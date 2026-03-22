@@ -43,12 +43,18 @@ services:
     volumes:
       - /home/hal9000/shrinkarr/data:/app/data
       - /home/hal9000/HALHUB:/media:rw
-    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - SHRINKARR_DB_PATH=/app/data/shrinkarr.db
       - SHRINKARR_MEDIA_ROOT=/media
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 ```
 
 5. Click **Deploy the stack**
@@ -97,10 +103,27 @@ Then in Portainer: go to the `shrinkarr` stack → click **Stop** → **Start** 
 
 ## Troubleshooting
 
-**Container won't start with GPU:**
+**"unknown or invalid runtime name: nvidia":**
+
+Install the NVIDIA Container Toolkit (replaces the old `nvidia-docker2`):
+
 ```bash
-# Verify NVIDIA runtime is available
-docker run --rm --runtime=nvidia nvidia/cuda:12.3.1-runtime-ubuntu22.04 nvidia-smi
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+**Verify GPU access in Docker:**
+```bash
+docker run --rm --gpus all nvidia/cuda:12.3.1-runtime-ubuntu22.04 nvidia-smi
 ```
 
 **Check container logs:**
@@ -109,8 +132,4 @@ docker logs shrinkarr
 ```
 
 **ffmpeg not detecting GPU:**
-Ensure `NVIDIA_VISIBLE_DEVICES=all` is set and the NVIDIA Container Toolkit is installed:
-```bash
-sudo apt install nvidia-docker2
-sudo systemctl restart docker
-```
+Ensure `NVIDIA_VISIBLE_DEVICES=all` is set in the compose environment and the container starts with `nvidia-smi` showing your GPU.
