@@ -27,6 +27,7 @@ export default function QueuePage({ jobProgress }: QueuePageProps) {
 
   useEffect(() => { load(); }, [jobProgress]);
 
+  const running = jobs.filter((j) => j.status === "running");
   const pending = jobs.filter((j) => j.status === "pending");
   const completed = jobs.filter((j) => j.status === "completed");
   const failed = jobs.filter((j) => j.status === "failed");
@@ -44,6 +45,22 @@ export default function QueuePage({ jobProgress }: QueuePageProps) {
       </div>
 
       {jobProgress && <JobCard progress={jobProgress} />}
+
+      {!jobProgress && running.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, opacity: 0.5, marginBottom: 8, color: "var(--primary)" }}>
+            RUNNING ({running.length})
+          </div>
+          <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden", marginBottom: 16 }}>
+            {running.map((job) => (
+              <JobListItem key={job.id} job={job}
+                onCancel={(id) => { cancelJob(id).then(load); }}
+                onRemove={(id) => { removeJob(id).then(load); }}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {pending.length > 0 && (
         <>

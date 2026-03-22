@@ -159,16 +159,31 @@ async def convert_file(
             stderr=asyncio.subprocess.PIPE,
         )
 
-        # Read stderr line by line for progress
+        # ffmpeg writes progress using \r (carriage return), not \n.
+        # Read in small chunks and split on \r to parse progress lines.
+        buffer = ""
         while True:
-            line_bytes = await proc.stderr.readline()
-            if not line_bytes:
+            chunk = await proc.stderr.read(4096)
+            if not chunk:
                 break
-            line = line_bytes.decode(errors="replace").strip()
-            if progress_callback and line:
-                parsed = parse_ffmpeg_progress(line, duration)
-                if parsed:
-                    await progress_callback(**parsed)
+            buffer += chunk.decode(errors="replace")
+            # Split on \r or \n to find progress lines
+            while "\r" in buffer or "\n" in buffer:
+                # Find earliest delimiter
+                r_pos = buffer.find("\r")
+                n_pos = buffer.find("\n")
+                if r_pos == -1:
+                    pos = n_pos
+                elif n_pos == -1:
+                    pos = r_pos
+                else:
+                    pos = min(r_pos, n_pos)
+                line = buffer[:pos].strip()
+                buffer = buffer[pos + 1:]
+                if progress_callback and line:
+                    parsed = parse_ffmpeg_progress(line, duration)
+                    if parsed:
+                        await progress_callback(**parsed)
 
         await asyncio.wait_for(proc.wait(), timeout=settings.ffmpeg_timeout)
 
