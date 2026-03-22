@@ -1,7 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+
+# Configure logging so shrinkarr.* loggers output to console
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db, DB_PATH
