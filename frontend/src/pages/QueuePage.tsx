@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getJobs, getJobStats, startQueue, pauseQueue, resumeQueue, cancelJob, removeJob, retryJob, clearCompleted } from "../api";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
+import ProgressBar from "../components/ProgressBar";
 import type { Job, JobProgress } from "../types";
 
 interface QueuePageProps {
@@ -25,7 +26,14 @@ export default function QueuePage({ jobProgress }: QueuePageProps) {
     setStats(s);
   };
 
+  // Reload when WebSocket progress arrives
   useEffect(() => { load(); }, [jobProgress]);
+
+  // Poll every 3 seconds so the page stays current even without WebSocket
+  useEffect(() => {
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   const running = jobs.filter((j) => j.status === "running");
   const pending = jobs.filter((j) => j.status === "pending");
@@ -46,21 +54,32 @@ export default function QueuePage({ jobProgress }: QueuePageProps) {
 
       {jobProgress && <JobCard progress={jobProgress} />}
 
-      {!jobProgress && running.length > 0 && (
-        <>
-          <div style={{ fontSize: 12, opacity: 0.5, marginBottom: 8, color: "var(--primary)" }}>
-            RUNNING ({running.length})
+      {!jobProgress && running.length > 0 && running.map((job) => (
+        <div key={job.id} className="job-active" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ color: "white", fontWeight: "bold" }}>Now Converting</span>
+            <span style={{ fontSize: 12, opacity: 0.6 }}>
+              {stats ? `Job ${stats.completed + 1} of ${stats.total_jobs}` : ""}
+            </span>
           </div>
-          <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden", marginBottom: 16 }}>
-            {running.map((job) => (
-              <JobListItem key={job.id} job={job}
-                onCancel={(id) => { cancelJob(id).then(load); }}
-                onRemove={(id) => { removeJob(id).then(load); }}
-              />
-            ))}
+          <div style={{ marginBottom: 8, fontSize: 13 }}>{job.file_name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
+            <div style={{ flex: 1 }}><ProgressBar progress={job.progress || 0} /></div>
+            <span style={{ color: "var(--success)", fontWeight: "bold" }}>
+              {(job.progress || 0).toFixed(1)}%
+            </span>
           </div>
-        </>
-      )}
+          <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6 }}>
+            {job.fps != null && <span>{job.fps.toFixed(0)} fps</span>}
+            {job.eta_seconds != null && job.eta_seconds > 0 && (
+              <span>ETA: {job.eta_seconds >= 3600
+                ? `${Math.floor(job.eta_seconds / 3600)}h ${Math.floor((job.eta_seconds % 3600) / 60)}m`
+                : `${Math.floor(job.eta_seconds / 60)} min`}
+              </span>
+            )}
+          </div>
+        </div>
+      ))}
 
       {pending.length > 0 && (
         <>
