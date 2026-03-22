@@ -1,9 +1,12 @@
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 import aiosqlite
+
+logger = logging.getLogger("shrinkarr.queue")
 
 
 def _utcnow() -> str:
@@ -218,17 +221,26 @@ class QueueWorker:
         self._paused = False
 
     async def _run_loop(self) -> None:
+        logger.info("Worker loop started")
         while self._running:
             if self._paused:
                 await asyncio.sleep(1)
                 continue
-            job = await self.queue.get_next_job()
+            try:
+                job = await self.queue.get_next_job()
+            except Exception as exc:
+                logger.error("Failed to get next job: %s", exc, exc_info=True)
+                await asyncio.sleep(5)
+                continue
             if job is None:
                 await asyncio.sleep(1)
                 continue
+            logger.info("Processing job %s: %s", job["id"], job["file_path"])
             try:
                 await self._process_job(job)
+                logger.info("Job %s completed successfully", job["id"])
             except Exception as exc:
+                logger.error("Job %s failed with exception: %s", job["id"], exc, exc_info=True)
                 try:
                     await self.queue.update_status(job["id"], "failed", error_log=str(exc))
                 except Exception:
@@ -255,12 +267,15 @@ class QueueWorker:
             audio_tracks_to_remove = audio_tracks_to_remove_raw or []
 
         await self.queue.update_status(job_id, "running")
+        logger.info("Job %s status set to running", job_id)
 
         # Probe for duration
         probe = await probe_file(file_path)
         if probe is None:
+            logger.error("Job %s: failed to probe file %s", job_id, file_path)
             await self.queue.update_status(job_id, "failed", error_log="Failed to probe file")
             return
+        logger.info("Job %s: probed OK, duration=%.1fs, codec=%s", job_id, probe.get("duration", 0), probe.get("video_codec", "?"))
 
         duration = probe.get("duration", 0.0)
         import os
