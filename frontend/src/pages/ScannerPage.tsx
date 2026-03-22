@@ -23,7 +23,7 @@ export default function ScannerPage({ scanProgress }: ScannerPageProps) {
   }, []);
 
   useEffect(() => {
-    if (scanProgress?.status === "complete") {
+    if (scanProgress?.status === "done") {
       setScanning(false);
       loadResults();
     }
