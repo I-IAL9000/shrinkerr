@@ -1,0 +1,15 @@
+services:
+  shrinkarr:
+    build: .
+    container_name: shrinkarr
+    ports:
+      - "6680:6680"
+    volumes:
+      - ./data:/app/data
+      - /home/hal9000/HALHUB:/media:rw
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - SHRINKARR_DB_PATH=/app/data/shrinkarr.db
+      - SHRINKARR_MEDIA_ROOT=/media
+    restart: unless-stopped
