@@ -207,6 +207,16 @@ class QueueWorker:
     def start(self) -> None:
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
+        self._task.add_done_callback(self._task_done)
+
+    @staticmethod
+    def _task_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            print("[WORKER] Task was cancelled", flush=True)
+        elif task.exception():
+            print(f"[WORKER] Task crashed: {task.exception()}", flush=True)
+        else:
+            print("[WORKER] Task finished normally", flush=True)
 
     def stop(self) -> None:
         self._running = False
@@ -221,7 +231,7 @@ class QueueWorker:
         self._paused = False
 
     async def _run_loop(self) -> None:
-        logger.info("Worker loop started")
+        print("[WORKER] Loop started, running=%s paused=%s" % (self._running, self._paused), flush=True)
         while self._running:
             if self._paused:
                 await asyncio.sleep(1)
@@ -229,18 +239,20 @@ class QueueWorker:
             try:
                 job = await self.queue.get_next_job()
             except Exception as exc:
-                logger.error("Failed to get next job: %s", exc, exc_info=True)
+                print(f"[WORKER] Failed to get next job: {exc}", flush=True)
+                import traceback; traceback.print_exc()
                 await asyncio.sleep(5)
                 continue
             if job is None:
                 await asyncio.sleep(1)
                 continue
-            logger.info("Processing job %s: %s", job["id"], job["file_path"])
+            print(f"[WORKER] Processing job {job['id']}: {job['file_path']}", flush=True)
             try:
                 await self._process_job(job)
-                logger.info("Job %s completed successfully", job["id"])
+                print(f"[WORKER] Job {job['id']} completed", flush=True)
             except Exception as exc:
-                logger.error("Job %s failed with exception: %s", job["id"], exc, exc_info=True)
+                print(f"[WORKER] Job {job['id']} FAILED: {exc}", flush=True)
+                import traceback; traceback.print_exc()
                 try:
                     await self.queue.update_status(job["id"], "failed", error_log=str(exc))
                 except Exception:
@@ -267,15 +279,15 @@ class QueueWorker:
             audio_tracks_to_remove = audio_tracks_to_remove_raw or []
 
         await self.queue.update_status(job_id, "running")
-        logger.info("Job %s status set to running", job_id)
+        print(f"[WORKER] Job {job_id} status set to running", flush=True)
 
         # Probe for duration
         probe = await probe_file(file_path)
         if probe is None:
-            logger.error("Job %s: failed to probe file %s", job_id, file_path)
+            print(f"[WORKER] Job {job_id}: FAILED to probe {file_path}", flush=True)
             await self.queue.update_status(job_id, "failed", error_log="Failed to probe file")
             return
-        logger.info("Job %s: probed OK, duration=%.1fs, codec=%s", job_id, probe.get("duration", 0), probe.get("video_codec", "?"))
+        print(f"[WORKER] Job {job_id}: probed OK, duration={probe.get('duration', 0):.1f}s, codec={probe.get('video_codec', '?')}", flush=True)
 
         duration = probe.get("duration", 0.0)
         import os

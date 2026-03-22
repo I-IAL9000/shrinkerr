@@ -129,13 +129,13 @@ async def convert_file(
     """
     input_path = str(input_path)
     p = Path(input_path)
-    logger.info("Starting conversion: %s (encoder=%s, duration=%.1fs)", input_path, encoder, duration)
+    print(f"[CONVERT] Starting: {input_path} (encoder={encoder}, duration={duration:.1f}s)", flush=True)
 
     # Check free disk space
     try:
         original_size = p.stat().st_size
     except OSError as exc:
-        logger.error("Cannot stat file: %s", exc)
+        print(f"[CONVERT] Cannot stat file: {exc}", flush=True)
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
     stat = shutil.disk_usage(str(p.parent))
@@ -156,7 +156,7 @@ async def convert_file(
     from backend.config import settings
 
     cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder)
-    logger.info("ffmpeg cmd: %s", " ".join(cmd[:6]) + " ...")
+    print(f"[CONVERT] ffmpeg cmd: {' '.join(cmd[:6])} ...", flush=True)
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -164,7 +164,7 @@ async def convert_file(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        logger.info("ffmpeg started, pid=%s", proc.pid)
+        print(f"[CONVERT] ffmpeg started, pid={proc.pid}", flush=True)
 
         # ffmpeg writes progress using \r (carriage return), not \n.
         # Read in small chunks and split on \r to parse progress lines.

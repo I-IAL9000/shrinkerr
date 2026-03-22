@@ -73,7 +73,9 @@ async def get_stats():
 async def start_worker():
     if _worker is None:
         raise HTTPException(status_code=503, detail="Worker not initialized")
+    print(f"[API] Starting worker, running={_worker._running}, paused={_worker._paused}", flush=True)
     _worker.start()
+    print("[API] Worker started", flush=True)
     return {"status": "started"}
 
 
