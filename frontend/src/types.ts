@@ -64,8 +64,8 @@ export interface ScanProgress {
   type: "scan_progress";
   status: string;
   current_file: string;
-  total_files: number;
-  files_probed: number;
+  total: number;
+  probed: number;
 }
 
 export interface JobProgress {
@@ -74,11 +74,11 @@ export interface JobProgress {
   file_name: string;
   progress: number;
   fps: number | null;
-  eta_seconds: number | null;
-  current_step: string;
+  eta: number | null;
+  step: string;
   jobs_completed: number;
   jobs_total: number;
-  total_space_saved: number;
+  total_saved: number;
 }
 
 export interface JobComplete {

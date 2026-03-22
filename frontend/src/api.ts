@@ -15,16 +15,32 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // Scan
 export const startScan = (paths: string[]) =>
   apiFetch("/scan/start", { method: "POST", body: JSON.stringify({ paths }) });
-export const getScanResults = () => apiFetch<{ results: any[] }>("/scan/results");
+export const getScanResults = () => apiFetch<any[]>("/scan/results");
 export const removeScanResult = (id: number) =>
   apiFetch(`/scan/results/${id}`, { method: "DELETE" });
 
 // Jobs
-export const addJob = (job: any) =>
-  apiFetch("/jobs/add", { method: "POST", body: JSON.stringify(job) });
+export const addJob = (job: {
+  file_path: string;
+  job_type: string;
+  encoder?: string;
+  audio_tracks_to_remove?: number[];
+}) => {
+  const params = new URLSearchParams({
+    file_path: job.file_path,
+    job_type: job.job_type,
+  });
+  if (job.encoder) params.set("encoder", job.encoder);
+  if (job.audio_tracks_to_remove) {
+    job.audio_tracks_to_remove.forEach((i) =>
+      params.append("audio_tracks_to_remove", String(i))
+    );
+  }
+  return apiFetch(`/jobs/add?${params}`, { method: "POST" });
+};
 export const addBulkJobs = (jobs: any[]) =>
-  apiFetch("/jobs/add-bulk", { method: "POST", body: JSON.stringify(jobs) });
-export const getJobs = () => apiFetch<{ jobs: any[] }>("/jobs/");
+  apiFetch("/jobs/add-bulk", { method: "POST", body: JSON.stringify({ jobs }) });
+export const getJobs = () => apiFetch<any[]>("/jobs/");
 export const getJobStats = () => apiFetch<any>("/jobs/stats");
 export const startQueue = () => apiFetch("/jobs/start", { method: "POST" });
 export const pauseQueue = () => apiFetch("/jobs/pause", { method: "POST" });
@@ -42,7 +58,7 @@ export const clearCompleted = () =>
 export const setSchedule = (startTime: string) =>
   apiFetch("/schedule/set", {
     method: "POST",
-    body: JSON.stringify({ scheduled_start: startTime }),
+    body: JSON.stringify({ start_time: startTime }),
   });
 export const cancelSchedule = () =>
   apiFetch("/schedule/cancel", { method: "DELETE" });
