@@ -6,7 +6,7 @@ import os
 @pytest_asyncio.fixture
 async def test_db(tmp_path):
     db_path = str(tmp_path / "test.db")
-    os.environ["SHRINKARR_DB_PATH"] = db_path
+    os.environ["SQUEEZARR_DB_PATH"] = db_path
     import backend.config
     from backend.config import Settings
     backend.config.settings = Settings(db_path=db_path, media_root=str(tmp_path / "media"))

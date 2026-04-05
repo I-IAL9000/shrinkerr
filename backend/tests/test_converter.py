@@ -11,7 +11,7 @@ from backend.converter import (
 def test_build_nvenc_command():
     cmd = build_ffmpeg_cmd("/media/movie.mkv", "/media/movie.converting.mkv", encoder="nvenc", cq=20)
     assert "hevc_nvenc" in cmd
-    assert cmd[cmd.index("-preset") + 1] == "p7"
+    assert cmd[cmd.index("-preset") + 1] == "p6"
     assert cmd[cmd.index("-cq") + 1] == "20"
     assert "main10" in cmd
     assert cmd[-1] == "/media/movie.converting.mkv"
@@ -59,7 +59,21 @@ def test_parse_ffmpeg_progress_basic():
     assert result is not None
     assert abs(result["progress"] - 30.17) < 0.1
     assert result["fps"] == 45.0
+    # Without start_time, ETA is None (no wall-clock reference)
+    assert result["eta_seconds"] is None
+
+
+def test_parse_ffmpeg_progress_with_start_time():
+    import time
+    line = "frame= 1234 fps= 45 q=28.0 size=   10240kB time=00:01:30.50 bitrate=..."
+    # Simulate encoding started 30s ago (real-time), 30% through a 300s video
+    start_time = time.monotonic() - 30.0
+    result = parse_ffmpeg_progress(line, duration=300.0, start_time=start_time)
+    assert result is not None
+    assert abs(result["progress"] - 30.17) < 0.1
     assert result["eta_seconds"] is not None
+    # ~30s elapsed for ~30% done → ~70s remaining (approximate)
+    assert 50 < result["eta_seconds"] < 90
 
 
 def test_parse_ffmpeg_progress_no_time():
@@ -76,8 +90,10 @@ def test_parse_ffmpeg_progress_zero_duration():
 
 
 def test_parse_ffmpeg_progress_at_end():
+    import time
     line = "frame= 9000 fps= 30 time=00:05:00.00 bitrate=..."
-    result = parse_ffmpeg_progress(line, duration=300.0)
+    start_time = time.monotonic() - 120.0  # 2min wall-clock for 5min video
+    result = parse_ffmpeg_progress(line, duration=300.0, start_time=start_time)
     assert result is not None
     assert result["progress"] == 100.0
     assert result["eta_seconds"] == 0

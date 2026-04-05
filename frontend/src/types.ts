@@ -10,6 +10,16 @@ export interface AudioTrack {
   locked: boolean;
 }
 
+export interface SubtitleTrack {
+  stream_index: number;
+  language: string;
+  codec: string;
+  title: string;
+  forced: boolean;
+  keep: boolean;
+  locked: boolean;
+}
+
 export interface ScannedFile {
   id: number;
   file_path: string;
@@ -20,10 +30,21 @@ export interface ScannedFile {
   video_codec: string;
   needs_conversion: boolean;
   audio_tracks: AudioTrack[];
+  subtitle_tracks: SubtitleTrack[];
   native_language: string;
+  language_source: string; // "api" | "heuristic"
   has_removable_tracks: boolean;
+  has_removable_subs: boolean;
   estimated_savings_bytes: number;
   estimated_savings_gb: number;
+  ignored: boolean;
+  is_new: boolean;
+  queued: boolean;
+  converted: boolean;
+  low_bitrate: boolean;
+  has_lossless_audio: boolean;
+  duration: number;
+  file_mtime: number | null;
 }
 
 export interface Job {
@@ -34,11 +55,17 @@ export interface Job {
   status: string;
   encoder: string | null;
   audio_tracks_to_remove: number[];
+  subtitle_tracks_to_remove: number[];
   progress: number;
   fps: number | null;
   eta_seconds: number | null;
   error_log: string | null;
   space_saved: number;
+  original_size: number;
+  nvenc_preset: string | null;
+  nvenc_cq: number | null;
+  audio_codec: string | null;
+  audio_bitrate: number | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

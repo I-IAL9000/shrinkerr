@@ -1,7 +1,7 @@
 services:
-  shrinkarr:
+  squeezarr:
     build: .
-    container_name: shrinkarr
+    container_name: squeezarr
     ports:
       - "6680:6680"
     volumes:
@@ -9,8 +9,8 @@ services:
       - /home/hal9000/HALHUB:/media:rw
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - SHRINKARR_DB_PATH=/app/data/shrinkarr.db
-      - SHRINKARR_MEDIA_ROOT=/media
+      - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
+      - SQUEEZARR_MEDIA_ROOT=/media
     restart: unless-stopped
     deploy:
       resources:

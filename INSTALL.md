@@ -1,4 +1,4 @@
-# Shrinkarr — Installation Guide
+# Squeezarr — Installation Guide
 
 ## Prerequisites
 
@@ -8,10 +8,10 @@
 
 ## Step 1: Copy to NUC
 
-Copy the `shrinkarr/` directory to your NUC:
+Copy the `squeezarr/` directory to your NUC:
 
 ```bash
-scp -r shrinkarr/ hal9000@<nuc-ip>:/home/hal9000/shrinkarr
+scp -r squeezarr/ hal9000@<nuc-ip>:/home/hal9000/squeezarr
 ```
 
 ## Step 2: Build the Docker Image
@@ -20,8 +20,8 @@ SSH into the NUC and build:
 
 ```bash
 ssh hal9000@<nuc-ip>
-cd /home/hal9000/shrinkarr
-docker build -t shrinkarr:latest .
+cd /home/hal9000/squeezarr
+docker build -t squeezarr:latest .
 ```
 
 This runs a multi-stage build (Node.js for frontend, nvidia/cuda for runtime). Takes a few minutes on first build.
@@ -30,23 +30,23 @@ This runs a multi-stage build (Node.js for frontend, nvidia/cuda for runtime). T
 
 1. Open Portainer (`http://<nuc-ip>:9000`)
 2. Go to **Stacks** → **Add stack**
-3. Name: `shrinkarr`
+3. Name: `squeezarr`
 4. Choose **Web editor** and paste this compose file:
 
 ```yaml
 services:
-  shrinkarr:
-    image: shrinkarr:latest
-    container_name: shrinkarr
+  squeezarr:
+    image: squeezarr:latest
+    container_name: squeezarr
     ports:
       - "6680:6680"
     volumes:
-      - /home/hal9000/shrinkarr/data:/app/data
+      - /home/hal9000/squeezarr/data:/app/data
       - /home/hal9000/HALHUB:/media:rw
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - SHRINKARR_DB_PATH=/app/data/shrinkarr.db
-      - SHRINKARR_MEDIA_ROOT=/media
+      - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
+      - SQUEEZARR_MEDIA_ROOT=/media
     restart: unless-stopped
     deploy:
       resources:
@@ -85,18 +85,18 @@ services:
 When you update the code:
 
 ```bash
-cd /home/hal9000/shrinkarr
+cd /home/hal9000/squeezarr
 git pull  # or copy updated files
-docker build -t shrinkarr:latest .
+docker build -t squeezarr:latest .
 ```
 
-Then in Portainer: go to the `shrinkarr` stack → click **Stop** → **Start** (or recreate the container). The SQLite database in `/home/hal9000/shrinkarr/data/` persists across rebuilds.
+Then in Portainer: go to the `squeezarr` stack → click **Stop** → **Start** (or recreate the container). The SQLite database in `/home/hal9000/squeezarr/data/` persists across rebuilds.
 
 ## Ports
 
 | Service    | Port |
 |------------|------|
-| Shrinkarr  | 6680 |
+| Squeezarr  | 6680 |
 | Sonarr     | 8989 |
 | Radarr     | 7878 |
 | Portainer  | 9000 |
@@ -128,7 +128,7 @@ docker run --rm --gpus all nvidia/cuda:12.3.1-runtime-ubuntu22.04 nvidia-smi
 
 **Check container logs:**
 ```bash
-docker logs shrinkarr
+docker logs squeezarr
 ```
 
 **ffmpeg not detecting GPU:**

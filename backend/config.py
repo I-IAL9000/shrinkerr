@@ -1,12 +1,13 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    db_path: str = "/app/data/shrinkarr.db"
+    db_path: str = "/app/data/squeezarr.db"
     media_root: str = "/media"
     port: int = 6680
     default_encoder: str = "nvenc"
     nvenc_cq: int = 20
     libx265_crf: int = 20
+    nvenc_preset: str = "p6"
     always_keep_languages: list[str] = ["eng", "isl", "ice"]
     ignore_unknown_tracks: bool = True
     ffprobe_timeout: int = 30
@@ -14,6 +15,6 @@ class Settings(BaseSettings):
     video_extensions: list[str] = [".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts"]
 
     class Config:
-        env_prefix = "SHRINKARR_"
+        env_prefix = "SQUEEZARR_"
 
 settings = Settings()
