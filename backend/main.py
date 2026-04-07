@@ -1,6 +1,9 @@
 import asyncio
+import hashlib
+import hmac
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -129,72 +132,173 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Squeezarr", lifespan=lifespan)
 
-# API key authentication middleware
-_api_key_cache: dict = {"key": None, "checked_at": 0}
+# Auth settings cache (replaces old _api_key_cache)
+_auth_cache: dict = {"settings": None, "checked_at": 0}
+
+
+def _get_auth_settings_sync() -> dict:
+    """Synchronous auth settings check -- cached for 60s."""
+    now = time.monotonic()
+    if now - _auth_cache.get("checked_at", 0) < 60 and _auth_cache.get("settings"):
+        return _auth_cache["settings"]
+    try:
+        import sqlite3
+        db = sqlite3.connect(DB_PATH)
+        try:
+            cur = db.execute(
+                "SELECT key, value FROM settings WHERE key IN "
+                "('auth_enabled','auth_username','auth_password_hash','api_key','session_secret')"
+            )
+            settings = {r[0]: r[1] for r in cur.fetchall()}
+        finally:
+            db.close()
+        _auth_cache["settings"] = {
+            "auth_enabled": settings.get("auth_enabled", "false") == "true",
+            "api_key": settings.get("api_key", ""),
+            "auth_username": settings.get("auth_username", ""),
+            "auth_password_hash": settings.get("auth_password_hash", ""),
+            "session_secret": settings.get("session_secret", ""),
+        }
+        _auth_cache["checked_at"] = now
+    except Exception:
+        if not _auth_cache.get("settings"):
+            _auth_cache["settings"] = {"auth_enabled": False, "api_key": "", "session_secret": ""}
+    return _auth_cache["settings"]
+
+
+def _validate_session(token: str, auth_settings: dict) -> bool:
+    """Validate a session cookie token."""
+    try:
+        parts = token.split(":")
+        if len(parts) != 3:
+            return False
+        username, timestamp, signature = parts
+        secret = auth_settings.get("session_secret", "default-secret")
+        expected = hmac.new(
+            secret.encode(), f"{username}:{timestamp}".encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return False
+        # Check token age (30 days max)
+        age = time.time() - int(timestamp)
+        return age < 86400 * 30
+    except Exception:
+        return False
+
 
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):
     path = request.url.path
 
     # Always allow: health, static assets, poster images, SPA routes, websocket
-    if path in ("/api/health",) or path == "/api/posters/image" or path.startswith("/assets/") or not path.startswith("/api/"):
+    if (
+        path in ("/api/health",)
+        or path == "/api/posters/image"
+        or path.startswith("/assets/")
+        or not path.startswith("/api/")
+    ):
         return await call_next(request)
 
-    # Also allow the login/auth check endpoint
-    if path == "/api/auth/check":
+    # Always allow auth endpoints
+    if path in ("/api/auth/check", "/api/auth/login", "/api/auth/logout"):
         return await call_next(request)
 
-    # Check if API key is configured (cached for 60s)
-    import time
-    now = time.monotonic()
-    if now - _api_key_cache.get("checked_at", 0) > 60:
-        try:
-            import aiosqlite
-            db = await aiosqlite.connect(DB_PATH)
-            try:
-                async with db.execute("SELECT value FROM settings WHERE key = 'api_key'") as cur:
-                    row = await cur.fetchone()
-                    _api_key_cache["key"] = row[0] if row and row[0] else None
-            finally:
-                await db.close()
-        except Exception:
-            _api_key_cache["key"] = None
-        _api_key_cache["checked_at"] = now
-
-    configured_key = _api_key_cache.get("key")
-    if not configured_key:
-        # No API key configured — allow all requests
+    # Check if auth is enabled
+    auth_settings = _get_auth_settings_sync()
+    if not auth_settings.get("auth_enabled"):
         return await call_next(request)
 
-    # Check for API key in header or query param
-    provided_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
-    if provided_key == configured_key:
+    # Method 1: API key in header or query param
+    api_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
+    if api_key and api_key == auth_settings.get("api_key"):
         return await call_next(request)
 
-    return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+    # Method 2: Session cookie
+    session_cookie = request.cookies.get("squeezarr_session")
+    if session_cookie and _validate_session(session_cookie, auth_settings):
+        return await call_next(request)
+
+    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
 
 # Auth check endpoint
 @app.get("/api/auth/check")
 async def auth_check(request: Request):
-    """Check if authentication is required and if the provided key is valid."""
+    """Check if authentication is required and if the current request is authenticated."""
+    settings = _get_auth_settings_sync()
+
+    if not settings.get("auth_enabled"):
+        return {"auth_required": False, "authenticated": True, "method": None}
+
+    # Check API key
+    api_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
+    if api_key and api_key == settings.get("api_key"):
+        return {"auth_required": True, "authenticated": True, "method": "api_key"}
+
+    # Check session cookie
+    session = request.cookies.get("squeezarr_session")
+    if session and _validate_session(session, settings):
+        return {"auth_required": True, "authenticated": True, "method": "session"}
+
+    return {"auth_required": True, "authenticated": False, "method": None}
+
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request):
+    """Authenticate with username/password and set a session cookie."""
+    body = await request.json()
+    username = body.get("username", "")
+    password = body.get("password", "")
+
+    # Read settings
     import aiosqlite
+    db = await aiosqlite.connect(DB_PATH)
     try:
-        db = await aiosqlite.connect(DB_PATH)
-        try:
-            async with db.execute("SELECT value FROM settings WHERE key = 'api_key'") as cur:
-                row = await cur.fetchone()
-                configured_key = row[0] if row and row[0] else None
-        finally:
-            await db.close()
-    except Exception:
-        configured_key = None
+        settings = {}
+        async with db.execute(
+            "SELECT key, value FROM settings WHERE key IN "
+            "('auth_enabled','auth_username','auth_password_hash','session_secret')"
+        ) as cur:
+            for row in await cur.fetchall():
+                settings[row[0]] = row[1]
+    finally:
+        await db.close()
 
-    if not configured_key:
-        return {"auth_required": False, "authenticated": True}
+    if settings.get("auth_enabled", "false") != "true":
+        return JSONResponse({"error": "Auth not enabled"}, status_code=400)
 
-    provided_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
-    return {"auth_required": True, "authenticated": provided_key == configured_key}
+    stored_username = settings.get("auth_username", "")
+    stored_hash = settings.get("auth_password_hash", "")
+
+    if username != stored_username:
+        return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+
+    # Verify password
+    password_hash = hashlib.sha256((password + stored_username).encode()).hexdigest()
+    if password_hash != stored_hash:
+        return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+
+    # Create session token
+    secret = settings.get("session_secret", "default-secret")
+    timestamp = str(int(time.time()))
+    signature = hmac.new(
+        secret.encode(), f"{username}:{timestamp}".encode(), hashlib.sha256
+    ).hexdigest()
+    token = f"{username}:{timestamp}:{signature}"
+
+    response = JSONResponse({"success": True, "username": username})
+    response.set_cookie(
+        "squeezarr_session", token, httponly=True, samesite="lax", max_age=86400 * 30
+    )
+    return response
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    """Clear the session cookie."""
+    response = JSONResponse({"success": True})
+    response.delete_cookie("squeezarr_session")
+    return response
 
 
 # Include routers
@@ -207,6 +311,9 @@ app.include_router(rules_router)
 
 from backend.routes.posters import router as poster_router
 app.include_router(poster_router)
+
+from backend.routes.webhooks import router as webhook_router
+app.include_router(webhook_router)
 
 
 @app.get("/api/health")
@@ -226,12 +333,19 @@ async def get_logs(
 
 
 async def _check_ws_auth(websocket: WebSocket) -> bool:
-    """Check API key for WebSocket connections via query param."""
-    configured_key = _api_key_cache.get("key")
-    if not configured_key:
+    """Check authentication for WebSocket connections via query param or cookie."""
+    auth_settings = _get_auth_settings_sync()
+    if not auth_settings.get("auth_enabled"):
         return True
+    # Check API key in query param
     provided = websocket.query_params.get("api_key", "")
-    return provided == configured_key
+    if provided and provided == auth_settings.get("api_key"):
+        return True
+    # Check session cookie
+    session = websocket.cookies.get("squeezarr_session")
+    if session and _validate_session(session, auth_settings):
+        return True
+    return False
 
 
 @app.websocket("/ws/logs")

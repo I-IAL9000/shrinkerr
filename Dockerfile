@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install ffmpeg with NVENC + libvmaf
 # BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs
+# Using latest master build (SDK 13.0) — requires NVIDIA driver 570+
 RUN curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" \
         | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' && \
     chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \

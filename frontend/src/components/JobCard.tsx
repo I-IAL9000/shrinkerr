@@ -61,10 +61,10 @@ export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nve
           )}
         </div>
       </div>
-      <div style={{ marginBottom: 8, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-        <span>{progress.file_name}</span>
+      <div style={{ marginBottom: 8, fontSize: 13, display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{progress.file_name}</span>
         {fileSize != null && fileSize > 0 && (
-          <span style={{ fontSize: 11, opacity: 0.5 }}>{formatBytes(fileSize)}</span>
+          <span style={{ fontSize: 11, opacity: 0.5, flexShrink: 0 }}>{formatBytes(fileSize)}</span>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>

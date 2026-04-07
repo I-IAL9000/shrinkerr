@@ -131,7 +131,7 @@ body {
   margin-bottom: 24px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
@@ -151,6 +151,24 @@ body {
   border-left: 3px solid var(--accent);
   border-radius: 0;
 }
+.settings-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
+}
+.settings-subnav-link {
+  padding: 5px 20px 5px 40px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.settings-subnav-link:hover {
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.03);
+}
 
 .main-content {
   flex: 1;
@@ -161,7 +179,7 @@ body {
 
 /* Cards */
 .stats-grid {
-  display: flex; gap: 12px; margin-bottom: 20px;
+  display: flex; gap: 12px; margin-bottom: 12px;
 }
 .stat-card {
   flex: 1;
@@ -209,6 +227,45 @@ body {
 .filter-pill:hover { background: #3d3165; color: var(--text-secondary); }
 .filter-pill.active { background: var(--accent); color: white; }
 .filter-pill.active:hover { background: var(--accent-hover); }
+
+/* Range sliders */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  margin-top: -6px;
+}
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  border: none;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
 
 /* Inputs & selects */
 input[type="text"]:hover, input[type="number"]:hover, input[type="password"]:hover,
@@ -380,6 +437,7 @@ input[type="checkbox"] { cursor: pointer; }
   padding: 3px 0;
   font-size: 12px;
   cursor: pointer;
+  flex-wrap: wrap;
 }
 .tree-row:hover { background: rgba(255,255,255,0.03); }
 .tree-folder { color: var(--accent); }
@@ -428,12 +486,15 @@ input[type="checkbox"] { cursor: pointer; }
   padding: 16px;
   border-left: 3px solid var(--accent);
   margin-bottom: 12px;
+  overflow: hidden;
 }
 .job-row {
   display: flex; align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--bg-card);
   font-size: 13px;
+  flex-wrap: wrap;
+  gap: 4px 0;
 }
 .job-row:hover { background: rgba(255,255,255,0.02); }
 .job-type-badge {
@@ -477,6 +538,7 @@ input[type="checkbox"] { cursor: pointer; }
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border);
   padding: 10px 16px;
+  padding-top: calc(10px + env(safe-area-inset-top, 0px));
   align-items: center;
   justify-content: space-between;
   position: sticky;
@@ -536,8 +598,15 @@ input[type="checkbox"] { cursor: pointer; }
   .app-layout { flex-direction: column; }
   .sidebar-desktop { display: none; }
   .mobile-header { display: flex; }
-  .main-content { max-height: none; padding: 12px; }
+  .main-content { max-height: none; padding: 12px; overflow-y: visible; }
+  .queue-control-panel { top: calc(env(safe-area-inset-top, 0px) + 48px) !important; }
+  .file-tree-virtual { position: static !important; height: auto !important; min-height: auto !important; }
+  .file-tree-virtual > div { position: static !important; height: auto !important; }
+  .file-tree-virtual > div > div { position: static !important; }
+  .file-tree-virtual [style*="height: 32px"] { height: auto !important; min-height: 32px; }
   .stats-grid { flex-wrap: wrap; }
   .stat-card { min-width: calc(33% - 8px); flex: 1 1 calc(33% - 8px); }
   .stat-card:nth-child(n+4) { min-width: calc(50% - 6px); flex: 1 1 calc(50% - 6px); }
+  .job-row .job-filename { flex: 1 1 100% !important; word-break: break-word; }
+  .tree-row .tree-name { flex: 1 1 100%; word-break: break-word; }
 }

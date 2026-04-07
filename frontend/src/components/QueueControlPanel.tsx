@@ -94,6 +94,7 @@ export default function QueueControlPanel({
 
   return (
     <div
+      className="queue-control-panel"
       style={{
         position: "sticky",
         top: 0,

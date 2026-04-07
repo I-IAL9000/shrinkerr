@@ -290,7 +290,10 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 pass
 
             has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
-            needs_conv = (bool(row["needs_conversion"]) or payload.force_reencode) and not skip_conversion
+            # force_reencode overrides both needs_conversion AND skip rules
+            needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
+            if skip_conversion and not payload.force_reencode:
+                needs_conv = False
 
             if needs_conv and has_audio_work:
                 job_type = "combined"
@@ -555,6 +558,8 @@ class AddByPathRequest(BaseModel):
     file_paths: list[str]
     priority: int = 1
     force_reencode: bool = False
+    skip_arr_rescan: bool = False
+    insert_next: bool = False
 
 
 @router.post("/add-by-path")
@@ -563,7 +568,19 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     if _queue is None:
         raise HTTPException(status_code=503, detail="Queue not initialized")
 
-    from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language
+    from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
+    from backend.config import settings
+
+    # Load source codecs from settings
+    source_codecs = ["h264"]
+    try:
+        async with connect_db() as _db:
+            async with _db.execute("SELECT value FROM settings WHERE key = 'source_codecs'") as _cur:
+                _row = await _cur.fetchone()
+                if _row and _row[0]:
+                    source_codecs = json.loads(_row[0])
+    except Exception:
+        pass
 
     added = 0
     errors = []
@@ -579,12 +596,14 @@ async def add_jobs_by_path(payload: AddByPathRequest):
             continue
 
         video_codec = (probe.get("video_codec") or "").lower()
-        needs_conversion = "264" in video_codec or "avc" in video_codec or "mpeg" in video_codec or "vc1" in video_codec
+        needs_conversion = codec_matches_source(video_codec, source_codecs)
         if payload.force_reencode:
             needs_conversion = True
 
+        print(f"[API] add-by-path: {_os.path.basename(fp)} codec={video_codec} source_codecs={source_codecs} needs_conversion={needs_conversion}", flush=True)
+
         native_lang = detect_native_language(probe.get("audio_tracks", []))
-        audio_tracks = classify_audio_tracks(probe.get("audio_tracks", []), native_lang)
+        audio_tracks = classify_audio_tracks(probe.get("audio_tracks", []), native_lang, probe.get("duration", 0))
         sub_tracks = classify_subtitle_tracks(probe.get("subtitle_tracks", []), native_lang)
 
         audio_remove = [t.stream_index for t in audio_tracks if not t.keep and not t.locked]
@@ -598,6 +617,7 @@ async def add_jobs_by_path(payload: AddByPathRequest):
         elif has_audio_work:
             job_type = "audio"
         else:
+            print(f"[API] add-by-path: SKIPPED {_os.path.basename(fp)} — no conversion or audio work needed", flush=True)
             continue
 
         job_id = await _queue.add_job(
@@ -608,9 +628,16 @@ async def add_jobs_by_path(payload: AddByPathRequest):
             subtitle_tracks_to_remove=sub_remove,
             original_size=probe.get("file_size", 0),
             priority=payload.priority,
+            insert_next=payload.insert_next,
         )
         added += 1
-        print(f"[API] Queued by path: {_os.path.basename(fp)} ({job_type}, priority={payload.priority})", flush=True)
+        print(f"[API] Queued by path: {_os.path.basename(fp)} ({job_type}, priority={payload.priority}, insert_next={payload.insert_next})", flush=True)
+
+    # Auto-start queue if items were added and worker is idle
+    if added > 0 and _worker is not None:
+        if not _worker._running or _worker._paused:
+            print(f"[API] Auto-starting queue for {added} new job(s) from add-by-path", flush=True)
+            _worker.start()
 
     return {"added": added, "errors": errors}
 
@@ -981,7 +1008,10 @@ async def estimate_jobs(payload: EstimateRequest):
             except Exception:
                 pass
 
-            needs_conv = (bool(row["needs_conversion"]) or payload.force_reencode) and not skip_conv
+            # force_reencode overrides both needs_conversion AND skip rules
+            needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
+            if skip_conv and not payload.force_reencode:
+                needs_conv = False
             has_work = has_audio or has_subs
 
             if needs_conv and has_work:
@@ -1059,6 +1089,20 @@ async def estimate_jobs(payload: EstimateRequest):
             "resolution_breakdown": resolution_breakdown,
             "smart_encoding": content_detect_on or res_aware,
         }
+    finally:
+        await db.close()
+
+
+# --- Failed count (for sidebar badge) ---
+
+@router.get("/failed-count")
+async def get_failed_count():
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT COUNT(*) as c FROM jobs WHERE status = 'failed'") as cur:
+            row = await cur.fetchone()
+            return {"count": row["c"] if row else 0}
     finally:
         await db.close()
 

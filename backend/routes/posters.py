@@ -303,15 +303,17 @@ async def _run_prefetch():
         tmdb_key = settings.get("tmdb_api_key", "")
         path_mapping = settings.get("plex_path_mapping", "")
 
-        # Step 3: Parallel resolution (5 concurrent) + batch DB writes
+        # Step 3: Sequential resolution with rate limiting + batch DB writes
+        # TMDB rate limit: 40 requests/10 seconds. We pace at ~3 req/sec to stay under.
         now_str = datetime.now(timezone.utc).isoformat()
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
             (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
         async def _do_one(path: str) -> tuple | None:
             async with sem:
+                await asyncio.sleep(0.35)  # ~3 req/sec to respect TMDB rate limits
                 parsed = parse_folder_name(path)
                 poster_url = None
                 source = "placeholder"
@@ -320,13 +322,19 @@ async def _run_prefetch():
 
                 if tmdb_key and parsed.get("imdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
-                    except Exception: pass
+                    except Exception as e:
+                        if "429" in str(e):
+                            await asyncio.sleep(5)
                 if not poster_url and tmdb_key and parsed.get("tvdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
-                    except Exception: pass
+                    except Exception as e:
+                        if "429" in str(e):
+                            await asyncio.sleep(5)
                 if not poster_url and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
-                    except Exception: pass
+                    except Exception as e:
+                        if "429" in str(e):
+                            await asyncio.sleep(5)
                 # Skip Plex in bulk prefetch (too slow, causes DB lock contention with queue)
 
                 if poster_url:
@@ -339,9 +347,9 @@ async def _run_prefetch():
                         rating, tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
                         now_str)
 
-        # Process in chunks of 50 (parallel HTTP, batch DB write)
-        for ci in range(0, len(to_resolve), 50):
-            chunk = to_resolve[ci:ci + 50]
+        # Process in chunks of 20 (rate-limited HTTP, batch DB write)
+        for ci in range(0, len(to_resolve), 20):
+            chunk = to_resolve[ci:ci + 20]
             results = await asyncio.gather(*[_do_one(p) for p in chunk], return_exceptions=True)
             batch = [r for r in results if isinstance(r, tuple)]
 
@@ -362,7 +370,7 @@ async def _run_prefetch():
                             await asyncio.sleep(2)
 
             _prefetch_progress["resolved"] = _prefetch_progress["cached"] + ci + len(chunk)
-            if (ci + len(chunk)) % 500 < 50:
+            if (ci + len(chunk)) % 100 < 20:
                 print(f"[POSTER] Progress: {ci + len(chunk)}/{len(to_resolve)}", flush=True)
 
         _prefetch_progress["status"] = "done"
@@ -490,7 +498,7 @@ async def _resolve_tmdb(imdb_id, api_key):
                     if poster:
                         meta = _extract_tmdb_meta(item, "movie" if key == "movie_results" else "tv", api_key)
                         return f"https://image.tmdb.org/t/p/w300{poster}", "tmdb", meta
-    return None, "placeholder", {}, {}
+    return None, "placeholder", {}
 
 
 async def _resolve_tmdb_tvdb(tvdb_id, api_key):
@@ -508,7 +516,7 @@ async def _resolve_tmdb_tvdb(tvdb_id, api_key):
                     if poster:
                         meta = _extract_tmdb_meta(item, "tv" if key == "tv_results" else "movie", api_key)
                         return f"https://image.tmdb.org/t/p/w300{poster}", "tmdb", meta
-    return None, "placeholder", {}, {}
+    return None, "placeholder", {}
 
 
 # Country code to full name
@@ -598,4 +606,4 @@ async def _resolve_tmdb_search(title, year, api_key):
                             return _match_return(item)
                     else:
                         return _match_return(item)
-    return None, "placeholder", {}, {}
+    return None, "placeholder", {}

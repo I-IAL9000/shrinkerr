@@ -6,7 +6,13 @@ services:
       - "6680:6680"
     volumes:
       - /home/hal9000/squeezarr/data:/app/data
-      - /home/hal9000/HALHUB:/media:rw
+      - type: bind
+        source: /home/hal9000/HALHUB
+        target: /media
+        bind:
+          propagation: rslave
+      - /home/hal9000/Downloads/completed/TV:/downloads/tv:rw
+      - /home/hal9000/Downloads/completed/Movies:/downloads/movies:rw
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
@@ -14,10 +20,11 @@ services:
       - PGID=1000
       - PUID=1000
     restart: unless-stopped
+    runtime: nvidia
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, video]

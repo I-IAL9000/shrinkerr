@@ -33,6 +33,7 @@ interface PosterGridProps {
   isSelected: (path: string) => boolean;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
   onToggleTrack: (filePath: string, streamIndex: number) => void;
+  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
@@ -106,7 +107,7 @@ const OVERSCAN = 3; // extra rows above/below viewport
 
 export default function PosterGrid({
   folders, filter = "all",
-  isSelected, onToggleSelect, onToggleTrack, onRemoveFile,
+  isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onDeleteFile,
   onFolderFilesLoaded,
   sortBy = "name", sortDir = "asc",
@@ -225,27 +226,29 @@ export default function PosterGrid({
     endRow = Math.min(rowCount, Math.max(endRow, expandedRow + OVERSCAN + 2));
   }
 
-  // Resolve posters for visible groups — only fetch what we don't have
+  // Resolve posters for visible groups — queue what we don't have
+  const resolveQueue = useRef<string[]>([]);
+
   useEffect(() => {
     const startIdx = startRow * colCount;
     const endIdx = Math.min(groups.length, (endRow + 1) * colCount);
-    const toResolve: string[] = [];
     for (let i = startIdx; i < endIdx; i++) {
       const k = groups[i].key;
       if (!posterMeta.has(k) && !pendingPaths.current.has(k)) {
         pendingPaths.current.add(k);
-        toResolve.push(k);
+        resolveQueue.current.push(k);
       }
     }
-    console.log(`[PosterGrid] Visible: ${startIdx}-${endIdx}, need resolve: ${toResolve.length}, meta size: ${posterMeta.size}, pending: ${pendingPaths.current.size}, resolving: ${resolving.current}`);
-    if (toResolve.length === 0 || resolving.current) return;
+
+    if (resolveQueue.current.length === 0 || resolving.current) return;
 
     resolving.current = true;
+    const batch = [...resolveQueue.current];
+    resolveQueue.current = [];
+
     (async () => {
-      // Resolve in chunks of 20
-      console.log("[PosterGrid] Resolving", toResolve.length, "posters");
-      for (let i = 0; i < toResolve.length; i += 20) {
-        const chunk = toResolve.slice(i, i + 20);
+      for (let i = 0; i < batch.length; i += 20) {
+        const chunk = batch.slice(i, i + 20);
         try {
           const data = await resolvePosterMetadata(chunk);
           setPosterMeta(prev => {
@@ -253,12 +256,15 @@ export default function PosterGrid({
             for (const [k, v] of Object.entries(data)) next.set(k, v);
             return next;
           });
-        } catch (err) { console.error("[PosterGrid] Resolve failed:", err); }
-        // Remove from pending
+        } catch (err) { /* ignore */ }
         for (const k of chunk) pendingPaths.current.delete(k);
-        if (i + 20 < toResolve.length) await new Promise(r => setTimeout(r, 200));
+        if (i + 20 < batch.length) await new Promise(r => setTimeout(r, 200));
       }
       resolving.current = false;
+      // If more items queued while resolving, trigger another round
+      if (resolveQueue.current.length > 0) {
+        setPosterMeta(prev => new Map(prev)); // Force re-render to trigger effect
+      }
     })();
   }, [startRow, endRow, groups, posterMeta.size]);
 
@@ -427,7 +433,7 @@ export default function PosterGrid({
                               {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
                             </div>
                           </div>
-                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={onToggleTrack} />}
+                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={onToggleTrack} onToggleSubTrack={onToggleSubTrack} />}
                         </div>
                       ))}
                     </div>

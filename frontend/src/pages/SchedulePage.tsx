@@ -119,7 +119,7 @@ export default function SchedulePage() {
   return (
     <div>
       <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>Schedule</h2>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
           <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>Schedule Queue Start</h3>
           <label style={{ fontSize: 12, opacity: 0.5 }}>Start time:</label>
@@ -128,8 +128,8 @@ export default function SchedulePage() {
             value={inputTime}
             onChange={(e) => setInputTime(e.target.value)}
             style={{
-              display: "block", width: "100%", marginTop: 4, marginBottom: 12,
-              background: "var(--bg-primary)", color: "var(--text-secondary)",
+              display: "block", width: "100%", boxSizing: "border-box" as const, marginTop: 4, marginBottom: 12,
+              backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
               border: "1px solid var(--border)", padding: 8, borderRadius: 4, fontSize: 14,
             }}
           />
@@ -159,7 +159,7 @@ export default function SchedulePage() {
       </div>
 
       {/* Run Hours */}
-      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 16 }}>
+      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ color: "var(--text-primary)" }}>Run During These Hours Only</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -263,7 +263,7 @@ export default function SchedulePage() {
       </div>
 
       {/* Quiet Hours */}
-      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 16 }}>
+      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <h3 style={{ color: "var(--text-primary)" }}>Quiet Hours</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -337,7 +337,7 @@ export default function SchedulePage() {
       </div>
 
       {/* Plex Stream-Aware Scheduling */}
-      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 16 }}>
+      <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <h3 style={{ color: "var(--text-primary)" }}>Plex Stream-Aware Scheduling</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>

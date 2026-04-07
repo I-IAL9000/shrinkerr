@@ -5,7 +5,7 @@ import {
   getEncodingSettings, updateEncodingSettings, testApiKey,
   createEncodingRule, updateEncodingRule, deleteEncodingRule,
   reorderEncodingRules, syncPlexRuleMetadata, getPlexOptions,
-  testNotifications, importSettings,
+  getConditionOptions, testNotifications, importSettings,
 } from "../api";
 import { useToast } from "../useToast";
 
@@ -109,14 +109,14 @@ const RESOLUTION_OPTIONS = [
 ];
 
 const inputStyle: React.CSSProperties = {
-  background: "var(--bg-primary)", color: "var(--text-secondary)",
+  backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
   border: "1px solid var(--border)", padding: "8px 10px", borderRadius: 4, fontSize: 13,
   height: 36, boxSizing: "border-box",
 };
 
-const labelStyle = { color: "var(--text-muted)", fontSize: 13 };
+const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
 const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 6 };
-const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 20 };
+const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -148,11 +148,12 @@ export default function SettingsPage() {
   const [showAddRule, setShowAddRule] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [ruleForm, setRuleForm] = useState<{
-    name: string; conditions: { type: string; value: string }[];
+    name: string; match_mode: string; conditions: { type: string; operator: string; value: string }[];
     action: string; encoder: string; nvenc_preset: string; nvenc_cq: string;
     libx265_crf: string; target_resolution: string; audio_codec: string; audio_bitrate: string;
     queue_priority: string;
-  }>({ name: "", conditions: [{ type: "directory", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+  }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+  const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
   const [ruleDragIdx, setRuleDragIdx] = useState<number | null>(null);
   const [ruleDropIdx, setRuleDropIdx] = useState<number | null>(null);
@@ -167,9 +168,46 @@ export default function SettingsPage() {
   };
   const loadPlexOpts = () => getPlexOptions().then(setPlexOpts).catch(() => {});
 
+  const CONDITION_TYPES: Record<string, { label: string; group: string; operators: { value: string; label: string }[]; valueType: "select" | "text" | "number" }> = {
+    directory: { label: "Media Directory", group: "Path", operators: [{ value: "is", label: "is" }], valueType: "select" },
+    source: { label: "Source", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    resolution: { label: "Resolution", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    video_codec: { label: "Video Codec", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    audio_codec: { label: "Audio Codec", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "select" },
+    file_size: { label: "File Size (GB)", group: "File", operators: [{ value: "greater_than", label: "greater than" }, { value: "less_than", label: "less than" }], valueType: "number" },
+    media_type: { label: "Type", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    title: { label: "Title", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "text" },
+    release_group: { label: "Release Group", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    label: { label: "Plex Label", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    collection: { label: "Plex Collection", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    genre: { label: "Plex Genre", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    library: { label: "Plex Library", group: "Plex", operators: [{ value: "is", label: "is" }], valueType: "select" },
+    arr_tag: { label: "Sonarr/Radarr Tag", group: "Arr", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+  };
+
+  const updateConditionType = (idx: number, newType: string) => {
+    const conds = [...ruleForm.conditions];
+    const defaultOp = CONDITION_TYPES[newType]?.operators[0]?.value || "is";
+    conds[idx] = { type: newType, operator: defaultOp, value: "" };
+    setRuleForm({ ...ruleForm, conditions: conds });
+  };
+
+  const updateConditionOperator = (idx: number, newOp: string) => {
+    const conds = [...ruleForm.conditions];
+    conds[idx] = { ...conds[idx], operator: newOp };
+    setRuleForm({ ...ruleForm, conditions: conds });
+  };
+
+  const updateConditionValue = (idx: number, newVal: string) => {
+    const conds = [...ruleForm.conditions];
+    conds[idx] = { ...conds[idx], value: newVal };
+    setRuleForm({ ...ruleForm, conditions: conds });
+  };
+
   useEffect(() => {
     loadDirs();
     loadRules();
+    getConditionOptions().then(setCondOpts).catch(() => {});
     // Don't load Plex options on page load — fetched on demand when adding/editing rules
     getEncodingSettings().then((enc: any) => {
       setEncoding(enc);
@@ -233,6 +271,7 @@ export default function SettingsPage() {
       ).slice(0, 8)
     : [];
 
+
   return (
     <div className="settings-page">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -271,16 +310,22 @@ export default function SettingsPage() {
         </div>
       )}
 
+
+      <h2 id="directories" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 0, marginBottom: 12, scrollMarginTop: 20 }}>
+        Media Directories
+      </h2>
       {/* Media Directories */}
       <div style={sectionStyle}>
-        <h3 style={{ color: "white", marginBottom: 12 }}>Media Directories</h3>
         <div style={{
           background: "var(--bg-primary)", borderRadius: 4, padding: 8,
           fontFamily: "var(--font-mono)", fontSize: 12, marginBottom: 8,
         }}>
           {dirs.map((d: any) => (
-            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
-              <span>{d.path}</span>
+            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+              <span>
+                {d.path}
+                {d.label && <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8, padding: "1px 6px", borderRadius: 8, backgroundColor: "var(--border)" }}>{d.label}</span>}
+              </span>
               <button onClick={() => handleRemoveDir(d.id)}
                 style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
             </div>
@@ -297,8 +342,13 @@ export default function SettingsPage() {
           </button>
           <input placeholder="Path (e.g., /media/Movies/HD 2020)" value={newPath} onChange={(e) => setNewPath(e.target.value)}
             style={{ ...inputStyle, flex: "1 1 200px", minWidth: 150 }} />
-          <input placeholder="Label (optional)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
-            style={{ ...inputStyle, width: 140 }} />
+          <select value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+            style={{ ...inputStyle, width: 140 }}>
+            <option value="">Type (optional)</option>
+            <option value="Movies">Movies</option>
+            <option value="TV Shows">TV Shows</option>
+            <option value="Other">Other</option>
+          </select>
           <button className="btn btn-secondary" onClick={handleAddDir} style={{ height: 36, whiteSpace: "nowrap" }}>+ Add</button>
         </div>
         <FolderBrowser
@@ -311,795 +361,9 @@ export default function SettingsPage() {
 
       {encoding && (
         <>
-          {/* Metadata APIs */}
-          <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
-            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect to TMDB and TVDB to automatically detect the original language of movies and TV shows. This improves audio track classification for foreign titles. Save your keys first, then click Test to verify.
-            </div>
-
-            {/* TMDB API Key */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ ...labelStyle, marginBottom: 8 }}>
-                TMDB API Key{" "}
-                <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
-                  <input
-                    type={showTmdbKey ? "text" : "password"}
-                    value={tmdbKey}
-                    onChange={(e) => setTmdbKey(e.target.value)}
-                    placeholder="Enter TMDB API key..."
-                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
-                  />
-                  <button
-                    onClick={() => setShowTmdbKey(!showTmdbKey)}
-                    style={{
-                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                      background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
-                    }}
-                    title={showTmdbKey ? "Hide" : "Show"}
-                  >
-                    {showTmdbKey ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                        <line x1="1" y1="1" x2="23" y2="23"/>
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={async () => {
-                    setTmdbTest({ status: "loading" });
-                    try {
-                      const res = await testApiKey("tmdb");
-                      if (res.success) {
-                        setTmdbTest({ status: "success" });
-                      } else {
-                        setTmdbTest({ status: "error", error: res.error || "Test failed" });
-                      }
-                    } catch (e: any) {
-                      setTmdbTest({ status: "error", error: e.message || "Request failed" });
-                    }
-                  }}
-                  disabled={tmdbTest.status === "loading"}
-                  style={{ minWidth: 60 }}
-                >
-                  {tmdbTest.status === "loading" ? "..." : "Test"}
-                </button>
-                {tmdbTest.status === "success" && (
-                  <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
-                )}
-                {tmdbTest.status === "error" && (
-                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tmdbTest.error}</span>
-                )}
-              </div>
-              {encoding.tmdb_configured && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
-                </div>
-              )}
-            </div>
-
-            {/* TVDB API Key */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ ...labelStyle, marginBottom: 8 }}>
-                TVDB API Key{" "}
-                <a href="https://thetvdb.com/api-information" target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
-                  <input
-                    type={showTvdbKey ? "text" : "password"}
-                    value={tvdbKey}
-                    onChange={(e) => setTvdbKey(e.target.value)}
-                    placeholder="Enter TVDB API key..."
-                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
-                  />
-                  <button
-                    onClick={() => setShowTvdbKey(!showTvdbKey)}
-                    style={{
-                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                      background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
-                    }}
-                    title={showTvdbKey ? "Hide" : "Show"}
-                  >
-                    {showTvdbKey ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                        <line x1="1" y1="1" x2="23" y2="23"/>
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={async () => {
-                    setTvdbTest({ status: "loading" });
-                    try {
-                      const res = await testApiKey("tvdb");
-                      if (res.success) {
-                        setTvdbTest({ status: "success" });
-                      } else {
-                        setTvdbTest({ status: "error", error: res.error || "Test failed" });
-                      }
-                    } catch (e: any) {
-                      setTvdbTest({ status: "error", error: e.message || "Request failed" });
-                    }
-                  }}
-                  disabled={tvdbTest.status === "loading"}
-                  style={{ minWidth: 60 }}
-                >
-                  {tvdbTest.status === "loading" ? "..." : "Test"}
-                </button>
-                {tvdbTest.status === "success" && (
-                  <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
-                )}
-                {tvdbTest.status === "error" && (
-                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tvdbTest.error}</span>
-                )}
-              </div>
-              {encoding.tvdb_configured && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
-                </div>
-              )}
-            </div>
-
-            {/* Plex Integration */}
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={labelStyle}>Plex Server URL</span>
-              </div>
-              <input
-                type="text"
-                value={plexUrl}
-                onChange={(e) => setPlexUrl(e.target.value)}
-                placeholder="http://192.168.0.103:32400"
-                style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
-              />
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                <span style={labelStyle}>Plex Auth Token</span>
-                <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>(How to find your token)</a>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", flex: 1 }}>
-                  <input
-                    type={showPlexToken ? "text" : "password"}
-                    value={plexToken}
-                    onChange={(e) => setPlexToken(e.target.value)}
-                    placeholder="Your Plex auth token"
-                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
-                  />
-                  <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  </button>
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap" }}
-                  onClick={async () => {
-                    setPlexTest({ status: "loading" });
-                    try {
-                      const result = await testApiKey("plex" as any);
-                      if (result.success) {
-                        setPlexTest({ status: "success", serverName: (result as any).server_name, libraryCount: (result as any).library_count });
-                      } else {
-                        setPlexTest({ status: "error", error: (result as any).error || "Failed" });
-                      }
-                    } catch (e: any) {
-                      setPlexTest({ status: "error", error: e.message });
-                    }
-                  }}
-                >
-                  {plexTest.status === "loading" ? "Testing..." : "Test"}
-                </button>
-                {plexTest.status === "success" && (
-                  <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {plexTest.serverName} ({plexTest.libraryCount} libraries)</span>
-                )}
-                {plexTest.status === "error" && (
-                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
-                )}
-              </div>
-              {encoding.plex_configured && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
-                </div>
-              )}
-              <div style={{ marginTop: 12 }}>
-                <span style={labelStyle}>Path Mapping (Container → Host)</span>
-                <input
-                  type="text"
-                  value={plexPathMapping}
-                  onChange={(e) => setPlexPathMapping(e.target.value)}
-                  placeholder="/media=/home/hal9000/HALHUB"
-                  style={{ ...inputStyle, width: "100%", marginTop: 4 }}
-                />
-                <div style={helpStyle}>
-                  Maps Docker container paths to host paths that Plex can see.
-                  Format: <code>/container/path=/host/path</code>.
-                  Multiple mappings separated by <code>;</code>
-                </div>
-              </div>
-              <div style={{ ...helpStyle, marginTop: 8 }}>
-                Triggers a partial Plex library scan after each conversion so your library stays up to date.
-              </div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
-                <input type="checkbox" checked={encoding?.plex_empty_trash_after_scan || false}
-                  readOnly
-                  onClick={() => setEncoding({ ...encoding, plex_empty_trash_after_scan: !encoding?.plex_empty_trash_after_scan })}
-                  style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Empty trash after scan</span>
-              </label>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Automatically empty the Plex library trash after each conversion scan completes.
-              </div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
-                <input type="checkbox" checked={encoding?.plex_prioritize_unwatched || false}
-                  onChange={() => setEncoding({ ...encoding, plex_prioritize_unwatched: !encoding?.plex_prioritize_unwatched })}
-                  style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Prioritize unwatched content</span>
-              </label>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                When adding files to the queue, unwatched content automatically gets High priority so it converts first. You're more likely to notice quality improvements on content you haven't watched yet. Requires syncing with Plex.
-              </div>
-            </div>
-
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: 16 }}
-              onClick={async () => {
-                await updateEncodingSettings({
-                  ...encoding,
-                  tmdb_api_key: tmdbKey,
-                  tvdb_api_key: tvdbKey,
-                  plex_url: plexUrl,
-                  plex_token: plexToken,
-                  plex_path_mapping: plexPathMapping,
-                });
-                setSaved(true);
-                setTimeout(() => setSaved(false), 2000);
-              }}
-            >
-              Save API Keys &amp; Plex Settings
-            </button>
-          </div>
-
-          {/* Sonarr / Radarr Integration */}
-          <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 16 }}>Sonarr / Radarr</h3>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              After conversion, Squeezarr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
-              {/* Sonarr */}
-              <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Sonarr</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div>
-                    <label style={labelStyle}>URL</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:8989"
-                      value={encoding?.sonarr_url || ""}
-                      onChange={e => setEncoding({ ...encoding, sonarr_url: e.target.value })} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>API Key</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Sonarr Settings > General"
-                      value={encoding?.sonarr_api_key || ""}
-                      onChange={e => setEncoding({ ...encoding, sonarr_api_key: e.target.value })} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Path Mapping</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/  (container=sonarr)"
-                      value={encoding?.sonarr_path_mapping || ""}
-                      onChange={e => setEncoding({ ...encoding, sonarr_path_mapping: e.target.value })} />
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      Maps container paths to Sonarr paths. e.g. /media/TV1=/TV1
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* Radarr */}
-              <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Radarr</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div>
-                    <label style={labelStyle}>URL</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:7878"
-                      value={encoding?.radarr_url || ""}
-                      onChange={e => setEncoding({ ...encoding, radarr_url: e.target.value })} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>API Key</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Radarr Settings > General"
-                      value={encoding?.radarr_api_key || ""}
-                      onChange={e => setEncoding({ ...encoding, radarr_api_key: e.target.value })} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Path Mapping</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media/Movies=/  (container=radarr)"
-                      value={encoding?.radarr_path_mapping || ""}
-                      onChange={e => setEncoding({ ...encoding, radarr_path_mapping: e.target.value })} />
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      Maps container paths to Radarr paths. e.g. /media/Movies=/Movies
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
-                onClick={async () => {
-                  try {
-                    await updateEncodingSettings(encoding);
-                    toast("Sonarr/Radarr settings saved", "success");
-                  } catch (err: any) { toast(`Save failed: ${err.message}`); }
-                }}
-              >Save</button>
-              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
-                onClick={async () => {
-                  try {
-                    await updateEncodingSettings(encoding);
-                    const res = await testApiKey("sonarr") as any;
-                    if (res.success) toast(`Sonarr connected (v${res.version})`, "success");
-                    else toast(`Sonarr: ${res.error}`);
-                  } catch (err: any) { toast(`Sonarr test failed: ${err.message}`); }
-                }}
-              >Test Sonarr</button>
-              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
-                onClick={async () => {
-                  try {
-                    await updateEncodingSettings(encoding);
-                    const res = await testApiKey("radarr") as any;
-                    if (res.success) toast(`Radarr connected (v${res.version})`, "success");
-                    else toast(`Radarr: ${res.error}`);
-                  } catch (err: any) { toast(`Radarr test failed: ${err.message}`); }
-                }}
-              >Test Radarr</button>
-            </div>
-          </div>
-
-          {/* Encoding Rules */}
-          <div style={sectionStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <h3 style={{ color: "white", margin: 0 }}>Encoding Rules</h3>
-              <div style={{ display: "flex", gap: 8 }}>
-                {encoding?.plex_configured && (
-                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
-                    disabled={ruleSyncing}
-                    onClick={async () => {
-                      setRuleSyncing(true);
-                      try {
-                        const res = await syncPlexRuleMetadata();
-                        await loadPlexOpts();
-                        const parts = [];
-                        if (res.labels_synced) parts.push(`${res.labels_synced} labels`);
-                        if (res.collections_synced) parts.push(`${res.collections_synced} collections`);
-                        if (res.genres_synced) parts.push(`${res.genres_synced} genres`);
-                        if (res.libraries_synced) parts.push(`${res.libraries_synced} libraries`);
-                        if (res.watch_synced) parts.push(`${res.watch_synced} watch status`);
-                        toast(`Synced: ${parts.join(", ") || "no changes"}`, "success");
-                      } catch (err: any) { toast(err.message || "Sync failed"); }
-                      setRuleSyncing(false);
-                    }}
-                  >
-                    {ruleSyncing ? "Syncing..." : "Sync from Plex"}
-                  </button>
-                )}
-                <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 10px" }}
-                  onClick={() => {
-                    setShowAddRule(true);
-                    setEditingRuleId(null);
-                    setRuleForm({ name: "", conditions: [{ type: "directory", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
-                    if (plexOpts.labels.length === 0) loadPlexOpts();
-                  }}
-                >+ Add Rule</button>
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.6 }}>
-              Apply different encoding settings based on where files are located. Match by media directory, or connect
-              Plex to match by label, collection, or library. Rules are evaluated top-to-bottom &mdash; the first match wins.
-              Files with no matching rule use the global defaults below.
-              {encoding?.plex_configured && <span> Click <b>Sync from Plex</b> after creating label/collection rules to build the folder lookup cache.</span>}
-            </div>
-
-            {/* Rule list */}
-            {rules.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: showAddRule ? 16 : 0 }}>
-                {rules.map((rule, idx) => {
-                  return (
-                    <div key={rule.id}
-                      draggable
-                      onDragStart={() => setRuleDragIdx(idx)}
-                      onDragOver={(e) => { e.preventDefault(); setRuleDropIdx(idx); }}
-                      onDragEnd={async () => {
-                        if (ruleDragIdx !== null && ruleDropIdx !== null && ruleDragIdx !== ruleDropIdx) {
-                          const ids = rules.map(r => r.id);
-                          const [moved] = ids.splice(ruleDragIdx, 1);
-                          ids.splice(ruleDropIdx, 0, moved);
-                          await reorderEncodingRules(ids);
-                          loadRules();
-                        }
-                        setRuleDragIdx(null);
-                        setRuleDropIdx(null);
-                      }}
-                      style={{
-                        background: ruleDropIdx === idx && ruleDragIdx !== null && ruleDragIdx !== idx ? "rgba(145,53,255,0.15)" : "var(--bg-primary)",
-                        borderRadius: 4, padding: "10px 12px",
-                        display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
-                        opacity: ruleDragIdx === idx ? 0.4 : rule.enabled ? 1 : 0.5,
-                        transition: "background 0.1s, opacity 0.1s",
-                        cursor: "grab",
-                      }}>
-                      {/* Drag handle + priority + toggle + name */}
-                      <span style={{ cursor: "grab", opacity: 0.3, fontSize: 14, flexShrink: 0 }} title="Drag to reorder">&#x2807;</span>
-                      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>#{idx + 1}</span>
-                      <input type="checkbox" checked={!!rule.enabled}
-                        onChange={async () => {
-                          await updateEncodingRule(rule.id, { enabled: !rule.enabled });
-                          loadRules();
-                        }}
-                        style={{ accentColor: "var(--accent)" }}
-                      />
-                      <span style={{ color: "white", fontSize: 13, fontWeight: 500 }}>{rule.name}</span>
-                      {/* Conditions — wraps naturally */}
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", flex: "1 1 200px" }}>
-                        {(rule.match_conditions || []).map((c: any, ci: number) => {
-                          const typeColors: Record<string, [string, string]> = {
-                            directory: ["#ffa94d22", "#ffa94d"], label: ["#9135ff33", "#b680ff"],
-                            collection: ["#40ceff33", "#40ceff"], genre: ["#ff6b9d33", "#ff6b9d"],
-                            library: ["#18ffa533", "#18ffa5"],
-                          };
-                          const [bg, fg] = typeColors[c.type] || ["#ffffff22", "#ccc"];
-                          const display = c.type === "directory"
-                            ? c.value.split("/").filter(Boolean).pop() || c.value
-                            : c.value;
-                          return (
-                            <span key={ci} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, whiteSpace: "nowrap" }}>
-                              {ci > 0 && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>or</span>}
-                              <span style={{ fontSize: 9, padding: "1px 4px", borderRadius: 6, fontWeight: "bold", background: bg, color: fg }}>
-                                {c.type === "directory" ? "dir" : c.type}
-                              </span>
-                              <span style={{ color: "var(--text-secondary)", fontSize: 11 }} title={c.value}>{display}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                      {/* Action badge + settings + buttons */}
-                      <span style={{
-                        fontSize: 10, padding: "1px 6px", borderRadius: 8, fontWeight: "bold", whiteSpace: "nowrap",
-                        background: rule.action === "encode" ? "rgba(24,255,165,0.15)" : rule.action === "skip" ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
-                        color: rule.action === "encode" ? "#18ffa5" : rule.action === "skip" ? "#e94560" : "#ffa94d",
-                      }}>
-                        {rule.action === "encode" ? "Encode" : rule.action === "skip" ? "Skip all" : "Audio/sub only"}
-                      </span>
-                      {rule.action !== "skip" && (
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {[
-                            rule.action === "encode" && rule.encoder && rule.encoder !== "nvenc" ? rule.encoder : null,
-                            rule.action === "encode" && rule.nvenc_preset ? rule.nvenc_preset.toUpperCase() : null,
-                            rule.action === "encode" && rule.nvenc_cq ? `CQ${rule.nvenc_cq}` : null,
-                            rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
-                            rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
-                            rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
-                            rule.queue_priority != null ? ["Normal", "High", "Highest"][rule.queue_priority] : null,
-                          ].filter(Boolean).join(" ") || "defaults"}
-                        </span>
-                      )}
-                      <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                        <button style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 2, fontSize: 12 }}
-                          onClick={() => {
-                            setEditingRuleId(rule.id);
-                            setShowAddRule(true);
-                            if (plexOpts.labels.length === 0) loadPlexOpts();
-                            setRuleForm({
-                              name: rule.name,
-                              conditions: (rule.match_conditions || []).map((c: any) => ({ type: c.type, value: c.value })),
-                              action: rule.action, encoder: rule.encoder || "",
-                              nvenc_preset: rule.nvenc_preset || "", nvenc_cq: rule.nvenc_cq ? String(rule.nvenc_cq) : "",
-                              libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
-                              target_resolution: rule.target_resolution || "",
-                              audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
-                              queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
-                            });
-                          }}
-                          title="Edit"
-                        >&#9998;</button>
-                        <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, fontSize: 12 }}
-                          onClick={async () => {
-                            await deleteEncodingRule(rule.id);
-                            loadRules();
-                          }}
-                          title="Delete"
-                        >&times;</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {rules.length === 0 && !showAddRule && (
-              <div style={{ textAlign: "center", padding: 20, opacity: 0.4, fontSize: 13 }}>
-                No encoding rules yet. Add a rule to apply different settings per media directory{encoding?.plex_configured ? ", Plex label, collection, or library" : ""}.
-              </div>
-            )}
-
-            {/* Add/Edit Rule form */}
-            {showAddRule && (
-              <div style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8 }}>
-                {/* Rule name */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
-                  <label style={labelStyle}>Name</label>
-                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} placeholder="e.g. 4K Max Quality"
-                    onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })} />
-                </div>
-
-                {/* Match conditions */}
-                <div style={{ marginBottom: 12 }}>
-                  <label style={labelStyle}>Match conditions <span style={{ fontWeight: "normal", opacity: 0.6 }}>(any match triggers the rule)</span></label>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-                    {ruleForm.conditions.map((cond, ci) => (
-                      <div key={ci} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        {ci > 0 && <span style={{ color: "var(--text-muted)", fontSize: 11, width: 16, textAlign: "center", flexShrink: 0 }}>or</span>}
-                        <select style={{ ...inputStyle, width: 160 }} value={cond.type}
-                          onChange={e => {
-                            const updated = [...ruleForm.conditions];
-                            updated[ci] = { type: e.target.value, value: "" };
-                            setRuleForm({ ...ruleForm, conditions: updated });
-                          }}>
-                          <option value="directory">Media Directory</option>
-                          {encoding?.plex_configured && <>
-                            <option value="label">Plex Label</option>
-                            <option value="collection">Plex Collection</option>
-                            <option value="genre">Plex Genre</option>
-                            <option value="library">Plex Library</option>
-                          </>}
-                        </select>
-                        {cond.type === "directory" ? (
-                          <select style={{ ...inputStyle, flex: 1 }} value={cond.value}
-                            onChange={e => {
-                              const updated = [...ruleForm.conditions];
-                              updated[ci] = { ...cond, value: e.target.value };
-                              setRuleForm({ ...ruleForm, conditions: updated });
-                            }}>
-                            <option value="">Select directory...</option>
-                            {dirs.map(d => <option key={d.path} value={d.path}>{d.label ? `${d.label} (${d.path})` : d.path}</option>)}
-                          </select>
-                        ) : (
-                          <div style={{ flex: 1, display: "flex", gap: 6 }}>
-                            <select style={{ ...inputStyle, flex: 1 }} value={cond.value}
-                              onChange={e => {
-                                const updated = [...ruleForm.conditions];
-                                updated[ci] = { ...cond, value: e.target.value };
-                                setRuleForm({ ...ruleForm, conditions: updated });
-                              }}>
-                              <option value="">Select...</option>
-                              {(cond.type === "label" ? plexOpts.labels
-                                : cond.type === "collection" ? plexOpts.collections
-                                : cond.type === "genre" ? plexOpts.genres
-                                : plexOpts.libraries.map(l => l.title)
-                              ).map((v: string) => <option key={v} value={v}>{v}</option>)}
-                            </select>
-                            {cond.type !== "library" && (
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value}
-                                placeholder="Or type manually..."
-                                onChange={e => {
-                                  const updated = [...ruleForm.conditions];
-                                  updated[ci] = { ...cond, value: e.target.value };
-                                  setRuleForm({ ...ruleForm, conditions: updated });
-                                }} />
-                            )}
-                          </div>
-                        )}
-                        {ruleForm.conditions.length > 1 && (
-                          <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", fontSize: 14, padding: 2 }}
-                            onClick={() => {
-                              const updated = ruleForm.conditions.filter((_, i) => i !== ci);
-                              setRuleForm({ ...ruleForm, conditions: updated });
-                            }}
-                            title="Remove condition">&times;</button>
-                        )}
-                      </div>
-                    ))}
-                    <button className="btn btn-secondary" style={{ fontSize: 11, padding: "2px 10px", alignSelf: "flex-start" }}
-                      onClick={() => setRuleForm({ ...ruleForm, conditions: [...ruleForm.conditions, { type: "directory", value: "" }] })}
-                    >+ Add condition</button>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
-                    <div>
-                      <label style={labelStyle}>Action</label>
-                      <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.action}
-                        onChange={e => setRuleForm({ ...ruleForm, action: e.target.value })}>
-                        <option value="encode">Encode (apply settings)</option>
-                        <option value="ignore">Skip conversion (audio/sub cleanup only)</option>
-                        <option value="skip">Skip entirely (do nothing)</option>
-                      </select>
-                    </div>
-                    {ruleForm.action === "encode" && <>
-                      <div>
-                        <label style={labelStyle}>Encoder</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
-                          onChange={e => setRuleForm({ ...ruleForm, encoder: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="nvenc">NVENC (GPU)</option>
-                          <option value="libx265">libx265 (CPU)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Preset</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
-                          onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
-                          <option value="">Use default</option>
-                          {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
-                        <input type="number" style={{ ...inputStyle, width: "100%" }}
-                          value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
-                          placeholder="Default" min={15} max={30}
-                          onChange={e => {
-                            if (ruleForm.encoder === "libx265") {
-                              setRuleForm({ ...ruleForm, libx265_crf: e.target.value });
-                            } else {
-                              setRuleForm({ ...ruleForm, nvenc_cq: e.target.value });
-                            }
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Resolution</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}
-                          onChange={e => setRuleForm({ ...ruleForm, target_resolution: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="copy">Copy (keep original)</option>
-                          <option value="1080p">1080p</option>
-                          <option value="720p">720p</option>
-                          <option value="480p">480p</option>
-                        </select>
-                      </div>
-                    </>}
-                    {ruleForm.action !== "skip" && <>
-                      <div>
-                        <label style={labelStyle}>Audio codec</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_codec}
-                          onChange={e => setRuleForm({ ...ruleForm, audio_codec: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="copy">Copy (no conversion)</option>
-                          <option value="eac3">EAC3</option>
-                          <option value="ac3">AC3</option>
-                          <option value="aac">AAC</option>
-                          <option value="opus">Opus</option>
-                          <option value="flac">FLAC</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Audio bitrate</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_bitrate}
-                          onChange={e => setRuleForm({ ...ruleForm, audio_bitrate: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="640">640k (Blu-ray)</option>
-                          <option value="448">448k (streaming)</option>
-                          <option value="256">256k (compact)</option>
-                          <option value="128">128k (low)</option>
-                        </select>
-                      </div>
-                    </>}
-                    {ruleForm.action !== "skip" && (
-                      <div>
-                        <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Queue priority</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
-                          onChange={e => setRuleForm({ ...ruleForm, queue_priority: e.target.value })}>
-                          <option value="">Default</option>
-                          <option value="0">Normal</option>
-                          <option value="1">High</option>
-                          <option value="2">Highest</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }}
-                    onClick={async () => {
-                      // Validation with feedback
-                      if (!ruleForm.name.trim()) {
-                        toast("Please enter a rule name");
-                        return;
-                      }
-                      const validConditions = ruleForm.conditions.filter(c => c.value);
-                      if (validConditions.length === 0) {
-                        toast("Please add at least one match condition with a value");
-                        return;
-                      }
-                      const emptyConditions = ruleForm.conditions.filter(c => !c.value);
-                      if (emptyConditions.length > 0 && validConditions.length > 0) {
-                        // Has some empty conditions — just skip them silently
-                      }
-                      const data: any = {
-                        name: ruleForm.name,
-                        match_conditions: validConditions,
-                        action: ruleForm.action,
-                      };
-                      data.queue_priority = ruleForm.queue_priority ? parseInt(ruleForm.queue_priority) : null;
-                      if (ruleForm.action === "encode") {
-                        data.encoder = ruleForm.encoder || null;
-                        data.nvenc_preset = ruleForm.nvenc_preset || null;
-                        data.nvenc_cq = ruleForm.nvenc_cq ? parseInt(ruleForm.nvenc_cq) : null;
-                        data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
-                        data.target_resolution = ruleForm.target_resolution || null;
-                        data.audio_codec = ruleForm.audio_codec || null;
-                        data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
-                      } else if (ruleForm.action === "ignore") {
-                        data.encoder = null;
-                        data.nvenc_preset = null;
-                        data.nvenc_cq = null;
-                        data.libx265_crf = null;
-                        data.target_resolution = null;
-                        data.audio_codec = ruleForm.audio_codec || null;
-                        data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
-                      } else {
-                        data.encoder = null;
-                        data.nvenc_preset = null;
-                        data.nvenc_cq = null;
-                        data.libx265_crf = null;
-                        data.target_resolution = null;
-                        data.audio_codec = null;
-                        data.audio_bitrate = null;
-                        data.queue_priority = null;
-                      }
-                      try {
-                        if (editingRuleId) {
-                          await updateEncodingRule(editingRuleId, data);
-                          toast("Rule updated", "success");
-                        } else {
-                          await createEncodingRule(data);
-                          toast("Rule created", "success");
-                        }
-                        setShowAddRule(false);
-                        setEditingRuleId(null);
-                        // Small delay to let DB commit, then reload
-                        setTimeout(loadRules, 200);
-                      } catch (err: any) {
-                        toast(err.message || "Failed to save rule");
-                      }
-                    }}
-                  >
-                    {editingRuleId ? "Update Rule" : "Add Rule"}
-                  </button>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "4px 12px" }}
-                    onClick={() => { setShowAddRule(false); setEditingRuleId(null); }}
-                  >Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-
+          <h2 id="video" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Video Settings
+          </h2>
           {/* Encoding Defaults */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 16 }}>Encoding Defaults</h3>
@@ -1462,6 +726,9 @@ export default function SettingsPage() {
             </div>
           </div>
 
+          <h2 id="audio" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Audio Settings
+          </h2>
           {/* Audio Track Rules */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 12 }}>Audio Track Rules</h3>
@@ -1524,8 +791,19 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div style={helpStyle}>
-                  Audio tracks in these languages will always be kept (locked). The native language of each file is also always kept (detected automatically). Only tracks in other languages will be suggested for removal.
+                  Audio tracks in these languages will always be kept (locked). Only tracks in other languages will be suggested for removal.
                 </div>
+              </div>
+
+              {/* Keep native language */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.keep_native_language !== false}
+                  onChange={() => setEncoding({ ...encoding, keep_native_language: encoding.keep_native_language === false })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Auto-keep native language tracks</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                Automatically keep audio and subtitle tracks matching each file's detected native language. Disable if you only want to keep dubbed/specified language tracks.
               </div>
 
               {/* Ignore Unknown Tracks */}
@@ -1744,9 +1022,11 @@ export default function SettingsPage() {
             )}
           </div>
 
+          <h2 id="subtitles" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Subtitles
+          </h2>
           {/* Subtitle Cleanup */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Subtitle Cleanup</h3>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 16 }}>
               <input type="checkbox" checked={encoding?.sub_cleanup_enabled ?? true}
                 readOnly
@@ -1834,9 +1114,1108 @@ export default function SettingsPage() {
             </div>
             )}
           </div>
+
+          <h2 id="connections" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Connections
+          </h2>
+          {/* Metadata APIs */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
+            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+              Connect to TMDB and TVDB to automatically detect the original language of movies and TV shows. This improves audio track classification for foreign titles. Save your keys first, then click Test to verify.
+            </div>
+
+            {/* TMDB API Key */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>
+                TMDB API Key{" "}
+                <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
+                  <input
+                    type={showTmdbKey ? "text" : "password"}
+                    value={tmdbKey}
+                    onChange={(e) => setTmdbKey(e.target.value)}
+                    placeholder="Enter TMDB API key..."
+                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
+                  />
+                  <button
+                    onClick={() => setShowTmdbKey(!showTmdbKey)}
+                    style={{
+                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                      background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
+                    }}
+                    title={showTmdbKey ? "Hide" : "Show"}
+                  >
+                    {showTmdbKey ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={async () => {
+                    setTmdbTest({ status: "loading" });
+                    try {
+                      const res = await testApiKey("tmdb");
+                      if (res.success) {
+                        setTmdbTest({ status: "success" });
+                      } else {
+                        setTmdbTest({ status: "error", error: res.error || "Test failed" });
+                      }
+                    } catch (e: any) {
+                      setTmdbTest({ status: "error", error: e.message || "Request failed" });
+                    }
+                  }}
+                  disabled={tmdbTest.status === "loading"}
+                  style={{ minWidth: 60 }}
+                >
+                  {tmdbTest.status === "loading" ? "..." : "Test"}
+                </button>
+                {tmdbTest.status === "success" && (
+                  <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
+                )}
+                {tmdbTest.status === "error" && (
+                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tmdbTest.error}</span>
+                )}
+              </div>
+              {encoding.tmdb_configured && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
+                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
+                </div>
+              )}
+            </div>
+
+            {/* TVDB API Key */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ ...labelStyle, marginBottom: 8 }}>
+                TVDB API Key{" "}
+                <a href="https://thetvdb.com/api-information" target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
+                  <input
+                    type={showTvdbKey ? "text" : "password"}
+                    value={tvdbKey}
+                    onChange={(e) => setTvdbKey(e.target.value)}
+                    placeholder="Enter TVDB API key..."
+                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
+                  />
+                  <button
+                    onClick={() => setShowTvdbKey(!showTvdbKey)}
+                    style={{
+                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+                      background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
+                    }}
+                    title={showTvdbKey ? "Hide" : "Show"}
+                  >
+                    {showTvdbKey ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                        <line x1="1" y1="1" x2="23" y2="23"/>
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  onClick={async () => {
+                    setTvdbTest({ status: "loading" });
+                    try {
+                      const res = await testApiKey("tvdb");
+                      if (res.success) {
+                        setTvdbTest({ status: "success" });
+                      } else {
+                        setTvdbTest({ status: "error", error: res.error || "Test failed" });
+                      }
+                    } catch (e: any) {
+                      setTvdbTest({ status: "error", error: e.message || "Request failed" });
+                    }
+                  }}
+                  disabled={tvdbTest.status === "loading"}
+                  style={{ minWidth: 60 }}
+                >
+                  {tvdbTest.status === "loading" ? "..." : "Test"}
+                </button>
+                {tvdbTest.status === "success" && (
+                  <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
+                )}
+                {tvdbTest.status === "error" && (
+                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tvdbTest.error}</span>
+                )}
+              </div>
+              {encoding.tvdb_configured && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
+                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: 4 }}
+              onClick={async () => {
+                await updateEncodingSettings({
+                  ...encoding,
+                  tmdb_api_key: tmdbKey,
+                  tvdb_api_key: tvdbKey,
+                });
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+              }}
+            >
+              Save API Keys
+            </button>
+          </div>
+
+          {/* Plex */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 4 }}>Plex</h3>
+            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+              Triggers a partial Plex library scan after each conversion so your library stays up to date.
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={labelStyle}>Plex Server URL</span>
+            </div>
+            <input
+              type="text"
+              value={plexUrl}
+              onChange={(e) => setPlexUrl(e.target.value)}
+              placeholder="http://192.168.0.103:32400"
+              style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
+            />
+
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={labelStyle}>Plex Auth Token</span>
+              <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>(How to find your token)</a>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ position: "relative", flex: 1 }}>
+                <input
+                  type={showPlexToken ? "text" : "password"}
+                  value={plexToken}
+                  onChange={(e) => setPlexToken(e.target.value)}
+                  placeholder="Your Plex auth token"
+                  style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
+                />
+                <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap" }}
+                onClick={async () => {
+                  setPlexTest({ status: "loading" });
+                  try {
+                    const result = await testApiKey("plex" as any);
+                    if (result.success) {
+                      setPlexTest({ status: "success", serverName: (result as any).server_name, libraryCount: (result as any).library_count });
+                    } else {
+                      setPlexTest({ status: "error", error: (result as any).error || "Failed" });
+                    }
+                  } catch (e: any) {
+                    setPlexTest({ status: "error", error: e.message });
+                  }
+                }}
+              >
+                {plexTest.status === "loading" ? "Testing..." : "Test"}
+              </button>
+              {plexTest.status === "success" && (
+                <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {plexTest.serverName} ({plexTest.libraryCount} libraries)</span>
+              )}
+              {plexTest.status === "error" && (
+                <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
+              )}
+            </div>
+            {encoding.plex_configured && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
+                <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
+              </div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <span style={labelStyle}>Path Mapping (Container → Host)</span>
+              <input
+                type="text"
+                value={plexPathMapping}
+                onChange={(e) => setPlexPathMapping(e.target.value)}
+                placeholder="/media=/home/hal9000/HALHUB"
+                style={{ ...inputStyle, width: "100%", marginTop: 4 }}
+              />
+              <div style={helpStyle}>
+                Maps Docker container paths to host paths that Plex can see.
+                Format: <code>/container/path=/host/path</code>.
+                Multiple mappings separated by <code>;</code>
+              </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
+              <input type="checkbox" checked={encoding?.plex_empty_trash_after_scan || false}
+                readOnly
+                onClick={() => setEncoding({ ...encoding, plex_empty_trash_after_scan: !encoding?.plex_empty_trash_after_scan })}
+                style={{ flexShrink: 0 }} />
+              <span style={labelStyle}>Empty trash after scan</span>
+            </label>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+              Automatically empty the Plex library trash after each conversion scan completes.
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
+              <input type="checkbox" checked={encoding?.plex_prioritize_unwatched || false}
+                onChange={() => setEncoding({ ...encoding, plex_prioritize_unwatched: !encoding?.plex_prioritize_unwatched })}
+                style={{ flexShrink: 0 }} />
+              <span style={labelStyle}>Prioritize unwatched content</span>
+            </label>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+              When adding files to the queue, unwatched content automatically gets High priority so it converts first. You're more likely to notice quality improvements on content you haven't watched yet. Requires syncing with Plex.
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
+              <input type="checkbox" checked={encoding?.plex_stream_aware || false}
+                onChange={() => setEncoding({ ...encoding, plex_stream_aware: !encoding?.plex_stream_aware })}
+                style={{ flexShrink: 0 }} />
+              <span style={labelStyle}>Stream-aware scheduling</span>
+            </label>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+              Pause encoding when someone is actively streaming from Plex to avoid impacting playback quality.
+            </div>
+
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: 16 }}
+              onClick={async () => {
+                await updateEncodingSettings({
+                  ...encoding,
+                  plex_url: plexUrl,
+                  plex_token: plexToken,
+                  plex_path_mapping: plexPathMapping,
+                });
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+              }}
+            >
+              Save Plex Settings
+            </button>
+          </div>
+
+          {/* Sonarr / Radarr Integration */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 16 }}>Sonarr / Radarr</h3>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+              After conversion, Squeezarr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
+              {/* Sonarr */}
+              <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Sonarr</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div>
+                    <label style={labelStyle}>URL</label>
+                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:8989"
+                      value={encoding?.sonarr_url || ""}
+                      onChange={e => setEncoding({ ...encoding, sonarr_url: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>API Key</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Sonarr Settings > General"
+                      value={encoding?.sonarr_api_key || ""}
+                      onChange={e => setEncoding({ ...encoding, sonarr_api_key: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Path Mapping</label>
+                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/  (container=sonarr)"
+                      value={encoding?.sonarr_path_mapping || ""}
+                      onChange={e => setEncoding({ ...encoding, sonarr_path_mapping: e.target.value })} />
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                      Maps container paths to Sonarr paths. e.g. /media/TV1=/TV1
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Radarr */}
+              <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Radarr</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div>
+                    <label style={labelStyle}>URL</label>
+                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:7878"
+                      value={encoding?.radarr_url || ""}
+                      onChange={e => setEncoding({ ...encoding, radarr_url: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>API Key</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Radarr Settings > General"
+                      value={encoding?.radarr_api_key || ""}
+                      onChange={e => setEncoding({ ...encoding, radarr_api_key: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Path Mapping</label>
+                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media/Movies=/  (container=radarr)"
+                      value={encoding?.radarr_path_mapping || ""}
+                      onChange={e => setEncoding({ ...encoding, radarr_path_mapping: e.target.value })} />
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                      Maps container paths to Radarr paths. e.g. /media/Movies=/Movies
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
+                onClick={async () => {
+                  try {
+                    await updateEncodingSettings(encoding);
+                    toast("Sonarr/Radarr settings saved", "success");
+                  } catch (err: any) { toast(`Save failed: ${err.message}`); }
+                }}
+              >Save</button>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                onClick={async () => {
+                  try {
+                    await updateEncodingSettings(encoding);
+                    const res = await testApiKey("sonarr") as any;
+                    if (res.success) toast(`Sonarr connected (v${res.version})`, "success");
+                    else toast(`Sonarr: ${res.error}`);
+                  } catch (err: any) { toast(`Sonarr test failed: ${err.message}`); }
+                }}
+              >Test Sonarr</button>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                onClick={async () => {
+                  try {
+                    await updateEncodingSettings(encoding);
+                    const res = await testApiKey("radarr") as any;
+                    if (res.success) toast(`Radarr connected (v${res.version})`, "success");
+                    else toast(`Radarr: ${res.error}`);
+                  } catch (err: any) { toast(`Radarr test failed: ${err.message}`); }
+                }}
+              >Test Radarr</button>
+            </div>
+          </div>
+
+          {/* NZBGet Integration */}
+          <div style={sectionStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ color: "white", margin: 0 }}>NZBGet Integration</h3>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? "Enabled" : "Disabled"}</span>
+                <input type="checkbox" checked={encoding?.nzbget_enabled || false}
+                  onChange={() => setEncoding({ ...encoding, nzbget_enabled: !encoding?.nzbget_enabled })}
+                  style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+              </label>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
+              Automatically convert downloads after NZBGet completes. The script checks Sonarr/Radarr for matching tags before converting. Sonarr/Radarr connection settings are inherited from above.
+            </div>
+
+            {/* Tags */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={labelStyle}>Tags to match in Sonarr/Radarr</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {(encoding?.nzbget_tags || []).map((tag: string) => (
+                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
+                    {tag}
+                    <button onClick={() => setEncoding({ ...encoding, nzbget_tags: (encoding?.nzbget_tags || []).filter((t: string) => t !== tag) })}
+                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
+                  </span>
+                ))}
+                <input type="text" placeholder="Add tag..."
+                  style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 100, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                      const val = (e.target as HTMLInputElement).value.trim().toLowerCase();
+                      if (!(encoding?.nzbget_tags || []).includes(val)) {
+                        setEncoding({ ...encoding, nzbget_tags: [...(encoding?.nzbget_tags || []), val] });
+                      }
+                      (e.target as HTMLInputElement).value = "";
+                    }
+                  }} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Series/movies must have at least one of these tags. Press Enter to add.</div>
+            </div>
+
+            {/* Categories */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={labelStyle}>NZBGet categories to process</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {(encoding?.nzbget_categories || []).map((cat: string) => (
+                  <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
+                    {cat}
+                    <button onClick={() => setEncoding({ ...encoding, nzbget_categories: (encoding?.nzbget_categories || []).filter((c: string) => c !== cat) })}
+                      style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
+                  </span>
+                ))}
+                <input type="text" placeholder="Add category..."
+                  style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 120, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
+                      const val = (e.target as HTMLInputElement).value.trim();
+                      if (!(encoding?.nzbget_categories || []).includes(val)) {
+                        setEncoding({ ...encoding, nzbget_categories: [...(encoding?.nzbget_categories || []), val] });
+                      }
+                      (e.target as HTMLInputElement).value = "";
+                    }
+                  }} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Only downloads in these NZBGet categories will be processed. Press Enter to add.</div>
+            </div>
+
+            {/* Path Mappings */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={labelStyle}>Path mappings (NZBGet path → Squeezarr path)</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
+                  <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+                    <input type="text" value={m.from || ""} placeholder="/Downloads/completed/TV"
+                      style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
+                      onChange={(e) => {
+                        const mappings = [...(encoding?.nzbget_path_mappings || [])];
+                        mappings[i] = { ...mappings[i], from: e.target.value };
+                        setEncoding({ ...encoding, nzbget_path_mappings: mappings });
+                      }} />
+                    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
+                    <input type="text" value={m.to || ""} placeholder="/downloads/tv"
+                      style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
+                      onChange={(e) => {
+                        const mappings = [...(encoding?.nzbget_path_mappings || [])];
+                        mappings[i] = { ...mappings[i], to: e.target.value };
+                        setEncoding({ ...encoding, nzbget_path_mappings: mappings });
+                      }} />
+                    <button onClick={() => {
+                      const mappings = (encoding?.nzbget_path_mappings || []).filter((_: any, j: number) => j !== i);
+                      setEncoding({ ...encoding, nzbget_path_mappings: mappings });
+                    }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>&times;</button>
+                  </div>
+                ))}
+                <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px", alignSelf: "flex-start" }}
+                  onClick={() => setEncoding({ ...encoding, nzbget_path_mappings: [...(encoding?.nzbget_path_mappings || []), { from: "", to: "" }] })}>
+                  + Add mapping
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Maps download paths inside NZBGet's container to paths Squeezarr can see. Both containers must have access to the same files via volume mounts.</div>
+            </div>
+
+            {/* Options row */}
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
+              <div>
+                <div style={labelStyle}>Priority</div>
+                <select value={encoding?.nzbget_priority || "High"}
+                  onChange={(e) => setEncoding({ ...encoding, nzbget_priority: e.target.value })}
+                  style={{ ...inputStyle, width: 140 }}>
+                  <option value="Normal">Normal</option>
+                  <option value="High">High</option>
+                  <option value="Highest">Highest</option>
+                </select>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
+                <input type="checkbox" checked={encoding?.nzbget_wait_for_completion !== false}
+                  onChange={() => setEncoding({ ...encoding, nzbget_wait_for_completion: encoding?.nzbget_wait_for_completion === false })}
+                  style={{ accentColor: "var(--accent)" }} />
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Wait for conversion to complete</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
+                <input type="checkbox" checked={encoding?.nzbget_check_sonarr_tags !== false}
+                  onChange={() => setEncoding({ ...encoding, nzbget_check_sonarr_tags: encoding?.nzbget_check_sonarr_tags === false })}
+                  style={{ accentColor: "var(--accent)" }} />
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Check Sonarr tags</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
+                <input type="checkbox" checked={encoding?.nzbget_check_radarr_tags !== false}
+                  onChange={() => setEncoding({ ...encoding, nzbget_check_radarr_tags: encoding?.nzbget_check_radarr_tags === false })}
+                  style={{ accentColor: "var(--accent)" }} />
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Check Radarr tags</span>
+              </label>
+            </div>
+
+            {/* Save + Download */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
+              <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
+                onClick={async () => {
+                  await updateEncodingSettings(encoding);
+                  toast("NZBGet settings saved", "success");
+                }}>Save</button>
+              <a href="/api/settings/nzbget-script" download="Squeezarr.py" style={{ textDecoration: "none" }}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
+                  Download Script
+                </button>
+              </a>
+            </div>
+
+            {/* Installation instructions */}
+            <details style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Installation Instructions</summary>
+              <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
+                <li>Save settings above and click <b>Download Script</b></li>
+                <li>Place <code>Squeezarr.py</code> in your NZBGet <b>ScriptDir</b> folder</li>
+                <li>In NZBGet → Settings → Extension Scripts, enable <b>Squeezarr</b></li>
+                <li>Restart NZBGet or click <b>Reload</b> in the scripts section</li>
+                <li>The script auto-configures from Squeezarr — no NZBGet settings needed</li>
+                <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
+              </ol>
+              <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(145,53,255,0.1)", borderRadius: 4 }}>
+                <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Squeezarr to set different conversion profiles (CQ, preset, audio codec) based on Plex labels or collections. Tag-based downloads will follow your encoding rules automatically.
+              </div>
+            </details>
+          </div>
+
+          <h2 id="rules" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Encoding Rules
+          </h2>
+          {/* Encoding Rules */}
+          <div style={sectionStyle}>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                {encoding?.plex_configured && (
+                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+                    disabled={ruleSyncing}
+                    onClick={async () => {
+                      setRuleSyncing(true);
+                      try {
+                        const res = await syncPlexRuleMetadata();
+                        await loadPlexOpts();
+                        const parts = [];
+                        if (res.labels_synced) parts.push(`${res.labels_synced} labels`);
+                        if (res.collections_synced) parts.push(`${res.collections_synced} collections`);
+                        if (res.genres_synced) parts.push(`${res.genres_synced} genres`);
+                        if (res.libraries_synced) parts.push(`${res.libraries_synced} libraries`);
+                        if (res.watch_synced) parts.push(`${res.watch_synced} watch status`);
+                        toast(`Synced: ${parts.join(", ") || "no changes"}`, "success");
+                      } catch (err: any) { toast(err.message || "Sync failed"); }
+                      setRuleSyncing(false);
+                    }}
+                  >
+                    {ruleSyncing ? "Syncing..." : "Sync from Plex"}
+                  </button>
+                )}
+                <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 10px" }}
+                  onClick={() => {
+                    setShowAddRule(true);
+                    setEditingRuleId(null);
+                    setRuleForm({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+                    if (plexOpts.labels.length === 0) loadPlexOpts();
+                  }}
+                >+ Add Rule</button>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.6 }}>
+              Apply different encoding settings based on where files are located. Match by media directory, or connect
+              Plex to match by label, collection, or library. Rules are evaluated top-to-bottom &mdash; the first match wins.
+              Files with no matching rule use the global defaults below.
+              {encoding?.plex_configured && <span> Click <b>Sync from Plex</b> after creating label/collection rules to build the folder lookup cache.</span>}
+            </div>
+
+            {/* Rule list */}
+            {rules.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: showAddRule ? 16 : 0 }}>
+                {rules.map((rule, idx) => {
+                  return (
+                    <div key={rule.id}
+                      draggable
+                      onDragStart={() => setRuleDragIdx(idx)}
+                      onDragOver={(e) => { e.preventDefault(); setRuleDropIdx(idx); }}
+                      onDragEnd={async () => {
+                        if (ruleDragIdx !== null && ruleDropIdx !== null && ruleDragIdx !== ruleDropIdx) {
+                          const ids = rules.map(r => r.id);
+                          const [moved] = ids.splice(ruleDragIdx, 1);
+                          ids.splice(ruleDropIdx, 0, moved);
+                          await reorderEncodingRules(ids);
+                          loadRules();
+                        }
+                        setRuleDragIdx(null);
+                        setRuleDropIdx(null);
+                      }}
+                      style={{
+                        background: ruleDropIdx === idx && ruleDragIdx !== null && ruleDragIdx !== idx ? "rgba(145,53,255,0.15)" : "var(--bg-primary)",
+                        borderRadius: 4, padding: "10px 12px",
+                        display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
+                        opacity: ruleDragIdx === idx ? 0.4 : rule.enabled ? 1 : 0.5,
+                        transition: "background 0.1s, opacity 0.1s",
+                        cursor: "grab",
+                      }}>
+                      {/* Drag handle + priority + toggle + name */}
+                      <span style={{ cursor: "grab", opacity: 0.3, fontSize: 14, flexShrink: 0 }} title="Drag to reorder">&#x2807;</span>
+                      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>#{idx + 1}</span>
+                      <input type="checkbox" checked={!!rule.enabled}
+                        onChange={async () => {
+                          await updateEncodingRule(rule.id, { enabled: !rule.enabled });
+                          loadRules();
+                        }}
+                        style={{ accentColor: "var(--accent)" }}
+                      />
+                      <span style={{ color: "white", fontSize: 13, fontWeight: 500 }}>{rule.name}</span>
+                      {/* Conditions — wraps naturally */}
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", flex: "1 1 200px" }}>
+                        {(rule.match_conditions || []).map((c: any, ci: number) => {
+                          const condColors: Record<string, string> = {
+                            directory: "#ffa94d", label: "#b680ff", collection: "#40ceff", genre: "#ff6b9d",
+                            library: "#18ffa5", source: "#74c0fc", resolution: "#ffd43b", video_codec: "#e94560",
+                            audio_codec: "#69db7c", file_size: "#ffa94d", media_type: "#9135ff", title: "#40ceff",
+                            release_group: "#ff6b9d", arr_tag: "#74c0fc",
+                          };
+                          const fg = condColors[c.type] || "#ccc";
+                          const bg = fg + "22";
+                          const display = c.type === "directory"
+                            ? c.value.split("/").filter(Boolean).pop() || c.value
+                            : c.value;
+                          const opLabel = c.operator === "is" ? "" : c.operator === "is_not" ? "!=" : c.operator === "contains" ? "~" : c.operator === "does_not_contain" ? "!~" : c.operator === "greater_than" ? ">" : c.operator === "less_than" ? "<" : "";
+                          const suffix = c.type === "file_size" ? " GB" : "";
+                          return (
+                            <span key={ci} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, whiteSpace: "nowrap" }}>
+                              {ci > 0 && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{rule.match_mode === "all" ? "and" : "or"}</span>}
+                              <span style={{ fontSize: 9, padding: "1px 4px", borderRadius: 6, fontWeight: "bold", background: bg, color: fg }}>
+                                {c.type === "directory" ? "dir" : c.type.replace("_", " ")}
+                              </span>
+                              {opLabel && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{opLabel}</span>}
+                              <span style={{ color: "var(--text-secondary)", fontSize: 11 }} title={c.value}>{display}{suffix}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                      {/* Action badge + settings + buttons */}
+                      <span style={{
+                        fontSize: 10, padding: "1px 6px", borderRadius: 8, fontWeight: "bold", whiteSpace: "nowrap",
+                        background: rule.action === "encode" ? "rgba(24,255,165,0.15)" : rule.action === "skip" ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
+                        color: rule.action === "encode" ? "#18ffa5" : rule.action === "skip" ? "#e94560" : "#ffa94d",
+                      }}>
+                        {rule.action === "encode" ? "Encode" : rule.action === "skip" ? "Skip all" : "Audio/sub only"}
+                      </span>
+                      {rule.action !== "skip" && (
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {[
+                            rule.action === "encode" && rule.encoder && rule.encoder !== "nvenc" ? rule.encoder : null,
+                            rule.action === "encode" && rule.nvenc_preset ? rule.nvenc_preset.toUpperCase() : null,
+                            rule.action === "encode" && rule.nvenc_cq ? `CQ${rule.nvenc_cq}` : null,
+                            rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
+                            rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
+                            rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
+                            rule.queue_priority != null ? ["Normal", "High", "Highest"][rule.queue_priority] : null,
+                          ].filter(Boolean).join(" ") || "defaults"}
+                        </span>
+                      )}
+                      <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+                        <button style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 2, fontSize: 12 }}
+                          onClick={() => {
+                            setEditingRuleId(rule.id);
+                            setShowAddRule(true);
+                            if (plexOpts.labels.length === 0) loadPlexOpts();
+                            setRuleForm({
+                              name: rule.name,
+                              match_mode: rule.match_mode || "any",
+                              conditions: (rule.match_conditions || []).map((c: any) => ({
+                                type: c.type || "directory",
+                                operator: c.operator || "is",
+                                value: c.value || "",
+                              })),
+                              action: rule.action, encoder: rule.encoder || "",
+                              nvenc_preset: rule.nvenc_preset || "", nvenc_cq: rule.nvenc_cq ? String(rule.nvenc_cq) : "",
+                              libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
+                              target_resolution: rule.target_resolution || "",
+                              audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
+                              queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
+                            });
+                          }}
+                          title="Edit"
+                        >&#9998;</button>
+                        <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, fontSize: 12 }}
+                          onClick={async () => {
+                            await deleteEncodingRule(rule.id);
+                            loadRules();
+                          }}
+                          title="Delete"
+                        >&times;</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {rules.length === 0 && !showAddRule && (
+              <div style={{ textAlign: "center", padding: 20, opacity: 0.4, fontSize: 13 }}>
+                No encoding rules yet. Add a rule to apply different settings per media directory{encoding?.plex_configured ? ", Plex label, collection, or library" : ""}.
+              </div>
+            )}
+
+            {/* Add/Edit Rule form */}
+            {showAddRule && (
+              <div style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8 }}>
+                {/* Rule name */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
+                  <label style={labelStyle}>Name</label>
+                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} placeholder="e.g. 4K Max Quality"
+                    onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })} />
+                </div>
+
+                {/* Match conditions */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={labelStyle}>Match conditions</label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 12 }}>
+                    <select value={ruleForm.match_mode} onChange={e => setRuleForm({...ruleForm, match_mode: e.target.value})}
+                      style={{ ...inputStyle, width: 260, fontWeight: 500 }}>
+                      <option value="any">Match any of the following</option>
+                      <option value="all">Match all of the following</option>
+                    </select>
+                    <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 8px" }}
+                      onClick={() => setRuleForm({...ruleForm, conditions: [...ruleForm.conditions, { type: "directory", operator: "is", value: "" }]})}>
+                      +
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {ruleForm.conditions.map((cond, condIdx) => (
+                      <div key={condIdx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {/* Type */}
+                        <select value={cond.type} onChange={e => updateConditionType(condIdx, e.target.value)} style={{ ...inputStyle, width: 160 }}>
+                          <optgroup label="Path">
+                            <option value="directory">Media Directory</option>
+                          </optgroup>
+                          <optgroup label="File">
+                            <option value="source">Source</option>
+                            <option value="resolution">Resolution</option>
+                            <option value="video_codec">Video Codec</option>
+                            <option value="audio_codec">Audio Codec</option>
+                            <option value="file_size">File Size (GB)</option>
+                            <option value="media_type">Type</option>
+                            <option value="title">Title</option>
+                            <option value="release_group">Release Group</option>
+                          </optgroup>
+                          <optgroup label="Plex">
+                            <option value="label">Label</option>
+                            <option value="collection">Collection</option>
+                            <option value="genre">Genre</option>
+                            <option value="library">Library</option>
+                          </optgroup>
+                          <optgroup label="Arr">
+                            <option value="arr_tag">Sonarr/Radarr Tag</option>
+                          </optgroup>
+                        </select>
+                        {/* Operator */}
+                        <select value={cond.operator} onChange={e => updateConditionOperator(condIdx, e.target.value)} style={{ ...inputStyle, width: 140 }}>
+                          {(CONDITION_TYPES[cond.type]?.operators || []).map(op => (
+                            <option key={op.value} value={op.value}>{op.label}</option>
+                          ))}
+                        </select>
+                        {/* Value */}
+                        {(() => {
+                          const ct = CONDITION_TYPES[cond.type];
+                          if (!ct) return null;
+
+                          if (cond.type === "directory") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select directory...</option>
+                              {dirs.map(d => <option key={d.path} value={d.path}>{d.label ? `${d.label} (${d.path})` : d.path}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "source") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(condOpts.sources || []).map((s: string) => <option key={s} value={s}>{s}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "resolution") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(condOpts.resolutions || []).map((r: string) => <option key={r} value={r}>{r}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "video_codec") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(condOpts.video_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "audio_codec") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(condOpts.audio_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "media_type") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              <option value="movie">Movie</option>
+                              <option value="tv">TV Show</option>
+                            </select>;
+                          }
+
+                          if (cond.type === "release_group") {
+                            return <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                <option value="">Select or type...</option>
+                                {(condOpts.release_groups || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
+                              </select>
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type group name..."
+                                onChange={e => updateConditionValue(condIdx, e.target.value)} />
+                            </div>;
+                          }
+
+                          if (cond.type === "label") {
+                            return <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                <option value="">Select...</option>
+                                {(plexOpts.labels || []).map((l: string) => <option key={l} value={l}>{l}</option>)}
+                              </select>
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type manually..."
+                                onChange={e => updateConditionValue(condIdx, e.target.value)} />
+                            </div>;
+                          }
+
+                          if (cond.type === "collection") {
+                            return <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                <option value="">Select...</option>
+                                {(plexOpts.collections || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type manually..."
+                                onChange={e => updateConditionValue(condIdx, e.target.value)} />
+                            </div>;
+                          }
+
+                          if (cond.type === "genre") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(plexOpts.genres || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "library") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              {(plexOpts.libraries || []).map((l: any) => <option key={l.title} value={l.title}>{l.title}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "arr_tag") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select tag...</option>
+                              {(condOpts.arr_tags || []).map((t: any) => <option key={`${t.source}-${t.label}`} value={t.label}>{t.label} ({t.source})</option>)}
+                            </select>;
+                          }
+
+                          if (ct.valueType === "number") {
+                            return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1 }} value={cond.value}
+                              placeholder="Size in GB..." onChange={e => updateConditionValue(condIdx, e.target.value)} />;
+                          }
+
+                          // Default: text input
+                          return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Enter value..."
+                            onChange={e => updateConditionValue(condIdx, e.target.value)} />;
+                        })()}
+                        {/* Remove button */}
+                        {ruleForm.conditions.length > 1 && (
+                          <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", fontSize: 14, padding: 2 }}
+                            onClick={() => {
+                              const updated = ruleForm.conditions.filter((_, i) => i !== condIdx);
+                              setRuleForm({ ...ruleForm, conditions: updated });
+                            }}
+                            title="Remove condition">&times;</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
+                    <div>
+                      <label style={labelStyle}>Action</label>
+                      <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.action}
+                        onChange={e => setRuleForm({ ...ruleForm, action: e.target.value })}>
+                        <option value="encode">Encode (apply settings)</option>
+                        <option value="ignore">Skip conversion (audio/sub cleanup only)</option>
+                        <option value="skip">Skip entirely (do nothing)</option>
+                      </select>
+                    </div>
+                    {ruleForm.action === "encode" && <>
+                      <div>
+                        <label style={labelStyle}>Encoder</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
+                          onChange={e => setRuleForm({ ...ruleForm, encoder: e.target.value })}>
+                          <option value="">Use default</option>
+                          <option value="nvenc">NVENC (GPU)</option>
+                          <option value="libx265">libx265 (CPU)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Preset</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
+                          onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
+                          <option value="">Use default</option>
+                          {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
+                        <input type="number" style={{ ...inputStyle, width: "100%" }}
+                          value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
+                          placeholder="Default" min={15} max={30}
+                          onChange={e => {
+                            if (ruleForm.encoder === "libx265") {
+                              setRuleForm({ ...ruleForm, libx265_crf: e.target.value });
+                            } else {
+                              setRuleForm({ ...ruleForm, nvenc_cq: e.target.value });
+                            }
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Resolution</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}
+                          onChange={e => setRuleForm({ ...ruleForm, target_resolution: e.target.value })}>
+                          <option value="">Use default</option>
+                          <option value="copy">Copy (keep original)</option>
+                          <option value="1080p">1080p</option>
+                          <option value="720p">720p</option>
+                          <option value="480p">480p</option>
+                        </select>
+                      </div>
+                    </>}
+                    {ruleForm.action !== "skip" && <>
+                      <div>
+                        <label style={labelStyle}>Audio codec</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_codec}
+                          onChange={e => setRuleForm({ ...ruleForm, audio_codec: e.target.value })}>
+                          <option value="">Use default</option>
+                          <option value="copy">Copy (no conversion)</option>
+                          <option value="eac3">EAC3</option>
+                          <option value="ac3">AC3</option>
+                          <option value="aac">AAC</option>
+                          <option value="opus">Opus</option>
+                          <option value="flac">FLAC</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Audio bitrate</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_bitrate}
+                          onChange={e => setRuleForm({ ...ruleForm, audio_bitrate: e.target.value })}>
+                          <option value="">Use default</option>
+                          <option value="640">640k (Blu-ray)</option>
+                          <option value="448">448k (streaming)</option>
+                          <option value="256">256k (compact)</option>
+                          <option value="128">128k (low)</option>
+                        </select>
+                      </div>
+                    </>}
+                    {ruleForm.action !== "skip" && (
+                      <div>
+                        <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Queue priority</label>
+                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
+                          onChange={e => setRuleForm({ ...ruleForm, queue_priority: e.target.value })}>
+                          <option value="">Default</option>
+                          <option value="0">Normal</option>
+                          <option value="1">High</option>
+                          <option value="2">Highest</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }}
+                    onClick={async () => {
+                      // Validation with feedback
+                      if (!ruleForm.name.trim()) {
+                        toast("Please enter a rule name");
+                        return;
+                      }
+                      const validConditions = ruleForm.conditions.filter(c => c.value);
+                      if (validConditions.length === 0) {
+                        toast("Please add at least one match condition with a value");
+                        return;
+                      }
+                      const emptyConditions = ruleForm.conditions.filter(c => !c.value);
+                      if (emptyConditions.length > 0 && validConditions.length > 0) {
+                        // Has some empty conditions — just skip them silently
+                      }
+                      const data: any = {
+                        name: ruleForm.name,
+                        match_mode: ruleForm.match_mode,
+                        match_conditions: validConditions.map(c => ({ type: c.type, operator: c.operator, value: c.value })),
+                        action: ruleForm.action,
+                      };
+                      data.queue_priority = ruleForm.queue_priority ? parseInt(ruleForm.queue_priority) : null;
+                      if (ruleForm.action === "encode") {
+                        data.encoder = ruleForm.encoder || null;
+                        data.nvenc_preset = ruleForm.nvenc_preset || null;
+                        data.nvenc_cq = ruleForm.nvenc_cq ? parseInt(ruleForm.nvenc_cq) : null;
+                        data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
+                        data.target_resolution = ruleForm.target_resolution || null;
+                        data.audio_codec = ruleForm.audio_codec || null;
+                        data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
+                      } else if (ruleForm.action === "ignore") {
+                        data.encoder = null;
+                        data.nvenc_preset = null;
+                        data.nvenc_cq = null;
+                        data.libx265_crf = null;
+                        data.target_resolution = null;
+                        data.audio_codec = ruleForm.audio_codec || null;
+                        data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
+                      } else {
+                        data.encoder = null;
+                        data.nvenc_preset = null;
+                        data.nvenc_cq = null;
+                        data.libx265_crf = null;
+                        data.target_resolution = null;
+                        data.audio_codec = null;
+                        data.audio_bitrate = null;
+                        data.queue_priority = null;
+                      }
+                      try {
+                        if (editingRuleId) {
+                          await updateEncodingRule(editingRuleId, data);
+                          toast("Rule updated", "success");
+                        } else {
+                          await createEncodingRule(data);
+                          toast("Rule created", "success");
+                        }
+                        setShowAddRule(false);
+                        setEditingRuleId(null);
+                        // Small delay to let DB commit, then reload
+                        setTimeout(loadRules, 200);
+                      } catch (err: any) {
+                        toast(err.message || "Failed to save rule");
+                      }
+                    }}
+                  >
+                    {editingRuleId ? "Update Rule" : "Add Rule"}
+                  </button>
+                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "4px 12px" }}
+                    onClick={() => { setShowAddRule(false); setEditingRuleId(null); }}
+                  >Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <h2 id="automation" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Automation
+          </h2>
           {/* Automation — at the bottom */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 16 }}>Automation</h3>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.auto_queue_new || false}
                 onClick={() => setEncoding({ ...encoding, auto_queue_new: !encoding?.auto_queue_new })}
@@ -2010,30 +2389,216 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          {/* Webhook Endpoints */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 12 }}>Webhook Endpoints</h3>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              External tools can call these endpoints to control Squeezarr. Authenticate with <code style={{ color: "var(--accent)" }}>?api_key=YOUR_KEY</code> or <code style={{ color: "var(--accent)" }}>X-Api-Key</code> header.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {[
+                { method: "POST", path: "/api/webhooks/scan", desc: "Trigger library scan" },
+                { method: "POST", path: "/api/webhooks/queue", desc: "Add files to queue (body: {paths: [...]})" },
+                { method: "POST", path: "/api/webhooks/pause", desc: "Pause the queue" },
+                { method: "POST", path: "/api/webhooks/resume", desc: "Resume the queue" },
+                { method: "GET", path: "/api/webhooks/status", desc: "Get current status" },
+              ].map(ep => (
+                <div key={ep.path} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                  <span style={{ color: ep.method === "GET" ? "#40ceff" : "var(--success)", fontWeight: 600, width: 40, flexShrink: 0 }}>{ep.method}</span>
+                  <code style={{ color: "var(--text-secondary)", flex: 1 }}>{ep.path}</code>
+                  <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{ep.desc}</span>
+                  <button
+                    title="Copy full URL"
+                    onClick={() => {
+                      const url = `${window.location.origin}${ep.path}`;
+                      const ta = document.createElement("textarea");
+                      ta.value = url;
+                      ta.style.position = "fixed";
+                      ta.style.opacity = "0";
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                      toast("URL copied", "success");
+                    }}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Post-Conversion Script */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 12 }}>Post-Conversion Script</h3>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Run a custom script after each conversion completes. The script receives job details as environment variables.
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={labelStyle}>Script path</div>
+              <input type="text" style={{ ...inputStyle, width: "100%", maxWidth: 500 }}
+                value={encoding?.post_conversion_script || ""}
+                onChange={e => setEncoding({ ...encoding, post_conversion_script: e.target.value })}
+                placeholder="/path/to/script.sh" />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                Absolute path to an executable script inside the container. Leave empty to disable.
+              </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <div style={labelStyle}>Timeout (seconds)</div>
+              <input type="number" style={{ ...inputStyle, width: 100 }}
+                value={encoding?.post_conversion_script_timeout || 300}
+                onChange={e => setEncoding({ ...encoding, post_conversion_script_timeout: parseInt(e.target.value) || 300 })} />
+            </div>
+            <details style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Environment Variables Reference</summary>
+              <div style={{ backgroundColor: "var(--bg-primary)", padding: 12, borderRadius: 4, fontFamily: "monospace", fontSize: 11, lineHeight: 1.8 }}>
+                {[
+                  "SQUEEZARR_EVENT=job_completed",
+                  "SQUEEZARR_JOB_ID=12345",
+                  "SQUEEZARR_FILE_PATH=/media/.../file.x265.mkv",
+                  "SQUEEZARR_ORIGINAL_PATH=/media/.../file.x264.mkv",
+                  "SQUEEZARR_JOB_TYPE=convert|audio|combined",
+                  "SQUEEZARR_SPACE_SAVED=1234567890 (bytes)",
+                  "SQUEEZARR_ORIGINAL_SIZE=5000000000 (bytes)",
+                  "SQUEEZARR_ENCODER=nvenc|libx265",
+                  "SQUEEZARR_PRESET=p3",
+                  "SQUEEZARR_CQ=27",
+                  "SQUEEZARR_FPS=195.5",
+                  "SQUEEZARR_VMAF_SCORE=96.2",
+                  "SQUEEZARR_STATUS=completed|failed",
+                  "SQUEEZARR_ERROR=(error message if failed)",
+                ].map(v => <div key={v}>{v}</div>)}
+              </div>
+            </details>
+            <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
+              onClick={async () => {
+                await updateEncodingSettings({
+                  post_conversion_script: encoding?.post_conversion_script || "",
+                  post_conversion_script_timeout: encoding?.post_conversion_script_timeout || 300,
+                });
+                toast("Post-conversion script settings saved", "success");
+              }}>Save</button>
+          </div>
+
+          <h2 id="system" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            System
+          </h2>
           {/* Authentication */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Authentication</h3>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-              <input type="password" style={{ ...inputStyle, flex: "1 1 300px", maxWidth: 400 }}
-                placeholder="Leave empty for no authentication"
-                value={encoding?.api_key ?? ""}
-                onChange={e => setEncoding({ ...encoding, api_key: e.target.value })} />
-              {encoding?.api_key_configured && (
-                <button className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 12px", whiteSpace: "nowrap" }}
-                  onClick={() => setEncoding({ ...encoding, api_key: "" })}>
-                  Clear key
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ color: "white", margin: 0 }}>Authentication</h3>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.auth_enabled ? "Enabled" : "Disabled"}</span>
+                <input type="checkbox" checked={encoding?.auth_enabled || false}
+                  onChange={() => setEncoding({ ...encoding, auth_enabled: !encoding?.auth_enabled })}
+                  style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+              </label>
+            </div>
+
+            {encoding?.auth_enabled && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={labelStyle}>Username</div>
+                  <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
+                    value={encoding?.auth_username || ""}
+                    onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
+                    placeholder="admin" />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={labelStyle}>Password</div>
+                  <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
+                    value={encoding?.auth_password || ""}
+                    onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
+                    placeholder="Enter new password..." />
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave empty to keep current password</div>
+                </div>
+              </>
+            )}
+
+            {/* API Key section — always visible */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
+              <div style={labelStyle}>API Key</div>
+              <div style={{ display: "flex", gap: 0, alignItems: "center", marginBottom: 4, maxWidth: 500 }}>
+                <input type="text" readOnly
+                  value={encoding?.api_key || ""}
+                  style={{
+                    ...inputStyle, flex: 1, fontFamily: "monospace", fontSize: 13, letterSpacing: 0.5,
+                    borderRadius: "4px 0 0 4px", borderRight: "none",
+                  }} />
+                <button
+                  title="Copy to clipboard"
+                  onClick={() => {
+                    const text = encoding?.api_key || "";
+                    if (navigator.clipboard?.writeText) {
+                      navigator.clipboard.writeText(text).then(() => toast("API key copied", "success")).catch(() => {
+                        // Fallback for non-HTTPS
+                        const ta = document.createElement("textarea");
+                        ta.value = text;
+                        ta.style.position = "fixed";
+                        ta.style.opacity = "0";
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        toast("API key copied", "success");
+                      });
+                    } else {
+                      const ta = document.createElement("textarea");
+                      ta.value = text;
+                      ta.style.position = "fixed";
+                      ta.style.opacity = "0";
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand("copy");
+                      document.body.removeChild(ta);
+                      toast("API key copied", "success");
+                    }
+                  }}
+                  style={{
+                    height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)",
+                    borderLeft: "none", borderRight: "none", cursor: "pointer", color: "var(--text-muted)",
+                  }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
                 </button>
-              )}
-              <button className="btn btn-primary" style={{ fontSize: 11, padding: "5px 12px", whiteSpace: "nowrap" }}
-                onClick={async () => {
-                  await updateEncodingSettings(encoding);
-                  toast("API key saved", "success");
-                }}
-              >Save</button>
+                <button
+                  title="Regenerate API key"
+                  onClick={() => {
+                    const key = crypto.randomUUID().replace(/-/g, "");
+                    setEncoding({ ...encoding, api_key: key });
+                  }}
+                  style={{
+                    height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundColor: "#e94560", border: "1px solid #e94560",
+                    borderRadius: "0 4px 4px 0", cursor: "pointer", color: "white",
+                  }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Used by NZBGet and other external integrations. Not required for browser login.
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              When set, all API requests require this key via the <code style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>X-Api-Key</code> header. Useful for exposing Squeezarr over the internet.
-            </div>
+
+            <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px", marginTop: 12 }}
+              onClick={async () => {
+                const data: any = { auth_enabled: encoding?.auth_enabled };
+                if (encoding?.auth_username) data.auth_username = encoding.auth_username;
+                if (encoding?.auth_password) data.auth_password = encoding.auth_password;
+                if (encoding?.api_key !== undefined) data.api_key = encoding.api_key;
+                await updateEncodingSettings(data);
+                // Clear the password field after saving
+                setEncoding({ ...encoding, auth_password: "" });
+                toast("Authentication settings saved", "success");
+              }}>Save Authentication</button>
           </div>
 
           {/* Notifications */}
@@ -2066,7 +2631,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Provider configs */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
               {/* Discord */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Discord</div>

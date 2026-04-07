@@ -22,12 +22,14 @@ interface FileTreeProps {
   isSelected: (path: string) => boolean;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
   onToggleTrack: (filePath: string, streamIndex: number) => void;
+  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
   onRescanFolder?: (folderPath: string) => void;
   onDeleteFile?: (filePath: string) => void;
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
+  externalFiles?: Map<string, ScannedFile[]>;
   sortBy?: SortBy;
   sortDir?: SortDirection;
 }
@@ -126,9 +128,9 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
       groupName = parentName ? `${parentName}  >  ${parts[titleIdx]}` : parts[titleIdx];
     } else {
       groupPath = folder.path;
-      const parentName = parts.length > 1 ? parts[parts.length - 2] : "";
-      const fileName = parts[parts.length - 1] || folder.path;
-      groupName = parentName ? `${parentName}  >  ${fileName}` : fileName;
+      // Show up to 2 levels of parent context (e.g. "KrakkaTV IS > Kennarastofan (2024) > Season 1")
+      const contextParts = parts.slice(-3);  // last 3 segments
+      groupName = contextParts.join("  >  ");
     }
     if (!groups.has(groupPath)) {
       groups.set(groupPath, { name: groupName, folders: [] });
@@ -347,7 +349,8 @@ function FolderRow({
 }) {
   const confirm = useConfirm();
   const hasMediaId = /\[(?:tvdb-\d+|tt\d+)\]/.test(node.name);
-  const colorClass = hasMediaId ? "tree-season" : depth === 0 ? "tree-folder" : depth === 1 ? "tree-subfolder" : "tree-season";
+  const isFlat = node.name.includes("  >  ");
+  const colorClass = hasMediaId ? "tree-season" : isFlat ? "tree-season" : depth === 0 ? "tree-folder" : depth === 1 ? "tree-subfolder" : "tree-season";
 
   return (
     <div className="tree-row" onClick={onToggle} style={{ paddingLeft: depth * 16 }}>
@@ -358,12 +361,12 @@ function FolderRow({
         onClick={(e) => { e.stopPropagation(); onSelectAll(!allSelected, e.shiftKey); }}
         style={{ marginRight: 4 }}
       />
-      <span className={colorClass}>
+      <span className={`tree-name ${colorClass}`}>
         {isExpanded ? "\u25BC" : "\u25B6"} {node.name}/
       </span>
       <MediaIdLink folderName={node.name} />
       <span className="tree-file-size">
-        {node.agg_file_count} files &middot; {(node.agg_total_size / (1024 ** 3)).toFixed(1)} GB
+        {node.agg_file_count} files &middot; {node.agg_total_size >= 1024 ** 4 ? `${(node.agg_total_size / (1024 ** 4)).toFixed(1)} TB` : `${(node.agg_total_size / (1024 ** 3)).toFixed(1)} GB`}
       </span>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
         {onRescanFolder && parseMediaId(node.name) && (
@@ -400,11 +403,12 @@ function FolderRow({
 
 function FileRow({
   file, selected, depth, onToggleSelect, onRemoveFile, onIgnoreFile, onUnignoreFile, onDeleteFile,
-  onToggleTrack, expanded, onToggleExpand,
+  onToggleTrack, onToggleSubTrack, expanded, onToggleExpand,
 }: {
   file: ScannedFile; selected: boolean; depth: number;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
   onToggleTrack: (filePath: string, streamIndex: number) => void;
+  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
@@ -425,7 +429,7 @@ function FileRow({
           onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }}
           style={{ marginRight: 4 }}
         />
-        <span style={{ cursor: "pointer" }}>{expanded ? "\u25BC" : "\u25B6"} {file.file_name}</span>
+        <span className="tree-name" style={{ cursor: "pointer" }}>{expanded ? "\u25BC" : "\u25B6"} {file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
         <span className={`codec-badge ${codecClass}`}>
           {file.needs_conversion ? "x264" : "x265"}
@@ -476,7 +480,7 @@ function FileRow({
         </div>
       </div>
       {expanded && (
-        <FileDetail file={file} onToggleTrack={onToggleTrack} />
+        <FileDetail file={file} onToggleTrack={onToggleTrack} onToggleSubTrack={onToggleSubTrack} />
       )}
     </div>
   );
@@ -486,13 +490,15 @@ function FileRow({
 
 export default function FileTree({
   folders, filter = "all",
-  isSelected, onToggleSelect, onToggleTrack, onRemoveFile,
+  isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
-  onFolderFilesLoaded,
+  onFolderFilesLoaded, externalFiles,
   sortBy = "name", sortDir = "asc", search = "",
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [folderFiles, setFolderFiles] = useState<Map<string, ScannedFile[]>>(new Map());
+  const [internalFiles, setInternalFiles] = useState<Map<string, ScannedFile[]>>(new Map());
+  // Use external files (from parent, updated on track toggle) when available, fallback to internal
+  const folderFiles = externalFiles || internalFiles;
   const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -571,8 +577,16 @@ export default function FileTree({
         subtitle_tracks: row.subtitle_tracks || [],
         has_removable_tracks: row.has_removable_tracks || false,
         has_removable_subs: row.has_removable_subs || false,
-        estimated_savings_bytes: 0,
-        estimated_savings_gb: 0,
+        estimated_savings_bytes: (() => {
+          let s = row.needs_conversion ? (row.file_size || 0) * 0.3 : 0;
+          for (const t of (row.audio_tracks || [])) {
+            if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
+          }
+          return Math.round(s);
+        })(),
+        estimated_savings_gb: +(((row.needs_conversion ? (row.file_size || 0) * 0.3 : 0) +
+          (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
+        ) / (1024**3)).toFixed(1),
         language_source: row.language_source || "heuristic",
         ignored: row.ignored || false,
         is_new: row.is_new || false,
@@ -583,7 +597,7 @@ export default function FileTree({
         duration: row.duration || 0,
         file_mtime: row.file_mtime || null,
       }));
-      setFolderFiles(prev => {
+      setInternalFiles(prev => {
         const next = new Map(prev);
         next.set(folderPath, parsed);
         return next;
@@ -628,7 +642,7 @@ export default function FileTree({
 
   // When filter changes, clear cached folder files so they reload with new filter
   useEffect(() => {
-    setFolderFiles(new Map());
+    setInternalFiles(new Map());
     // Reload files for currently expanded leaf folders
     for (const path of expanded) {
       // Check if this is a leaf by looking at the tree
@@ -688,7 +702,7 @@ export default function FileTree({
   return (
     <div
       ref={containerRef}
-      className="tree-container"
+      className="tree-container file-tree-virtual"
       style={{
         position: "relative",
         minHeight: totalHeight || 100,
@@ -732,6 +746,7 @@ export default function FileTree({
                     depth={row.depth}
                     onToggleSelect={onToggleSelect}
                     onToggleTrack={onToggleTrack}
+                    onToggleSubTrack={onToggleSubTrack}
                     onRemoveFile={onRemoveFile}
                     onIgnoreFile={onIgnoreFile}
                     onUnignoreFile={onUnignoreFile}

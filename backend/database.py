@@ -293,12 +293,43 @@ async def init_db():
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # Migration: add language_source to scan_results (api/heuristic)
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN language_source TEXT DEFAULT 'heuristic'")
+        except Exception:
+            pass
         # Create indexes for fast filtered queries
         await db.execute("CREATE INDEX IF NOT EXISTS idx_plex_meta_folder ON plex_metadata_cache(folder_path)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_order ON jobs(status, queue_order)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_completed ON jobs(status, completed_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_filepath ON scan_results(file_path)")
+
+        # Backfill converted flag from completed jobs (for files converted before flag existed)
+        # Excludes jobs where no space was saved (ignored/no-op conversions)
+        await db.execute("""
+            UPDATE scan_results SET converted = 1
+            WHERE converted = 0 AND file_path IN (
+                SELECT file_path FROM jobs
+                WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
+            )
+        """)
+
+        # Backfill VMAF scores from jobs to scan_results (match by original_file_path or file_path)
+        await db.execute("""
+            UPDATE scan_results SET vmaf_score = (
+                SELECT j.vmaf_score FROM jobs j
+                WHERE j.vmaf_score IS NOT NULL AND j.vmaf_score > 0
+                AND j.status = 'completed'
+                AND (j.file_path = scan_results.file_path OR j.original_file_path = scan_results.file_path)
+                ORDER BY j.completed_at DESC LIMIT 1
+            )
+            WHERE vmaf_score IS NULL AND file_path IN (
+                SELECT file_path FROM jobs WHERE vmaf_score IS NOT NULL AND vmaf_score > 0 AND status = 'completed'
+                UNION
+                SELECT original_file_path FROM jobs WHERE vmaf_score IS NOT NULL AND vmaf_score > 0 AND status = 'completed' AND original_file_path IS NOT NULL
+            )
+        """)
 
         await db.commit()
     finally:

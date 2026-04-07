@@ -1,91 +1,64 @@
 #!/usr/bin/env python3
 #
-# NZBGet Post-Processing Script
+# Squeezarr NZBGet Post-Processing Script
 #
 ##############################################################################
 ### NZBGET POST-PROCESSING SCRIPT                                          ###
 #
 # Squeezarr Post-Processing
 #
-# After NZBGet completes a download, checks Sonarr for a matching tag.
-# If tagged, sends the file to Squeezarr for HEVC conversion.
+# Converts media files to x265/HEVC after download completes.
+# Configuration is managed in Squeezarr's web UI — only the connection
+# details below need to be set in NZBGet.
 #
 ##############################################################################
 ### OPTIONS                                                                 ###
 
-# Squeezarr URL (http://host:port).
-#SqueezarrUrl=http://localhost:6680
+# Squeezarr server URL.
+#SqueezarrUrl=__SQUEEZARR_URL__
 
-# Squeezarr API Key (leave empty if no auth).
-#SqueezarrApiKey=
-
-# Sonarr URL (http://host:port).
-#SonarrUrl=http://localhost:8989
-
-# Sonarr API Key.
-#SonarrApiKey=
-
-# Sonarr tag name to match (case-insensitive).
-#TagName=convert
-
-# NZBGet categories to process (comma-separated, empty=all).
-#Categories=TV
-
-# Queue priority (Normal, High, Highest).
-#Priority=High
-
-# Wait for conversion to complete before exiting (Yes, No).
-#
-# Yes: Blocks Sonarr import until Squeezarr finishes.
-# No: Queues and exits immediately.
-#WaitForCompletion=Yes
-
-# Path mapping from NZBGet to Squeezarr (NZBGet path=Squeezarr path).
-#
-# Maps the download path inside NZBGet to the path Squeezarr sees.
-# Example: /Downloads/completed/TV=/downloads/tv
-#PathMapping=/Downloads/completed/TV=/downloads/tv
+# Squeezarr API key. Leave empty if authentication is disabled.
+#SqueezarrApiKey=__SQUEEZARR_API_KEY__
 
 ### NZBGET POST-PROCESSING SCRIPT                                          ###
 ##############################################################################
 
 import json
 import os
+import re
 import sys
 import time
-import glob
-from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
+from urllib.request import Request, urlopen
 
+# ---------------------------------------------------------------------------
 # NZBGet exit codes
+# ---------------------------------------------------------------------------
 POSTPROCESS_SUCCESS = 93
 POSTPROCESS_ERROR = 94
 POSTPROCESS_NONE = 95
 
-# Read NZBGet environment
+# ---------------------------------------------------------------------------
+# NZBGet environment variables
+# ---------------------------------------------------------------------------
 DOWNLOAD_DIR = os.environ.get("NZBPP_DIRECTORY", "")
 NZB_NAME = os.environ.get("NZBPP_NZBNAME", "")
 CATEGORY = os.environ.get("NZBPP_CATEGORY", "")
 TOTAL_STATUS = os.environ.get("NZBPP_TOTALSTATUS", "")
-NZB_ID = os.environ.get("NZBPP_NZBID", "")
 
-# Read extension options (NZBPO_ prefix)
-SQUEEZARR_URL = os.environ.get("NZBPO_SQUEEZARRURL", "http://localhost:6680").rstrip("/")
-SQUEEZARR_KEY = os.environ.get("NZBPO_SQUEEZARRAPIKEY", "")
-SONARR_URL = os.environ.get("NZBPO_SONARRURL", "http://localhost:8989").rstrip("/")
-SONARR_KEY = os.environ.get("NZBPO_SONARRAPIKEY", "")
-TAG_NAME = os.environ.get("NZBPO_TAGNAME", "convert").lower()
-CATEGORIES = [c.strip().lower() for c in os.environ.get("NZBPO_CATEGORIES", "TV").split(",") if c.strip()]
-PRIORITY_MAP = {"Normal": 0, "High": 1, "Highest": 2}
-PRIORITY = PRIORITY_MAP.get(os.environ.get("NZBPO_PRIORITY", "High"), 1)
-WAIT = os.environ.get("NZBPO_WAITFORCOMPLETION", "Yes") == "Yes"
-PATH_MAPPING = os.environ.get("NZBPO_PATHMAPPING", "/Downloads/completed/TV=/downloads/tv")
+SQUEEZARR_URL = os.environ.get("NZBPO_SQUEEZARRURL", "__SQUEEZARR_URL__").rstrip("/")
+SQUEEZARR_KEY = os.environ.get("NZBPO_SQUEEZARRAPIKEY", "__SQUEEZARR_API_KEY__")
 
-# Check if this is a command test
-COMMAND = os.environ.get("NZBCP_CONNECTIONTEST", "")
+# ---------------------------------------------------------------------------
+# Video file extensions we consider "media"
+# ---------------------------------------------------------------------------
+MEDIA_EXTENSIONS = {".mkv", ".mp4", ".avi", ".ts", ".m2ts", ".wmv", ".flv", ".mov"}
 
 
+# ---------------------------------------------------------------------------
+# Logging helpers
+# ---------------------------------------------------------------------------
 def log(msg):
     print(f"[INFO] {msg}", flush=True)
 
@@ -94,11 +67,14 @@ def error(msg):
     print(f"[ERROR] {msg}", flush=True)
 
 
+# ---------------------------------------------------------------------------
+# HTTP helpers (stdlib only)
+# ---------------------------------------------------------------------------
 def api_request(url, method="GET", data=None, headers=None):
-    """Make an HTTP request and return parsed JSON."""
+    """Make an HTTP request and return parsed JSON, or None on failure."""
     if headers is None:
         headers = {}
-    headers["Content-Type"] = "application/json"
+    headers.setdefault("Content-Type", "application/json")
 
     body = json.dumps(data).encode("utf-8") if data else None
     req = Request(url, data=body, headers=headers, method=method)
@@ -118,108 +94,29 @@ def api_request(url, method="GET", data=None, headers=None):
 
 
 def squeezarr_headers():
+    """Return headers dict with the Squeezarr API key (if configured)."""
     h = {}
-    if SQUEEZARR_KEY:
+    if SQUEEZARR_KEY and SQUEEZARR_KEY != "__SQUEEZARR_API_KEY__":
         h["X-Api-Key"] = SQUEEZARR_KEY
     return h
 
 
-def sonarr_headers():
-    return {"X-Api-Key": SONARR_KEY} if SONARR_KEY else {}
+# ---------------------------------------------------------------------------
+# Squeezarr API
+# ---------------------------------------------------------------------------
+def fetch_config():
+    """Fetch the NZBGet extension config from Squeezarr's API."""
+    url = f"{SQUEEZARR_URL}/api/settings/nzbget-config"
+    return api_request(url, headers=squeezarr_headers())
 
 
-def test_connections():
-    """Test both Squeezarr and Sonarr connections."""
-    ok = True
-
-    # Test Squeezarr
-    log(f"Testing Squeezarr at {SQUEEZARR_URL}...")
-    result = api_request(f"{SQUEEZARR_URL}/api/health", headers=squeezarr_headers())
-    if result:
-        log("Squeezarr: Connected OK")
-    else:
-        error("Squeezarr: Connection failed")
-        ok = False
-
-    # Test Sonarr
-    log(f"Testing Sonarr at {SONARR_URL}...")
-    result = api_request(f"{SONARR_URL}/api/v3/system/status", headers=sonarr_headers())
-    if result:
-        log(f"Sonarr: Connected OK (v{result.get('version', '?')})")
-    else:
-        error("Sonarr: Connection failed")
-        ok = False
-
-    return ok
-
-
-def get_sonarr_tags():
-    """Get all tags from Sonarr, return dict of {id: name}."""
-    data = api_request(f"{SONARR_URL}/api/v3/tag", headers=sonarr_headers())
-    if not data:
-        return {}
-    return {t["id"]: t["label"].lower() for t in data}
-
-
-def get_series_by_name(name):
-    """Search Sonarr for a series matching the download name."""
-    # Try to extract series name from NZB name (before season/episode info)
-    import re
-    # Common patterns: "Show Name S01E01" or "Show.Name.S01E01"
-    match = re.match(r"^(.+?)[\s._-]+[Ss]\d+", name)
-    search_name = match.group(1).replace(".", " ").replace("_", " ").strip() if match else name
-
-    data = api_request(
-        f"{SONARR_URL}/api/v3/series/lookup?term={quote(search_name)}",
-        headers=sonarr_headers(),
-    )
-    if not data:
-        return None
-
-    # Also check the local series list for exact match
-    all_series = api_request(f"{SONARR_URL}/api/v3/series", headers=sonarr_headers())
-    if all_series:
-        for series in all_series:
-            title_clean = series.get("title", "").lower().replace(".", " ").replace("_", " ")
-            search_clean = search_name.lower()
-            if title_clean == search_clean or search_clean in title_clean:
-                return series
-
-    # Fallback: use lookup results
-    for item in data:
-        if item.get("id"):
-            return item
-
-    return None
-
-
-def series_has_tag(series, tag_name, all_tags):
-    """Check if a series has a specific tag."""
-    if not series or not series.get("tags"):
-        return False
-    for tag_id in series["tags"]:
-        if all_tags.get(tag_id, "").lower() == tag_name:
-            return True
-    return False
-
-
-def find_media_files(directory):
-    """Find video files in the download directory."""
-    extensions = {".mkv", ".mp4", ".avi", ".ts", ".m2ts", ".wmv", ".flv", ".mov"}
-    files = []
-    for root, dirs, filenames in os.walk(directory):
-        for fname in filenames:
-            if os.path.splitext(fname)[1].lower() in extensions:
-                files.append(os.path.join(root, fname))
-    return files
-
-
-def queue_in_squeezarr(file_paths):
-    """Send files to Squeezarr for conversion. Returns job count."""
+def queue_files(file_paths, priority):
+    """POST files to Squeezarr for conversion. Returns number of jobs added."""
     data = {
         "file_paths": file_paths,
-        "priority": PRIORITY,
+        "priority": priority,
         "force_reencode": False,
+        "insert_next": True,
     }
 
     result = api_request(
@@ -231,26 +128,27 @@ def queue_in_squeezarr(file_paths):
 
     if result:
         added = result.get("added", 0)
-        log(f"Squeezarr: Queued {added} job(s)")
+        errs = result.get("errors", [])
+        log(f"Queued {added} job(s)")
+        for e in errs:
+            error(f"  {e}")
         return added
     else:
-        error("Squeezarr: Failed to queue jobs")
+        error("Failed to queue jobs")
         return 0
 
 
 def wait_for_jobs(file_paths, timeout=7200):
     """Poll Squeezarr until the specific files we queued are completed."""
-    log("Waiting for Squeezarr to finish converting our files...")
+    log("Waiting for Squeezarr to finish converting...")
     start = time.time()
-    check_interval = 15  # seconds
+    check_interval = 15
 
-    # Normalize paths for matching
     our_files = set(os.path.basename(f) for f in file_paths)
 
     while time.time() - start < timeout:
         time.sleep(check_interval)
 
-        # Get all jobs and check if our files are still pending/running
         jobs = api_request(f"{SQUEEZARR_URL}/api/jobs/", headers=squeezarr_headers())
         if not jobs:
             continue
@@ -273,112 +171,292 @@ def wait_for_jobs(file_paths, timeout=7200):
         elapsed = int(time.time() - start)
 
         if our_running == 0 and our_pending == 0 and our_done > 0:
-            log(f"Squeezarr: Our {our_done} file(s) completed ({elapsed}s)")
+            log(f"All {our_done} file(s) completed ({elapsed}s)")
             return True
 
         if our_running == 0 and our_pending == 0 and our_done == 0:
-            # Jobs might not have appeared yet, give it a moment
             if elapsed > 60:
-                log("Squeezarr: Jobs not found — may have completed already")
+                log("Jobs not found — may have completed already")
                 return True
 
-        log(f"Squeezarr: {our_running} converting, {our_pending} pending, {our_done} done ({elapsed}s)")
+        log(f"  {our_running} converting, {our_pending} pending, {our_done} done ({elapsed}s)")
 
-    error(f"Squeezarr: Timed out after {timeout}s")
+    error(f"Timed out after {timeout}s")
     return False
 
 
-def main():
-    # Handle connection test command
-    if COMMAND:
-        if test_connections():
-            log("All connections OK")
-            sys.exit(POSTPROCESS_SUCCESS)
-        else:
-            sys.exit(POSTPROCESS_ERROR)
+# ---------------------------------------------------------------------------
+# Sonarr helpers
+# ---------------------------------------------------------------------------
+def get_sonarr_tags(sonarr_url, sonarr_key):
+    """GET /api/v3/tag from Sonarr. Returns {id: label} dict."""
+    headers = {"X-Api-Key": sonarr_key} if sonarr_key else {}
+    data = api_request(f"{sonarr_url.rstrip('/')}/api/v3/tag", headers=headers)
+    if not data:
+        return {}
+    return {t["id"]: t["label"].lower() for t in data}
 
-    # Validate environment
+
+def find_series_in_sonarr(nzb_name, sonarr_url, sonarr_key):
+    """Search Sonarr for a series matching the NZB name.
+
+    Uses three passes:
+      1. Parse series name from NZB, exact title match against local series list
+      2. Alternate title match
+      3. Sonarr's /api/v3/parse endpoint
+    """
+    sonarr_url = sonarr_url.rstrip("/")
+    headers = {"X-Api-Key": sonarr_key} if sonarr_key else {}
+
+    # Extract series name (everything before S##E##)
+    match = re.match(r"^(.+?)[\s._-]+[Ss]\d+", nzb_name)
+    search_name = match.group(1).replace(".", " ").replace("_", " ").strip() if match else nzb_name
+    search_clean = search_name.lower()
+
+    log(f"Parsed series name: '{search_name}'")
+
+    all_series = api_request(f"{sonarr_url}/api/v3/series", headers=headers)
+    if all_series:
+        # Pass 1: exact title match
+        for series in all_series:
+            title = series.get("title", "").lower()
+            if title == search_clean:
+                log(f"Exact match: '{series.get('title')}'")
+                return series
+
+        # Pass 2: alternate title match
+        for series in all_series:
+            alt_titles = series.get("alternateTitles", [])
+            for alt in alt_titles:
+                if alt.get("title", "").lower() == search_clean:
+                    log(f"Alternate title match: '{series.get('title')}' (via '{alt.get('title')}')")
+                    return series
+
+    # Pass 3: Sonarr's own parse endpoint
+    parse_result = api_request(
+        f"{sonarr_url}/api/v3/parse?title={quote(nzb_name)}",
+        headers=headers,
+    )
+    if parse_result and parse_result.get("series", {}).get("id"):
+        parsed_series = parse_result["series"]
+        log(f"Sonarr parse match: '{parsed_series.get('title')}'")
+        return parsed_series
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Radarr helpers
+# ---------------------------------------------------------------------------
+def get_radarr_tags(radarr_url, radarr_key):
+    """GET /api/v3/tag from Radarr. Returns {id: label} dict."""
+    headers = {"X-Api-Key": radarr_key} if radarr_key else {}
+    data = api_request(f"{radarr_url.rstrip('/')}/api/v3/tag", headers=headers)
+    if not data:
+        return {}
+    return {t["id"]: t["label"].lower() for t in data}
+
+
+def find_movie_in_radarr(nzb_name, radarr_url, radarr_key):
+    """Search Radarr for a movie matching the NZB name.
+
+    Uses three passes:
+      1. Parse movie name + year from NZB, exact title match against local movie list
+      2. Title-only match (no year) against local movie list
+      3. Radarr's /api/v3/parse endpoint
+    """
+    radarr_url = radarr_url.rstrip("/")
+    headers = {"X-Api-Key": radarr_key} if radarr_key else {}
+
+    # Extract movie title and optional year
+    # "Movie.Name.2024.1080p..." -> "Movie Name", "2024"
+    match = re.match(r"^(.+?)[\s._-]+(\d{4})[\s._-]", nzb_name)
+    if match:
+        search_name = match.group(1).replace(".", " ").replace("_", " ").strip()
+        year = match.group(2)
+    else:
+        search_name = nzb_name
+        year = None
+
+    search_clean = search_name.lower()
+    log(f"Parsed movie name: '{search_name}'" + (f" ({year})" if year else ""))
+
+    all_movies = api_request(f"{radarr_url}/api/v3/movie", headers=headers)
+    if all_movies:
+        # Pass 1: exact title + year match
+        for movie in all_movies:
+            title = movie.get("title", "").lower()
+            movie_year = str(movie.get("year", ""))
+            if title == search_clean and (not year or movie_year == year):
+                log(f"Exact match: '{movie.get('title')}' ({movie_year})")
+                return movie
+
+        # Pass 2: title-only match (if year didn't narrow it down)
+        if year:
+            for movie in all_movies:
+                title = movie.get("title", "").lower()
+                movie_year = str(movie.get("year", ""))
+                if title == search_clean and movie_year == year:
+                    log(f"Title+year match: '{movie.get('title')}' ({movie_year})")
+                    return movie
+
+    # Pass 3: Radarr's own parse endpoint
+    parse_result = api_request(
+        f"{radarr_url}/api/v3/parse?title={quote(nzb_name)}",
+        headers=headers,
+    )
+    if parse_result and parse_result.get("movie", {}).get("id"):
+        parsed_movie = parse_result["movie"]
+        log(f"Radarr parse match: '{parsed_movie.get('title')}'")
+        return parsed_movie
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Tag matching
+# ---------------------------------------------------------------------------
+def media_has_any_tag(media, tag_names, all_tags):
+    """Check if a media item (series or movie) has ANY of the configured tags."""
+    if not media or not media.get("tags"):
+        return False
+    for tag_id in media["tags"]:
+        tag_label = all_tags.get(tag_id, "").lower()
+        if tag_label in tag_names:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# File discovery & path translation
+# ---------------------------------------------------------------------------
+def find_media_files(directory):
+    """Walk directory for video files."""
+    files = []
+    for root, _dirs, filenames in os.walk(directory):
+        for fname in filenames:
+            if os.path.splitext(fname)[1].lower() in MEDIA_EXTENSIONS:
+                files.append(os.path.join(root, fname))
+    return files
+
+
+def translate_paths(file_paths, path_mappings):
+    """Translate file paths using the configured path mappings.
+
+    Each mapping is a dict with 'from' and 'to' keys. The first matching
+    mapping wins for each file path.
+    """
+    result = []
+    for f in file_paths:
+        translated = f
+        for mapping in path_mappings:
+            src = mapping.get("from", "").rstrip("/")
+            dst = mapping.get("to", "").rstrip("/")
+            if src and dst and f.startswith(src + "/"):
+                translated = dst + f[len(src):]
+                break
+        result.append(translated)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+def main():
+    # 1. Validate NZBGet environment
     if not DOWNLOAD_DIR:
-        error("Missing NZBPP_DIRECTORY — not running as NZBGet post-processing script?")
+        error("Not running as NZBGet post-processing script")
         sys.exit(POSTPROCESS_ERROR)
 
-    # Only process successful downloads
     if TOTAL_STATUS != "SUCCESS":
         log(f"Download status: {TOTAL_STATUS} — skipping")
         sys.exit(POSTPROCESS_NONE)
 
-    # Check category filter
-    if CATEGORIES and CATEGORY.lower() not in CATEGORIES:
-        log(f"Category '{CATEGORY}' not in filter [{', '.join(CATEGORIES)}] — skipping")
+    # 2. Fetch config from Squeezarr API
+    config = fetch_config()
+    if not config:
+        error("Failed to fetch config from Squeezarr — check URL and API key")
+        sys.exit(POSTPROCESS_ERROR)
+
+    # 3. Check category filter
+    categories = [c.lower() for c in config.get("categories", [])]
+    if categories and CATEGORY.lower() not in categories:
+        log(f"Category '{CATEGORY}' not in configured categories {categories} — skipping")
         sys.exit(POSTPROCESS_NONE)
 
     log(f"Processing: {NZB_NAME}")
     log(f"Directory: {DOWNLOAD_DIR}")
     log(f"Category: {CATEGORY}")
 
-    # Check Sonarr for tag
-    if SONARR_KEY:
-        log(f"Checking Sonarr for '{TAG_NAME}' tag...")
-        all_tags = get_sonarr_tags()
-        if not all_tags:
-            error("Could not fetch Sonarr tags")
+    # 4. Check Sonarr/Radarr tags
+    tags = [t.lower() for t in config.get("tags", ["convert"])]
+
+    sonarr_url = config.get("sonarr_url", "")
+    sonarr_key = config.get("sonarr_api_key", "")
+    radarr_url = config.get("radarr_url", "")
+    radarr_key = config.get("radarr_api_key", "")
+    check_sonarr = config.get("check_sonarr_tags", True)
+    check_radarr = config.get("check_radarr_tags", True)
+
+    has_tag = False
+
+    if check_sonarr and sonarr_url and sonarr_key:
+        series = find_series_in_sonarr(NZB_NAME, sonarr_url, sonarr_key)
+        if series:
+            log(f"Found series in Sonarr: {series.get('title', '?')}")
+            all_tags = get_sonarr_tags(sonarr_url, sonarr_key)
+            has_tag = media_has_any_tag(series, tags, all_tags)
+            if has_tag:
+                log("Series has matching tag — proceeding")
+            else:
+                log(f"Series does not have any of {tags} — skipping")
+                sys.exit(POSTPROCESS_NONE)
+
+    if not has_tag and check_radarr and radarr_url and radarr_key:
+        movie = find_movie_in_radarr(NZB_NAME, radarr_url, radarr_key)
+        if movie:
+            log(f"Found movie in Radarr: {movie.get('title', '?')}")
+            all_tags = get_radarr_tags(radarr_url, radarr_key)
+            has_tag = media_has_any_tag(movie, tags, all_tags)
+            if has_tag:
+                log("Movie has matching tag — proceeding")
+            else:
+                log(f"Movie does not have any of {tags} — skipping")
+                sys.exit(POSTPROCESS_NONE)
+
+    if not has_tag:
+        if not (sonarr_url and sonarr_key) and not (radarr_url and radarr_key):
+            log("No Sonarr/Radarr configured — processing all downloads")
+        else:
+            log("Not found in Sonarr or Radarr — skipping")
             sys.exit(POSTPROCESS_NONE)
 
-        series = get_series_by_name(NZB_NAME)
-        if not series:
-            log(f"Series not found in Sonarr for '{NZB_NAME}' — skipping")
-            sys.exit(POSTPROCESS_NONE)
-
-        log(f"Found series: {series.get('title', '?')}")
-
-        if not series_has_tag(series, TAG_NAME, all_tags):
-            log(f"Series does not have '{TAG_NAME}' tag — skipping")
-            sys.exit(POSTPROCESS_NONE)
-
-        log(f"Series has '{TAG_NAME}' tag — proceeding with conversion")
-    else:
-        log("No Sonarr API key — processing all downloads in matching categories")
-
-    # Find media files
+    # 5. Find media files
     media_files = find_media_files(DOWNLOAD_DIR)
     if not media_files:
-        log("No media files found in download directory")
+        log("No media files found")
         sys.exit(POSTPROCESS_NONE)
 
-    log(f"Found {len(media_files)} media file(s):")
+    log(f"Found {len(media_files)} media file(s)")
     for f in media_files:
         log(f"  {os.path.basename(f)} ({os.path.getsize(f) / (1024**3):.1f} GB)")
 
-    # Translate paths from NZBGet container paths to Squeezarr container paths
-    squeezarr_files = []
-    src_path, dst_path = "", ""
-    if "=" in PATH_MAPPING:
-        src_path, dst_path = PATH_MAPPING.split("=", 1)
-
-    for f in media_files:
-        if src_path and dst_path:
-            squeezarr_path = f.replace(src_path, dst_path, 1)
-        else:
-            squeezarr_path = f
-        squeezarr_files.append(squeezarr_path)
-
+    # 6. Translate paths
+    path_mappings = config.get("path_mappings", [])
+    squeezarr_files = translate_paths(media_files, path_mappings)
     log(f"Squeezarr paths: {squeezarr_files}")
 
-    # Queue in Squeezarr
-    added = queue_in_squeezarr(squeezarr_files)
+    # 7. Queue in Squeezarr
+    priority = config.get("priority", 1)
+    added = queue_files(squeezarr_files, priority)
     if added == 0:
         log("No files queued (may already be optimized)")
         sys.exit(POSTPROCESS_NONE)
 
-    # Wait for completion if configured
-    if WAIT:
+    # 8. Wait if configured
+    if config.get("wait_for_completion", True):
         success = wait_for_jobs(squeezarr_files)
-        if success:
-            log("Conversion complete — Sonarr can now import")
-            sys.exit(POSTPROCESS_SUCCESS)
-        else:
-            error("Conversion timed out or failed")
-            sys.exit(POSTPROCESS_ERROR)
+        sys.exit(POSTPROCESS_SUCCESS if success else POSTPROCESS_ERROR)
     else:
         log("Queued for conversion (not waiting)")
         sys.exit(POSTPROCESS_SUCCESS)

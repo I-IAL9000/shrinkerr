@@ -86,7 +86,7 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
       {job.status === "pending" && (
         <span style={{ cursor: "grab", opacity: 0.3, marginLeft: 8, marginRight: 10, fontSize: 14 }}>&#x2807;</span>
       )}
-      <span style={{ flex: 1 }}>
+      <span className="job-filename" style={{ flex: 1, minWidth: 0 }}>
         {fileName}
         {(job as any).original_size > 0 && (
           <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.4 }}>{formatBytes((job as any).original_size)}</span>

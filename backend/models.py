@@ -120,6 +120,7 @@ class SettingsUpdate(BaseModel):
     audio_cleanup_enabled: Optional[bool] = None
     always_keep_languages: Optional[list[str]] = None
     ignore_unknown_tracks: Optional[bool] = None
+    keep_native_language: Optional[bool] = None
     target_codec: Optional[str] = None
     target_resolution: Optional[str] = None
     source_codecs: Optional[list[str]] = None
@@ -184,3 +185,19 @@ class SettingsUpdate(BaseModel):
     notify_job_failed: Optional[bool] = None
     notify_disk_low: Optional[bool] = None
     disk_space_threshold_gb: Optional[Any] = None
+    # NZBGet integration
+    nzbget_enabled: Optional[bool] = None
+    nzbget_tags: Optional[list[str]] = None
+    nzbget_categories: Optional[list[str]] = None
+    nzbget_path_mappings: Optional[list[dict]] = None  # [{"from": "...", "to": "..."}]
+    nzbget_priority: Optional[str] = None  # "Normal", "High", "Highest"
+    nzbget_wait_for_completion: Optional[bool] = None
+    nzbget_check_sonarr_tags: Optional[bool] = None
+    nzbget_check_radarr_tags: Optional[bool] = None
+    # Authentication
+    auth_enabled: Optional[bool] = None
+    auth_username: Optional[str] = None
+    auth_password: Optional[str] = None  # Plain text, gets hashed in the PUT handler
+    # Post-conversion script
+    post_conversion_script: Optional[str] = None
+    post_conversion_script_timeout: Optional[int] = None

@@ -10,19 +10,23 @@ interface FileDetailProps {
 }
 
 export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: FileDetailProps) {
-  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>(file.audio_tracks?.length ? file.audio_tracks : []);
-  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>(file.subtitle_tracks?.length ? file.subtitle_tracks : []);
+  const [fetchedAudio, setFetchedAudio] = useState<AudioTrack[]>([]);
+  const [fetchedSubs, setFetchedSubs] = useState<SubtitleTrack[]>([]);
   const [loading, setLoading] = useState(!file.audio_tracks?.length);
 
   useEffect(() => {
-    if (file.audio_tracks?.length) return; // Already have tracks (e.g. from cache)
+    if (file.audio_tracks?.length) return; // Already have tracks from parent
     setLoading(true);
     getTracksByPath(file.file_path).then((data) => {
-      setAudioTracks(data.audio_tracks || []);
-      setSubtitleTracks(data.subtitle_tracks || []);
+      setFetchedAudio(data.audio_tracks || []);
+      setFetchedSubs(data.subtitle_tracks || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [file.file_path]);
+
+  // Use parent-provided tracks (which update on toggle), fallback to fetched
+  const audioTracks = file.audio_tracks?.length ? file.audio_tracks : fetchedAudio;
+  const subtitleTracks = file.subtitle_tracks?.length ? file.subtitle_tracks : fetchedSubs;
 
   const convSavings = file.needs_conversion ? file.file_size * 0.3 : 0;
 
@@ -82,9 +86,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                     ) : (
                       <input
                         type="checkbox"
-                        checked={track.keep}
+                        checked={!track.keep}
                         readOnly
-                        onClick={() => onToggleSubTrack?.(file.file_path, track.stream_index)}
+                        onClick={(e) => { e.stopPropagation(); onToggleSubTrack?.(file.file_path, track.stream_index); }}
+                        style={{ accentColor: "var(--accent)" }}
                       />
                     )}
                     <span style={{ color: track.keep ? "var(--text-secondary)" : "var(--text-muted)", textDecoration: track.keep ? "none" : "line-through" }}>

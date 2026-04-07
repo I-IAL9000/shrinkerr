@@ -13,7 +13,7 @@ from backend.websocket import ws_manager
 
 router = APIRouter(prefix="/api/scan")
 
-SCAN_BATCH_SIZE = 100
+SCAN_BATCH_SIZE = 25
 
 # Module-level scan state
 _scan_task: asyncio.Task | None = None
@@ -23,9 +23,22 @@ _scan_cancel = asyncio.Event()
 def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = False) -> None:
     """Write a batch of ScannedFile results to the database (synchronous, for use in thread executor)."""
     import sqlite3
+    import time as _time
+    for attempt in range(5):
+        try:
+            return _write_batch_sync_inner(db_path, batch, now, mark_new)
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower() and attempt < 4:
+                print(f"[SCANNER] DB locked on batch write (attempt {attempt+1}/5), retrying in {2*(attempt+1)}s...", flush=True)
+                _time.sleep(2 * (attempt + 1))
+            else:
+                raise
+
+def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool = False) -> None:
+    import sqlite3
     db = sqlite3.connect(db_path)
     db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA busy_timeout=30000")
+    db.execute("PRAGMA busy_timeout=60000")
     try:
         is_new_val = 1 if mark_new else 0
         new_detected_at_val = now if mark_new else None
@@ -49,9 +62,9 @@ def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = Fals
             db.execute(
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
-                    audio_tracks_json, subtitle_tracks_json, native_language, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
+                    audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
                     has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -59,6 +72,7 @@ def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = Fals
                        audio_tracks_json=excluded.audio_tracks_json,
                        subtitle_tracks_json=excluded.subtitle_tracks_json,
                        native_language=excluded.native_language,
+                       language_source=excluded.language_source,
                        scan_timestamp=excluded.scan_timestamp,
                        removed_from_list=0,
                        file_mtime=excluded.file_mtime,
@@ -78,6 +92,7 @@ def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = Fals
                     audio_json,
                     sub_json,
                     scanned.native_language,
+                    getattr(scanned, 'language_source', 'heuristic'),
                     now,
                     is_new_val,
                     scanned.file_mtime,
@@ -139,7 +154,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
     try:
         db = sqlite3.connect(db_path)
         db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA busy_timeout=30000")
+        db.execute("PRAGMA busy_timeout=60000")
         try:
             for path in paths:
                 db.execute(
@@ -202,7 +217,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
-                db.execute("PRAGMA busy_timeout=30000")
+                db.execute("PRAGMA busy_timeout=60000")
                 try:
                     cur = db.execute(
                         """UPDATE scan_results SET converted = 1
@@ -224,7 +239,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
-                db.execute("PRAGMA busy_timeout=30000")
+                db.execute("PRAGMA busy_timeout=60000")
                 try:
                     # Reset all dup counts
                     db.execute("UPDATE scan_results SET dup_count = 0, dup_group = NULL WHERE removed_from_list = 0")
@@ -254,9 +269,12 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             folder_name = folder.split("/")[-1] if "/" in folder else folder
                             is_season = folder_name.lower().startswith("season") or folder_name.lower().startswith("specials")
 
-                            if is_season:
-                                # For season folders, detect episode duplicates (same episode, different quality)
-                                import re as _re_dup
+                            # Also treat as episodic if files have S##E## patterns (episodes without Season subfolder)
+                            import re as _re_dup
+                            has_episodes = any(_re_dup.search(r'[Ss]\d+[Ee]\d+', fp.split("/")[-1]) for fp in files)
+
+                            if is_season or has_episodes:
+                                # For season/episode folders, detect episode duplicates (same episode, different quality)
                                 ep_groups = defaultdict(list)
                                 for fp in files:
                                     fname = fp.split("/")[-1]
@@ -523,8 +541,10 @@ async def get_scan_stats():
         recent_count = 0
         watched_count = 0
         unwatched_count = 0
+        watchlist_count = 0
         estimated_savings = 0
         res_sd_fallback = 0
+        src_remux_count = 0
         src_bluray_count = 0
         src_webdl_count = 0
         src_hdtv_count = 0
@@ -565,15 +585,19 @@ async def get_scan_stats():
 
         watched_sorted: list[str] = []
         unwatched_sorted: list[str] = []
+        watchlist_sorted: list[str] = []
         try:
             async with db.execute("SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type='watch_status'") as cur:
                 for r in await cur.fetchall():
                     if r["metadata_value"] == "watched":
                         watched_sorted.append(r["folder_path"])
+                    elif r["metadata_value"] == "watchlist":
+                        watchlist_sorted.append(r["folder_path"])
                     else:
                         unwatched_sorted.append(r["folder_path"])
             watched_sorted.sort()
             unwatched_sorted.sort()
+            watchlist_sorted.sort()
         except Exception:
             pass
 
@@ -668,10 +692,15 @@ async def get_scan_stats():
                     idx = bisect.bisect_right(unwatched_sorted, fp) - 1
                     if idx >= 0 and fp.startswith(unwatched_sorted[idx]):
                         unwatched_count += 1
+                if watchlist_sorted:
+                    idx = bisect.bisect_right(watchlist_sorted, fp) - 1
+                    if idx >= 0 and fp.startswith(watchlist_sorted[idx]):
+                        watchlist_count += 1
 
                 # Source detection
                 fn = fp.lower()
-                if re_src.search(fn): src_bluray_count += 1
+                if "remux" in fn: src_remux_count += 1
+                elif re_src.search(fn): src_bluray_count += 1
                 elif "web-dl" in fn or "webdl" in fn or "webrip" in fn: src_webdl_count += 1
                 elif "hdtv" in fn: src_hdtv_count += 1
                 elif "dvd" in fn: src_dvd_count += 1
@@ -712,9 +741,11 @@ async def get_scan_stats():
                 "lossy_audio": total - (row["lossless_audio"] or 0),
                 "plex_watched": watched_count,
                 "plex_unwatched": unwatched_count,
+                "plex_watchlist": watchlist_count,
                 "vmaf_excellent": row["vmaf_excellent"] or 0,
                 "vmaf_good": row["vmaf_good"] or 0,
                 "vmaf_poor": row["vmaf_poor"] or 0,
+                "src_remux": src_remux_count,
                 "src_bluray": src_bluray_count,
                 "src_webdl": src_webdl_count,
                 "src_hdtv": src_hdtv_count,
@@ -777,6 +808,7 @@ async def _build_enrichment_context(db) -> dict:
     # Plex watch status
     watched_sorted: list[str] = []
     unwatched_sorted: list[str] = []
+    watchlist_sorted: list[str] = []
     try:
         async with db.execute(
             "SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type='watch_status'"
@@ -784,10 +816,13 @@ async def _build_enrichment_context(db) -> dict:
             for r in await cur.fetchall():
                 if r["metadata_value"] == "watched":
                     watched_sorted.append(r["folder_path"])
+                elif r["metadata_value"] == "watchlist":
+                    watchlist_sorted.append(r["folder_path"])
                 else:
                     unwatched_sorted.append(r["folder_path"])
         watched_sorted.sort()
         unwatched_sorted.sort()
+        watchlist_sorted.sort()
     except Exception:
         pass
 
@@ -801,6 +836,7 @@ async def _build_enrichment_context(db) -> dict:
         "queued_paths": queued_paths,
         "watched_sorted": watched_sorted,
         "unwatched_sorted": unwatched_sorted,
+        "watchlist_sorted": watchlist_sorted,
         "cutoff_24h": cutoff_24h,
         "LOW_BITRATE_THRESHOLD": LOW_BITRATE_THRESHOLD,
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
@@ -850,6 +886,11 @@ def _get_watch_status(fp: str, ctx: dict) -> str | None:
         idx = bisect.bisect_right(us, fp) - 1
         if idx >= 0 and fp.startswith(us[idx]):
             return "unwatched"
+    wl = ctx.get("watchlist_sorted", [])
+    if wl:
+        idx = bisect.bisect_right(wl, fp) - 1
+        if idx >= 0 and fp.startswith(wl[idx]):
+            return "watchlist"
     return None
 
 
@@ -888,12 +929,16 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "duplicate_count": row.get("duplicate_count", 0),
         "duplicate_group": row.get("duplicate_group"),
         "vmaf_score": row.get("vmaf_score"),
+        "audio_tracks": json.loads(row.get("audio_tracks_json") or "[]"),
+        "subtitle_tracks": json.loads(row.get("subtitle_tracks_json") or "[]"),
+        "language_source": row.get("language_source", "heuristic"),
     }
 
 
 # Standard columns used by tree/files/results endpoints
 _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
-    native_language, new_detected_at, converted, file_mtime, duration,
+    native_language, language_source, new_detected_at, converted, file_mtime, duration,
+    audio_tracks_json, subtitle_tracks_json,
     COALESCE(probe_status, 'ok') as probe_status,
     COALESCE(video_height, 0) as video_height,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
@@ -970,9 +1015,14 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
             return (time.time() - mt) < 86400
         return False
     if filter_name == "res_4k":
-        return vh >= 2000
+        if vh >= 1400:
+            return True
+        if vh == 0:
+            fn = f.get("file_path", "").lower()
+            return "2160p" in fn or "4k" in fn or "uhd" in fn
+        return False
     if filter_name == "res_1080p":
-        return 900 <= vh < 2000
+        return 900 <= vh < 1400
     if filter_name == "res_720p":
         return 600 <= vh < 900
     if filter_name == "res_sd":
@@ -981,6 +1031,8 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return f.get("plex_watch_status") == "watched"
     if filter_name == "plex_unwatched":
         return f.get("plex_watch_status") == "unwatched"
+    if filter_name == "plex_watchlist":
+        return f.get("plex_watch_status") == "watchlist"
     # VMAF quality filters
     vs = f.get("vmaf_score")
     if filter_name == "vmaf_excellent":
@@ -991,9 +1043,11 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return vs is not None and vs < 85
     # Source filters (match against file path)
     fp_lower = f.get("file_path", "").lower()
+    if filter_name == "src_remux":
+        return "remux" in fp_lower
     if filter_name == "src_bluray":
         import re as _re
-        return bool(_re.search(r"blu[\-\s]?ray|bdremux|bdrip|bdmv", fp_lower))
+        return bool(_re.search(r"blu[\-\s]?ray|bdrip|bdmv", fp_lower)) and "remux" not in fp_lower
     if filter_name == "src_webdl":
         return "web-dl" in fp_lower or "webdl" in fp_lower or "webrip" in fp_lower
     if filter_name == "src_hdtv":
@@ -1128,22 +1182,30 @@ async def _run_metadata_refresh() -> None:
     """Background task: refresh API metadata for files with heuristic language detection."""
     _metadata_cancel.clear()
 
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
     try:
-        # Find files that have heuristic language source (never had API lookup)
-        async with db.execute(
-            "SELECT id, file_path, native_language FROM scan_results "
-            "WHERE removed_from_list = 0 ORDER BY id ASC"
-        ) as cur:
-            rows = await cur.fetchall()
+        # Clear failed cache entries and load file list (short DB connection)
+        db = await aiosqlite.connect(DB_PATH)
+        db.row_factory = aiosqlite.Row
+        try:
+            await db.execute("PRAGMA busy_timeout=60000")
+            await db.execute("DELETE FROM metadata_cache WHERE original_language IS NULL")
+            await db.commit()
+            print("[METADATA] Cleared stale NULL cache entries for retry", flush=True)
+
+            async with db.execute(
+                "SELECT id, file_path, native_language FROM scan_results "
+                "WHERE language_source = 'heuristic' AND removed_from_list = 0 ORDER BY id ASC"
+            ) as cur:
+                rows = await cur.fetchall()
+        finally:
+            await db.close()
 
         from backend.metadata import lookup_original_language
-        from backend.scanner import classify_audio_tracks, detect_native_language
 
         total = len(rows)
         updated = 0
         skipped = 0
+        pending_updates = []
 
         for idx, row in enumerate(rows):
             if _metadata_cancel.is_set():
@@ -1162,18 +1224,24 @@ async def _run_metadata_refresh() -> None:
 
             if not api_lang:
                 skipped += 1
-                continue
+            else:
+                pending_updates.append((api_lang, row["id"]))
+                updated += 1
 
-            # Update the scan result with API language
-            await db.execute(
-                "UPDATE scan_results SET native_language = ? WHERE id = ?",
-                (api_lang, row["id"]),
-            )
-            updated += 1
-
-            # Commit every 50 updates
-            if updated % 50 == 0:
-                await db.commit()
+            # Batch-write updates every 25 files (short DB connection)
+            if len(pending_updates) >= 25:
+                db2 = await aiosqlite.connect(DB_PATH)
+                try:
+                    await db2.execute("PRAGMA busy_timeout=60000")
+                    for lang, rid in pending_updates:
+                        await db2.execute(
+                            "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
+                            (lang, rid),
+                        )
+                    await db2.commit()
+                finally:
+                    await db2.close()
+                pending_updates.clear()
                 print(f"[METADATA] Progress: {idx+1}/{total} checked, {updated} updated", flush=True)
 
             # Send progress via WebSocket
@@ -1185,10 +1253,23 @@ async def _run_metadata_refresh() -> None:
                     probed=idx + 1,
                 )
 
-            # Yield to event loop periodically
+            # Yield to event loop
             await asyncio.sleep(0.05)
 
-        await db.commit()
+        # Flush remaining updates
+        if pending_updates:
+            db3 = await aiosqlite.connect(DB_PATH)
+            try:
+                await db3.execute("PRAGMA busy_timeout=60000")
+                for lang, rid in pending_updates:
+                    await db3.execute(
+                        "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
+                        (lang, rid),
+                    )
+                await db3.commit()
+            finally:
+                await db3.close()
+
         print(f"[METADATA] Refresh complete: {updated} updated, {skipped} no API data, {total} total", flush=True)
         await ws_manager.send_scan_progress(status="done", current_file="", total=total, probed=total)
 

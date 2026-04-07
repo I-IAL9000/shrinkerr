@@ -2,10 +2,10 @@ import json
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.database import DB_PATH
+from backend.database import DB_PATH, connect_db
 from backend.models import MediaDir, SettingsUpdate
 
 router = APIRouter(prefix="/api/settings")
@@ -22,6 +22,7 @@ _ENCODING_DEFAULTS = {
     "audio_cleanup_enabled": "true",
     "always_keep_languages": '["eng", "isl", "ice"]',
     "ignore_unknown_tracks": "true",
+    "keep_native_language": "true",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
@@ -69,6 +70,10 @@ _ENCODING_DEFAULTS = {
     "max_plex_api_calls": "0",  # 0 = unlimited; max concurrent Plex API calls
     # Authentication
     "api_key": "",  # Empty = no auth required
+    "auth_enabled": "false",
+    "auth_username": "",
+    "auth_password_hash": "",
+    "session_secret": "",
     # File age
     "skip_files_newer_enabled": "false",
     "skip_files_newer_than_minutes": "10",
@@ -100,6 +105,18 @@ _ENCODING_DEFAULTS = {
     "notify_job_failed": "false",
     "notify_disk_low": "false",
     "disk_space_threshold_gb": "50",
+    # NZBGet integration
+    "nzbget_enabled": "false",
+    "nzbget_tags": '["convert"]',
+    "nzbget_categories": '["TV", "Movies"]',
+    "nzbget_path_mappings": '[]',
+    "nzbget_priority": "High",
+    "nzbget_wait_for_completion": "true",
+    "nzbget_check_sonarr_tags": "true",
+    "nzbget_check_radarr_tags": "true",
+    # Post-conversion script
+    "post_conversion_script": "",
+    "post_conversion_script_timeout": "300",
 }
 
 
@@ -183,6 +200,7 @@ async def get_encoding_settings():
         "ffprobe_timeout": int(merged.get("ffprobe_timeout", 30)),
         "audio_cleanup_enabled": merged.get("audio_cleanup_enabled", "true").lower() == "true",
         "ignore_unknown_tracks": merged.get("ignore_unknown_tracks", "true").lower() == "true",
+        "keep_native_language": merged.get("keep_native_language", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
@@ -253,8 +271,11 @@ async def get_encoding_settings():
 
     # Authentication
     api_key_val = merged.get("api_key", "")
-    result["api_key"] = ("****" + api_key_val[-4:]) if api_key_val else ""
+    result["api_key"] = api_key_val
     result["api_key_configured"] = bool(api_key_val)
+    result["auth_enabled"] = merged.get("auth_enabled", "false").lower() == "true"
+    result["auth_username"] = merged.get("auth_username", "")
+    # Never expose password hash or session secret
 
     # File age
     result["skip_files_newer_enabled"] = merged.get("skip_files_newer_enabled", "false").lower() == "true"
@@ -271,6 +292,20 @@ async def get_encoding_settings():
     result["radarr_api_key"] = ("****" + radarr_key[-4:]) if radarr_key else ""
     result["radarr_configured"] = bool(radarr_key and merged.get("radarr_url", ""))
     result["radarr_path_mapping"] = merged.get("radarr_path_mapping", "")
+
+    # NZBGet integration
+    result["nzbget_enabled"] = merged.get("nzbget_enabled", "false").lower() == "true"
+    result["nzbget_tags"] = json.loads(merged.get("nzbget_tags", '["convert"]'))
+    result["nzbget_categories"] = json.loads(merged.get("nzbget_categories", '["TV", "Movies"]'))
+    result["nzbget_path_mappings"] = json.loads(merged.get("nzbget_path_mappings", '[]'))
+    result["nzbget_priority"] = merged.get("nzbget_priority", "High")
+    result["nzbget_wait_for_completion"] = merged.get("nzbget_wait_for_completion", "true").lower() == "true"
+    result["nzbget_check_sonarr_tags"] = merged.get("nzbget_check_sonarr_tags", "true").lower() == "true"
+    result["nzbget_check_radarr_tags"] = merged.get("nzbget_check_radarr_tags", "true").lower() == "true"
+
+    # Post-conversion script
+    result["post_conversion_script"] = merged.get("post_conversion_script", "")
+    result["post_conversion_script_timeout"] = int(merged.get("post_conversion_script_timeout", 300))
 
     # Quiet hours
     result["quiet_hours_enabled"] = merged.get("quiet_hours_enabled", "false").lower() == "true"
@@ -412,6 +447,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["audio_cleanup_enabled"] = "true" if update.audio_cleanup_enabled else "false"
         if update.ignore_unknown_tracks is not None:
             updates["ignore_unknown_tracks"] = "true" if update.ignore_unknown_tracks else "false"
+        if update.keep_native_language is not None:
+            updates["keep_native_language"] = "true" if update.keep_native_language else "false"
         if update.target_codec is not None:
             updates["target_codec"] = update.target_codec
         if update.target_resolution is not None:
@@ -475,6 +512,26 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["vmaf_analysis_enabled"] = "true" if update.vmaf_analysis_enabled else "false"
         if update.api_key is not None and not update.api_key.startswith("****"):
             updates["api_key"] = update.api_key
+        # Auth settings
+        if update.auth_enabled is not None:
+            updates["auth_enabled"] = "true" if update.auth_enabled else "false"
+        if update.auth_username is not None:
+            updates["auth_username"] = update.auth_username
+        if update.auth_password is not None and update.auth_password:
+            import hashlib
+            username = update.auth_username or ""
+            # If username not provided in this update, read current from DB
+            if not username:
+                async with db.execute("SELECT value FROM settings WHERE key = 'auth_username'") as cur:
+                    row = await cur.fetchone()
+                    username = row[0] if row else ""
+            updates["auth_password_hash"] = hashlib.sha256((update.auth_password + username).encode()).hexdigest()
+        # Generate session_secret if not yet set
+        async with db.execute("SELECT value FROM settings WHERE key = 'session_secret'") as cur:
+            row = await cur.fetchone()
+            if not row or not row[0]:
+                import secrets
+                updates["session_secret"] = secrets.token_hex(32)
         # Post-conversion
         if update.trash_original_after_conversion is not None:
             updates["trash_original_after_conversion"] = "true" if update.trash_original_after_conversion else "false"
@@ -496,6 +553,28 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["radarr_api_key"] = update.radarr_api_key
         if update.radarr_path_mapping is not None:
             updates["radarr_path_mapping"] = update.radarr_path_mapping
+        # NZBGet integration
+        if update.nzbget_enabled is not None:
+            updates["nzbget_enabled"] = "true" if update.nzbget_enabled else "false"
+        if update.nzbget_tags is not None:
+            updates["nzbget_tags"] = json.dumps(update.nzbget_tags)
+        if update.nzbget_categories is not None:
+            updates["nzbget_categories"] = json.dumps(update.nzbget_categories)
+        if update.nzbget_path_mappings is not None:
+            updates["nzbget_path_mappings"] = json.dumps(update.nzbget_path_mappings)
+        if update.nzbget_priority is not None:
+            updates["nzbget_priority"] = update.nzbget_priority
+        if update.nzbget_wait_for_completion is not None:
+            updates["nzbget_wait_for_completion"] = "true" if update.nzbget_wait_for_completion else "false"
+        if update.nzbget_check_sonarr_tags is not None:
+            updates["nzbget_check_sonarr_tags"] = "true" if update.nzbget_check_sonarr_tags else "false"
+        if update.nzbget_check_radarr_tags is not None:
+            updates["nzbget_check_radarr_tags"] = "true" if update.nzbget_check_radarr_tags else "false"
+        # Post-conversion script
+        if update.post_conversion_script is not None:
+            updates["post_conversion_script"] = update.post_conversion_script
+        if update.post_conversion_script_timeout is not None:
+            updates["post_conversion_script_timeout"] = str(update.post_conversion_script_timeout)
         # Quiet hours
         for key in ["quiet_hours_start", "quiet_hours_end", "quiet_hours_parallel"]:
             val = getattr(update, key, None)
@@ -529,6 +608,12 @@ async def update_encoding_settings(update: SettingsUpdate):
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache
         invalidate_sub_settings_cache()
+
+    # Invalidate auth cache if auth-related keys changed
+    auth_keys = {"auth_enabled", "auth_username", "auth_password_hash", "api_key", "session_secret"}
+    if auth_keys & set(updates.keys()):
+        from backend.main import _auth_cache
+        _auth_cache["checked_at"] = 0
 
     return {"status": "updated", "keys": list(updates.keys())}
 
@@ -831,3 +916,66 @@ async def delete_backups(req: DeleteBackupsRequest):
         pass  # Handled by the OS when empty
 
     return {"deleted": deleted, "freed": freed}
+
+
+@router.get("/nzbget-config")
+async def get_nzbget_config(request: Request):
+    """Return full NZBGet extension configuration (for runtime script)."""
+    db = await connect_db()
+    try:
+        settings = {}
+        async with db.execute("SELECT key, value FROM settings") as cur:
+            for row in await cur.fetchall():
+                settings[row["key"]] = row["value"]
+    finally:
+        await db.close()
+
+    return {
+        "squeezarr_url": str(request.base_url).rstrip("/"),
+        "squeezarr_api_key": settings.get("api_key", ""),
+        "sonarr_url": settings.get("sonarr_url", ""),
+        "sonarr_api_key": settings.get("sonarr_api_key", ""),
+        "radarr_url": settings.get("radarr_url", ""),
+        "radarr_api_key": settings.get("radarr_api_key", ""),
+        "tags": json.loads(settings.get("nzbget_tags", '["convert"]')),
+        "categories": json.loads(settings.get("nzbget_categories", '["TV", "Movies"]')),
+        "path_mappings": json.loads(settings.get("nzbget_path_mappings", '[]')),
+        "priority": {"Normal": 0, "High": 1, "Highest": 2}.get(settings.get("nzbget_priority", "High"), 1),
+        "wait_for_completion": settings.get("nzbget_wait_for_completion", "true").lower() == "true",
+        "check_sonarr_tags": settings.get("nzbget_check_sonarr_tags", "true").lower() == "true",
+        "check_radarr_tags": settings.get("nzbget_check_radarr_tags", "true").lower() == "true",
+    }
+
+
+@router.get("/nzbget-script")
+async def download_nzbget_script(request: Request):
+    """Generate and download the NZBGet post-processing script with baked-in Squeezarr connection."""
+    from starlette.responses import Response
+
+    db = await connect_db()
+    try:
+        settings = {}
+        async with db.execute("SELECT key, value FROM settings WHERE key IN ('api_key')") as cur:
+            for row in await cur.fetchall():
+                settings[row["key"]] = row["value"]
+    finally:
+        await db.close()
+
+    squeezarr_url = str(request.base_url).rstrip("/")
+    api_key = settings.get("api_key", "")
+
+    # Read the template script
+    import os
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "nzbget-extension", "Squeezarr", "main.py")
+    with open(script_path, "r") as f:
+        script_content = f.read()
+
+    # Replace placeholder values
+    script_content = script_content.replace("__SQUEEZARR_URL__", squeezarr_url)
+    script_content = script_content.replace("__SQUEEZARR_API_KEY__", api_key)
+
+    return Response(
+        content=script_content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="Squeezarr.py"'},
+    )

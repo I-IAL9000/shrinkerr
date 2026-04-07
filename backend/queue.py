@@ -10,6 +10,67 @@ import aiosqlite
 logger = logging.getLogger("squeezarr.queue")
 
 
+async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
+    """Run user-configured post-conversion script with job details as env vars."""
+    try:
+        import sqlite3
+        from backend.config import settings as app_settings
+        db = sqlite3.connect(app_settings.db_path)
+        try:
+            cur = db.execute("SELECT value FROM settings WHERE key = 'post_conversion_script'")
+            row = cur.fetchone()
+            script = row[0] if row else ""
+            cur = db.execute("SELECT value FROM settings WHERE key = 'post_conversion_script_timeout'")
+            row = cur.fetchone()
+            timeout = int(row[0]) if row else 300
+        finally:
+            db.close()
+    except Exception:
+        return
+
+    if not script or not script.strip():
+        return
+
+    import os
+    env = {**os.environ}
+    env["SQUEEZARR_EVENT"] = "job_completed"
+    env["SQUEEZARR_JOB_ID"] = str(job_id)
+    env["SQUEEZARR_FILE_PATH"] = str(file_path)
+    env["SQUEEZARR_ORIGINAL_PATH"] = str(original_path or file_path)
+    env["SQUEEZARR_JOB_TYPE"] = str(job_data.get("job_type", ""))
+    env["SQUEEZARR_SPACE_SAVED"] = str(result.get("space_saved", 0))
+    env["SQUEEZARR_ORIGINAL_SIZE"] = str(job_data.get("original_size", 0))
+    env["SQUEEZARR_ENCODER"] = str(job_data.get("encoder", ""))
+    env["SQUEEZARR_PRESET"] = str(job_data.get("nvenc_preset", ""))
+    env["SQUEEZARR_CQ"] = str(job_data.get("nvenc_cq", ""))
+    env["SQUEEZARR_FPS"] = str(round(job_data.get("fps", 0) or 0, 1))
+    env["SQUEEZARR_VMAF_SCORE"] = str(result.get("vmaf_score", ""))
+    env["SQUEEZARR_STATUS"] = "completed" if result.get("success") else "failed"
+    env["SQUEEZARR_ERROR"] = str(result.get("error", ""))
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            script, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        rc = proc.returncode
+        if rc != 0:
+            print(f"[WORKER] Post-conversion script exited with code {rc}: {stderr.decode()[:200]}", flush=True)
+        else:
+            print(f"[WORKER] Post-conversion script completed successfully", flush=True)
+    except asyncio.TimeoutError:
+        print(f"[WORKER] Post-conversion script timed out after {timeout}s", flush=True)
+        try:
+            proc.kill()
+            await proc.wait()
+        except Exception:
+            pass
+    except FileNotFoundError:
+        print(f"[WORKER] Post-conversion script not found: {script}", flush=True)
+    except Exception as exc:
+        print(f"[WORKER] Post-conversion script error: {exc}", flush=True)
+
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -40,6 +101,7 @@ class JobQueue:
         libx265_crf: Optional[int] = None,
         target_resolution: Optional[str] = None,
         priority: int = 0,
+        insert_next: bool = False,
     ) -> int:
         db = await self._connect()
         try:
@@ -52,10 +114,19 @@ class JobQueue:
             if existing:
                 return existing[0]
 
-            # Get current max queue_order
-            async with db.execute("SELECT COALESCE(MAX(queue_order), 0) FROM jobs") as cur:
-                row = await cur.fetchone()
-                next_order = (row[0] or 0) + 1
+            if insert_next:
+                # Insert at the front of the pending queue (right after running jobs)
+                async with db.execute(
+                    "SELECT COALESCE(MIN(queue_order), 1) FROM jobs WHERE status = 'pending'"
+                ) as cur:
+                    row = await cur.fetchone()
+                    min_pending = (row[0] or 1)
+                next_order = min_pending - 1
+            else:
+                # Get current max queue_order
+                async with db.execute("SELECT COALESCE(MAX(queue_order), 0) FROM jobs") as cur:
+                    row = await cur.fetchone()
+                    next_order = (row[0] or 0) + 1
 
             audio_json = json.dumps(audio_tracks_to_remove or [])
             sub_json = json.dumps(subtitle_tracks_to_remove or [])
@@ -149,27 +220,35 @@ class JobQueue:
         status: str,
         error_log: Optional[str] = None,
     ) -> None:
-        db = await self._connect()
-        try:
-            now = _utcnow()
-            if status == "running":
-                await db.execute(
-                    "UPDATE jobs SET status = ?, started_at = ?, error_log = ? WHERE id = ?",
-                    (status, now, error_log, job_id),
-                )
-            elif status in ("completed", "failed"):
-                await db.execute(
-                    "UPDATE jobs SET status = ?, completed_at = ?, error_log = ? WHERE id = ?",
-                    (status, now, error_log, job_id),
-                )
-            else:
-                await db.execute(
-                    "UPDATE jobs SET status = ?, error_log = ? WHERE id = ?",
-                    (status, error_log, job_id),
-                )
-            await db.commit()
-        finally:
-            await db.close()
+        for attempt in range(5):
+            db = await self._connect()
+            try:
+                now = _utcnow()
+                if status == "running":
+                    await db.execute(
+                        "UPDATE jobs SET status = ?, started_at = ?, error_log = ? WHERE id = ?",
+                        (status, now, error_log, job_id),
+                    )
+                elif status in ("completed", "failed"):
+                    await db.execute(
+                        "UPDATE jobs SET status = ?, completed_at = ?, error_log = ? WHERE id = ?",
+                        (status, now, error_log, job_id),
+                    )
+                else:
+                    await db.execute(
+                        "UPDATE jobs SET status = ?, error_log = ? WHERE id = ?",
+                        (status, error_log, job_id),
+                    )
+                await db.commit()
+                return
+            except Exception as exc:
+                if "locked" in str(exc).lower() and attempt < 4:
+                    print(f"[QUEUE] DB locked on update_status (attempt {attempt+1}/5), retrying...", flush=True)
+                    await asyncio.sleep(2 * (attempt + 1))
+                    continue
+                raise
+            finally:
+                await db.close()
 
     async def update_progress(
         self,
@@ -985,20 +1064,27 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Plex scan/trash cleanup failed (non-fatal): {exc}", flush=True)
 
-        # Trigger Sonarr/Radarr rescan
-        try:
-            from backend.arr import trigger_arr_rescan
-            arr_result = await trigger_arr_rescan(current_file_path)
-            if arr_result.get("sonarr"):
-                print(f"[WORKER] Sonarr rescan triggered for {file_name}", flush=True)
-            elif arr_result.get("radarr"):
-                print(f"[WORKER] Radarr rescan triggered for {file_name}", flush=True)
-            elif any(arr_result.values()):
-                pass  # Already logged
-            else:
-                print(f"[WORKER] No Sonarr/Radarr match for {file_name}", flush=True)
-        except Exception as exc:
-            print(f"[WORKER] Sonarr/Radarr rescan failed (non-fatal): {exc}", flush=True)
+        # Trigger Sonarr/Radarr rescan (skip for NZBGet-sourced files —
+        # Sonarr/Radarr will import them automatically after post-processing)
+        from backend.config import settings
+        media_root = getattr(settings, "media_root", "/media")
+        is_media_path = current_file_path.startswith(media_root)
+        if is_media_path:
+            try:
+                from backend.arr import trigger_arr_rescan
+                arr_result = await trigger_arr_rescan(current_file_path)
+                if arr_result.get("sonarr"):
+                    print(f"[WORKER] Sonarr rescan triggered for {file_name}", flush=True)
+                elif arr_result.get("radarr"):
+                    print(f"[WORKER] Radarr rescan triggered for {file_name}", flush=True)
+                elif any(arr_result.values()):
+                    pass  # Already logged
+                else:
+                    print(f"[WORKER] No Sonarr/Radarr match for {file_name}", flush=True)
+            except Exception as exc:
+                print(f"[WORKER] Sonarr/Radarr rescan failed (non-fatal): {exc}", flush=True)
+        else:
+            print(f"[WORKER] Skipping arr rescan for non-library file: {file_name}", flush=True)
 
         # Mark file as ignored if no space was saved (so future scans tag it)
         # Store both original and current path (file may have been renamed x264→x265)
@@ -1051,3 +1137,9 @@ class QueueWorker:
                     {"Total saved": _fmt(stats["total_space_saved"])})
         except Exception:
             pass
+
+        # Run post-conversion script (non-blocking — failure doesn't affect job)
+        try:
+            await _run_post_conversion_script(job_id, current_file_path, file_path, result, dict(job))
+        except Exception as exc:
+            print(f"[WORKER] Post-conversion script wrapper failed: {exc}", flush=True)

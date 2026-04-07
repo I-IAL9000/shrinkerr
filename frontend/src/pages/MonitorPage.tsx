@@ -1,20 +1,54 @@
 import { useState, useEffect } from "react";
 import { getSystemMetrics } from "../api";
 
-function MetricBar({ label, value, max, unit, color }: { label: string; value: number; max: number; unit?: string; color?: string }) {
+function Gauge({ value, max, label, unit, size = 100, color }: { value: number; max: number; label: string; unit?: string; size?: number; color?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  const fillColor = color || (pct > 90 ? "#e94560" : pct > 70 ? "#ffa94d" : "var(--success)");
+  // Arc from 225° to -45° (270° sweep) — ¾ circle gauge
+  const cx = size / 2, cy = size * 0.44, r = size * 0.38;
+  const startAngle = 225, endAngle = -45, sweep = 270;
+  const filledAngle = startAngle - (pct / 100) * sweep;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const arcPoint = (angle: number) => ({
+    x: cx + r * Math.cos(toRad(angle)),
+    y: cy - r * Math.sin(toRad(angle)),
+  });
+  const strokeW = size * 0.08;
+  // Background arc
+  const bgStart = arcPoint(startAngle);
+  const bgEnd = arcPoint(endAngle);
+  const bgPath = `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 1 1 ${bgEnd.x} ${bgEnd.y}`;
+  // Value arc
+  const valEnd = arcPoint(filledAngle);
+  const valSweepAngle = (pct / 100) * sweep;
+  const largeArc = valSweepAngle > 180 ? 1 : 0;
+  const valPath = pct > 0 ? `M ${bgStart.x} ${bgStart.y} A ${r} ${r} 0 ${largeArc} 1 ${valEnd.x} ${valEnd.y}` : "";
+  // Needle
+  const needleAngle = startAngle - (pct / 100) * sweep;
+  const needleLen = r * 0.75;
+  const needleTip = { x: cx + needleLen * Math.cos(toRad(needleAngle)), y: cy - needleLen * Math.sin(toRad(needleAngle)) };
+
+  // Calculate SVG height to include the full arc endpoints + strokeWidth + label below
+  const svgH = size * 0.78;
+
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-        <span style={{ color: "var(--text-muted)" }}>{label}</span>
-        <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>{value}{unit || ""} / {max}{unit || ""}</span>
-      </div>
-      <div style={{ height: 6, background: "var(--bg-primary)", borderRadius: 3, overflow: "hidden" }}>
-        <div style={{
-          height: "100%", width: `${pct}%`, borderRadius: 3, transition: "width 0.5s",
-          background: pct > 90 ? "#e94560" : pct > 70 ? "#ffa94d" : color || "var(--accent)",
-        }} />
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+      <svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
+        {/* Background track */}
+        <path d={bgPath} fill="none" stroke="var(--bg-primary)" strokeWidth={strokeW} strokeLinecap="round" />
+        {/* Filled arc */}
+        {pct > 0 && <path d={valPath} fill="none" stroke={fillColor} strokeWidth={strokeW} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s, stroke 0.3s" }} />}
+        {/* Needle */}
+        <line x1={cx} y1={cy} x2={needleTip.x} y2={needleTip.y}
+          stroke="#2d2355" strokeWidth={1.5} strokeLinecap="round"
+          style={{ transition: "x2 0.5s, y2 0.5s" }} />
+        <circle cx={cx} cy={cy} r={size * 0.03} fill="#2d2355" />
+        {/* Center value */}
+        <text x={cx} y={cy - size * 0.06} textAnchor="middle" fill={fillColor} fontSize={size * 0.18} fontWeight="bold">{Math.round(pct)}%</text>
+        {/* Label */}
+        <text x={cx} y={cy + size * 0.15} textAnchor="middle" fill="var(--text-muted)" fontSize={size * 0.09}>{label}</text>
+      </svg>
+      <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>{value}{unit || ""} / {max}{unit || ""}</div>
     </div>
   );
 }
@@ -67,14 +101,14 @@ export default function MonitorPage() {
     );
   }
 
-  const { gpu, cpu, memory, disk_io, network, plex, squeezarr } = metrics;
+  const { gpu, cpu, memory, disk_io, plex, squeezarr } = metrics;
 
   return (
     <div>
       <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>System Monitor</h2>
 
       {/* Top row: key numbers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 12 }}>
         {gpu && (
           <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
             <div style={{ fontSize: 24, fontWeight: "bold", color: gpu.gpu_util > 80 ? "#e94560" : gpu.gpu_util > 50 ? "#ffa94d" : "var(--success)" }}>{gpu.gpu_util}%</div>
@@ -106,26 +140,30 @@ export default function MonitorPage() {
       </div>
 
       {/* Detail cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
         {/* GPU */}
         {gpu && (
           <MetricCard title={`GPU — ${gpu.name}`}>
-            <MetricBar label="GPU Utilization" value={gpu.gpu_util} max={100} unit="%" color="var(--accent)" />
-            {gpu.encoder_util != null && <MetricBar label="NVENC (Encoder)" value={gpu.encoder_util} max={100} unit="%" color="#74c0fc" />}
-            {gpu.decoder_util != null && <MetricBar label="NVDEC (Decoder)" value={gpu.decoder_util} max={100} unit="%" color="#69db7c" />}
-            <MetricBar label="VRAM" value={Math.round(gpu.memory_used_mb)} max={Math.round(gpu.memory_total_mb)} unit=" MB" />
-            <MetricBar label="Power" value={Math.round(gpu.power_draw_w)} max={Math.round(gpu.power_limit_w)} unit="W" />
-            <StatRow label="Temperature" value={`${gpu.temperature_c}°C`} color={gpu.temperature_c > 85 ? "#e94560" : gpu.temperature_c > 70 ? "#ffa94d" : "var(--success)"} />
+            <div style={{ display: "flex", justifyContent: "space-evenly", margin: "8px 0 12px" }}>
+              <Gauge value={gpu.gpu_util} max={100} label="Utilization" unit="%" size={110} color="var(--accent)" />
+              <Gauge value={Math.round(gpu.memory_used_mb)} max={Math.round(gpu.memory_total_mb)} label="VRAM" unit=" MB" size={110} color="#74c0fc" />
+              <Gauge value={Math.round(gpu.power_draw_w)} max={Math.round(gpu.power_limit_w)} label="Power" unit="W" size={110} color="#ffa94d" />
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <StatRow label="Temperature" value={`${gpu.temperature_c}°C`} color={gpu.temperature_c > 85 ? "#e94560" : gpu.temperature_c > 70 ? "#ffa94d" : "var(--success)"} />
+              {gpu.encoder_util != null && <StatRow label="NVENC (Encoder)" value={`${gpu.encoder_util}%`} color="#74c0fc" />}
+              {gpu.decoder_util != null && <StatRow label="NVDEC (Decoder)" value={`${gpu.decoder_util}%`} color="#69db7c" />}
+            </div>
           </MetricCard>
         )}
 
         {/* CPU & Memory */}
         <MetricCard title={`CPU — ${cpu.cpu_count} cores`}>
-          <MetricBar label="CPU Usage" value={cpu.cpu_percent} max={100} unit="%" />
-          <MetricBar label="RAM" value={memory.ram_used_gb} max={memory.ram_total_gb} unit=" GB" />
-          {memory.swap_percent > 0 && (
-            <MetricBar label="Swap" value={memory.swap_used_gb} max={memory.ram_total_gb} unit=" GB" color="#e94560" />
-          )}
+          <div style={{ display: "flex", justifyContent: "space-evenly", margin: "8px 0 12px" }}>
+            <Gauge value={cpu.cpu_percent} max={100} label="CPU" unit="%" size={110} />
+            <Gauge value={memory.ram_used_gb} max={memory.ram_total_gb} label="RAM" unit=" GB" size={110} color="#74c0fc" />
+            <Gauge value={memory.swap_used_gb || 0} max={memory.ram_total_gb} label="Swap" unit=" GB" size={110} color={memory.swap_percent > 50 ? "#e94560" : "#ffa94d"} />
+          </div>
           <div style={{ marginTop: 8 }}>
             <StatRow label="Load Average" value={cpu.load_avg.map((l: number) => l.toFixed(2)).join(" / ")} />
             {cpu.cpu_freq_mhz && <StatRow label="Frequency" value={`${cpu.cpu_freq_mhz} MHz`} />}
@@ -142,20 +180,6 @@ export default function MonitorPage() {
             <div style={{ flex: 1, textAlign: "center" }}>
               <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{disk_io.write_mbps}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Write MB/s</div>
-            </div>
-          </div>
-        </MetricCard>
-
-        {/* Network */}
-        <MetricCard title="Network">
-          <div style={{ display: "flex", gap: 24 }}>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "#74c0fc" }}>{network.download_mbps}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Download MB/s</div>
-            </div>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "#ffa94d" }}>{network.upload_mbps}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Upload MB/s</div>
             </div>
           </div>
         </MetricCard>
@@ -190,23 +214,45 @@ export default function MonitorPage() {
           )}
         </MetricCard>
 
-        {/* Squeezarr Workload */}
-        <MetricCard title="Squeezarr Workload">
-          <div style={{ display: "flex", gap: 24 }}>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{squeezarr?.running_jobs || 0}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Running</div>
+        {/* Squeezarr Workload — spans full width */}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <MetricCard title="Squeezarr Workload">
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{squeezarr?.running_jobs || 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Running</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{squeezarr?.pending_jobs || 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Pending</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{squeezarr?.completed_jobs || 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Completed</div>
+              </div>
+              {(squeezarr?.failed_jobs || 0) > 0 && (
+                <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{squeezarr.failed_jobs}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Failed</div>
+                </div>
+              )}
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{squeezarr?.avg_fps || 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Live FPS</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "#74c0fc" }}>{squeezarr?.lifetime_avg_fps || 0}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Avg FPS</div>
+              </div>
+              <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>
+                  {squeezarr?.total_saved ? `${(squeezarr.total_saved / (1024**4)).toFixed(1)} TB` : "0"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Total Saved</div>
+              </div>
             </div>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{squeezarr?.pending_jobs || 0}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Pending</div>
-            </div>
-            <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{squeezarr?.avg_fps || 0}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Avg FPS</div>
-            </div>
-          </div>
-        </MetricCard>
+          </MetricCard>
+        </div>
       </div>
 
       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 12, textAlign: "center", opacity: 0.5 }}>

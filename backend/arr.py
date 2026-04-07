@@ -36,6 +36,9 @@ async def _get_arr_settings() -> dict:
 
 def _translate_path(file_path: str, path_mapping: str) -> str:
     """Translate container path to Sonarr/Radarr-visible path."""
+    # Normalize double slashes (e.g. /media//Movies -> /media/Movies)
+    import posixpath
+    file_path = posixpath.normpath(file_path)
     if not path_mapping:
         return file_path
     for mapping in path_mapping.split(";"):
@@ -142,6 +145,7 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
         return False
 
     arr_path = _translate_path(file_path, path_mapping)
+    print(f"[RADARR] Translated path: {file_path} -> {arr_path}", flush=True)
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -173,6 +177,7 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
                 check_path = str(Path(check_path).parent)
 
             if movie_id is None:
+                print(f"[RADARR] No match for folder: {str(Path(arr_path).parent)}", flush=True)
                 return False
 
             # Dedup check
@@ -196,17 +201,37 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
 
 
 def _detect_media_type(file_path: str) -> str:
-    """Detect if a file is a TV show or movie based on folder naming conventions.
+    """Detect if a file is a TV show or movie based on path and naming conventions.
 
-    TV shows have [tvdb-XXXXX] in the path.
-    Movies have [ttXXXXXXX] (IMDB) in the path.
     Returns 'tv', 'movie', or 'unknown'.
     """
     import re
+    p = file_path.lower()
+
+    # Explicit metadata tags in Sonarr/Radarr folder names
     if re.search(r'\[tvdb-\d+\]', file_path):
         return "tv"
     if re.search(r'\[tt\d+\]', file_path):
         return "movie"
+
+    # Season/episode patterns (S01E01, S01, 1x01) — strong TV indicator
+    if re.search(r'[/\\].*[Ss]\d{1,2}[Ee]\d{1,2}', file_path):
+        return "tv"
+    if re.search(r'[/\\].*\b\d{1,2}x\d{2}\b', file_path):
+        return "tv"
+
+    # Common TV path segments
+    if re.search(r'[/\\](tv|tv\d|series|shows?)[/\\]', p):
+        return "tv"
+
+    # Season folder in path (e.g. /Season 01/ or /Season 1/)
+    if re.search(r'[/\\]season\s*\d+[/\\]', p):
+        return "tv"
+
+    # Common movie path segments
+    if re.search(r'[/\\](movies?|films?)[/\\]', p):
+        return "movie"
+
     return "unknown"
 
 
@@ -226,10 +251,12 @@ async def trigger_arr_rescan(file_path: str) -> dict:
         radarr = await trigger_radarr_rescan(file_path)
         return {"sonarr": False, "radarr": radarr}
     else:
-        # Unknown — try Sonarr first, fall back to Radarr
+        # Unknown — try both, Sonarr first then Radarr
         sonarr = await trigger_sonarr_rescan(file_path)
-        radarr = False if sonarr else await trigger_radarr_rescan(file_path)
-        return {"sonarr": sonarr, "radarr": radarr}
+        if sonarr:
+            return {"sonarr": True, "radarr": False}
+        radarr = await trigger_radarr_rescan(file_path)
+        return {"sonarr": False, "radarr": radarr}
 
 
 async def test_sonarr(url: str, api_key: str) -> dict:

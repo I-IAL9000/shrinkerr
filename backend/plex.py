@@ -425,17 +425,27 @@ async def get_watch_status_folders() -> dict[str, list[str]]:
                 except Exception:
                     pass
 
-            # Fetch watched items (viewCount >= 1)
+            # Fetch watched items
             try:
                 params3: dict = {"includeLocations": "1"}
                 if plex_type:
                     params3["type"] = plex_type
-
-                resp = await client.get(
-                    f"{url.rstrip('/')}/library/sections/{lib['id']}/recentlyViewed",
-                    params=params3,
-                    headers=headers,
-                )
+                if lib["type"] == "show":
+                    # For TV: get fully watched shows (all episodes watched)
+                    params3["unwatchedLeaves"] = "0"
+                    resp = await client.get(
+                        f"{url.rstrip('/')}/library/sections/{lib['id']}/all",
+                        params=params3,
+                        headers=headers,
+                    )
+                else:
+                    # For movies: viewCount > 0 means watched
+                    params3["viewCount>>"] = "0"
+                    resp = await client.get(
+                        f"{url.rstrip('/')}/library/sections/{lib['id']}/all",
+                        params=params3,
+                        headers=headers,
+                    )
                 resp.raise_for_status()
                 root = ET.fromstring(resp.text)
                 watched_folders.extend(await _extract_folder_paths(client, url, token, path_mapping, lib, root, "watched"))
@@ -522,129 +532,114 @@ async def sync_plex_metadata_cache() -> dict:
     """Sync Plex metadata (labels, collections, libraries) into plex_metadata_cache table.
 
     Only syncs values referenced by enabled encoding rules.
+    Collects all Plex data first, then writes to DB in short transactions to avoid locking.
     """
     from datetime import datetime, timezone
     from backend.database import connect_db
 
+    # Step 1: Read rules from DB (short connection)
     db = await connect_db()
     try:
-        # Load enabled rules and extract all Plex match conditions to sync
         import json as _json
         async with db.execute(
             "SELECT match_type, match_value, match_conditions FROM encoding_rules WHERE enabled = 1"
         ) as cur:
             rules = await cur.fetchall()
+    finally:
+        await db.close()
 
-        needed_labels: set[str] = set()
-        needed_collections: set[str] = set()
-        needed_libraries: set[str] = set()
-        needed_genres: set[str] = set()
-        for r in rules:
-            conditions = []
-            if r["match_conditions"]:
-                try:
-                    conditions = _json.loads(r["match_conditions"])
-                except (ValueError, _json.JSONDecodeError):
-                    pass
-            if not conditions and r["match_type"] and r["match_value"]:
-                conditions = [{"type": r["match_type"], "value": r["match_value"]}]
-            for cond in conditions:
-                ct = cond.get("type", "")
-                cv = cond.get("value", "")
-                if ct == "label":
-                    needed_labels.add(cv)
-                elif ct == "collection":
-                    needed_collections.add(cv)
-                elif ct == "library":
-                    needed_libraries.add(cv)
-                elif ct == "genre":
-                    needed_genres.add(cv)
+    needed_labels: set[str] = set()
+    needed_collections: set[str] = set()
+    needed_libraries: set[str] = set()
+    needed_genres: set[str] = set()
+    for r in rules:
+        conditions = []
+        raw = r["match_conditions"]
+        if raw:
+            try:
+                parsed = _json.loads(raw)
+                if isinstance(parsed, dict) and "conditions" in parsed:
+                    conditions = parsed.get("conditions", [])
+                elif isinstance(parsed, list):
+                    conditions = parsed
+            except (ValueError, _json.JSONDecodeError):
+                pass
+        if not conditions and r["match_type"] and r["match_value"]:
+            conditions = [{"type": r["match_type"], "value": r["match_value"]}]
+        for cond in conditions:
+            ct = cond.get("type", "")
+            cv = cond.get("value", "")
+            if ct == "label":
+                needed_labels.add(cv)
+            elif ct == "collection":
+                needed_collections.add(cv)
+            elif ct == "library":
+                needed_libraries.add(cv)
+            elif ct == "genre":
+                needed_genres.add(cv)
 
-        if not needed_labels and not needed_collections and not needed_libraries and not needed_genres:
-            return {"labels_synced": 0, "collections_synced": 0, "genres_synced": 0, "libraries_synced": 0}
+    # Step 2: Fetch all data from Plex APIs (no DB held)
+    now = datetime.now(timezone.utc).isoformat()
+    cache_rows: list[tuple] = []  # (folder_path, metadata_type, metadata_value, synced_at)
+    labels_count = 0
+    collections_count = 0
+    genres_count = 0
+    libraries_count = 0
 
-        # Clear cache and any stale rule-based ignore entries
+    for label in needed_labels:
+        folders = await get_folders_by_label(label)
+        for folder in folders:
+            cache_rows.append((folder.rstrip("/") + "/", "label", label, now))
+            labels_count += 1
+
+    for coll in needed_collections:
+        folders = await get_folders_by_collection(coll)
+        for folder in folders:
+            cache_rows.append((folder.rstrip("/") + "/", "collection", coll, now))
+            collections_count += 1
+
+    for genre in needed_genres:
+        folders = await get_folders_by_genre(genre)
+        for folder in folders:
+            cache_rows.append((folder.rstrip("/") + "/", "genre", genre, now))
+            genres_count += 1
+
+    url, token, path_mapping = await _get_plex_settings()
+    if url and token and needed_libraries:
+        try:
+            libs = await get_plex_libraries(url, token)
+            for lib in libs:
+                if lib["title"] in needed_libraries:
+                    for lib_path in lib["paths"]:
+                        container_path = _reverse_translate_path(lib_path, path_mapping)
+                        cache_rows.append((container_path.rstrip("/") + "/", "library", lib["title"], now))
+                        libraries_count += 1
+        except Exception as exc:
+            print(f"[PLEX] Failed to sync library paths: {exc}", flush=True)
+
+    # Fetch watch status (can be slow — separate from DB)
+    watch_count = 0
+    try:
+        watch_data = await get_watch_status_folders()
+        for folder in watch_data.get("watched", []):
+            cache_rows.append((folder.rstrip("/") + "/", "watch_status", "watched", now))
+            watch_count += 1
+        for folder in watch_data.get("unwatched", []):
+            cache_rows.append((folder.rstrip("/") + "/", "watch_status", "unwatched", now))
+            watch_count += 1
+    except Exception as exc:
+        print(f"[PLEX SYNC] Watch status sync failed: {exc}", flush=True)
+
+    # Step 3: Write all collected data to DB in one short transaction
+    db = await connect_db()
+    try:
         await db.execute("DELETE FROM plex_metadata_cache")
         await db.execute("DELETE FROM ignored_files WHERE reason LIKE 'encoding_rule:%'")
-        now = datetime.now(timezone.utc).isoformat()
-        labels_count = 0
-        collections_count = 0
-        libraries_count = 0
-
-        # Sync labels
-        for label in needed_labels:
-            folders = await get_folders_by_label(label)
-            for folder in folders:
-                folder_norm = folder.rstrip("/") + "/"
-                await db.execute(
-                    "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'label', ?, ?)",
-                    (folder_norm, label, now),
-                )
-                labels_count += 1
-
-        # Sync collections
-        for coll in needed_collections:
-            folders = await get_folders_by_collection(coll)
-            for folder in folders:
-                folder_norm = folder.rstrip("/") + "/"
-                await db.execute(
-                    "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'collection', ?, ?)",
-                    (folder_norm, coll, now),
-                )
-                collections_count += 1
-
-        # Sync genres
-        genres_count = 0
-        for genre in needed_genres:
-            folders = await get_folders_by_genre(genre)
-            for folder in folders:
-                folder_norm = folder.rstrip("/") + "/"
-                await db.execute(
-                    "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'genre', ?, ?)",
-                    (folder_norm, genre, now),
-                )
-                genres_count += 1
-
-        # Sync libraries
-        url, token, path_mapping = await _get_plex_settings()
-        if url and token and needed_libraries:
-            try:
-                libs = await get_plex_libraries(url, token)
-                for lib in libs:
-                    if lib["title"] in needed_libraries:
-                        for lib_path in lib["paths"]:
-                            container_path = _reverse_translate_path(lib_path, path_mapping)
-                            folder_norm = container_path.rstrip("/") + "/"
-                            await db.execute(
-                                "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'library', ?, ?)",
-                                (folder_norm, lib["title"], now),
-                            )
-                            libraries_count += 1
-            except Exception as exc:
-                print(f"[PLEX] Failed to sync library paths: {exc}", flush=True)
-
-        await db.commit()
-
-        # Sync watch status
-        watch_count = 0
-        try:
-            watch_data = await get_watch_status_folders()
-            for folder in watch_data.get("watched", []):
-                folder_norm = folder.rstrip("/") + "/"
-                await db.execute(
-                    "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'watch_status', 'watched', ?)",
-                    (folder_norm, now),
-                )
-                watch_count += 1
-            for folder in watch_data.get("unwatched", []):
-                folder_norm = folder.rstrip("/") + "/"
-                await db.execute(
-                    "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, 'watch_status', 'unwatched', ?)",
-                    (folder_norm, now),
-                )
-                watch_count += 1
-        except Exception as exc:
-            print(f"[PLEX SYNC] Watch status sync failed: {exc}", flush=True)
+        for row in cache_rows:
+            await db.execute(
+                "INSERT OR IGNORE INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) VALUES (?, ?, ?, ?)",
+                row,
+            )
 
         await db.commit()
         return {"labels_synced": labels_count, "collections_synced": collections_count, "genres_synced": genres_count, "libraries_synced": libraries_count, "watch_synced": watch_count}

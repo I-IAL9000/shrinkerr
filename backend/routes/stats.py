@@ -115,6 +115,24 @@ async def get_stats_summary():
     jobs_with_time = 0
     files_audio_cleaned = 0
 
+    # Load configured media directories for library-level grouping
+    _media_dirs = []
+    try:
+        async with db.execute("SELECT path FROM media_dirs ORDER BY LENGTH(path) DESC") as cur:
+            _media_dirs = [r["path"].rstrip("/") for r in await cur.fetchall()]
+    except Exception:
+        pass
+
+    def _get_library_name(file_path: str) -> str:
+        """Map a file path to its configured media directory label."""
+        for d in _media_dirs:
+            if file_path.startswith(d + "/") or file_path.startswith(d):
+                # Return the last component of the media dir path as the label
+                return d.rstrip("/").split("/")[-1]
+        # Fallback: use 3rd path component (e.g. /media/TV1/... -> TV1)
+        parts = file_path.split("/")
+        return parts[2] if len(parts) >= 3 else "Unknown"
+
     for j in completed:
         saved = max(0, j["space_saved"] or 0)
         total_saved += saved
@@ -124,8 +142,7 @@ async def get_stats_summary():
         if saved > 0:
             files_with_savings += 1
             top_savers.append({"file_name": fname, "space_saved": saved})
-            parts = j["file_path"].split("/")
-            folder = parts[3] if len(parts) >= 4 else parts[-2] if len(parts) >= 2 else "Unknown"
+            folder = _get_library_name(j["file_path"])
             saved_by_folder[folder] += saved
         else:
             files_no_savings += 1
@@ -223,6 +240,24 @@ async def get_stats_summary():
 
     already_converted = sum(1 for j in completed if j["job_type"] in ("convert", "combined"))
 
+    # VMAF quality scores
+    vmaf_stats = {"avg": 0, "count": 0, "excellent": 0, "good": 0, "fair": 0, "poor": 0}
+    try:
+        async with db.execute(
+            "SELECT vmaf_score FROM jobs WHERE status='completed' AND vmaf_score IS NOT NULL AND vmaf_score > 0"
+        ) as cur:
+            vmaf_rows = await cur.fetchall()
+        if vmaf_rows:
+            scores = [r["vmaf_score"] for r in vmaf_rows]
+            vmaf_stats["count"] = len(scores)
+            vmaf_stats["avg"] = round(sum(scores) / len(scores), 1)
+            vmaf_stats["excellent"] = sum(1 for s in scores if s >= 95)
+            vmaf_stats["good"] = sum(1 for s in scores if 90 <= s < 95)
+            vmaf_stats["fair"] = sum(1 for s in scores if 85 <= s < 90)
+            vmaf_stats["poor"] = sum(1 for s in scores if s < 85)
+    except Exception:
+        pass
+
     return {
         # Overview cards
         "total_saved": total_saved,
@@ -276,6 +311,8 @@ async def get_stats_summary():
         "audio_langs": sorted(audio_langs.items(), key=lambda x: x[1], reverse=True)[:10],
         "tracks_marked_removal": tracks_marked_removal,
         "removed_langs": sorted(removed_langs.items(), key=lambda x: x[1], reverse=True)[:10],
+        # VMAF quality
+        "vmaf_stats": vmaf_stats,
     }
 
 
@@ -654,6 +691,32 @@ async def get_system_metrics():
             ) as cur:
                 row = await cur.fetchone()
                 avg_fps = round(row["avg_fps"], 1) if row and row["avg_fps"] else 0
+            # Extended stats
+            async with db.execute(
+                """SELECT
+                    SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed,
+                    COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN space_saved ELSE 0 END), 0) as total_saved,
+                    COALESCE(AVG(CASE WHEN status='completed' AND fps > 0 THEN fps ELSE NULL END), 0) as lifetime_avg_fps
+                FROM jobs"""
+            ) as cur:
+                row = await cur.fetchone()
+                completed = row["completed"] or 0 if row else 0
+                failed = row["failed"] or 0 if row else 0
+                total_saved = row["total_saved"] or 0 if row else 0
+                lifetime_avg_fps = round(row["lifetime_avg_fps"], 1) if row and row["lifetime_avg_fps"] else 0
+            # Today's stats
+            from datetime import date
+            today_str = date.today().isoformat()
+            async with db.execute(
+                """SELECT COUNT(*) as c,
+                    COALESCE(SUM(CASE WHEN space_saved > 0 THEN space_saved ELSE 0 END), 0) as saved
+                FROM jobs WHERE status='completed' AND substr(completed_at,1,10) = ?""",
+                (today_str,),
+            ) as cur:
+                row = await cur.fetchone()
+                today_completed = row["c"] or 0 if row else 0
+                today_saved = row["saved"] or 0 if row else 0
         finally:
             await db.close()
 
@@ -661,8 +724,14 @@ async def get_system_metrics():
             "running_jobs": running,
             "pending_jobs": pending,
             "avg_fps": avg_fps,
+            "completed_jobs": completed,
+            "failed_jobs": failed,
+            "total_saved": total_saved,
+            "lifetime_avg_fps": lifetime_avg_fps,
+            "today_completed": today_completed,
+            "today_saved": today_saved,
         }
     except Exception:
-        metrics["squeezarr"] = {"running_jobs": 0, "pending_jobs": 0, "avg_fps": 0}
+        metrics["squeezarr"] = {"running_jobs": 0, "pending_jobs": 0, "avg_fps": 0, "completed_jobs": 0, "failed_jobs": 0, "total_saved": 0, "lifetime_avg_fps": 0, "today_completed": 0, "today_saved": 0}
 
     return metrics

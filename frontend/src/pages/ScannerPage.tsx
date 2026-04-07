@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk } from "../api";
+import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk } from "../api";
 import StatsCards from "../components/StatsCards";
 import FilterBar, { FILTER_LABELS } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
@@ -175,9 +175,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     return () => clearInterval(poll);
   }, [posterPrefetching]);
 
-  // When filter changes, reload tree with new filter
+  // When filter changes, clear tree and reload with new filter
   useEffect(() => {
     if (!loading) {
+      setFolders([]);
       setUpdating(true);
       loadTree(filter);
     }
@@ -267,6 +268,26 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             updateAudioTracks(f.id, JSON.stringify(newTracks)).catch(() => {});
           }
           return { ...f, audio_tracks: newTracks };
+        });
+        next.set(folder, updated);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSubTrack = (filePath: string, streamIndex: number) => {
+    setLoadedFiles(prev => {
+      const next = new Map(prev);
+      for (const [folder, files] of next) {
+        const updated = files.map(f => {
+          if (f.file_path !== filePath) return f;
+          const newTracks = (f.subtitle_tracks || []).map(t =>
+            t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
+          );
+          if (f.id) {
+            updateSubtitleTracks(f.id, JSON.stringify(newTracks)).catch(() => {});
+          }
+          return { ...f, subtitle_tracks: newTracks };
         });
         next.set(folder, updated);
       }
@@ -727,12 +748,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             ? `${encodingSettings.nvenc_preset?.toUpperCase() || "P6"} / CQ ${encodingSettings.nvenc_cq ?? 20}`
             : undefined
           } />
-          {updating && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, background: "rgba(145,53,255,0.1)", borderRadius: 4, fontSize: 12, color: "var(--text-muted)" }}>
-              <div className="spinner" style={{ width: 14, height: 14 }} />
-              Updating...
-            </div>
-          )}
           {/* Filter toggle + active filter indicator */}
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
             <button
@@ -954,8 +969,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           </div>
             </>
           )}
+
+          {updating && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, background: "rgba(145,53,255,0.1)", borderRadius: 4, fontSize: 12, color: "var(--text-muted)" }}>
+              <div className="spinner" style={{ width: 14, height: 14 }} />
+              Updating...
+            </div>
+          )}
+
           {/* Selection control panel */}
-          <div style={{
+          <div className="queue-control-panel" style={{
             display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
             padding: "8px 12px", marginBottom: 12,
             background: selectedCount > 0 ? "var(--bg-card)" : "var(--bg-secondary)",
@@ -1029,12 +1052,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
               onToggleTrack={handleToggleTrack}
+              onToggleSubTrack={handleToggleSubTrack}
               onRemoveFile={handleRemoveFile}
               onIgnoreFile={handleIgnoreFile}
               onUnignoreFile={handleUnignoreFile}
               onRescanFolder={handleRescanFolder}
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
+              externalFiles={loadedFiles}
               sortBy={sortBy}
               sortDir={sortDir}
             />
@@ -1045,6 +1070,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
               onToggleTrack={handleToggleTrack}
+              onToggleSubTrack={handleToggleSubTrack}
               onRemoveFile={handleRemoveFile}
               onIgnoreFile={handleIgnoreFile}
               onUnignoreFile={handleUnignoreFile}

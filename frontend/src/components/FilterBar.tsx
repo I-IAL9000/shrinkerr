@@ -16,7 +16,6 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "ignored", label: "Ignored" },
   { key: "duplicates", label: "Duplicates" },
   { key: "corrupt", label: "Corrupt" },
-  { key: "recent", label: "Recent (<24h)" },
   { key: "converted", label: "Converted" },
   { key: "queued", label: "Queued" },
   // Video group
@@ -47,6 +46,7 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "type_other", label: "Other" },
   // Source group
   { key: "_source", label: "Source:", group: "divider" },
+  { key: "src_remux", label: "Remux" },
   { key: "src_bluray", label: "Blu-ray" },
   { key: "src_webdl", label: "WEB-DL" },
   { key: "src_hdtv", label: "HDTV" },

@@ -26,7 +26,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export const checkAuth = () =>
   fetch("/api/auth/check", {
     headers: getStoredApiKey() ? { "X-Api-Key": getStoredApiKey() } : {},
-  }).then(r => r.json()) as Promise<{ auth_required: boolean; authenticated: boolean }>;
+  }).then(r => r.json()) as Promise<{ auth_required: boolean; authenticated: boolean; method: string | null }>;
+
+export const login = (username: string, password: string) =>
+  fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  }).then(r => {
+    if (!r.ok) throw new Error("Login failed");
+    return r.json();
+  });
+
+export const logout = () =>
+  fetch("/api/auth/logout", { method: "POST" }).then(r => r.json());
 
 // Scan
 export const startScan = (paths: string[]) =>
@@ -36,6 +49,7 @@ export const refreshMetadata = () => apiFetch("/scan/refresh-metadata", { method
 export const cancelMetadata = () => apiFetch("/scan/cancel-metadata", { method: "POST" });
 export const getScanStatus = () => apiFetch<{ scanning: boolean }>("/scan/status");
 export const getNewFileCount = () => apiFetch<{ count: number }>("/scan/new-count");
+export const getFailedJobCount = () => apiFetch<{ count: number }>("/jobs/failed-count");
 export const clearNewFileCount = () => apiFetch("/scan/clear-new", { method: "POST" });
 export const getScanResults = () => apiFetch<any[]>("/scan/results");
 export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
@@ -200,6 +214,8 @@ export const syncPlexRuleMetadata = () =>
   apiFetch<any>("/rules/sync-plex", { method: "POST" });
 export const getPlexOptions = () =>
   apiFetch<{ labels: string[]; collections: string[]; genres: string[]; libraries: any[] }>("/rules/plex-options");
+export const getConditionOptions = () =>
+  apiFetch<{ sources: string[]; resolutions: string[]; video_codecs: string[]; audio_codecs: string[]; media_types: string[]; release_groups: string[]; arr_tags: { label: string; source: string }[] }>("/rules/condition-options");
 
 // Settings
 export const getMediaDirs = () => apiFetch<{ dirs: any[] }>("/settings/dirs");

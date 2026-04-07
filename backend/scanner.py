@@ -181,10 +181,11 @@ LANGUAGE_EQUIVALENTS = {
     "nob": {"nor", "nob", "nno"},
     "nno": {"nor", "nob", "nno"},
     # Chinese
-    "zho": {"zho", "chi", "cmn", "yue", "wuu"},
-    "chi": {"zho", "chi", "cmn", "yue", "wuu"},
-    "cmn": {"zho", "chi", "cmn"},
-    "yue": {"zho", "chi", "yue"},
+    "zho": {"zho", "chi", "cmn", "yue", "wuu", "cn"},
+    "chi": {"zho", "chi", "cmn", "yue", "wuu", "cn"},
+    "cmn": {"zho", "chi", "cmn", "cn"},
+    "yue": {"zho", "chi", "yue", "cn"},
+    "cn": {"zho", "chi", "cmn", "yue", "wuu", "cn"},
     # Czech
     "ces": {"ces", "cze"},
     "cze": {"ces", "cze"},
@@ -275,7 +276,7 @@ def _is_cleanup_enabled(key: str) -> bool:
 
 
 def classify_audio_tracks(
-    tracks: list[dict], native_language: str
+    tracks: list[dict], native_language: str, duration: float = 0
 ) -> list[AudioTrack]:
     """
     Classify audio tracks for keep/remove.
@@ -303,15 +304,17 @@ def classify_audio_tracks(
 
     always_keep = {lang.lower() for lang in settings.always_keep_languages}
     native = native_language.lower() if native_language else "und"
+    auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
 
     result = []
     for track in tracks:
         lang = (track.get("language") or "und").lower()
         bitrate = track.get("bitrate")
         size_estimate = None
-        if bitrate:
+        if bitrate and duration > 0:
             try:
-                size_estimate = int(bitrate)
+                # bitrate is in bits/second from ffprobe; convert to bytes for the full duration
+                size_estimate = int(int(bitrate) * duration / 8)
             except (ValueError, TypeError):
                 size_estimate = None
 
@@ -320,7 +323,7 @@ def classify_audio_tracks(
         if is_always_keep:
             keep = True
             locked = True
-        elif languages_match(lang, native):
+        elif auto_keep_native and languages_match(lang, native):
             keep = True
             locked = False
         elif lang == "und":
@@ -431,6 +434,7 @@ def classify_subtitle_tracks(
 
     sub_keep_langs, sub_keep_unknown = _load_sub_settings()
     native = native_language.lower() if native_language else "und"
+    auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
 
     result = []
     for track in tracks:
@@ -440,14 +444,14 @@ def classify_subtitle_tracks(
         # Forced subs only kept if they match native language or user's keep languages
         if forced:
             is_relevant = (lang == "und"
-                or languages_match(lang, native)
+                or (auto_keep_native and languages_match(lang, native))
                 or any(languages_match(lang, k) for k in sub_keep_langs))
             keep = is_relevant
             locked = is_relevant
         elif any(languages_match(lang, k) for k in sub_keep_langs):
             keep = True
             locked = True
-        elif languages_match(lang, native):
+        elif auto_keep_native and languages_match(lang, native):
             keep = True
             locked = False
         elif lang == "und":
@@ -669,15 +673,15 @@ async def scan_directory(
                     timeout=10,
                 )
             except asyncio.TimeoutError:
-                pass
-            except Exception:
-                pass
+                print(f"[SCANNER] Metadata lookup timed out for {file_path.name}", flush=True)
+            except Exception as exc:
+                print(f"[SCANNER] Metadata lookup failed for {file_path.name}: {exc}", flush=True)
 
         native_lang = api_lang if api_lang else detect_native_language(raw_tracks)
         language_source = "api" if api_lang else "heuristic"
 
         needs_conversion = codec_matches_source(video_codec, source_codecs)
-        audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
+        audio_tracks = classify_audio_tracks(raw_tracks, native_lang, duration)
         raw_subs = probe.get("subtitle_tracks", [])
         subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
 

@@ -38,7 +38,7 @@ def parse_media_id(file_path: str) -> tuple[str, str] | None:
 # ---------------------------------------------------------------------------
 
 ISO_639_1_TO_2B: dict[str, str] = {
-    "en": "eng", "ja": "jpn", "ko": "kor", "is": "isl", "zh": "chi",
+    "en": "eng", "ja": "jpn", "ko": "kor", "is": "isl", "zh": "chi", "cn": "chi",
     "de": "ger", "fr": "fre", "es": "spa", "it": "ita", "pt": "por",
     "ru": "rus", "ar": "ara", "hi": "hin", "th": "tha", "sv": "swe",
     "da": "dan", "no": "nor", "fi": "fin", "nl": "dut", "pl": "pol",
@@ -164,6 +164,14 @@ async def lookup_original_language(file_path: str) -> str | None:
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
+        # Ensure metadata_cache table exists
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS metadata_cache ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "id_type TEXT NOT NULL, media_id TEXT NOT NULL, "
+            "original_language TEXT, raw_api_language TEXT, "
+            "looked_up_at TEXT NOT NULL, UNIQUE(id_type, media_id))"
+        )
         # Fetch API keys
         tmdb_key: Optional[str] = None
         tvdb_key: Optional[str] = None
@@ -192,23 +200,31 @@ async def lookup_original_language(file_path: str) -> str | None:
             if age < 86400:
                 return None
 
-        # Determine which API to use
-        api_key: Optional[str] = None
-        if id_type == "imdb" and tmdb_key:
-            api_key = tmdb_key
-        elif id_type == "tvdb" and tvdb_key:
-            api_key = tvdb_key
-
-        if not api_key:
+        # Use TMDB for both IMDb and TVDB lookups (TMDB supports both external ID types)
+        if not tmdb_key:
+            print(f"[METADATA] No TMDB API key for {id_type} lookup", flush=True)
             return None
 
-        # Do the lookup
+        # Do the lookup via TMDB
         raw_lang: Optional[str] = None
         async with httpx.AsyncClient(timeout=10) as client:
             if id_type == "imdb":
-                raw_lang = await _lookup_tmdb(media_id, api_key, client)
+                raw_lang = await _lookup_tmdb(media_id, tmdb_key, client)
             elif id_type == "tvdb":
-                raw_lang = await _lookup_tvdb(media_id, api_key, client)
+                # TMDB's find endpoint supports tvdb_id as external source
+                url = f"https://api.themoviedb.org/3/find/{media_id}?external_source=tvdb_id&api_key={tmdb_key}"
+                try:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    for bucket in ("tv_results", "movie_results"):
+                        items = data.get(bucket, [])
+                        if items:
+                            raw_lang = items[0].get("original_language")
+                            if raw_lang:
+                                break
+                except Exception:
+                    pass
 
         mapped = map_language_code(raw_lang) if raw_lang else None
         now = datetime.now(timezone.utc).isoformat()

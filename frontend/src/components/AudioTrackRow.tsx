@@ -28,18 +28,21 @@ export default function AudioTrackRow({ track, onToggle }: AudioTrackRowProps) {
     );
   }
 
+  const removeStyle = !track.keep ? { color: "var(--text-muted)", textDecoration: "line-through" as const } : {};
+
   return (
     <div className="audio-track-row">
       <input
         type="checkbox"
         checked={!track.keep}
-        onChange={() => onToggle(track.stream_index)}
+        readOnly
+        onClick={(e) => { e.stopPropagation(); onToggle(track.stream_index); }}
         style={{ accentColor: "var(--accent)" }}
       />
-      <span>{track.language}</span>
-      <span>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
-      {track.title && <span style={{ opacity: 0.5 }}>&quot;{track.title}&quot;</span>}
-      <span className="track-size">{sizeLabel}</span>
+      <span style={removeStyle}>{track.language}</span>
+      <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
+      {track.title && <span style={{ opacity: 0.5, ...removeStyle }}>&quot;{track.title}&quot;</span>}
+      <span className="track-size" style={removeStyle}>{sizeLabel}</span>
     </div>
   );
 }

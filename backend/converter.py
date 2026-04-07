@@ -128,6 +128,7 @@ def build_ffmpeg_cmd(
     lossless_conversion: dict | None = None,
     audio_stream_codecs: list[str] | None = None,
     target_resolution: str = "copy",
+    subtitle_streams: list[dict] | None = None,
 ) -> list[str]:
     """Build an ffmpeg command list for converting a file to HEVC.
 
@@ -186,11 +187,34 @@ def build_ffmpeg_cmd(
         args = _audio_codec_args(audio_codec, audio_bitrate)
         cmd += ["-c:a"] + args
 
-    cmd += [
-        "-c:s", "copy",
-        "-map", "0",
-        output_path,
-    ]
+    # Map video and audio
+    cmd += ["-map", "0:v", "-map", "0:a"]
+
+    # Map subtitle streams — only include codecs the matroska muxer supports.
+    # Unsupported codecs (e.g. codec_id 94213) cause "Subtitle codec not supported" errors.
+    SUPPORTED_SUB_CODECS = {
+        "subrip", "srt", "ass", "ssa", "webvtt",
+        "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle",
+        "hdmv_text_subtitle",
+    }
+    if subtitle_streams:
+        for sub in subtitle_streams:
+            codec = (sub.get("codec_name") or "").lower()
+            idx = sub.get("index")
+            if codec in SUPPORTED_SUB_CODECS and idx is not None:
+                cmd += ["-map", f"0:{idx}"]
+            else:
+                print(f"[CONVERT] Skipping unsupported subtitle stream #{idx} codec={codec or 'unknown'}", flush=True)
+        if any((s.get("codec_name") or "").lower() in SUPPORTED_SUB_CODECS for s in subtitle_streams):
+            cmd += ["-c:s", "copy"]
+    else:
+        # No subtitle info available — skip subs rather than risk unsupported codecs
+        print("[CONVERT] No subtitle stream info from probe — skipping subtitle mapping", flush=True)
+
+    # Map attachments (fonts etc.)
+    cmd += ["-map", "0:t?"]
+
+    cmd += [output_path]
     return cmd
 
 
@@ -199,6 +223,10 @@ def rename_x264_to_x265(filename: str) -> str:
     result = re.sub(r'\bx264\b', 'x265', filename, flags=re.IGNORECASE)
     result = re.sub(r'\bh264\b', 'x265', result, flags=re.IGNORECASE)
     result = re.sub(r'\bAVC\b', 'x265', result)
+    # Remove "Remux" since re-encoded files are no longer remuxes
+    result = re.sub(r'\s*\bRemux\b\s*', ' ', result, flags=re.IGNORECASE).strip()
+    # Clean up any double spaces left behind
+    result = re.sub(r'  +', ' ', result)
     return result
 
 
@@ -414,17 +442,23 @@ async def convert_file(
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
     audio_bitrate = override_audio_bitrate if override_audio_bitrate is not None else live_settings.get("audio_bitrate", 128)
 
-    # Check if lossless audio auto-conversion is enabled
+    # Probe file for audio/subtitle stream details
     lossless_conversion = None
     audio_stream_codecs = None
-    if live_settings.get("auto_convert_lossless", False):
-        target_codec = live_settings.get("lossless_target_codec", "eac3")
-        target_bitrate = live_settings.get("lossless_target_bitrate", 640)
-        # Probe audio stream codecs from the file
-        try:
-            from backend.scanner import probe_file
-            probe_data = await probe_file(input_path)
-            if probe_data and probe_data.get("audio_tracks"):
+    subtitle_streams = None
+    try:
+        from backend.scanner import probe_file
+        probe_data = await probe_file(input_path)
+        if probe_data:
+            # Subtitle streams for safe mapping (skip unsupported codecs)
+            # Map probe format to what build_ffmpeg_cmd expects
+            raw_subs = probe_data.get("subtitle_tracks", [])
+            subtitle_streams = [{"codec_name": s.get("codec", ""), "index": s.get("stream_index")} for s in raw_subs]
+
+            # Lossless audio auto-conversion
+            if live_settings.get("auto_convert_lossless", False) and probe_data.get("audio_tracks"):
+                target_codec = live_settings.get("lossless_target_codec", "eac3")
+                target_bitrate = live_settings.get("lossless_target_bitrate", 640)
                 tracks = probe_data["audio_tracks"]
                 audio_stream_codecs = [t.get("codec", "unknown") for t in tracks]
                 audio_stream_profiles = [t.get("profile", "") for t in tracks]
@@ -433,14 +467,14 @@ async def convert_file(
                     lossless_conversion = {"codec": target_codec, "bitrate": target_bitrate, "profiles": audio_stream_profiles}
                     lossless_names = [c for c, p in zip(audio_stream_codecs, audio_stream_profiles) if is_lossless_audio(c, p)]
                     print(f"[CONVERT] Lossless audio detected ({', '.join(lossless_names)}), converting to {target_codec} {target_bitrate}k", flush=True)
-        except Exception as exc:
-            print(f"[CONVERT] Failed to probe audio for lossless check: {exc}", flush=True)
+    except Exception as exc:
+        print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
 
     target_resolution = override_target_resolution if override_target_resolution is not None else live_settings.get("target_resolution", "copy")
 
     print(f"[CONVERT] Settings: encoder={encoder}, preset={nvenc_preset}, cq={cq}, crf={crf}, audio={audio_codec}, resolution={target_resolution}", flush=True)
 
-    cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder, nvenc_preset=nvenc_preset, cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate, lossless_conversion=lossless_conversion, audio_stream_codecs=audio_stream_codecs, target_resolution=target_resolution)
+    cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder, nvenc_preset=nvenc_preset, cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate, lossless_conversion=lossless_conversion, audio_stream_codecs=audio_stream_codecs, target_resolution=target_resolution, subtitle_streams=subtitle_streams)
 
     # Append custom ffmpeg flags if configured
     custom_flags = live_settings.get("custom_ffmpeg_flags", "")
