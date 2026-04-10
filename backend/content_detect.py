@@ -116,7 +116,7 @@ def get_resolution_tier(video_height: int) -> str:
     Returns:
         One of: "4k", "1080p", "720p", "sd"
     """
-    if video_height >= 2000:
+    if video_height >= 1400:
         return "4k"
     if video_height >= 900:
         return "1080p"

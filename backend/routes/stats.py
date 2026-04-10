@@ -251,10 +251,10 @@ async def get_stats_summary():
             scores = [r["vmaf_score"] for r in vmaf_rows]
             vmaf_stats["count"] = len(scores)
             vmaf_stats["avg"] = round(sum(scores) / len(scores), 1)
-            vmaf_stats["excellent"] = sum(1 for s in scores if s >= 95)
-            vmaf_stats["good"] = sum(1 for s in scores if 90 <= s < 95)
-            vmaf_stats["fair"] = sum(1 for s in scores if 85 <= s < 90)
-            vmaf_stats["poor"] = sum(1 for s in scores if s < 85)
+            vmaf_stats["excellent"] = sum(1 for s in scores if s >= 93)
+            vmaf_stats["good"] = sum(1 for s in scores if 87 <= s < 93)
+            vmaf_stats["fair"] = sum(1 for s in scores if 80 <= s < 87)
+            vmaf_stats["poor"] = sum(1 for s in scores if s < 80)
     except Exception:
         pass
 

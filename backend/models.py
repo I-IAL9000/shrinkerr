@@ -114,6 +114,7 @@ class SettingsUpdate(BaseModel):
     nvenc_cq: Optional[int] = None
     libx265_crf: Optional[int] = None
     nvenc_preset: Optional[str] = None
+    libx265_preset: Optional[str] = None
     parallel_jobs: Optional[int] = None
     ffmpeg_timeout: Optional[int] = None
     ffprobe_timeout: Optional[int] = None

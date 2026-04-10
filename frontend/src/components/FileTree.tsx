@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { ScannedFile } from "../types";
 import { getScanFiles } from "../api";
+import { getCodecLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
 
@@ -30,6 +31,7 @@ interface FileTreeProps {
   onDeleteFile?: (filePath: string) => void;
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
   externalFiles?: Map<string, ScannedFile[]>;
+  mediaDirs?: string[];
   sortBy?: SortBy;
   sortDir?: SortDirection;
 }
@@ -417,6 +419,7 @@ function FileRow({
   onToggleExpand: () => void;
 }) {
   const confirm = useConfirm();
+  const codecLabel = getCodecLabel(file.video_codec, file.needs_conversion);
   const codecClass = file.needs_conversion ? "x264" : "x265";
 
   return (
@@ -432,7 +435,7 @@ function FileRow({
         <span className="tree-name" style={{ cursor: "pointer" }}>{expanded ? "\u25BC" : "\u25B6"} {file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
         <span className={`codec-badge ${codecClass}`}>
-          {file.needs_conversion ? "x264" : "x265"}
+          {codecLabel}
         </span>
         {file.converted && (
           <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Squeezarr">&#x2713;</span>
@@ -492,7 +495,7 @@ export default function FileTree({
   folders, filter = "all",
   isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
-  onFolderFilesLoaded, externalFiles,
+  onFolderFilesLoaded, externalFiles, mediaDirs,
   sortBy = "name", sortDir = "asc", search = "",
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -514,12 +517,27 @@ export default function FileTree({
   const prevFolderCount = useRef(0);
   useEffect(() => {
     if (folders.length > 0 && prevFolderCount.current === 0) {
+      // Auto-expand tree to reveal all configured media directories
       const autoExpand = new Set<string>();
-      let node = tree;
-      while (node.children.size === 1 && !node.isLeaf) {
-        const child = Array.from(node.children.values())[0];
-        autoExpand.add(child.path);
-        node = child;
+      if (mediaDirs && mediaDirs.length > 0) {
+        // For each media dir, expand all ancestor nodes in the tree
+        for (const dir of mediaDirs) {
+          const parts = dir.replace(/^\//, "").replace(/\/$/, "").split("/");
+          let path = "";
+          // Expand ancestors only — stop before the media dir itself
+          for (let i = 0; i < parts.length - 1; i++) {
+            path = path ? `${path}/${parts[i]}` : `/${parts[i]}`;
+            autoExpand.add(path);
+          }
+        }
+      } else {
+        // Fallback: expand single-child paths
+        let node = tree;
+        while (node.children.size === 1 && !node.isLeaf) {
+          const child = Array.from(node.children.values())[0];
+          autoExpand.add(child.path);
+          node = child;
+        }
       }
       if (autoExpand.size > 0) {
         setExpanded(prev => {
@@ -774,9 +792,10 @@ export default function FileTree({
           })}
         </div>
       </div>
-      {folders.length === 0 && (
+      {folders.length === 0 && !search && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-          No scan results. Select directories and click Scan to start.
+          <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
+          Loading files...
         </div>
       )}
     </div>

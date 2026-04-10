@@ -23,11 +23,24 @@ export interface EncodingOverrides {
   nvenc_preset?: string;
   nvenc_cq?: number;
   libx265_crf?: number;
+  libx265_preset?: string;
   audio_codec?: string;
   audio_bitrate?: number;
   target_resolution?: string;
   force_reencode?: boolean;
 }
+
+const CPU_PRESETS = [
+  { value: "ultrafast", label: "Ultrafast" },
+  { value: "superfast", label: "Superfast" },
+  { value: "veryfast", label: "Very Fast" },
+  { value: "faster", label: "Faster" },
+  { value: "fast", label: "Fast" },
+  { value: "medium", label: "Medium (default)" },
+  { value: "slow", label: "Slow" },
+  { value: "slower", label: "Slower" },
+  { value: "veryslow", label: "Very Slow (Best quality)" },
+];
 
 interface EstimateModalProps {
   filePaths: string[];
@@ -61,7 +74,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   useEffect(() => {
     setLoading(true);
     const overrides: Record<string, any> = {};
-    if (cq !== null) overrides.nvenc_cq_override = cq;
+    if (cq !== null) {
+      if (encoder === "libx265") overrides.libx265_crf_override = cq;
+      else overrides.nvenc_cq_override = cq;
+    }
     if (forceReencode) overrides.force_reencode = true;
     if (activeFilter && activeFilter !== "all") overrides.filter = activeFilter;
     estimateJobs(filePaths, overrideRules, overrides).then(data => {
@@ -70,11 +86,18 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     }).catch(() => setLoading(false));
   }, [overrideRules, cq, forceReencode]);
 
+  const isCpu = encoder === "libx265";
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
-    if (preset !== null) o.nvenc_preset = preset;
-    if (cq !== null) o.nvenc_cq = cq;
+    if (preset !== null) {
+      if (isCpu) o.libx265_preset = preset;
+      else o.nvenc_preset = preset;
+    }
+    if (cq !== null) {
+      if (isCpu) o.libx265_crf = cq;
+      else o.nvenc_cq = cq;
+    }
     if (audioCdc !== null) o.audio_codec = audioCdc;
     if (audioBr !== null) o.audio_bitrate = audioBr;
     if (resolution !== null) o.target_resolution = resolution;
@@ -146,12 +169,23 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By job type</div>
-                  {Object.entries(estimate.by_type || {}).filter(([, v]) => (v as number) > 0).map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
-                      <span style={{ color: "var(--text-muted)" }}>{k}</span>
-                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{v as number}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const bt = estimate.by_type || {};
+                    const conv = (bt.convert || 0) + (bt.combined || 0);
+                    const cleanup = (bt.audio || 0) + (bt.combined || 0);
+                    const items: [string, number][] = [];
+                    if (conv > 0) items.push(["conversions", conv]);
+                    if (cleanup > 0) items.push(["audio/sub cleanups", cleanup]);
+                    if (items.length === 0) {
+                      Object.entries(bt).filter(([, v]) => (v as number) > 0).forEach(([k, v]) => items.push([k, v as number]));
+                    }
+                    return items.map(([label, count]) => (
+                      <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
+                        <span style={{ color: "var(--text-muted)" }}>{label}</span>
+                        <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{count}</span>
+                      </div>
+                    ));
+                  })()}
                 </div>
                 <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By source</div>
@@ -186,9 +220,30 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               </div>
             )}
 
-            {estimate.total_files === 0 && !hasIgnoredFiles && (
+            {estimate.total_files === 0 && (
               <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
                 No actionable files in selection. Files may already be optimized.
+                {(estimate.ignored_files > 0 || estimate.skipped_by_rules > 0) && (
+                  <div style={{ marginTop: 8 }}>
+                    {estimate.ignored_files > 0 && (
+                      <span>{estimate.ignored_files} file{estimate.ignored_files !== 1 ? "s" : ""} with <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }}>IGNORE</span> status</span>
+                    )}
+                    {estimate.ignored_files > 0 && estimate.skipped_by_rules > 0 && <span> · </span>}
+                    {estimate.skipped_by_rules > 0 && (
+                      <span style={{ color: "#ffa94d" }}>{estimate.skipped_by_rules} skipped by rules</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {estimate.total_files === 0 && (estimate.ignored_files > 0 || estimate.skipped_by_rules > 0) && (
+              <div style={{ textAlign: "center", marginBottom: 12 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>
+                  <input type="checkbox" checked={overrideRules}
+                    onChange={() => setOverrideRules(!overrideRules)}
+                    style={{ accentColor: "var(--accent)" }} />
+                  Include ignored files and override rules
+                </label>
               </div>
             )}
 
@@ -235,7 +290,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {/* Encoder */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Encoder</label>
-                    <select value={encoder ?? ""} onChange={e => setEncoder(e.target.value || null)}
+                    <select value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">Auto</option>
                       <option value="nvenc">NVENC (GPU)</option>
@@ -243,9 +298,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     </select>
                   </div>
 
-                  {/* Quality CQ */}
+                  {/* Quality CQ/CRF */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality (CQ)</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality ({isCpu ? "CRF" : "CQ"})</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
                       <input type="range" min={15} max={30} value={cq ?? (estimate?.cq || 20)}
                         onChange={e => setCq(Number(e.target.value))}
@@ -262,23 +317,27 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     </div>
                   </div>
 
-                  {/* Preset (NVENC only) */}
-                  {(encoder === null || encoder === "nvenc") && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Preset</label>
-                      <select value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
-                        style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                        <option value="">Auto</option>
-                        <option value="p1">P1 — Fastest</option>
-                        <option value="p2">P2 — Very Fast</option>
-                        <option value="p3">P3 — Fast</option>
-                        <option value="p4">P4 — Medium</option>
-                        <option value="p5">P5 — Slow</option>
-                        <option value="p6">P6 — Very Slow</option>
-                        <option value="p7">P7 — Slowest (Best quality)</option>
-                      </select>
-                    </div>
-                  )}
+                  {/* Preset */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Preset</label>
+                    <select value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
+                      style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
+                      <option value="">Auto</option>
+                      {isCpu ? (
+                        CPU_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)
+                      ) : (
+                        <>
+                          <option value="p1">P1 — Fastest</option>
+                          <option value="p2">P2 — Very Fast</option>
+                          <option value="p3">P3 — Fast</option>
+                          <option value="p4">P4 — Medium</option>
+                          <option value="p5">P5 — Slow</option>
+                          <option value="p6">P6 — Very Slow</option>
+                          <option value="p7">P7 — Slowest (Best quality)</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
 
                   {/* Audio Codec */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

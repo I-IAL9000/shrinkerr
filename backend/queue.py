@@ -99,6 +99,7 @@ class JobQueue:
         audio_codec: Optional[str] = None,
         audio_bitrate: Optional[int] = None,
         libx265_crf: Optional[int] = None,
+        libx265_preset: Optional[str] = None,
         target_resolution: Optional[str] = None,
         priority: int = 0,
         insert_next: bool = False,
@@ -135,11 +136,11 @@ class JobQueue:
                 """INSERT INTO jobs
                    (file_path, job_type, status, encoder, audio_tracks_to_remove, subtitle_tracks_to_remove,
                     created_at, queue_order, original_size,
-                    nvenc_preset, nvenc_cq, audio_codec, audio_bitrate, libx265_crf, target_resolution, priority)
-                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    nvenc_preset, nvenc_cq, audio_codec, audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority)
+                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (file_path, job_type, encoder, audio_json, sub_json, now, next_order,
                  original_size or 0, nvenc_preset, nvenc_cq, audio_codec, audio_bitrate,
-                 libx265_crf, target_resolution, priority),
+                 libx265_crf, libx265_preset, target_resolution, priority),
             ) as cur:
                 job_id = cur.lastrowid
             await db.commit()
@@ -839,6 +840,7 @@ class QueueWorker:
                 override_audio_codec=job.get("audio_codec"),
                 override_audio_bitrate=job.get("audio_bitrate"),
                 override_crf=job.get("libx265_crf"),
+                override_libx265_preset=job.get("libx265_preset"),
                 override_target_resolution=job.get("target_resolution"),
                 nice=use_nice,
             )

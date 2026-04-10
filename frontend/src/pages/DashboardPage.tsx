@@ -651,10 +651,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 <Donut
                   size={130}
                   segments={[
-                    { value: excellent, color: "#18ffa5", label: "Excellent (95+)" },
-                    { value: good, color: "var(--accent)", label: "Good (90-95)" },
-                    { value: fair, color: "#ffa94d", label: "Fair (85-90)" },
-                    { value: poor, color: "#e94560", label: "Poor (<85)" },
+                    { value: excellent, color: "#18ffa5", label: "Excellent (93+)" },
+                    { value: good, color: "var(--accent)", label: "Good (87-93)" },
+                    { value: fair, color: "#ffa94d", label: "Fair (80-87)" },
+                    { value: poor, color: "#e94560", label: "Poor (<80)" },
                   ]}
                   centerText={vm.avg?.toFixed(1) ?? ""}
                 />
@@ -672,10 +672,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                     {([
-                      ["Excellent (95+)", excellent, "#18ffa5"],
-                      ["Good (90-95)", good, "var(--accent)"],
-                      ["Fair (85-90)", fair, "#ffa94d"],
-                      ["Poor (<85)", poor, "#e94560"],
+                      ["Excellent (93+)", excellent, "#18ffa5"],
+                      ["Good (87-93)", good, "var(--accent)"],
+                      ["Fair (80-87)", fair, "#ffa94d"],
+                      ["Poor (<80)", poor, "#e94560"],
                     ] as const).map(([label, val, color]) => (
                       <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{label}</span>

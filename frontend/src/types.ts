@@ -64,6 +64,8 @@ export interface Job {
   original_size: number;
   nvenc_preset: string | null;
   nvenc_cq: number | null;
+  libx265_preset: string | null;
+  libx265_crf: number | null;
   audio_codec: string | null;
   audio_bitrate: number | null;
   created_at: string;

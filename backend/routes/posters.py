@@ -111,6 +111,7 @@ async def resolve_posters(req: ResolveRequest):
         ) as cur:
             cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
 
+        needs_media_type = []  # cached but missing media_type
         for path in req.paths:
             row = cached_rows.get(path)
             if row:
@@ -130,10 +131,12 @@ async def resolve_posters(req: ResolveRequest):
                     "media_type": row["media_type"],
                     "rating_source": "imdb" if row["rating"] else None,
                 }
+                if not row["media_type"]:
+                    needs_media_type.append(path)
             else:
                 uncached.append(path)
 
-        if not uncached:
+        if not uncached and not needs_media_type:
             return result
 
         # Load API settings
@@ -143,6 +146,25 @@ async def resolve_posters(req: ResolveRequest):
         ) as cur:
             for row in await cur.fetchall():
                 settings[row["key"]] = row["value"]
+
+        # Backfill media_type for cached entries missing it
+        tmdb_key = settings.get("tmdb_api_key", "")
+        if needs_media_type and tmdb_key:
+            sem = asyncio.Semaphore(3)
+            async def _backfill_one(path: str):
+                async with sem:
+                    parsed = parse_folder_name(path)
+                    try:
+                        _, _, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
+                        return path, tmdb_meta.get("media_type")
+                    except Exception:
+                        return path, None
+            results_mt = await asyncio.gather(*[_backfill_one(p) for p in needs_media_type])
+            for path, mt in results_mt:
+                if mt:
+                    result[path]["media_type"] = mt
+                    await db.execute("UPDATE poster_cache SET media_type = ? WHERE folder_path = ?", (mt, path))
+            await db.commit()
 
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")

@@ -207,7 +207,7 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
                     color: logData.vmaf_score >= 90 ? "#40c057" : logData.vmaf_score >= 80 ? "#ffa94d" : "#e94560",
                     fontWeight: 600,
                   }}>
-                    {logData.vmaf_score} ({logData.vmaf_score >= 95 ? "Excellent" : logData.vmaf_score >= 90 ? "Great" : logData.vmaf_score >= 85 ? "Good" : logData.vmaf_score >= 80 ? "Acceptable" : "Poor"})
+                    {logData.vmaf_score} ({logData.vmaf_score >= 93 ? "Excellent" : logData.vmaf_score >= 87 ? "Good" : logData.vmaf_score >= 80 ? "Fair" : "Poor"})
                   </span>
                 </>}
               </div>

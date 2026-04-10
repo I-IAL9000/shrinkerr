@@ -18,6 +18,7 @@ def _make_rule_result(rule: dict) -> dict:
         "nvenc_preset": rule.get("nvenc_preset"),
         "nvenc_cq": rule.get("nvenc_cq"),
         "libx265_crf": rule.get("libx265_crf"),
+        "libx265_preset": rule.get("libx265_preset"),
         "target_resolution": rule.get("target_resolution"),
         "audio_codec": rule.get("audio_codec"),
         "audio_bitrate": rule.get("audio_bitrate"),
@@ -156,7 +157,8 @@ def _audio_codec_family_match(actual: str, expected: str) -> bool:
 
 
 def _check_condition(cond: dict, file_path: str, scan_row: dict,
-                     folder_metadata: list[tuple[str, str]]) -> bool:
+                     folder_metadata: list[tuple[str, str]],
+                     extra_context: dict | None = None) -> bool:
     """Check if a single condition matches a file.
 
     Args:
@@ -167,6 +169,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
                   May be empty if file hasn't been scanned yet.
         folder_metadata: List of (metadata_type, metadata_value) tuples
                         from plex_metadata_cache for this file's folder hierarchy.
+        extra_context: Optional dict with additional context (e.g. nzbget_category).
     """
     ctype = cond.get("type", "")
     op = cond.get("operator", "is")
@@ -278,11 +281,13 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         return False
 
     # 12. Plex watched status
-    # TODO: Implement plex_watched condition. Requires Plex API calls per file
-    # which is expensive for batch operations. Consider caching watched status
-    # in plex_metadata_cache during periodic syncs.
     if ctype == "plex_watched":
         return False
+
+    # 13. NZBGet category — passed via extra_context from add-by-path
+    if ctype == "nzbget_category":
+        actual = (extra_context or {}).get("nzbget_category", "")
+        return _match_op(actual, op, value)
 
     return False
 
@@ -343,7 +348,7 @@ async def get_skip_prefixes() -> list[str]:
         await db.close()
 
 
-async def resolve_rules_for_batch(file_paths: list[str]) -> dict[str, Optional[dict]]:
+async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | None = None) -> dict[str, Optional[dict]]:
     """For each file path, find the first matching encoding rule.
 
     Condition types include directory, source, resolution, video_codec,
@@ -442,7 +447,7 @@ async def resolve_rules_for_batch(file_paths: list[str]) -> dict[str, Optional[d
                 if not conditions:
                     continue
 
-                cond_results = [_check_condition(c, fp, scan_row, meta) for c in conditions]
+                cond_results = [_check_condition(c, fp, scan_row, meta, extra_context) for c in conditions]
 
                 if match_mode == "all":
                     rule_matches = all(cond_results) and len(cond_results) > 0

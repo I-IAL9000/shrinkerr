@@ -1,12 +1,20 @@
 import json
+import os
+import shutil
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
 from backend.models import MediaDir, SettingsUpdate
+
+BACKUP_DIR = Path(DB_PATH).parent / "backups"
 
 router = APIRouter(prefix="/api/settings")
 
@@ -16,6 +24,7 @@ _ENCODING_DEFAULTS = {
     "nvenc_cq": "20",
     "libx265_crf": "20",
     "nvenc_preset": "p6",
+    "libx265_preset": "medium",
     "parallel_jobs": "1",
     "ffmpeg_timeout": "21600",
     "ffprobe_timeout": "30",
@@ -195,6 +204,7 @@ async def get_encoding_settings():
         "nvenc_cq": int(merged.get("nvenc_cq", 20)),
         "libx265_crf": int(merged.get("libx265_crf", 20)),
         "nvenc_preset": merged.get("nvenc_preset", "p6"),
+        "libx265_preset": merged.get("libx265_preset", "medium"),
         "parallel_jobs": int(merged.get("parallel_jobs", 1)),
         "ffmpeg_timeout": int(merged.get("ffmpeg_timeout", 21600)),
         "ffprobe_timeout": int(merged.get("ffprobe_timeout", 30)),
@@ -437,6 +447,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["always_keep_languages"] = json.dumps(update.always_keep_languages)
         if update.nvenc_preset is not None:
             updates["nvenc_preset"] = update.nvenc_preset
+        if update.libx265_preset is not None:
+            updates["libx265_preset"] = update.libx265_preset
         if update.parallel_jobs is not None:
             updates["parallel_jobs"] = str(max(1, min(16, update.parallel_jobs)))
         if update.ffmpeg_timeout is not None:
@@ -979,3 +991,155 @@ async def download_nzbget_script(request: Request):
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="Squeezarr.py"'},
     )
+
+
+# --- Backup / Restore ---
+
+
+@router.post("/backup")
+async def create_backup():
+    """Create a full backup zip containing the database and settings export."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.now(timezone.utc).strftime("%Y.%m.%d_%H.%M.%S")
+    zip_name = f"squeezarr_backup_{ts}.zip"
+    zip_path = BACKUP_DIR / zip_name
+
+    # Safe copy of SQLite DB (handles WAL mode correctly)
+    tmp_db = BACKUP_DIR / f"_tmp_backup_{ts}.db"
+    try:
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute(f"VACUUM INTO '{tmp_db}'")
+        finally:
+            await db.close()
+
+        # Build settings JSON
+        db = await aiosqlite.connect(str(tmp_db))
+        db.row_factory = aiosqlite.Row
+        try:
+            settings = {}
+            async with db.execute("SELECT key, value FROM settings") as cur:
+                for row in await cur.fetchall():
+                    settings[row["key"]] = row["value"]
+            async with db.execute("SELECT path, label FROM media_dirs") as cur:
+                dirs = [{"path": r["path"], "label": r["label"]} for r in await cur.fetchall()]
+            async with db.execute("SELECT * FROM encoding_rules ORDER BY priority ASC") as cur:
+                rules = [dict(r) for r in await cur.fetchall()]
+        finally:
+            await db.close()
+
+        settings_json = json.dumps({
+            "version": "1",
+            "settings": settings,
+            "media_dirs": dirs,
+            "encoding_rules": rules,
+        }, indent=2)
+
+        # Create zip
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(tmp_db, "squeezarr.db")
+            zf.writestr("settings.json", settings_json)
+    finally:
+        if tmp_db.exists():
+            tmp_db.unlink()
+
+    stat = zip_path.stat()
+    return {
+        "name": zip_name,
+        "size": stat.st_size,
+        "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+    }
+
+
+@router.get("/backup/list")
+async def list_backups():
+    """List all backup zip files."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backups = []
+    for f in sorted(BACKUP_DIR.glob("squeezarr_backup_*.zip"), reverse=True):
+        stat = f.stat()
+        backups.append({
+            "name": f.name,
+            "size": stat.st_size,
+            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+        })
+    return backups
+
+
+@router.get("/backup/download/{name}")
+async def download_backup(name: str):
+    """Download a backup zip file."""
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(400, "Invalid backup name")
+    path = BACKUP_DIR / name
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, "Backup not found")
+    return FileResponse(
+        path=str(path),
+        media_type="application/zip",
+        filename=name,
+    )
+
+
+@router.delete("/backup/{name}")
+async def delete_backup(name: str):
+    """Delete a specific backup file."""
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(400, "Invalid backup name")
+    path = BACKUP_DIR / name
+    if not path.exists():
+        raise HTTPException(404, "Backup not found")
+    path.unlink()
+    return {"status": "deleted"}
+
+
+@router.post("/backup/restore")
+async def restore_backup(file: UploadFile = File(...)):
+    """Restore from a backup zip. Replaces the current database."""
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(400, "Must upload a .zip file")
+
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_zip = BACKUP_DIR / f"_restore_upload_{datetime.now().strftime('%H%M%S')}.zip"
+    tmp_db = BACKUP_DIR / "_restore_tmp.db"
+
+    try:
+        # Save uploaded file
+        content = await file.read()
+        tmp_zip.write_bytes(content)
+
+        # Validate zip contents
+        with zipfile.ZipFile(tmp_zip, "r") as zf:
+            names = zf.namelist()
+            if "squeezarr.db" not in names:
+                raise HTTPException(400, "Backup zip must contain squeezarr.db")
+            zf.extract("squeezarr.db", BACKUP_DIR)
+            extracted = BACKUP_DIR / "squeezarr.db"
+            extracted.rename(tmp_db)
+
+        # Validate the extracted DB is a valid SQLite database
+        try:
+            test_db = await aiosqlite.connect(str(tmp_db))
+            try:
+                async with test_db.execute("SELECT count(*) FROM settings") as cur:
+                    await cur.fetchone()
+            finally:
+                await test_db.close()
+        except Exception as exc:
+            raise HTTPException(400, f"Invalid database in backup: {exc}")
+
+        # Create a safety backup of the current DB before replacing
+        safety_name = f"squeezarr_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        safety_path = BACKUP_DIR / safety_name
+        shutil.copy2(DB_PATH, str(safety_path))
+
+        # Replace the database
+        shutil.move(str(tmp_db), DB_PATH)
+
+        return {"status": "restored", "message": "Database restored. Restart the container for changes to take full effect."}
+    finally:
+        if tmp_zip.exists():
+            tmp_zip.unlink()
+        if tmp_db.exists():
+            tmp_db.unlink()

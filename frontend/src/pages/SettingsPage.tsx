@@ -6,6 +6,7 @@ import {
   createEncodingRule, updateEncodingRule, deleteEncodingRule,
   reorderEncodingRules, syncPlexRuleMetadata, getPlexOptions,
   getConditionOptions, testNotifications, importSettings,
+  listBackups, createBackup, deleteBackup, downloadBackupUrl, restoreBackup,
 } from "../api";
 import { useToast } from "../useToast";
 
@@ -115,7 +116,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
-const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 6 };
+const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 28 };
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
 
 export default function SettingsPage() {
@@ -150,12 +151,16 @@ export default function SettingsPage() {
   const [ruleForm, setRuleForm] = useState<{
     name: string; match_mode: string; conditions: { type: string; operator: string; value: string }[];
     action: string; encoder: string; nvenc_preset: string; nvenc_cq: string;
-    libx265_crf: string; target_resolution: string; audio_codec: string; audio_bitrate: string;
+    libx265_crf: string; libx265_preset: string; target_resolution: string; audio_codec: string; audio_bitrate: string;
     queue_priority: string;
-  }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+  }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
   const [ruleDragIdx, setRuleDragIdx] = useState<number | null>(null);
+
+  // Backup state
+  const [backupList, setBackupList] = useState<{ name: string; size: number; created_at: string }[]>([]);
+  const [backupCreating, setBackupCreating] = useState(false);
   const [ruleDropIdx, setRuleDropIdx] = useState<number | null>(null);
 
   const loadRules = () => {
@@ -183,6 +188,7 @@ export default function SettingsPage() {
     genre: { label: "Plex Genre", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     library: { label: "Plex Library", group: "Plex", operators: [{ value: "is", label: "is" }], valueType: "select" },
     arr_tag: { label: "Sonarr/Radarr Tag", group: "Arr", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    nzbget_category: { label: "NZBGet Category", group: "NZBGet", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
   };
 
   const updateConditionType = (idx: number, newType: string) => {
@@ -204,9 +210,12 @@ export default function SettingsPage() {
     setRuleForm({ ...ruleForm, conditions: conds });
   };
 
+  const loadBackups = () => { listBackups().then(setBackupList).catch(() => {}); };
+
   useEffect(() => {
     loadDirs();
     loadRules();
+    loadBackups();
     getConditionOptions().then(setCondOpts).catch(() => {});
     // Don't load Plex options on page load — fetched on demand when adding/editing rules
     getEncodingSettings().then((enc: any) => {
@@ -462,61 +471,94 @@ export default function SettingsPage() {
                 <div style={helpStyle}>Select which source codecs should be converted to the target codec.</div>
               </div>
 
-              {/* NVENC Preset */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={labelStyle}>NVENC Preset</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
-                </div>
-                <input type="range" min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
-                  onChange={(e) => setEncoding({ ...encoding, nvenc_preset: `p${e.target.value}` })}
-                  style={{ width: "100%", accentColor: "var(--accent)" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                  <span>p1 (Fastest)</span><span>p4</span><span>p7 (Best)</span>
-                </div>
-                <div style={{ ...helpStyle, padding: 8, background: "var(--bg-primary)", borderRadius: 4, marginTop: 8 }}>
-                  <strong style={{ color: "var(--accent)" }}>{PRESET_INFO[encoding.nvenc_preset || "p6"]?.label}</strong>
-                  {" — "}{PRESET_INFO[encoding.nvenc_preset || "p6"]?.desc}
-                </div>
-              </div>
+              {encoding.default_encoder !== "libx265" ? (
+                <>
+                  {/* NVENC Preset */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>NVENC Preset</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
+                    </div>
+                    <input type="range" min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
+                      onChange={(e) => setEncoding({ ...encoding, nvenc_preset: `p${e.target.value}` })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>p1 (Fastest)</span><span>p4</span><span>p7 (Best)</span>
+                    </div>
+                    <div style={{ ...helpStyle, padding: 8, background: "var(--bg-primary)", borderRadius: 4, marginTop: 8 }}>
+                      <strong style={{ color: "var(--accent)" }}>{PRESET_INFO[encoding.nvenc_preset || "p6"]?.label}</strong>
+                      {" — "}{PRESET_INFO[encoding.nvenc_preset || "p6"]?.desc}
+                    </div>
+                  </div>
 
-              {/* NVENC CQ */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={labelStyle}>NVENC Constant Quality (CQ)</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
-                </div>
-                <input type="range" min={15} max={30} value={encoding.nvenc_cq}
-                  onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
-                  style={{ width: "100%", accentColor: "var(--accent)" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                  <span>15 (Highest quality)</span><span>20</span><span>24</span><span>30 (Smallest file)</span>
-                </div>
-                <div style={helpStyle}>
-                  Controls quality vs file size. Lower = higher quality, larger files.
-                  <strong> 18-20:</strong> Transparent quality (recommended).
-                  <strong> 21-24:</strong> Good quality, noticeable savings.
-                  <strong> 25+:</strong> Visible quality loss, maximum compression.
-                </div>
-              </div>
+                  {/* NVENC CQ */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>NVENC Constant Quality (CQ)</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
+                    </div>
+                    <input type="range" min={15} max={30} value={encoding.nvenc_cq}
+                      onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>15 (Highest quality)</span><span>20</span><span>24</span><span>30 (Smallest file)</span>
+                    </div>
+                    <div style={helpStyle}>
+                      Controls quality vs file size. Lower = higher quality, larger files.
+                      <strong> 18-20:</strong> Transparent quality (recommended).
+                      <strong> 21-24:</strong> Good quality, noticeable savings.
+                      <strong> 25+:</strong> Visible quality loss, maximum compression.
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* libx265 Preset */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>CPU Preset</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_preset || "medium"}</span>
+                    </div>
+                    <select value={encoding.libx265_preset || "medium"}
+                      onChange={(e) => setEncoding({ ...encoding, libx265_preset: e.target.value })}
+                      style={{ ...inputStyle, width: "100%" }}>
+                      <option value="ultrafast">Ultrafast</option>
+                      <option value="superfast">Superfast</option>
+                      <option value="veryfast">Very Fast</option>
+                      <option value="faster">Faster</option>
+                      <option value="fast">Fast</option>
+                      <option value="medium">Medium (default)</option>
+                      <option value="slow">Slow</option>
+                      <option value="slower">Slower</option>
+                      <option value="veryslow">Very Slow (Best quality)</option>
+                    </select>
+                    <div style={helpStyle}>
+                      Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality.
+                      <strong> medium:</strong> Balanced speed and quality (recommended).
+                      <strong> slow/slower:</strong> Better compression, significantly slower.
+                      <strong> fast/veryfast:</strong> Quick encodes, larger files.
+                    </div>
+                  </div>
 
-              {/* libx265 CRF */}
-              <div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={labelStyle}>libx265 Constant Rate Factor (CRF)</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
-                </div>
-                <input type="range" min={15} max={28} value={encoding.libx265_crf}
-                  onChange={(e) => setEncoding({ ...encoding, libx265_crf: parseInt(e.target.value) })}
-                  style={{ width: "100%", accentColor: "var(--accent)" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                  <span>15 (Highest quality)</span><span>20</span><span>24</span><span>28 (Smallest file)</span>
-                </div>
-                <div style={helpStyle}>
-                  CRF for software encoding. Similar concept to CQ but for CPU encoding.
-                  CRF 18-20 is typically transparent to the original. CRF produces slightly smaller files than NVENC CQ at equivalent quality levels.
-                </div>
-              </div>
+                  {/* libx265 CRF */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>Constant Rate Factor (CRF)</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
+                    </div>
+                    <input type="range" min={15} max={28} value={encoding.libx265_crf}
+                      onChange={(e) => setEncoding({ ...encoding, libx265_crf: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>15 (Highest quality)</span><span>20</span><span>24</span><span>28 (Smallest file)</span>
+                    </div>
+                    <div style={helpStyle}>
+                      Controls quality vs file size. Lower = higher quality, larger files.
+                      CRF 18-20 is typically transparent to the original.
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Smart Encoding */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
@@ -547,13 +589,30 @@ export default function SettingsPage() {
                 <div style={helpStyle}>
                   <strong>VMAF</strong> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix.
                   It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality.
-                  Scores above 93 are considered transparent (indistinguishable from the original), 85-93 is good, and below 85 may have visible artifacts.
-                  <br /><br />
-                  When enabled, Squeezarr extracts a 30-second sample from the original file before encoding, then runs a VMAF comparison after conversion.
-                  This adds 1-3 minutes per job but gives you confidence that your CQ settings produce acceptable quality.
-                  Scores appear in the completed job details and in the scanner's Quality filters.
-                  Requires ffmpeg with libvmaf support (included in the Docker image).
+                  When enabled, Squeezarr runs a frame-accurate VMAF comparison between the original and encoded file after conversion.
+                  This adds a few minutes per job but gives you confidence that your CQ settings produce acceptable quality.
                 </div>
+                <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ textAlign: "left", padding: "4px 0 4px 28px", color: "var(--text-secondary)", fontWeight: 600, width: 120 }}>Score</th>
+                      <th style={{ textAlign: "left", padding: "4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>Quality</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[
+                      ["93+", "Transparent / indistinguishable", "#18ffa5"],
+                      ["87–93", "High quality streaming", "var(--accent)"],
+                      ["80–87", "Acceptable quality", "#ffa94d"],
+                      ["< 80", "Noticeable degradation", "#e94560"],
+                    ].map(([score, desc, color]) => (
+                      <tr key={score as string} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "4px 0 4px 28px", color: color as string, fontWeight: 600 }}>{score}</td>
+                        <td style={{ padding: "4px 0", color: "var(--text-muted)" }}>{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
                 {/* Resolution-Aware CQ Toggle + Table */}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 8, cursor: "pointer" }}>
@@ -1517,7 +1576,7 @@ export default function SettingsPage() {
           {/* NZBGet Integration */}
           <div style={sectionStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ color: "white", margin: 0 }}>NZBGet Integration</h3>
+              <h3 style={{ color: "white", margin: 0 }}>NZBGet Extension Script</h3>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? "Enabled" : "Disabled"}</span>
                 <input type="checkbox" checked={encoding?.nzbget_enabled || false}
@@ -1583,7 +1642,8 @@ export default function SettingsPage() {
 
             {/* Path Mappings */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Path mappings (NZBGet path → Squeezarr path)</div>
+              <div style={labelStyle}>Path mappings (NZBGet MainDir → Squeezarr path)</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Map NZBGet's <b>MainDir</b> (or <b>DestDir</b>) to a path Squeezarr can access. Make sure this path is added as a volume in your Squeezarr docker-compose.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
@@ -1613,7 +1673,6 @@ export default function SettingsPage() {
                   + Add mapping
                 </button>
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Maps download paths inside NZBGet's container to paths Squeezarr can see. Both containers must have access to the same files via volume mounts.</div>
             </div>
 
             {/* Options row */}
@@ -1674,7 +1733,7 @@ export default function SettingsPage() {
                 <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
               </ol>
               <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(145,53,255,0.1)", borderRadius: 4 }}>
-                <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Squeezarr to set different conversion profiles (CQ, preset, audio codec) based on Plex labels or collections. Tag-based downloads will follow your encoding rules automatically.
+                <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Squeezarr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.
               </div>
             </details>
           </div>
@@ -1712,7 +1771,7 @@ export default function SettingsPage() {
                   onClick={() => {
                     setShowAddRule(true);
                     setEditingRuleId(null);
-                    setRuleForm({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+                    setRuleForm({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
                     if (plexOpts.labels.length === 0) loadPlexOpts();
                   }}
                 >+ Add Rule</button>
@@ -1830,6 +1889,7 @@ export default function SettingsPage() {
                               action: rule.action, encoder: rule.encoder || "",
                               nvenc_preset: rule.nvenc_preset || "", nvenc_cq: rule.nvenc_cq ? String(rule.nvenc_cq) : "",
                               libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
+                              libx265_preset: rule.libx265_preset || "",
                               target_resolution: rule.target_resolution || "",
                               audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
                               queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
@@ -2017,6 +2077,13 @@ export default function SettingsPage() {
                             </select>;
                           }
 
+                          if (cond.type === "nzbget_category") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select category...</option>
+                              {(condOpts.nzbget_categories || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                            </select>;
+                          }
+
                           if (ct.valueType === "number") {
                             return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1 }} value={cond.value}
                               placeholder="Size in GB..." onChange={e => updateConditionValue(condIdx, e.target.value)} />;
@@ -2062,11 +2129,19 @@ export default function SettingsPage() {
                       </div>
                       <div>
                         <label style={labelStyle}>Preset</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
-                          onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
-                          <option value="">Use default</option>
-                          {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
-                        </select>
+                        {ruleForm.encoder === "libx265" ? (
+                          <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.libx265_preset}
+                            onChange={e => setRuleForm({ ...ruleForm, libx265_preset: e.target.value })}>
+                            <option value="">Use default</option>
+                            {["ultrafast","superfast","veryfast","faster","fast","medium","slow","slower","veryslow"].map(p => <option key={p} value={p}>{p}</option>)}
+                          </select>
+                        ) : (
+                          <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
+                            onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
+                            <option value="">Use default</option>
+                            {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
+                          </select>
+                        )}
                       </div>
                       <div>
                         <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
@@ -2161,6 +2236,7 @@ export default function SettingsPage() {
                       if (ruleForm.action === "encode") {
                         data.encoder = ruleForm.encoder || null;
                         data.nvenc_preset = ruleForm.nvenc_preset || null;
+                        data.libx265_preset = ruleForm.libx265_preset || null;
                         data.nvenc_cq = ruleForm.nvenc_cq ? parseInt(ruleForm.nvenc_cq) : null;
                         data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
                         data.target_resolution = ruleForm.target_resolution || null;
@@ -2631,7 +2707,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Provider configs */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
+            <div className="notification-providers" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 16 }}>
               {/* Discord */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Discord</div>
@@ -2729,6 +2805,102 @@ export default function SettingsPage() {
                   if (ok.length === 0 && fail.length === 0) toast("No notification providers configured");
                 }}
               >Test Notifications</button>
+            </div>
+          </div>
+
+          {/* Backups */}
+          <div style={sectionStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ color: "white", margin: 0 }}>Backups</h3>
+              <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 12px" }}
+                disabled={backupCreating}
+                onClick={async () => {
+                  setBackupCreating(true);
+                  try {
+                    await createBackup();
+                    toast("Backup created", "success");
+                    loadBackups();
+                  } catch { toast("Backup failed"); }
+                  setBackupCreating(false);
+                }}>
+                {backupCreating ? "Creating..." : "Backup Now"}
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Backups include the full database (scan results, jobs, settings, rules) as a zip file.
+            </div>
+            {backupList.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12, opacity: 0.6 }}>
+                No backups yet
+              </div>
+            ) : (
+              <div style={{ borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 60px", gap: 0, padding: "6px 12px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+                  <span>Name</span><span>Size</span><span>Time</span><span></span>
+                </div>
+                {backupList.map(b => (
+                  <div key={b.name} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 60px", gap: 0, padding: "8px 12px", fontSize: 12, borderBottom: "1px solid var(--bg-primary)", alignItems: "center" }}>
+                    <a href={downloadBackupUrl(b.name)} download style={{ color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {b.name}
+                    </a>
+                    <span style={{ color: "var(--text-muted)" }}>{(b.size / (1024 * 1024)).toFixed(1)} MiB</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {new Date(b.created_at).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" })}
+                    </span>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                      <button title="Restore" style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center" }}
+                        onClick={async () => {
+                          if (!confirm(`Restore from ${b.name}? This will replace your current database. A safety backup will be created first.`)) return;
+                          try {
+                            const resp = await fetch(downloadBackupUrl(b.name));
+                            const blob = await resp.blob();
+                            const file = new File([blob], b.name, { type: "application/zip" });
+                            await restoreBackup(file);
+                            toast("Backup restored. Restart the container for full effect.", "success");
+                          } catch { toast("Restore failed"); }
+                        }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
+                        </svg>
+                      </button>
+                      <button title="Delete" style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center", opacity: 0.6 }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
+                        onClick={async () => {
+                          if (!confirm(`Delete backup ${b.name}?`)) return;
+                          try {
+                            await deleteBackup(b.name);
+                            loadBackups();
+                            toast("Backup deleted");
+                          } catch { toast("Delete failed"); }
+                        }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 12 }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
+                <input type="file" accept=".zip" style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!confirm(`Restore from uploaded file ${file.name}? This will replace your current database.`)) { e.target.value = ""; return; }
+                    try {
+                      await restoreBackup(file);
+                      toast("Backup restored. Restart the container for full effect.", "success");
+                      loadBackups();
+                    } catch { toast("Restore failed"); }
+                    e.target.value = "";
+                  }} />
+                <span style={{ border: "1px solid var(--border)", padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
+                  Restore from file...
+                </span>
+              </label>
             </div>
           </div>
 

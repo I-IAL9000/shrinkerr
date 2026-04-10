@@ -516,9 +516,9 @@ async def get_scan_stats():
                 SUM(CASE WHEN new_detected_at > ? THEN 1 ELSE 0 END) as new_count,
                 SUM(CASE WHEN file_size > 10737418240 THEN 1 ELSE 0 END) as large_files,
                 SUM(file_size) as total_size,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 95 THEN 1 ELSE 0 END) as vmaf_excellent,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 85 AND vmaf_score < 95 THEN 1 ELSE 0 END) as vmaf_good,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score < 85 THEN 1 ELSE 0 END) as vmaf_poor,
+                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 93 THEN 1 ELSE 0 END) as vmaf_excellent,
+                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 87 AND vmaf_score < 93 THEN 1 ELSE 0 END) as vmaf_good,
+                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score < 87 THEN 1 ELSE 0 END) as vmaf_poor,
                 SUM(CASE WHEN converted = 1 AND vmaf_score IS NULL THEN 1 ELSE 0 END) as vmaf_pending
             FROM scan_results WHERE removed_from_list = 0
             AND file_path NOT LIKE '%%.converting.%%'
@@ -1036,11 +1036,11 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     # VMAF quality filters
     vs = f.get("vmaf_score")
     if filter_name == "vmaf_excellent":
-        return vs is not None and vs >= 95
+        return vs is not None and vs >= 93
     if filter_name == "vmaf_good":
-        return vs is not None and 85 <= vs < 95
+        return vs is not None and 87 <= vs < 93
     if filter_name == "vmaf_poor":
-        return vs is not None and vs < 85
+        return vs is not None and vs < 87
     # Source filters (match against file path)
     fp_lower = f.get("file_path", "").lower()
     if filter_name == "src_remux":
@@ -1110,6 +1110,33 @@ async def get_scan_tree(filter: str = "all"):
 
 
 @router.get("/files")
+@router.get("/files-by-title")
+async def get_files_by_title(prefix: str, filter: str = "all"):
+    """Return all enriched files under a title prefix (all seasons). Single DB call."""
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        ctx = await _build_enrichment_context(db)
+        title_prefix = prefix.rstrip("/") + "/"
+        async with db.execute(
+            f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
+                WHERE {_SCAN_WHERE}
+                  AND file_path LIKE ?
+                ORDER BY file_path ASC""",
+            (title_prefix + "%",),
+        ) as cur:
+            rows = await cur.fetchall()
+
+        results = []
+        for row in rows:
+            enriched = _enrich_row(dict(row), ctx)
+            if _matches_filter(enriched, filter):
+                results.append(enriched)
+        return results
+    finally:
+        await db.close()
+
+
 async def get_scan_files(folder: str, filter: str = "all"):
     """Return enriched files for a single folder. Typically 5-50 files per call."""
     db = await aiosqlite.connect(DB_PATH)

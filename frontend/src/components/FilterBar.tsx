@@ -53,9 +53,9 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "src_dvd", label: "DVD" },
   // VMAF group
   { key: "_vmaf", label: "VMAF:", group: "divider" },
-  { key: "vmaf_excellent", label: "Excellent (95+)" },
-  { key: "vmaf_good", label: "Good (85-95)" },
-  { key: "vmaf_poor", label: "Poor (<85)" },
+  { key: "vmaf_excellent", label: "Excellent (93+)" },
+  { key: "vmaf_good", label: "Good (87-93)" },
+  { key: "vmaf_poor", label: "Poor (<87)" },
 ];
 
 export const FILTER_LABELS: Record<string, string> = {};

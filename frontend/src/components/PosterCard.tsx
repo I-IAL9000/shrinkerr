@@ -8,6 +8,7 @@ interface PosterCardProps {
   onSelect: (shiftKey?: boolean) => void;
   onClick: () => void;
   isExpanded: boolean;
+  mediaType?: string | null;
 }
 
 function formatSize(bytes: number): string {
@@ -17,7 +18,7 @@ function formatSize(bytes: number): string {
 
 export default function PosterCard({
   title, year, posterUrl, fileCount, totalSize,
-  isSelected, onSelect, onClick, isExpanded,
+  isSelected, onSelect, onClick, isExpanded, mediaType,
 }: PosterCardProps) {
   return (
     <div
@@ -50,6 +51,18 @@ export default function PosterCard({
             style={{ accentColor: "var(--accent)", width: 16, height: 16, cursor: "pointer" }}
           />
         </div>
+
+        {mediaType && (
+          <span style={{
+            position: "absolute", top: 6, right: 6,
+            fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
+            padding: "2px 5px", borderRadius: 3,
+            background: mediaType === "tv" ? "rgba(64, 206, 255, 0.85)" : "rgba(145, 53, 255, 0.85)",
+            color: "white",
+          }}>
+            {mediaType === "tv" ? "TV" : "MOVIE"}
+          </span>
+        )}
 
         {isExpanded && (
           <div className="poster-expand-arrow">

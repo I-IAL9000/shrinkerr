@@ -110,7 +110,7 @@ def fetch_config():
     return api_request(url, headers=squeezarr_headers())
 
 
-def queue_files(file_paths, priority):
+def queue_files(file_paths, priority, category=None):
     """POST files to Squeezarr for conversion. Returns number of jobs added."""
     data = {
         "file_paths": file_paths,
@@ -118,6 +118,8 @@ def queue_files(file_paths, priority):
         "force_reencode": False,
         "insert_next": True,
     }
+    if category:
+        data["nzbget_category"] = category
 
     result = api_request(
         f"{SQUEEZARR_URL}/api/jobs/add-by-path",
@@ -448,7 +450,7 @@ def main():
 
     # 7. Queue in Squeezarr
     priority = config.get("priority", 1)
-    added = queue_files(squeezarr_files, priority)
+    added = queue_files(squeezarr_files, priority, category=CATEGORY)
     if added == 0:
         log("No files queued (may already be optimized)")
         sys.exit(POSTPROCESS_NONE)

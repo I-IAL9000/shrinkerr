@@ -57,6 +57,8 @@ export const getScanTree = (filter: string = "all") =>
   apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`);
 export const getScanFiles = (folder: string, filter: string = "all") =>
   apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`);
+export const getFilesByTitle = (prefix: string, filter: string = "all") =>
+  apiFetch<any[]>(`/scan/files-by-title?prefix=${encodeURIComponent(prefix)}&filter=${encodeURIComponent(filter)}`);
 export const getScanResultsVersion = () => apiFetch<{ count: number; max_id: number }>("/scan/results-version");
 export const removeScanResult = (id: number) =>
   apiFetch(`/scan/results/${id}`, { method: "DELETE" });
@@ -275,4 +277,20 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
 
     return () => ws.close();
   }, [onMessage]);
+}
+
+// Backups
+export const listBackups = () => apiFetch<{ name: string; size: number; created_at: string }[]>("/settings/backup/list");
+export const createBackup = () => apiFetch<{ name: string; size: number; created_at: string }>("/settings/backup", { method: "POST" });
+export const deleteBackup = (name: string) => apiFetch(`/settings/backup/${encodeURIComponent(name)}`, { method: "DELETE" });
+export const downloadBackupUrl = (name: string) => `${API_BASE}/settings/backup/download/${encodeURIComponent(name)}`;
+export async function restoreBackup(file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  const headers: Record<string, string> = {};
+  const apiKey = getStoredApiKey();
+  if (apiKey) headers["X-Api-Key"] = apiKey;
+  const resp = await fetch(`${API_BASE}/settings/backup/restore`, { method: "POST", body: form, headers, credentials: "include" });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
 }

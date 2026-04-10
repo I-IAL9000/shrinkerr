@@ -28,6 +28,7 @@ class RuleCreate(BaseModel):
     nvenc_preset: Optional[str] = None
     nvenc_cq: Optional[int] = None
     libx265_crf: Optional[int] = None
+    libx265_preset: Optional[str] = None
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -44,6 +45,7 @@ class RuleUpdate(BaseModel):
     nvenc_preset: Optional[str] = None
     nvenc_cq: Optional[int] = None
     libx265_crf: Optional[int] = None
+    libx265_preset: Optional[str] = None
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -156,12 +158,12 @@ async def create_rule(payload: RuleCreate):
         async with db.execute(
             """INSERT INTO encoding_rules
                (name, match_type, match_value, match_conditions, priority, action, enabled,
-                encoder, nvenc_preset, nvenc_cq, libx265_crf, target_resolution,
+                encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution,
                 audio_codec, audio_bitrate, queue_priority, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (payload.name, first.type, first.value, conditions_json, next_priority,
              payload.action, int(payload.enabled), payload.encoder, payload.nvenc_preset,
-             payload.nvenc_cq, payload.libx265_crf, payload.target_resolution,
+             payload.nvenc_cq, payload.libx265_crf, payload.libx265_preset, payload.target_resolution,
              payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now),
         ) as cur:
             rule_id = cur.lastrowid
@@ -399,6 +401,16 @@ async def get_condition_options():
         except Exception:
             pass
 
+        # NZBGet categories from settings
+        nzbget_categories = []
+        try:
+            async with db.execute("SELECT value FROM settings WHERE key = 'nzbget_categories'") as cur:
+                row = await cur.fetchone()
+                if row and row["value"]:
+                    nzbget_categories = json.loads(row["value"])
+        except Exception:
+            pass
+
         return {
             "sources": sorted(sources),
             "resolutions": ["4K", "1080p", "720p", "SD"],
@@ -407,6 +419,7 @@ async def get_condition_options():
             "media_types": ["movie", "tv"],
             "release_groups": [g for g, _ in sorted(release_groups.items(), key=lambda x: -x[1])][:200],
             "arr_tags": arr_tags,
+            "nzbget_categories": nzbget_categories,
         }
     finally:
         await db.close()

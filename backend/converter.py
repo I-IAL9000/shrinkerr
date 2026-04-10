@@ -21,6 +21,7 @@ async def get_live_encoding_settings() -> dict:
         "nvenc_cq": 20,
         "libx265_crf": 20,
         "nvenc_preset": "p6",
+        "libx265_preset": "medium",
         "ffmpeg_timeout": 21600,
         "ffprobe_timeout": 30,
         "audio_codec": "copy",
@@ -43,6 +44,8 @@ async def get_live_encoding_settings() -> dict:
             result["libx265_crf"] = int(db_settings["libx265_crf"])
         if "nvenc_preset" in db_settings:
             result["nvenc_preset"] = db_settings["nvenc_preset"]
+        if "libx265_preset" in db_settings:
+            result["libx265_preset"] = db_settings["libx265_preset"]
         if "default_encoder" in db_settings:
             result["default_encoder"] = db_settings["default_encoder"]
         if "ffmpeg_timeout" in db_settings:
@@ -123,6 +126,7 @@ def build_ffmpeg_cmd(
     cq: int = 20,
     crf: int = 20,
     nvenc_preset: str = "p6",
+    libx265_preset: str = "medium",
     audio_codec: str = "copy",
     audio_bitrate: int = 128,
     lossless_conversion: dict | None = None,
@@ -162,7 +166,7 @@ def build_ffmpeg_cmd(
         # libx265
         cmd += [
             "-c:v", "libx265",
-            "-preset", "medium",
+            "-preset", libx265_preset,
             "-crf", str(crf),
             "-profile:v", "main10",
             "-pix_fmt", "yuv420p10le",
@@ -394,6 +398,7 @@ async def convert_file(
     override_audio_codec: Optional[str] = None,
     override_audio_bitrate: Optional[int] = None,
     override_crf: Optional[int] = None,
+    override_libx265_preset: Optional[str] = None,
     override_target_resolution: Optional[str] = None,
     nice: bool = False,
 ) -> dict:
@@ -437,6 +442,7 @@ async def convert_file(
     filename_suffix = live_settings.get("filename_suffix", "")
     final_path = get_output_path(input_path, suffix=filename_suffix)
     nvenc_preset = override_preset if override_preset is not None else live_settings.get("nvenc_preset", "p6")
+    libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
     cq = override_cq if override_cq is not None else live_settings.get("nvenc_cq", 20)
     crf = override_crf if override_crf is not None else live_settings.get("libx265_crf", 20)
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
@@ -472,9 +478,11 @@ async def convert_file(
 
     target_resolution = override_target_resolution if override_target_resolution is not None else live_settings.get("target_resolution", "copy")
 
-    print(f"[CONVERT] Settings: encoder={encoder}, preset={nvenc_preset}, cq={cq}, crf={crf}, audio={audio_codec}, resolution={target_resolution}", flush=True)
+    active_preset = libx265_preset if encoder == "libx265" else nvenc_preset
+    active_quality = f"crf={crf}" if encoder == "libx265" else f"cq={cq}"
+    print(f"[CONVERT] Settings: encoder={encoder}, preset={active_preset}, {active_quality}, audio={audio_codec}, resolution={target_resolution}", flush=True)
 
-    cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder, nvenc_preset=nvenc_preset, cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate, lossless_conversion=lossless_conversion, audio_stream_codecs=audio_stream_codecs, target_resolution=target_resolution, subtitle_streams=subtitle_streams)
+    cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder, nvenc_preset=nvenc_preset, libx265_preset=libx265_preset, cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate, lossless_conversion=lossless_conversion, audio_stream_codecs=audio_stream_codecs, target_resolution=target_resolution, subtitle_streams=subtitle_streams)
 
     # Append custom ffmpeg flags if configured
     custom_flags = live_settings.get("custom_ffmpeg_flags", "")

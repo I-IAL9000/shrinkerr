@@ -97,6 +97,7 @@ class BulkQueueFromScanRequest(BaseModel):
     nvenc_preset_override: str | None = None
     nvenc_cq_override: int | None = None
     libx265_crf_override: int | None = None
+    libx265_preset_override: str | None = None
     audio_codec_override: str | None = None
     audio_bitrate_override: int | None = None
     target_resolution_override: str | None = None
@@ -312,6 +313,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             nvenc_preset = rule.get("nvenc_preset") if rule else None
             nvenc_cq = rule.get("nvenc_cq") if rule else None
             libx265_crf = rule.get("libx265_crf") if rule else None
+            libx265_preset = rule.get("libx265_preset") if rule else None
             target_resolution = rule.get("target_resolution") if rule else None
             audio_codec = rule.get("audio_codec") if rule else None
             audio_bitrate = rule.get("audio_bitrate") if rule else None
@@ -328,6 +330,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 nvenc_cq = payload.nvenc_cq_override
             if payload.libx265_crf_override is not None:
                 libx265_crf = payload.libx265_crf_override
+            if payload.libx265_preset_override is not None:
+                libx265_preset = payload.libx265_preset_override
             if payload.audio_codec_override is not None:
                 audio_codec = payload.audio_codec_override
             if payload.audio_bitrate_override is not None:
@@ -345,6 +349,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 nvenc_preset=nvenc_preset,
                 nvenc_cq=nvenc_cq,
                 libx265_crf=libx265_crf,
+                libx265_preset=libx265_preset,
                 target_resolution=target_resolution,
                 audio_codec=audio_codec,
                 audio_bitrate=audio_bitrate,
@@ -560,6 +565,7 @@ class AddByPathRequest(BaseModel):
     force_reencode: bool = False
     skip_arr_rescan: bool = False
     insert_next: bool = False
+    nzbget_category: str | None = None
 
 
 @router.post("/add-by-path")
@@ -569,18 +575,28 @@ async def add_jobs_by_path(payload: AddByPathRequest):
         raise HTTPException(status_code=503, detail="Queue not initialized")
 
     from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
+    from backend.rule_resolver import resolve_rules_for_batch
     from backend.config import settings
 
-    # Load source codecs from settings
+    # Load source codecs and default encoder from settings
     source_codecs = ["h264"]
+    default_encoder = "nvenc"
     try:
         async with connect_db() as _db:
-            async with _db.execute("SELECT value FROM settings WHERE key = 'source_codecs'") as _cur:
-                _row = await _cur.fetchone()
-                if _row and _row[0]:
-                    source_codecs = json.loads(_row[0])
+            async with _db.execute("SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder')") as _cur:
+                for _row in await _cur.fetchall():
+                    if _row["key"] == "source_codecs" and _row["value"]:
+                        source_codecs = json.loads(_row["value"])
+                    elif _row["key"] == "default_encoder" and _row["value"]:
+                        default_encoder = _row["value"]
     except Exception:
         pass
+
+    # Resolve encoding rules for all files
+    extra_context = {}
+    if payload.nzbget_category:
+        extra_context["nzbget_category"] = payload.nzbget_category
+    rule_results = await resolve_rules_for_batch(payload.file_paths, extra_context=extra_context)
 
     added = 0
     errors = []
@@ -620,14 +636,36 @@ async def add_jobs_by_path(payload: AddByPathRequest):
             print(f"[API] add-by-path: SKIPPED {_os.path.basename(fp)} — no conversion or audio work needed", flush=True)
             continue
 
+        # Apply encoding rule overrides
+        rule = rule_results.get(fp)
+        if rule and rule["action"] == "skip":
+            print(f"[API] add-by-path: SKIPPED {_os.path.basename(fp)} — rule '{rule['rule_name']}' says skip", flush=True)
+            continue
+
+        encoder = (rule.get("encoder") if rule else None) or default_encoder
+        nvenc_preset = rule.get("nvenc_preset") if rule else None
+        nvenc_cq = rule.get("nvenc_cq") if rule else None
+        libx265_crf = rule.get("libx265_crf") if rule else None
+        libx265_preset = rule.get("libx265_preset") if rule else None
+        target_resolution = rule.get("target_resolution") if rule else None
+        audio_codec = rule.get("audio_codec") if rule else None
+        audio_bitrate = rule.get("audio_bitrate") if rule else None
+
         job_id = await _queue.add_job(
             file_path=fp,
             job_type=job_type,
-            encoder="nvenc",
+            encoder=encoder,
             audio_tracks_to_remove=audio_remove,
             subtitle_tracks_to_remove=sub_remove,
             original_size=probe.get("file_size", 0),
-            priority=payload.priority,
+            nvenc_preset=nvenc_preset,
+            nvenc_cq=nvenc_cq,
+            libx265_crf=libx265_crf,
+            libx265_preset=libx265_preset,
+            target_resolution=target_resolution,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            priority=max(payload.priority, rule.get("queue_priority") or 0 if rule else 0),
             insert_next=payload.insert_next,
         )
         added += 1
@@ -980,11 +1018,23 @@ async def estimate_jobs(payload: EstimateRequest):
         content_profiles: dict[str, dict] = {}
         resolution_breakdown = {"4k": 0, "1080p": 0, "720p": 0, "sd": 0}
         skipped = 0
+        ignored_count = 0
+
+        # Check which files are in the ignored_files table
+        ignored_set = set()
+        try:
+            placeholders = ",".join("?" * len(file_paths))
+            async with db.execute(f"SELECT file_path FROM ignored_files WHERE file_path IN ({placeholders})", file_paths) as cur:
+                ignored_set = {r["file_path"] for r in await cur.fetchall()}
+        except Exception:
+            pass
 
         for fp in file_paths:
             rule = rule_results.get(fp)
             if rule and rule["action"] == "skip":
                 skipped += 1
+            if fp in ignored_set:
+                ignored_count += 1
             skip_conv = rule and rule["action"] == "ignore"
 
             async with db.execute(
@@ -1032,6 +1082,14 @@ async def estimate_jobs(payload: EstimateRequest):
             # Smart CQ per file for savings estimation
             if needs_conv:
                 vh = row["video_height"] or 0
+                if vh == 0:
+                    fn = fp.lower()
+                    if "2160p" in fn or "4k" in fn or "uhd" in fn:
+                        vh = 2160
+                    elif "1080p" in fn or "1080i" in fn:
+                        vh = 1080
+                    elif "720p" in fn:
+                        vh = 720
                 tier = get_resolution_tier(vh)
                 resolution_breakdown[tier] = resolution_breakdown.get(tier, 0) + 1
 
@@ -1083,6 +1141,7 @@ async def estimate_jobs(payload: EstimateRequest):
             "by_type": by_type,
             "by_source": by_source,
             "skipped_by_rules": skipped,
+            "ignored_files": ignored_count,
             "cq": payload.nvenc_cq_override or global_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "content_profiles": content_profiles,

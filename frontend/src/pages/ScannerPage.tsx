@@ -34,7 +34,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [scanStarted, setScanStarted] = useState(false);
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
+  const [, setUpdating] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "size" | "files" | "date">("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [search, setSearch] = useState("");
@@ -175,9 +175,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     return () => clearInterval(poll);
   }, [posterPrefetching]);
 
-  // When filter changes, clear tree and reload with new filter
+  // When filter changes, clear tree/cache and reload with new filter
   useEffect(() => {
     if (!loading) {
+      _cachedFolders = null;
+      _cachedFilter = "";
       setFolders([]);
       setUpdating(true);
       loadTree(filter);
@@ -210,40 +212,54 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     setSelectedPaths((prev) => {
       const next = new Set(prev);
       if (shiftKey && lastClickedPathRef.current) {
-        // Build path list matching the current view:
-        // - Filtered tree / poster: use title-level paths
-        // - Unfiltered tree: use leaf folder paths
-        const isFiltered = filter !== "all";
-        const pathSet = new Set<string>();
-        for (const f of folders) {
-          if (isFiltered) {
-            // Extract title-level path (matches flat tree nodes)
-            const parts = f.path.split("/").filter(Boolean);
-            let titlePath = f.path;
-            for (let i = 0; i < parts.length; i++) {
-              if (/\[(?:tvdb-\d+|tt\d+)\]/.test(parts[i])) {
-                titlePath = "/" + parts.slice(0, i + 1).join("/");
-                break;
-              }
-            }
-            pathSet.add(titlePath + "/");
-          } else {
-            pathSet.add(f.path + "/");
-          }
-        }
-        const allPaths = Array.from(pathSet).sort();
+        // Check if selecting individual files (inside poster accordion)
+        const isFileSelect = !path.endsWith("/") && !lastClickedPathRef.current.endsWith("/");
 
-        const lastIdx = allPaths.indexOf(lastClickedPathRef.current);
-        const curIdx = allPaths.indexOf(path);
-        if (lastIdx !== -1 && curIdx !== -1) {
-          const start = Math.min(lastIdx, curIdx);
-          const end = Math.max(lastIdx, curIdx);
-          for (let i = start; i <= end; i++) {
-            next.add(allPaths[i]);
+        if (isFileSelect) {
+          // Range-select files from loadedFiles
+          const allFiles: string[] = [];
+          for (const files of loadedFiles.values()) {
+            for (const f of files) allFiles.push(f.file_path);
+          }
+          allFiles.sort();
+          const lastIdx = allFiles.indexOf(lastClickedPathRef.current);
+          const curIdx = allFiles.indexOf(path);
+          if (lastIdx !== -1 && curIdx !== -1) {
+            const start = Math.min(lastIdx, curIdx);
+            const end = Math.max(lastIdx, curIdx);
+            for (let i = start; i <= end; i++) next.add(allFiles[i]);
+          } else {
+            if (next.has(path)) next.delete(path); else next.add(path);
           }
         } else {
-          if (next.has(path)) next.delete(path);
-          else next.add(path);
+          // Range-select folders
+          const isFiltered = filter !== "all";
+          const pathSet = new Set<string>();
+          for (const f of folders) {
+            if (isFiltered) {
+              const parts = f.path.split("/").filter(Boolean);
+              let titlePath = f.path;
+              for (let i = 0; i < parts.length; i++) {
+                if (/\[(?:tvdb-\d+|tt\d+)\]/.test(parts[i])) {
+                  titlePath = "/" + parts.slice(0, i + 1).join("/");
+                  break;
+                }
+              }
+              pathSet.add(titlePath + "/");
+            } else {
+              pathSet.add(f.path + "/");
+            }
+          }
+          const allPaths = Array.from(pathSet).sort();
+          const lastIdx = allPaths.indexOf(lastClickedPathRef.current);
+          const curIdx = allPaths.indexOf(path);
+          if (lastIdx !== -1 && curIdx !== -1) {
+            const start = Math.min(lastIdx, curIdx);
+            const end = Math.max(lastIdx, curIdx);
+            for (let i = start; i <= end; i++) next.add(allPaths[i]);
+          } else {
+            if (next.has(path)) next.delete(path); else next.add(path);
+          }
         }
       } else {
         if (next.has(path)) next.delete(path);
@@ -518,10 +534,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // Send all selected paths (both folder paths ending with / and file paths)
     // The server resolves folder paths to actual files
     const paths = Array.from(selectedPaths);
+
+    // Check if any selected files are ignored
+    const allFiles = Array.from(loadedFiles.values()).flat();
+    const hasIgnored = allFiles.some(f => f.ignored && (
+      paths.includes(f.file_path) || paths.some(p => p.endsWith("/") && f.file_path.startsWith(p.slice(0, -1)))
+    ));
+
     if (selectAllActive) {
       // Select all: use the filter-based server-side resolution
+      const anyIgnored = allFiles.some(f => f.ignored);
       setEstimatePaths(folders.map(f => f.path + "/"));
-      setEstimateHasIgnored(false);
+      setEstimateHasIgnored(anyIgnored);
       return;
     }
     if (!paths.length) {
@@ -529,7 +553,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       return;
     }
     setEstimatePaths(paths);
-    setEstimateHasIgnored(false);
+    setEstimateHasIgnored(hasIgnored);
   };
 
   const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any) => {
@@ -970,13 +994,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             </>
           )}
 
-          {updating && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", marginBottom: 8, background: "rgba(145,53,255,0.1)", borderRadius: 4, fontSize: 12, color: "var(--text-muted)" }}>
-              <div className="spinner" style={{ width: 14, height: 14 }} />
-              Updating...
-            </div>
-          )}
-
           {/* Selection control panel */}
           <div className="queue-control-panel" style={{
             display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
@@ -1060,6 +1077,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
               externalFiles={loadedFiles}
+              mediaDirs={dirs.map((d: any) => d.path)}
               sortBy={sortBy}
               sortDir={sortDir}
             />

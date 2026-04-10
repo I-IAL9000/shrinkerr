@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { FolderInfo } from "./FileTree";
 import type { ScannedFile } from "../types";
-import { resolvePosterMetadata, getScanFiles } from "../api";
+import { resolvePosterMetadata, getFilesByTitle } from "../api";
+import { getCodecLabel } from "../codecLabels";
 import PosterCard from "./PosterCard";
 import FileDetail from "./FileDetail";
 
@@ -279,16 +280,21 @@ export default function PosterGrid({
     setLoadingFiles(true);
     setExpandedFileDetails(new Set());
     try {
-      // Load all season folders in parallel
-      const results = await Promise.all(
-        group.folders.map(folder => getScanFiles(folder.path, filter).catch(() => []))
-      );
-      const allFiles: ScannedFile[] = [];
-      for (let i = 0; i < results.length; i++) {
-        const parsed = (Array.isArray(results[i]) ? results[i] : []).map(parseFile);
-        allFiles.push(...parsed);
-        onFolderFilesLoaded?.(group.folders[i].path, parsed);
+      // Single batch call for all files under the title prefix
+      const result = await getFilesByTitle(group.key, filter);
+      const allFiles = (Array.isArray(result) ? result : []).map(parseFile);
+
+      // Group by folder for the onFolderFilesLoaded callback
+      const byFolder = new Map<string, ScannedFile[]>();
+      for (const f of allFiles) {
+        const folder = f.file_path.split("/").slice(0, -1).join("/");
+        if (!byFolder.has(folder)) byFolder.set(folder, []);
+        byFolder.get(folder)!.push(f);
       }
+      for (const [folder, files] of byFolder) {
+        onFolderFilesLoaded?.(folder, files);
+      }
+
       setExpandedFiles(allFiles);
     } catch { /* ignore */ }
     setLoadingFiles(false);
@@ -317,6 +323,7 @@ export default function PosterGrid({
           onSelect={(shiftKey) => handlePosterSelect(group.key, shiftKey)}
           onClick={() => handleExpand(group)}
           isExpanded={expandedKey === group.key}
+          mediaType={meta?.media_type}
         />
       );
     }
@@ -389,7 +396,7 @@ export default function PosterGrid({
                 {meta?.genres && <span>{meta.genres}</span>}
                 {meta?.country && <span>{meta.country}</span>}
                 {parentFolder && (
-                  <span style={{ marginLeft: "auto", background: "rgba(145,53,255,0.15)", color: "var(--accent)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
+                  <span style={{ marginLeft: "auto", background: "rgba(145,53,255,0.25)", color: "#c4a8ff", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
                     {parentFolder}
                   </span>
                 )}
@@ -423,7 +430,7 @@ export default function PosterGrid({
                             <input type="checkbox" checked={isSelected(file.file_path)} readOnly onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }} style={{ marginRight: 6 }} />
                             <span style={{ flex: 1 }}>{expandedFileDetails.has(file.file_path) ? "\u25BC" : "\u25B6"} {file.file_name}</span>
                             <span className="tree-file-size" style={{ marginLeft: "auto", flexShrink: 0 }}>{file.file_size_gb} GB</span>
-                            <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0 }}>{file.needs_conversion ? "x264" : "x265"}</span>
+                            <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0 }}>{getCodecLabel(file.video_codec, file.needs_conversion)}</span>
                             {file.converted && <span style={{ color: "var(--success)", fontSize: 14, flexShrink: 0 }}>&#x2713;</span>}
                             {file.is_new && <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, flexShrink: 0 }}>NEW</span>}
                             {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }}>ignored ✕</button>}
@@ -454,7 +461,8 @@ export default function PosterGrid({
       {renderedRows}
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-          No scan results. Select directories and click Scan to start.
+          <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
+          Loading files...
         </div>
       )}
     </div>

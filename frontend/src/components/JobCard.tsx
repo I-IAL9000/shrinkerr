@@ -22,6 +22,9 @@ interface JobCardProps {
   fileSize?: number;
   nvencPreset?: string | null;
   nvencCq?: number | null;
+  encoder?: string | null;
+  libx265Preset?: string | null;
+  libx265Crf?: number | null;
   jobType?: string | null;
   audioCodec?: string | null;
   audioBitrate?: number | null;
@@ -33,7 +36,7 @@ interface JobCardProps {
   onCancel?: () => void;
 }
 
-export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nvencCq, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
+export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encoder, libx265Preset, libx265Crf, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
   const confirm = useConfirm();
   return (
     <div className="job-active">
@@ -75,8 +78,12 @@ export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nve
       </div>
       <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6, flexWrap: "wrap" }}>
         <span>{progress.step === "vmaf analysis" ? "Analyzing quality..." : progress.step}</span>
-        {nvencPreset && (jobType === "convert" || jobType === "combined") && (
-          <span>{nvencPreset.toUpperCase()} / CQ {nvencCq}</span>
+        {(jobType === "convert" || jobType === "combined") && (
+          encoder === "libx265" ? (
+            <span>{libx265Preset || "medium"} / CRF {libx265Crf ?? 20}</span>
+          ) : nvencPreset ? (
+            <span>{nvencPreset.toUpperCase()} / CQ {nvencCq}</span>
+          ) : null
         )}
         {audioCodec && audioCodec !== "copy" && (jobType === "audio" || jobType === "combined") && (
           <span>Audio: {audioCodec.toUpperCase()} / {audioBitrate}k</span>

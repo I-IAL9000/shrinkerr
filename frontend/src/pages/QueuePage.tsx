@@ -101,7 +101,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   }, [tab, failedCount]);
 
   // For pending tab: use tabJobs when on pending tab
-  const pending = tab === "pending" ? tabJobs : [];
+  const pending = tab === "pending" ? tabJobs : jobs.filter(j => j.status === "pending");
   // Stable memo: only recalculate when the actual IDs change
   const pendingIdStr = pending.map((j) => j.id).join(",");
   const pendingIds = useMemo(() => pending.map((j) => j.id), [pendingIdStr]);
@@ -242,7 +242,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={() => { startQueue(); setQueueStarting(true); toast("Queue started", "success"); }}>
+          <button className="btn btn-primary" onClick={async () => { await startQueue(); setQueueStarting(true); load(); toast("Queue started", "success"); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg> Start
           </button>
         )}
@@ -250,8 +250,18 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
       {/* Render a JobCard for each active job with progress */}
       {running.map((job, runIndex) => {
-        const progress = jobProgressMap.get(job.id);
-        if (!progress) return null;
+        const progress = jobProgressMap.get(job.id) || {
+          type: "job_progress" as const,
+          job_id: job.id,
+          file_name: job.file_path?.split("/").pop() || "Starting...",
+          progress: 0,
+          fps: 0,
+          eta: 0,
+          step: "starting",
+          jobs_completed: stats?.completed ?? 0,
+          jobs_total: (stats?.completed ?? 0) + (stats?.pending ?? 0) + running.length,
+          total_saved: 0,
+        };
         const tracks = trackCache.get(job.file_path) || [];
         const removeIndices = new Set(job.audio_tracks_to_remove || []);
         const removedLangs = tracks
@@ -272,6 +282,9 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             fileSize={job.original_size}
             nvencPreset={job.nvenc_preset || encodingDefaults?.nvenc_preset || "p6"}
             nvencCq={job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}
+            encoder={job.encoder || encodingDefaults?.default_encoder || "nvenc"}
+            libx265Preset={job.libx265_preset || encodingDefaults?.libx265_preset || "medium"}
+            libx265Crf={job.libx265_crf ?? encodingDefaults?.libx265_crf ?? 20}
             jobType={job.job_type}
             audioCodec={job.audio_codec || encodingDefaults?.audio_codec || "copy"}
             audioBitrate={job.audio_bitrate ?? encodingDefaults?.audio_bitrate ?? 128}
@@ -287,24 +300,15 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         );
       })}
 
-      {/* Show spinner cards for jobs that are starting up (running but no WS progress yet, OR queue just started) */}
+      {/* Show spinner cards for pending jobs about to start when queue is ramping up */}
       {(() => {
-        // Jobs already running in DB but waiting for first WS progress
-        const startingJobs = running.filter(j => !jobProgressMap.has(j.id));
-        // If queue is starting and we don't have enough spinner cards yet, fill from pending
+        if (!queueStarting) return null;
         const parallelLimit = encodingDefaults?.parallel_jobs ?? 4;
-        const activeWithProgress = running.filter(j => jobProgressMap.has(j.id)).length;
-        const slotsShowing = activeWithProgress + startingJobs.length;
-        const slotsToFill = queueStarting ? Math.max(0, Math.min(parallelLimit, pendingCount + slotsShowing) - slotsShowing) : 0;
-        const pendingPreview = pending.slice(0, slotsToFill);
-        const allStarting = [
-          ...startingJobs.map(j => ({ key: `run-${j.id}`, name: j.file_name })),
-          ...pendingPreview.map(j => ({ key: `pend-${j.id}`, name: j.file_name })),
-        ];
-        return allStarting.map(item => (
-          <div key={item.key} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
+        const slotsToFill = Math.max(0, Math.min(parallelLimit, pendingCount + running.length) - running.length);
+        return pending.slice(0, slotsToFill).map(j => (
+          <div key={`pend-${j.id}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
             <div className="spinner" style={{ width: 18, height: 18 }} />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting: {item.name}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting: {j.file_name}</span>
           </div>
         ));
       })()}
