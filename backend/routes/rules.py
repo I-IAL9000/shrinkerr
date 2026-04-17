@@ -304,6 +304,16 @@ async def sync_plex():
         raise HTTPException(500, f"Plex sync failed: {exc}")
 
 
+@router.post("/sync-jellyfin")
+async def sync_jellyfin():
+    from backend.jellyfin import sync_jellyfin_metadata_cache
+    try:
+        result = await sync_jellyfin_metadata_cache()
+        return {"status": "synced", **result}
+    except Exception as exc:
+        raise HTTPException(500, f"Jellyfin sync failed: {exc}")
+
+
 @router.get("/plex-options")
 async def plex_options():
     from backend.plex import get_available_plex_options
@@ -411,6 +421,17 @@ async def get_condition_options():
         except Exception:
             pass
 
+        # Jellyfin tags/genres
+        jellyfin_tags = []
+        jellyfin_genres = []
+        try:
+            from backend.jellyfin import get_available_jellyfin_options
+            jf_opts = await get_available_jellyfin_options()
+            jellyfin_tags = jf_opts.get("tags", [])
+            jellyfin_genres = jf_opts.get("genres", [])
+        except Exception:
+            pass
+
         return {
             "sources": sorted(sources),
             "resolutions": ["4K", "1080p", "720p", "SD"],
@@ -420,6 +441,8 @@ async def get_condition_options():
             "release_groups": [g for g, _ in sorted(release_groups.items(), key=lambda x: -x[1])][:200],
             "arr_tags": arr_tags,
             "nzbget_categories": nzbget_categories,
+            "jellyfin_tags": jellyfin_tags,
+            "jellyfin_genres": jellyfin_genres,
         }
     finally:
         await db.close()

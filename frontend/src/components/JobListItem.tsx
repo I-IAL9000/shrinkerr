@@ -43,6 +43,7 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
   const typeBadge = job.job_type === "combined"
     ? `Convert${hasAudioRemoval ? " + Audio" : ""}${hasSubRemoval ? " + Subs" : ""}${!hasAudioRemoval && !hasSubRemoval ? " + Cleanup" : ""}`
     : job.job_type === "convert" ? "Convert"
+    : job.job_type === "health_check" ? `Health check${job.encoder ? ` (${job.encoder})` : ""}`
     : hasSubRemoval && !hasAudioRemoval ? "Sub cleanup"
     : hasAudioRemoval && !hasSubRemoval ? "Audio cleanup"
     : "Cleanup";
@@ -89,7 +90,11 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
       <span className="job-filename" style={{ flex: 1, minWidth: 0 }}>
         {fileName}
         {(job as any).original_size > 0 && (
-          <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.4 }}>{formatBytes((job as any).original_size)}</span>
+          <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.4 }}>
+            {job.status === "completed" && job.space_saved > 0
+              ? formatBytes((job as any).original_size - job.space_saved)
+              : formatBytes((job as any).original_size)}
+          </span>
         )}
         {(job as any).priority > 0 && (
           <span style={{
@@ -103,11 +108,26 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
       </span>
       {job.status === "completed" && (
         <>
-          {job.space_saved > 0 && (
-            <span style={{ color: "var(--success)", fontSize: 11 }}>saved {formatBytes(job.space_saved)}</span>
-          )}
-          {job.space_saved <= 0 && (
-            <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>Ignored</span>
+          {job.job_type === "health_check" ? (
+            job.error_log && job.error_log.startsWith("Corrupt") ? (
+              <span
+                title={job.error_log}
+                style={{ fontSize: 11, color: "#ffffff", background: "var(--danger)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
+              >Corrupt</span>
+            ) : (
+              <span
+                style={{ fontSize: 11, color: "#ffffff", background: "var(--success)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
+              >Healthy</span>
+            )
+          ) : (
+            <>
+              {job.space_saved > 0 && (
+                <span style={{ color: "var(--success)", fontSize: 11 }}>saved {formatBytes(job.space_saved)}</span>
+              )}
+              {job.space_saved <= 0 && (
+                <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>Ignored</span>
+              )}
+            </>
           )}
           {onUndo && (job as any).backup_path && (
             <button
@@ -144,7 +164,10 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
         <>
           <span className="job-type-badge" style={{ background: "var(--border)" }}>{typeBadge}</span>
           <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
-            {(job.nvenc_preset || encodingDefaults?.nvenc_preset || "P6").toUpperCase()} / CQ {job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}
+            {(job.encoder === "libx265" || (!job.encoder && encodingDefaults?.default_encoder === "libx265"))
+              ? `${(job.libx265_preset || encodingDefaults?.libx265_preset || "medium").charAt(0).toUpperCase() + (job.libx265_preset || encodingDefaults?.libx265_preset || "medium").slice(1)} / CRF ${job.libx265_crf ?? encodingDefaults?.libx265_crf ?? 20}`
+              : `${(job.nvenc_preset || encodingDefaults?.nvenc_preset || "P6").toUpperCase()} / CQ ${job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}`
+            }
           </span>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
             {onIgnore && (
@@ -236,6 +259,38 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
               )}
               {logData.started_at && <span style={{ color: "var(--text-muted)" }}>Started: {new Date(logData.started_at).toLocaleString()}</span>}
             </div>
+
+            {/* Health check result (inline post-conversion OR standalone health_check job) */}
+            {job.health_status && (
+              <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 4, background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: job.health_status === "corrupt" && job.health_errors_json ? 6 : 0 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Health check</span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 3, color: "#ffffff",
+                    background: job.health_status === "corrupt" ? "var(--danger)" : "var(--success)",
+                  }}>
+                    {job.health_status === "corrupt" ? "Corrupt" : "Healthy"}
+                  </span>
+                  {job.health_check_type && (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({job.health_check_type})</span>
+                  )}
+                  {job.health_check_seconds != null && (
+                    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{job.health_check_seconds.toFixed(1)}s</span>
+                  )}
+                </div>
+                {job.health_status === "corrupt" && job.health_errors_json && (() => {
+                  let errs: string[] = [];
+                  try { errs = JSON.parse(job.health_errors_json); } catch { /* ignore */ }
+                  if (!errs.length) return null;
+                  return (
+                    <ul style={{ margin: 0, padding: "4px 0 0 18px", color: "#e94560", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
+                      {errs.slice(0, 8).map((e, i) => <li key={i} style={{ wordBreak: "break-word" }}>{e}</li>)}
+                      {errs.length > 8 && <li style={{ opacity: 0.6 }}>...and {errs.length - 8} more</li>}
+                    </ul>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* ffmpeg command (copyable) */}
             {logData.ffmpeg_command && (

@@ -117,41 +117,40 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
         active_filter = payload.filter or "all"
+        # Single query with OR'd LIKE clauses — much faster than N separate queries
+        like_clause = " OR ".join(["file_path LIKE ?" for _ in folder_paths])
+        like_args = [fp + "%" for fp in folder_paths]
         if active_filter != "all":
-            # Use enrichment + filter matching to only include files matching the filter
             import aiosqlite
             from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
             db_resolve = await aiosqlite.connect(DB_PATH)
             db_resolve.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_resolve)
-                for fp in folder_paths:
-                    async with db_resolve.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND file_path LIKE ?",
-                        (fp + "%",),
-                    ) as cur:
-                        rows = await cur.fetchall()
-                    matched = 0
-                    for row in rows:
-                        enriched = _enrich_row(dict(row), ctx)
-                        if _matches_filter(enriched, active_filter):
-                            file_paths.append(enriched["file_path"])
-                            matched += 1
-                    print(f"[QUEUE] Folder '{fp}' resolved to {matched}/{len(rows)} files (filter: {active_filter})", flush=True)
+                async with db_resolve.execute(
+                    f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    rows = await cur.fetchall()
+                total_rows = len(rows)
+                for row in rows:
+                    enriched = _enrich_row_minimal(dict(row), ctx)
+                    if _matches_filter(enriched, active_filter):
+                        file_paths.append(enriched["file_path"])
+                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s): {len(file_paths)}/{total_rows} files matched filter '{active_filter}'", flush=True)
             finally:
                 await db_resolve.close()
         else:
             db_resolve = await connect_db()
             try:
-                for fp in folder_paths:
-                    async with db_resolve.execute(
-                        "SELECT file_path FROM scan_results WHERE file_path LIKE ? AND removed_from_list = 0",
-                        (fp + "%",),
-                    ) as cur:
-                        rows = await cur.fetchall()
-                        print(f"[QUEUE] Folder '{fp}' resolved to {len(rows)} files", flush=True)
-                        file_paths.extend(r["file_path"] for r in rows)
+                async with db_resolve.execute(
+                    f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    rows = await cur.fetchall()
+                    file_paths.extend(r["file_path"] for r in rows)
+                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {len(rows)} files", flush=True)
             finally:
                 await db_resolve.close()
     print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
@@ -234,7 +233,22 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
         except Exception:
             pass
 
-        job_ids = []
+        # Batch-load all scan_results up front (avoids N+1 queries)
+        scan_rows: dict[str, dict] = {}
+        CHUNK = 900
+        for i in range(0, len(file_paths), CHUNK):
+            chunk = file_paths[i:i + CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            async with db.execute(
+                f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
+                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height "
+                f"FROM scan_results WHERE file_path IN ({placeholders})",
+                chunk,
+            ) as cur:
+                for r in await cur.fetchall():
+                    scan_rows[r["file_path"]] = dict(r)
+
+        jobs_to_insert: list[dict] = []
         ignored_by_rule = 0
         for fp in file_paths:
             rule = rule_results.get(fp)
@@ -242,7 +256,6 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             # "skip" = do nothing at all, skip entirely
             if rule and rule["action"] == "skip":
                 ignored_by_rule += 1
-                print(f"[QUEUE] Skipped {fp} entirely (rule: {rule['rule_name']})", flush=True)
                 continue
 
             # "ignore" = skip video conversion, still do audio/sub cleanup
@@ -250,11 +263,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             if skip_conversion:
                 ignored_by_rule += 1
 
-            async with db.execute(
-                "SELECT file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height FROM scan_results WHERE file_path = ?",
-                (fp,),
-            ) as cur:
-                row = await cur.fetchone()
+            row = scan_rows.get(fp)
             if not row:
                 continue
 
@@ -291,6 +300,22 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 pass
 
             has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
+
+            # Also treat "native language not first" as audio work (reorder-only job)
+            if not has_audio_work:
+                try:
+                    from backend.scanner import languages_match, _is_cleanup_enabled
+                    if _is_cleanup_enabled("reorder_native_audio"):
+                        all_tracks = json.loads(row["audio_tracks_json"] or "[]")
+                        if len(all_tracks) > 1:
+                            native = row.get("native_language") or ""
+                            first_lang = (all_tracks[0].get("language") or "").lower()
+                            if native and native.lower() != "und" and first_lang != native.lower():
+                                if not languages_match(first_lang, native.lower()):
+                                    has_audio_work = True
+                except Exception:
+                    pass
+
             # force_reencode overrides both needs_conversion AND skip rules
             needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
             if skip_conversion and not payload.force_reencode:
@@ -339,34 +364,36 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             if payload.target_resolution_override is not None:
                 target_resolution = payload.target_resolution_override
 
-            job_id = await _queue.add_job(
-                file_path=fp,
-                job_type=job_type,
-                encoder=encoder,
-                audio_tracks_to_remove=audio_remove,
-                subtitle_tracks_to_remove=sub_remove,
-                original_size=row["file_size"],
-                nvenc_preset=nvenc_preset,
-                nvenc_cq=nvenc_cq,
-                libx265_crf=libx265_crf,
-                libx265_preset=libx265_preset,
-                target_resolution=target_resolution,
-                audio_codec=audio_codec,
-                audio_bitrate=audio_bitrate,
-                priority=max(
+            jobs_to_insert.append({
+                "file_path": fp,
+                "job_type": job_type,
+                "encoder": encoder,
+                "audio_tracks_to_remove": audio_remove,
+                "subtitle_tracks_to_remove": sub_remove,
+                "original_size": row["file_size"],
+                "nvenc_preset": nvenc_preset,
+                "nvenc_cq": nvenc_cq,
+                "libx265_crf": libx265_crf,
+                "libx265_preset": libx265_preset,
+                "target_resolution": target_resolution,
+                "audio_codec": audio_codec,
+                "audio_bitrate": audio_bitrate,
+                "priority": max(
                     payload.priority,
                     rule.get("queue_priority") or 0 if rule else 0,
                     1 if plex_prioritize and any(fp.startswith(uf) for uf in unwatched_folders) else 0,
                 ),
-            )
-            job_ids.append(job_id)
+            })
 
         if ignored_by_rule > 0:
             await db.commit()
-
-        return {"job_ids": job_ids, "added": len(job_ids), "ignored_by_rule": ignored_by_rule}
     finally:
         await db.close()
+
+    # Bulk-insert all queued jobs in a single transaction (huge perf win)
+    all_ids = await _queue.add_jobs_bulk(jobs_to_insert)
+    job_ids = [jid for jid in all_ids if jid]
+    return {"job_ids": job_ids, "added": len(job_ids), "ignored_by_rule": ignored_by_rule}
 
 
 @router.get("/")
@@ -555,6 +582,109 @@ async def bulk_ignore(payload: BulkIgnoreRequest):
         await db.close()
 
 
+# --- Health check ---
+
+class HealthCheckRequest(BaseModel):
+    file_paths: list[str] = []
+    mode: str = "quick"  # "quick" | "thorough"
+    select_all: bool = False
+    filter: str = "all"
+
+
+@router.post("/health-check")
+async def queue_health_checks(payload: HealthCheckRequest):
+    """Queue health_check jobs for the given files (or current filter when select_all=True)."""
+    if _queue is None:
+        raise HTTPException(status_code=503, detail="Queue not initialized")
+
+    mode = payload.mode.lower()
+    if mode not in ("quick", "thorough"):
+        raise HTTPException(status_code=400, detail="mode must be 'quick' or 'thorough'")
+
+    file_paths = list(payload.file_paths)
+
+    # Resolve folder paths (same pattern used elsewhere in this file)
+    folder_paths = [p for p in file_paths if p.endswith("/")]
+    if folder_paths:
+        file_paths = [p for p in file_paths if not p.endswith("/")]
+        like_clause = " OR ".join(["file_path LIKE ?" for _ in folder_paths])
+        like_args = [fp + "%" for fp in folder_paths]
+        active_filter = payload.filter or "all"
+        if active_filter != "all":
+            import aiosqlite
+            from backend.database import DB_PATH
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            db_r = await aiosqlite.connect(DB_PATH)
+            db_r.row_factory = aiosqlite.Row
+            try:
+                ctx = await _build_enrichment_context(db_r)
+                async with db_r.execute(
+                    f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    for row in await cur.fetchall():
+                        enriched = _enrich_row_minimal(dict(row), ctx)
+                        if _matches_filter(enriched, active_filter):
+                            file_paths.append(enriched["file_path"])
+            finally:
+                await db_r.close()
+        else:
+            db_r = await connect_db()
+            try:
+                async with db_r.execute(
+                    f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    file_paths.extend(r["file_path"] for r in await cur.fetchall())
+            finally:
+                await db_r.close()
+
+    # select_all path (whole library matching filter)
+    if payload.select_all and not file_paths:
+        import aiosqlite
+        from backend.database import DB_PATH
+        from backend.routes.scan import (
+            _build_enrichment_context, _enrich_row_minimal, _matches_filter,
+            _SCAN_SELECT_COLS, _SCAN_WHERE,
+        )
+        sdb = await aiosqlite.connect(DB_PATH)
+        sdb.row_factory = aiosqlite.Row
+        try:
+            ctx = await _build_enrichment_context(sdb)
+            async with sdb.execute(
+                f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE}"
+            ) as cur:
+                for row in await cur.fetchall():
+                    enriched = _enrich_row_minimal(dict(row), ctx)
+                    if _matches_filter(enriched, payload.filter):
+                        file_paths.append(enriched["file_path"])
+        finally:
+            await sdb.close()
+
+    if not file_paths:
+        return {"added": 0, "job_ids": []}
+
+    # Build bulk-insert payload. Store mode in the 'encoder' column (re-uses existing schema).
+    jobs_to_insert = [
+        {
+            "file_path": fp,
+            "job_type": "health_check",
+            "encoder": mode,
+            "priority": 0,
+        }
+        for fp in file_paths
+    ]
+    all_ids = await _queue.add_jobs_bulk(jobs_to_insert)
+    job_ids = [jid for jid in all_ids if jid]
+
+    # Auto-start the worker if idle
+    if job_ids and _worker is not None:
+        if not _worker._running or _worker._paused:
+            _worker.start()
+
+    return {"added": len(job_ids), "job_ids": job_ids, "mode": mode}
+
+
 # --- Add by path (for NZBGet/external integrations) ---
 
 import os as _os
@@ -566,6 +696,33 @@ class AddByPathRequest(BaseModel):
     skip_arr_rescan: bool = False
     insert_next: bool = False
     nzbget_category: str | None = None
+
+
+@router.post("/health-check/clear-pending")
+async def clear_pending_health_checks():
+    """Emergency cleanup: delete all PENDING health_check jobs.
+
+    Useful when auto-queue has flooded the queue. Running jobs and other job
+    types are untouched.
+    """
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'health_check' AND status = 'pending'"
+        ) as cur:
+            row = await cur.fetchone()
+            n = row["n"] if row else 0
+        await db.execute(
+            "DELETE FROM jobs WHERE job_type = 'health_check' AND status = 'pending'"
+        )
+        # Clean up the file_events queued entries too so the Activity feed isn't drowned
+        await db.execute(
+            "DELETE FROM file_events WHERE event_type = 'queued' AND summary LIKE '%health check%'"
+        )
+        await db.commit()
+        return {"deleted": n}
+    finally:
+        await db.close()
 
 
 @router.post("/add-by-path")
@@ -767,8 +924,104 @@ async def cancel_job(job_id: int):
 
 @router.post("/{job_id}/retry")
 async def retry_job(job_id: int):
+    """Retry a failed job.
+
+    Special handling: if the file on disk has been renamed since the job was
+    recorded (a previous partial conversion: x264 → x265 on disk succeeded but
+    a later step failed), the conversion is effectively done. Don't re-run it
+    — repoint scan_results to the new file, mark the original job completed,
+    and return a note so the frontend can tell the user to rescan if they still
+    want tracks removed.
+    """
+    import os as _os
+    from backend.converter import rename_x264_to_x265
+
     if _queue is None:
         raise HTTPException(status_code=503, detail="Queue not initialized")
+
+    # Fetch job to check its file_path
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT file_path, job_type, audio_tracks_to_remove, subtitle_tracks_to_remove "
+            "FROM jobs WHERE id = ?", (job_id,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    if row:
+        fp = row["file_path"]
+        if fp and not _os.path.exists(fp):
+            # Try common renames: x264 → x265 in the filename
+            candidates = []
+            try:
+                d = _os.path.dirname(fp)
+                orig_name = _os.path.basename(fp)
+                renamed_name = rename_x264_to_x265(orig_name)
+                if renamed_name != orig_name:
+                    candidates.append(_os.path.join(d, renamed_name))
+            except Exception:
+                pass
+
+            for candidate in candidates:
+                if _os.path.exists(candidate):
+                    # File was already converted in a previous run. Mark this job
+                    # completed (conversion part done), update scan_results to the
+                    # new path, and return a note so the user can decide whether
+                    # to rescan for track-removal.
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc).isoformat()
+                    try:
+                        new_size = _os.path.getsize(candidate)
+                    except OSError:
+                        new_size = None
+
+                    had_track_removal = False
+                    try:
+                        import json as _json
+                        a = _json.loads(row["audio_tracks_to_remove"] or "[]")
+                        s = _json.loads(row["subtitle_tracks_to_remove"] or "[]")
+                        had_track_removal = bool(a) or bool(s)
+                    except Exception:
+                        pass
+
+                    db2 = await connect_db()
+                    try:
+                        # Mark the failed job as completed (conversion happened)
+                        await db2.execute(
+                            "UPDATE jobs SET status = 'completed', completed_at = ?, "
+                            "file_path = ?, error_log = NULL WHERE id = ?",
+                            (now, candidate, job_id),
+                        )
+                        # Update scan_results to point to the new file
+                        if new_size:
+                            await db2.execute(
+                                "UPDATE scan_results SET file_path = ?, file_size = ?, "
+                                "video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                                "WHERE file_path = ?",
+                                (candidate, new_size, fp),
+                            )
+                        else:
+                            await db2.execute(
+                                "UPDATE scan_results SET file_path = ?, "
+                                "video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                                "WHERE file_path = ?",
+                                (candidate, fp),
+                            )
+                        await db2.commit()
+                        print(f"[RETRY] Job {job_id}: file was already converted to {candidate} in a prior run — marking completed", flush=True)
+                    finally:
+                        await db2.close()
+
+                    if had_track_removal:
+                        msg = ("The file was already converted in a previous run. "
+                               "Marked the job as completed and updated the path. "
+                               "To remove the tracks, rescan the folder and queue a new audio-cleanup job.")
+                    else:
+                        msg = "The file was already converted in a previous run. Marked the job as completed."
+                    return {"status": "completed", "job_id": job_id, "message": msg, "new_path": candidate}
+
     await _queue.update_status(job_id, "pending")
     return {"status": "pending", "job_id": job_id}
 
@@ -870,6 +1123,12 @@ async def undo_conversion(job_id: int):
         )
         await db.commit()
 
+        try:
+            from backend.file_events import log_event, EVENT_REVERTED
+            await log_event(original_path, EVENT_REVERTED, "Restored original from backup", {"job_id": job_id, "converted_path": converted_path})
+        except Exception:
+            pass
+
         return {
             "status": "reverted",
             "restored_path": original_path,
@@ -920,20 +1179,54 @@ class EstimateRequest(BaseModel):
 
 
 def _cq_to_savings_pct(cq: int) -> float:
-    """CQ-based empirical savings curve."""
-    if cq <= 15: return 0.10
-    if cq <= 18: return 0.15
-    if cq <= 20: return 0.25
-    if cq <= 22: return 0.35
-    if cq <= 24: return 0.45
-    if cq <= 26: return 0.55
-    if cq <= 28: return 0.60
-    return 0.65
+    """CQ-based empirical savings curve for x264→x265 conversion.
+
+    Calibrated from real-world NVENC results:
+      CQ 23 → ~54% actual, CQ 27 → ~77% actual
+    """
+    if cq <= 15: return 0.25
+    if cq <= 18: return 0.35
+    if cq <= 20: return 0.45
+    if cq <= 22: return 0.50
+    if cq <= 23: return 0.55
+    if cq <= 24: return 0.60
+    if cq <= 25: return 0.65
+    if cq <= 26: return 0.70
+    if cq <= 27: return 0.75
+    if cq <= 28: return 0.77
+    return 0.80
 
 
 @router.post("/estimate")
 async def estimate_jobs(payload: EstimateRequest):
     """Estimate savings for a batch of files without creating jobs."""
+    try:
+        return await _estimate_jobs_impl(payload)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        print(f"[ESTIMATE] Fatal error: {exc}", flush=True)
+        # Return a minimal valid response so the frontend shows *something*
+        return {
+            "total_selected": len(payload.file_paths),
+            "total_files": 0,
+            "total_size": 0,
+            "estimated_savings": 0,
+            "estimated_time_seconds": 0,
+            "by_type": {"convert": 0, "audio": 0, "combined": 0},
+            "by_source": {},
+            "skipped_by_rules": 0,
+            "ignored_files": 0,
+            "cq": 20,
+            "savings_pct": 0,
+            "content_profiles": {},
+            "resolution_breakdown": {},
+            "smart_encoding": False,
+            "error": str(exc),
+        }
+
+
+async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.rule_resolver import resolve_rules_for_batch
     from backend.content_detect import detect_content_type_from_path, get_resolution_tier, get_recommended_cq
     import re
@@ -944,34 +1237,34 @@ async def estimate_jobs(payload: EstimateRequest):
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
         active_filter = payload.filter or "all"
+        like_clause = " OR ".join(["file_path LIKE ?" for _ in folder_paths])
+        like_args = [fp + "%" for fp in folder_paths]
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
             db_r = await aiosqlite.connect(DB_PATH)
             db_r.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_r)
-                for fp in folder_paths:
-                    async with db_r.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND file_path LIKE ?",
-                        (fp + "%",),
-                    ) as cur:
-                        for row in await cur.fetchall():
-                            enriched = _enrich_row(dict(row), ctx)
-                            if _matches_filter(enriched, active_filter):
-                                file_paths.append(enriched["file_path"])
+                async with db_r.execute(
+                    f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    for row in await cur.fetchall():
+                        enriched = _enrich_row_minimal(dict(row), ctx)
+                        if _matches_filter(enriched, active_filter):
+                            file_paths.append(enriched["file_path"])
             finally:
                 await db_r.close()
         else:
             db_r = await connect_db()
             try:
-                for fp in folder_paths:
-                    async with db_r.execute(
-                        "SELECT file_path FROM scan_results WHERE file_path LIKE ? AND removed_from_list = 0",
-                        (fp + "%",),
-                    ) as cur:
-                        file_paths.extend(r["file_path"] for r in await cur.fetchall())
+                async with db_r.execute(
+                    f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                    like_args,
+                ) as cur:
+                    file_paths.extend(r["file_path"] for r in await cur.fetchall())
             finally:
                 await db_r.close()
 
@@ -993,6 +1286,11 @@ async def estimate_jobs(payload: EstimateRequest):
                 est_settings[row["key"]] = row["value"]
 
         global_cq = int(est_settings.get("nvenc_cq", "20"))
+
+        # Read default encoder for per-file time estimate
+        async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
+            _enc_row = await cur.fetchone()
+        default_encoder = (_enc_row["value"] if _enc_row else "nvenc").lower()
         content_detect_on = est_settings.get("content_type_detection", "true").lower() == "true"
         res_aware = est_settings.get("resolution_aware_cq", "false").lower() == "true"
         res_cq_map = {
@@ -1002,16 +1300,91 @@ async def estimate_jobs(payload: EstimateRequest):
             "sd": int(est_settings.get("resolution_cq_sd", "16")),
         }
 
-        # Get avg time per job from daily stats
+        # Compute a speed factor: encoding-seconds per content-second, derived from
+        # recent completed jobs (last 30 days) so a few slow CPU-encoded outliers
+        # in the full history don't skew small-file estimates.
+        # Also compute a fallback avg_seconds for files whose duration is unknown.
         async with db.execute(
             "SELECT COALESCE(SUM(total_encode_seconds), 0) as total_secs, "
-            "COALESCE(SUM(jobs_completed), 0) as total_jobs FROM daily_stats"
+            "COALESCE(SUM(jobs_completed), 0) as total_jobs FROM daily_stats "
+            "WHERE date >= date('now', '-30 days')"
         ) as cur:
             stat_row = await cur.fetchone()
         avg_seconds = (stat_row["total_secs"] / stat_row["total_jobs"]) if stat_row["total_jobs"] > 0 else 600
 
+        # Per-encoder speed factors: encoding-seconds per content-second.
+        # Uses jobs.started_at/completed_at directly rather than daily_stats aggregates
+        # so we can filter by encoder (GPU vs CPU have very different speeds).
+        # Each factor is the MEDIAN ratio across the last ~50 completed jobs of that
+        # encoder — more robust than mean against occasional slow outliers.
+        def _median(vals: list[float]) -> float:
+            if not vals:
+                return 0.0
+            s = sorted(vals)
+            n = len(s)
+            return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+        async def _speed_factor_for(encoder_filter: str) -> float:
+            # Prefer jobs.encoding_stats JSON which contains the actual ffmpeg
+            # encode_seconds + duration (no post-processing overhead in it).
+            # Fall back to started_at/completed_at elapsed time if stats are missing.
+            async with db.execute(
+                "SELECT j.encoding_stats, j.started_at, j.completed_at, sr.duration "
+                "FROM jobs j JOIN scan_results sr ON sr.file_path = j.file_path "
+                f"WHERE j.status = 'completed' "
+                f"  AND j.job_type IN ('convert', 'combined') "
+                f"  AND {encoder_filter} "
+                "ORDER BY j.completed_at DESC LIMIT 100"
+            ) as cur:
+                rows = await cur.fetchall()
+            ratios: list[float] = []
+            for r in rows:
+                enc_secs: float = 0.0
+                dur: float = 0.0
+                # Try encoding_stats JSON first (most accurate)
+                raw_stats = r["encoding_stats"]
+                if raw_stats:
+                    try:
+                        st = json.loads(raw_stats)
+                        enc_secs = float(st.get("encode_seconds") or 0)
+                        dur = float(st.get("duration") or 0)
+                    except Exception:
+                        pass
+                # Fallback: elapsed time from started_at/completed_at
+                if enc_secs <= 0 or dur <= 0:
+                    try:
+                        if r["started_at"] and r["completed_at"]:
+                            t0 = datetime.fromisoformat(r["started_at"])
+                            t1 = datetime.fromisoformat(r["completed_at"])
+                            enc_secs = (t1 - t0).total_seconds()
+                            dur = float(r["duration"] or 0)
+                    except Exception:
+                        pass
+                if enc_secs > 0 and dur > 0:
+                    ratios.append(enc_secs / dur)
+                if len(ratios) >= 50:
+                    break  # 50 data points is plenty
+            med = _median(ratios)
+            # Clamp: [0.02 (50x realtime), 3.0 (3x slower than realtime)]
+            return max(0.02, min(3.0, med)) if med > 0 else 0.0
+
+        try:
+            nvenc_speed = await _speed_factor_for("LOWER(j.encoder) IN ('nvenc', 'hevc_nvenc')")
+            libx265_speed = await _speed_factor_for("LOWER(j.encoder) IN ('libx265', 'x265', 'cpu')")
+        except Exception as exc:
+            print(f"[ESTIMATE] Speed factor query failed (using defaults): {exc}", flush=True)
+            nvenc_speed = 0.0
+            libx265_speed = 0.0
+
+        # Fallbacks: typical realistic defaults
+        if nvenc_speed == 0.0:
+            nvenc_speed = 0.08  # ~12x realtime for NVENC p3 at 1080p
+        if libx265_speed == 0.0:
+            libx265_speed = 0.4  # ~2.5x realtime for libx265 medium on a decent CPU
+
         total_files = 0
         total_size = 0
+        total_est_time = 0.0  # accumulates per-file encoding-seconds (sequential sum)
         estimated_savings = 0
         by_type = {"convert": 0, "audio": 0, "combined": 0}
         by_source = {}
@@ -1020,14 +1393,42 @@ async def estimate_jobs(payload: EstimateRequest):
         skipped = 0
         ignored_count = 0
 
-        # Check which files are in the ignored_files table
+        # Check which files are in the ignored_files table — batched
         ignored_set = set()
-        try:
-            placeholders = ",".join("?" * len(file_paths))
-            async with db.execute(f"SELECT file_path FROM ignored_files WHERE file_path IN ({placeholders})", file_paths) as cur:
-                ignored_set = {r["file_path"] for r in await cur.fetchall()}
-        except Exception:
-            pass
+        scan_rows: dict[str, dict] = {}
+        if file_paths:
+            # Chunk IN clauses to stay under SQLite's 999-variable limit
+            CHUNK = 900
+            try:
+                for i in range(0, len(file_paths), CHUNK):
+                    chunk = file_paths[i:i + CHUNK]
+                    placeholders = ",".join("?" * len(chunk))
+                    async with db.execute(
+                        f"SELECT file_path FROM ignored_files WHERE file_path IN ({placeholders})",
+                        chunk,
+                    ) as cur:
+                        for r in await cur.fetchall():
+                            ignored_set.add(r["file_path"])
+            except Exception:
+                pass
+
+            # Batch-load scan_results for all file paths (avoids N+1 queries)
+            for i in range(0, len(file_paths), CHUNK):
+                chunk = file_paths[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                async with db.execute(
+                    f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
+                    f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
+                    f"COALESCE(duration, 0) as duration, native_language "
+                    f"FROM scan_results WHERE file_path IN ({placeholders})",
+                    chunk,
+                ) as cur:
+                    for r in await cur.fetchall():
+                        scan_rows[r["file_path"]] = dict(r)
+
+        print(f"[ESTIMATE] {len(file_paths)} file(s) to estimate, {len(scan_rows)} found in scan_results, {len(ignored_set)} ignored", flush=True)
+        if len(file_paths) > 0 and len(scan_rows) == 0:
+            print(f"[ESTIMATE] No scan_results found for paths: {file_paths[:5]}", flush=True)
 
         for fp in file_paths:
             rule = rule_results.get(fp)
@@ -1037,11 +1438,7 @@ async def estimate_jobs(payload: EstimateRequest):
                 ignored_count += 1
             skip_conv = rule and rule["action"] == "ignore"
 
-            async with db.execute(
-                "SELECT file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, COALESCE(video_height, 0) as video_height FROM scan_results WHERE file_path = ?",
-                (fp,),
-            ) as cur:
-                row = await cur.fetchone()
+            row = scan_rows.get(fp)
             if not row:
                 continue
 
@@ -1079,17 +1476,39 @@ async def estimate_jobs(payload: EstimateRequest):
             total_size += row["file_size"]
             by_type[jt] = by_type.get(jt, 0) + 1
 
+            # Per-file time estimate — pick speed factor based on target encoder
+            file_dur = float(row.get("duration") or 0)
+            if jt == "audio":
+                # Remux only — fast, ~30 seconds regardless of content length
+                per_file_seconds = 30
+            elif file_dur > 0:
+                # Determine which encoder this file will use
+                target_enc = (rule.get("encoder") if rule else None) or default_encoder
+                is_cpu = (target_enc or "").lower() in ("libx265", "x265", "cpu")
+                sf = libx265_speed if is_cpu else nvenc_speed
+                per_file_seconds = file_dur * sf
+            else:
+                per_file_seconds = avg_seconds
+            total_est_time += per_file_seconds
+
             # Smart CQ per file for savings estimation
             if needs_conv:
                 vh = row["video_height"] or 0
-                if vh == 0:
-                    fn = fp.lower()
-                    if "2160p" in fn or "4k" in fn or "uhd" in fn:
-                        vh = 2160
-                    elif "1080p" in fn or "1080i" in fn:
-                        vh = 1080
-                    elif "720p" in fn:
-                        vh = 720
+                # Use filename resolution as fallback or override if DB value seems wrong
+                fn = fp.lower()
+                if "2160p" in fn or "4k" in fn or "uhd" in fn:
+                    fn_vh = 2160
+                elif "1080p" in fn or "1080i" in fn:
+                    fn_vh = 1080
+                elif "720p" in fn:
+                    fn_vh = 720
+                elif "480p" in fn:
+                    fn_vh = 480
+                else:
+                    fn_vh = 0
+                # Trust filename if DB has no data or filename suggests higher res
+                if fn_vh > 0 and (vh == 0 or fn_vh > vh):
+                    vh = fn_vh
                 tier = get_resolution_tier(vh)
                 resolution_breakdown[tier] = resolution_breakdown.get(tier, 0) + 1
 
@@ -1130,7 +1549,8 @@ async def estimate_jobs(payload: EstimateRequest):
             prow = await cur.fetchone()
             parallel = int(prow["value"]) if prow else 1
 
-        est_time_seconds = (total_files * avg_seconds) / max(1, parallel)
+        # Per-file estimates summed above; divide by parallel for wall-clock estimate
+        est_time_seconds = total_est_time / max(1, parallel)
 
         return {
             "total_selected": len(file_paths),

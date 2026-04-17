@@ -304,20 +304,129 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN language_source TEXT DEFAULT 'heuristic'")
         except Exception:
             pass
+        # Migration: add health-check columns to scan_results
+        for col, ctype in [
+            ("health_status", "TEXT DEFAULT NULL"),          # NULL=unchecked, 'healthy'|'corrupt'|'warnings'
+            ("health_errors_json", "TEXT DEFAULT NULL"),     # JSON array of decoder errors (thorough only)
+            ("health_checked_at", "TEXT DEFAULT NULL"),
+            ("health_check_type", "TEXT DEFAULT NULL"),      # 'quick' | 'thorough'
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
+        # Mirror health-check result onto the jobs row so the expanded Completed view can show it
+        for col, ctype in [
+            ("health_status", "TEXT DEFAULT NULL"),
+            ("health_errors_json", "TEXT DEFAULT NULL"),
+            ("health_check_type", "TEXT DEFAULT NULL"),
+            ("health_check_seconds", "REAL DEFAULT NULL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
         # Create indexes for fast filtered queries
         await db.execute("CREATE INDEX IF NOT EXISTS idx_plex_meta_folder ON plex_metadata_cache(folder_path)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_order ON jobs(status, queue_order)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_completed ON jobs(status, completed_at)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_filepath ON scan_results(file_path)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_health ON scan_results(health_status)")
+        # Performance indexes for common filter queries on /scan/tree
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_converted ON scan_results(converted) WHERE removed_from_list = 0")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_needs ON scan_results(needs_conversion) WHERE removed_from_list = 0")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_height ON scan_results(video_height) WHERE removed_from_list = 0")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_codec ON scan_results(video_codec) WHERE removed_from_list = 0")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_removed ON scan_results(removed_from_list)")
+        # Worker nodes for distributed transcoding
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS worker_nodes (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                hostname TEXT,
+                capabilities TEXT DEFAULT '[]',
+                status TEXT DEFAULT 'offline',
+                last_heartbeat TEXT,
+                registered_at TEXT NOT NULL,
+                current_job_id INTEGER,
+                jobs_completed INTEGER DEFAULT 0,
+                total_space_saved INTEGER DEFAULT 0,
+                path_mappings TEXT DEFAULT '[]',
+                ffmpeg_version TEXT,
+                gpu_name TEXT,
+                os_info TEXT,
+                max_jobs INTEGER DEFAULT 1
+            );
+        """)
+        # Migration: add node assignment columns to jobs
+        for col, ctype in [
+            ("assigned_node_id", "TEXT DEFAULT NULL"),
+            ("assigned_at", "TEXT DEFAULT NULL"),
+            ("cancel_requested", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_assigned_node ON jobs(assigned_node_id, status)")
+        # Migration: add consecutive_failures to worker_nodes for circuit breaker
+        try:
+            await db.execute("ALTER TABLE worker_nodes ADD COLUMN consecutive_failures INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        # Migration: audio reorder flag on scan_results
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN needs_audio_reorder INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        # Migration: external subtitle files flag
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN has_external_subs_flag INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        # Migration: per-node configuration (pause, affinity, translation, schedule)
+        for col, ctype in [
+            ("paused", "INTEGER DEFAULT 0"),                    # 0/1 — per-node pause
+            ("job_affinity", "TEXT DEFAULT 'any'"),             # 'any' | 'cpu_only' | 'nvenc_only'
+            ("translate_encoder", "INTEGER DEFAULT 1"),         # 0/1 — allow NVENC↔libx265 translation
+            ("schedule_enabled", "INTEGER DEFAULT 0"),          # 0/1 — per-node schedule
+            ("schedule_hours", "TEXT DEFAULT '[]'"),            # JSON array of allowed hours 0-23
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
 
-        # Backfill converted flag from completed jobs (for files converted before flag existed)
-        # Excludes jobs where no space was saved (ignored/no-op conversions)
+        # Per-file event log (history tab + global Activity feed)
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS file_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_path TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                details_json TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_file_events_path ON file_events(file_path, occurred_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_file_events_time ON file_events(occurred_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_file_events_type ON file_events(event_type);
+        """)
+
+        # Backfill converted flag from completed jobs that actually saved space
+        # Match on file_path OR original_file_path (handles renames during conversion)
+        # Reset all first, then set only for jobs with real savings
+        await db.execute("UPDATE scan_results SET converted = 0 WHERE converted = 1")
         await db.execute("""
             UPDATE scan_results SET converted = 1
-            WHERE converted = 0 AND file_path IN (
+            WHERE file_path IN (
                 SELECT file_path FROM jobs
                 WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
+            )
+            OR file_path IN (
+                SELECT original_file_path FROM jobs
+                WHERE status = 'completed' AND job_type IN ('convert', 'combined')
+                AND original_file_path IS NOT NULL AND space_saved > 0
             )
         """)
 

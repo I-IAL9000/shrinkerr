@@ -51,8 +51,10 @@ class ConnectionManager:
         jobs_completed: int,
         jobs_total: int,
         total_saved: int,
+        node_name: Optional[str] = None,
+        node_id: Optional[str] = None,
     ) -> None:
-        await self.broadcast({
+        msg: dict = {
             "type": "job_progress",
             "job_id": job_id,
             "file_name": file_name,
@@ -63,7 +65,12 @@ class ConnectionManager:
             "jobs_completed": jobs_completed,
             "jobs_total": jobs_total,
             "total_saved": total_saved,
-        })
+        }
+        if node_name:
+            msg["node_name"] = node_name
+        if node_id:
+            msg["node_id"] = node_id
+        await self.broadcast(msg)
 
     async def send_job_complete(
         self,

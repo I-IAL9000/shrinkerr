@@ -46,16 +46,25 @@ _ENCODING_DEFAULTS = {
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
     "tmdb_api_key": "",
-    "tvdb_api_key": "",
     "plex_url": "",
     "plex_token": "",
     "plex_path_mapping": "",
+    "plex_scan_after_conversion": "true",
     "plex_empty_trash_after_scan": "false",
     "plex_ignore_labels": "",
     "plex_prioritize_unwatched": "false",
     "plex_pause_on_stream": "false",
     "plex_pause_stream_threshold": "1",
     "plex_pause_transcode_only": "true",
+    "jellyfin_url": "",
+    "jellyfin_api_key": "",
+    "jellyfin_user_id": "",
+    "jellyfin_path_mapping": "",
+    "jellyfin_scan_after_conversion": "true",
+    "jellyfin_empty_trash": "false",
+    "jellyfin_pause_on_stream": "false",
+    "jellyfin_pause_stream_threshold": "1",
+    "jellyfin_pause_transcode_only": "true",
     # Conversion filters
     "min_bitrate_mbps": "0",  # 0 = disabled; skip files below this bitrate (Mbps)
     "max_bitrate_mbps": "0",  # 0 = disabled; only convert files above this bitrate (Mbps)
@@ -86,6 +95,9 @@ _ENCODING_DEFAULTS = {
     # File age
     "skip_files_newer_enabled": "false",
     "skip_files_newer_than_minutes": "10",
+    # Health checks — values: "off" | "quick" | "thorough"
+    "health_check_on_scan": "off",
+    "health_check_after_conversion": "off",
     # Sonarr / Radarr
     "sonarr_url": "",
     "sonarr_api_key": "",
@@ -221,6 +233,7 @@ async def get_encoding_settings():
         "lossless_target_codec": merged.get("lossless_target_codec", "eac3"),
         "lossless_target_bitrate": int(merged.get("lossless_target_bitrate", 640)),
         "plex_ignore_labels": merged.get("plex_ignore_labels", ""),
+        "plex_scan_after_conversion": merged.get("plex_scan_after_conversion", "true").lower() == "true",
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
     }
     try:
@@ -246,16 +259,21 @@ async def get_encoding_settings():
 
     # Mask API keys — show only last 4 chars if set
     tmdb_key = merged.get("tmdb_api_key", "")
-    tvdb_key = merged.get("tvdb_api_key", "")
     plex_token = merged.get("plex_token", "")
     result["tmdb_api_key"] = ("****" + tmdb_key[-4:]) if tmdb_key else ""
-    result["tvdb_api_key"] = ("****" + tvdb_key[-4:]) if tvdb_key else ""
     result["tmdb_configured"] = bool(tmdb_key)
-    result["tvdb_configured"] = bool(tvdb_key)
     result["plex_url"] = merged.get("plex_url", "")
     result["plex_token"] = ("****" + plex_token[-4:]) if plex_token else ""
     result["plex_configured"] = bool(plex_token and merged.get("plex_url", ""))
     result["plex_path_mapping"] = merged.get("plex_path_mapping", "")
+
+    # Jellyfin
+    jellyfin_key = merged.get("jellyfin_api_key", "")
+    result["jellyfin_url"] = merged.get("jellyfin_url", "")
+    result["jellyfin_api_key"] = ("****" + jellyfin_key[-4:]) if jellyfin_key else ""
+    result["jellyfin_user_id"] = merged.get("jellyfin_user_id", "")
+    result["jellyfin_configured"] = bool(jellyfin_key and merged.get("jellyfin_url", ""))
+    result["jellyfin_path_mapping"] = merged.get("jellyfin_path_mapping", "")
 
     # Conversion filters
     result["min_bitrate_mbps"] = int(merged.get("min_bitrate_mbps", "0"))
@@ -290,6 +308,18 @@ async def get_encoding_settings():
     # File age
     result["skip_files_newer_enabled"] = merged.get("skip_files_newer_enabled", "false").lower() == "true"
     result["skip_files_newer_than_minutes"] = int(merged.get("skip_files_newer_than_minutes", "10"))
+    # Normalize legacy boolean values ("true" -> "quick", "false" -> "off")
+    def _hc_mode(raw: str) -> str:
+        v = (raw or "off").lower()
+        if v == "true":
+            return "quick"
+        if v == "false":
+            return "off"
+        if v in ("off", "quick", "thorough"):
+            return v
+        return "off"
+    result["health_check_on_scan"] = _hc_mode(merged.get("health_check_on_scan", "off"))
+    result["health_check_after_conversion"] = _hc_mode(merged.get("health_check_after_conversion", "off"))
 
     # Sonarr / Radarr
     sonarr_key = merged.get("sonarr_api_key", "")
@@ -380,6 +410,11 @@ async def ignore_file(req: IgnoreFileRequest):
         await db.commit()
     finally:
         await db.close()
+    try:
+        from backend.file_events import log_event, EVENT_IGNORED
+        await log_event(req.file_path, EVENT_IGNORED, f"Ignored ({req.reason})", {"reason": req.reason})
+    except Exception:
+        pass
     return {"status": "ignored"}
 
 
@@ -418,6 +453,11 @@ async def unignore_file(file_path: str):
         await db.commit()
     finally:
         await db.close()
+    try:
+        from backend.file_events import log_event, EVENT_UNIGNORED
+        await log_event(file_path, EVENT_UNIGNORED, "Unignored")
+    except Exception:
+        pass
     return {"status": "unignored"}
 
 
@@ -489,8 +529,6 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["lossless_target_bitrate"] = str(update.lossless_target_bitrate)
         if update.tmdb_api_key is not None and not update.tmdb_api_key.startswith("****"):
             updates["tmdb_api_key"] = update.tmdb_api_key
-        if update.tvdb_api_key is not None and not update.tvdb_api_key.startswith("****"):
-            updates["tvdb_api_key"] = update.tvdb_api_key
         if update.plex_url is not None:
             updates["plex_url"] = update.plex_url.rstrip("/")
         if update.plex_token is not None and not update.plex_token.startswith("****"):
@@ -552,6 +590,18 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["skip_files_newer_enabled"] = "true" if update.skip_files_newer_enabled else "false"
         if update.skip_files_newer_than_minutes is not None:
             updates["skip_files_newer_than_minutes"] = str(update.skip_files_newer_than_minutes)
+        if update.health_check_on_scan is not None:
+            v = str(update.health_check_on_scan).lower()
+            if v in ("true", "1"): v = "quick"
+            elif v in ("false", "0"): v = "off"
+            if v not in ("off", "quick", "thorough"): v = "off"
+            updates["health_check_on_scan"] = v
+        if update.health_check_after_conversion is not None:
+            v = str(update.health_check_after_conversion).lower()
+            if v in ("true", "1"): v = "quick"
+            elif v in ("false", "0"): v = "off"
+            if v not in ("off", "quick", "thorough"): v = "off"
+            updates["health_check_after_conversion"] = v
         # Sonarr / Radarr
         if update.sonarr_url is not None:
             updates["sonarr_url"] = update.sonarr_url.rstrip("/")
@@ -756,14 +806,6 @@ async def test_api_key(req: TestApiRequest):
             ok = await test_tmdb_key(key)
             return {"success": ok, "error": None if ok else "API key validation failed"}
 
-        elif req.service == "tvdb":
-            key = settings.get("tvdb_api_key", "")
-            if not key:
-                return {"success": False, "error": "No API key configured"}
-            from backend.metadata import test_tvdb_key
-            ok = await test_tvdb_key(key)
-            return {"success": ok, "error": None if ok else "API key validation failed"}
-
         elif req.service == "plex":
             plex_url = settings.get("plex_url", "")
             plex_token = settings.get("plex_token", "")
@@ -773,6 +815,10 @@ async def test_api_key(req: TestApiRequest):
                 return {"success": False, "error": "No Plex token configured"}
             from backend.plex import test_plex_connection
             return await test_plex_connection(plex_url, plex_token)
+
+        elif req.service == "jellyfin":
+            from backend.jellyfin import test_jellyfin_connection
+            return await test_jellyfin_connection()
 
         elif req.service == "sonarr":
             sonarr_url = settings.get("sonarr_url", "")
@@ -989,20 +1035,75 @@ async def download_nzbget_script(request: Request):
     return Response(
         content=script_content,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": 'attachment; filename="Squeezarr.py"'},
+        headers={"Content-Disposition": 'attachment; filename="Shrinkerr.py"'},
+    )
+
+
+@router.get("/sabnzbd-script")
+async def download_sabnzbd_script(request: Request):
+    """Generate and download the SABnzbd post-processing script with baked-in connection."""
+    from starlette.responses import Response
+
+    db = await connect_db()
+    try:
+        settings = {}
+        async with db.execute("SELECT key, value FROM settings WHERE key IN ('api_key')") as cur:
+            for row in await cur.fetchall():
+                settings[row["key"]] = row["value"]
+    finally:
+        await db.close()
+
+    shrinkerr_url = str(request.base_url).rstrip("/")
+    api_key = settings.get("api_key", "")
+
+    import os
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sabnzbd-script", "shrinkerr.py")
+    with open(script_path, "r") as f:
+        script_content = f.read()
+
+    script_content = script_content.replace("__SHRINKERR_URL__", shrinkerr_url)
+    script_content = script_content.replace("__SHRINKERR_API_KEY__", api_key)
+
+    return Response(
+        content=script_content,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": 'attachment; filename="shrinkerr.py"'},
     )
 
 
 # --- Backup / Restore ---
 
+MAX_BACKUPS = 4  # Keep this many most-recent backups; older ones are pruned
+BACKUP_INTERVAL_SECONDS = 7 * 24 * 60 * 60  # Weekly
 
-@router.post("/backup")
-async def create_backup():
-    """Create a full backup zip containing the database and settings export."""
+
+def _list_backup_files() -> list[Path]:
+    """Return all backup zips (both legacy squeezarr_ and new shrinkerr_), newest first."""
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    files = list(BACKUP_DIR.glob("shrinkerr_backup_*.zip")) + list(BACKUP_DIR.glob("squeezarr_backup_*.zip"))
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return files
+
+
+def _prune_backups(keep: int = MAX_BACKUPS) -> int:
+    """Delete oldest backups, keeping only the most recent `keep`. Returns number deleted."""
+    files = _list_backup_files()
+    removed = 0
+    for f in files[keep:]:
+        try:
+            f.unlink()
+            removed += 1
+        except Exception:
+            pass
+    return removed
+
+
+async def _do_create_backup() -> dict:
+    """Create a full backup zip. Used by both the manual endpoint and the scheduler."""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now(timezone.utc).strftime("%Y.%m.%d_%H.%M.%S")
-    zip_name = f"squeezarr_backup_{ts}.zip"
+    zip_name = f"shrinkerr_backup_{ts}.zip"
     zip_path = BACKUP_DIR / zip_name
 
     # Safe copy of SQLite DB (handles WAL mode correctly)
@@ -1036,13 +1137,16 @@ async def create_backup():
             "encoding_rules": rules,
         }, indent=2)
 
-        # Create zip
+        # Create zip — include db under both names so old restore code still works
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(tmp_db, "squeezarr.db")
+            zf.write(tmp_db, "shrinkerr.db")
             zf.writestr("settings.json", settings_json)
     finally:
         if tmp_db.exists():
             tmp_db.unlink()
+
+    # Prune older backups to keep only MAX_BACKUPS
+    _prune_backups(MAX_BACKUPS)
 
     stat = zip_path.stat()
     return {
@@ -1052,12 +1156,35 @@ async def create_backup():
     }
 
 
+async def scheduled_backup_loop():
+    """Background task: create a backup every week (if none in the last week), pruning to MAX_BACKUPS."""
+    import asyncio
+    while True:
+        try:
+            files = _list_backup_files()
+            now = datetime.now(timezone.utc).timestamp()
+            most_recent_age = (now - files[0].stat().st_mtime) if files else float("inf")
+            if most_recent_age >= BACKUP_INTERVAL_SECONDS:
+                print(f"[backup] Creating scheduled weekly backup", flush=True)
+                result = await _do_create_backup()
+                print(f"[backup] Wrote {result['name']} ({result['size']} bytes)", flush=True)
+        except Exception as exc:
+            print(f"[backup] Scheduled backup failed: {exc}", flush=True)
+        # Check again in 1 hour — cheap, and catches cases where the container was down past the deadline
+        await asyncio.sleep(3600)
+
+
+@router.post("/backup")
+async def create_backup():
+    """Create a full backup zip containing the database and settings export."""
+    return await _do_create_backup()
+
+
 @router.get("/backup/list")
 async def list_backups():
     """List all backup zip files."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     backups = []
-    for f in sorted(BACKUP_DIR.glob("squeezarr_backup_*.zip"), reverse=True):
+    for f in _list_backup_files():
         stat = f.stat()
         backups.append({
             "name": f.name,
@@ -1109,13 +1236,14 @@ async def restore_backup(file: UploadFile = File(...)):
         content = await file.read()
         tmp_zip.write_bytes(content)
 
-        # Validate zip contents
+        # Validate zip contents — accept either shrinkerr.db (new) or squeezarr.db (legacy)
         with zipfile.ZipFile(tmp_zip, "r") as zf:
             names = zf.namelist()
-            if "squeezarr.db" not in names:
-                raise HTTPException(400, "Backup zip must contain squeezarr.db")
-            zf.extract("squeezarr.db", BACKUP_DIR)
-            extracted = BACKUP_DIR / "squeezarr.db"
+            db_name = "shrinkerr.db" if "shrinkerr.db" in names else ("squeezarr.db" if "squeezarr.db" in names else None)
+            if db_name is None:
+                raise HTTPException(400, "Backup zip must contain shrinkerr.db or squeezarr.db")
+            zf.extract(db_name, BACKUP_DIR)
+            extracted = BACKUP_DIR / db_name
             extracted.rename(tmp_db)
 
         # Validate the extracted DB is a valid SQLite database
@@ -1130,7 +1258,7 @@ async def restore_backup(file: UploadFile = File(...)):
             raise HTTPException(400, f"Invalid database in backup: {exc}")
 
         # Create a safety backup of the current DB before replacing
-        safety_name = f"squeezarr_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        safety_name = f"shrinkerr_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
         safety_path = BACKUP_DIR / safety_name
         shutil.copy2(DB_PATH, str(safety_path))
 

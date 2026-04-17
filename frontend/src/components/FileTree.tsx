@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import type { ScannedFile } from "../types";
-import { getScanFiles } from "../api";
+import { getScanFiles, getScanFilesByPaths } from "../api";
 import { getCodecLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
@@ -34,6 +34,7 @@ interface FileTreeProps {
   mediaDirs?: string[];
   sortBy?: SortBy;
   sortDir?: SortDirection;
+  allowedPaths?: Set<string>;
 }
 
 // ─── Tree node built from flat folder list ───
@@ -306,6 +307,7 @@ function flattenTree(
   loadingFolders: Set<string>,
   sortBy: SortBy,
   sortDir: SortDirection,
+  allowedPaths?: Set<string>,
 ): FlatRow[] {
   const rows: FlatRow[] = [];
 
@@ -315,16 +317,17 @@ function flattenTree(
       if (expanded.has(child.path)) {
         // Recurse into subfolders first
         walk(child, depth + 1);
-        // Then show files if this is a leaf folder
-        if (child.isLeaf) {
-          const files = folderFiles.get(child.path);
-          if (files) {
-            for (const f of sortFiles(files, sortBy, sortDir)) {
-              rows.push({ type: "file", file: f, depth: depth + 1 });
-            }
-          } else if (loadingFolders.has(child.path)) {
-            rows.push({ type: "loading", folderPath: child.path, depth: depth + 1 });
+        // Then show files for this folder (if any were loaded)
+        let files = folderFiles.get(child.path);
+        if (files && allowedPaths) {
+          files = files.filter(f => allowedPaths.has(f.file_path));
+        }
+        if (files && files.length > 0) {
+          for (const f of sortFiles(files, sortBy, sortDir)) {
+            rows.push({ type: "file", file: f, depth: depth + 1 });
           }
+        } else if (loadingFolders.has(child.path) && !allowedPaths) {
+          rows.push({ type: "loading", folderPath: child.path, depth: depth + 1 });
         }
       }
     }
@@ -339,7 +342,7 @@ function flattenTree(
 const ROW_HEIGHT = 32;
 const FILE_EXPANDED_HEIGHT = 300; // approximate for file detail panel
 
-function FolderRow({
+const FolderRow = memo(function FolderRow({
   node, depth, isExpanded, onToggle, allSelected, onSelectAll,
   onIgnoreFolder, onRescanFolder,
 }: {
@@ -363,8 +366,11 @@ function FolderRow({
         onClick={(e) => { e.stopPropagation(); onSelectAll(!allSelected, e.shiftKey); }}
         style={{ marginRight: 4 }}
       />
+      <span style={{ fontSize: 10, color: "var(--text-muted)", width: 12, textAlign: "center", flexShrink: 0 }}>
+        {isExpanded ? "\u25BC" : "\u25B6"}
+      </span>
       <span className={`tree-name ${colorClass}`}>
-        {isExpanded ? "\u25BC" : "\u25B6"} {node.name}/
+        {node.name}/
       </span>
       <MediaIdLink folderName={node.name} />
       <span className="tree-file-size">
@@ -401,9 +407,15 @@ function FolderRow({
       </div>
     </div>
   );
-}
+}, (prev, next) => {
+  // Skip re-render if only function props changed — only re-render when visual state differs
+  return prev.node === next.node
+    && prev.depth === next.depth
+    && prev.isExpanded === next.isExpanded
+    && prev.allSelected === next.allSelected;
+});
 
-function FileRow({
+const FileRow = memo(function FileRow({
   file, selected, depth, onToggleSelect, onRemoveFile, onIgnoreFile, onUnignoreFile, onDeleteFile,
   onToggleTrack, onToggleSubTrack, expanded, onToggleExpand,
 }: {
@@ -432,13 +444,38 @@ function FileRow({
           onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }}
           style={{ marginRight: 4 }}
         />
-        <span className="tree-name" style={{ cursor: "pointer" }}>{expanded ? "\u25BC" : "\u25B6"} {file.file_name}</span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)", width: 12, textAlign: "center", flexShrink: 0 }}>
+          {expanded ? "\u25BC" : "\u25B6"}
+        </span>
+        <span className="tree-name" style={{ cursor: "pointer" }}>{file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
         <span className={`codec-badge ${codecClass}`}>
           {codecLabel}
         </span>
+        {(file.health_status === "corrupt" || file.probe_status === "corrupt") && (
+          <span
+            title={`Corrupt${file.health_check_type ? ` (${file.health_check_type} check)` : ""}`}
+            style={{ display: "inline-flex", alignItems: "center", color: "var(--danger)" }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </span>
+        )}
+        {file.health_status === "healthy" && (
+          <span
+            title={`Healthy (${file.health_check_type || "checked"})`}
+            style={{ display: "inline-flex", alignItems: "center", color: "var(--success)", opacity: 0.7 }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </span>
+        )}
         {file.converted && (
-          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Squeezarr">&#x2713;</span>
+          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Shrinkerr">&#x2713;</span>
         )}
         {file.is_new && (
           <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>NEW</span>
@@ -487,7 +524,13 @@ function FileRow({
       )}
     </div>
   );
-}
+}, (prev, next) => {
+  // Re-render only when file data, selection state, depth, or expanded state changes
+  return prev.file === next.file
+    && prev.selected === next.selected
+    && prev.depth === next.depth
+    && prev.expanded === next.expanded;
+});
 
 // ─── Main component ───
 
@@ -496,7 +539,7 @@ export default function FileTree({
   isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
   onFolderFilesLoaded, externalFiles, mediaDirs,
-  sortBy = "name", sortDir = "asc", search = "",
+  sortBy = "name", sortDir = "asc", search = "", allowedPaths,
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [internalFiles, setInternalFiles] = useState<Map<string, ScannedFile[]>>(new Map());
@@ -507,11 +550,17 @@ export default function FileTree({
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
-  // When filter or search is active, show a flat title-level tree (no deep hierarchy)
-  const isFiltered = (filter !== undefined && filter !== "all" && filter !== "") || search.trim() !== "";
+  // When filter, search, or advanced-search is active, show a flat title-level tree
+  const isFiltered = (filter !== undefined && filter !== "all" && filter !== "") || search.trim() !== "" || (allowedPaths != null && allowedPaths.size > 0);
 
-  // Build tree from server-provided folder data
-  const tree = isFiltered ? buildFlatTitleTree(folders) : buildTreeFromFolders(folders);
+  // Build tree from server-provided folder data — memoized so scroll doesn't rebuild it
+  const tree = useMemo(
+    () => isFiltered ? buildFlatTitleTree(folders) : buildTreeFromFolders(folders),
+    [folders, isFiltered],
+  );
+
+  // (advanced-search auto-expand effect lives below loadFolderFiles)
+  const prevAllowedSize = useRef(0);
 
   // Auto-expand single-child paths on first load (e.g., /media → M2T2 → TV4)
   const prevFolderCount = useRef(0);
@@ -549,36 +598,71 @@ export default function FileTree({
     prevFolderCount.current = folders.length;
   }, [folders, tree]);
 
-  // Flatten for virtual scrolling
-  const flatRows = flattenTree(tree, expanded, folderFiles, loadingFolders, sortBy, sortDir);
+  // Flatten for virtual scrolling — memoized so scroll events don't re-flatten
+  const flatRows = useMemo(
+    () => flattenTree(tree, expanded, folderFiles, loadingFolders, sortBy, sortDir, allowedPaths),
+    [tree, expanded, folderFiles, loadingFolders, sortBy, sortDir, allowedPaths],
+  );
 
-  // Virtual scroll calculations
-  const containerHeight = typeof window !== "undefined" ? window.innerHeight : 800;
   const overscan = 8;
-  const totalHeight = flatRows.reduce((h, row) => {
-    if (row.type === "file" && expandedFiles.has(row.file.file_path)) {
-      return h + ROW_HEIGHT + FILE_EXPANDED_HEIGHT;
-    }
-    return h + ROW_HEIGHT;
-  }, 0);
 
-  // For variable height rows, compute positions
-  const rowPositions: number[] = [];
-  let pos = 0;
-  for (const row of flatRows) {
-    rowPositions.push(pos);
-    if (row.type === "file" && expandedFiles.has(row.file.file_path)) {
-      pos += ROW_HEIGHT + FILE_EXPANDED_HEIGHT;
-    } else {
-      pos += ROW_HEIGHT;
+  // Row positions + total height — only recompute when rows or expanded-files set changes.
+  const { rowPositions, totalHeight } = useMemo(() => {
+    const positions: number[] = new Array(flatRows.length);
+    let pos = 0;
+    for (let i = 0; i < flatRows.length; i++) {
+      positions[i] = pos;
+      const row = flatRows[i];
+      if (row.type === "file" && expandedFiles.has(row.file.file_path)) {
+        pos += ROW_HEIGHT + FILE_EXPANDED_HEIGHT;
+      } else {
+        pos += ROW_HEIGHT;
+      }
     }
-  }
+    return { rowPositions: positions, totalHeight: pos };
+  }, [flatRows, expandedFiles]);
 
-  // Find visible range via binary search on positions
-  const startIdx = Math.max(0, rowPositions.findIndex(p => p + ROW_HEIGHT > scrollTop) - overscan);
-  let endBase = rowPositions.findIndex(p => p > scrollTop + containerHeight);
-  if (endBase === -1) endBase = flatRows.length;
-  const endIdx = Math.min(flatRows.length, endBase + overscan);
+  // Read container height from state so resizes update the visible range
+  const [containerHeight, setContainerHeight] = useState(() => typeof window !== "undefined" ? window.innerHeight : 800);
+  useEffect(() => {
+    const onResize = () => setContainerHeight(window.innerHeight);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Binary-search the visible row range.
+  // Use the NEXT row's position (rowPositions[i+1] or totalHeight) as the end of row i.
+  // This correctly accounts for expanded-file rows that are taller than ROW_HEIGHT.
+  const { startIdx, endIdx } = useMemo(() => {
+    const n = rowPositions.length;
+    if (n === 0) return { startIdx: 0, endIdx: 0 };
+
+    const rowEnd = (i: number) => (i + 1 < n ? rowPositions[i + 1] : totalHeight);
+
+    // firstVisible: first row where its end > scrollTop
+    let lo = 0, hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rowEnd(mid) > scrollTop) hi = mid;
+      else lo = mid + 1;
+    }
+    const firstVisible = lo;
+
+    // lastVisible: first row whose top > viewportEnd
+    lo = firstVisible; hi = n;
+    const viewportEnd = scrollTop + containerHeight;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rowPositions[mid] > viewportEnd) hi = mid;
+      else lo = mid + 1;
+    }
+    const lastVisible = lo;
+
+    return {
+      startIdx: Math.max(0, firstVisible - overscan),
+      endIdx: Math.min(n, lastVisible + overscan),
+    };
+  }, [rowPositions, totalHeight, scrollTop, containerHeight]);
 
 
   // Load files when a leaf folder is expanded
@@ -632,6 +716,109 @@ export default function FileTree({
     }
   }, [filter, onFolderFilesLoaded]);
 
+  // When advanced search is active, auto-expand parent folders of matched files
+  // AND fetch the matching files in ONE batch call (not N per-folder calls).
+  useEffect(() => {
+    if (!allowedPaths || allowedPaths.size === 0) {
+      prevAllowedSize.current = 0;
+      return;
+    }
+    if (allowedPaths.size === prevAllowedSize.current) return;
+    prevAllowedSize.current = allowedPaths.size;
+
+    const toExpand = new Set<string>();
+    const leafFolders = new Set<string>();
+    for (const fp of allowedPaths) {
+      const parts = fp.split("/");
+      for (let i = 1; i < parts.length - 1; i++) {
+        toExpand.add(parts.slice(0, i + 1).join("/"));
+      }
+      const parent = parts.slice(0, parts.length - 1).join("/");
+      if (parent) leafFolders.add(parent);
+    }
+    setExpanded(toExpand);
+
+    // Skip leaf folders we already have files for
+    const foldersToFetch = new Set<string>();
+    for (const folder of leafFolders) {
+      if (!folderFiles.has(folder)) foldersToFetch.add(folder);
+    }
+    if (foldersToFetch.size === 0) return;
+
+    // Batch: fetch just the matched files in one request
+    // (much faster than N /files calls per folder)
+    (async () => {
+      // Mark all folders as loading
+      setLoadingFolders(prev => {
+        const next = new Set(prev);
+        for (const f of foldersToFetch) next.add(f);
+        return next;
+      });
+      try {
+        const data = await getScanFilesByPaths(Array.from(allowedPaths), filter);
+        // Group returned files by parent folder
+        const byFolder = new Map<string, ScannedFile[]>();
+        for (const row of data) {
+          const parts = row.file_path.split("/");
+          const folder = parts.slice(0, -1).join("/");
+          const parsed: ScannedFile = {
+            ...row,
+            file_name: parts[parts.length - 1],
+            folder_name: parts[parts.length - 2],
+            file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
+            audio_tracks: row.audio_tracks || [],
+            subtitle_tracks: row.subtitle_tracks || [],
+            has_removable_tracks: row.has_removable_tracks || false,
+            has_removable_subs: row.has_removable_subs || false,
+            estimated_savings_bytes: (() => {
+              let s = row.needs_conversion ? (row.file_size || 0) * 0.3 : 0;
+              for (const t of (row.audio_tracks || [])) {
+                if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
+              }
+              return Math.round(s);
+            })(),
+            estimated_savings_gb: +(((row.needs_conversion ? (row.file_size || 0) * 0.3 : 0) +
+              (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
+            ) / (1024 ** 3)).toFixed(1),
+            language_source: row.language_source || "heuristic",
+            ignored: row.ignored || false,
+            is_new: row.is_new || false,
+            queued: row.queued || false,
+            converted: row.converted || false,
+            low_bitrate: row.low_bitrate || false,
+            has_lossless_audio: row.has_lossless_audio || false,
+            duration: row.duration || 0,
+            file_mtime: row.file_mtime || null,
+          };
+          if (!byFolder.has(folder)) byFolder.set(folder, []);
+          byFolder.get(folder)!.push(parsed);
+        }
+        // Merge into state in a single update
+        setInternalFiles(prev => {
+          const next = new Map(prev);
+          for (const [folder, files] of byFolder) {
+            next.set(folder, files);
+            onFolderFilesLoaded?.(folder, files);
+          }
+          // Ensure empty folders also get an entry so they show "no matching files" instead of a spinner
+          for (const folder of foldersToFetch) {
+            if (!byFolder.has(folder)) next.set(folder, []);
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error("Batch file load failed:", err);
+      } finally {
+        setLoadingFolders(prev => {
+          const next = new Set(prev);
+          for (const f of foldersToFetch) next.delete(f);
+          return next;
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedPaths]);
+
   // Find all leaf folder paths under a tree node
   const getLeafPaths = useCallback((node: TreeNode): string[] => {
     const result: string[] = [];
@@ -642,15 +829,15 @@ export default function FileTree({
     return result;
   }, []);
 
-  const toggleFolder = useCallback((path: string, isLeaf: boolean) => {
+  const toggleFolder = useCallback((path: string, _isLeaf: boolean) => {
     setExpanded(prev => {
       const next = new Set(prev);
       if (next.has(path)) {
         next.delete(path);
       } else {
         next.add(path);
-        // Load files only for leaf folders (folders that directly contain files)
-        if (isLeaf && !folderFiles.has(path)) {
+        // Load files for leaf folders or any folder that might contain files
+        if (!folderFiles.has(path)) {
           loadFolderFiles(path);
         }
       }
@@ -697,25 +884,35 @@ export default function FileTree({
     return isSelected(node.path + "/");
   }, [isSelected]);
 
-  const visibleRows = flatRows.slice(startIdx, endIdx);
+  const visibleRows = useMemo(() => flatRows.slice(startIdx, endIdx), [flatRows, startIdx, endIdx]);
 
   // Track scroll position from the scrolling ancestor (.main-content)
+  // Throttle via requestAnimationFrame so a fast scroll triggers at most one setState per frame.
   useEffect(() => {
     const scrollParent = containerRef.current?.closest(".main-content") as HTMLElement | null;
     if (!scrollParent) return;
 
+    let rafId = 0;
+    let pending = false;
     const handler = () => {
-      if (containerRef.current) {
-        // Container's top relative to the scroll parent's viewport
-        const containerTop = containerRef.current.offsetTop;
-        const scrolled = scrollParent.scrollTop;
-        setScrollTop(Math.max(0, scrolled - containerTop));
-      }
+      if (pending) return;
+      pending = true;
+      rafId = requestAnimationFrame(() => {
+        pending = false;
+        if (containerRef.current) {
+          const containerTop = containerRef.current.offsetTop;
+          const scrolled = scrollParent.scrollTop;
+          setScrollTop(Math.max(0, scrolled - containerTop));
+        }
+      });
     };
     scrollParent.addEventListener("scroll", handler, { passive: true });
     handler();
-    return () => scrollParent.removeEventListener("scroll", handler);
-  }, [flatRows.length]); // Re-attach when rows change (tree updates)
+    return () => {
+      cancelAnimationFrame(rafId);
+      scrollParent.removeEventListener("scroll", handler);
+    };
+  }, [flatRows.length]);
 
   return (
     <div
@@ -726,15 +923,17 @@ export default function FileTree({
         minHeight: totalHeight || 100,
       }}
     >
-      <div style={{ height: totalHeight, position: "relative" }}>
-        <div
-          style={{
-            position: "absolute",
-            top: rowPositions[startIdx] || 0,
-            left: 0,
-            right: 0,
-          }}
-        >
+      {/* Flow-based virtualization: a top spacer puts the visible window at the right
+          scroll position, then rows render naturally (so their real heights — which
+          vary widely for expanded file detail panels — drive layout), then a bottom
+          spacer keeps the total scrollable area consistent. This avoids the visual
+          drift that happens when rowPositions under/over-estimate expanded heights. */}
+      <div style={{ height: rowPositions[startIdx] || 0 }} />
+      <div
+        style={{
+          position: "relative",
+        }}
+      >
           {visibleRows.map((row) => {
             if (row.type === "folder") {
               const node = row.node;
@@ -791,11 +990,19 @@ export default function FileTree({
             );
           })}
         </div>
-      </div>
-      {folders.length === 0 && !search && (
+      {/* Bottom spacer to preserve total scroll height */}
+      <div style={{ height: Math.max(0, totalHeight - (rowPositions[endIdx] || totalHeight)) }} />
+      {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-          <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
-          Loading files...
+          {search || allowedPaths || (filter && filter !== "all") ? (
+            // Empty because of a filter/search — not loading
+            <div style={{ fontSize: 13 }}>No files match the current filter.</div>
+          ) : (
+            <>
+              <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
+              Loading files...
+            </>
+          )}
         </div>
       )}
     </div>

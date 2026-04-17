@@ -133,6 +133,11 @@ def build_ffmpeg_cmd(
     audio_stream_codecs: list[str] | None = None,
     target_resolution: str = "copy",
     subtitle_streams: list[dict] | None = None,
+    # NEW: inline track removal. When provided, these override the default "-map 0:a"
+    # and are mapped explicitly by source stream index so the output contains exactly
+    # the user's desired tracks — no separate remux pass needed.
+    # audio_streams_to_keep: list of dicts with {stream_index, codec, profile} in OUTPUT order
+    # subtitle_streams_to_remove: set/list of source stream indices to exclude
 ) -> list[str]:
     """Build an ffmpeg command list for converting a file to HEVC.
 
@@ -140,7 +145,45 @@ def build_ffmpeg_cmd(
     audio_stream_codecs: list of codec names per audio stream (from ffprobe), needed for per-stream lossless conversion.
     target_resolution: "copy", "1080p", "720p", or "480p".
     """
+    return _build_ffmpeg_cmd_impl(
+        input_path, output_path, encoder=encoder, cq=cq, crf=crf,
+        nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
+        audio_codec=audio_codec, audio_bitrate=audio_bitrate,
+        lossless_conversion=lossless_conversion,
+        audio_stream_codecs=audio_stream_codecs,
+        target_resolution=target_resolution,
+        subtitle_streams=subtitle_streams,
+        audio_streams_to_keep=None,
+        subtitle_streams_to_remove=None,
+    )
+
+
+def _build_ffmpeg_cmd_impl(
+    input_path: str,
+    output_path: str,
+    encoder: str = "nvenc",
+    cq: int = 20,
+    crf: int = 20,
+    nvenc_preset: str = "p6",
+    libx265_preset: str = "medium",
+    audio_codec: str = "copy",
+    audio_bitrate: int = 128,
+    lossless_conversion: dict | None = None,
+    audio_stream_codecs: list[str] | None = None,
+    target_resolution: str = "copy",
+    subtitle_streams: list[dict] | None = None,
+    audio_streams_to_keep: list[dict] | None = None,
+    # External subtitle files to merge into the output.
+    # Each dict: {path, codec, language, forced}
+    external_subtitle_files: list[dict] | None = None,
+    subtitle_streams_to_remove: set | None = None,
+) -> list[str]:
     cmd = ["ffmpeg", "-y", "-i", input_path]
+
+    # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
+    ext_subs = external_subtitle_files or []
+    for es in ext_subs:
+        cmd += ["-i", es["path"]]
 
     # Resolution scaling (applied before video encoder)
     scale = RESOLUTION_MAP.get(target_resolution)
@@ -173,47 +216,112 @@ def build_ffmpeg_cmd(
             "-x265-params", "aq-mode=3:rd=4:psy-rd=2.0",
         ]
 
-    # Audio encoding — per-stream lossless conversion or global codec
-    if lossless_conversion and audio_stream_codecs:
-        target_codec = lossless_conversion["codec"]
-        target_bitrate = lossless_conversion["bitrate"]
-        profiles = lossless_conversion.get("profiles", [""] * len(audio_stream_codecs))
-        for idx, stream_codec in enumerate(audio_stream_codecs):
-            profile = profiles[idx] if idx < len(profiles) else ""
-            if is_lossless_audio(stream_codec, profile):
-                args = _audio_codec_args(target_codec, target_bitrate)
-                cmd += [f"-c:a:{idx}"] + args
+    # Map ONLY the first video stream (0:v:0) — NOT all video streams.
+    # Some files have cover art (PNG/JPEG attached_pic) registered as extra video streams.
+    # Using "-map 0:v" maps ALL of them, causing ffmpeg to re-encode the cover as HEVC,
+    # which corrupts the output stream layout and confuses players like Sonarr/Plex.
+    cmd += ["-map", "0:v:0"]
+
+    # Audio mapping + codec args
+    # Two paths:
+    #   (a) Explicit keep-list (inline track removal): map each kept audio stream by
+    #       source stream_index, and set per-stream codec based on source codec+profile.
+    #   (b) Default: map all audio streams, apply global codec logic.
+    if audio_streams_to_keep is not None:
+        # Explicit audio streams — these came from user selection (+ native-first reorder)
+        target_lossless_codec = (lossless_conversion or {}).get("codec")
+        target_lossless_bitrate = (lossless_conversion or {}).get("bitrate")
+        for out_idx, track in enumerate(audio_streams_to_keep):
+            src_idx = track.get("stream_index")
+            cmd += ["-map", f"0:{src_idx}"]
+            src_codec = (track.get("codec") or "").lower()
+            src_profile = (track.get("profile") or "")
+            if target_lossless_codec and is_lossless_audio(src_codec, src_profile):
+                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate)
             else:
-                # Also apply global audio_codec to lossy streams if not "copy"
-                args = _audio_codec_args(audio_codec, audio_bitrate)
-                cmd += [f"-c:a:{idx}"] + args
+                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate)
     else:
-        args = _audio_codec_args(audio_codec, audio_bitrate)
-        cmd += ["-c:a"] + args
+        # Default path: all audio streams
+        cmd += ["-map", "0:a"]
+        if lossless_conversion and audio_stream_codecs:
+            target_codec = lossless_conversion["codec"]
+            target_bitrate = lossless_conversion["bitrate"]
+            profiles = lossless_conversion.get("profiles", [""] * len(audio_stream_codecs))
+            for idx, stream_codec in enumerate(audio_stream_codecs):
+                profile = profiles[idx] if idx < len(profiles) else ""
+                if is_lossless_audio(stream_codec, profile):
+                    args = _audio_codec_args(target_codec, target_bitrate)
+                    cmd += [f"-c:a:{idx}"] + args
+                else:
+                    args = _audio_codec_args(audio_codec, audio_bitrate)
+                    cmd += [f"-c:a:{idx}"] + args
+        else:
+            args = _audio_codec_args(audio_codec, audio_bitrate)
+            cmd += ["-c:a"] + args
 
-    # Map video and audio
-    cmd += ["-map", "0:v", "-map", "0:a"]
+    # Map subtitle streams. Matroska accepts many text/image codecs as-is (copy),
+    # but some codecs (notably mp4's `mov_text`) need to be transcoded to a
+    # matroska-friendly format (srt) or the mux will fail.
+    # Text subs that can be copied directly into mkv:
+    COPYABLE_TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "webvtt"}
+    # Text subs that need conversion to srt (mkv can't copy these as-is):
+    CONVERTIBLE_TEXT_SUBS = {"mov_text", "tx3g"}
+    # Image-based subs that copy cleanly to mkv:
+    IMAGE_SUBS = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "hdmv_text_subtitle", "pgs", "vobsub"}
+    SUPPORTED_SUB_CODECS = COPYABLE_TEXT_SUBS | CONVERTIBLE_TEXT_SUBS | IMAGE_SUBS
 
-    # Map subtitle streams — only include codecs the matroska muxer supports.
-    # Unsupported codecs (e.g. codec_id 94213) cause "Subtitle codec not supported" errors.
-    SUPPORTED_SUB_CODECS = {
-        "subrip", "srt", "ass", "ssa", "webvtt",
-        "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle",
-        "hdmv_text_subtitle",
-    }
+    to_remove = set(subtitle_streams_to_remove or [])
+    sub_codec_args: list[str] = []  # per-output-stream codec args, appended after maps
+    mapped_any_sub = False
+    out_sub_idx = 0
     if subtitle_streams:
         for sub in subtitle_streams:
             codec = (sub.get("codec_name") or "").lower()
             idx = sub.get("index")
-            if codec in SUPPORTED_SUB_CODECS and idx is not None:
-                cmd += ["-map", f"0:{idx}"]
-            else:
+            if idx is None:
+                continue
+            if idx in to_remove:
+                continue  # user asked to remove this subtitle track
+            if codec not in SUPPORTED_SUB_CODECS:
                 print(f"[CONVERT] Skipping unsupported subtitle stream #{idx} codec={codec or 'unknown'}", flush=True)
-        if any((s.get("codec_name") or "").lower() in SUPPORTED_SUB_CODECS for s in subtitle_streams):
-            cmd += ["-c:s", "copy"]
+                continue
+            cmd += ["-map", f"0:{idx}"]
+            if codec in CONVERTIBLE_TEXT_SUBS:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
+            else:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+            mapped_any_sub = True
+            out_sub_idx += 1
+        if mapped_any_sub:
+            cmd += sub_codec_args
     else:
         # No subtitle info available — skip subs rather than risk unsupported codecs
         print("[CONVERT] No subtitle stream info from probe — skipping subtitle mapping", flush=True)
+
+    # Map external subtitle files (additional inputs)
+    # These come after embedded subs, and need per-stream codec + metadata
+    if ext_subs:
+        for i, es in enumerate(ext_subs):
+            input_idx = i + 1  # input 0 is the video, 1+ are external subs
+            cmd += ["-map", f"{input_idx}:s"]
+            codec = (es.get("codec") or "subrip").lower()
+            # For text subs going into mkv: copy if natively supported, else convert to srt
+            if codec in ("subrip", "srt"):
+                cmd += [f"-c:s:{out_sub_idx}", "srt"]
+            elif codec in ("ass", "ssa"):
+                cmd += [f"-c:s:{out_sub_idx}", "copy"]
+            elif codec in ("webvtt",):
+                cmd += [f"-c:s:{out_sub_idx}", "srt"]
+            else:
+                cmd += [f"-c:s:{out_sub_idx}", "copy"]
+            # Set language metadata
+            lang = es.get("language") or "und"
+            cmd += [f"-metadata:s:s:{out_sub_idx}", f"language={lang}"]
+            # Set forced disposition
+            if es.get("forced"):
+                cmd += [f"-disposition:s:{out_sub_idx}", "forced"]
+            out_sub_idx += 1
+        print(f"[CONVERT] Merging {len(ext_subs)} external subtitle(s)", flush=True)
 
     # Map attachments (fonts etc.)
     cmd += ["-map", "0:t?"]
@@ -401,6 +509,12 @@ async def convert_file(
     override_libx265_preset: Optional[str] = None,
     override_target_resolution: Optional[str] = None,
     nice: bool = False,
+    pre_settings: Optional[dict] = None,
+    # Inline track removal — when passed, tracks in these sets are EXCLUDED from
+    # the output in the same ffmpeg pass as the video conversion. Avoids a second
+    # remux pass whose stream indices wouldn't match the converted file.
+    audio_tracks_to_remove: Optional[list] = None,
+    subtitle_tracks_to_remove: Optional[list] = None,
 ) -> dict:
     """
     Convert a video file to HEVC.
@@ -437,8 +551,11 @@ async def convert_file(
 
     temp_path = get_temp_path(input_path)
 
-    # Read live settings from DB (not the config singleton which is frozen at startup)
-    live_settings = await get_live_encoding_settings()
+    # Read live settings from DB — or use pre_settings if provided (worker mode, no local DB)
+    if pre_settings is not None:
+        live_settings = pre_settings
+    else:
+        live_settings = await get_live_encoding_settings()
     filename_suffix = live_settings.get("filename_suffix", "")
     final_path = get_output_path(input_path, suffix=filename_suffix)
     nvenc_preset = override_preset if override_preset is not None else live_settings.get("nvenc_preset", "p6")
@@ -452,6 +569,8 @@ async def convert_file(
     lossless_conversion = None
     audio_stream_codecs = None
     subtitle_streams = None
+    audio_streams_to_keep: Optional[list] = None  # inline keep-list (if tracks_to_remove given)
+    probe_audio_tracks: list = []
     try:
         from backend.scanner import probe_file
         probe_data = await probe_file(input_path)
@@ -461,13 +580,14 @@ async def convert_file(
             raw_subs = probe_data.get("subtitle_tracks", [])
             subtitle_streams = [{"codec_name": s.get("codec", ""), "index": s.get("stream_index")} for s in raw_subs]
 
+            probe_audio_tracks = probe_data.get("audio_tracks") or []
+
             # Lossless audio auto-conversion
-            if live_settings.get("auto_convert_lossless", False) and probe_data.get("audio_tracks"):
+            if live_settings.get("auto_convert_lossless", False) and probe_audio_tracks:
                 target_codec = live_settings.get("lossless_target_codec", "eac3")
                 target_bitrate = live_settings.get("lossless_target_bitrate", 640)
-                tracks = probe_data["audio_tracks"]
-                audio_stream_codecs = [t.get("codec", "unknown") for t in tracks]
-                audio_stream_profiles = [t.get("profile", "") for t in tracks]
+                audio_stream_codecs = [t.get("codec", "unknown") for t in probe_audio_tracks]
+                audio_stream_profiles = [t.get("profile", "") for t in probe_audio_tracks]
                 has_lossless = any(is_lossless_audio(c, p) for c, p in zip(audio_stream_codecs, audio_stream_profiles))
                 if has_lossless:
                     lossless_conversion = {"codec": target_codec, "bitrate": target_bitrate, "profiles": audio_stream_profiles}
@@ -476,13 +596,125 @@ async def convert_file(
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
 
+    # Build inline keep-list for audio:
+    #   - Filter out any tracks in audio_tracks_to_remove
+    #   - Reorder so native-language tracks come first (default playback track)
+    # This runs even when no tracks are being removed so every conversion produces
+    # a file with the native-language track on stream 1.
+    if probe_audio_tracks:
+        remove_set = set(audio_tracks_to_remove or [])
+        kept = [t for t in probe_audio_tracks if t.get("stream_index") not in remove_set]
+
+        # Determine native language — prefer the scan_results value (populated from
+        # TMDB/Sonarr API, more reliable than track ordering in the file).
+        native_lang = None
+        try:
+            import aiosqlite as _aiosqlite
+            from backend.database import DB_PATH as _DB_PATH
+            db_nl = await _aiosqlite.connect(_DB_PATH)
+            db_nl.row_factory = _aiosqlite.Row
+            try:
+                async with db_nl.execute(
+                    "SELECT native_language FROM scan_results WHERE file_path = ?",
+                    (input_path,),
+                ) as cur:
+                    row = await cur.fetchone()
+                if row and row["native_language"]:
+                    native_lang = row["native_language"]
+            finally:
+                await db_nl.close()
+        except Exception:
+            pass
+        # Fall back to track-based detection only if scan_results didn't have it
+        if not native_lang:
+            try:
+                from backend.scanner import detect_native_language
+                native_lang = detect_native_language(probe_audio_tracks)
+            except Exception:
+                native_lang = None
+
+        # Reorder: native-language tracks first (if enabled in settings)
+        try:
+            from backend.scanner import languages_match, _is_cleanup_enabled
+            if _is_cleanup_enabled("reorder_native_audio") and native_lang and native_lang.lower() != "und":
+                native = [t for t in kept if languages_match((t.get("language") or "").lower(), native_lang.lower())]
+                others = [t for t in kept if t not in native]
+                if native and (not kept or native[0] is not kept[0]):
+                    kept = native + others
+                    print(f"[CONVERT] Reordered audio: native ({native_lang}) tracks first", flush=True)
+        except Exception:
+            pass
+
+        # Only set the inline keep-list if we're actually changing something
+        # (removing tracks or reordering). Otherwise fall through to the default
+        # "-map 0:a" path to avoid no-op ffmpeg complexity.
+        order_changed = [t.get("stream_index") for t in kept] != [t.get("stream_index") for t in probe_audio_tracks]
+        if kept and (remove_set or order_changed):
+            audio_streams_to_keep = kept
+        elif not kept:
+            print("[CONVERT] Warning: audio_tracks_to_remove would drop ALL tracks — ignoring", flush=True)
+
     target_resolution = override_target_resolution if override_target_resolution is not None else live_settings.get("target_resolution", "copy")
 
     active_preset = libx265_preset if encoder == "libx265" else nvenc_preset
     active_quality = f"crf={crf}" if encoder == "libx265" else f"cq={cq}"
     print(f"[CONVERT] Settings: encoder={encoder}, preset={active_preset}, {active_quality}, audio={audio_codec}, resolution={target_resolution}", flush=True)
+    if audio_streams_to_keep is not None:
+        removed_count = len(probe_audio_tracks) - len(audio_streams_to_keep)
+        print(f"[CONVERT] Inline audio removal: keeping {len(audio_streams_to_keep)} of {len(probe_audio_tracks)} ({removed_count} removed)", flush=True)
 
-    cmd = build_ffmpeg_cmd(input_path, temp_path, encoder=encoder, nvenc_preset=nvenc_preset, libx265_preset=libx265_preset, cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate, lossless_conversion=lossless_conversion, audio_stream_codecs=audio_stream_codecs, target_resolution=target_resolution, subtitle_streams=subtitle_streams)
+    sub_remove_set = set(subtitle_tracks_to_remove or [])
+    if sub_remove_set:
+        print(f"[CONVERT] Inline subtitle removal: {len(sub_remove_set)} track(s) to drop", flush=True)
+
+    # Load external subtitle files to merge (if the setting is enabled)
+    external_sub_files: list[dict] | None = None
+    try:
+        from backend.scanner import _is_cleanup_enabled
+        if _is_cleanup_enabled("merge_external_subs"):
+            import aiosqlite as _aiosqlite
+            from backend.database import DB_PATH as _DB_PATH
+            db_es = await _aiosqlite.connect(_DB_PATH)
+            db_es.row_factory = _aiosqlite.Row
+            try:
+                async with db_es.execute(
+                    "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+                    (input_path,),
+                ) as cur:
+                    row_es = await cur.fetchone()
+                if row_es and row_es["subtitle_tracks_json"]:
+                    import json as _json
+                    all_sub_tracks = _json.loads(row_es["subtitle_tracks_json"])
+                    ext_subs_to_merge = [
+                        t for t in all_sub_tracks
+                        if t.get("external") and t.get("keep", True) and t.get("external_path")
+                    ]
+                    if ext_subs_to_merge:
+                        external_sub_files = [
+                            {"path": t["external_path"], "codec": t.get("codec", "subrip"),
+                             "language": t.get("language", "und"), "forced": t.get("forced", False)}
+                            for t in ext_subs_to_merge
+                            if os.path.exists(t["external_path"])
+                        ]
+                        if external_sub_files:
+                            print(f"[CONVERT] Will merge {len(external_sub_files)} external subtitle file(s)", flush=True)
+            finally:
+                await db_es.close()
+    except Exception as exc:
+        print(f"[CONVERT] External sub loading failed (non-fatal): {exc}", flush=True)
+
+    cmd = _build_ffmpeg_cmd_impl(
+        input_path, temp_path, encoder=encoder,
+        nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
+        cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
+        lossless_conversion=lossless_conversion,
+        audio_stream_codecs=audio_stream_codecs,
+        target_resolution=target_resolution,
+        subtitle_streams=subtitle_streams,
+        audio_streams_to_keep=audio_streams_to_keep,
+        subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
+        external_subtitle_files=external_sub_files,
+    )
 
     # Append custom ffmpeg flags if configured
     custom_flags = live_settings.get("custom_ffmpeg_flags", "")
@@ -625,8 +857,13 @@ async def convert_file(
             "error": f"Output file suspiciously small ({output_size} bytes vs {original_size} bytes original) — likely corrupt. Original file preserved.",
         }
 
-    # If the converted file is LARGER than the original, discard it and keep original
-    if space_saved < 0:
+    # If the converted file is LARGER than the original, discard it and keep original.
+    # EXCEPTION: if we did inline track removal (audio/subtitle), keep the output even
+    # if the video codec conversion alone was a loss — the user explicitly asked for
+    # those tracks to be removed, and they're already gone from the output file.
+    # Discarding would lose the track removal work and leave unwanted tracks in place.
+    had_track_removal = bool(audio_tracks_to_remove) or bool(subtitle_tracks_to_remove) or bool(external_sub_files)
+    if space_saved < 0 and not had_track_removal:
         print(f"[CONVERT] Output ({output_size}) is LARGER than original ({original_size}), keeping original", flush=True)
         try:
             temp.unlink()
@@ -639,6 +876,9 @@ async def convert_file(
             "error": None,
             "skipped_larger": True,
         }
+    if space_saved < 0 and had_track_removal:
+        print(f"[CONVERT] Output is larger but keeping it — tracks were removed inline ({abs(space_saved)} bytes growth, but unwanted tracks are gone)", flush=True)
+        space_saved = 0  # Don't report negative savings
 
     # VMAF analysis — compare original vs encoded BEFORE the original is moved/deleted
     vmaf_score = None
@@ -754,7 +994,26 @@ async def convert_file(
     except OSError as exc:
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
-    # Rename external subtitle files to match the new filename
+    # Handle external subtitle files after successful conversion
+    _should_delete_ext_subs = False
+    if external_sub_files:
+        try:
+            from backend.scanner import _is_cleanup_enabled as _ice
+            _should_delete_ext_subs = _ice("delete_external_subs_after_merge")
+        except Exception:
+            pass
+    if external_sub_files and _should_delete_ext_subs:
+        # Delete external subs that were merged into the output
+        for es in external_sub_files:
+            try:
+                p = Path(es["path"])
+                if p.exists():
+                    p.unlink()
+                    print(f"[CONVERT] Deleted merged external sub: {p.name}", flush=True)
+            except Exception as exc:
+                print(f"[CONVERT] Failed to delete external sub {es['path']}: {exc}", flush=True)
+
+    # Rename remaining external subtitle files to match the new filename
     final_stem = Path(final_path).stem
     rename_external_subtitles(input_path, final_stem)
 

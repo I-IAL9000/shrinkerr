@@ -109,6 +109,22 @@ async def probe_file(file_path: str) -> Optional[dict]:
     except (ValueError, TypeError, OSError):
         file_size = 0
 
+    # Corruption heuristic: a media file with no video stream at all is almost
+    # always a container that ffprobe couldn't fully parse (damaged headers,
+    # truncated download, etc). Treat like a probe failure so it lands in the
+    # corrupt branch of scan_directory() and shows up under the Corrupt filter.
+    # We check the raw streams list (not just video_codec) so cover-art / image
+    # attachments don't fool us.
+    has_real_video = any(
+        s.get("codec_type") == "video"
+        and s.get("codec_name") not in ("mjpeg", "png", "bmp", "gif", "ansi")
+        and s.get("disposition", {}).get("attached_pic", 0) != 1
+        for s in streams
+    )
+    if not has_real_video:
+        print(f"[SCANNER] No decodable video stream in: {file_path} — marking corrupt", flush=True)
+        return None
+
     return {
         "video_codec": video_codec,
         "video_width": video_width,
@@ -251,6 +267,148 @@ def languages_match(lang1: str, lang2: str) -> bool:
     if group and l2 in group:
         return True
     return False
+
+
+# ── External subtitle detection ──────────────────────────────────────────────
+
+SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".sub", ".vtt", ".sup", ".idx"}
+
+# Known ISO 639-1 (2-letter) and 639-2/B (3-letter) codes for validation.
+# We only need enough to distinguish real language tags from random filename parts.
+_KNOWN_LANG_CODES = {
+    # 2-letter
+    "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "ar", "hi",
+    "nl", "sv", "no", "da", "fi", "pl", "cs", "sk", "hu", "ro", "bg", "el",
+    "tr", "he", "th", "vi", "id", "ms", "is", "hr", "sr", "sl", "uk", "ca",
+    "et", "lv", "lt", "ga", "af", "sw", "tl", "bn",
+    # 3-letter (common ones used in media)
+    "eng", "spa", "fre", "fra", "ger", "deu", "ita", "por", "rus", "jpn",
+    "kor", "zho", "chi", "ara", "hin", "nld", "dut", "swe", "nor", "nob",
+    "dan", "fin", "pol", "cze", "ces", "slo", "slk", "hun", "rum", "ron",
+    "bul", "gre", "ell", "tur", "heb", "tha", "vie", "ind", "msa", "may",
+    "ice", "isl", "hrv", "srp", "slv", "ukr", "cat", "est", "lav", "lit",
+    "gle", "afr", "swa", "tgl", "ben", "und",
+}
+
+import re as _re
+_EXT_SUB_LANG_RE = _re.compile(
+    r"\.([a-zA-Z]{2,3})"           # language code (2-3 letters)
+    r"(?:\.(forced|sdh|cc|hi))?"    # optional flag
+    r"$",
+    _re.IGNORECASE,
+)
+
+_EXT_CODEC_MAP = {
+    ".srt": "subrip",
+    ".ass": "ass",
+    ".ssa": "ass",
+    ".vtt": "webvtt",
+    ".sub": "subviewer",
+    ".sup": "hdmv_pgs_subtitle",
+    ".idx": "dvd_subtitle",
+}
+
+
+def detect_external_subtitles(video_path: str) -> list[dict]:
+    """Detect external subtitle files alongside a video file.
+
+    Matching strategies (in order):
+      1. Sub filename starts with the full video stem (strictest)
+      2. Sub filename shares the same S##E## pattern as the video (TV)
+      3. If only one video file in the folder, all sub files belong to it
+    """
+    video = Path(video_path)
+    video_stem = video.stem
+    parent = video.parent
+    results: list[dict] = []
+
+    if not parent.exists():
+        return results
+
+    try:
+        siblings = list(parent.iterdir())
+    except OSError:
+        return results
+
+    sub_files = [f for f in siblings if f.suffix.lower() in SUBTITLE_EXTENSIONS]
+    if not sub_files:
+        return results
+
+    video_files = [f for f in siblings if f.suffix.lower() in {".mkv", ".mp4", ".avi", ".mov", ".ts", ".m4v", ".webm"}]
+    only_one_video = len(video_files) == 1
+
+    # Extract S##E## pattern from the video filename for TV episode matching
+    import re as _re
+    ep_match = _re.search(r"[Ss](\d{1,2})[Ee](\d{1,3})", video_stem)
+    video_ep_key = f"s{int(ep_match.group(1)):02d}e{int(ep_match.group(2)):02d}" if ep_match else None
+
+    print(f"[EXT-SUBS] {video.name}: {len(sub_files)} sub file(s), {len(video_files)} video file(s) in folder", flush=True)
+
+    for f in sub_files:
+        fname = f.name
+        match_reason = None
+
+        # Strategy 1: full stem match
+        if fname.lower().startswith(video_stem.lower()):
+            match_reason = "stem"
+        # Strategy 2: same episode key
+        elif video_ep_key:
+            sub_ep = _re.search(r"[Ss](\d{1,2})[Ee](\d{1,3})", fname)
+            if sub_ep:
+                sub_ep_key = f"s{int(sub_ep.group(1)):02d}e{int(sub_ep.group(2)):02d}"
+                if sub_ep_key == video_ep_key:
+                    match_reason = "episode"
+        # Strategy 3: only one video in folder
+        if not match_reason and only_one_video:
+            match_reason = "single-video"
+
+        if not match_reason:
+            print(f"[EXT-SUBS]   Skip '{fname}' — no match (stem/episode/single)", flush=True)
+            continue
+        print(f"[EXT-SUBS]   Match '{fname}' via {match_reason}", flush=True)
+        # Don't match the video file itself
+        if f == video:
+            continue
+
+        # Parse language from the end of the sub's stem.
+        # For stem match: "Video.eng.srt" → stem "Video.eng" → last segment "eng"
+        # For episode match: "Show.S01E01.eng.srt" → stem "Show.S01E01.eng" → last "eng"
+        # For single-video match: "subs.eng.forced.srt" → stem "subs.eng.forced" → "eng" + forced
+        sub_stem = f.stem  # e.g. "Movie.eng.forced" or "Show.S01E01.eng"
+
+        language = "und"
+        forced = False
+        sdh = False
+        title_parts = []
+
+        # Try the end of the sub stem (matches stem-match case): .eng[.forced|.sdh]?
+        if True:
+            m = _EXT_SUB_LANG_RE.search(sub_stem)
+            if m:
+                lang_candidate = m.group(1).lower()
+                if lang_candidate in _KNOWN_LANG_CODES:
+                    language = lang_candidate
+                flag = (m.group(2) or "").lower()
+                if flag == "forced":
+                    forced = True
+                elif flag in ("sdh", "hi", "cc"):
+                    sdh = True
+                    title_parts.append(flag.upper())
+
+        codec = _EXT_CODEC_MAP.get(f.suffix.lower(), "subrip")
+
+        results.append({
+            "language": language,
+            "codec": codec,
+            "title": " ".join(title_parts) if title_parts else f.name,
+            "forced": forced,
+            "external_path": str(f),
+            "stream_index": 0,  # placeholder, assigned by caller
+        })
+
+    # Sort by language then filename for deterministic order
+    results.sort(key=lambda x: (x["language"], x["external_path"]))
+    return results
 
 
 _cleanup_enabled_cache: dict[str, bool] = {}
@@ -626,13 +784,34 @@ async def scan_directory(
                 except Exception as te:
                     print(f"[SCANNER] ffprobe debug failed: {te}", flush=True)
         if probe is None:
-            # Store corrupt file entry so it appears in the Corrupt filter
+            # Store corrupt file entry so it appears in the Corrupt filter.
+            # Even for unprobed files, still detect external subtitles so they
+            # show up in the UI (independent of ffprobe success).
             try:
                 file_size_corrupt = os.path.getsize(str(file_path))
                 file_mtime_corrupt = os.path.getmtime(str(file_path))
             except OSError:
                 file_size_corrupt = 0
                 file_mtime_corrupt = None
+
+            # Detect external subs even for corrupt files
+            corrupt_subs: list = []
+            corrupt_has_ext = False
+            try:
+                ext_subs_raw_c = detect_external_subtitles(str(file_path))
+                corrupt_has_ext = len(ext_subs_raw_c) > 0
+                if ext_subs_raw_c:
+                    for i, es in enumerate(ext_subs_raw_c):
+                        es["stream_index"] = -(i + 1)
+                    for cls_track, raw in zip(classify_subtitle_tracks(ext_subs_raw_c, "und"), ext_subs_raw_c):
+                        cls_track = cls_track.model_copy(update={
+                            "external": True,
+                            "external_path": raw["external_path"],
+                        })
+                        corrupt_subs.append(cls_track)
+            except Exception as exc:
+                print(f"[SCANNER] Ext sub detection failed for unprobed {file_path.name}: {exc}", flush=True)
+
             corrupt_entry = ScannedFile(
                 file_path=str(file_path),
                 file_name=file_path.name,
@@ -642,10 +821,11 @@ async def scan_directory(
                 video_codec="unknown",
                 needs_conversion=False,
                 audio_tracks=[],
-                subtitle_tracks=[],
+                subtitle_tracks=corrupt_subs,
                 native_language="und",
                 has_removable_tracks=False,
                 has_removable_subs=False,
+                has_external_subs=corrupt_has_ext,
                 estimated_savings_bytes=0,
                 estimated_savings_gb=0,
                 file_mtime=file_mtime_corrupt,
@@ -685,9 +865,32 @@ async def scan_directory(
         raw_subs = probe.get("subtitle_tracks", [])
         subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
 
+        # Detect external subtitle files (.srt, .ass, etc.) alongside the video
+        ext_subs_raw = detect_external_subtitles(str(file_path))
+        has_external_subs = len(ext_subs_raw) > 0
+        if ext_subs_raw:
+            # Assign negative stream indices to avoid collision with embedded
+            for i, es in enumerate(ext_subs_raw):
+                es["stream_index"] = -(i + 1)
+            # Classify with the same language rules as embedded subs
+            ext_classified = classify_subtitle_tracks(ext_subs_raw, native_lang)
+            # Carry over external fields that classify doesn't know about
+            for cls_track, raw in zip(ext_classified, ext_subs_raw):
+                cls_track = cls_track.model_copy(update={
+                    "external": True,
+                    "external_path": raw["external_path"],
+                })
+                subtitle_tracks.append(cls_track)
+
         tracks_to_remove = [t for t in audio_tracks if not t.keep]
         has_removable = len(tracks_to_remove) > 0
         has_removable_subs = any(not t.keep for t in subtitle_tracks)
+
+        # Check if native-language audio isn't the first stream (needs reorder)
+        needs_audio_reorder = False
+        if _is_cleanup_enabled("reorder_native_audio") and len(audio_tracks) > 1 and native_lang and native_lang.lower() != "und":
+            first_lang = (audio_tracks[0].language or "").lower()
+            needs_audio_reorder = not languages_match(first_lang, native_lang.lower())
 
         savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration)
         savings_gb = round(savings_bytes / (1024 ** 3), 3)
@@ -712,6 +915,7 @@ async def scan_directory(
             language_source=language_source,
             has_removable_tracks=has_removable,
             has_removable_subs=has_removable_subs,
+            has_external_subs=has_external_subs,
             estimated_savings_bytes=savings_bytes,
             estimated_savings_gb=savings_gb,
             ignored=str(file_path) in ignored_paths,

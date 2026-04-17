@@ -21,6 +21,8 @@ class SubtitleTrack(BaseModel):
     forced: bool = False
     keep: bool = True
     locked: bool = False
+    external: bool = False       # True for sidecar .srt/.ass files (not embedded)
+    external_path: str = ""      # Absolute path to the external subtitle file
 
 class ScannedFile(BaseModel):
     id: Optional[int] = None
@@ -36,6 +38,8 @@ class ScannedFile(BaseModel):
     native_language: str
     has_removable_tracks: bool
     has_removable_subs: bool = False
+    needs_audio_reorder: bool = False
+    has_external_subs: bool = False
     estimated_savings_bytes: int
     estimated_savings_gb: float
     language_source: str = "heuristic"
@@ -136,11 +140,11 @@ class SettingsUpdate(BaseModel):
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None
     tmdb_api_key: Optional[str] = None
-    tvdb_api_key: Optional[str] = None
     plex_url: Optional[str] = None
     plex_token: Optional[str] = None
     plex_path_mapping: Optional[str] = None
     plex_ignore_labels: Optional[str] = None
+    plex_scan_after_conversion: Optional[bool] = None
     plex_empty_trash_after_scan: Optional[bool] = None
     min_bitrate_mbps: Optional[Any] = None
     max_bitrate_mbps: Optional[Any] = None
@@ -149,6 +153,15 @@ class SettingsUpdate(BaseModel):
     plex_pause_on_stream: Optional[bool] = None
     plex_pause_stream_threshold: Optional[Any] = None
     plex_pause_transcode_only: Optional[bool] = None
+    jellyfin_url: Optional[str] = None
+    jellyfin_api_key: Optional[str] = None
+    jellyfin_user_id: Optional[str] = None
+    jellyfin_path_mapping: Optional[str] = None
+    jellyfin_scan_after_conversion: Optional[bool] = None
+    jellyfin_empty_trash: Optional[bool] = None
+    jellyfin_pause_on_stream: Optional[bool] = None
+    jellyfin_pause_stream_threshold: Optional[Any] = None
+    jellyfin_pause_transcode_only: Optional[bool] = None
     trash_original_after_conversion: Optional[bool] = None
     backup_original_days: Optional[Any] = None
     backup_folder: Optional[str] = None
@@ -159,6 +172,8 @@ class SettingsUpdate(BaseModel):
     api_key: Optional[str] = None
     skip_files_newer_enabled: Optional[bool] = None
     skip_files_newer_than_minutes: Optional[Any] = None
+    health_check_on_scan: Optional[Any] = None           # "off" | "quick" | "thorough"
+    health_check_after_conversion: Optional[Any] = None   # "off" | "quick" | "thorough"
     sonarr_url: Optional[str] = None
     sonarr_api_key: Optional[str] = None
     sonarr_path_mapping: Optional[str] = None

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk } from "../api";
+import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
+import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import FilterBar, { FILTER_LABELS } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
 import PosterGrid from "../components/PosterGrid";
@@ -8,6 +10,7 @@ import type { FolderInfo } from "../components/FileTree";
 import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
+import RenameModal from "../components/RenameModal";
 import type { ScannedFile, ScanProgress } from "../types";
 
 // Module-level cache for tree data
@@ -34,10 +37,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [scanStarted, setScanStarted] = useState(false);
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [, setUpdating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "size" | "files" | "date">("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");  // raw input, debounced into `search`
+  const [advSearchOpen, setAdvSearchOpen] = useState(false);
+  const [advSearchPredicates, setAdvSearchPredicates] = useState<any[]>([]);
+  const [advSearchResults, setAdvSearchResults] = useState<Set<string> | null>(null);
   const [encodingSettings, setEncodingSettings] = useState<any>(null);
   const [bulkAction, setBulkAction] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -47,14 +54,26 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [serverStats, setServerStats] = useState<any>(null);
   const [estimatePaths, setEstimatePaths] = useState<string[] | null>(null);
   const [estimateHasIgnored, setEstimateHasIgnored] = useState(false);
+  const [renamePaths, setRenamePaths] = useState<string[] | null>(null);
+
+  // Debounce the search input 250ms so rapid typing doesn't trigger
+  // a poster re-resolution per keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 250);
+    return () => clearTimeout(t);
+  }, [searchInput]);
   // Track all loaded files across expanded folders (for selection/bulk ops)
   const [loadedFiles, setLoadedFiles] = useState<Map<string, ScannedFile[]>>(new Map());
   // Prevent overlapping stats/tree requests during scanning
   const statsInFlight = useRef(false);
   const treeInFlight = useRef(false);
+  // Per-request generation — only the latest response wins.
+  // Prevents stale responses from overwriting newer results when filters change rapidly.
+  const treeRequestGen = useRef(0);
+  const treeAbortCtrl = useRef<AbortController | null>(null);
 
   // Derive scanning state from WebSocket progress
-  const scanning = scanStarted || (scanProgress != null && scanProgress.status !== "done");
+  const scanning = scanStarted || (scanProgress != null && scanProgress.status !== "done" && scanProgress.status !== "health_check_complete" && scanProgress.status !== "cancelled");
 
   const refreshStats = useCallback(() => {
     if (statsInFlight.current) return;
@@ -63,11 +82,19 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   }, []);
 
   const loadTree = useCallback(async (activeFilter?: string) => {
-    if (treeInFlight.current && !activeFilter) return; // skip if already loading (unless forced by filter change)
-    treeInFlight.current = true;
     const f = activeFilter ?? filter;
+    // Cancel any in-flight request so its result can't overwrite the newer one
+    if (treeAbortCtrl.current) {
+      try { treeAbortCtrl.current.abort(); } catch {}
+    }
+    const ctrl = new AbortController();
+    treeAbortCtrl.current = ctrl;
+    const myGen = ++treeRequestGen.current;
+    treeInFlight.current = true;
     try {
-      const data = await getScanTree(f);
+      const data = await getScanTree(f, ctrl.signal);
+      // Ignore if a newer request has been fired since we started
+      if (myGen !== treeRequestGen.current) return;
       const result = data.folders || [];
       _cachedFolders = result;
       _cachedFilter = f;
@@ -75,14 +102,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       setFolders(result);
       setLoading(false);
       setUpdating(false);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;  // Superseded — normal
+      if (myGen !== treeRequestGen.current) return;
       console.error("Failed to load tree:", err);
       setLoading(false);
       setUpdating(false);
     } finally {
-      treeInFlight.current = false;
+      if (myGen === treeRequestGen.current) {
+        treeInFlight.current = false;
+      }
     }
-  }, [filters]);
+  }, [filter]);
 
   useEffect(() => {
     getMediaDirs().then((r: any) => setDirs(Array.isArray(r) ? r : r.dirs || []));
@@ -175,16 +206,22 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     return () => clearInterval(poll);
   }, [posterPrefetching]);
 
-  // When filter changes, clear tree/cache and reload with new filter
+  // When filter changes, debounce then reload.
+  // Don't clear folders to [] — keep showing stale data under a "Updating..." indicator
+  // until the new result arrives. This avoids the flash of "all items" when the user
+  // changes filters quickly.
   useEffect(() => {
-    if (!loading) {
-      _cachedFolders = null;
-      _cachedFilter = "";
-      setFolders([]);
-      setUpdating(true);
+    if (loading) return;
+    // Invalidate cache so a full reload happens
+    _cachedFolders = null;
+    _cachedFilter = "";
+    setUpdating(true);
+    // Debounce 200ms — rapid filter clicks get coalesced into a single request
+    const handle = setTimeout(() => {
       loadTree(filter);
-    }
-  }, [filters]);
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [filter, loadTree]);
 
   const handleScan = async () => {
     setScanStarted(true);
@@ -215,11 +252,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         // Check if selecting individual files (inside poster accordion)
         const isFileSelect = !path.endsWith("/") && !lastClickedPathRef.current.endsWith("/");
 
+        // When advanced search is active, the visible set is narrower than the full folder/file list.
+        // Shift-range should operate ONLY over what's currently visible, not the whole library.
+        const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
+
         if (isFileSelect) {
-          // Range-select files from loadedFiles
+          // Range-select files — limit to advanced-search matches when active
           const allFiles: string[] = [];
           for (const files of loadedFiles.values()) {
-            for (const f of files) allFiles.push(f.file_path);
+            for (const f of files) {
+              if (hasAdv && !advSearchResults!.has(f.file_path)) continue;
+              allFiles.push(f.file_path);
+            }
           }
           allFiles.sort();
           const lastIdx = allFiles.indexOf(lastClickedPathRef.current);
@@ -232,10 +276,34 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             if (next.has(path)) next.delete(path); else next.add(path);
           }
         } else {
-          // Range-select folders
+          // Range-select folders — build the same visible subset the UI renders
           const isFiltered = filter !== "all";
+          const searchLower = search.trim().toLowerCase();
+          const searchWords = searchLower ? searchLower.split(/\s+/) : [];
+
+          // If adv search active, the matched folders are the parents of matched files
+          let advFolderSet: Set<string> | null = null;
+          if (hasAdv) {
+            advFolderSet = new Set();
+            for (const fp of advSearchResults!) {
+              const slash = fp.lastIndexOf("/");
+              if (slash > 0) advFolderSet.add(fp.slice(0, slash));
+            }
+          }
+
           const pathSet = new Set<string>();
           for (const f of folders) {
+            // Apply search filter
+            if (searchWords.length > 0) {
+              const hay = f.path.toLowerCase();
+              if (!searchWords.every(w => hay.includes(w))) continue;
+            }
+            // Apply advanced search filter
+            if (advFolderSet) {
+              const inAdv = advFolderSet.has(f.path) || Array.from(advFolderSet).some(mf => mf.startsWith(f.path + "/"));
+              if (!inAdv) continue;
+            }
+
             if (isFiltered) {
               const parts = f.path.split("/").filter(Boolean);
               let titlePath = f.path;
@@ -342,7 +410,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkDelete = async () => {
     const selected = getSelectedFiles();
     if (!selected.length) return;
-    if (!await confirm({ message: `Move ${selected.length} file(s) to trash? This cannot be undone from Squeezarr.`, confirmLabel: `Trash ${selected.length} files`, danger: true })) return;
+    if (!await confirm({ message: `Move ${selected.length} file(s) to trash? This cannot be undone from Shrinkerr.`, confirmLabel: `Trash ${selected.length} files`, danger: true })) return;
     setBulkAction(`Trashing ${selected.length} files...`);
     try {
       let deleted = 0;
@@ -449,18 +517,68 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleBulkRescan = async () => {
+    // Build folder set from selections — handle both file paths and folder paths
+    const paths = Array.from(selectedPaths);
+    const folderSet = new Set<string>();
+    for (const p of paths) {
+      if (p.endsWith("/")) {
+        // Folder selection from poster view — strip trailing slash for the rescan path
+        folderSet.add(p.slice(0, -1));
+      } else {
+        // File selection — derive parent folder
+        const parts = p.split("/");
+        folderSet.add(parts.slice(0, -1).join("/"));
+      }
+    }
+    // Also check loadedFiles for any resolved file selections
     const selected = getSelectedFiles();
-    const folderSet = new Set(selected.map(f => {
+    for (const f of selected) {
       const parts = f.file_path.split("/");
-      return parts.slice(0, -1).join("/");
-    }));
-    if (!await confirm({ message: `Rescan ${folderSet.size} folder(s) containing ${selected.length} selected file(s)?`, confirmLabel: "Rescan" })) return;
+      folderSet.add(parts.slice(0, -1).join("/"));
+    }
+    if (folderSet.size === 0) {
+      toast("No files or folders selected");
+      return;
+    }
+    if (!await confirm({ message: `Rescan ${folderSet.size} folder(s)?`, confirmLabel: "Rescan" })) return;
     for (const folder of folderSet) {
       await rescanFolder([folder]);
     }
     setSelectAllActive(false);
     setSelectedPaths(new Set());
     toast(`Rescanning ${folderSet.size} folder(s)...`, "success");
+  };
+
+  const handleHealthCheck = async (mode: "quick" | "thorough") => {
+    const { queueHealthChecks } = await import("../api");
+    const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
+    if (!paths.length && !selectAllActive) {
+      toast("No files or folders selected");
+      return;
+    }
+    if (mode === "thorough") {
+      if (!await confirm({
+        message: `Thorough check decodes every frame of every file — this can take a long time (roughly duration / 10 per file). Proceed?`,
+        confirmLabel: "Run thorough check",
+      })) return;
+    }
+    try {
+      const res = await queueHealthChecks(
+        selectAllActive ? [] : paths,
+        mode,
+        filter,
+        selectAllActive,
+      );
+      if (res.added > 0) {
+        toast(`Queued ${res.added} ${mode} health check${res.added !== 1 ? "s" : ""}`, "success");
+        setSelectAllActive(false);
+        setSelectedPaths(new Set());
+      } else {
+        toast("No files to check (already queued or no matches)");
+      }
+    } catch (err: any) {
+      toast(`Failed to queue health checks: ${err.message || "unknown error"}`);
+    }
   };
 
   const handleRemoveFile = async (filePath: string) => {
@@ -604,32 +722,52 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     : { all: treeTotalFiles };
 
   // Count selected items — for folder paths, use the folder's file count from tree data
-  const selectedCount = useMemo(() => selectAllActive
-    ? folders.reduce((sum, f) => sum + f.file_count, 0)
-    : (() => {
-        let count = 0;
-        // Count individual file selections
-        for (const p of selectedPaths) {
-          if (!p.endsWith("/")) { count += 1; continue; }
-        }
-        // For folder selections, iterate folders once and check against sorted prefixes
-        if (selectedFolderPrefixes.length > 0) {
-          for (const f of folders) {
-            const fp = f.path + "/";
-            // Binary search for matching prefix
-            let lo = 0, hi = selectedFolderPrefixes.length;
-            while (lo < hi) {
-              const mid = (lo + hi) >> 1;
-              if (selectedFolderPrefixes[mid] <= fp) lo = mid + 1;
-              else hi = mid;
-            }
-            if (lo > 0 && fp.startsWith(selectedFolderPrefixes[lo - 1])) {
-              count += f.file_count;
-            }
+  const selectedCount = useMemo(() => {
+    // When advanced search is active, only count files that actually match the search.
+    // Folder selections should contribute only their matched files, not f.file_count.
+    const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
+
+    if (selectAllActive) {
+      if (hasAdv) return advSearchResults!.size;
+      return folders.reduce((sum, f) => sum + f.file_count, 0);
+    }
+
+    let count = 0;
+    // Individual file selections
+    for (const p of selectedPaths) {
+      if (!p.endsWith("/")) {
+        if (!hasAdv || advSearchResults!.has(p)) count += 1;
+      }
+    }
+
+    // Folder selections
+    if (selectedFolderPrefixes.length > 0) {
+      if (hasAdv) {
+        // Count only matched files under any selected prefix
+        for (const fp of advSearchResults!) {
+          // Skip if we already counted this path as an individual selection
+          if (selectedPaths.has(fp)) continue;
+          for (const prefix of selectedFolderPrefixes) {
+            if (fp.startsWith(prefix)) { count += 1; break; }
           }
         }
-        return count;
-      })(), [selectAllActive, selectedPaths, selectedFolderPrefixes, folders]);
+      } else {
+        for (const f of folders) {
+          const fp = f.path + "/";
+          let lo = 0, hi = selectedFolderPrefixes.length;
+          while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (selectedFolderPrefixes[mid] <= fp) lo = mid + 1;
+            else hi = mid;
+          }
+          if (lo > 0 && fp.startsWith(selectedFolderPrefixes[lo - 1])) {
+            count += f.file_count;
+          }
+        }
+      }
+    }
+    return count;
+  }, [selectAllActive, selectedPaths, selectedFolderPrefixes, folders, advSearchResults]);
 
   // Server-computed stats for StatsCards
   const ss = serverStats?.summary;
@@ -637,32 +775,62 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     filesToConvert: ss.files_to_convert || 0,
     audioCleanup: ss.audio_cleanup || 0,
     ignoredCount: ss.ignored_count || 0,
+    corruptCount: serverStats?.counts?.corrupt || 0,
     estimatedSavingsGB: (ss.estimated_savings_bytes || 0) / (1024 ** 3),
     totalScannedGB: (ss.total_size || 0) / (1024 ** 3),
   } : {
-    filesToConvert: 0, audioCleanup: 0, ignoredCount: 0,
+    filesToConvert: 0, audioCleanup: 0, ignoredCount: 0, corruptCount: 0,
     estimatedSavingsGB: 0, totalScannedGB: 0,
   };
 
-  // Apply search filter to folders
-  const displayFolders = search.trim()
-    ? folders.filter(f => {
-        const words = search.trim().toLowerCase().split(/\s+/);
+  // Pre-compute the set of ancestor paths for advanced search results.
+  // A folder f should be shown if f.path is an ancestor of any matched file.
+  // Important: when advSearchResults is set but empty (0 matches), we must still
+  // return an empty Set — not null — so the filter runs and yields 0 folders,
+  // rather than showing all folders.
+  const advAncestorPaths = useMemo(() => {
+    if (!advSearchResults) return null;  // no advanced search active
+    const ancestors = new Set<string>();
+    for (const fp of advSearchResults) {
+      const parts = fp.split("/");
+      for (let i = 1; i < parts.length; i++) {
+        ancestors.add(parts.slice(0, i).join("/"));
+      }
+    }
+    return ancestors;  // may be empty if 0 matches
+  }, [advSearchResults]);
+
+  // Memoize the filtered folder list so this doesn't rerun on every render.
+  // Previous code ran O(N×M) + thousands of allocations on every render.
+  const displayFolders = useMemo(() => {
+    let result = folders;
+    const s = search.trim().toLowerCase();
+    if (s) {
+      const words = s.split(/\s+/);
+      result = result.filter(f => {
         const haystack = f.path.toLowerCase();
         return words.every(w => haystack.includes(w));
-      })
-    : folders;
+      });
+    }
+    if (advAncestorPaths) {
+      result = result.filter(f => advAncestorPaths.has(f.path));
+    }
+    return result;
+  }, [folders, search, advAncestorPaths]);
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 24 }}>
         <select
           value={selectedDir}
           onChange={(e) => setSelectedDir(e.target.value)}
           style={{
             background: "var(--bg-card)", color: "var(--text-secondary)",
-            border: "1px solid var(--border)", padding: "6px 10px",
+            border: "1px solid var(--border)", padding: "6px 28px 6px 10px",
             borderRadius: 4, fontSize: 13, height: 36, boxSizing: "border-box" as const,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23827b9a' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 10px center",
           }}
         >
           <option value="all">All configured paths</option>
@@ -731,14 +899,20 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             </button>
           )
         )}
-        {scanning && scanProgress && scanProgress.status !== "metadata" && (
+        {scanning && scanProgress && scanProgress.status !== "metadata" && !scanProgress.status?.startsWith("health_check") && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            {scanProgress.probed} / {scanProgress.total} files probed
+            {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} files probed
           </span>
         )}
         {refreshingMetadata && scanProgress && scanProgress.status === "metadata" && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Metadata: {scanProgress.probed} / {scanProgress.total} checked
+            Metadata: {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} checked
+          </span>
+        )}
+        {scanning && scanProgress && scanProgress.status?.startsWith("health_check") && (
+          <span style={{ fontSize: 12, opacity: 0.6 }}>
+            Health check ({scanProgress.status === "health_check_thorough" ? "thorough" : "quick"}):{" "}
+            {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)}
           </span>
         )}
       </div>
@@ -779,7 +953,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onClick={() => setFiltersOpen(!filtersOpen)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                background: filtersOpen ? "var(--accent)" : "var(--bg-card)",
+                background: filtersOpen ? "#4920f0" : "var(--bg-card)",
                 color: filtersOpen ? "white" : "var(--text-muted)",
               }}
             >
@@ -796,7 +970,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   marginLeft: 4,
                   display: "inline-flex", alignItems: "center", lineHeight: 1.4,
                 }}>
-                  {treeTotalFiles > 99999 ? `${(treeTotalFiles / 1000).toFixed(0)}k` : treeTotalFiles.toLocaleString()}
+                  {treeTotalFiles > 99999 ? `${(treeTotalFiles / 1000).toFixed(0)}k` : fmtNum(treeTotalFiles)}
                 </span>
               )}
             </button>
@@ -817,19 +991,47 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                     style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
                     <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
                   </svg>
-                  <input type="text" placeholder="Search folders..." value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    style={{ width: "100%", padding: "5px 12px 5px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid transparent", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
-                  {search && (
-                    <button onClick={() => setSearch("")}
+                  <input type="text" placeholder="Search folders..." value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    style={{ width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
+                  {searchInput && (
+                    <button onClick={() => { setSearchInput(""); setSearch(""); }}
                       style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>&times;</button>
                   )}
                 </div>
+                <button
+                  className="sort-pill"
+                  title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
+                  onClick={() => setAdvSearchOpen(true)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+                    background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
+                    color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+                    borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {/* Microscope icon */}
+                    <path d="M6 18h8"/>
+                    <path d="M3 22h18"/>
+                    <path d="M14 22a7 7 0 1 0 0-14h-1"/>
+                    <path d="M9 14h2"/>
+                    <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
+                    <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
+                  </svg>
+                  Advanced
+                  {advSearchPredicates.length > 0 && (
+                    <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
+                      {advSearchPredicates.length}
+                    </span>
+                  )}
+                </button>
+                <span style={{ width: 1, height: 16, background: "var(--border)" }} />
                 <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
                 {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
                   <button key={val}
-                    onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}
-                    style={{ padding: "5px 12px", borderRadius: 16, fontSize: 12, cursor: "pointer", border: "none", whiteSpace: "nowrap", background: sortBy === val ? "var(--accent)" : "var(--bg-card)", color: sortBy === val ? "white" : "var(--text-muted)" }}>
+                    className={`sort-pill ${sortBy === val ? "active" : ""}`}
+                    onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
                     {label} {sortBy === val && (sortDir === "asc"
                       ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
                       : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
@@ -837,10 +1039,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   </button>
                 ))}
                 {/* View toggle */}
-                <span style={{ width: 1, height: 16, background: "var(--border)", marginLeft: 4 }} />
+                <span style={{ width: 1, height: 16, background: "var(--border)" }} />
                 <button
+                  className="sort-pill"
                   onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("squeezarr_viewMode", next); }}
-                  style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, cursor: "pointer", border: "none", whiteSpace: "nowrap", background: "var(--bg-card)", color: "var(--text-muted)", display: "inline-flex", alignItems: "center", gap: 5 }}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
                   title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
                 >
                   {viewMode === "tree" ? (
@@ -914,18 +1117,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <input
                 type="text"
                 placeholder="Search folders..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 style={{
-                  width: "100%", padding: "5px 12px 5px 30px", fontSize: 12, lineHeight: "1.4",
+                  width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4",
                   background: "var(--bg-card)", color: "var(--text-secondary)",
-                  border: "1px solid transparent", borderRadius: 16,
+                  border: "1px solid var(--border)", borderRadius: 16,
                   outline: "none", boxSizing: "border-box",
                 }}
               />
-              {search && (
+              {searchInput && (
                 <button
-                  onClick={() => setSearch("")}
+                  onClick={() => { setSearchInput(""); setSearch(""); }}
                   style={{
                     position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
                     background: "none", border: "none", color: "var(--text-muted)",
@@ -938,6 +1141,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
               <button
                 key={val}
+                className={`sort-pill ${sortBy === val ? "active" : ""}`}
                 onClick={() => {
                   if (sortBy === val) {
                     setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -945,12 +1149,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                     setSortBy(val);
                     setSortDir(val === "size" || val === "date" ? "desc" : "asc");
                   }
-                }}
-                style={{
-                  padding: "5px 12px", borderRadius: 16, fontSize: 12, cursor: "pointer",
-                  border: "none", whiteSpace: "nowrap",
-                  background: sortBy === val ? "var(--accent)" : "var(--bg-card)",
-                  color: sortBy === val ? "white" : "var(--text-muted)",
                 }}
               >
                 {label} {sortBy === val && (sortDir === "asc"
@@ -960,10 +1158,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               </button>
             ))}
             {/* View toggle (same as in collapsed view) */}
-            <span style={{ width: 1, height: 16, background: "var(--border)", marginLeft: 4 }} />
+            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
             <button
+              className="sort-pill"
               onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("squeezarr_viewMode", next); }}
-              style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, cursor: "pointer", border: "none", whiteSpace: "nowrap", background: "var(--bg-card)", color: "var(--text-muted)", display: "inline-flex", alignItems: "center", gap: 5 }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
               title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
             >
               {viewMode === "tree" ? (
@@ -999,10 +1198,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center",
             padding: "8px 12px", marginBottom: 12,
             background: selectedCount > 0 ? "var(--bg-card)" : "var(--bg-secondary)",
+            border: "1px solid var(--border)",
             borderRadius: 6, transition: "background 0.15s",
             position: "sticky" as const, top: 0, zIndex: 50,
           }}>
-            <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
+            <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
               {selectAllActive || selectedPaths.size > 0 ? "Deselect all" : "Select all"}
             </button>
             {selectedCount > 0 && (() => {
@@ -1012,39 +1212,77 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               return <>
                 <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{selectedCount} selected</span>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-primary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleAddToQueue}>
+                <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleAddToQueue}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   Add to queue
                 </button>
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   Rescan
                 </button>
+                <button
+                  className="btn btn-secondary"
+                  title="Rename selected files using the renaming patterns"
+                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  onClick={() => {
+                    // Pass all selected paths (folder + file) — server expands folders
+                    const paths = Array.from(selectedPaths);
+                    if (paths.length === 0) {
+                      toast("No files or folders selected");
+                      return;
+                    }
+                    setRenamePaths(paths);
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  Rename
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  title="Quick check (header/metadata parse) — fast"
+                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  onClick={() => handleHealthCheck("quick")}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  Quick check
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  title="Thorough check (full frame-by-frame decode) — slow"
+                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  onClick={() => handleHealthCheck("thorough")}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Thorough check
+                </button>
                 {allSelectedIgnored ? (
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
+                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     Unignore
                   </button>
                 ) : (
                   <>
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkIgnore}>
+                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkIgnore}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
                       Ignore
                     </button>
                     {someSelectedIgnored && (
-                      <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
+                      <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         Unignore
                       </button>
                     )}
                   </>
                 )}
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRemove}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRemove}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   Remove
                 </button>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "5px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "#e94560", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "#e94560", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                   Trash files
                 </button>
@@ -1059,6 +1297,49 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             }}>
               <div className="spinner" style={{ width: 18, height: 18 }} />
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{bulkAction}</span>
+            </div>
+          )}
+
+          {/* Advanced search active banner */}
+          {advSearchResults && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              padding: "8px 14px", marginBottom: 12,
+              background: "var(--accent-bg)", border: "1px solid var(--accent)", borderRadius: 6,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
+              </svg>
+              <span style={{ fontSize: 12, color: "var(--accent)" }}>
+                <strong>Advanced search:</strong> {advSearchResults.size.toLocaleString()} match{advSearchResults.size === 1 ? "" : "es"} from {advSearchPredicates.length} condition{advSearchPredicates.length === 1 ? "" : "s"}
+              </span>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 11, padding: "3px 10px", marginLeft: "auto" }}
+                onClick={() => setAdvSearchOpen(true)}
+              >Edit</button>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 11, padding: "3px 10px" }}
+                onClick={() => { setAdvSearchResults(null); setAdvSearchPredicates([]); }}
+              >Clear</button>
+            </div>
+          )}
+          <div style={{
+            position: "relative",
+            opacity: updating ? 0.5 : 1,
+            transition: "opacity 0.15s",
+            pointerEvents: updating ? "none" : "auto",
+          }}>
+          {updating && (
+            <div style={{
+              position: "absolute", top: 8, right: 8, zIndex: 10,
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              padding: "4px 10px", borderRadius: 12, fontSize: 11,
+              color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <div className="spinner" style={{ width: 10, height: 10 }} />
+              Updating...
             </div>
           )}
           {viewMode === "tree" ? (
@@ -1080,6 +1361,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               mediaDirs={dirs.map((d: any) => d.path)}
               sortBy={sortBy}
               sortDir={sortDir}
+              allowedPaths={advSearchResults || undefined}
             />
           ) : (
             <PosterGrid
@@ -1098,6 +1380,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               sortDir={sortDir}
             />
           )}
+          </div>
         </>
       )}
 
@@ -1109,6 +1392,33 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           activeFilter={filter}
           onConfirm={handleConfirmAdd}
           onCancel={() => setEstimatePaths(null)}
+        />
+      )}
+
+      {/* Rename modal */}
+      {renamePaths && (
+        <RenameModal
+          filePaths={renamePaths}
+          onClose={() => setRenamePaths(null)}
+          onApplied={() => {
+            setRenamePaths(null);
+            loadTree(filter);
+            toast("Rename applied", "success");
+          }}
+        />
+      )}
+
+      {/* Advanced search modal */}
+      {advSearchOpen && (
+        <AdvancedSearchModal
+          initial={advSearchPredicates}
+          onApply={(preds, paths) => {
+            setAdvSearchPredicates(preds);
+            setAdvSearchResults(new Set(paths));
+            setAdvSearchOpen(false);
+            toast(`Advanced search: ${paths.length} match${paths.length === 1 ? "" : "es"}`, "success");
+          }}
+          onClose={() => setAdvSearchOpen(false)}
         />
       )}
     </div>

@@ -1,11 +1,11 @@
 services:
-  squeezarr:
-    image: squeezarr:latest
-    container_name: squeezarr
+  shrinkerr:
+    image: shrinkerr:latest
+    container_name: shrinkerr
     ports:
       - "6680:6680"
     volumes:
-      - /home/hal9000/squeezarr/data:/app/data
+      - /home/hal9000/shrinkerr/data:/app/data
       - type: bind
         source: /home/hal9000/HALHUB
         target: /media

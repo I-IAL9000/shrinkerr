@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getSchedule, setSchedule, cancelSchedule, startQueue, pauseQueue, clearCompleted, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
+import { getSchedule, setSchedule, cancelSchedule, startQueue, pauseQueue, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
 import { useToast } from "../useToast";
 
 const inputStyle: React.CSSProperties = {
@@ -152,8 +152,6 @@ export default function SchedulePage() {
               onClick={() => { startQueue(); toast("Queue started", "success"); }}>Start queue now</button>
             <button className="btn btn-secondary" style={{ textAlign: "left" }}
               onClick={() => { pauseQueue(); toast("Queue paused"); }}>Pause after current job</button>
-            <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={() => { clearCompleted(); toast("Completed jobs cleared"); }}>Clear completed jobs</button>
           </div>
         </div>
       </div>
@@ -336,10 +334,10 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* Plex Stream-Aware Scheduling */}
+      {/* Stream-Aware Scheduling */}
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <h3 style={{ color: "var(--text-primary)" }}>Plex Stream-Aware Scheduling</h3>
+          <h3 style={{ color: "var(--text-primary)" }}>Plex / Jellyfin Stream-Aware Scheduling</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
             <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{plexPauseEnabled ? "Enabled" : "Disabled"}</span>
             <input type="checkbox" checked={plexPauseEnabled}
@@ -348,7 +346,7 @@ export default function SchedulePage() {
           </label>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          Pause encoding when Plex users are actively streaming. Prevents competing for disk I/O and CPU, ensuring smooth playback. Encoding resumes automatically when streams end.
+          Pause encoding when Plex or Jellyfin users are actively streaming. Prevents competing for disk I/O and CPU, ensuring smooth playback. Encoding resumes automatically when streams end.
         </div>
 
         <div style={{ opacity: plexPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
@@ -385,7 +383,7 @@ export default function SchedulePage() {
                 plex_pause_stream_threshold: String(plexPauseThreshold),
                 plex_pause_transcode_only: plexPauseTranscodeOnly,
               });
-              toast("Plex streaming settings saved", "success");
+              toast("Streaming settings saved", "success");
             }}>
             Save Streaming Settings
           </button>

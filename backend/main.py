@@ -30,15 +30,18 @@ from backend.routes.rules import router as rules_router
 async def cleanup_temp_files(queue: JobQueue) -> None:
     """Delete leftover .converting.mkv temp files from interrupted conversions.
 
-    Only checks directories of jobs that were recently running, not all media dirs.
+    Only checks directories of pending CONVERT/COMBINED jobs (health_check jobs
+    don't produce temp files). Hard cap on directories scanned so a flooded
+    queue can't stall startup.
     """
     import aiosqlite
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        # Only look at directories of pending jobs (just reset from running)
         async with db.execute(
-            "SELECT DISTINCT file_path FROM jobs WHERE status = 'pending'"
+            "SELECT DISTINCT file_path FROM jobs "
+            "WHERE status = 'pending' AND job_type IN ('convert', 'combined') "
+            "LIMIT 500"
         ) as cur:
             rows = await cur.fetchall()
             job_dirs = {str(Path(row["file_path"]).parent) for row in rows}
@@ -70,12 +73,13 @@ async def cleanup_temp_files(queue: JobQueue) -> None:
 
 
 async def backfill_ignored_files() -> None:
-    """Populate ignored_files from completed jobs with space_saved <= 0 (one-time migration)."""
+    """Populate ignored_files from completed CONVERT/COMBINED jobs with no savings."""
     import aiosqlite
     db = await aiosqlite.connect(DB_PATH)
     try:
         async with db.execute(
-            "SELECT file_path FROM jobs WHERE status = 'completed' AND space_saved <= 0"
+            "SELECT file_path FROM jobs WHERE status = 'completed' "
+            "AND job_type IN ('convert', 'combined') AND space_saved <= 0"
         ) as cur:
             rows = await cur.fetchall()
         count = 0
@@ -105,6 +109,16 @@ async def lifespan(app: FastAPI):
     await init_db()
     from backend.database import backfill_daily_stats
     await backfill_daily_stats()
+    # Backfill file_events from existing jobs — run in BACKGROUND so a huge
+    # jobs table can't block startup and cause Docker to kill the container.
+    import asyncio as _asyncio
+    async def _bg_backfill_events():
+        try:
+            from backend.file_events import backfill_from_jobs
+            await backfill_from_jobs()
+        except Exception as exc:
+            print(f"[STARTUP] file_events backfill skipped: {exc}", flush=True)
+    _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir
     await check_vmaf_available()
@@ -112,6 +126,11 @@ async def lifespan(app: FastAPI):
     # Load IMDb ratings dataset
     from backend.imdb_ratings import ensure_ratings
     await ensure_ratings()
+    # Initialize node manager and register local worker
+    from backend.nodes import NodeManager, stale_release_loop
+    node_manager = NodeManager()
+    await node_manager.register_local_node()
+
     queue = JobQueue(DB_PATH)
     # Reset any jobs stuck in "running" from a previous session back to pending
     await queue.reset_stale_running()
@@ -122,12 +141,21 @@ async def lifespan(app: FastAPI):
     worker = QueueWorker(DB_PATH)
     watcher = FileWatcher(DB_PATH, interval_minutes=5)
     app.state.watcher = watcher  # Expose for the API endpoint
+    app.state.node_manager = node_manager
     init_job_routes(worker, queue)
     init_scheduler(worker.start)
     watcher.start()
+    # Weekly database backup task (keeps last 4)
+    import asyncio
+    from backend.routes.settings import scheduled_backup_loop
+    backup_task = asyncio.create_task(scheduled_backup_loop())
+    # Background: stale node detection + job release
+    stale_task = asyncio.create_task(stale_release_loop(node_manager))
     yield
     worker.stop()
     watcher.stop()
+    backup_task.cancel()
+    stale_task.cancel()
 
 
 app = FastAPI(title="Squeezarr", lifespan=lifespan)
@@ -315,6 +343,24 @@ app.include_router(poster_router)
 from backend.routes.webhooks import router as webhook_router
 app.include_router(webhook_router)
 
+from backend.routes.activity import router as activity_router
+app.include_router(activity_router)
+
+from backend.routes.nodes import router as nodes_router
+app.include_router(nodes_router)
+
+from backend.routes.search import router as search_router
+app.include_router(search_router)
+
+from backend.routes.rename import router as rename_router
+app.include_router(rename_router)
+
+from backend.routes.arr import router as arr_router
+app.include_router(arr_router)
+
+from backend.routes.plex import router as plex_router
+app.include_router(plex_router)
+
 
 @app.get("/api/health")
 async def health_check():
@@ -401,5 +447,11 @@ if frontend_dist.exists():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=6680, reload=True)
+    # Worker mode: run as a remote worker instead of the server
+    mode = os.environ.get("SHRINKERR_MODE", "server").lower()
+    if mode == "worker":
+        from backend.worker_mode import run_worker
+        asyncio.run(run_worker())
+    else:
+        import uvicorn
+        uvicorn.run("backend.main:app", host="0.0.0.0", port=6680)

@@ -85,27 +85,46 @@ def _detect_source(file_path: str) -> str:
     return "Other"
 
 
-def _detect_resolution(video_height: Optional[int]) -> str:
-    """Map video height to resolution label."""
-    if not video_height:
+def _detect_resolution(video_height: Optional[int], file_path: str = "") -> str:
+    """Map video height to resolution label. Falls back to filename parsing."""
+    if video_height:
+        if video_height >= 1400:
+            return "4K"
+        if video_height >= 900:
+            return "1080p"
+        if video_height >= 600:
+            return "720p"
         return "SD"
-    if video_height >= 1400:
-        return "4K"
-    if video_height >= 900:
-        return "1080p"
-    if video_height >= 600:
-        return "720p"
+    # Fallback: parse resolution from filename
+    if file_path:
+        from backend.media_parser import parse_media_name
+        parsed = parse_media_name(os.path.basename(file_path))
+        if parsed.resolution:
+            res = parsed.resolution.lower()
+            if res in ("2160p", "4k", "uhd"):
+                return "4K"
+            if res in ("1080p", "1080i"):
+                return "1080p"
+            if res == "720p":
+                return "720p"
+            if res == "480p":
+                return "SD"
     return "SD"
 
 
 def _detect_media_type(file_path: str) -> str:
     """Detect whether a file is TV or movie based on path patterns."""
-    # S##E## pattern
-    if re.search(r'[Ss]\d{2}[Ee]\d{2}', file_path):
+    # S##E## pattern (including S#E# for single digits)
+    if re.search(r'[Ss]\d{1,2}[Ee]\d{1,3}', file_path):
         return "tv"
-    if "/Season " in file_path:
+    if "/Season " in file_path or "/Series " in file_path:
         return "tv"
-    return "movie"
+    if "/Specials/" in file_path:
+        return "tv"
+    # Fallback: use media parser on the filename
+    from backend.media_parser import parse_media_name
+    parsed = parse_media_name(os.path.basename(file_path))
+    return parsed.media_type
 
 
 def _parse_release_group(file_path: str) -> str:
@@ -190,7 +209,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
 
     # 3. Resolution — from scan_row video_height
     if ctype == "resolution":
-        detected = _detect_resolution(scan_row.get("video_height"))
+        detected = _detect_resolution(scan_row.get("video_height"), file_path)
         return _match_op(detected, op, value)
 
     # 4. Video codec — with family matching
@@ -274,14 +293,27 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         return found
 
     # 11. Tag — requires Sonarr/Radarr API calls
-    # TODO: Implement tag matching via Sonarr/Radarr API. Currently used by NZBGet
-    # extension which handles tag resolution separately. For batch rule resolution,
-    # we skip tag conditions (return False) to avoid expensive API calls per file.
     if ctype == "tag":
         return False
 
     # 12. Plex watched status
     if ctype == "plex_watched":
+        return False
+
+    # 13. Jellyfin tag — matched via plex_metadata_cache (shared cache table)
+    if ctype == "jellyfin_tag":
+        found = any(
+            mt == "jellyfin_tag" and mv.lower() == value.lower()
+            for mt, mv in folder_metadata
+        )
+        if op in ("is", "contains"):
+            return found
+        elif op in ("is_not", "does_not_contain"):
+            return not found
+        return found
+
+    # 14. Jellyfin watched status
+    if ctype == "jellyfin_watched":
         return False
 
     # 13. NZBGet category — passed via extra_context from add-by-path

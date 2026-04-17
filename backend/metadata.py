@@ -1,7 +1,6 @@
 """TMDB / TVDB API integration for original-language detection."""
 
 import re
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -67,37 +66,7 @@ def map_language_code(code: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# c) TVDB JWT token management
-# ---------------------------------------------------------------------------
-
-_tvdb_token: Optional[str] = None
-_tvdb_token_expires: float = 0.0
-
-
-async def _get_tvdb_token(api_key: str, client: httpx.AsyncClient) -> Optional[str]:
-    """Return a cached TVDB JWT token, refreshing if expired (24h, 60s buffer)."""
-    global _tvdb_token, _tvdb_token_expires
-
-    if _tvdb_token and time.time() < _tvdb_token_expires:
-        return _tvdb_token
-
-    try:
-        resp = await client.post(
-            "https://api4.thetvdb.com/v4/login",
-            json={"apikey": api_key},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        _tvdb_token = data["data"]["token"]
-        _tvdb_token_expires = time.time() + 86400 - 60  # 24h minus 60s buffer
-        return _tvdb_token
-    except Exception as exc:
-        print(f"[METADATA] TVDB auth failed: {exc}", flush=True)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# d) TMDB lookup
+# c) TMDB lookup
 # ---------------------------------------------------------------------------
 
 
@@ -123,29 +92,7 @@ async def _lookup_tmdb(
 
 
 # ---------------------------------------------------------------------------
-# e) TVDB lookup
-# ---------------------------------------------------------------------------
-
-
-async def _lookup_tvdb(
-    tvdb_id: str, api_key: str, client: httpx.AsyncClient
-) -> str | None:
-    """Look up original language on TVDB via series ID."""
-    token = await _get_tvdb_token(api_key, client)
-    if not token:
-        return None
-
-    resp = await client.get(
-        f"https://api4.thetvdb.com/v4/series/{tvdb_id}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    return data.get("data", {}).get("originalLanguage") or None
-
-
-# ---------------------------------------------------------------------------
-# f) Main orchestrator
+# d) Main orchestrator
 # ---------------------------------------------------------------------------
 
 
@@ -172,16 +119,12 @@ async def lookup_original_language(file_path: str) -> str | None:
             "original_language TEXT, raw_api_language TEXT, "
             "looked_up_at TEXT NOT NULL, UNIQUE(id_type, media_id))"
         )
-        # Fetch API keys
+        # Fetch TMDB API key (TMDB resolves both IMDb and TVDB IDs via /find)
         tmdb_key: Optional[str] = None
-        tvdb_key: Optional[str] = None
-        async with db.execute("SELECT key, value FROM settings WHERE key IN ('tmdb_api_key', 'tvdb_api_key')") as cur:
-            rows = await cur.fetchall()
-            for row in rows:
-                if row["key"] == "tmdb_api_key":
-                    tmdb_key = row["value"]
-                elif row["key"] == "tvdb_api_key":
-                    tvdb_key = row["value"]
+        async with db.execute("SELECT value FROM settings WHERE key = 'tmdb_api_key'") as cur:
+            row = await cur.fetchone()
+            if row:
+                tmdb_key = row["value"]
 
         # Check cache
         async with db.execute(
@@ -260,10 +203,3 @@ async def test_tmdb_key(api_key: str) -> bool:
     async with httpx.AsyncClient(timeout=10) as client:
         lang = await _lookup_tmdb("tt0111161", api_key, client)
         return lang == "en"
-
-
-async def test_tvdb_key(api_key: str) -> bool:
-    """Validate a TVDB API key by attempting authentication."""
-    async with httpx.AsyncClient(timeout=10) as client:
-        token = await _get_tvdb_token(api_key, client)
-        return token is not None

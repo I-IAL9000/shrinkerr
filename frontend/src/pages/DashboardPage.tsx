@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
+import { fmtNum } from "../fmt";
 import {
   LineChart, Line, AreaChart, Area, BarChart as RBarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -9,11 +10,12 @@ import type { JobProgress } from "../types";
 
 const cardStyle: React.CSSProperties = { background: "var(--bg-card)", padding: 20, borderRadius: 6 };
 const headingStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: 14, marginBottom: 16 };
-const donutColors = ["#9135ff", "#6882ff", "#40ceff", "#2cf4e8", "#18ffa5", "#ff6b9d", "#ffa94d"];
+const donutColors = ["#6860fe", "#6882ff", "#40ceff", "#2cf4e8", "#10B981", "#ff6b9d", "#ffa94d"];
 
 const tooltipStyle = {
-  contentStyle: { background: "#1a1030", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 },
+  contentStyle: { background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 },
   labelStyle: { color: "var(--text-muted)" },
+  cursor: { fill: "var(--bg-tertiary)", opacity: 0.5 },
 };
 
 function formatBytes(bytes: number): string {
@@ -65,7 +67,7 @@ function Donut({ segments, size = 120, hole = 0.65, centerText }: {
 // Horizontal bar chart (renamed to avoid conflict with recharts BarChart)
 function HBarChart({ items, colors }: { items: { label: string; value: number }[]; colors?: string[] }) {
   const max = Math.max(...items.map(i => i.value), 1);
-  const defaultColors = ["#9135ff", "#7c5cff", "#6882ff", "#54a8ff", "#40ceff", "#2cf4e8", "#18ffa5"];
+  const defaultColors = ["#6860fe", "#7c5cff", "#6882ff", "#54a8ff", "#40ceff", "#2cf4e8", "#10B981"];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {items.filter(i => i.value > 0).map((item, idx) => (
@@ -107,7 +109,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
     {
       key: "dirs",
       title: "Add media directories",
-      description: "Tell Squeezarr where your media files are stored so it can scan them.",
+      description: "Tell Shrinkerr where your media files are stored so it can scan them.",
       done: setup.has_dirs,
       action: () => navigate("/settings"),
       actionLabel: "Go to Settings",
@@ -167,13 +169,13 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
   return (
     <div>
       <div style={{ textAlign: "center", padding: "40px 20px 20px" }}>
-        <img src="/squeezarr-logo.svg" alt="" width="48" height="48" style={{ marginBottom: 16 }} />
+        <img src="/shrinkerr-logo.svg" alt="" width="48" height="48" style={{ marginBottom: 16 }} />
         <h1 style={{
           fontSize: 28, fontWeight: "bold", margin: "0 0 8px",
-          background: "linear-gradient(90deg, #9135ff, #5089F7)",
+          background: "linear-gradient(90deg, #6860fe, #5089F7)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
         }}>
-          Welcome to Squeezarr
+          Welcome to Shrinkerr
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0, maxWidth: 500, marginInline: "auto" }}>
           Convert your media library from x264 to x265 with NVENC hardware encoding.
@@ -198,15 +200,15 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
           <div key={step.key} style={{
             background: "var(--bg-card)", borderRadius: 8, padding: "16px 20px",
             display: "flex", alignItems: "center", gap: 16,
-            border: step.done ? "1px solid rgba(145,53,255,0.2)" : "1px solid var(--border)",
+            border: step.done ? "1px solid rgba(104,96,254,0.2)" : "1px solid var(--border)",
             opacity: step.done ? 0.6 : 1,
           }}>
             {/* Step number / checkmark */}
             <div style={{
               width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
-              background: step.done ? "rgba(24,255,165,0.15)" : "rgba(145,53,255,0.15)",
-              color: step.done ? "#18ffa5" : "var(--accent)",
+              background: step.done ? "rgba(24,255,165,0.15)" : "rgba(104,96,254,0.15)",
+              color: step.done ? "#10B981" : "var(--accent)",
               fontSize: 14, fontWeight: "bold",
             }}>
               {step.done ? (
@@ -322,7 +324,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
   const combinedFps = liveJobs.reduce((s: number, j: any) => s + (j.fps || 0), 0);
   const diskColor = (free: number) => {
     const gb = free / (1024 ** 3);
-    if (gb > 100) return "#18ffa5";
+    if (gb > 100) return "#10B981";
     if (gb > 50) return "#ffa94d";
     return "#e94560";
   };
@@ -400,10 +402,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
         {/* Queue depth */}
         <div style={cardStyle}>
-          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{dash.queue?.pending || 0}</div>
+          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{fmtNum(dash.queue?.pending)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Pending in queue</div>
           {(dash.queue?.failed || 0) > 0 && (
-            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{dash.queue.failed} failed</div>
+            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{fmtNum(dash.queue.failed)} failed</div>
           )}
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{dash.queue?.completed?.toLocaleString() || 0} completed</div>
         </div>
@@ -439,7 +441,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
       {/* Today's summary bar */}
       <div style={{ ...cardStyle, display: "flex", gap: 28, padding: "12px 20px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Today</span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{today.jobs_completed || 0}</b> <span style={{ color: "var(--text-muted)" }}>jobs</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>jobs</span></span>
         <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{formatBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>saved</span></span>
         {(today.avg_fps || 0) > 0 && (
           <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>avg fps/job</span></span>
@@ -555,7 +557,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 size={110}
                 segments={[
                   { value: s.needs_conversion, color: "#e94560", label: "Needs converting" },
-                  { value: s.already_converted, color: "var(--accent)", label: "Converted by Squeezarr" },
+                  { value: s.already_converted, color: "var(--accent)", label: "Converted by Shrinkerr" },
                 ]}
                 centerText={`${s.needs_conversion + s.already_converted > 0 ? Math.round(s.already_converted / (s.needs_conversion + s.already_converted) * 100) : 0}%`}
               />
@@ -567,7 +569,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 size={110}
                 segments={[
                   { value: s.files_needing_audio_cleanup, color: "#ffa94d", label: "Needs cleanup" },
-                  { value: s.files_audio_cleaned, color: "var(--accent)", label: "Cleaned by Squeezarr" },
+                  { value: s.files_audio_cleaned, color: "var(--accent)", label: "Cleaned by Shrinkerr" },
                 ]}
                 centerText={`${s.files_audio_cleaned + s.files_needing_audio_cleanup > 0 ? Math.round(s.files_audio_cleaned / (s.files_audio_cleaned + s.files_needing_audio_cleanup) * 100) : 0}%`}
               />
@@ -585,7 +587,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
               <Donut
                 size={110}
                 segments={s.codecs.map(([label, value]: [string, number], i: number) => ({
-                  value, label, color: ["#e94560", "#9135ff", "#40ceff", "#18ffa5", "#ffa94d"][i % 5],
+                  value, label, color: ["#e94560", "#6860fe", "#40ceff", "#10B981", "#ffa94d"][i % 5],
                 }))}
                 centerText={`${s.scan_total}`}
               />
@@ -599,7 +601,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 {Object.entries(s.savings_by_source).map(([src, data]: [string, any]) => (
                   <div key={src}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
-                      <span style={{ color: "var(--text-muted)" }}>{src} ({data.count})</span>
+                      <span style={{ color: "var(--text-muted)" }}>{src} ({fmtNum(data.count)})</span>
                       <span style={{ color: "var(--success)", fontWeight: "bold" }}>{data.percent}%</span>
                     </div>
                     <div style={{ height: 8, background: "var(--bg-primary)", borderRadius: 4, overflow: "hidden" }}>
@@ -630,7 +632,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
             <Donut
               size={110}
               segments={(s.resolutions || []).map(([label, value]: [string, number], i: number) => ({
-                value, label, color: ["#9135ff", "#40ceff", "#18ffa5", "#ffa94d"][i % 4],
+                value, label, color: ["#6860fe", "#40ceff", "#10B981", "#ffa94d"][i % 4],
               }))}
               centerText={`${totalCompleted}`}
             />
@@ -651,7 +653,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 <Donut
                   size={130}
                   segments={[
-                    { value: excellent, color: "#18ffa5", label: "Excellent (93+)" },
+                    { value: excellent, color: "#10B981", label: "Excellent (93+)" },
                     { value: good, color: "var(--accent)", label: "Good (87-93)" },
                     { value: fair, color: "#ffa94d", label: "Fair (80-87)" },
                     { value: poor, color: "#e94560", label: "Poor (<80)" },
@@ -672,7 +674,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                     {([
-                      ["Excellent (93+)", excellent, "#18ffa5"],
+                      ["Excellent (93+)", excellent, "#10B981"],
                       ["Good (87-93)", good, "var(--accent)"],
                       ["Fair (80-87)", fair, "#ffa94d"],
                       ["Poor (<80)", poor, "#e94560"],
@@ -703,7 +705,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" TB" />
                   <Tooltip {...tooltipStyle} />
-                  <Area type="monotone" dataKey="cumulative_tb" stroke="#9135ff" fill="rgba(145,53,255,0.2)" strokeWidth={2} name="TB Saved" />
+                  <Area type="monotone" dataKey="cumulative_tb" stroke="#6860fe" fill="rgba(104,96,254,0.2)" strokeWidth={2} name="TB Saved" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -732,7 +734,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" GB" />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="saved_gb" fill="#18ffa5" radius={[3, 3, 0, 0]} name="GB Saved" />
+                  <Bar dataKey="saved_gb" fill="#10B981" radius={[3, 3, 0, 0]} name="GB Saved" />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
@@ -745,7 +747,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="jobs_completed" fill="#9135ff" radius={[3, 3, 0, 0]} name="Jobs" />
+                  <Bar dataKey="jobs_completed" fill="#6860fe" radius={[3, 3, 0, 0]} name="Jobs" />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
@@ -975,7 +977,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                           {src}
                         </span>
                         <span style={{ display: "flex", gap: 12, color: "var(--text-muted)" }}>
-                          <span>{data.count} files</span>
+                          <span>{fmtNum(data.count)} files</span>
                           <span>{formatBytes(data.saved)} saved</span>
                           <span style={{ color: "var(--success)", fontWeight: 600 }}>{data.percent}%</span>
                         </span>

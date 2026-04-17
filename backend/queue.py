@@ -148,14 +148,136 @@ class JobQueue:
         finally:
             await db.close()
 
+    async def _log_event(self, file_path: str, event_type: str, summary: str, details: dict | None = None) -> None:
+        """Convenience wrapper around file_events.log_event (never raises)."""
+        try:
+            from backend.file_events import log_event
+            await log_event(file_path, event_type, summary, details)
+        except Exception:
+            pass
+
+    async def add_jobs_bulk(self, jobs: list[dict]) -> list[int]:
+        """Insert many jobs in a single transaction — much faster than N add_job() calls.
+
+        Each job dict supports the same fields as add_job() kwargs plus an optional
+        "insert_next" boolean. Returns the list of inserted job IDs (0 for skipped
+        duplicates). Files already having a pending/running job are skipped.
+        """
+        if not jobs:
+            return []
+        db = await self._connect()
+        try:
+            # 1. Find which files already have pending/running jobs (batched)
+            file_paths = [j["file_path"] for j in jobs]
+            existing: set[str] = set()
+            CHUNK = 900
+            for i in range(0, len(file_paths), CHUNK):
+                chunk = file_paths[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                async with db.execute(
+                    f"SELECT file_path FROM jobs WHERE status IN ('pending','running') "
+                    f"AND file_path IN ({placeholders})",
+                    chunk,
+                ) as cur:
+                    for r in await cur.fetchall():
+                        existing.add(r["file_path"])
+
+            # 2. Get current min pending order (for insert_next) and max order once
+            async with db.execute(
+                "SELECT COALESCE(MIN(queue_order), 1) FROM jobs WHERE status = 'pending'"
+            ) as cur:
+                row = await cur.fetchone()
+                min_pending = (row[0] or 1)
+            async with db.execute("SELECT COALESCE(MAX(queue_order), 0) FROM jobs") as cur:
+                row = await cur.fetchone()
+                max_order = (row[0] or 0)
+
+            insert_next_counter = min_pending - 1
+            append_counter = max_order
+
+            # 3. Insert every new job in one transaction
+            now = _utcnow()
+            job_ids: list[int] = []
+            sql = (
+                "INSERT INTO jobs (file_path, job_type, status, encoder, "
+                "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
+                "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
+                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            for j in jobs:
+                fp = j["file_path"]
+                if fp in existing:
+                    job_ids.append(0)
+                    continue
+                if j.get("insert_next"):
+                    order = insert_next_counter
+                    insert_next_counter -= 1
+                else:
+                    append_counter += 1
+                    order = append_counter
+
+                async with db.execute(
+                    sql,
+                    (
+                        fp,
+                        j["job_type"],
+                        j.get("encoder"),
+                        json.dumps(j.get("audio_tracks_to_remove") or []),
+                        json.dumps(j.get("subtitle_tracks_to_remove") or []),
+                        now,
+                        order,
+                        j.get("original_size") or 0,
+                        j.get("nvenc_preset"),
+                        j.get("nvenc_cq"),
+                        j.get("audio_codec"),
+                        j.get("audio_bitrate"),
+                        j.get("libx265_crf"),
+                        j.get("libx265_preset"),
+                        j.get("target_resolution"),
+                        j.get("priority") or 0,
+                    ),
+                ) as cur:
+                    job_ids.append(cur.lastrowid or 0)
+                    # Mark this file as existing so duplicates within the same batch are skipped
+                    existing.add(fp)
+
+            await db.commit()
+        finally:
+            await db.close()
+
+        # Log "queued" events for new jobs (skipped duplicates have id == 0)
+        try:
+            from backend.file_events import log_event, EVENT_QUEUED
+            for j, jid in zip(jobs, job_ids):
+                if not jid:
+                    continue
+                jt = j.get("job_type", "convert")
+                if jt == "health_check":
+                    summary = f"Queued for {j.get('encoder', 'quick')} health check"
+                else:
+                    summary = f"Queued for {jt}"
+                await log_event(j["file_path"], EVENT_QUEUED, summary, {"job_id": jid, "job_type": jt})
+        except Exception:
+            pass
+        return job_ids
+
     async def reset_stale_running(self) -> int:
-        """Reset jobs stuck in 'running' status back to 'pending' (e.g. after a restart)."""
+        """Reset jobs stuck in 'running' status back to 'pending' (e.g. after a restart).
+
+        Only resets jobs assigned to the local node — remote workers may still be
+        actively processing their assigned jobs. Stale remote assignments are
+        handled by the NodeManager's release_stale_assignments loop based on
+        heartbeat timeout.
+        """
         db = await self._connect()
         try:
             async with db.execute(
                 "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
-                "eta_seconds = NULL, started_at = NULL, error_log = NULL "
-                "WHERE status = 'running'"
+                "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                "assigned_node_id = NULL, assigned_at = NULL "
+                "WHERE status = 'running' "
+                "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')"
             ) as cur:
                 count = cur.rowcount
             await db.commit()
@@ -165,19 +287,35 @@ class JobQueue:
         finally:
             await db.close()
 
-    async def get_next_job(self, exclude_ids: list[int] | None = None) -> Optional[dict]:
+    async def get_next_job(
+        self,
+        exclude_ids: list[int] | None = None,
+        affinity: str = "any",
+    ) -> Optional[dict]:
         db = await self._connect()
         try:
             # Priority DESC ensures Highest (2) before High (1) before Normal (0)
             # Within same priority, FIFO by queue_order
+            # Optional affinity filter: 'cpu_only', 'nvenc_only', or 'any'
+            affinity_sql = ""
+            if affinity == "cpu_only":
+                affinity_sql = " AND (encoder IS NULL OR encoder = '' OR LOWER(encoder) IN ('libx265','x265','cpu'))"
+            elif affinity == "nvenc_only":
+                affinity_sql = " AND LOWER(encoder) IN ('nvenc','hevc_nvenc')"
+
             if exclude_ids:
                 placeholders = ",".join("?" * len(exclude_ids))
-                query = f"SELECT * FROM jobs WHERE status = 'pending' AND id NOT IN ({placeholders}) ORDER BY priority DESC, queue_order ASC LIMIT 1"
+                query = (
+                    f"SELECT * FROM jobs WHERE status = 'pending'{affinity_sql} "
+                    f"AND id NOT IN ({placeholders}) "
+                    f"ORDER BY priority DESC, queue_order ASC LIMIT 1"
+                )
                 async with db.execute(query, exclude_ids) as cur:
                     row = await cur.fetchone()
             else:
                 async with db.execute(
-                    "SELECT * FROM jobs WHERE status = 'pending' ORDER BY priority DESC, queue_order ASC LIMIT 1"
+                    f"SELECT * FROM jobs WHERE status = 'pending'{affinity_sql} "
+                    f"ORDER BY priority DESC, queue_order ASC LIMIT 1"
                 ) as cur:
                     row = await cur.fetchone()
             if row is None:
@@ -618,6 +756,36 @@ class QueueWorker:
         except Exception:
             return False
 
+    async def _should_pause_for_jellyfin(self) -> bool:
+        """Check if encoding should pause due to active Jellyfin streams."""
+        try:
+            db = await self._db()
+            try:
+                settings = {}
+                async with db.execute(
+                    "SELECT key, value FROM settings WHERE key IN ('jellyfin_pause_on_stream', 'jellyfin_pause_stream_threshold', 'jellyfin_pause_transcode_only')"
+                ) as cur:
+                    for row in await cur.fetchall():
+                        settings[row[0]] = row[1]
+            finally:
+                await db.close()
+
+            if settings.get("jellyfin_pause_on_stream", "false").lower() != "true":
+                return False
+
+            threshold = int(settings.get("jellyfin_pause_stream_threshold", "1"))
+            transcode_only = settings.get("jellyfin_pause_transcode_only", "true").lower() == "true"
+
+            from backend.jellyfin import get_active_streams
+            streams = await get_active_streams()
+
+            if transcode_only:
+                return streams["transcoding"] >= threshold
+            else:
+                return streams["total"] >= threshold
+        except Exception:
+            return False
+
     async def _should_use_nice(self) -> bool:
         """Check if quiet hours nice (low priority) is enabled and active."""
         if not await self._is_quiet_hours():
@@ -633,6 +801,46 @@ class QueueWorker:
         except Exception:
             return False
 
+    async def _get_local_node_settings(self) -> dict:
+        """Read per-node settings for the 'local' node from worker_nodes."""
+        try:
+            db = await self._db()
+            try:
+                async with db.execute(
+                    "SELECT paused, max_jobs, job_affinity, translate_encoder, "
+                    "schedule_enabled, schedule_hours FROM worker_nodes WHERE id = 'local'"
+                ) as cur:
+                    row = await cur.fetchone()
+                if not row:
+                    return {}
+                try:
+                    schedule_hours = json.loads(row["schedule_hours"] or "[]")
+                except Exception:
+                    schedule_hours = []
+                return {
+                    "paused": bool(row["paused"]),
+                    "max_jobs": row["max_jobs"] or 1,
+                    "job_affinity": row["job_affinity"] or "any",
+                    "translate_encoder": bool(row["translate_encoder"]),
+                    "schedule_enabled": bool(row["schedule_enabled"]),
+                    "schedule_hours": schedule_hours,
+                }
+            finally:
+                await db.close()
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _is_local_within_schedule(settings: dict) -> bool:
+        """Return True if the local node's per-node schedule allows running now."""
+        if not settings.get("schedule_enabled"):
+            return True  # Schedule disabled = always allowed
+        hours = settings.get("schedule_hours") or []
+        if not hours:
+            return False  # Schedule enabled but no hours selected = never
+        from datetime import datetime
+        return datetime.now().hour in hours
+
     async def _run_loop(self) -> None:
         print("[WORKER] Loop started, running=%s paused=%s" % (self._running, self._paused), flush=True)
         self._outside_hours_logged = False
@@ -643,6 +851,15 @@ class QueueWorker:
                 _first_iter = False
             if self._paused:
                 await asyncio.sleep(1)
+                continue
+
+            # Per-node settings for 'local' — check pause, schedule, parallel_jobs, affinity
+            local_settings = await self._get_local_node_settings()
+            if local_settings.get("paused"):
+                await asyncio.sleep(2)
+                continue
+            if not self._is_local_within_schedule(local_settings):
+                await asyncio.sleep(30)
                 continue
 
             # Check run hours restriction
@@ -669,6 +886,12 @@ class QueueWorker:
                             self._plex_pause_logged = True
                         await asyncio.sleep(15)
                         continue
+                    if await self._should_pause_for_jellyfin():
+                        if not getattr(self, '_jellyfin_pause_logged', False):
+                            print("[WORKER] Pausing — active Jellyfin stream(s) detected", flush=True)
+                            self._jellyfin_pause_logged = True
+                        await asyncio.sleep(15)
+                        continue
                     elif getattr(self, '_plex_pause_logged', False):
                         print("[WORKER] Resuming — Plex streams ended", flush=True)
                         self._plex_pause_logged = False
@@ -684,7 +907,9 @@ class QueueWorker:
 
             # Check how many slots are available (reduced during quiet hours)
             try:
-                max_parallel = await self._get_parallel_limit()
+                # Per-node max_jobs takes precedence over the global parallel_jobs setting
+                node_max = local_settings.get("max_jobs")
+                max_parallel = node_max if node_max else await self._get_parallel_limit()
                 if await self._is_quiet_hours():
                     quiet_parallel = await self._get_quiet_hours_parallel()
                     max_parallel = min(max_parallel, quiet_parallel)
@@ -700,7 +925,10 @@ class QueueWorker:
             # Try to pick the next job (excluding already-running ones)
             try:
                 running_ids = list(self._active_tasks.keys())
-                job = await self.queue.get_next_job(exclude_ids=running_ids)
+                job = await self.queue.get_next_job(
+                    exclude_ids=running_ids,
+                    affinity=local_settings.get("job_affinity", "any"),
+                )
             except Exception as exc:
                 print(f"[WORKER] Failed to get next job (DB may be busy): {exc}", flush=True)
                 await asyncio.sleep(2)
@@ -735,10 +963,120 @@ class QueueWorker:
                 await self.queue.update_status(job_id, "failed", error_log=str(exc))
             except Exception:
                 pass
+            try:
+                from backend.file_events import log_event, EVENT_FAILED
+                await log_event(job.get("file_path", ""), EVENT_FAILED, f"Failed: {str(exc)[:120]}", {"job_id": job_id})
+            except Exception:
+                pass
         finally:
             self._active_procs.pop(job_id, None)
             self._active_tasks.pop(job_id, None)
             self._cancel_flags.discard(job_id)
+
+    async def _run_health_check_job(self, job_id: int, file_path: str, file_name: str, job: dict, stats: dict) -> None:
+        """Run a health check (quick or thorough) and persist results to scan_results."""
+        import os
+        from backend.health_check import run_check
+        from backend.websocket import ws_manager
+        from backend.database import DB_PATH
+
+        # Mode is stashed in the 'encoder' column (reuses existing schema)
+        mode = (job.get("encoder") or "quick").lower()
+        if mode not in ("quick", "thorough"):
+            mode = "quick"
+
+        if not os.path.exists(file_path):
+            await self.queue.update_status(job_id, "failed", error_log="File not found")
+            return
+
+        await ws_manager.send_job_progress(
+            job_id=job_id,
+            file_name=file_name,
+            progress=0.0,
+            fps=None,
+            eta=None,
+            step=f"health-check ({mode})",
+            jobs_completed=stats["completed"],
+            jobs_total=stats["total_jobs"],
+            total_saved=stats["total_space_saved"],
+        )
+
+        try:
+            result = await run_check(file_path, mode=mode)
+        except Exception as exc:
+            await self.queue.update_status(job_id, "failed", error_log=f"Health check failed: {exc}")
+            return
+
+        status = result.get("status", "healthy")
+        errors = result.get("errors", [])
+        errs_json = json.dumps(errors) if errors else None
+        duration_s = result.get("duration_seconds")
+
+        # Persist results to scan_results AND mirror onto the job row
+        import aiosqlite
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA busy_timeout=30000")
+            await db.execute(
+                "UPDATE scan_results SET health_status = ?, health_errors_json = ?, "
+                "health_checked_at = ?, health_check_type = ? WHERE file_path = ?",
+                (status, errs_json, now, mode, file_path),
+            )
+            await db.execute(
+                "UPDATE jobs SET health_status = ?, health_errors_json = ?, "
+                "health_check_type = ?, health_check_seconds = ? WHERE id = ?",
+                (status, errs_json, mode, duration_s, job_id),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+        print(
+            f"[HEALTH] {mode} check complete for {file_name}: {status} "
+            f"({result.get('duration_seconds', 0)}s)",
+            flush=True,
+        )
+
+        # Mark the job completed with the status recorded as error_log for visibility
+        error_log = None
+        if status == "corrupt":
+            error_log = "Corrupt: " + ("; ".join(errors[:3]) if errors else "unknown error")
+        await self.queue.update_status(job_id, "completed", error_log=error_log)
+
+        # File-events log
+        try:
+            from backend.file_events import log_event, EVENT_HEALTH_CHECK
+            await log_event(
+                file_path,
+                EVENT_HEALTH_CHECK,
+                f"Health check: {status} ({mode})",
+                {
+                    "status": status,
+                    "check_type": mode,
+                    "duration_seconds": duration_s,
+                    "errors": errors[:5] if errors else None,
+                    "job_id": job_id,
+                },
+            )
+        except Exception:
+            pass
+
+        # Broadcast final progress
+        stats_final = await self.queue.get_stats()
+        await ws_manager.send_job_progress(
+            job_id=job_id,
+            file_name=file_name,
+            progress=100.0,
+            fps=None,
+            eta=0,
+            step=f"health-check ({status})",
+            jobs_completed=stats_final["completed"],
+            jobs_total=stats_final["total_jobs"],
+            total_saved=stats_final["total_space_saved"],
+        )
 
     async def _process_job(self, job: dict) -> None:
         from backend.scanner import probe_file
@@ -770,7 +1108,16 @@ class QueueWorker:
             subtitle_tracks_to_remove = subtitle_tracks_to_remove_raw or []
 
         await self.queue.update_status(job_id, "running")
-        print(f"[WORKER] Job {job_id} status set to running", flush=True)
+        # Tag job as assigned to the local node
+        db = await self.queue._connect()
+        try:
+            await db.execute(
+                "UPDATE jobs SET assigned_node_id = 'local' WHERE id = ?", (job_id,),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        print(f"[WORKER] Job {job_id} status set to running (local)", flush=True)
 
         import os
         file_name = os.path.basename(file_path)
@@ -788,6 +1135,11 @@ class QueueWorker:
             jobs_total=stats["total_jobs"],
             total_saved=stats["total_space_saved"],
         )
+
+        # Health check jobs bypass the convert/audio pipeline entirely
+        if job_type == "health_check":
+            await self._run_health_check_job(job_id, file_path, file_name, job, stats)
+            return
 
         # Probe for duration
         probe = await probe_file(file_path)
@@ -827,7 +1179,9 @@ class QueueWorker:
             def on_proc(proc):
                 self._active_procs[job_id] = proc
 
-            # Pass per-job encoding overrides (None means use global settings)
+            # Pass per-job encoding overrides (None means use global settings).
+            # For combined jobs, pass audio/subtitle removal lists so they're applied
+            # in the same ffmpeg pass — no second remux with mismatched stream indices.
             use_nice = await self._should_use_nice()
             result = await convert_file(
                 input_path=current_file_path,
@@ -843,11 +1197,45 @@ class QueueWorker:
                 override_libx265_preset=job.get("libx265_preset"),
                 override_target_resolution=job.get("target_resolution"),
                 nice=use_nice,
+                audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,
+                subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
             )
             if not result["success"]:
                 if job_id in self._cancel_flags:
-                    await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user")
-                    await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user")
+                    # Check if this cancel was triggered by a node pause — if so,
+                    # return the job to pending for another worker to pick up.
+                    requeue = False
+                    try:
+                        from backend.routes.jobs import app_state_ref  # pragma: no cover
+                    except Exception:
+                        app_state_ref = None
+                    try:
+                        # NodeManager is the source of truth for requeue flags
+                        from backend.main import app as _app
+                        nm = getattr(_app.state, "node_manager", None)
+                        if nm is not None and nm.should_requeue(job_id):
+                            requeue = True
+                            nm.clear_cancel(job_id)
+                    except Exception:
+                        pass
+
+                    if requeue:
+                        db = await self.queue._connect()
+                        try:
+                            await db.execute(
+                                "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
+                                "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                                "assigned_node_id = NULL, assigned_at = NULL, cancel_requested = 0 "
+                                "WHERE id = ?",
+                                (job_id,),
+                            )
+                            await db.commit()
+                        finally:
+                            await db.close()
+                        print(f"[WORKER] Job {job_id} returned to pending (node paused)", flush=True)
+                    else:
+                        await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user")
+                        await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user")
                 else:
                     await self.queue.update_status(job_id, "failed", error_log=result["error"])
                     await ws_manager.send_job_complete(job_id, "failed", 0, result["error"])
@@ -861,6 +1249,116 @@ class QueueWorker:
                 return
             space_saved += result.get("space_saved", 0)
             current_file_path = result["output_path"]
+
+            # IMPORTANT: as soon as the file has been renamed on disk, update the
+            # job + scan_results fully: new path, new size, new codec, new track
+            # info. Otherwise the UI will show the old codec badge / size / tracks
+            # until a manual rescan, and any failed post-conversion step would
+            # leave the row in an inconsistent half-updated state.
+            if current_file_path != file_path:
+                import os as _os
+                import json as _json
+                try:
+                    new_size = _os.path.getsize(current_file_path)
+                except OSError:
+                    new_size = None
+
+                # Re-probe the converted file to get fresh audio / subtitle track info.
+                # Stream indices, track counts, and codecs have changed. We also
+                # re-classify tracks (keep/locked) so the UI shows correct checkboxes
+                # and future "add to queue" knows which tracks to remove.
+                new_audio_json = None
+                new_sub_json = None
+                new_has_removable_audio = 0
+                new_has_removable_subs = 0
+                new_lossless = 0
+                try:
+                    from backend.scanner import (
+                        classify_audio_tracks, classify_subtitle_tracks,
+                        detect_native_language, _is_cleanup_enabled,
+                        languages_match,
+                    )
+                    from backend.converter import is_lossless_audio
+                    fresh = await probe_file(current_file_path)
+                    if fresh:
+                        raw_audio = fresh.get("audio_tracks") or []
+                        raw_subs = fresh.get("subtitle_tracks") or []
+                        native_lang = detect_native_language(raw_audio)
+                        # Look up API-sourced native language from scan_results
+                        try:
+                            db_nl = await self._db()
+                            try:
+                                async with db_nl.execute(
+                                    "SELECT native_language FROM scan_results WHERE file_path = ?",
+                                    (file_path,),
+                                ) as cur:
+                                    nl_row = await cur.fetchone()
+                                if nl_row and nl_row["native_language"]:
+                                    native_lang = nl_row["native_language"]
+                            finally:
+                                await db_nl.close()
+                        except Exception:
+                            pass
+                        classified_audio = classify_audio_tracks(
+                            raw_audio, native_lang, fresh.get("duration", 0),
+                        )
+                        classified_subs = classify_subtitle_tracks(raw_subs, native_lang)
+                        new_audio_json = _json.dumps([t.model_dump() for t in classified_audio])
+                        new_sub_json = _json.dumps([t.model_dump() for t in classified_subs])
+                        # Flag includes both removable tracks AND reorder-needed (if enabled)
+                        needs_reorder = False
+                        if _is_cleanup_enabled("reorder_native_audio") and len(classified_audio) > 1 and native_lang and native_lang.lower() != "und":
+                            first_lang = (classified_audio[0].language or "").lower()
+                            needs_reorder = not languages_match(first_lang, native_lang.lower())
+                        new_has_removable_audio = 1 if (any(not t.keep for t in classified_audio) or needs_reorder) else 0
+                        new_has_removable_subs = 1 if any(not t.keep for t in classified_subs) else 0
+                        new_lossless = 1 if any(
+                            is_lossless_audio(t.codec, getattr(t, "profile", ""))
+                            for t in classified_audio
+                        ) else 0
+                except Exception as exc:
+                    print(f"[WORKER] Re-probe after conversion failed (non-fatal): {exc}", flush=True)
+
+                try:
+                    db_path = await self.queue._connect()
+                    try:
+                        await db_path.execute(
+                            "UPDATE jobs SET file_path = ? WHERE id = ?",
+                            (current_file_path, job_id),
+                        )
+                        # Build the scan_results update based on what we have
+                        update_cols = [
+                            "file_path = ?",
+                            "video_codec = 'hevc'",
+                            "needs_conversion = 0",
+                            "converted = 1",
+                        ]
+                        update_params: list = [current_file_path]
+                        if new_size is not None:
+                            update_cols.append("file_size = ?")
+                            update_params.append(new_size)
+                        if new_audio_json is not None:
+                            update_cols.append("audio_tracks_json = ?")
+                            update_params.append(new_audio_json)
+                            update_cols.append("has_removable_tracks_flag = ?")
+                            update_params.append(new_has_removable_audio)
+                            update_cols.append("has_lossless_audio_flag = ?")
+                            update_params.append(new_lossless)
+                        if new_sub_json is not None:
+                            update_cols.append("subtitle_tracks_json = ?")
+                            update_params.append(new_sub_json)
+                            update_cols.append("has_removable_subs_flag = ?")
+                            update_params.append(new_has_removable_subs)
+                        update_params.append(file_path)  # WHERE
+                        await db_path.execute(
+                            f"UPDATE scan_results SET {', '.join(update_cols)} WHERE file_path = ?",
+                            update_params,
+                        )
+                        await db_path.commit()
+                    finally:
+                        await db_path.close()
+                except Exception as exc:
+                    print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
 
             # Store backup path + conversion log for undo/history
             if result.get("backup_path"):
@@ -895,6 +1393,21 @@ class QueueWorker:
                         await db.close()
                 except Exception as exc:
                     print(f"[WORKER] Failed to store VMAF score: {exc}", flush=True)
+                # File-events log
+                try:
+                    if vmaf_score >= 93: tier = "Excellent"
+                    elif vmaf_score >= 87: tier = "Good"
+                    elif vmaf_score >= 80: tier = "Fair"
+                    else: tier = "Poor"
+                    from backend.file_events import log_event, EVENT_VMAF
+                    await log_event(
+                        file_path,
+                        EVENT_VMAF,
+                        f"VMAF: {vmaf_score} ({tier})",
+                        {"vmaf_score": vmaf_score, "tier": tier, "job_id": job_id},
+                    )
+                except Exception:
+                    pass
 
             if result.get("skipped_larger"):
                 # Mark file as ignored so future scans tag it
@@ -912,16 +1425,35 @@ class QueueWorker:
                 except Exception as exc:
                     print(f"[WORKER] Failed to mark ignored: {exc}", flush=True)
 
-        if job_type in ("audio", "combined"):
+        # For "combined" jobs, track removal is now handled inline during conversion
+        # (no separate remux pass). Skip the remux block unless this is an "audio"-only job.
+        if job_type == "audio":
             # Determine keep indices from probe
             raw_tracks = probe.get("audio_tracks", [])
             all_indices = [t["stream_index"] for t in raw_tracks]
             keep_indices = [i for i in all_indices if i not in audio_tracks_to_remove]
 
             # Reorder: native language tracks first so they become the default playback track
+            # (only if enabled in audio settings — default on)
             try:
-                from backend.scanner import detect_native_language, languages_match
+                from backend.scanner import detect_native_language, languages_match, _is_cleanup_enabled
+                if not _is_cleanup_enabled("reorder_native_audio"):
+                    raise Exception("reorder disabled")
                 native_lang = detect_native_language(raw_tracks)
+                try:
+                    db_nl = await self._db()
+                    try:
+                        async with db_nl.execute(
+                            "SELECT native_language FROM scan_results WHERE file_path = ?",
+                            (current_file_path,),
+                        ) as cur:
+                            nl_row = await cur.fetchone()
+                        if nl_row and nl_row["native_language"]:
+                            native_lang = nl_row["native_language"]
+                    finally:
+                        await db_nl.close()
+                except Exception:
+                    pass
                 if native_lang and native_lang.lower() != "und":
                     native_indices = []
                     other_indices = []
@@ -951,7 +1483,7 @@ class QueueWorker:
                         progress=progress,
                         fps=speed,
                         eta=eta_seconds,
-                        step="removing tracks" if audio_tracks_to_remove else "removing subtitles",
+                        step="removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else "reordering audio"),
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
@@ -983,14 +1515,165 @@ class QueueWorker:
                 new_stem = rename_audio_codec_in_filename(current_p.stem, new_audio_tag)
                 if new_stem != current_p.stem:
                     new_path = current_p.parent / (new_stem + current_p.suffix)
+                    old_path = current_file_path
                     current_p.rename(new_path)
                     print(f"[WORKER] Renamed audio codec in filename: {current_p.name} -> {new_path.name}", flush=True)
                     current_file_path = str(new_path)
+                    # Update DB so jobs + scan_results reflect the new filename
+                    try:
+                        db_ac = await self.queue._connect()
+                        try:
+                            await db_ac.execute(
+                                "UPDATE jobs SET file_path = ? WHERE id = ?",
+                                (current_file_path, job_id),
+                            )
+                            await db_ac.execute(
+                                "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
+                                (current_file_path, old_path),
+                            )
+                            await db_ac.commit()
+                        finally:
+                            await db_ac.close()
+                    except Exception as exc2:
+                        print(f"[WORKER] Audio-rename DB update failed (non-fatal): {exc2}", flush=True)
         except Exception as exc:
             print(f"[WORKER] Audio codec rename failed (non-fatal): {exc}", flush=True)
 
         await self.queue.update_space_saved(job_id, space_saved)
+
+        # Inline post-conversion health check (keeps the same job card up; no re-queue)
+        try:
+            db = await self._db()
+            try:
+                async with db.execute(
+                    "SELECT value FROM settings WHERE key = 'health_check_after_conversion'"
+                ) as cur:
+                    hc_row = await cur.fetchone()
+                    _hc_raw = (str(hc_row["value"]).lower() if hc_row else "off")
+                    hc_mode_post = {"true": "quick", "false": "off"}.get(_hc_raw, _hc_raw)
+                    if hc_mode_post not in ("quick", "thorough"):
+                        hc_mode_post = "off"
+            finally:
+                await db.close()
+
+            if hc_mode_post != "off" and os.path.exists(current_file_path):
+                from backend.health_check import run_check
+                step_label = f"health check ({hc_mode_post})"
+                print(f"[WORKER] Running inline {hc_mode_post} health check on {current_file_path}", flush=True)
+                await ws_manager.send_job_progress(
+                    job_id=job_id,
+                    file_name=os.path.basename(current_file_path),
+                    progress=100.0,
+                    fps=None,
+                    eta=None,
+                    step=step_label,
+                    jobs_completed=jobs_completed,
+                    jobs_total=jobs_total,
+                    total_saved=total_saved,
+                )
+                async def _hc_progress_cb(pct: float):
+                    await self.queue.update_progress(job_id, pct)
+                    await ws_manager.send_job_progress(
+                        job_id=job_id,
+                        file_name=os.path.basename(current_file_path),
+                        progress=pct,
+                        fps=None,
+                        eta=None,
+                        step=step_label,
+                        jobs_completed=jobs_completed,
+                        jobs_total=jobs_total,
+                        total_saved=total_saved,
+                    )
+                try:
+                    hc_result = await run_check(
+                        current_file_path,
+                        mode=hc_mode_post,
+                        progress_cb=_hc_progress_cb,
+                        duration_seconds_hint=duration,
+                    )
+                    hc_status = hc_result.get("status", "healthy")
+                    hc_errors = hc_result.get("errors", [])
+                    from datetime import datetime, timezone
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    db = await self._db()
+                    try:
+                        # scan_results still keyed by the original path here —
+                        # the rename to current_file_path happens a bit later.
+                        # Match both to be safe in case a previous run already renamed.
+                        _errs_json = json.dumps(hc_errors) if hc_errors else None
+                        await db.execute(
+                            "UPDATE scan_results SET health_status = ?, health_errors_json = ?, "
+                            "health_checked_at = ?, health_check_type = ? "
+                            "WHERE file_path = ? OR file_path = ?",
+                            (
+                                hc_status,
+                                _errs_json,
+                                now_iso,
+                                hc_mode_post,
+                                file_path,
+                                current_file_path,
+                            ),
+                        )
+                        # Mirror onto the job row so the expanded Completed view sees it
+                        await db.execute(
+                            "UPDATE jobs SET health_status = ?, health_errors_json = ?, "
+                            "health_check_type = ?, health_check_seconds = ? WHERE id = ?",
+                            (
+                                hc_status,
+                                _errs_json,
+                                hc_mode_post,
+                                hc_result.get("duration_seconds"),
+                                job_id,
+                            ),
+                        )
+                        await db.commit()
+                    finally:
+                        await db.close()
+                    print(f"[WORKER] Inline health check: {hc_status} ({hc_result.get('duration_seconds', 0)}s)", flush=True)
+                    await self.queue._log_event(
+                        current_file_path,
+                        "health_check",
+                        f"Health check: {hc_status} ({hc_mode_post})",
+                        {
+                            "status": hc_status,
+                            "check_type": hc_mode_post,
+                            "duration_seconds": hc_result.get("duration_seconds"),
+                            "errors": hc_errors[:5] if hc_errors else None,
+                            "job_id": job_id,
+                        },
+                    )
+                except Exception as hc_exc:
+                    print(f"[WORKER] Inline health check failed: {hc_exc}", flush=True)
+        except Exception as exc:
+            print(f"[WORKER] Failed to run inline health check: {exc}", flush=True)
+
         await self.queue.update_status(job_id, "completed")
+
+        # Log the completed conversion to file_events
+        try:
+            from backend.file_events import log_event, EVENT_COMPLETED
+            if space_saved > 0:
+                gb = space_saved / (1024 ** 3)
+                pct = (space_saved / file_size * 100) if file_size else 0
+                summary = f"Converted: saved {gb:.2f} GB ({pct:.0f}%)"
+            else:
+                summary = "Converted (no savings)"
+            await log_event(
+                current_file_path,
+                EVENT_COMPLETED,
+                summary,
+                {
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "space_saved": space_saved,
+                    "original_size": file_size,
+                    "encoder": encoder,
+                    "vmaf_score": locals().get("vmaf_score"),
+                    "original_path": file_path if current_file_path != file_path else None,
+                },
+            )
+        except Exception:
+            pass
 
         # Update scan_results: change file_path to new name, mark as converted (x265)
         if current_file_path != file_path:
@@ -1043,10 +1726,22 @@ class QueueWorker:
             except Exception as exc:
                 pass
 
-        # Trigger Plex partial scan for the converted file's folder
+        # Trigger Plex partial scan for the converted file's folder (if enabled)
         try:
+            plex_scan_enabled = True
+            try:
+                db = await self._db()
+                try:
+                    async with db.execute("SELECT value FROM settings WHERE key = 'plex_scan_after_conversion'") as cur:
+                        row = await cur.fetchone()
+                        if row and row[0].lower() == "false":
+                            plex_scan_enabled = False
+                finally:
+                    await db.close()
+            except Exception:
+                pass
             from backend.plex import trigger_plex_scan, empty_plex_trash
-            section_id = await trigger_plex_scan(current_file_path)
+            section_id = await trigger_plex_scan(current_file_path) if plex_scan_enabled else None
             if section_id:
                 # Only empty trash if the setting is enabled
                 try:
@@ -1065,6 +1760,57 @@ class QueueWorker:
                     pass
         except Exception as exc:
             print(f"[WORKER] Plex scan/trash cleanup failed (non-fatal): {exc}", flush=True)
+
+        # Trigger Jellyfin library refresh (if enabled)
+        try:
+            jf_scan_enabled = True
+            try:
+                db = await self._db()
+                try:
+                    async with db.execute("SELECT value FROM settings WHERE key = 'jellyfin_scan_after_conversion'") as cur:
+                        row = await cur.fetchone()
+                        if row and row[0].lower() == "false":
+                            jf_scan_enabled = False
+                finally:
+                    await db.close()
+            except Exception:
+                pass
+            if jf_scan_enabled:
+                from backend.jellyfin import trigger_jellyfin_scan
+                await trigger_jellyfin_scan(current_file_path)
+        except Exception as exc:
+            print(f"[WORKER] Jellyfin library refresh failed (non-fatal): {exc}", flush=True)
+
+        # Auto-rename after conversion, if enabled
+        try:
+            import os as _os
+            from backend.rename import get_settings as get_rename_settings, build_plan, apply_plan
+            rs = await get_rename_settings()
+            if rs.enabled_auto and space_saved > 0:
+                plan = await build_plan(current_file_path, settings=rs)
+                if plan.reason != "noop":
+                    rename_result = await apply_plan(plan)
+                    if rename_result.get("applied"):
+                        old_path = current_file_path
+                        current_file_path = rename_result.get("new_path", current_file_path)
+                        print(f"[WORKER] Auto-renamed: {_os.path.basename(old_path)} → {_os.path.basename(current_file_path)}", flush=True)
+                        # Update scan_results with the new path
+                        try:
+                            db_r = await self._db()
+                            try:
+                                await db_r.execute(
+                                    "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
+                                    (current_file_path, old_path),
+                                )
+                                await db_r.commit()
+                            finally:
+                                await db_r.close()
+                        except Exception:
+                            pass
+                    elif rename_result.get("error"):
+                        print(f"[WORKER] Auto-rename failed (non-fatal): {rename_result['error']}", flush=True)
+        except Exception as exc:
+            print(f"[WORKER] Auto-rename hook error (non-fatal): {exc}", flush=True)
 
         # Trigger Sonarr/Radarr rescan (skip for NZBGet-sourced files —
         # Sonarr/Radarr will import them automatically after post-processing)
@@ -1145,3 +1891,5 @@ class QueueWorker:
             await _run_post_conversion_script(job_id, current_file_path, file_path, result, dict(job))
         except Exception as exc:
             print(f"[WORKER] Post-conversion script wrapper failed: {exc}", flush=True)
+
+        # (post-conversion health check runs inline before the job is marked complete)

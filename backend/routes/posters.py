@@ -18,7 +18,12 @@ CACHE_TTL_HOURS = 168  # 7 days
 
 
 def parse_folder_name(folder_path: str) -> dict:
-    """Extract title, year, IMDb ID, TVDB ID from a media folder path."""
+    """Extract title, year, IMDb ID, TVDB ID from a media folder path.
+
+    Primary: looks for bracketed IDs like [tt1234567] and [tvdb-123456].
+    Fallback: uses scene-style parser to extract title/year from folder names
+    like 'Movie.Name.2024.1080p.BluRay' or plain 'Movie Name (2024)'.
+    """
     parts = folder_path.rstrip("/").split("/")
     folder_name = parts[-1] if parts else ""
     if re.match(r"^(Season|Series|Specials)\b", folder_name, re.IGNORECASE):
@@ -31,6 +36,22 @@ def parse_folder_name(folder_path: str) -> dict:
     title = re.sub(r"\s*\[(?:tt\d+|tvdb-\d+|imdb-\w+)\]", "", title)
     title = re.sub(r"\s*\(\d{4}\)", "", title)
     title = title.strip().rstrip(" -")
+
+    # Fallback: if no media IDs found, use scene parser for cleaner title/year
+    if not imdb_match and not tvdb_match:
+        from backend.media_parser import parse_media_name
+        parsed = parse_media_name(folder_name)
+        if parsed.title:
+            title = parsed.title
+        if parsed.year and not year_match:
+            year_match = None  # clear the match object
+            return {
+                "title": title or folder_name,
+                "year": parsed.year,
+                "imdb_id": None,
+                "tvdb_id": None,
+            }
+
     return {
         "title": title or folder_name,
         "year": year_match.group(1) if year_match else None,
@@ -149,16 +170,46 @@ async def resolve_posters(req: ResolveRequest):
 
         # Backfill media_type for cached entries missing it
         tmdb_key = settings.get("tmdb_api_key", "")
-        if needs_media_type and tmdb_key:
+        plex_url_bf = settings.get("plex_url", "").rstrip("/")
+        plex_token_bf = settings.get("plex_token", "")
+        path_mapping_bf = settings.get("plex_path_mapping", "")
+        if needs_media_type:
             sem = asyncio.Semaphore(3)
             async def _backfill_one(path: str):
                 async with sem:
                     parsed = parse_folder_name(path)
-                    try:
-                        _, _, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
-                        return path, tmdb_meta.get("media_type")
-                    except Exception:
-                        return path, None
+                    # Try IMDb/TVDB ID first (most reliable)
+                    if tmdb_key and parsed.get("imdb_id"):
+                        try:
+                            _, _, meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
+                            if meta.get("media_type"):
+                                return path, meta["media_type"]
+                        except Exception:
+                            pass
+                    if tmdb_key and parsed.get("tvdb_id"):
+                        try:
+                            _, _, meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
+                            if meta.get("media_type"):
+                                return path, meta["media_type"]
+                        except Exception:
+                            pass
+                    # TMDB title search
+                    if tmdb_key:
+                        try:
+                            _, _, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
+                            if tmdb_meta.get("media_type"):
+                                return path, tmdb_meta["media_type"]
+                        except Exception:
+                            pass
+                    # Fall back to Plex (knows the type from the library)
+                    if plex_url_bf and plex_token_bf:
+                        try:
+                            _, _, plex_meta = await _resolve_plex(path, parsed, plex_url_bf, plex_token_bf, path_mapping_bf)
+                            if plex_meta.get("media_type"):
+                                return path, plex_meta["media_type"]
+                        except Exception:
+                            pass
+                    return path, None
             results_mt = await asyncio.gather(*[_backfill_one(p) for p in needs_media_type])
             for path, mt in results_mt:
                 if mt:
@@ -474,6 +525,7 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
             if not any(search_path.startswith(lp.rstrip("/") + "/") or search_path.startswith(lp) for lp in lib_paths):
                 continue
 
+            lib_media_type = "movie" if lib.get("type") == "movie" else "tv"
             try:
                 resp = await client.get(
                     f"{plex_url}/library/sections/{section_id}/search",
@@ -486,11 +538,11 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
                         if item_title == title.lower().strip():
                             thumb = item.get("thumb")
                             if thumb:
-                                return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {}
+                                return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {"media_type": lib_media_type}
             except Exception:
                 pass
 
-        # Global fallback
+        # Global fallback — derive media_type from Plex item type
         try:
             resp = await client.get(f"{plex_url}/search", params={"query": title}, headers=headers)
             if resp.status_code == 200:
@@ -498,7 +550,9 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
                     if (item.get("title") or "").lower().strip() == title.lower().strip():
                         thumb = item.get("thumb")
                         if thumb:
-                            return f"/api/posters/image?path={quote(thumb, safe='')}", "plex"
+                            plex_type = item.get("type")  # "movie" | "show" | etc.
+                            mt = "movie" if plex_type == "movie" else "tv" if plex_type == "show" else None
+                            return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", ({"media_type": mt} if mt else {})
         except Exception:
             pass
 
@@ -629,3 +683,153 @@ async def _resolve_tmdb_search(title, year, api_key):
                     else:
                         return _match_return(item)
     return None, "placeholder", {}
+
+
+# ---------------------------------------------------------------------------
+# Manual TMDB search & override (user picks a match when auto-detection fails)
+# ---------------------------------------------------------------------------
+
+class TMDBSearchRequest(BaseModel):
+    query: str
+    year: str | None = None
+
+
+@router.post("/search")
+async def search_tmdb(req: TMDBSearchRequest):
+    """Search TMDB for possible matches. Returns up to 10 candidates for user selection."""
+    if not req.query or len(req.query.strip()) < 2:
+        return {"results": []}
+
+    from backend.config import settings as app_settings
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        tmdb_key = ""
+        async with db.execute("SELECT value FROM settings WHERE key = 'tmdb_api_key'") as cur:
+            row = await cur.fetchone()
+            if row:
+                tmdb_key = row["value"]
+    finally:
+        await db.close()
+
+    if not tmdb_key:
+        raise HTTPException(400, "TMDB API key not configured")
+
+    import httpx
+    params = {"api_key": tmdb_key, "query": req.query.strip()}
+    if req.year:
+        params["year"] = req.year
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get("https://api.themoviedb.org/3/search/multi", params=params)
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
+        results = resp.json().get("results", [])
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f"TMDB request failed: {exc}")
+
+    # Filter to movie/tv only and normalize
+    out = []
+    for item in results:
+        mt = item.get("media_type")
+        if mt not in ("movie", "tv"):
+            continue
+        title = item.get("title") or item.get("name") or "Unknown"
+        release_date = item.get("release_date") or item.get("first_air_date") or ""
+        year = release_date[:4] if release_date else None
+        poster_path = item.get("poster_path")
+        poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else None
+        out.append({
+            "tmdb_id": item.get("id"),
+            "media_type": mt,
+            "title": title,
+            "year": year,
+            "poster_url": poster_url,
+            "overview": (item.get("overview") or "")[:200],
+            "rating": round(item.get("vote_average", 0), 1) if item.get("vote_average") else None,
+        })
+        if len(out) >= 10:
+            break
+
+    return {"results": out}
+
+
+class OverrideRequest(BaseModel):
+    folder_path: str
+    tmdb_id: int
+    media_type: str   # 'movie' or 'tv'
+
+
+@router.post("/override")
+async def override_poster(req: OverrideRequest):
+    """Replace the cached poster metadata for a folder with a user-selected TMDB match."""
+    if req.media_type not in ("movie", "tv"):
+        raise HTTPException(400, "media_type must be 'movie' or 'tv'")
+
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'tmdb_api_key'") as cur:
+            row = await cur.fetchone()
+            tmdb_key = row["value"] if row else ""
+    finally:
+        await db.close()
+
+    if not tmdb_key:
+        raise HTTPException(400, "TMDB API key not configured")
+
+    # Fetch the specific TMDB item details
+    import httpx
+    detail_url = f"https://api.themoviedb.org/3/{req.media_type}/{req.tmdb_id}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(detail_url, params={"api_key": tmdb_key})
+        if resp.status_code != 200:
+            raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
+        data = resp.json()
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f"TMDB request failed: {exc}")
+
+    title = data.get("title") or data.get("name") or "Unknown"
+    release_date = data.get("release_date") or data.get("first_air_date") or ""
+    year = release_date[:4] if release_date else None
+    poster_path = data.get("poster_path")
+    poster_url = f"https://image.tmdb.org/t/p/w300{poster_path}" if poster_path else None
+
+    genres = data.get("genres") or []
+    genre_names = ", ".join(g.get("name", "") for g in genres[:3] if g.get("name"))
+    countries = data.get("origin_country") or []
+    country_names = ", ".join(_COUNTRY_NAMES.get(c, c) for c in countries[:2])
+    rating = round(data.get("vote_average", 0), 1) if data.get("vote_average") else None
+
+    # Download poster image
+    image_data = None
+    if poster_url:
+        image_data = await _download_image(poster_url, "", "")
+
+    # Upsert into poster_cache
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute(
+            """INSERT OR REPLACE INTO poster_cache
+               (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (req.folder_path, title, year, poster_url, "tmdb-manual", image_data,
+             rating, genre_names or None, country_names or None, req.media_type,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    return {
+        "title": title,
+        "year": year,
+        "poster_url": f"data:image/jpeg;base64,{image_data}" if image_data else poster_url,
+        "media_type": req.media_type,
+        "rating": rating,
+        "genres": genre_names or None,
+        "country": country_names or None,
+        "source": "tmdb-manual",
+    }

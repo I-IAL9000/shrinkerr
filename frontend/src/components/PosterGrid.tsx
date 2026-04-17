@@ -5,6 +5,7 @@ import { resolvePosterMetadata, getFilesByTitle } from "../api";
 import { getCodecLabel } from "../codecLabels";
 import PosterCard from "./PosterCard";
 import FileDetail from "./FileDetail";
+import PosterFixModal from "./PosterFixModal";
 
 interface PosterMeta {
   title: string;
@@ -115,6 +116,7 @@ export default function PosterGrid({
 }: PosterGridProps) {
   const [posterMeta, setPosterMeta] = useState<Map<string, PosterMeta>>(new Map());
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [fixModalGroup, setFixModalGroup] = useState<{ key: string; title: string; year: string | null } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<ScannedFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [expandedFileDetails, setExpandedFileDetails] = useState<Set<string>>(new Set());
@@ -125,9 +127,39 @@ export default function PosterGrid({
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingPaths = useRef<Set<string>>(new Set());
   const resolving = useRef(false);
+  const resolveQueue = useRef<string[]>([]);
   const lastClickedGroup = useRef<string | null>(null);
 
   const groups = useMemo(() => sortGroups(groupFolders(folders), sortBy, sortDir), [folders, sortBy, sortDir]);
+
+  // Wrap the track toggle handlers so we also update PosterGrid's local
+  // `expandedFiles` copy. Without this, the parent's loadedFiles gets updated
+  // but the local list stays stale, so the checkbox visually doesn't change.
+  const toggleAudioTrack = useCallback((filePath: string, streamIndex: number) => {
+    setExpandedFiles(prev => prev.map(f => {
+      if (f.file_path !== filePath) return f;
+      return {
+        ...f,
+        audio_tracks: f.audio_tracks.map(t =>
+          t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
+        ),
+      };
+    }));
+    onToggleTrack(filePath, streamIndex);
+  }, [onToggleTrack]);
+
+  const toggleSubTrack = useCallback((filePath: string, streamIndex: number) => {
+    setExpandedFiles(prev => prev.map(f => {
+      if (f.file_path !== filePath) return f;
+      return {
+        ...f,
+        subtitle_tracks: (f.subtitle_tracks || []).map(t =>
+          t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
+        ),
+      };
+    }));
+    onToggleSubTrack?.(filePath, streamIndex);
+  }, [onToggleSubTrack]);
 
   // Handle poster card selection with shift-select using group visual order
   const handlePosterSelect = useCallback((groupKey: string, shiftKey?: boolean) => {
@@ -152,9 +184,25 @@ export default function PosterGrid({
   }, [groups, isSelected, onToggleSelect]);
 
   // Reset pending set when folders change (e.g. after rescan)
+  // When the folder set changes (e.g. search narrowing), clear pending requests
+  // so we don't keep processing stale batches for folders no longer visible
   useEffect(() => {
     pendingPaths.current.clear();
+    resolveQueue.current = [];
+    // Reset the resolving gate so the effect can start a fresh batch for the new set
+    resolving.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folders.length]);
+
+  // When the filter changes, close any expanded card and cancel in-flight file loads
+  // so we don't show stale file lists against a new filter.
+  useEffect(() => {
+    if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
+    setExpandedKey(null);
+    setExpandedFiles([]);
+    setLoadingFiles(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   // Measure container width
   useEffect(() => {
@@ -228,7 +276,8 @@ export default function PosterGrid({
   }
 
   // Resolve posters for visible groups — queue what we don't have
-  const resolveQueue = useRef<string[]>([]);
+  const expandAbortCtrl = useRef<AbortController | null>(null);
+  const expandRequestGen = useRef(0);
 
   useEffect(() => {
     const startIdx = startRow * colCount;
@@ -259,7 +308,8 @@ export default function PosterGrid({
           });
         } catch (err) { /* ignore */ }
         for (const k of chunk) pendingPaths.current.delete(k);
-        if (i + 20 < batch.length) await new Promise(r => setTimeout(r, 200));
+        // Short breather between batches (cache hits are fast; this mainly paces uncached TMDB calls)
+        if (i + 20 < batch.length) await new Promise(r => setTimeout(r, 50));
       }
       resolving.current = false;
       // If more items queued while resolving, trigger another round
@@ -273,18 +323,24 @@ export default function PosterGrid({
     if (expandedKey === group.key) {
       setExpandedKey(null);
       setExpandedFiles([]);
+      if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
       return;
     }
+    // Cancel any in-flight expand so a prior click's result can't land on top
+    if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
+    const ctrl = new AbortController();
+    expandAbortCtrl.current = ctrl;
+    const myGen = ++expandRequestGen.current;
+
     setExpandedKey(group.key);
     setExpandedFiles([]);
     setLoadingFiles(true);
     setExpandedFileDetails(new Set());
     try {
-      // Single batch call for all files under the title prefix
-      const result = await getFilesByTitle(group.key, filter);
+      const result = await getFilesByTitle(group.key, filter, ctrl.signal);
+      if (myGen !== expandRequestGen.current) return;
       const allFiles = (Array.isArray(result) ? result : []).map(parseFile);
 
-      // Group by folder for the onFolderFilesLoaded callback
       const byFolder = new Map<string, ScannedFile[]>();
       for (const f of allFiles) {
         const folder = f.file_path.split("/").slice(0, -1).join("/");
@@ -296,8 +352,12 @@ export default function PosterGrid({
       }
 
       setExpandedFiles(allFiles);
-    } catch { /* ignore */ }
-    setLoadingFiles(false);
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+    }
+    if (myGen === expandRequestGen.current) {
+      setLoadingFiles(false);
+    }
   }, [expandedKey, filter, onFolderFilesLoaded]);
 
   // Render only visible rows
@@ -324,6 +384,7 @@ export default function PosterGrid({
           onClick={() => handleExpand(group)}
           isExpanded={expandedKey === group.key}
           mediaType={meta?.media_type}
+          onEditClick={() => setFixModalGroup({ key: group.key, title: meta?.title || group.title, year: meta?.year || group.year })}
         />
       );
     }
@@ -396,7 +457,7 @@ export default function PosterGrid({
                 {meta?.genres && <span>{meta.genres}</span>}
                 {meta?.country && <span>{meta.country}</span>}
                 {parentFolder && (
-                  <span style={{ marginLeft: "auto", background: "rgba(145,53,255,0.25)", color: "#c4a8ff", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
+                  <span style={{ marginLeft: "auto", background: "rgba(104,96,254,0.25)", color: "#c4a8ff", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
                     {parentFolder}
                   </span>
                 )}
@@ -440,7 +501,7 @@ export default function PosterGrid({
                               {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
                             </div>
                           </div>
-                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={onToggleTrack} onToggleSubTrack={onToggleSubTrack} />}
+                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={toggleAudioTrack} onToggleSubTrack={toggleSubTrack} />}
                         </div>
                       ))}
                     </div>
@@ -464,6 +525,25 @@ export default function PosterGrid({
           <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
           Loading files...
         </div>
+      )}
+      {fixModalGroup && (
+        <PosterFixModal
+          folderPath={fixModalGroup.key}
+          currentTitle={fixModalGroup.title}
+          currentYear={fixModalGroup.year}
+          onClose={() => setFixModalGroup(null)}
+          onFixed={() => {
+            // Clear cached metadata for this group so it re-fetches
+            setPosterMeta(prev => {
+              const next = new Map(prev);
+              next.delete(fixModalGroup.key);
+              return next;
+            });
+            pendingPaths.current.delete(fixModalGroup.key);
+            resolveQueue.current.push(fixModalGroup.key);
+            setFixModalGroup(null);
+          }}
+        />
       )}
     </div>
   );

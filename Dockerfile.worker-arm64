@@ -1,0 +1,32 @@
+# Lightweight ARM64 worker image — no CUDA, no frontend, native performance
+# Build: docker build -f Dockerfile.worker-arm64 -t shrinkerr:arm64-worker .
+# Run:   docker run -d -e SHRINKERR_MODE=worker -e CAPABILITIES=libx265 ...
+
+FROM python:3.11-slim-bookworm
+
+# Install optimized ffmpeg static build for ARM64 (BtbN GPL build with x265, libvmaf)
+RUN apt-get update && apt-get install -y --no-install-recommends curl xz-utils \
+    && curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz" \
+        | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' \
+    && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+    && apt-get purge -y curl xz-utils && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "ffmpeg installed:" && ffmpeg -version 2>&1 | head -1
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend only (worker doesn't need frontend)
+COPY backend/ backend/
+COPY VERSION .
+
+RUN mkdir -p /app/data
+
+# Force worker mode
+ENV SHRINKERR_MODE=worker
+ENV CAPABILITIES=libx265
+
+CMD ["python3", "-m", "backend.main"]

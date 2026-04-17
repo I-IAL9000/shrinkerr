@@ -259,6 +259,299 @@ async def trigger_arr_rescan(file_path: str) -> dict:
         return {"sonarr": False, "radarr": radarr}
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# Re-search (research): blocklist the current release + trigger a new download.
+# Used when the downloaded file is corrupt, or when the user just wants a
+# different release. Works in two phases:
+#   1. Mark the most recent history record as "failed" → this adds the release
+#      to the blocklist so the same NZB/torrent won't be re-grabbed, and in
+#      most *arr versions it automatically triggers a fresh search.
+#   2. Explicitly trigger a search command to be safe across versions.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_key: str,
+                                        arr_path: str) -> dict | None:
+    """Locate the Sonarr series record whose folder contains the given file path."""
+    headers = {"X-Api-Key": api_key}
+    now = time.monotonic()
+    if _sonarr_cache.get("data") and (now - _sonarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
+        series_list = _sonarr_cache["data"]
+    else:
+        resp = await client.get(f"{url}/api/v3/series", headers=headers)
+        resp.raise_for_status()
+        series_list = resp.json()
+        _sonarr_cache["data"] = series_list
+        _sonarr_cache["fetched_at"] = now
+
+    check_path = str(Path(arr_path).parent)
+    while check_path and check_path != "/":
+        for s in series_list:
+            s_path = s.get("path", "").rstrip("/")
+            if check_path.rstrip("/") == s_path:
+                return s
+        check_path = str(Path(check_path).parent)
+    return None
+
+
+async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_key: str,
+                                       arr_path: str) -> dict | None:
+    """Locate the Radarr movie record whose folder contains the given file path."""
+    headers = {"X-Api-Key": api_key}
+    now = time.monotonic()
+    if _radarr_cache.get("data") and (now - _radarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
+        movie_list = _radarr_cache["data"]
+    else:
+        resp = await client.get(f"{url}/api/v3/movie", headers=headers)
+        resp.raise_for_status()
+        movie_list = resp.json()
+        _radarr_cache["data"] = movie_list
+        _radarr_cache["fetched_at"] = now
+
+    check_path = str(Path(arr_path).parent)
+    while check_path and check_path != "/":
+        for m in movie_list:
+            m_path = m.get("path", "").rstrip("/")
+            if check_path.rstrip("/") == m_path:
+                return m
+        check_path = str(Path(check_path).parent)
+    return None
+
+
+async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict:
+    """Blocklist the current release and trigger Sonarr to grab a replacement."""
+    settings = await _get_arr_settings()
+    url = settings.get("sonarr_url", "").rstrip("/")
+    api_key = settings.get("sonarr_api_key", "")
+    path_mapping = settings.get("sonarr_path_mapping", "")
+
+    if not url or not api_key:
+        return {"success": False, "error": "Sonarr not configured"}
+
+    arr_path = _translate_path(file_path, path_mapping)
+    headers = {"X-Api-Key": api_key}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # 1. Locate the series
+            series = await _find_sonarr_series_for_path(client, url, api_key, arr_path)
+            if not series:
+                return {"success": False, "error": f"No matching Sonarr series for path: {arr_path}"}
+            series_id = series["id"]
+
+            # 2. Find the episodefile whose path matches
+            resp = await client.get(
+                f"{url}/api/v3/episodefile",
+                headers=headers,
+                params={"seriesId": series_id},
+            )
+            resp.raise_for_status()
+            files = resp.json()
+            match = next((f for f in files if f.get("path", "").rstrip("/") == arr_path.rstrip("/")), None)
+            if not match:
+                # Fall back to basename match (path mapping discrepancies)
+                target_name = Path(arr_path).name
+                match = next((f for f in files if Path(f.get("path", "")).name == target_name), None)
+            if not match:
+                return {"success": False, "error": f"No Sonarr episodefile matching path"}
+            episodefile_id = match["id"]
+
+            # 3. Find the episodes associated with this file (needed for search command)
+            resp = await client.get(
+                f"{url}/api/v3/episode",
+                headers=headers,
+                params={"seriesId": series_id},
+            )
+            resp.raise_for_status()
+            episodes = resp.json()
+            episode_ids = [e["id"] for e in episodes if e.get("episodeFileId") == episodefile_id]
+
+            # 4. Find the most recent import history record for these episodes
+            blocklisted = False
+            blocklist_error = None
+            if episode_ids:
+                try:
+                    # Look for the most recent grabbed/imported record and blocklist it.
+                    # eventType 1 = grabbed, 3 = downloadFolderImported
+                    for ep_id in episode_ids:
+                        resp = await client.get(
+                            f"{url}/api/v3/history",
+                            headers=headers,
+                            params={"episodeId": ep_id, "pageSize": 20, "sortKey": "date", "sortDirection": "descending"},
+                        )
+                        if resp.status_code != 200:
+                            continue
+                        records = resp.json().get("records", [])
+                        # markAsFailed needs a history record id for a *grabbed* event
+                        grab_rec = next((r for r in records if r.get("eventType") == "grabbed"), None)
+                        if grab_rec:
+                            resp2 = await client.post(
+                                f"{url}/api/v3/history/failed/{grab_rec['id']}",
+                                headers=headers,
+                            )
+                            if resp2.status_code in (200, 201):
+                                blocklisted = True
+                                print(f"[SONARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
+                                break
+                            else:
+                                blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
+                except Exception as exc:
+                    blocklist_error = str(exc)
+                    print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+
+            # 5. Delete the episodefile (removes DB record + physical file if requested)
+            # Sonarr's DELETE /api/v3/episodefile/{id} always deletes the physical file.
+            # If the user doesn't want the file deleted, we skip this step.
+            deleted = False
+            if delete_file:
+                resp = await client.delete(
+                    f"{url}/api/v3/episodefile/{episodefile_id}",
+                    headers=headers,
+                )
+                deleted = resp.status_code in (200, 204)
+                if not deleted:
+                    print(f"[SONARR-RESEARCH] Delete episodefile failed: {resp.status_code} {resp.text[:200]}", flush=True)
+
+            # 6. Trigger a fresh search. markAsFailed usually does this implicitly,
+            #    but call it explicitly to be safe across versions.
+            searched = False
+            if episode_ids:
+                resp = await client.post(
+                    f"{url}/api/v3/command",
+                    headers=headers,
+                    json={"name": "EpisodeSearch", "episodeIds": episode_ids},
+                )
+                searched = resp.status_code in (200, 201)
+                if searched:
+                    print(f"[SONARR-RESEARCH] Triggered EpisodeSearch for episodes {episode_ids}", flush=True)
+
+            return {
+                "success": True,
+                "service": "sonarr",
+                "series": series.get("title"),
+                "episode_ids": episode_ids,
+                "blocklisted": blocklisted,
+                "blocklist_error": blocklist_error,
+                "deleted": deleted,
+                "searched": searched,
+            }
+    except Exception as exc:
+        print(f"[SONARR-RESEARCH] Failed: {exc}", flush=True)
+        return {"success": False, "error": str(exc)}
+
+
+async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict:
+    """Blocklist the current release and trigger Radarr to grab a replacement."""
+    settings = await _get_arr_settings()
+    url = settings.get("radarr_url", "").rstrip("/")
+    api_key = settings.get("radarr_api_key", "")
+    path_mapping = settings.get("radarr_path_mapping", "")
+
+    if not url or not api_key:
+        return {"success": False, "error": "Radarr not configured"}
+
+    arr_path = _translate_path(file_path, path_mapping)
+    headers = {"X-Api-Key": api_key}
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # 1. Locate the movie
+            movie = await _find_radarr_movie_for_path(client, url, api_key, arr_path)
+            if not movie:
+                return {"success": False, "error": f"No matching Radarr movie for path: {arr_path}"}
+            movie_id = movie["id"]
+
+            # 2. Refresh movie to make sure we have current movieFile info
+            resp = await client.get(f"{url}/api/v3/movie/{movie_id}", headers=headers)
+            resp.raise_for_status()
+            movie_full = resp.json()
+            movie_file = movie_full.get("movieFile") or {}
+            movie_file_id = movie_file.get("id")
+
+            # 3. Blocklist the most recent grabbed release
+            blocklisted = False
+            blocklist_error = None
+            try:
+                resp = await client.get(
+                    f"{url}/api/v3/history/movie",
+                    headers=headers,
+                    params={"movieId": movie_id, "eventType": 1},  # 1 = grabbed
+                )
+                if resp.status_code == 200:
+                    records = resp.json()
+                    # sort by date desc
+                    records.sort(key=lambda r: r.get("date", ""), reverse=True)
+                    if records:
+                        grab_rec = records[0]
+                        resp2 = await client.post(
+                            f"{url}/api/v3/history/failed/{grab_rec['id']}",
+                            headers=headers,
+                        )
+                        if resp2.status_code in (200, 201):
+                            blocklisted = True
+                            print(f"[RADARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
+                        else:
+                            blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
+            except Exception as exc:
+                blocklist_error = str(exc)
+                print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+
+            # 4. Delete moviefile
+            deleted = False
+            if delete_file and movie_file_id:
+                resp = await client.delete(
+                    f"{url}/api/v3/moviefile/{movie_file_id}",
+                    headers=headers,
+                )
+                deleted = resp.status_code in (200, 204)
+                if not deleted:
+                    print(f"[RADARR-RESEARCH] Delete moviefile failed: {resp.status_code} {resp.text[:200]}", flush=True)
+
+            # 5. Trigger search
+            resp = await client.post(
+                f"{url}/api/v3/command",
+                headers=headers,
+                json={"name": "MoviesSearch", "movieIds": [movie_id]},
+            )
+            searched = resp.status_code in (200, 201)
+            if searched:
+                print(f"[RADARR-RESEARCH] Triggered MoviesSearch for movie {movie_id}", flush=True)
+
+            return {
+                "success": True,
+                "service": "radarr",
+                "movie": movie_full.get("title"),
+                "movie_id": movie_id,
+                "blocklisted": blocklisted,
+                "blocklist_error": blocklist_error,
+                "deleted": deleted,
+                "searched": searched,
+            }
+    except Exception as exc:
+        print(f"[RADARR-RESEARCH] Failed: {exc}", flush=True)
+        return {"success": False, "error": str(exc)}
+
+
+async def research_file(file_path: str, delete_file: bool = True) -> dict:
+    """Request a fresh download of this file via the appropriate *arr.
+
+    Routes based on folder conventions:
+      * TV ([tvdb-*] / S##E## paths) → Sonarr
+      * Movies ([tt*] / movies/films path) → Radarr
+      * Unknown → try Sonarr first, then Radarr
+    """
+    media_type = _detect_media_type(file_path)
+    if media_type == "tv":
+        return await research_sonarr_file(file_path, delete_file=delete_file)
+    if media_type == "movie":
+        return await research_radarr_file(file_path, delete_file=delete_file)
+    # Unknown — try Sonarr first
+    result = await research_sonarr_file(file_path, delete_file=delete_file)
+    if result.get("success"):
+        return result
+    return await research_radarr_file(file_path, delete_file=delete_file)
+
+
 async def test_sonarr(url: str, api_key: str) -> dict:
     """Test Sonarr connection."""
     try:

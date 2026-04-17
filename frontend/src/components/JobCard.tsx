@@ -1,6 +1,7 @@
 import type { JobProgress } from "../types";
 import ProgressBar from "./ProgressBar";
 import { useConfirm } from "./ConfirmModal";
+import { fmtNum } from "../fmt";
 
 function formatEta(seconds: number | null): string {
   if (!seconds) return "";
@@ -44,7 +45,7 @@ export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nve
         <span style={{ color: "white", fontWeight: "bold" }}>Now {progress.step || "Processing"}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ color: "var(--accent)" }}>
-            Job {progress.jobs_completed + (jobIndex ?? 0) + 1} of {progress.jobs_total}
+            Job {fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1)} of {fmtNum(progress.jobs_total)}
           </span>
           {onCancel && (
             <button
@@ -106,8 +107,8 @@ export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nve
         )}
         {progress.fps && <span>{progress.fps.toFixed(0)} fps</span>}
         {progress.eta && <span>ETA: {formatEta(progress.eta)}</span>}
-        {progress.total_saved > 0 && (
-          <span>Saved: {formatBytes(progress.total_saved)}</span>
+        {progress.node_name && (
+          <span style={{ color: "var(--text-muted)" }}>on {progress.node_name}</span>
         )}
       </div>
     </div>

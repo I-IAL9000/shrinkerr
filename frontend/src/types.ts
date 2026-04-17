@@ -18,6 +18,8 @@ export interface SubtitleTrack {
   forced: boolean;
   keep: boolean;
   locked: boolean;
+  external?: boolean;
+  external_path?: string;
 }
 
 export interface ScannedFile {
@@ -45,6 +47,10 @@ export interface ScannedFile {
   has_lossless_audio: boolean;
   duration: number;
   file_mtime: number | null;
+  probe_status?: string;
+  health_status?: "healthy" | "corrupt" | "warnings" | null;
+  health_check_type?: "quick" | "thorough" | null;
+  health_checked_at?: string | null;
 }
 
 export interface Job {
@@ -71,6 +77,45 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  health_status?: "healthy" | "corrupt" | "warnings" | null;
+  health_errors_json?: string | null;
+  health_check_type?: "quick" | "thorough" | null;
+  health_check_seconds?: number | null;
+}
+
+export interface WorkerNode {
+  id: string;
+  name: string;
+  hostname: string;
+  capabilities: string[];
+  status: "online" | "offline" | "working" | "error";
+  last_heartbeat: string | null;
+  registered_at: string;
+  current_job_id: number | null;
+  current_job_file?: string;
+  current_job_progress?: number;
+  jobs_completed: number;
+  total_space_saved: number;
+  path_mappings: { server: string; worker: string }[];
+  ffmpeg_version: string | null;
+  gpu_name: string | null;
+  os_info: string | null;
+  max_jobs: number;
+  consecutive_failures: number;
+  paused: boolean;
+  job_affinity: "any" | "cpu_only" | "nvenc_only";
+  translate_encoder: boolean;
+  schedule_enabled: boolean;
+  schedule_hours: number[];
+}
+
+export interface NodeSettings {
+  paused?: boolean;
+  max_jobs?: number;
+  job_affinity?: "any" | "cpu_only" | "nvenc_only";
+  translate_encoder?: boolean;
+  schedule_enabled?: boolean;
+  schedule_hours?: number[];
 }
 
 export interface QueueStats {
@@ -108,6 +153,8 @@ export interface JobProgress {
   jobs_completed: number;
   jobs_total: number;
   total_saved: number;
+  node_name?: string;
+  node_id?: string;
 }
 
 export interface JobComplete {

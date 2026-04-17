@@ -11,27 +11,67 @@ def build_remux_cmd(
     output_path: str,
     keep_audio_indices: list[int],
     keep_subtitle_indices: list[int] | None = None,
+    external_subtitle_files: list[dict] | None = None,
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
 
     Maps all video and attachment streams plus only the requested audio and subtitle
-    streams. All streams are copied without re-encoding.
+    streams. External subtitle files (if provided) are added as additional inputs.
+    All streams are copied without re-encoding (except text subs that need conversion).
     """
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
-        "-map", "0:v?",
     ]
+    # Add external subtitle files as additional inputs
+    ext_subs = external_subtitle_files or []
+    for es in ext_subs:
+        cmd += ["-i", es["path"]]
+
+    cmd += ["-map", "0:v?"]
+
     # Subtitles: if indices provided, map selectively; otherwise keep all
+    out_sub_idx = 0
+    sub_codec_args: list[str] = []
     if keep_subtitle_indices is not None:
         for idx in keep_subtitle_indices:
             cmd += ["-map", f"0:{idx}"]
+            sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+            out_sub_idx += 1
     else:
         cmd += ["-map", "0:s?"]
+        # Can't set per-stream codec without explicit maps; copy all
+        if not ext_subs:
+            sub_codec_args = []  # will use global -c copy
+
+    # Map external subtitle inputs
+    for i, es in enumerate(ext_subs):
+        input_idx = i + 1
+        cmd += ["-map", f"{input_idx}:s"]
+        codec = (es.get("codec") or "subrip").lower()
+        if codec in ("subrip", "srt", "webvtt"):
+            sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
+        elif codec in ("ass", "ssa"):
+            sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+        else:
+            sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+        lang = es.get("language") or "und"
+        sub_codec_args += [f"-metadata:s:s:{out_sub_idx}", f"language={lang}"]
+        if es.get("forced"):
+            sub_codec_args += [f"-disposition:s:{out_sub_idx}", "forced"]
+        out_sub_idx += 1
+
     cmd += ["-map", "0:t?"]
     for idx in keep_audio_indices:
         cmd += ["-map", f"0:{idx}"]
-    cmd += ["-c", "copy", output_path]
+
+    if ext_subs or keep_subtitle_indices is not None:
+        # Use per-stream codec args + copy for non-sub streams
+        cmd += ["-c:v", "copy", "-c:a", "copy"] + sub_codec_args
+    else:
+        cmd += ["-c", "copy"]
+
+    cmd += [output_path]
     return cmd
 
 

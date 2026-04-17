@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
-import { estimateJobs, startTestEncode } from "../api";
+import { useState, useEffect, useRef } from "react";
+import { estimateJobs, startTestEncode, getStoredApiKey } from "../api";
+import { fmtNum } from "../fmt";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
@@ -61,11 +62,33 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [encoder, setEncoder] = useState<string | null>(null);
   const [preset, setPreset] = useState<string | null>(null);
   const [cq, setCq] = useState<number | null>(null);
+  const [cqSlider, setCqSlider] = useState<number | null>(null); // visual only, committed on release
   const [audioCdc, setAudioCdc] = useState<string | null>(null);
   // Test encode state
   const [testRunning, setTestRunning] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
   const [testStep, setTestStep] = useState("");
+  const [testProgress, setTestProgress] = useState(0);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // Connect WebSocket on mount for test encode progress (must be open before test starts)
+  useEffect(() => {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const apiKey = getStoredApiKey();
+    const wsUrl = `${proto}//${window.location.host}/ws${apiKey ? `?api_key=${apiKey}` : ""}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === "test_encode_progress") {
+          setTestProgress(msg.progress || 0);
+          if (msg.step) setTestStep(msg.step);
+        }
+      } catch {}
+    };
+    return () => { ws.close(); wsRef.current = null; };
+  }, []);
   const [audioBr, setAudioBr] = useState<number | null>(null);
   const [resolution, setResolution] = useState<string | null>(null);
   const [forceReencode, setForceReencode] = useState(false);
@@ -83,7 +106,11 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     estimateJobs(filePaths, overrideRules, overrides).then(data => {
       setEstimate(data);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => {
+      console.error("Estimate failed:", err);
+      setEstimate({ total_files: 0, error: err?.message || "Unknown error" });
+      setLoading(false);
+    });
   }, [overrideRules, cq, forceReencode]);
 
   const isCpu = encoder === "libx265";
@@ -111,8 +138,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       alignItems: "center", justifyContent: "center", zIndex: 1000,
     }} onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
       <div style={{
-        background: "var(--bg-card)", borderRadius: 8, padding: 24, minWidth: 500, maxWidth: 620,
-        maxHeight: "90vh", overflowY: "auto",
+        background: "var(--bg-card)", borderRadius: 8, padding: "20px", width: "95%", maxWidth: 620,
+        maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" as const,
         border: "1px solid var(--border)",
       }}>
         <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>Add to Queue</h3>
@@ -149,9 +176,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         ) : estimate ? (
           <>
             {/* Summary */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <div className="estimate-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: "bold", color: "white" }}>{estimate.total_files}</div>
+                <div style={{ fontSize: 22, fontWeight: "bold", color: "white" }}>{fmtNum(estimate.total_files)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Files to process</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
@@ -166,7 +193,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
             {/* Breakdown */}
             {(estimate.total_files > 0) && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div className="estimate-breakdown-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By job type</div>
                   {(() => {
@@ -182,7 +209,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     return items.map(([label, count]) => (
                       <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
                         <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                        <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{count}</span>
+                        <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{fmtNum(count)}</span>
                       </div>
                     ));
                   })()}
@@ -192,7 +219,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {Object.entries(estimate.by_source || {}).sort(([,a], [,b]) => (b as number) - (a as number)).map(([k, v]) => (
                     <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
                       <span style={{ color: "var(--text-muted)" }}>{k}</span>
-                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{v as number}</span>
+                      <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{fmtNum(v as number)}</span>
                     </div>
                   ))}
                 </div>
@@ -201,7 +228,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
             {/* Resolution breakdown */}
             {estimate.resolution_breakdown && Object.values(estimate.resolution_breakdown).some((v: any) => v > 0) && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div className="estimate-breakdown-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 {estimate.resolution_breakdown && (
                   <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By resolution</div>
@@ -211,7 +238,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       return (
                         <div key={res} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
                           <span style={{ color: "var(--text-muted)" }}>{res === "sd" ? "SD" : res.toUpperCase()}</span>
-                          <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{count}</span>
+                          <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>{fmtNum(count)}</span>
                         </div>
                       );
                     })}
@@ -226,11 +253,11 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 {(estimate.ignored_files > 0 || estimate.skipped_by_rules > 0) && (
                   <div style={{ marginTop: 8 }}>
                     {estimate.ignored_files > 0 && (
-                      <span>{estimate.ignored_files} file{estimate.ignored_files !== 1 ? "s" : ""} with <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }}>IGNORE</span> status</span>
+                      <span>{fmtNum(estimate.ignored_files)} file{estimate.ignored_files !== 1 ? "s" : ""} with <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }}>IGNORE</span> status</span>
                     )}
                     {estimate.ignored_files > 0 && estimate.skipped_by_rules > 0 && <span> · </span>}
                     {estimate.skipped_by_rules > 0 && (
-                      <span style={{ color: "#ffa94d" }}>{estimate.skipped_by_rules} skipped by rules</span>
+                      <span style={{ color: "#ffa94d" }}>{fmtNum(estimate.skipped_by_rules)} skipped by rules</span>
                     )}
                   </div>
                 )}
@@ -302,11 +329,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality ({isCpu ? "CRF" : "CQ"})</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-                      <input type="range" min={15} max={30} value={cq ?? (estimate?.cq || 20)}
-                        onChange={e => setCq(Number(e.target.value))}
+                      <input type="range" min={15} max={30} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
+                        onChange={e => setCqSlider(Number(e.target.value))}
+                        onMouseUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
+                        onTouchEnd={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
                         style={{ flex: 1, accentColor: "var(--accent)" }} />
-                      <span style={{ fontSize: 12, color: cq !== null ? "white" : "var(--text-muted)", fontWeight: 600, width: 24, textAlign: "center" }}>
-                        {cq ?? (estimate?.cq || 20)}
+                      <span style={{ fontSize: 12, color: (cqSlider ?? cq) !== null ? "white" : "var(--text-muted)", fontWeight: 600, width: 24, textAlign: "center" }}>
+                        {cqSlider ?? cq ?? (estimate?.cq || 20)}
                       </span>
                       {cq !== null && (
                         <button onClick={() => setCq(null)}
@@ -400,6 +429,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           setTestRunning(true);
                           setTestResult(null);
                           setTestStep("encoding");
+                          setTestProgress(0);
                           try {
                             let testFile = filePaths.find(p => !p.endsWith("/")) || filePaths[0];
                             const result = await startTestEncode(
@@ -424,6 +454,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           </span>
                         ) : "Test Encode (30s sample)"}
                       </button>
+                      {testRunning && (
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                          <div className="progress-bar-track" style={{ flex: 1, height: 4 }}>
+                            <div className="progress-bar-fill" style={{ width: `${testProgress}%` }} />
+                          </div>
+                          <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                            {testProgress.toFixed(0)}%
+                          </span>
+                        </div>
+                      )}
                       {testResult && testResult.status === "complete" && (
                         <div style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ color: "var(--text-secondary)" }}>
@@ -465,7 +505,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             </div>
           </>
         ) : (
-          <div style={{ color: "var(--text-muted)", padding: 20, textAlign: "center" }}>Failed to estimate</div>
+          <div style={{ color: "var(--text-muted)", padding: 20, textAlign: "center" }}>
+            Failed to estimate
+            {estimate?.error && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 8 }}>{estimate.error}</div>}
+          </div>
         )}
 
         {/* Actions */}
@@ -477,7 +520,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
             onClick={() => onConfirm(priority, overrideRules, buildOverrides())}
           >
-            Add {estimate?.total_files || filePaths.length} to Queue
+            Add {fmtNum(estimate?.total_files || filePaths.length)} to Queue
           </button>
         </div>
       </div>

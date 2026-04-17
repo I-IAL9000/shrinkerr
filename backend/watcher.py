@@ -169,6 +169,25 @@ class FileWatcher:
             raw_subs = probe.get("subtitle_tracks", [])
             subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
 
+            # Detect external subtitle files (.srt/.ass/.ssa/.sub/.vtt) alongside the video
+            try:
+                from backend.scanner import detect_external_subtitles
+                ext_subs_raw = detect_external_subtitles(file_path)
+                has_external_subs = len(ext_subs_raw) > 0
+                if ext_subs_raw:
+                    for i, es in enumerate(ext_subs_raw):
+                        es["stream_index"] = -(i + 1)
+                    ext_classified = classify_subtitle_tracks(ext_subs_raw, native_lang)
+                    for cls_track, raw in zip(ext_classified, ext_subs_raw):
+                        cls_track = cls_track.model_copy(update={
+                            "external": True,
+                            "external_path": raw["external_path"],
+                        })
+                        subtitle_tracks.append(cls_track)
+            except Exception as exc:
+                print(f"[WATCHER] External sub detection failed: {exc}", flush=True)
+                has_external_subs = False
+
             tracks_to_remove = [t for t in audio_tracks if not t.keep]
             has_removable = len(tracks_to_remove) > 0
             has_removable_subs = any(not t.keep for t in subtitle_tracks)
@@ -198,6 +217,7 @@ class FileWatcher:
                 language_source=language_source,
                 has_removable_tracks=has_removable,
                 has_removable_subs=has_removable_subs,
+                has_external_subs=has_external_subs,
                 estimated_savings_bytes=savings_bytes,
                 estimated_savings_gb=round(savings_bytes / (1024 ** 3), 3),
                 file_mtime=file_mtime,
@@ -208,6 +228,34 @@ class FileWatcher:
 
         if skipped_ignored or skipped_probe or skipped_av1:
             print(f"[WATCHER] Skipped: {skipped_ignored} ignored, {skipped_probe} probe failed, {skipped_av1} AV1", flush=True)
+
+        if results:
+            # Final defensive filter: re-query scan_results right before writing.
+            # Conversion jobs can complete mid-probe-loop and update scan_results with
+            # the new (renamed) file_path. If we don't filter here, those freshly-
+            # converted files would hit the ON CONFLICT branch and incorrectly count
+            # toward the new-files badge. (The SQL CASE in _write_batch_sync_inner
+            # already prevents them from being flagged is_new, but the badge counter
+            # still increments unless we filter here.)
+            db_chk = await aiosqlite.connect(self.db_path)
+            db_chk.row_factory = aiosqlite.Row
+            try:
+                result_paths = [s.file_path for s in results]
+                placeholders = ",".join("?" * len(result_paths))
+                async with db_chk.execute(
+                    f"SELECT file_path FROM scan_results WHERE file_path IN ({placeholders})",
+                    result_paths,
+                ) as cur:
+                    already_known = {r["file_path"] for r in await cur.fetchall()}
+            finally:
+                await db_chk.close()
+
+            if already_known:
+                before = len(results)
+                results = [s for s in results if s.file_path not in already_known]
+                skipped_race = before - len(results)
+                if skipped_race > 0:
+                    print(f"[WATCHER] Skipped {skipped_race} files that scan_results picked up mid-probe (post-conversion renames)", flush=True)
 
         if results:
             from backend.routes.scan import _write_batch

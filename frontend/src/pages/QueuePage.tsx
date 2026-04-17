@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs } from "../api";
+import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk } from "../api";
+import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
 import QueueControlPanel from "../components/QueueControlPanel";
@@ -56,7 +57,15 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         getJobs(tab),
       ]);
       setStats(s);
-      setJobs([...parseJobs(runningData), ...parseJobs(tabData)]);
+      const allJobs = [...parseJobs(runningData), ...parseJobs(tabData)];
+      // Ensure pending jobs are available for spinner cards
+      if (tab !== "pending" && runningData.length === 0 && s.pending > 0) {
+        try {
+          const pendingData = await getJobs("pending", 0, 10);
+          allJobs.push(...parseJobs(pendingData));
+        } catch {}
+      }
+      setJobs(allJobs);
       setInitialLoading(false);
       setTabLoading(false);
     } finally {
@@ -78,11 +87,16 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const hasActiveJobs = queueStarting || jobProgressMap.size > 0 || running.length > 0;
 
   // Clear "starting" state once every running job has WebSocket progress
-  // (i.e., no more spinner placeholders needed)
+  const queueStartedAt = useRef<number>(0);
+  useEffect(() => {
+    if (queueStarting) queueStartedAt.current = Date.now();
+  }, [queueStarting]);
   useEffect(() => {
     if (!queueStarting) return;
+    // Don't clear for at least 3 seconds to ensure spinners are visible
+    const elapsed = Date.now() - queueStartedAt.current;
+    if (elapsed < 3000) return;
     const runningWithoutProgress = running.filter(j => !jobProgressMap.has(j.id)).length;
-    // All running jobs have progress AND we have at least some running
     if (running.length > 0 && runningWithoutProgress === 0) {
       setQueueStarting(false);
     }
@@ -242,7 +256,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={async () => { await startQueue(); setQueueStarting(true); load(); toast("Queue started", "success"); }}>
+          <button className="btn btn-primary" onClick={() => { setQueueStarting(true); startQueue().then(() => { load(); toast("Queue started", "success"); }); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg> Start
           </button>
         )}
@@ -250,18 +264,8 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
       {/* Render a JobCard for each active job with progress */}
       {running.map((job, runIndex) => {
-        const progress = jobProgressMap.get(job.id) || {
-          type: "job_progress" as const,
-          job_id: job.id,
-          file_name: job.file_path?.split("/").pop() || "Starting...",
-          progress: 0,
-          fps: 0,
-          eta: 0,
-          step: "starting",
-          jobs_completed: stats?.completed ?? 0,
-          jobs_total: (stats?.completed ?? 0) + (stats?.pending ?? 0) + running.length,
-          total_saved: 0,
-        };
+        const progress = jobProgressMap.get(job.id);
+        if (!progress) return null; // shown as spinner below
         const tracks = trackCache.get(job.file_path) || [];
         const removeIndices = new Set(job.audio_tracks_to_remove || []);
         const removedLangs = tracks
@@ -300,17 +304,40 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         );
       })}
 
-      {/* Show spinner cards for pending jobs about to start when queue is ramping up */}
+      {/* Starting / loading next job placeholders */}
       {(() => {
-        if (!queueStarting) return null;
-        const parallelLimit = encodingDefaults?.parallel_jobs ?? 4;
-        const slotsToFill = Math.max(0, Math.min(parallelLimit, pendingCount + running.length) - running.length);
-        return pending.slice(0, slotsToFill).map(j => (
-          <div key={`pend-${j.id}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
+        const parallelLimit = encodingDefaults?.parallel_jobs ?? 2;
+        const jobCardsShowing = running.filter(j => jobProgressMap.has(j.id)).length;
+        const runningSansProgress = running.filter(j => !jobProgressMap.has(j.id));
+        const totalActive = jobCardsShowing + runningSansProgress.length;
+        const hasPending = pendingCount > 0;
+
+        // Show spinner for running jobs without WS progress
+        const spinners = runningSansProgress.map(j => (
+          <div key={`run-${j.id}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
             <div className="spinner" style={{ width: 18, height: 18 }} />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting: {j.file_name}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{j.file_name}</span>
           </div>
         ));
+
+        // Show "Starting..." placeholders when:
+        // 1. Queue is initially starting, OR
+        // 2. We have fewer active jobs than parallel limit and there are pending jobs
+        const queueIsRunning = running.length > 0 || jobProgressMap.size > 0;
+        const showPlaceholders = queueStarting || (queueIsRunning && hasPending && totalActive < parallelLimit);
+        if (showPlaceholders) {
+          const slotsNeeded = Math.max(0, parallelLimit - totalActive);
+          for (let i = 0; i < slotsNeeded; i++) {
+            spinners.push(
+              <div key={`starting-${i}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
+                <div className="spinner" style={{ width: 18, height: 18 }} />
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting...</span>
+              </div>
+            );
+          }
+        }
+
+        return spinners;
       })()}
 
       {/* Tabs */}
@@ -324,7 +351,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             borderBottom: tab === "pending" ? "2px solid var(--accent)" : "2px solid transparent",
           }}
         >
-          Pending ({pendingCount} remaining)
+          Pending ({fmtNum(pendingCount)} remaining)
         </button>
         <button
           onClick={() => setTab("completed")}
@@ -335,7 +362,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             borderBottom: tab === "completed" ? "2px solid var(--success)" : "2px solid transparent",
           }}
         >
-          Completed ({completedCount} &middot; saved {stats ? (() => { const gb = Math.max(0, stats.total_space_saved) / (1024**3); return gb >= 1000 ? (gb / 1024).toFixed(2) + " TB" : gb.toFixed(1) + " GB"; })() : "0 GB"})
+          Completed ({fmtNum(completedCount)} &middot; saved {stats ? (() => { const gb = Math.max(0, stats.total_space_saved) / (1024**3); return gb >= 1000 ? (gb / 1024).toFixed(2) + " TB" : gb.toFixed(1) + " GB"; })() : "0 GB"})
         </button>
         {failedCount > 0 && (
           <button
@@ -347,7 +374,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               borderBottom: tab === "failed" ? "2px solid #e94560" : "2px solid transparent",
             }}
           >
-            Failed ({failedCount})
+            Failed ({fmtNum(failedCount)})
           </button>
         )}
       </div>
@@ -480,6 +507,25 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                 }}>
                 Retry all
               </button>
+              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "#e94560" }}
+                onClick={async () => {
+                  const paths = tabJobs.map(j => j.file_path).filter(Boolean);
+                  if (!paths.length) { toast("No file paths on these jobs", "error"); return; }
+                  if (!await confirm({
+                    message: `Re-request ${paths.length} file(s) from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.`,
+                    confirmLabel: `Re-request ${paths.length}`,
+                    danger: true,
+                  })) return;
+                  const res = await researchFilesBulk(paths, true);
+                  load();
+                  if (res.failed === 0) {
+                    toast(`Re-requested ${res.succeeded} file(s) from Sonarr/Radarr`, "success");
+                  } else {
+                    toast(`${res.succeeded} re-requested, ${res.failed} failed (check logs)`, res.succeeded > 0 ? "success" : "error");
+                  }
+                }}>
+                Re-request all (Sonarr/Radarr)
+              </button>
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                 onClick={async () => {
                   if (!await confirm({ message: `Clear all ${tabJobs.length} failed job(s)?`, confirmLabel: "Clear all", danger: true })) return;
@@ -497,7 +543,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               {tabJobs.map((job) => (
                 <JobListItem key={job.id} job={job}
                   onCancel={(id) => { cancelJob(id).then(load); }}
-                  onRetry={(id) => { retryJob(id).then(load); }}
+                  onRetry={(id) => {
+                    retryJob(id).then(res => {
+                      load();
+                      if (res.message) toast(res.message, "success");
+                    });
+                  }}
                   onRemove={(id) => { removeJob(id).then(load); }}
                 />
               ))}

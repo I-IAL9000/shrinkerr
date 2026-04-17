@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import FolderBrowser from "../components/FolderBrowser";
+import RenamingSettings from "../components/RenamingSettings";
 import {
   getMediaDirs, addMediaDir, removeMediaDir,
   getEncodingSettings, updateEncodingSettings, testApiKey,
@@ -7,6 +8,9 @@ import {
   reorderEncodingRules, syncPlexRuleMetadata, getPlexOptions,
   getConditionOptions, testNotifications, importSettings,
   listBackups, createBackup, deleteBackup, downloadBackupUrl, restoreBackup,
+  plexAuthStart, plexAuthCheck, plexAuthResources, plexAuthSave,
+  plexAuthDisconnect, plexAuthStatus,
+  type PlexAuthStatus, type PlexServer,
 } from "../api";
 import { useToast } from "../useToast";
 
@@ -116,10 +120,10 @@ const inputStyle: React.CSSProperties = {
 };
 
 const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
-const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 28 };
+const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 0 };
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
 
-export default function SettingsPage() {
+export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
   const toast = useToast();
   const [dirs, setDirs] = useState<any[]>([]);
   const [newPath, setNewPath] = useState("");
@@ -129,17 +133,23 @@ export default function SettingsPage() {
   const [langSearch, setLangSearch] = useState("");
   const [subLangSearch, setSubLangSearch] = useState("");
   const [tmdbKey, setTmdbKey] = useState("");
-  const [tvdbKey, setTvdbKey] = useState("");
   const [showTmdbKey, setShowTmdbKey] = useState(false);
-  const [showTvdbKey, setShowTvdbKey] = useState(false);
   const [tmdbTest, setTmdbTest] = useState<{ status: "idle" | "loading" | "success" | "error"; error?: string }>({ status: "idle" });
-  const [tvdbTest, setTvdbTest] = useState<{ status: "idle" | "loading" | "success" | "error"; error?: string }>({ status: "idle" });
   const [plexUrl, setPlexUrl] = useState("");
   const [plexToken, setPlexToken] = useState("");
   const [plexPathMapping, setPlexPathMapping] = useState("");
   const [showPlexToken, setShowPlexToken] = useState(false);
+  const [showManualPlex, setShowManualPlex] = useState(false);
 
   const [plexTest, setPlexTest] = useState<{ status: "idle" | "loading" | "success" | "error"; error?: string; serverName?: string; libraryCount?: number }>({ status: "idle" });
+
+  // Plex Connect (PIN-based OAuth) state
+  const [plexConn, setPlexConn] = useState<PlexAuthStatus>({ connected: false, server_url: "", server_name: "", user: null });
+  const [plexAuthState, setPlexAuthState] = useState<"idle" | "waiting" | "picking-server" | "saving">("idle");
+  const [plexServers, setPlexServers] = useState<PlexServer[]>([]);
+  const [plexPendingToken, setPlexPendingToken] = useState("");
+  const [plexPickerError, setPlexPickerError] = useState("");
+  const [plexPickedUri, setPlexPickedUri] = useState("");
   const [browserOpen, setBrowserOpen] = useState(false);
   const [backupBrowserOpen, setBackupBrowserOpen] = useState(false);
 
@@ -188,7 +198,8 @@ export default function SettingsPage() {
     genre: { label: "Plex Genre", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     library: { label: "Plex Library", group: "Plex", operators: [{ value: "is", label: "is" }], valueType: "select" },
     arr_tag: { label: "Sonarr/Radarr Tag", group: "Arr", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    nzbget_category: { label: "NZBGet Category", group: "NZBGet", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    jellyfin_tag: { label: "Jellyfin Tag", group: "Jellyfin", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    nzbget_category: { label: "Download Category", group: "Downloads", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
   };
 
   const updateConditionType = (idx: number, newType: string) => {
@@ -221,12 +232,118 @@ export default function SettingsPage() {
     getEncodingSettings().then((enc: any) => {
       setEncoding(enc);
       if (enc?.tmdb_api_key) setTmdbKey(enc.tmdb_api_key);
-      if (enc?.tvdb_api_key) setTvdbKey(enc.tvdb_api_key);
       if (enc?.plex_url) setPlexUrl(enc.plex_url);
       if (enc?.plex_token) setPlexToken(enc.plex_token);
       if (enc?.plex_path_mapping) setPlexPathMapping(enc.plex_path_mapping);
     });
+    // Load Plex connection status for the Connect UI.
+    plexAuthStatus().then(setPlexConn).catch(() => {});
   }, []);
+
+  // Plex Connect flow — opens plex.tv popup, polls backend until user approves.
+  const handlePlexConnect = async () => {
+    setPlexPickerError("");
+    try {
+      const { pin_id, auth_url } = await plexAuthStart();
+      // Open the Plex sign-in popup. Some browsers block popups if we don't
+      // open from a direct click — this handler IS a direct click, so it's fine.
+      const popup = window.open(auth_url, "plex_auth", "width=550,height=750");
+      if (!popup) {
+        setPlexPickerError("Popup blocked. Please allow popups for this site and try again.");
+        return;
+      }
+      setPlexAuthState("waiting");
+
+      // Poll every 2s for up to 5 minutes.
+      const deadline = Date.now() + 5 * 60 * 1000;
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setPlexAuthState("idle");
+          setPlexPickerError("Timed out waiting for Plex sign-in. Please try again.");
+          try { popup.close(); } catch {}
+          return;
+        }
+        try {
+          const res = await plexAuthCheck(pin_id);
+          if (res.expired) {
+            setPlexAuthState("idle");
+            setPlexPickerError("Plex sign-in PIN expired. Please try again.");
+            try { popup.close(); } catch {}
+            return;
+          }
+          if (res.token) {
+            try { popup.close(); } catch {}
+            setPlexPendingToken(res.token);
+            // Fetch servers and present the picker.
+            setPlexAuthState("picking-server");
+            try {
+              const { servers } = await plexAuthResources(res.token);
+              setPlexServers(servers);
+              // Pre-pick the first server's recommended URI, if any.
+              const recommended = servers[0]?.recommended_uri || servers[0]?.connections?.[0]?.uri || "";
+              setPlexPickedUri(recommended);
+            } catch (e: any) {
+              setPlexPickerError(`Couldn't list your Plex servers: ${e?.message || e}`);
+            }
+            return;
+          }
+          setTimeout(poll, 2000);
+        } catch (e) {
+          // Transient error; keep polling.
+          setTimeout(poll, 2000);
+        }
+      };
+      poll();
+    } catch (e: any) {
+      setPlexAuthState("idle");
+      setPlexPickerError(e?.message || String(e));
+    }
+  };
+
+  const handlePlexSaveConnection = async () => {
+    if (!plexPickedUri || !plexPendingToken) return;
+    setPlexAuthState("saving");
+    // Find the picked server to capture its metadata.
+    const picked = plexServers.find(s =>
+      s.connections.some(c => c.uri === plexPickedUri)
+    );
+    try {
+      await plexAuthSave(
+        plexPendingToken,
+        plexPickedUri,
+        picked?.name || "",
+        picked?.client_identifier || "",
+      );
+      // Refresh everything so the page reflects the new connection.
+      const [status, enc] = await Promise.all([
+        plexAuthStatus(),
+        getEncodingSettings(),
+      ]);
+      setPlexConn(status);
+      setEncoding(enc);
+      setPlexUrl(enc?.plex_url || "");
+      setPlexToken(enc?.plex_token || "");
+      setPlexAuthState("idle");
+      setPlexPendingToken("");
+      setPlexServers([]);
+      setPlexPickedUri("");
+    } catch (e: any) {
+      setPlexAuthState("picking-server");
+      setPlexPickerError(e?.message || String(e));
+    }
+  };
+
+  const handlePlexDisconnect = async () => {
+    await plexAuthDisconnect();
+    const [status, enc] = await Promise.all([
+      plexAuthStatus(),
+      getEncodingSettings(),
+    ]);
+    setPlexConn(status);
+    setEncoding(enc);
+    setPlexUrl(enc?.plex_url || "");
+    setPlexToken("");
+  };
 
   const loadDirs = () => getMediaDirs().then((r: any) => setDirs(Array.isArray(r) ? r : r.dirs || []));
 
@@ -327,13 +444,13 @@ export default function SettingsPage() {
       <div style={sectionStyle}>
         <div style={{
           background: "var(--bg-primary)", borderRadius: 4, padding: 8,
-          fontFamily: "var(--font-mono)", fontSize: 12, marginBottom: 8,
+          fontSize: 13, marginBottom: 8,
         }}>
           {dirs.map((d: any) => (
             <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
               <span>
                 {d.path}
-                {d.label && <span style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8, padding: "1px 6px", borderRadius: 8, backgroundColor: "var(--border)" }}>{d.label}</span>}
+                {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--border)" }}>{d.label}</span>}
               </span>
               <button onClick={() => handleRemoveDir(d.id)}
                 style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
@@ -589,7 +706,7 @@ export default function SettingsPage() {
                 <div style={helpStyle}>
                   <strong>VMAF</strong> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix.
                   It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality.
-                  When enabled, Squeezarr runs a frame-accurate VMAF comparison between the original and encoded file after conversion.
+                  When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion.
                   This adds a few minutes per job but gives you confidence that your CQ settings produce acceptable quality.
                 </div>
                 <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
@@ -863,6 +980,17 @@ export default function SettingsPage() {
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                 Automatically keep audio and subtitle tracks matching each file's detected native language. Disable if you only want to keep dubbed/specified language tracks.
+              </div>
+
+              {/* Reorder native language first */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.reorder_native_audio !== false}
+                  onChange={() => setEncoding({ ...encoding, reorder_native_audio: encoding.reorder_native_audio === false })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Reorder native language to first audio stream</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup.
               </div>
 
               {/* Ignore Unknown Tracks */}
@@ -1172,6 +1300,39 @@ export default function SettingsPage() {
               </button>
             </div>
             )}
+
+            {/* External Subtitles */}
+            <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>External Subtitles</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
+                <input type="checkbox" checked={encoding.merge_external_subs ?? false}
+                  onChange={() => setEncoding({ ...encoding, merge_external_subs: !(encoding.merge_external_subs ?? false) })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Merge external subtitles into video</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
+                During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container.
+                Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).
+              </div>
+
+              {(encoding.merge_external_subs ?? false) && (
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
+                  <input type="checkbox" checked={encoding.delete_external_subs_after_merge ?? false}
+                    onChange={() => setEncoding({ ...encoding, delete_external_subs_after_merge: !(encoding.delete_external_subs_after_merge ?? false) })}
+                    style={{ flexShrink: 0 }} />
+                  <span style={labelStyle}>Delete external subtitle files after merge</span>
+                </label>
+              )}
+              {(encoding.merge_external_subs ?? false) && (encoding.delete_external_subs_after_merge ?? false) && (
+                <div style={{ fontSize: 11, color: "var(--warning)", paddingLeft: 26, marginTop: -4 }}>
+                  The original .srt/.ass files will be permanently deleted after a successful merge.
+                </div>
+              )}
+
+              <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start", marginTop: 12 }}>
+                Save External Subtitle Settings
+              </button>
+            </div>
           </div>
 
           <h2 id="connections" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
@@ -1181,7 +1342,7 @@ export default function SettingsPage() {
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect to TMDB and TVDB to automatically detect the original language of movies and TV shows. This improves audio track classification for foreign titles. Save your keys first, then click Test to verify.
+              Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
             </div>
 
             {/* TMDB API Key */}
@@ -1257,79 +1418,6 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* TVDB API Key */}
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ ...labelStyle, marginBottom: 8 }}>
-                TVDB API Key{" "}
-                <a href="https://thetvdb.com/api-information" target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
-                  <input
-                    type={showTvdbKey ? "text" : "password"}
-                    value={tvdbKey}
-                    onChange={(e) => setTvdbKey(e.target.value)}
-                    placeholder="Enter TVDB API key..."
-                    style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
-                  />
-                  <button
-                    onClick={() => setShowTvdbKey(!showTvdbKey)}
-                    style={{
-                      position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-                      background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
-                    }}
-                    title={showTvdbKey ? "Hide" : "Show"}
-                  >
-                    {showTvdbKey ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                        <line x1="1" y1="1" x2="23" y2="23"/>
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={async () => {
-                    setTvdbTest({ status: "loading" });
-                    try {
-                      const res = await testApiKey("tvdb");
-                      if (res.success) {
-                        setTvdbTest({ status: "success" });
-                      } else {
-                        setTvdbTest({ status: "error", error: res.error || "Test failed" });
-                      }
-                    } catch (e: any) {
-                      setTvdbTest({ status: "error", error: e.message || "Request failed" });
-                    }
-                  }}
-                  disabled={tvdbTest.status === "loading"}
-                  style={{ minWidth: 60 }}
-                >
-                  {tvdbTest.status === "loading" ? "..." : "Test"}
-                </button>
-                {tvdbTest.status === "success" && (
-                  <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
-                )}
-                {tvdbTest.status === "error" && (
-                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tvdbTest.error}</span>
-                )}
-              </div>
-              {encoding.tvdb_configured && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
-                </div>
-              )}
-            </div>
-
             <button
               className="btn btn-primary"
               style={{ marginTop: 4 }}
@@ -1337,13 +1425,12 @@ export default function SettingsPage() {
                 await updateEncodingSettings({
                   ...encoding,
                   tmdb_api_key: tmdbKey,
-                  tvdb_api_key: tvdbKey,
                 });
                 setSaved(true);
                 setTimeout(() => setSaved(false), 2000);
               }}
             >
-              Save API Keys
+              Save API Key
             </button>
           </div>
 
@@ -1351,70 +1438,267 @@ export default function SettingsPage() {
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Plex</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Triggers a partial Plex library scan after each conversion so your library stays up to date.
+              Connect your Plex server to automatically refresh your library after each conversion, create encoding rules based on Plex labels, collections, and genres, prioritize unwatched content in the queue, and pause encoding when someone is streaming.
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <span style={labelStyle}>Plex Server URL</span>
-            </div>
-            <input
-              type="text"
-              value={plexUrl}
-              onChange={(e) => setPlexUrl(e.target.value)}
-              placeholder="http://192.168.0.103:32400"
-              style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
-            />
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <span style={labelStyle}>Plex Auth Token</span>
-              <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>(How to find your token)</a>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <div style={{ position: "relative", flex: 1 }}>
-                <input
-                  type={showPlexToken ? "text" : "password"}
-                  value={plexToken}
-                  onChange={(e) => setPlexToken(e.target.value)}
-                  placeholder="Your Plex auth token"
-                  style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
-                />
-                <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            {/* ── Connected state: show current connection + disconnect ────── */}
+            {plexConn.connected && plexAuthState !== "picking-server" && (
+              <div style={{
+                background: "var(--bg-primary)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--success)", flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "white" }}>
+                    Connected to <span style={{ color: "#e5a00d" }}>{plexConn.server_name || "Plex"}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {plexConn.user?.email ? `${plexConn.user.email} · ` : ""}{plexConn.server_url}
+                  </div>
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: 12, padding: "6px 12px" }}
+                  onClick={handlePlexDisconnect}
+                >
+                  Disconnect
                 </button>
               </div>
-              <button
-                className="btn btn-secondary"
-                style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap" }}
-                onClick={async () => {
-                  setPlexTest({ status: "loading" });
-                  try {
-                    const result = await testApiKey("plex" as any);
-                    if (result.success) {
-                      setPlexTest({ status: "success", serverName: (result as any).server_name, libraryCount: (result as any).library_count });
-                    } else {
-                      setPlexTest({ status: "error", error: (result as any).error || "Failed" });
-                    }
-                  } catch (e: any) {
-                    setPlexTest({ status: "error", error: e.message });
-                  }
-                }}
-              >
-                {plexTest.status === "loading" ? "Testing..." : "Test"}
-              </button>
-              {plexTest.status === "success" && (
-                <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {plexTest.serverName} ({plexTest.libraryCount} libraries)</span>
-              )}
-              {plexTest.status === "error" && (
-                <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
-              )}
-            </div>
-            {encoding.plex_configured && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
+            )}
+
+            {/* ── Disconnected state: big Connect button ─────────────────── */}
+            {!plexConn.connected && plexAuthState === "idle" && (
+              <>
+                <button
+                  onClick={handlePlexConnect}
+                  style={{
+                    background: "#e5a00d",
+                    color: "#1f1f1f",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "10px 18px",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.644 1.59a.9.9 0 0 1 .712 0l9 4.5a.9.9 0 0 1 .544.826v10.168a.9.9 0 0 1-.544.826l-9 4.5a.9.9 0 0 1-.712 0l-9-4.5a.9.9 0 0 1-.544-.826V6.916a.9.9 0 0 1 .544-.826l9-4.5Z"/>
+                  </svg>
+                  Connect to Plex
+                </button>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+                  Opens Plex sign-in in a popup. After you sign in we'll list your servers so you can pick which one to connect.
+                </div>
+              </>
+            )}
+
+            {/* ── Waiting for user sign-in ──────────────────────────────── */}
+            {plexAuthState === "waiting" && (
+              <div style={{
+                background: "var(--bg-primary)",
+                border: "1px dashed var(--border)",
+                borderRadius: 6,
+                padding: 16,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}>
+                <div className="spinner" style={{ width: 18, height: 18 }} />
+                <div>
+                  <div style={{ fontSize: 13, color: "white" }}>Waiting for Plex sign-in…</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Complete the sign-in in the popup window. This page will update automatically.
+                  </div>
+                </div>
+                <div style={{ flex: 1 }} />
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: 12, padding: "4px 10px" }}
+                  onClick={() => { setPlexAuthState("idle"); setPlexPickerError(""); }}
+                >
+                  Cancel
+                </button>
               </div>
             )}
-            <div style={{ marginTop: 12 }}>
+
+            {/* ── Server picker ─────────────────────────────────────────── */}
+            {plexAuthState === "picking-server" && (
+              <div style={{
+                background: "var(--bg-primary)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 12,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>
+                  Choose which Plex server to connect
+                </div>
+                {plexServers.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
+                    No Plex servers found for this account.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {plexServers.flatMap(server =>
+                      server.connections.map(conn => {
+                        const id = `${server.client_identifier}|${conn.uri}`;
+                        const picked = plexPickedUri === conn.uri;
+                        return (
+                          <label
+                            key={id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "8px 10px",
+                              borderRadius: 4,
+                              border: `1px solid ${picked ? "#e5a00d" : "var(--border)"}`,
+                              background: picked ? "rgba(229,160,13,0.08)" : "transparent",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="plex_server_uri"
+                              checked={picked}
+                              onChange={() => setPlexPickedUri(conn.uri)}
+                              style={{ accentColor: "#e5a00d" }}
+                            />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, color: "white", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                <span style={{ fontWeight: 500 }}>{server.name}</span>
+                                {server.owned && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(229,160,13,0.2)", color: "#e5a00d" }}>OWNED</span>}
+                                {conn.local && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>LOCAL</span>}
+                                {conn.relay && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--border)", color: "var(--text-muted)" }}>RELAY</span>}
+                                {conn.reachable === true && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>REACHABLE</span>}
+                                {conn.reachable === false && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(231,76,60,0.2)", color: "var(--danger, #e74c3c)" }}>UNREACHABLE</span>}
+                              </div>
+                              <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {conn.uri}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ fontSize: 12, padding: "6px 14px" }}
+                    disabled={!plexPickedUri}
+                    onClick={handlePlexSaveConnection}
+                  >
+                    Use this server
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: 12, padding: "6px 14px" }}
+                    onClick={() => { setPlexAuthState("idle"); setPlexPendingToken(""); setPlexServers([]); setPlexPickedUri(""); setPlexPickerError(""); }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {plexAuthState === "saving" && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>Saving…</div>
+            )}
+
+            {plexPickerError && (
+              <div style={{ fontSize: 12, color: "var(--danger, #e74c3c)", marginBottom: 12 }}>
+                {plexPickerError}
+              </div>
+            )}
+
+            {/* ── Manual setup (fallback / advanced) ───────────────────── */}
+            <button
+              onClick={() => setShowManualPlex(!showManualPlex)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-muted)",
+                fontSize: 11,
+                cursor: "pointer",
+                padding: "6px 0",
+                textDecoration: "underline",
+              }}
+            >
+              {showManualPlex ? "Hide manual setup" : "Advanced: enter URL & token manually"}
+            </button>
+
+            {showManualPlex && (
+              <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: 12, marginTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={labelStyle}>Plex Server URL</span>
+                </div>
+                <input
+                  type="text"
+                  value={plexUrl}
+                  onChange={(e) => setPlexUrl(e.target.value)}
+                  placeholder="http://192.168.0.103:32400"
+                  style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
+                />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={labelStyle}>Plex Auth Token</span>
+                  <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>(How to find your token)</a>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ position: "relative", flex: 1 }}>
+                    <input
+                      type={showPlexToken ? "text" : "password"}
+                      value={plexToken}
+                      onChange={(e) => setPlexToken(e.target.value)}
+                      placeholder="Your Plex auth token"
+                      style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
+                    />
+                    <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap" }}
+                    onClick={async () => {
+                      setPlexTest({ status: "loading" });
+                      try {
+                        const result = await testApiKey("plex" as any);
+                        if (result.success) {
+                          setPlexTest({ status: "success", serverName: (result as any).server_name, libraryCount: (result as any).library_count });
+                        } else {
+                          setPlexTest({ status: "error", error: (result as any).error || "Failed" });
+                        }
+                      } catch (e: any) {
+                        setPlexTest({ status: "error", error: e.message });
+                      }
+                    }}
+                  >
+                    {plexTest.status === "loading" ? "Testing..." : "Test"}
+                  </button>
+                  {plexTest.status === "success" && (
+                    <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {plexTest.serverName} ({plexTest.libraryCount} libraries)</span>
+                  )}
+                  {plexTest.status === "error" && (
+                    <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 16 }}>
               <span style={labelStyle}>Path Mapping (Container → Host)</span>
               <input
                 type="text"
@@ -1428,6 +1712,16 @@ export default function SettingsPage() {
                 Format: <code>/container/path=/host/path</code>.
                 Multiple mappings separated by <code>;</code>
               </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
+              <input type="checkbox" checked={encoding?.plex_scan_after_conversion !== false && encoding?.plex_scan_after_conversion !== "false"}
+                onChange={() => setEncoding({ ...encoding, plex_scan_after_conversion: encoding?.plex_scan_after_conversion === false || encoding?.plex_scan_after_conversion === "false" })}
+                style={{ flexShrink: 0 }} />
+              <span style={labelStyle}>Refresh library after conversion</span>
+            </label>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 28 }}>
+              Trigger a partial Plex library scan after each file is converted so changes appear immediately.
             </div>
 
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
@@ -1451,16 +1745,6 @@ export default function SettingsPage() {
               When adding files to the queue, unwatched content automatically gets High priority so it converts first. You're more likely to notice quality improvements on content you haven't watched yet. Requires syncing with Plex.
             </div>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
-              <input type="checkbox" checked={encoding?.plex_stream_aware || false}
-                onChange={() => setEncoding({ ...encoding, plex_stream_aware: !encoding?.plex_stream_aware })}
-                style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Stream-aware scheduling</span>
-            </label>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-              Pause encoding when someone is actively streaming from Plex to avoid impacting playback quality.
-            </div>
-
             <button
               className="btn btn-primary"
               style={{ marginTop: 16 }}
@@ -1479,11 +1763,88 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          {/* Jellyfin */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 4 }}>Jellyfin</h3>
+            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+              Connect your Jellyfin server to automatically refresh your library after each conversion, create encoding rules based on Jellyfin tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={labelStyle}>Jellyfin URL</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
+                  value={encoding?.jellyfin_url || ""}
+                  onChange={(e) => setEncoding({ ...encoding, jellyfin_url: e.target.value })} />
+              </div>
+              <div>
+                <div style={labelStyle}>API Key</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="Your Jellyfin API key"
+                  type="password"
+                  value={encoding?.jellyfin_api_key || ""}
+                  onChange={(e) => setEncoding({ ...encoding, jellyfin_api_key: e.target.value })} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={labelStyle}>User ID (optional)</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="Auto-detected if empty"
+                  value={encoding?.jellyfin_user_id || ""}
+                  onChange={(e) => setEncoding({ ...encoding, jellyfin_user_id: e.target.value })} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  Used for watched status. Leave empty to auto-detect the admin user.
+                </div>
+              </div>
+              <div>
+                <div style={labelStyle}>Path mapping</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
+                  value={encoding?.jellyfin_path_mapping || ""}
+                  onChange={(e) => setEncoding({ ...encoding, jellyfin_path_mapping: e.target.value })} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  Maps container paths to Jellyfin paths. Format: /container=/jellyfin
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                onClick={async () => {
+                  try {
+                    const r = await testApiKey("jellyfin");
+                    if (r.success) toast(`Connected to ${(r as any).server_name || "Jellyfin"} (${(r as any).library_count || 0} libraries)`, "success");
+                    else toast(r.error || "Connection failed");
+                  } catch { toast("Connection failed"); }
+                }}>Test Connection</button>
+              {encoding?.jellyfin_configured && (
+                <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
+                  Connected
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding?.jellyfin_scan_after_conversion !== false && encoding?.jellyfin_scan_after_conversion !== "false"}
+                  onChange={() => setEncoding({ ...encoding, jellyfin_scan_after_conversion: encoding?.jellyfin_scan_after_conversion === false || encoding?.jellyfin_scan_after_conversion === "false" })} />
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Refresh library after conversion</span>
+              </label>
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 16 }}
+              onClick={async () => {
+                await updateEncodingSettings({
+                  jellyfin_url: encoding?.jellyfin_url,
+                  jellyfin_api_key: encoding?.jellyfin_api_key,
+                  jellyfin_user_id: encoding?.jellyfin_user_id,
+                  jellyfin_path_mapping: encoding?.jellyfin_path_mapping,
+                  jellyfin_scan_after_conversion: encoding?.jellyfin_scan_after_conversion,
+                } as any);
+                toast("Jellyfin settings saved", "success");
+              }}>Save Jellyfin Settings</button>
+          </div>
+
           {/* Sonarr / Radarr Integration */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 16 }}>Sonarr / Radarr</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              After conversion, Squeezarr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.
+              After conversion, Shrinkerr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
               {/* Sonarr */}
@@ -1573,10 +1934,10 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* NZBGet Integration */}
+          {/* Download Client Integration */}
           <div style={sectionStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ color: "white", margin: 0 }}>NZBGet Extension Script</h3>
+              <h3 style={{ color: "white", margin: 0 }}>NZBGet / SABnzbd</h3>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? "Enabled" : "Disabled"}</span>
                 <input type="checkbox" checked={encoding?.nzbget_enabled || false}
@@ -1585,7 +1946,7 @@ export default function SettingsPage() {
               </label>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              Automatically convert downloads after NZBGet completes. The script checks Sonarr/Radarr for matching tags before converting. Sonarr/Radarr connection settings are inherited from above.
+              Automatically convert downloads after NZBGet or SABnzbd completes. The script checks Sonarr/Radarr for matching tags before converting. Sonarr/Radarr connection settings are inherited from above.
             </div>
 
             {/* Tags */}
@@ -1616,7 +1977,7 @@ export default function SettingsPage() {
 
             {/* Categories */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>NZBGet categories to process</div>
+              <div style={labelStyle}>Categories to process</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_categories || []).map((cat: string) => (
                   <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
@@ -1637,13 +1998,13 @@ export default function SettingsPage() {
                     }
                   }} />
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Only downloads in these NZBGet categories will be processed. Press Enter to add.</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Only downloads in these categories will be processed. Works with both NZBGet and SABnzbd. Press Enter to add.</div>
             </div>
 
             {/* Path Mappings */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Path mappings (NZBGet MainDir → Squeezarr path)</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Map NZBGet's <b>MainDir</b> (or <b>DestDir</b>) to a path Squeezarr can access. Make sure this path is added as a volume in your Squeezarr docker-compose.</div>
+              <div style={labelStyle}>Path mappings (download client → Shrinkerr path)</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Map your download client's completed folder to a path Shrinkerr can access. Make sure this path is added as a volume in your Shrinkerr docker-compose.</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
@@ -1712,30 +2073,45 @@ export default function SettingsPage() {
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
                 onClick={async () => {
                   await updateEncodingSettings(encoding);
-                  toast("NZBGet settings saved", "success");
+                  toast("Download client settings saved", "success");
                 }}>Save</button>
-              <a href="/api/settings/nzbget-script" download="Squeezarr.py" style={{ textDecoration: "none" }}>
+              <a href="/api/settings/nzbget-script" download="Shrinkerr.py" style={{ textDecoration: "none" }}>
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
-                  Download Script
+                  Download NZBGet Script
+                </button>
+              </a>
+              <a href="/api/settings/sabnzbd-script" download="shrinkerr.py" style={{ textDecoration: "none" }}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
+                  Download SABnzbd Script
                 </button>
               </a>
             </div>
 
             {/* Installation instructions */}
             <details style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Installation Instructions</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>NZBGet Installation</summary>
               <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
-                <li>Save settings above and click <b>Download Script</b></li>
-                <li>Place <code>Squeezarr.py</code> in your NZBGet <b>ScriptDir</b> folder</li>
-                <li>In NZBGet → Settings → Extension Scripts, enable <b>Squeezarr</b></li>
+                <li>Save settings above and click <b>Download NZBGet Script</b></li>
+                <li>Place <code>Shrinkerr.py</code> in your NZBGet <b>ScriptDir</b> folder</li>
+                <li>In NZBGet → Settings → Extension Scripts, enable <b>Shrinkerr</b></li>
                 <li>Restart NZBGet or click <b>Reload</b> in the scripts section</li>
-                <li>The script auto-configures from Squeezarr — no NZBGet settings needed</li>
+                <li>The script auto-configures from Shrinkerr — no NZBGet settings needed</li>
                 <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
               </ol>
-              <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(145,53,255,0.1)", borderRadius: 4 }}>
-                <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Squeezarr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.
-              </div>
             </details>
+            <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>SABnzbd Installation</summary>
+              <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
+                <li>Save settings above and click <b>Download SABnzbd Script</b></li>
+                <li>Place <code>shrinkerr.py</code> in your SABnzbd <b>scripts</b> folder</li>
+                <li>In SABnzbd → Config → Categories, set <b>shrinkerr.py</b> as the post-processing script for your TV/Movie categories</li>
+                <li>The script auto-configures from Shrinkerr — your URL and API key are baked in</li>
+                <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
+              </ol>
+            </details>
+            <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(104,96,254,0.1)", borderRadius: 4, fontSize: 12 }}>
+              <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Shrinkerr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.
+            </div>
           </div>
 
           <h2 id="rules" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
@@ -1805,7 +2181,7 @@ export default function SettingsPage() {
                         setRuleDropIdx(null);
                       }}
                       style={{
-                        background: ruleDropIdx === idx && ruleDragIdx !== null && ruleDragIdx !== idx ? "rgba(145,53,255,0.15)" : "var(--bg-primary)",
+                        background: ruleDropIdx === idx && ruleDragIdx !== null && ruleDragIdx !== idx ? "rgba(104,96,254,0.15)" : "var(--bg-primary)",
                         borderRadius: 4, padding: "10px 12px",
                         display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
                         opacity: ruleDragIdx === idx ? 0.4 : rule.enabled ? 1 : 0.5,
@@ -1829,7 +2205,7 @@ export default function SettingsPage() {
                           const condColors: Record<string, string> = {
                             directory: "#ffa94d", label: "#b680ff", collection: "#40ceff", genre: "#ff6b9d",
                             library: "#18ffa5", source: "#74c0fc", resolution: "#ffd43b", video_codec: "#e94560",
-                            audio_codec: "#69db7c", file_size: "#ffa94d", media_type: "#9135ff", title: "#40ceff",
+                            audio_codec: "#69db7c", file_size: "#ffa94d", media_type: "#6860fe", title: "#40ceff",
                             release_group: "#ff6b9d", arr_tag: "#74c0fc",
                           };
                           const fg = condColors[c.type] || "#ccc";
@@ -1968,6 +2344,12 @@ export default function SettingsPage() {
                           <optgroup label="Arr">
                             <option value="arr_tag">Sonarr/Radarr Tag</option>
                           </optgroup>
+                          <optgroup label="Jellyfin">
+                            <option value="jellyfin_tag">Jellyfin Tag</option>
+                          </optgroup>
+                          <optgroup label="Downloads">
+                            <option value="nzbget_category">Download Category</option>
+                          </optgroup>
                         </select>
                         {/* Operator */}
                         <select value={cond.operator} onChange={e => updateConditionOperator(condIdx, e.target.value)} style={{ ...inputStyle, width: 140 }}>
@@ -2074,6 +2456,13 @@ export default function SettingsPage() {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">Select tag...</option>
                               {(condOpts.arr_tags || []).map((t: any) => <option key={`${t.source}-${t.label}`} value={t.label}>{t.label} ({t.source})</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "jellyfin_tag") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select tag...</option>
+                              {(condOpts.jellyfin_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                             </select>;
                           }
 
@@ -2287,11 +2676,17 @@ export default function SettingsPage() {
             )}
           </div>
 
+          <h2 id="renaming" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Renaming
+          </h2>
+          <RenamingSettings />
+
           <h2 id="automation" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
             Automation
           </h2>
           {/* Automation — at the bottom */}
           <div style={sectionStyle}>
+            <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Auto-Queue</div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.auto_queue_new || false}
                 onClick={() => setEncoding({ ...encoding, auto_queue_new: !encoding?.auto_queue_new })}
@@ -2331,18 +2726,19 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Filename suffix */}
-            <div style={{ marginBottom: 16 }}>
+            {/* Output Filename */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Output Filename</div>
               <div style={labelStyle}>Filename suffix after conversion</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                 <input type="text" style={{ ...inputStyle, flex: "1 1 200px", maxWidth: 300 }}
                   value={encoding?.filename_suffix ?? ""}
                   onChange={e => setEncoding({ ...encoding, filename_suffix: e.target.value })}
-                  placeholder="e.g. -Squeezarr" />
+                  placeholder="e.g. -Shrinkerr" />
                 {!encoding?.filename_suffix && (
                   <button className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}
-                    onClick={() => setEncoding({ ...encoding, filename_suffix: "-Squeezarr" })}>
-                    Use "-Squeezarr"
+                    onClick={() => setEncoding({ ...encoding, filename_suffix: "-Shrinkerr" })}>
+                    Use "-Shrinkerr"
                   </button>
                 )}
               </div>
@@ -2353,7 +2749,10 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Post-conversion */}
+            {/* Originals & Backups */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Originals & Backups</div>
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.trash_original_after_conversion || false}
                 onChange={() => setEncoding({ ...encoding, trash_original_after_conversion: !encoding?.trash_original_after_conversion })}
@@ -2416,19 +2815,22 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            {/* Skip recently modified files */}
+            {/* File Stability */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>File Stability</div>
+            </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.skip_files_newer_enabled || false}
                 onChange={() => setEncoding({ ...encoding, skip_files_newer_enabled: !encoding?.skip_files_newer_enabled })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Skip recently modified files</span>
+              <span style={labelStyle}>Delay recently modified files</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-              Files modified within this window are skipped during scanning and auto-queue. This prevents converting files that are still being downloaded, transferred, or processed by other tools like Sonarr/Radarr. Recommended for shared systems.
+              Files modified within this window are postponed during scanning and auto-queue. They'll be picked up on the next scan once the window has passed. This prevents converting files that are still being downloaded, transferred, or processed by other tools like Sonarr/Radarr. Recommended for shared systems.
             </div>
             {encoding?.skip_files_newer_enabled && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Skip files newer than</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Delay files newer than</span>
                 <input type="number" min={1} max={1440}
                   style={{ ...inputStyle, width: 70 }}
                   value={encoding?.skip_files_newer_than_minutes ?? 10}
@@ -2436,6 +2838,55 @@ export default function SettingsPage() {
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>minutes</span>
               </div>
             )}
+
+            {/* Health Checks */}
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Health Checks</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <span style={{ ...labelStyle, flex: "0 0 240px" }}>Auto-check after scans</span>
+              <select
+                style={{ ...inputStyle, width: 140 }}
+                value={encoding?.health_check_on_scan ?? "off"}
+                onChange={e => setEncoding({ ...encoding, health_check_on_scan: e.target.value })}
+              >
+                <option value="off">Off</option>
+                <option value="quick">Quick</option>
+                <option value="thorough">Thorough</option>
+              </select>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 8 }}>
+              After each scan, queue a health check for files <strong>newly detected in the last 24h</strong> (capped at 1000 per scan to protect the queue).
+              <strong> Quick</strong> parses headers (&lt;1s per file). <strong>Thorough</strong> decodes every frame (slow — minutes per file).
+              To check files retroactively, use the manual <strong>Quick check</strong> / <strong>Thorough check</strong> buttons on the Scanner.
+            </div>
+            <div style={{ marginBottom: 14, paddingLeft: 0 }}>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "rgba(233,69,96,0.4)" }}
+                onClick={async () => {
+                  if (!confirm("Delete ALL pending health-check jobs? Running jobs and other job types are not affected.")) return;
+                  const { clearPendingHealthChecks } = await import("../api");
+                  const res = await clearPendingHealthChecks();
+                  toast(`Removed ${res.deleted.toLocaleString()} pending health-check job${res.deleted === 1 ? "" : "s"}`, "success");
+                }}
+              >Clear pending health-check jobs</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <span style={{ ...labelStyle, flex: "0 0 240px" }}>Auto-check after conversion</span>
+              <select
+                style={{ ...inputStyle, width: 140 }}
+                value={encoding?.health_check_after_conversion ?? "off"}
+                onChange={e => setEncoding({ ...encoding, health_check_after_conversion: e.target.value })}
+              >
+                <option value="off">Off</option>
+                <option value="quick">Quick</option>
+                <option value="thorough">Thorough</option>
+              </select>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 12 }}>
+              Verify each converted output. <strong>Quick</strong> confirms the container/streams parse. <strong>Thorough</strong> catches visual artifacts (decoder errors) at the cost of roughly duration/10 per file.
+            </div>
 
             {/* Advanced */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
@@ -2469,7 +2920,7 @@ export default function SettingsPage() {
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 12 }}>Webhook Endpoints</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              External tools can call these endpoints to control Squeezarr. Authenticate with <code style={{ color: "var(--accent)" }}>?api_key=YOUR_KEY</code> or <code style={{ color: "var(--accent)" }}>X-Api-Key</code> header.
+              External tools can call these endpoints to control Shrinkerr. Authenticate with <code style={{ color: "var(--accent)" }}>?api_key=YOUR_KEY</code> or <code style={{ color: "var(--accent)" }}>X-Api-Key</code> header.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
@@ -2660,7 +3111,7 @@ export default function SettingsPage() {
                 </button>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                Used by NZBGet and other external integrations. Not required for browser login.
+                Used by NZBGet, SABnzbd, and other external integrations. Not required for browser login.
               </div>
             </div>
 
@@ -2901,6 +3352,31 @@ export default function SettingsPage() {
                   Restore from file...
                 </span>
               </label>
+            </div>
+          </div>
+
+          {/* User Interface */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 12 }}>User Interface</h3>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Theme</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  Switch between dark and light mode
+                </div>
+              </div>
+              <button
+                className="sort-pill"
+                onClick={onToggleTheme}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+              >
+                {theme === "dark" ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                )}
+                {theme === "dark" ? "Light mode" : "Dark mode"}
+              </button>
             </div>
           </div>
 

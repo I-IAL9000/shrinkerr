@@ -35,9 +35,9 @@ export default function AudioTrackRow({ track, onToggle }: AudioTrackRowProps) {
       <input
         type="checkbox"
         checked={!track.keep}
-        readOnly
-        onClick={(e) => { e.stopPropagation(); onToggle(track.stream_index); }}
-        style={{ accentColor: "var(--accent)" }}
+        onChange={() => onToggle(track.stream_index)}
+        onClick={(e) => e.stopPropagation()}
+        style={{ accentColor: "var(--accent)", cursor: "pointer" }}
       />
       <span style={removeStyle}>{track.language}</span>
       <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>

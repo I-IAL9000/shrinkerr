@@ -5,6 +5,8 @@ import DashboardPage from "./pages/DashboardPage";
 import ScannerPage from "./pages/ScannerPage";
 import QueuePage from "./pages/QueuePage";
 import LogsPage from "./pages/LogsPage";
+import ActivityPage from "./pages/ActivityPage";
+import NodesPage from "./pages/NodesPage";
 import SchedulePage from "./pages/SchedulePage";
 import SettingsPage from "./pages/SettingsPage";
 import MonitorPage from "./pages/MonitorPage";
@@ -21,33 +23,12 @@ function VersionBadge() {
   }, []);
 
   if (!version) return null;
-  const isBeta = version.current.includes("beta");
-
   return (
-    <div style={{ padding: "12px 20px", marginTop: "auto" }} className="version-badge">
-      {version.update_available && (
-        <div style={{
-          fontSize: 11, padding: "4px 8px", marginBottom: 8, borderRadius: 4,
-          background: "rgba(145,53,255,0.15)", color: "var(--accent)",
-          display: "flex", alignItems: "center", gap: 6,
-        }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2v10m0 0l3-3m-3 3l-3-3M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
-          </svg>
-          v{version.latest} available
-        </div>
-      )}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <img src="/squeezarr-logo.svg" alt="" width="14" height="14" style={{ opacity: 0.4, marginTop: 2 }} />
-        <div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500 }}>
-            Squeezarr{isBeta ? " Beta" : ""}
-          </div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.5 }}>
-            v{version.current}
-          </div>
-        </div>
-      </div>
+    <div style={{ padding: "12px 0 24px", marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} className="version-badge">
+      <img src="/favicon.svg" alt="" width="16" height="17" />
+      <span style={{ fontSize: 10, color: "#5c6778" }}>
+        Shrinkerr v{version.current}
+      </span>
     </div>
   );
 }
@@ -111,47 +92,83 @@ const SETTINGS_SECTIONS = [
   { id: "subtitles", label: "Subtitles" },
   { id: "connections", label: "Connections" },
   { id: "rules", label: "Rules" },
+  { id: "renaming", label: "Renaming" },
   { id: "automation", label: "Automation" },
   { id: "system", label: "System" },
 ];
 
-const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", end: true, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> },
-  { to: "/scanner", label: "Scanner", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>, badge: true },
-  { to: "/queue", label: "Queue", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7h8M8 12h8M8 17h8"/></svg>, failedBadge: true },
-  { to: "/monitor", label: "Monitor", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 12l4-4"/><path d="M8 16h.01"/><path d="M12 16h.01"/><path d="M16 16h.01"/><path d="M6 12h.01"/><path d="M18 12h.01"/></svg> },
-  { to: "/logs", label: "Logs", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> },
-  { to: "/schedule", label: "Schedule", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-  { to: "/settings", label: "Settings", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg> },
+interface NavItem {
+  to: string;
+  label: string;
+  end?: boolean;
+  icon: string;
+  badge?: boolean;
+  failedBadge?: boolean;
+  section: string;
+}
+
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
+  {
+    label: "ENCODE",
+    items: [
+      { to: "/", label: "Dashboard", end: true, icon: "/icons/dashboard.svg", section: "ENCODE" },
+      { to: "/scanner", label: "Scanner", icon: "/icons/search.svg", badge: true, section: "ENCODE" },
+      { to: "/queue", label: "Queue", icon: "/icons/queue.svg", failedBadge: true, section: "ENCODE" },
+      { to: "/nodes", label: "Nodes", icon: "/icons/nodes.svg", section: "ENCODE" },
+    ],
+  },
+  {
+    label: "SYSTEM",
+    items: [
+      { to: "/monitor", label: "Monitor", icon: "/icons/monitor.svg", section: "SYSTEM" },
+      { to: "/activity", label: "Activity", icon: "/icons/activity.svg", section: "SYSTEM" },
+      { to: "/logs", label: "Logs", icon: "/icons/terminal.svg", section: "SYSTEM" },
+      { to: "/schedule", label: "Schedule", icon: "/icons/clock.svg", section: "SYSTEM" },
+    ],
+  },
+  {
+    label: "CONFIG",
+    items: [
+      { to: "/settings", label: "Settings", icon: "/icons/settings.svg", section: "CONFIG" },
+    ],
+  },
 ];
 
 function SidebarNavItems() {
   const location = useLocation();
   return (
     <>
-      {NAV_ITEMS.map(item => (
-        <React.Fragment key={item.to}>
-          <NavLink to={item.to} end={item.end} className={({isActive}) => `sidebar-link ${isActive ? "active" : ""}`}>
-            {item.icon} {item.label}{item.badge && <NewFileBadge />}{(item as any).failedBadge && <FailedJobBadge />}
-          </NavLink>
-          {item.to === "/settings" && location.pathname === "/settings" && (
-            <div className="settings-subnav">
-              {SETTINGS_SECTIONS.map(section => (
-                <a
-                  key={section.id}
-                  href={`#${section.id}`}
-                  className="settings-subnav-link"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    document.getElementById(section.id)?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                >
-                  {section.label}
-                </a>
-              ))}
-            </div>
-          )}
-        </React.Fragment>
+      {NAV_SECTIONS.map(section => (
+        <div key={section.label}>
+          <div className="sidebar-section-label">{section.label}</div>
+          {section.items.map(item => (
+            <React.Fragment key={item.to}>
+              <NavLink to={item.to} end={item.end} className={({isActive}) => `sidebar-link ${isActive ? "active" : ""}`}>
+                <img src={item.icon} alt="" width="18" height="18" />
+                {item.label}
+                {item.badge && <NewFileBadge />}
+                {item.failedBadge && <FailedJobBadge />}
+              </NavLink>
+              {item.to === "/settings" && location.pathname === "/settings" && (
+                <div className="settings-subnav">
+                  {SETTINGS_SECTIONS.map(s => (
+                    <a
+                      key={s.id}
+                      href={`#${s.id}`}
+                      className="settings-subnav-link"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth" });
+                      }}
+                    >
+                      {s.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
       ))}
     </>
   );
@@ -265,8 +282,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-primary)" }}>
       <div style={{ background: "var(--bg-card)", padding: 32, borderRadius: 8, textAlign: "center", maxWidth: 360, width: "100%" }}>
-        <img src="/squeezarr-logo.svg" alt="" width="40" height="40" style={{ marginBottom: 16 }} />
-        <h2 style={{ color: "white", margin: "0 0 4px", fontSize: 20 }}>Squeezarr</h2>
+        <img src="/shrinkerr-logo.svg" alt="Shrinkerr" height="32" style={{ marginBottom: 16 }} />
         <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>Sign in to continue</div>
         <input
           type="text"
@@ -318,6 +334,26 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("squeezarr_theme", theme);
   }, [theme]);
+
+  // Update range slider fill color via inline background gradient
+  useEffect(() => {
+    const updateRange = (el: HTMLInputElement) => {
+      const min = parseFloat(el.min) || 0;
+      const max = parseFloat(el.max) || 100;
+      const val = parseFloat(el.value) || 0;
+      const pct = ((val - min) / (max - min)) * 100;
+      el.style.background = `linear-gradient(to right, #6860fe ${pct}%, #212533 ${pct}%)`;
+      el.style.borderRadius = "3px";
+    };
+    const handler = (e: Event) => { if ((e.target as HTMLElement)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "range") updateRange(e.target as HTMLInputElement); };
+    document.addEventListener("input", handler);
+    // Init existing sliders + re-init on navigation
+    const initSliders = () => document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(updateRange);
+    setTimeout(initSliders, 100);
+    const observer = new MutationObserver(() => setTimeout(initSliders, 50));
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => { document.removeEventListener("input", handler); observer.disconnect(); };
+  }, []);
 
   const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
@@ -382,51 +418,18 @@ export default function App() {
         {/* Desktop sidebar */}
         <aside className="sidebar sidebar-desktop">
           <div className="sidebar-logo">
-            <img src="/squeezarr-logo.svg" alt="Squeezarr" width="32" height="32" style={{ flexShrink: 0 }} />
-            <span style={{
-              background: "linear-gradient(90deg, #863BFF 0%, #863BFF 55%, #5564FB 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-              fontWeight: "bold",
-              fontSize: 24,
-            }}>Squeezarr</span>
+            <img src="/shrinkerr-logo.svg" alt="Shrinkerr" width="160" style={{ flexShrink: 0 }} />
           </div>
           <nav className="sidebar-nav">
             <SidebarNavItems />
           </nav>
           <VersionBadge />
-          <button
-            onClick={toggleTheme}
-            style={{
-              background: "none", border: "none", color: "var(--text-muted)",
-              cursor: "pointer", padding: "4px 20px 12px", margin: 0,
-              display: "flex", alignItems: "center", gap: 8, fontSize: 11,
-              transition: "color 0.15s", opacity: 0.7,
-            }}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          >
-            {theme === "dark" ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
         </aside>
 
         {/* Mobile header */}
         <header className="mobile-header">
           <div className="sidebar-logo" style={{ margin: 0, padding: 0 }}>
-            <img src="/squeezarr-logo.svg" alt="Squeezarr" width="20" height="20" style={{ flexShrink: 0 }} />
-            <span style={{
-              background: "linear-gradient(90deg, #863BFF 0%, #863BFF 55%, #5564FB 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-              fontWeight: "bold",
-              fontSize: 16,
-            }}>Squeezarr</span>
+            <img src="/shrinkerr-logo.svg" alt="Shrinkerr" height="22" style={{ flexShrink: 0 }} />
           </div>
           <MobileMenu />
         </header>
@@ -437,9 +440,11 @@ export default function App() {
             <Route path="/scanner" element={<ScannerPage scanProgress={scanProgress} onClearScanProgress={() => setScanProgress(null)} />} />
             <Route path="/queue" element={<QueuePage jobProgressMap={jobProgressMap} />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/nodes" element={<NodesPage />} />
+            <Route path="/activity" element={<ActivityPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/monitor" element={<MonitorPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings" element={<SettingsPage theme={theme} onToggleTheme={toggleTheme} />} />
           </Routes>
         </main>
       </div>

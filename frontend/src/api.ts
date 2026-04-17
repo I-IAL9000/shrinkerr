@@ -53,12 +53,18 @@ export const getFailedJobCount = () => apiFetch<{ count: number }>("/jobs/failed
 export const clearNewFileCount = () => apiFetch("/scan/clear-new", { method: "POST" });
 export const getScanResults = () => apiFetch<any[]>("/scan/results");
 export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
-export const getScanTree = (filter: string = "all") =>
-  apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`);
-export const getScanFiles = (folder: string, filter: string = "all") =>
-  apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`);
-export const getFilesByTitle = (prefix: string, filter: string = "all") =>
-  apiFetch<any[]>(`/scan/files-by-title?prefix=${encodeURIComponent(prefix)}&filter=${encodeURIComponent(filter)}`);
+export const getScanTree = (filter: string = "all", signal?: AbortSignal) =>
+  apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
+export const getScanFiles = (folder: string, filter: string = "all", signal?: AbortSignal) =>
+  apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`, { signal });
+export const getFilesByTitle = (prefix: string, filter: string = "all", signal?: AbortSignal) =>
+  apiFetch<any[]>(`/scan/files-by-title?prefix=${encodeURIComponent(prefix)}&filter=${encodeURIComponent(filter)}`, { signal });
+export const getScanFilesByPaths = (filePaths: string[], filter: string = "all", signal?: AbortSignal) =>
+  apiFetch<any[]>("/scan/files-by-paths", {
+    method: "POST",
+    body: JSON.stringify({ file_paths: filePaths, filter }),
+    signal,
+  });
 export const getScanResultsVersion = () => apiFetch<{ count: number; max_id: number }>("/scan/results-version");
 export const removeScanResult = (id: number) =>
   apiFetch(`/scan/results/${id}`, { method: "DELETE" });
@@ -106,6 +112,62 @@ export const addJobsFromScan = (filePaths: string[], priority: number = 0, overr
   apiFetch<{ job_ids: number[]; added: number }>("/jobs/add-from-scan", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority, override_rules: overrideRules, ...extra }) });
 export const addAllFromScan = (filter: string, priority: number = 0, overrideRules: boolean = false) =>
   apiFetch<{ job_ids: number[]; added: number }>("/jobs/add-from-scan", { method: "POST", body: JSON.stringify({ select_all: true, filter, priority, override_rules: overrideRules }) });
+export interface FileEvent {
+  id: number;
+  file_path: string;
+  event_type: string;
+  occurred_at: string;
+  summary: string;
+  details: any;
+}
+export const getFileHistory = (path: string, limit = 100) =>
+  apiFetch<{ events: FileEvent[] }>(`/files/history?path=${encodeURIComponent(path)}&limit=${limit}`);
+export const getActivity = (params: { event_type?: string; search?: string; since?: string; until?: string; limit?: number; offset?: number } = {}) => {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== "") qs.set(k, String(v));
+  }
+  return apiFetch<{ total: number; limit: number; offset: number; events: FileEvent[] }>(`/activity?${qs}`);
+};
+export interface SearchProperty {
+  label: string;
+  group: string;
+  type: "string" | "number" | "bool" | "enum";
+  ops: string[];
+  examples?: any[];
+  options?: any[];
+  option_labels?: Record<string, string>;
+}
+export interface SearchPredicate {
+  property: string;
+  op: string;
+  value?: any;
+  value2?: any;
+}
+export const getSearchProperties = () =>
+  apiFetch<Record<string, SearchProperty>>("/scan/search/properties");
+export const advancedSearch = (predicates: SearchPredicate[], matchMode: "all" | "any" = "all", limit = 5000) =>
+  apiFetch<{ total: number; file_paths: string[]; limit: number }>("/scan/search", {
+    method: "POST",
+    body: JSON.stringify({ predicates, match_mode: matchMode, limit }),
+  });
+
+export const queueHealthChecks = (filePaths: string[], mode: "quick" | "thorough" = "quick", filter?: string, selectAll?: boolean) =>
+  apiFetch<{ added: number; job_ids: number[]; mode: string }>("/jobs/health-check", {
+    method: "POST",
+    body: JSON.stringify({ file_paths: filePaths, mode, filter: filter || "all", select_all: !!selectAll }),
+  });
+export const clearPendingHealthChecks = () =>
+  apiFetch<{ deleted: number }>("/jobs/health-check/clear-pending", { method: "POST" });
+// Worker nodes
+import type { WorkerNode } from "./types";
+export const getNodes = () => apiFetch<{ nodes: WorkerNode[] }>("/nodes");
+export const removeNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}`, { method: "DELETE" });
+export const cancelNodeJob = (nodeId: string) => apiFetch(`/nodes/${nodeId}/cancel`, { method: "POST" });
+export const resetNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}/reset`, { method: "POST" });
+import type { NodeSettings } from "./types";
+export const updateNodeSettings = (nodeId: string, settings: NodeSettings) =>
+  apiFetch(`/nodes/${nodeId}/settings`, { method: "PATCH", body: JSON.stringify(settings) });
 export const getJobs = (status?: string, limit?: number, offset?: number) => {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
@@ -129,6 +191,88 @@ export const resolvePosterMetadata = (paths: string[]) =>
   apiFetch<Record<string, { title: string; year: string | null; poster_url: string | null; source: string }>>(
     "/posters/resolve", { method: "POST", body: JSON.stringify({ paths }) }
   );
+export interface TMDBSearchResult {
+  tmdb_id: number;
+  media_type: "movie" | "tv";
+  title: string;
+  year: string | null;
+  poster_url: string | null;
+  overview: string;
+  rating: number | null;
+}
+export const searchTMDB = (query: string, year?: string) =>
+  apiFetch<{ results: TMDBSearchResult[] }>("/posters/search", {
+    method: "POST",
+    body: JSON.stringify({ query, year }),
+  });
+export const overridePoster = (folderPath: string, tmdbId: number, mediaType: "movie" | "tv") =>
+  apiFetch<{ title: string; year: string | null; poster_url: string | null; media_type: string; rating: number | null; genres: string | null; country: string | null; source: string }>(
+    "/posters/override", {
+      method: "POST",
+      body: JSON.stringify({ folder_path: folderPath, tmdb_id: tmdbId, media_type: mediaType }),
+    }
+  );
+
+// ── Rename ──────────────────────────────────────────────────────────────────
+export interface RenameSettings {
+  enabled_auto: boolean;
+  rename_folders: boolean;
+  movie_file_pattern: string;
+  movie_folder_pattern: string;
+  tv_file_pattern: string;
+  tv_folder_pattern: string;
+  season_folder_pattern: string;
+  separator: "space" | "dot" | "dash" | "underscore";
+  case_mode: "default" | "lower" | "upper";
+  remove_illegal: boolean;
+}
+export interface RenameToken {
+  token: string;
+  example: string;
+  desc: string;
+}
+export interface RenameTokenCategory {
+  category: string;
+  media_type: "movie" | "tv" | "both";
+  tokens: RenameToken[];
+}
+export interface RenamePlan {
+  old_path: string;
+  new_path: string;
+  old_folder?: string | null;
+  new_folder?: string | null;
+  old_season_folder?: string | null;
+  new_season_folder?: string | null;
+  reason: string;
+  changed: boolean;
+  error?: string;
+}
+export const getRenameSettings = () =>
+  apiFetch<RenameSettings>("/rename/settings");
+export const saveRenameSettings = (s: Partial<RenameSettings>) =>
+  apiFetch<RenameSettings>("/rename/settings", { method: "PUT", body: JSON.stringify(s) });
+export const getRenameTokens = () =>
+  apiFetch<{ categories: RenameTokenCategory[] }>("/rename/tokens");
+export const previewRename = (filePaths: string[], override?: Partial<RenameSettings>) =>
+  apiFetch<{ plans: RenamePlan[] }>("/rename/preview", {
+    method: "POST",
+    body: JSON.stringify({ file_paths: filePaths, settings_override: override || null }),
+  });
+export const applyRename = (filePaths: string[], opts?: { rescan_arr?: boolean; rescan_plex?: boolean; override?: Partial<RenameSettings> }) =>
+  apiFetch<{ results: any[]; rescans: any }>("/rename/apply", {
+    method: "POST",
+    body: JSON.stringify({
+      file_paths: filePaths,
+      settings_override: opts?.override || null,
+      rescan_arr: opts?.rescan_arr ?? true,
+      rescan_plex: opts?.rescan_plex ?? true,
+    }),
+  });
+export const previewRenamePattern = (pattern: string, filePath?: string, settings?: Partial<RenameSettings>) =>
+  apiFetch<{ rendered: string; metadata: any }>("/rename/preview-pattern", {
+    method: "POST",
+    body: JSON.stringify({ pattern, file_path: filePath, settings: settings || {} }),
+  });
 export const startPosterPrefetch = () =>
   apiFetch<{ status: string }>("/posters/prefetch", { method: "POST" });
 export const getPosterPrefetchStatus = () =>
@@ -140,6 +284,96 @@ export const undoConversion = (jobId: number) =>
 export const getJobLog = (jobId: number) =>
   apiFetch<any>(`/jobs/${jobId}/log`);
 export const dismissSetup = () => apiFetch<any>("/stats/setup/dismiss", { method: "POST" });
+
+// *arr actions
+export interface ResearchResult {
+  success: boolean;
+  service?: "sonarr" | "radarr";
+  series?: string;
+  movie?: string;
+  episode_ids?: number[];
+  movie_id?: number;
+  blocklisted?: boolean;
+  blocklist_error?: string | null;
+  deleted?: boolean;
+  searched?: boolean;
+  error?: string;
+}
+export const researchFile = (filePath: string, deleteFile: boolean = true) =>
+  apiFetch<ResearchResult>("/arr/research", {
+    method: "POST",
+    body: JSON.stringify({ file_path: filePath, delete_file: deleteFile }),
+  });
+export const researchFilesBulk = (filePaths: string[], deleteFile: boolean = true) =>
+  apiFetch<{ total: number; succeeded: number; failed: number; results: (ResearchResult & { file_path: string })[] }>(
+    "/arr/research/bulk",
+    { method: "POST", body: JSON.stringify({ file_paths: filePaths, delete_file: deleteFile }) },
+  );
+
+// Plex Connect (PIN-based OAuth)
+export interface PlexUser {
+  email: string;
+  username: string;
+  title: string;
+  thumb: string;
+}
+export interface PlexConnection {
+  uri: string;
+  address: string;
+  port: number;
+  local: boolean;
+  relay: boolean;
+  protocol: string;
+  reachable?: boolean | null;
+}
+export interface PlexServer {
+  name: string;
+  client_identifier: string;
+  owned: boolean;
+  product_version: string;
+  platform: string;
+  connections: PlexConnection[];
+  recommended_uri?: string;
+}
+export interface PlexAuthStatus {
+  connected: boolean;
+  server_url: string;
+  server_name: string;
+  user: PlexUser | null;
+}
+
+export const plexAuthStart = () =>
+  apiFetch<{ pin_id: number; code: string; client_id: string; auth_url: string }>(
+    "/plex/auth/start",
+    { method: "POST" },
+  );
+export const plexAuthCheck = (pinId: number) =>
+  apiFetch<{ token: string | null; expired: boolean; user?: PlexUser | null }>(
+    "/plex/auth/check",
+    { method: "POST", body: JSON.stringify({ pin_id: pinId }) },
+  );
+export const plexAuthResources = (token: string) =>
+  apiFetch<{ servers: PlexServer[] }>(
+    "/plex/auth/resources",
+    { method: "POST", body: JSON.stringify({ token }) },
+  );
+export const plexAuthSave = (token: string, serverUrl: string, serverName?: string, serverClientId?: string) =>
+  apiFetch<{ success: boolean }>(
+    "/plex/auth/save",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        token,
+        server_url: serverUrl,
+        server_name: serverName || "",
+        server_client_id: serverClientId || "",
+      }),
+    },
+  );
+export const plexAuthDisconnect = () =>
+  apiFetch<{ success: boolean }>("/plex/auth/disconnect", { method: "POST" });
+export const plexAuthStatus = () =>
+  apiFetch<PlexAuthStatus>("/plex/auth/status");
 
 // Estimation & Export
 export const estimateJobs = (filePaths: string[], overrideRules: boolean = false, overrides?: Record<string, any>) =>
@@ -157,7 +391,7 @@ export const cancelCurrentJob = (jobId?: number) =>
 export const removeJob = (id: number) =>
   apiFetch(`/jobs/${id}`, { method: "DELETE" });
 export const retryJob = (id: number) =>
-  apiFetch(`/jobs/${id}/retry`, { method: "POST" });
+  apiFetch<{ status: string; job_id: number; message?: string; new_path?: string }>(`/jobs/${id}/retry`, { method: "POST" });
 export const reorderJobs = (jobIds: number[]) =>
   apiFetch("/jobs/reorder", { method: "POST", body: JSON.stringify({ job_ids: jobIds }) });
 export const clearCompleted = () =>
@@ -240,10 +474,14 @@ export const updateEncodingSettings = (settings: any) =>
   });
 
 // API key testing
-export const testApiKey = (service: "tmdb" | "tvdb" | "plex" | "sonarr" | "radarr") =>
+export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "sonarr" | "radarr") =>
   apiFetch<{ success: boolean; error: string | null; version?: string }>("/settings/test-api", {
     method: "POST", body: JSON.stringify({ service })
   });
+
+// Jellyfin sync
+export const syncJellyfinMetadata = () =>
+  apiFetch<any>("/rules/sync-jellyfin", { method: "POST" });
 
 // WebSocket hook
 export function useWebSocket(onMessage: (msg: WSMessage) => void) {

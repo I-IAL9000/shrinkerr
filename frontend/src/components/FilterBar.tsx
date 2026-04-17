@@ -9,7 +9,6 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "all", label: "All" },
   { key: "new", label: "New" },
   { key: "needs_conversion", label: "Needs conversion" },
-  { key: "large_files", label: "Large (>10GB)" },
   { key: "high_bitrate", label: "High bitrate" },
   { key: "low_bitrate", label: "Low bitrate" },
   { key: "sub_cleanup", label: "Subtitle cleanup" },
@@ -30,6 +29,11 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "res_1080p", label: "1080p" },
   { key: "res_720p", label: "720p" },
   { key: "res_sd", label: "SD" },
+  // Size group
+  { key: "_size", label: "Size:", group: "divider" },
+  { key: "size_small", label: "Small (<5 GB)" },
+  { key: "size_medium", label: "Medium (5-10 GB)" },
+  { key: "size_large", label: "Large (>10 GB)" },
   // Audio group
   { key: "_audio", label: "Audio:", group: "divider" },
   { key: "audio_cleanup", label: "Audio cleanup" },
@@ -67,7 +71,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
   const isAll = activeFilters.length === 0 || (activeFilters.length === 1 && activeFilters[0] === "all");
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16, alignItems: "center" }}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 24, alignItems: "center" }}>
       {FILTERS.map((f) => {
         if (f.key === "new" && (!newCount || newCount <= 0)) return null;
         if (f.group === "divider") {
@@ -90,7 +94,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
             {f.label}
             {count != null && count > 0 && (
               <span style={{
-                background: f.key === "new" ? "var(--accent)" : "rgba(145,53,255,0.3)",
+                background: f.key === "new" ? "var(--accent)" : "rgba(104,96,254,0.3)",
                 color: f.key === "new" ? "white" : "var(--text-secondary)",
                 fontSize: 10, fontWeight: "bold",
                 padding: "1px 6px", borderRadius: 8,

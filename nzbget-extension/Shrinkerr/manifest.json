@@ -1,34 +1,34 @@
 {
-  "main": "main.py",
-  "name": "Squeezarr",
+  "main": "Shrinkerr.py",
+  "name": "Shrinkerr",
   "homepage": "",
   "kind": "POST-PROCESSING",
-  "displayName": "Squeezarr Post-Processing",
+  "displayName": "Shrinkerr Post-Processing",
   "version": "1.0.0",
-  "author": "Squeezarr",
+  "author": "Shrinkerr",
   "license": "MIT",
-  "about": "Compress media files via Squeezarr before Sonarr imports them. Only processes shows tagged in Sonarr.",
+  "about": "Compress media files via Shrinkerr before Sonarr imports them. Only processes shows tagged in Sonarr.",
   "description": [
     "After NZBGet completes a download, this extension checks Sonarr for a matching tag.",
-    "If the tag matches, it sends the file to Squeezarr for HEVC conversion.",
+    "If the tag matches, it sends the file to Shrinkerr for HEVC conversion.",
     "The compressed file is then picked up by Sonarr for import.",
     "",
-    "Requires: Squeezarr running and accessible, Sonarr API access."
+    "Requires: Shrinkerr running and accessible, Sonarr API access."
   ],
   "requirements": ["Python 3.8+"],
   "options": [
     {
-      "name": "SqueezarrUrl",
-      "displayName": "Squeezarr URL",
+      "name": "ShrinkerrUrl",
+      "displayName": "Shrinkerr URL",
       "value": "http://localhost:6680",
-      "description": ["URL of your Squeezarr instance"],
+      "description": ["URL of your Shrinkerr instance"],
       "select": []
     },
     {
-      "name": "SqueezarrApiKey",
-      "displayName": "Squeezarr API Key",
+      "name": "ShrinkerrApiKey",
+      "displayName": "Shrinkerr API Key",
       "value": "",
-      "description": ["API key for Squeezarr (leave empty if no auth)"],
+      "description": ["API key for Shrinkerr (leave empty if no auth)"],
       "select": []
     },
     {
@@ -63,7 +63,7 @@
       "name": "Priority",
       "displayName": "Queue Priority",
       "value": "High",
-      "description": ["Priority for Squeezarr queue"],
+      "description": ["Priority for Shrinkerr queue"],
       "select": ["Normal", "High", "Highest"]
     },
     {
@@ -71,7 +71,7 @@
       "displayName": "Wait for Conversion",
       "value": "Yes",
       "description": [
-        "Yes: Script waits until Squeezarr finishes converting (blocks Sonarr import until done).",
+        "Yes: Script waits until Shrinkerr finishes converting (blocks Sonarr import until done).",
         "No: Script queues the file and exits immediately (Sonarr may import before conversion)."
       ],
       "select": ["Yes", "No"]
@@ -82,7 +82,7 @@
       "name": "ConnectionTest",
       "action": "Send Test",
       "displayName": "Test Connection",
-      "description": ["Tests connection to Squeezarr and Sonarr"]
+      "description": ["Tests connection to Shrinkerr and Sonarr"]
     }
   ],
   "taskTime": ""

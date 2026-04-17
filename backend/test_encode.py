@@ -91,13 +91,13 @@ async def run_test_encode(
         _tasks[task_id]["progress"] = progress
         if ws_manager:
             try:
-                await ws_manager.broadcast(json.dumps({
+                await ws_manager.broadcast({
                     "type": "test_encode_progress",
                     "task_id": task_id,
                     "step": step,
                     "progress": round(progress, 1),
                     "status": "running",
-                }))
+                })
             except Exception:
                 pass
 
@@ -110,7 +110,7 @@ async def run_test_encode(
             raise ValueError(f"File too short or probe failed (duration={probe.get('duration') if probe else None})")
 
         duration = probe["duration"]
-        # Start at 33% of duration (avoids intros/credits)
+        # Sample from 33% into the file (deterministic, avoids intros/credits)
         start_time = max(0, duration * 0.33)
         sample_dur = min(sample_seconds, duration - start_time)
 
@@ -209,7 +209,7 @@ async def run_test_encode(
             await _send_progress("analyzing", 90)
             vmaf_json = TEMP_DIR / f"{task_id}_vmaf.json"
             vmaf_cmd = [
-                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "ffmpeg", "-y", "-hide_banner", "-progress", "pipe:1",
                 "-i", str(enc_path),
                 "-i", str(orig_path),
                 "-lavfi", f"libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path={vmaf_json}",
@@ -217,10 +217,24 @@ async def run_test_encode(
             ]
             vmaf_proc = await asyncio.create_subprocess_exec(
                 *vmaf_cmd,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-            await asyncio.wait_for(vmaf_proc.communicate(), timeout=300)
+            # Track VMAF progress (90% → 100%)
+            if vmaf_proc.stdout:
+                while True:
+                    line = await vmaf_proc.stdout.readline()
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace").strip()
+                    if decoded.startswith("out_time_us=") and sample_dur > 0:
+                        try:
+                            us = int(decoded.split("=")[1])
+                            pct = min(99, 90 + (us / (sample_dur * 1_000_000)) * 10)
+                            await _send_progress("analyzing", pct)
+                        except (ValueError, ZeroDivisionError):
+                            pass
+            await vmaf_proc.wait()
 
             if vmaf_json.exists():
                 try:
@@ -236,14 +250,12 @@ async def run_test_encode(
 
             if vmaf_score is not None:
                 vmaf_score = round(vmaf_score, 1)
-                if vmaf_score >= 95:
+                if vmaf_score >= 93:
                     vmaf_label = "Excellent"
-                elif vmaf_score >= 90:
-                    vmaf_label = "Great"
-                elif vmaf_score >= 85:
+                elif vmaf_score >= 87:
                     vmaf_label = "Good"
                 elif vmaf_score >= 80:
-                    vmaf_label = "Acceptable"
+                    vmaf_label = "Fair"
                 else:
                     vmaf_label = "Poor"
 
@@ -268,11 +280,11 @@ async def run_test_encode(
 
         if ws_manager:
             try:
-                await ws_manager.broadcast(json.dumps({
+                await ws_manager.broadcast({
                     "type": "test_encode_complete",
                     "task_id": task_id,
                     "result": result,
-                }))
+                })
             except Exception:
                 pass
 
@@ -287,11 +299,11 @@ async def run_test_encode(
         _tasks[task_id] = error_result
         if ws_manager:
             try:
-                await ws_manager.broadcast(json.dumps({
+                await ws_manager.broadcast({
                     "type": "test_encode_complete",
                     "task_id": task_id,
                     "result": error_result,
-                }))
+                })
             except Exception:
                 pass
         return error_result

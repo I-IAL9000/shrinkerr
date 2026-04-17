@@ -1,12 +1,13 @@
 import asyncio
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from backend.database import DB_PATH
+from backend.database import DB_PATH, connect_db
 from backend.models import ScanRequest
 from backend.scanner import scan_directory
 from backend.websocket import ws_manager
@@ -63,8 +64,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -76,13 +77,21 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        scan_timestamp=excluded.scan_timestamp,
                        removed_from_list=0,
                        file_mtime=excluded.file_mtime,
-                       new_detected_at=excluded.new_detected_at,
+                       -- Only bump new_detected_at when mark_new=True AND this is a re-add
+                       -- (existing row had removed_from_list=1). Otherwise preserve the
+                       -- original detection time so converted/renamed files don't
+                       -- mass-flip to "new" when the watcher re-sees them.
+                       new_detected_at = CASE
+                           WHEN ? = 1 AND scan_results.removed_from_list = 1 THEN excluded.new_detected_at
+                           ELSE scan_results.new_detected_at
+                       END,
                        duration=excluded.duration,
                        probe_status=excluded.probe_status,
                        video_height=excluded.video_height,
                        has_removable_tracks_flag=excluded.has_removable_tracks_flag,
                        has_removable_subs_flag=excluded.has_removable_subs_flag,
-                       has_lossless_audio_flag=excluded.has_lossless_audio_flag
+                       has_lossless_audio_flag=excluded.has_lossless_audio_flag,
+                       has_external_subs_flag=excluded.has_external_subs_flag
                 """,
                 (
                     scanned.file_path,
@@ -100,9 +109,11 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     scanned.duration,
                     getattr(scanned, 'probe_status', 'ok'),
                     getattr(scanned, 'video_height', 0),
-                    has_removable,
+                    1 if (has_removable or getattr(scanned, 'needs_audio_reorder', False)) else 0,
                     has_removable_subs,
                     has_lossless,
+                    1 if getattr(scanned, 'has_external_subs', False) else 0,
+                    is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
         db.commit()
@@ -221,9 +232,16 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                 try:
                     cur = db.execute(
                         """UPDATE scan_results SET converted = 1
-                           WHERE converted = 0 AND file_path IN (
-                               SELECT file_path FROM jobs
-                               WHERE status = 'completed' AND job_type IN ('convert', 'combined')
+                           WHERE converted = 0 AND (
+                               file_path IN (
+                                   SELECT file_path FROM jobs
+                                   WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
+                               )
+                               OR file_path IN (
+                                   SELECT original_file_path FROM jobs
+                                   WHERE status = 'completed' AND job_type IN ('convert', 'combined')
+                                   AND original_file_path IS NOT NULL AND space_saved > 0
+                               )
                            )"""
                     )
                     if cur.rowcount > 0:
@@ -401,6 +419,106 @@ async def _run_scan(paths: list[str]) -> None:
         except Exception as exc:
             print(f"[SCANNER] Poster prefetch skipped: {exc}", flush=True)
 
+        # Auto health-check newly-scanned files inline (NOT via the conversion queue)
+        try:
+            db_hc = await connect_db()
+            try:
+                async with db_hc.execute(
+                    "SELECT value FROM settings WHERE key = 'health_check_on_scan'"
+                ) as cur:
+                    row = await cur.fetchone()
+                    raw = (str(row["value"]).lower() if row else "off")
+                    hc_mode = {"true": "quick", "false": "off"}.get(raw, raw)
+                    if hc_mode not in ("quick", "thorough"):
+                        hc_mode = "off"
+                unchecked: list[str] = []
+                if hc_mode != "off":
+                    # Only check files DETECTED in the last 24h, capped for safety.
+                    HC_BATCH_CAP = 2000
+                    async with db_hc.execute(
+                        "SELECT file_path FROM scan_results "
+                        "WHERE removed_from_list = 0 AND health_status IS NULL "
+                        "AND COALESCE(probe_status, 'ok') = 'ok' "
+                        "AND new_detected_at IS NOT NULL "
+                        "AND new_detected_at > datetime('now', '-1 day') "
+                        "ORDER BY new_detected_at DESC LIMIT ?",
+                        (HC_BATCH_CAP,),
+                    ) as cur:
+                        unchecked = [r["file_path"] for r in await cur.fetchall()]
+            finally:
+                await db_hc.close()
+
+            if hc_mode != "off" and unchecked:
+                from backend.health_check import run_check
+                from backend.file_events import log_event, EVENT_HEALTH_CHECK
+                from datetime import datetime, timezone
+                total = len(unchecked)
+                print(f"[SCANNER] Running inline {hc_mode} health check on {total} new file(s)", flush=True)
+                # Open one DB connection for the whole pass
+                hc_db = await connect_db()
+                try:
+                    for idx, fp in enumerate(unchecked):
+                        # Respect scan cancel
+                        if os.path.exists(_scan_cancel_file):
+                            print("[SCANNER] Health-check phase cancelled", flush=True)
+                            break
+                        # Stream progress on the same scan_progress channel
+                        await ws_manager.send_scan_progress(
+                            status=f"health_check_{hc_mode}",
+                            current_file=fp,
+                            total=total,
+                            probed=idx,
+                        )
+                        try:
+                            result = await run_check(fp, mode=hc_mode)
+                        except Exception as exc:
+                            print(f"[SCANNER] Health check error on {fp}: {exc}", flush=True)
+                            continue
+                        status = result.get("status", "healthy")
+                        errors = result.get("errors", [])
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        try:
+                            await hc_db.execute(
+                                "UPDATE scan_results SET health_status = ?, health_errors_json = ?, "
+                                "health_checked_at = ?, health_check_type = ? WHERE file_path = ?",
+                                (
+                                    status,
+                                    json.dumps(errors) if errors else None,
+                                    now_iso,
+                                    hc_mode,
+                                    fp,
+                                ),
+                            )
+                            await hc_db.commit()
+                        except Exception as exc:
+                            print(f"[SCANNER] Failed to persist health status for {fp}: {exc}", flush=True)
+                        # Only log corrupt files to the Activity feed — healthy ones are noise
+                        if status == "corrupt":
+                            try:
+                                await log_event(
+                                    fp, EVENT_HEALTH_CHECK,
+                                    f"Health check: corrupt ({hc_mode})",
+                                    {
+                                        "status": status, "check_type": hc_mode,
+                                        "duration_seconds": result.get("duration_seconds"),
+                                        "errors": errors[:5] if errors else None,
+                                    },
+                                )
+                            except Exception:
+                                pass
+                    # Final progress ping
+                    await ws_manager.send_scan_progress(
+                        status="health_check_complete",
+                        current_file="",
+                        total=total,
+                        probed=total,
+                    )
+                    print(f"[SCANNER] Health-check phase complete ({total} file(s))", flush=True)
+                finally:
+                    await hc_db.close()
+        except Exception as exc:
+            print(f"[SCANNER] Inline health-check skipped: {exc}", flush=True)
+
     except asyncio.CancelledError:
         with open(_scan_cancel_file, "w") as f:
             f.write("cancel")
@@ -505,7 +623,7 @@ async def get_scan_stats():
                 SUM(has_lossless_audio_flag) as lossless_audio,
                 SUM(converted) as converted,
                 SUM(CASE WHEN dup_count > 1 THEN 1 ELSE 0 END) as duplicates,
-                SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' THEN 1 ELSE 0 END) as corrupt,
+                SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt' THEN 1 ELSE 0 END) as corrupt,
                 SUM(CASE WHEN video_height >= 2000 THEN 1 ELSE 0 END) as res_4k,
                 SUM(CASE WHEN video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
                 SUM(CASE WHEN video_height >= 600 AND video_height < 900 THEN 1 ELSE 0 END) as res_720p,
@@ -532,6 +650,12 @@ async def get_scan_stats():
         x265 = row["x265"] or 0
         av1 = row["av1"] or 0
 
+        # Converted count from jobs table (same logic as dashboard)
+        async with db.execute(
+            "SELECT COUNT(*) as cnt FROM jobs WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
+        ) as cur:
+            converted_from_jobs = (await cur.fetchone())["cnt"] or 0
+
         # Counts that need Python-side computation (ignored, queued, bitrate-based)
         ignored_count = 0
         queued_count = 0
@@ -544,6 +668,9 @@ async def get_scan_stats():
         watchlist_count = 0
         estimated_savings = 0
         res_sd_fallback = 0
+        size_small_count = 0
+        size_medium_count = 0
+        size_large_count = 0
         src_remux_count = 0
         src_bluray_count = 0
         src_webdl_count = 0
@@ -697,6 +824,11 @@ async def get_scan_stats():
                     if idx >= 0 and fp.startswith(watchlist_sorted[idx]):
                         watchlist_count += 1
 
+                # Size buckets
+                if sz < 5 * (1024 ** 3): size_small_count += 1
+                elif sz <= 10 * (1024 ** 3): size_medium_count += 1
+                else: size_large_count += 1
+
                 # Source detection
                 fn = fp.lower()
                 if "remux" in fn: src_remux_count += 1
@@ -726,7 +858,7 @@ async def get_scan_stats():
                 "duplicates": row["duplicates"] or 0,
                 "corrupt": row["corrupt"] or 0,
                 "recent": recent_count,
-                "converted": row["converted"] or 0,
+                "converted": converted_from_jobs,
                 "queued": queued_count,
                 "x264": x264,
                 "x265": x265,
@@ -745,6 +877,9 @@ async def get_scan_stats():
                 "vmaf_excellent": row["vmaf_excellent"] or 0,
                 "vmaf_good": row["vmaf_good"] or 0,
                 "vmaf_poor": row["vmaf_poor"] or 0,
+                "size_small": size_small_count,
+                "size_medium": size_medium_count,
+                "size_large": size_large_count,
                 "src_remux": src_remux_count,
                 "src_bluray": src_bluray_count,
                 "src_webdl": src_webdl_count,
@@ -805,6 +940,21 @@ async def _build_enrichment_context(db) -> dict:
     async with db.execute("SELECT file_path FROM jobs WHERE status IN ('pending', 'running')") as cur:
         queued_paths = {r["file_path"] for r in await cur.fetchall()}
 
+    # Converted: collect both exact paths and parent folders from jobs with savings
+    converted_paths: set[str] = set()
+    converted_folders: set[str] = set()
+    async with db.execute(
+        "SELECT file_path, original_file_path FROM jobs WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
+    ) as cur:
+        for r in await cur.fetchall():
+            fp = r["file_path"]
+            converted_paths.add(fp)
+            converted_folders.add(fp.rsplit("/", 1)[0] + "/" if "/" in fp else "")
+            if r["original_file_path"]:
+                ofp = r["original_file_path"]
+                converted_paths.add(ofp)
+                converted_folders.add(ofp.rsplit("/", 1)[0] + "/" if "/" in ofp else "")
+
     # Plex watch status
     watched_sorted: list[str] = []
     unwatched_sorted: list[str] = []
@@ -834,6 +984,8 @@ async def _build_enrichment_context(db) -> dict:
         "rule_exempt_paths": rule_exempt_paths,
         "skip_prefixes_sorted": skip_prefixes_sorted,
         "queued_paths": queued_paths,
+        "converted_paths": converted_paths,
+        "converted_folders": converted_folders,
         "watched_sorted": watched_sorted,
         "unwatched_sorted": unwatched_sorted,
         "watchlist_sorted": watchlist_sorted,
@@ -894,6 +1046,55 @@ def _get_watch_status(fp: str, ctx: dict) -> str | None:
     return None
 
 
+def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
+    """Like _enrich_row but skips expensive json.loads on audio/subtitle track JSON.
+
+    Use this when you only need the filter-relevant fields (no track lists), e.g.
+    when resolving folder selections into file paths before queueing/estimating.
+    """
+    fp = row["file_path"]
+    sz = row["file_size"] or 0
+    dur = row["duration"] or 0
+
+    is_ignored = _check_ignored(fp, ctx)
+    bitrate = (sz * 8 / dur) if dur > 0 else 0
+    low_bitrate = bool(row.get("needs_conversion") and dur > 0 and bitrate < ctx["LOW_BITRATE_THRESHOLD"])
+
+    detected_at = row.get("new_detected_at")
+
+    return {
+        "id": row["id"],
+        "file_path": fp,
+        "file_size": sz,
+        "video_codec": row.get("video_codec"),
+        "needs_conversion": bool(row.get("needs_conversion")),
+        "native_language": row.get("native_language"),
+        "has_removable_tracks": bool(row.get("has_removable_tracks")),
+        "has_removable_subs": bool(row.get("has_removable_subs")),
+        "has_lossless_audio": bool(row.get("has_lossless_audio")),
+        "ignored": is_ignored,
+        "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
+        "queued": fp in ctx["queued_paths"],
+        "converted": fp in ctx["converted_paths"] or (
+            not row.get("needs_conversion") and
+            (fp.rsplit("/", 1)[0] + "/" if "/" in fp else "") in ctx["converted_folders"]
+        ),
+        "low_bitrate": low_bitrate,
+        "duration": dur,
+        "file_mtime": row.get("file_mtime"),
+        "probe_status": row.get("probe_status", "ok"),
+        "video_height": row.get("video_height", 0),
+        "plex_watch_status": _get_watch_status(fp, ctx),
+        "duplicate_count": row.get("duplicate_count", 0),
+        "duplicate_group": row.get("duplicate_group"),
+        "vmaf_score": row.get("vmaf_score"),
+        "language_source": row.get("language_source", "heuristic"),
+        "health_status": row.get("health_status"),
+        "health_check_type": row.get("health_check_type"),
+        "health_checked_at": row.get("health_checked_at"),
+    }
+
+
 def _enrich_row(row: dict, ctx: dict) -> dict:
     """Enrich a scan_results row with computed fields (ignored, queued, watch status, etc.)."""
     fp = row["file_path"]
@@ -919,7 +1120,10 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "ignored": is_ignored,
         "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
         "queued": fp in ctx["queued_paths"],
-        "converted": bool(row.get("converted")),
+        "converted": fp in ctx["converted_paths"] or (
+            not row.get("needs_conversion") and
+            (fp.rsplit("/", 1)[0] + "/" if "/" in fp else "") in ctx["converted_folders"]
+        ),
         "low_bitrate": low_bitrate,
         "duration": dur,
         "file_mtime": row.get("file_mtime"),
@@ -945,12 +1149,14 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
     COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
     vmaf_score,
+    health_status, health_check_type, health_checked_at,
     COALESCE(dup_count, 0) as duplicate_count,
     dup_group as duplicate_group"""
 
 _SCAN_WHERE = """removed_from_list = 0
     AND file_path NOT LIKE '%%.converting.%%'
-    AND file_path NOT LIKE '%%.remuxing.%%'"""
+    AND file_path NOT LIKE '%%.remuxing.%%'
+    AND file_path NOT LIKE '%%/._%%'"""
 
 
 def _matches_filter(enriched: dict, filter_name: str) -> bool:
@@ -1007,7 +1213,7 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     if filter_name == "duplicates":
         return (f.get("duplicate_count") or 0) > 1
     if filter_name == "corrupt":
-        return f.get("probe_status", "ok") != "ok"
+        return f.get("probe_status", "ok") != "ok" or f.get("health_status") == "corrupt"
     if filter_name == "recent":
         mt = f.get("file_mtime")
         if mt:
@@ -1022,11 +1228,23 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
             return "2160p" in fn or "4k" in fn or "uhd" in fn
         return False
     if filter_name == "res_1080p":
-        return 900 <= vh < 1400
+        if 900 <= vh < 1400:
+            return True
+        # 2.40:1 BluRays stored as 1920x800 have vh < 900 but filename says "1080p"
+        fn = f.get("file_path", "").lower()
+        return "1080p" in fn and vh < 1400
     if filter_name == "res_720p":
-        return 600 <= vh < 900
+        if not (600 <= vh < 900):
+            return False
+        # Exclude HD-labeled files that happen to have vh < 900 due to aspect ratio
+        fn = f.get("file_path", "").lower()
+        return "1080p" not in fn and "2160p" not in fn and "4k" not in fn and "uhd" not in fn
     if filter_name == "res_sd":
-        return 0 < vh < 600
+        if not (0 < vh < 600):
+            return False
+        fn = f.get("file_path", "").lower()
+        return ("720p" not in fn and "1080p" not in fn
+                and "2160p" not in fn and "4k" not in fn and "uhd" not in fn)
     if filter_name == "plex_watched":
         return f.get("plex_watch_status") == "watched"
     if filter_name == "plex_unwatched":
@@ -1041,6 +1259,14 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return vs is not None and 87 <= vs < 93
     if filter_name == "vmaf_poor":
         return vs is not None and vs < 87
+    # Size filters
+    file_size = f.get("file_size") or 0
+    if filter_name == "size_small":
+        return file_size < 5 * (1024 ** 3)
+    if filter_name == "size_medium":
+        return 5 * (1024 ** 3) <= file_size <= 10 * (1024 ** 3)
+    if filter_name == "size_large":
+        return file_size > 10 * (1024 ** 3)
     # Source filters (match against file path)
     fp_lower = f.get("file_path", "").lower()
     if filter_name == "src_remux":
@@ -1064,31 +1290,292 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     return True
 
 
+# Filters that can be pushed into SQL WHERE clauses for the tree endpoint.
+# These avoid loading+enriching every row just to discard most of them.
+def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
+    """Build a SQL WHERE fragment for a single filter token.
+
+    Returns (sql_fragment, params, python_filters_still_needed).
+    Any filter not pushed into SQL is added to python_filters_still_needed
+    and will be applied in Python after the query runs.
+    """
+    sql = ""
+    params: list = []
+    needs_python: set = set()
+
+    f = filter_name.strip()
+    if f in ("all", ""):
+        return "", [], set()
+
+    # Simple single-column filters (all have supporting indexes)
+    if f == "converted":
+        # Handled specially in the endpoint — requires folder set from jobs table
+        needs_python = {f}
+        return "", [], needs_python
+    elif f == "x264":
+        sql = "AND (LOWER(video_codec) LIKE '%264%' OR LOWER(video_codec) LIKE '%avc%')"
+    elif f == "x265":
+        sql = "AND (LOWER(video_codec) LIKE '%265%' OR LOWER(video_codec) LIKE '%hevc%')"
+    elif f == "av1":
+        sql = "AND LOWER(video_codec) LIKE '%av1%'"
+    elif f == "misc_codec":
+        sql = ("AND LOWER(video_codec) NOT LIKE '%264%' "
+               "AND LOWER(video_codec) NOT LIKE '%avc%' "
+               "AND LOWER(video_codec) NOT LIKE '%265%' "
+               "AND LOWER(video_codec) NOT LIKE '%hevc%' "
+               "AND LOWER(video_codec) NOT LIKE '%av1%'")
+    elif f == "res_4k":
+        # SQL handles >= 1400; fall back to filename heuristic in Python for vh=0 rows
+        sql = "AND (video_height >= 1400 OR video_height IS NULL OR video_height = 0)"
+        needs_python = {f}  # still refine in Python for vh=0 heuristic
+    elif f == "res_1080p":
+        # A file is "1080p" if either:
+        #   - video_height is in the 1080p range (900–1399), OR
+        #   - the filename says "1080p" and height is below 4K
+        # This catches 2.40:1 BluRays stored as 1920x800.
+        sql = ("AND (video_height BETWEEN 900 AND 1399 "
+               "OR (LOWER(file_path) LIKE '%1080p%' AND (video_height IS NULL OR video_height < 1400)))")
+    elif f == "res_720p":
+        # 720p range, but EXCLUDE files whose filename clearly says 1080p/2160p/4K
+        # (these are shorter-aspect HD films stored with height <900)
+        sql = ("AND video_height BETWEEN 600 AND 899 "
+               "AND LOWER(file_path) NOT LIKE '%1080p%' "
+               "AND LOWER(file_path) NOT LIKE '%2160p%' "
+               "AND LOWER(file_path) NOT LIKE '%4k%' "
+               "AND LOWER(file_path) NOT LIKE '%uhd%'")
+    elif f == "res_sd":
+        # SD: below 720p, exclude any HD-labeled files
+        sql = ("AND video_height > 0 AND video_height < 600 "
+               "AND LOWER(file_path) NOT LIKE '%720p%' "
+               "AND LOWER(file_path) NOT LIKE '%1080p%' "
+               "AND LOWER(file_path) NOT LIKE '%2160p%' "
+               "AND LOWER(file_path) NOT LIKE '%4k%' "
+               "AND LOWER(file_path) NOT LIKE '%uhd%'")
+    elif f == "large_files":
+        sql = "AND file_size > ?"
+        params.append(10 * 1024 ** 3)
+    elif f == "size_small":
+        sql = "AND file_size < ?"
+        params.append(5 * 1024 ** 3)
+    elif f == "size_medium":
+        sql = "AND file_size BETWEEN ? AND ?"
+        params.extend([5 * 1024 ** 3, 10 * 1024 ** 3])
+    elif f == "size_large":
+        sql = "AND file_size > ?"
+        params.append(10 * 1024 ** 3)
+    elif f == "duplicates":
+        sql = "AND COALESCE(dup_count, 0) > 1"
+    elif f == "lossless_audio":
+        sql = "AND COALESCE(has_lossless_audio_flag, 0) = 1"
+    elif f == "lossy_audio":
+        sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
+    elif f == "audio_cleanup":
+        sql = "AND COALESCE(has_removable_tracks_flag, 0) = 1"
+        needs_python = {f}  # still need to exclude ignored
+    elif f == "sub_cleanup":
+        sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
+        needs_python = {f}  # still need to exclude ignored
+    elif f == "corrupt":
+        sql = "AND (COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt')"
+    elif f == "recent":
+        # file_mtime is a unix timestamp (seconds). 24h = 86400s.
+        import time
+        sql = "AND file_mtime > ?"
+        params.append(time.time() - 86400)
+    elif f == "vmaf_excellent":
+        sql = "AND vmaf_score IS NOT NULL AND vmaf_score >= 93"
+    elif f == "vmaf_good":
+        sql = "AND vmaf_score IS NOT NULL AND vmaf_score >= 87 AND vmaf_score < 93"
+    elif f == "vmaf_poor":
+        sql = "AND vmaf_score IS NOT NULL AND vmaf_score < 87"
+    elif f == "needs_conversion":
+        # "needs_conversion AND NOT low_bitrate AND NOT ignored" — SQL filters the base,
+        # Python removes low-bitrate + ignored exceptions
+        sql = "AND needs_conversion != 0"
+        needs_python = {f}
+    elif f == "low_bitrate":
+        # Requires duration + bitrate calc — SQL can approximate
+        sql = "AND duration > 0 AND needs_conversion != 0"
+        needs_python = {f}
+    elif f == "high_bitrate":
+        sql = "AND duration > 0 AND needs_conversion != 0"
+        needs_python = {f}
+
+    # Source filters (filename-based, case-insensitive LIKE)
+    elif f == "src_remux":
+        sql = "AND LOWER(file_path) LIKE '%remux%'"
+    elif f == "src_bluray":
+        sql = ("AND (LOWER(file_path) LIKE '%bluray%' "
+               "OR LOWER(file_path) LIKE '%blu-ray%' "
+               "OR LOWER(file_path) LIKE '%blu.ray%' "
+               "OR LOWER(file_path) LIKE '%bdrip%' "
+               "OR LOWER(file_path) LIKE '%bdmv%') "
+               "AND LOWER(file_path) NOT LIKE '%remux%'")
+    elif f == "src_webdl":
+        sql = ("AND (LOWER(file_path) LIKE '%web-dl%' "
+               "OR LOWER(file_path) LIKE '%webdl%' "
+               "OR LOWER(file_path) LIKE '%webrip%')")
+    elif f == "src_hdtv":
+        sql = "AND LOWER(file_path) LIKE '%hdtv%'"
+    elif f == "src_dvd":
+        sql = "AND LOWER(file_path) LIKE '%dvd%'"
+
+    # Type filters (detect via bracketed ID conventions in path)
+    elif f == "type_movie":
+        sql = "AND LOWER(file_path) LIKE '%[tt%' AND LOWER(file_path) NOT LIKE '%[tvdb-%'"
+    elif f == "type_tv":
+        sql = "AND LOWER(file_path) LIKE '%[tvdb-%'"
+    elif f == "type_other":
+        sql = "AND LOWER(file_path) NOT LIKE '%[tt%' AND LOWER(file_path) NOT LIKE '%[tvdb-%'"
+
+    else:
+        # Filters that need Python enrichment (is_new, ignored, queued, plex_*)
+        needs_python = {f}
+
+    return sql, params, needs_python
+
+
+# Filters that require the expensive enrichment context (ignored/queued/plex tables)
+_ENRICHMENT_FILTERS = {
+    "new", "ignored", "queued", "plex_watched", "plex_unwatched", "plex_watchlist",
+    "needs_conversion", "audio_cleanup", "sub_cleanup", "low_bitrate", "high_bitrate",
+}
+
+
+async def _get_converted_folders(db) -> set[str]:
+    """Return the set of parent folder paths (with trailing slash) where Shrinkerr
+    has successfully converted at least one file. Used to infer that other HEVC
+    files in the same folder are 'already converted'."""
+    folders: set[str] = set()
+    async with db.execute(
+        "SELECT file_path, original_file_path FROM jobs "
+        "WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
+    ) as cur:
+        rows = await cur.fetchall()
+    for row in rows:
+        for fp in (row["file_path"], row["original_file_path"]):
+            if fp and "/" in fp:
+                folders.add(fp.rsplit("/", 1)[0] + "/")
+    return folders
+
+
 @router.get("/tree")
 async def get_scan_tree(filter: str = "all"):
-    """Return folder hierarchy with aggregated counts/sizes. ~200KB vs 15MB for full results.
+    """Return folder hierarchy with aggregated counts/sizes.
 
-    Each folder entry includes file_count, total_size, newest_mtime — enough for
-    the frontend to build and sort the tree without loading individual files.
+    Fast path: pushes simple filters (codec, resolution, size, converted, etc.) into
+    SQL, skips JSON parsing, and only builds the enrichment context when a filter
+    actually needs it (ignored/queued/plex_*).
     """
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db)
+        # Build SQL WHERE + figure out which filters still need Python
+        tokens = [t.strip() for t in filter.split(",") if t.strip() and t.strip() != "all"]
+        sql_extras = []
+        sql_params: list = []
+        python_filters: set = set()
+        for tok in tokens:
+            frag, params, py = _build_tree_sql_filter(tok)
+            if frag:
+                sql_extras.append(frag)
+                sql_params.extend(params)
+            python_filters |= py
 
-        async with db.execute(
-            f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} ORDER BY id ASC"
-        ) as cur:
+        need_ctx = bool(python_filters & _ENRICHMENT_FILTERS)
+        ctx = await _build_enrichment_context(db) if need_ctx else None
+
+        # Special handling for 'converted' — requires folder set from jobs table.
+        converted_folders: set[str] | None = None
+        if "converted" in python_filters:
+            converted_folders = await _get_converted_folders(db)
+            # Narrow in SQL: only rows where converted=1 OR the file's already in target format.
+            # The Python loop below does the folder membership check for the needs_conversion=0 case.
+            sql_extras.append("AND (converted = 1 OR needs_conversion = 0)")
+            # Keep 'converted' in python_filters so the loop applies the folder check
+
+        # Minimal column set — tree aggregation only needs path/size/mtime,
+        # plus any columns still referenced by remaining python_filters.
+        cols = """id, file_path, file_size, file_mtime, video_height, video_codec,
+                  needs_conversion, converted, duration,
+                  COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
+                  COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
+                  COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
+                  new_detected_at"""
+        where_extra = (" " + " ".join(sql_extras)) if sql_extras else ""
+
+        query = f"SELECT {cols} FROM scan_results WHERE {_SCAN_WHERE}{where_extra}"
+        async with db.execute(query, sql_params) as cur:
             rows = await cur.fetchall()
 
-        # Group by parent folder, applying filter
+        # Group by parent folder, applying any remaining Python filters
         folders: dict[str, dict] = {}
-        for row in rows:
-            enriched = _enrich_row(dict(row), ctx)
-            if not _matches_filter(enriched, filter):
-                continue
+        LOW_BR = ctx["LOW_BITRATE_THRESHOLD"] if ctx else 0
+        cutoff_24h = ctx["cutoff_24h"] if ctx else ""
+        HIGH_BR = 15_000_000
 
-            fp = enriched["file_path"]
+        for row in rows:
+            r = dict(row)
+            fp = r["file_path"]
+            sz = r["file_size"] or 0
+            dur = r["duration"] or 0
+
+            # Python-side filter checks (only for tokens SQL couldn't handle)
+            if python_filters:
+                bitrate = (sz * 8 / dur) if dur > 0 else 0
+                low_bitrate = bool(r.get("needs_conversion") and dur > 0 and bitrate < LOW_BR)
+                is_ignored = _check_ignored(fp, ctx) if ctx else False
+                skip = False
+                for pf in python_filters:
+                    if pf == "converted":
+                        # Shrinkerr converted it directly, OR it's already in target format
+                        # AND lives in a folder where at least one file was converted
+                        if r.get("converted"):
+                            continue
+                        parent = fp.rsplit("/", 1)[0] + "/" if "/" in fp else ""
+                        if not (not r.get("needs_conversion") and converted_folders and parent in converted_folders):
+                            skip = True; break
+                        continue
+                    if pf == "new":
+                        detected_at = r.get("new_detected_at")
+                        if not (detected_at and detected_at > cutoff_24h):
+                            skip = True; break
+                    elif pf == "ignored":
+                        if not is_ignored:
+                            skip = True; break
+                    elif pf == "queued":
+                        if fp not in ctx["queued_paths"]:
+                            skip = True; break
+                    elif pf == "needs_conversion":
+                        if not (r.get("needs_conversion") and not low_bitrate and not is_ignored):
+                            skip = True; break
+                    elif pf == "low_bitrate":
+                        if not (low_bitrate and not is_ignored):
+                            skip = True; break
+                    elif pf == "high_bitrate":
+                        if not (r.get("needs_conversion") and not is_ignored and bitrate > HIGH_BR):
+                            skip = True; break
+                    elif pf == "audio_cleanup":
+                        if not (r.get("has_removable_tracks") and not is_ignored):
+                            skip = True; break
+                    elif pf == "sub_cleanup":
+                        if not (r.get("has_removable_subs") and not is_ignored):
+                            skip = True; break
+                    elif pf == "res_4k":
+                        vh = r.get("video_height") or 0
+                        if vh >= 1400:
+                            continue
+                        fn = fp.lower()
+                        if not ("2160p" in fn or "4k" in fn or "uhd" in fn):
+                            skip = True; break
+                    elif pf in ("plex_watched", "plex_unwatched", "plex_watchlist"):
+                        want = pf.split("_", 1)[1]
+                        status = _get_watch_status(fp, ctx) if ctx else None
+                        if status != want:
+                            skip = True; break
+                if skip:
+                    continue
+
             parent = fp.rsplit("/", 1)[0] if "/" in fp else ""
             if parent not in folders:
                 folders[parent] = {
@@ -1097,19 +1584,18 @@ async def get_scan_tree(filter: str = "all"):
                     "total_size": 0,
                     "newest_mtime": 0,
                 }
-            f = folders[parent]
-            f["file_count"] += 1
-            f["total_size"] += enriched["file_size"]
-            mt = enriched.get("file_mtime") or 0
-            if mt > f["newest_mtime"]:
-                f["newest_mtime"] = mt
+            fd = folders[parent]
+            fd["file_count"] += 1
+            fd["total_size"] += sz
+            mt = r.get("file_mtime") or 0
+            if mt > fd["newest_mtime"]:
+                fd["newest_mtime"] = mt
 
         return {"folders": list(folders.values())}
     finally:
         await db.close()
 
 
-@router.get("/files")
 @router.get("/files-by-title")
 async def get_files_by_title(prefix: str, filter: str = "all"):
     """Return all enriched files under a title prefix (all seasons). Single DB call."""
@@ -1137,6 +1623,49 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
         await db.close()
 
 
+class _FilesByPathsBody(BaseModel):
+    file_paths: list[str]
+    filter: str = "all"
+
+
+@router.post("/files-by-paths")
+async def get_scan_files_by_paths(body: _FilesByPathsBody):
+    """Return enriched files for a given list of exact file paths.
+
+    Designed for advanced search: one HTTP call + one enrichment-context build,
+    instead of N parallel /files requests per folder. Each file is returned only
+    if it passes the given filter.
+    """
+    if not body.file_paths:
+        return []
+
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        ctx = await _build_enrichment_context(db)
+
+        # Chunk paths into batches of 500 to stay within SQLite variable limits
+        results = []
+        paths = list(body.file_paths)
+        for i in range(0, len(paths), 500):
+            chunk = paths[i:i + 500]
+            placeholders = ",".join("?" * len(chunk))
+            async with db.execute(
+                f"SELECT {_SCAN_SELECT_COLS} FROM scan_results "
+                f"WHERE {_SCAN_WHERE} AND file_path IN ({placeholders})",
+                chunk,
+            ) as cur:
+                rows = await cur.fetchall()
+            for row in rows:
+                enriched = _enrich_row(dict(row), ctx)
+                if _matches_filter(enriched, body.filter):
+                    results.append(enriched)
+        return results
+    finally:
+        await db.close()
+
+
+@router.get("/files")
 async def get_scan_files(folder: str, filter: str = "all"):
     """Return enriched files for a single folder. Typically 5-50 files per call."""
     db = await aiosqlite.connect(DB_PATH)

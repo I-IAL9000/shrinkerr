@@ -1,11 +1,11 @@
 {
-  "name": "Squeezarr",
-  "short_name": "Squeezarr",
+  "name": "Shrinkerr",
+  "short_name": "Shrinkerr",
   "description": "Media transcoding manager — convert x264 to x265 with NVENC",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d0b1a",
-  "theme_color": "#863BFF",
+  "background_color": "#11111a",
+  "theme_color": "#6860fe",
   "orientation": "any",
   "icons": [
     {

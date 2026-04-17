@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getSystemMetrics } from "../api";
+import { fmtNum } from "../fmt";
 
 function Gauge({ value, max, label, unit, size = 100, color }: { value: number; max: number; label: string; unit?: string; size?: number; color?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -124,11 +125,11 @@ export default function MonitorPage() {
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>RAM</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent)" }}>{squeezarr?.running_jobs || 0}</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(squeezarr?.running_jobs)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Encoding Jobs</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--success)" }}>{plex?.total || 0}</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(plex?.total)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Plex Streams</div>
         </div>
         {squeezarr?.avg_fps > 0 && (
@@ -140,7 +141,7 @@ export default function MonitorPage() {
       </div>
 
       {/* Detail cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+      <div className="monitor-detail-grid" style={{ display: "grid", gap: 12 }}>
         {/* GPU */}
         {gpu && (
           <MetricCard title={`GPU — ${gpu.name}`}>
@@ -188,15 +189,15 @@ export default function MonitorPage() {
         <MetricCard title="Plex Streams">
           <div style={{ display: "flex", gap: 24, marginBottom: plex?.sessions?.length > 0 ? 10 : 0 }}>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{plex?.total || 0}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(plex?.total)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Total Streams</div>
             </div>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "#ffa94d" }}>{plex?.transcoding || 0}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "#ffa94d" }}>{fmtNum(plex?.transcoding)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Transcoding</div>
             </div>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{plex?.direct || 0}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(plex?.direct)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Direct Play</div>
             </div>
           </div>
@@ -214,25 +215,25 @@ export default function MonitorPage() {
           )}
         </MetricCard>
 
-        {/* Squeezarr Workload — spans full width */}
+        {/* Shrinkerr Workload — spans full width */}
         <div style={{ gridColumn: "1 / -1" }}>
-          <MetricCard title="Squeezarr Workload">
+          <MetricCard title="Shrinkerr Workload">
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{squeezarr?.running_jobs || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(squeezarr?.running_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Running</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{squeezarr?.pending_jobs || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{fmtNum(squeezarr?.pending_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Pending</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{squeezarr?.completed_jobs || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(squeezarr?.completed_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Completed</div>
               </div>
               {(squeezarr?.failed_jobs || 0) > 0 && (
                 <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{squeezarr.failed_jobs}</div>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{fmtNum(squeezarr.failed_jobs)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Failed</div>
                 </div>
               )}
