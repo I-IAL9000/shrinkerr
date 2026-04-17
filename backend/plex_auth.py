@@ -128,7 +128,22 @@ async def check_pin(pin_id: int) -> dict:
     """Poll a PIN once. Returns {"token": str|None, "expired": bool}.
 
     Callers should poll every ~2 seconds until token is set or expired=True.
+
+    Plex's PIN lifecycle:
+      * POST /pins                  → 200, returns {id, code, expiresAt, authToken: null}
+      * GET /pins/{id} (pre-auth)   → 200, authToken still null, expiresAt present
+      * GET /pins/{id} (post-auth)  → 200, authToken populated
+      * GET /pins/{id} (after TTL)  → 404 (we treat this as expired)
+
+    Important: `expiresAt` is the expiry *timestamp*, not a flag — it's
+    populated on every successful response, so we must compare against
+    the current time (or just rely on Plex's 404 as the authoritative
+    signal). Earlier code that naively treated a non-null expiresAt as
+    "expired" fired on the very first poll, before the user even had a
+    chance to sign in.
     """
+    import datetime as _dt
+
     client_id = await _get_or_create_client_id()
     headers = _plex_headers(client_id)
 
@@ -142,12 +157,24 @@ async def check_pin(pin_id: int) -> dict:
         resp.raise_for_status()
         data = resp.json()
 
-    return {
-        "token": data.get("authToken") or None,
-        "expired": bool(data.get("expiresAt")) and not data.get("authToken"),
-        # Note: we don't actually check expiresAt time; Plex's 404 is authoritative
-        # once the PIN expires.
-    }
+    token = data.get("authToken") or None
+
+    # Defensive: if the PIN's expiresAt has actually passed, treat as expired
+    # even if Plex hasn't 404'd yet. Otherwise keep polling.
+    expired = False
+    expires_at = data.get("expiresAt")
+    if not token and expires_at:
+        try:
+            # Plex returns ISO 8601 like "2024-04-17T15:23:45Z"
+            exp_dt = _dt.datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            now = _dt.datetime.now(_dt.timezone.utc)
+            if now >= exp_dt:
+                expired = True
+        except Exception:
+            # If we can't parse it, fall back to trusting the 404 branch.
+            pass
+
+    return {"token": token, "expired": expired}
 
 
 async def get_user(token: str) -> dict | None:
