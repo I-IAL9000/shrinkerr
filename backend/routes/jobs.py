@@ -698,6 +698,69 @@ class AddByPathRequest(BaseModel):
     nzbget_category: str | None = None
 
 
+class ResetHealthRequest(BaseModel):
+    file_paths: list[str] = []
+    reset_all_corrupt: bool = False
+    unignore: bool = True
+
+
+@router.post("/health-check/reset")
+async def reset_health_status(payload: ResetHealthRequest):
+    """Clear stored health_status so a file gets re-checked on the next pass.
+
+    Two modes:
+      * reset_all_corrupt=True  → clear every row currently flagged corrupt.
+        Used after shipping a classifier fix to invalidate false positives
+        en masse (e.g. the "number of reference frames exceeds max" noise).
+      * file_paths supplied     → clear only those specific paths.
+
+    By default we also remove them from ignored_files so they return to the
+    normal scan views. Set unignore=False to leave ignored_files alone.
+    """
+    if not payload.reset_all_corrupt and not payload.file_paths:
+        raise HTTPException(status_code=400, detail="Provide file_paths or set reset_all_corrupt=true")
+
+    db = await connect_db()
+    try:
+        if payload.reset_all_corrupt:
+            async with db.execute(
+                "SELECT file_path FROM scan_results WHERE health_status = 'corrupt'"
+            ) as cur:
+                targets = [r["file_path"] for r in await cur.fetchall()]
+        else:
+            targets = list(payload.file_paths)
+
+        if not targets:
+            return {"reset": 0, "unignored": 0}
+
+        # SQLite has a parameter limit (~999); chunk to be safe.
+        reset_count = 0
+        unignored_count = 0
+        CHUNK = 500
+        for i in range(0, len(targets), CHUNK):
+            batch = targets[i:i + CHUNK]
+            placeholders = ",".join("?" * len(batch))
+            cur = await db.execute(
+                f"UPDATE scan_results SET health_status = NULL, health_errors_json = NULL, "
+                f"health_checked_at = NULL, health_check_type = NULL "
+                f"WHERE file_path IN ({placeholders})",
+                batch,
+            )
+            reset_count += cur.rowcount or 0
+
+            if payload.unignore:
+                cur2 = await db.execute(
+                    f"DELETE FROM ignored_files WHERE file_path IN ({placeholders})",
+                    batch,
+                )
+                unignored_count += cur2.rowcount or 0
+
+        await db.commit()
+        return {"reset": reset_count, "unignored": unignored_count, "targeted": len(targets)}
+    finally:
+        await db.close()
+
+
 @router.post("/health-check/clear-pending")
 async def clear_pending_health_checks():
     """Emergency cleanup: delete all PENDING health_check jobs.

@@ -581,6 +581,21 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
+  const handleResetCorruptFlags = async () => {
+    const { resetHealthStatus } = await import("../api");
+    if (!await confirm({
+      message: "Clear the 'corrupt' flag on every file currently marked corrupt and un-ignore them? They'll go back to being considered healthy until the next health check runs.",
+      confirmLabel: "Clear corrupt flags",
+    })) return;
+    try {
+      const res = await resetHealthStatus({ reset_all_corrupt: true, unignore: true });
+      toast(`Cleared ${res.reset} corrupt flag(s)${res.unignored ? `, un-ignored ${res.unignored}` : ""}`, "success");
+      loadTree();
+    } catch (err: any) {
+      toast(`Failed to reset: ${err.message || "unknown error"}`, "error");
+    }
+  };
+
   const handleRemoveFile = async (filePath: string) => {
     // Find file in loaded files to get ID
     for (const files of loadedFiles.values()) {
@@ -1083,6 +1098,37 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
                 Fetching posters: {posterProgress.resolved} / {posterProgress.total}
               </div>
+            </div>
+          )}
+
+          {/* When Corrupt filter is active, offer a one-click "clear false positives"
+              action. Handy after upgrading Shrinkerr with a fixed health-check
+              classifier (e.g. the ref-frames-exceeds-max false positive). */}
+          {filters.includes("corrupt") && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 12px",
+              marginBottom: 10,
+              background: "rgba(229,160,13,0.08)",
+              border: "1px solid rgba(229,160,13,0.25)",
+              borderRadius: 6,
+              fontSize: 12,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e5a00d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span style={{ color: "var(--text-secondary)", flex: 1 }}>
+                Some files may be flagged corrupt due to benign ffmpeg warnings (e.g. "number of reference frames exceeds max"). Clear the flags and let them re-check.
+              </span>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
+                onClick={handleResetCorruptFlags}
+              >
+                Clear all corrupt flags
+              </button>
             </div>
           )}
 

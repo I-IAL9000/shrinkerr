@@ -8,24 +8,135 @@ Two modes:
 Returned dict shape:
     {
         "status": "healthy" | "corrupt" | "warnings",
-        "errors": [str, ...],       # decoder errors (thorough) or probe errors (quick)
+        "errors": [str, ...],       # lines ffprobe/ffmpeg emitted on stderr
         "check_type": "quick" | "thorough",
         "duration_seconds": float,  # wall time of the check
     }
 
-A file is "corrupt" if ffprobe fails (quick) or ffmpeg emits any error-level
-log lines (thorough). "warnings" is reserved for non-fatal anomalies that we
-might want to surface separately in the future; for now a check returns either
-"healthy" or "corrupt".
+Classification rules:
+    * ffprobe/ffmpeg emits nothing and exits 0           → "healthy"
+    * All stderr lines match a known benign pattern       → "warnings"
+      (file is still considered healthy for purposes of
+      auto-ignore / queue decisions — we just surface the
+      messages so the user can see what was noticed)
+    * Any stderr line matches a known *fatal* pattern     → "corrupt"
+    * Unrecognised stderr lines OR non-zero exit          → "corrupt"
+
+The benign patterns below are documented false positives that crop up on
+otherwise perfectly playable releases. The most common by far is x264
+encoders using 5+ reference frames at 1080p, which technically violates
+H.264 Level 4.0 but every decoder in existence tolerates it. Without this
+allow-list, ~80% of scene releases would be flagged "corrupt."
 """
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Literal
 
 
 HealthStatus = Literal["healthy", "corrupt", "warnings"]
+
+
+# Patterns that mean "technically out-of-spec but plays fine everywhere" —
+# purely informational. Matched case-insensitively against each stderr line.
+BENIGN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
+    # H.264 encoders that use more reference frames than the level allows.
+    # Classic x264 behaviour — harmless.
+    r"number of reference frames.*exceeds max",
+    # MKVs with slightly non-monotonic audio/subtitle DTS. Trivial.
+    r"application provided invalid, non monotonically increasing dts",
+    r"non-monotonous dts",
+    # Duration estimation; happens whenever the container doesn't store
+    # duration at the top — ffprobe falls back to bitrate. Not corruption.
+    r"estimating duration from bitrate",
+    # B-frame parsing quirks — the decoder recovers automatically.
+    r"co located pocs unavailable",
+    # Edge-list warnings on some mp4/m4v remuxes. Plays fine.
+    r"edit list elements are not supported",
+    r"edit list starts at a non-zero offset",
+    # DVD/Bluray passthrough streams that lack explicit stream duration.
+    r"stream \d+.*duration not set",
+    # PGS/subtitle-only warnings.
+    r"could not find codec parameters for stream.*subtitle",
+    # mov/mp4 fragmented container chatter.
+    r"found duplicated moov atom",
+    # mkv: known-fine hint that ffmpeg prints for certain encoders.
+    r"using cpu capabilities",
+    # Atmos / TrueHD informational notices.
+    r"substream \d+: skipping",
+    # Minor timestamp rounding warnings.
+    r"past duration.*too large",
+    # Unknown-but-decodable private data — not corruption.
+    r"unknown cuvid format",
+    # Bitstream filter parsing — ffmpeg does NOT fail here.
+    r"svc_extension_flag not implemented",
+))
+
+
+# Patterns that ALWAYS mean the file is broken, even if earlier lines looked
+# benign. Any match → corrupt regardless of the rest.
+FATAL_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"moov atom not found",
+    r"invalid nal unit size",
+    r"invalid data found when processing input",
+    r"error while decoding stream",
+    r"decoder_generic_error",
+    r"error splitting the input into nal units",
+    r"truncating packet of size",
+    r"end of file",                     # in context, means premature EOF
+    r"concealing \d+ dc, \d+ ac, \d+ mv errors",
+    r"frame_type mismatch",
+    r"invalid starting bit",
+    r"header missing",
+    r"failed to read header",
+    r"no frame!",
+    r"file ended prematurely",
+))
+
+
+def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, list[str]]:
+    """Classify ffprobe/ffmpeg stderr into (status, cleaned_errors).
+
+    Returns the health status label plus the stderr lines we want to surface
+    to the user (deduplicated, capped at 10 to avoid log spam).
+    """
+    lines = [ln.strip() for ln in (stderr_text or "").splitlines() if ln.strip()]
+    # Deduplicate while preserving order — decoders often repeat the same warning
+    # thousands of times, which isn't useful.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for ln in lines:
+        if ln not in seen:
+            seen.add(ln)
+            unique.append(ln)
+
+    capped = unique[:10]
+
+    # Any fatal match → corrupt, full stop.
+    for ln in unique:
+        if any(p.search(ln) for p in FATAL_PATTERNS):
+            return "corrupt", capped
+
+    # Non-zero returncode without a recognised fatal line — still treat as
+    # corrupt but let the stderr speak for itself.
+    if returncode != 0:
+        return "corrupt", capped or [f"exit code {returncode}"]
+
+    # No stderr at all → healthy.
+    if not unique:
+        return "healthy", []
+
+    # If every line matches a benign pattern, the file is effectively healthy
+    # but we surface the messages under the "warnings" label.
+    if all(any(p.search(ln) for p in BENIGN_PATTERNS) for ln in unique):
+        return "warnings", capped
+
+    # Unrecognised stderr → treat as corrupt. Better to surface false
+    # positives than silently ignore genuinely bad files; the allow-list
+    # above is the lever for tuning this over time.
+    return "corrupt", capped
 
 
 async def quick_check(file_path: str, timeout: int = 30) -> dict:
@@ -58,19 +169,10 @@ async def quick_check(file_path: str, timeout: int = 30) -> dict:
     err = (stderr.decode(errors="replace") or "").strip()
     rc = proc.returncode or 0
 
-    if rc != 0 or err:
-        # Split multi-line errors and keep the first few to avoid bloat
-        lines = [ln.strip() for ln in err.splitlines() if ln.strip()]
-        return {
-            "status": "corrupt",
-            "errors": lines[:10] if lines else [f"ffprobe exited {rc}"],
-            "check_type": "quick",
-            "duration_seconds": round(time.monotonic() - t0, 2),
-        }
-
+    status, errors = classify_errors(err, rc)
     return {
-        "status": "healthy",
-        "errors": [],
+        "status": status,
+        "errors": errors,
         "check_type": "quick",
         "duration_seconds": round(time.monotonic() - t0, 2),
     }
@@ -155,17 +257,15 @@ async def thorough_check(file_path: str, timeout: int = 7200, progress_cb=None, 
         }
 
     rc = proc.returncode or 0
-    if rc != 0 or errors_collected:
-        return {
-            "status": "corrupt",
-            "errors": errors_collected[:20] if errors_collected else [f"ffmpeg exited {rc}"],
-            "check_type": "thorough",
-            "duration_seconds": round(time.monotonic() - t0, 2),
-        }
-
+    # Thorough decode with -xerror — ffmpeg stops at the first real error, so
+    # any stderr is likely meaningful. We still run it through the classifier
+    # so benign decoder chatter (reference-frame warnings, past-duration
+    # notices) doesn't mark cleanly-decoded files as corrupt.
+    stderr_blob = "\n".join(errors_collected)
+    status, errors = classify_errors(stderr_blob, rc)
     return {
-        "status": "healthy",
-        "errors": [],
+        "status": status,
+        "errors": errors,
         "check_type": "thorough",
         "duration_seconds": round(time.monotonic() - t0, 2),
     }

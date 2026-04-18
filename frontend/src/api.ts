@@ -157,6 +157,15 @@ export const queueHealthChecks = (filePaths: string[], mode: "quick" | "thorough
     method: "POST",
     body: JSON.stringify({ file_paths: filePaths, mode, filter: filter || "all", select_all: !!selectAll }),
   });
+export const resetHealthStatus = (opts: { file_paths?: string[]; reset_all_corrupt?: boolean; unignore?: boolean } = {}) =>
+  apiFetch<{ reset: number; unignored: number; targeted?: number }>("/jobs/health-check/reset", {
+    method: "POST",
+    body: JSON.stringify({
+      file_paths: opts.file_paths || [],
+      reset_all_corrupt: opts.reset_all_corrupt || false,
+      unignore: opts.unignore !== false,
+    }),
+  });
 export const clearPendingHealthChecks = () =>
   apiFetch<{ deleted: number }>("/jobs/health-check/clear-pending", { method: "POST" });
 // Worker nodes
