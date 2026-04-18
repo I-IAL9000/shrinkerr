@@ -70,7 +70,34 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
     <div className="job-row" onClick={canExpand ? handleExpand : undefined} style={canExpand ? { cursor: "pointer" } : undefined}>
       {job.status === "completed" && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: 34, flexShrink: 0 }}>
-          <span style={{ color: "var(--success)", fontSize: 14 }}>&#x2713;</span>
+          {/* Green check for normal success; red warning when the post-convert
+              health check flagged corruption; amber warning for the "warnings"
+              status (out-of-spec but playable). */}
+          {job.health_status === "corrupt" ? (
+            <span
+              title={job.error_log || "Health check flagged this file as corrupt"}
+              style={{ color: "var(--danger, #e94560)", fontSize: 14, display: "inline-flex", alignItems: "center" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </span>
+          ) : job.health_status === "warnings" ? (
+            <span
+              title="Health check surfaced warnings (file is playable)"
+              style={{ color: "#ffa94d", fontSize: 14, display: "inline-flex", alignItems: "center" }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </span>
+          ) : (
+            <span style={{ color: "var(--success)", fontSize: 14 }}>&#x2713;</span>
+          )}
           <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.5 }}>{expanded ? "\u25BC" : "\u25B6"}</span>
         </span>
       )}
