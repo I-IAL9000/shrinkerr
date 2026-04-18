@@ -151,11 +151,29 @@ async def lifespan(app: FastAPI):
     backup_task = asyncio.create_task(scheduled_backup_loop())
     # Background: stale node detection + job release
     stale_task = asyncio.create_task(stale_release_loop(node_manager))
+
+    # Background: keep the built-in "local" node's last_heartbeat fresh so
+    # the Nodes page doesn't show the server itself going stale (it clearly
+    # hasn't — we're the one rendering the page). 30s cadence matches the
+    # remote-worker heartbeat interval.
+    async def _local_heartbeat_loop():
+        try:
+            while True:
+                try:
+                    await node_manager.touch_local_heartbeat()
+                except Exception as exc:
+                    print(f"[NODES] Local heartbeat refresh failed: {exc}", flush=True)
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            pass
+    local_heartbeat_task = asyncio.create_task(_local_heartbeat_loop())
+
     yield
     worker.stop()
     watcher.stop()
     backup_task.cancel()
     stale_task.cancel()
+    local_heartbeat_task.cancel()
 
 
 app = FastAPI(title="Squeezarr", lifespan=lifespan)

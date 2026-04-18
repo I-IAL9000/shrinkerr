@@ -133,6 +133,32 @@ class NodeManager:
         finally:
             await db.close()
 
+    async def touch_local_heartbeat(self) -> None:
+        """Bump last_heartbeat + status for the built-in local worker.
+
+        Called periodically so the Nodes page doesn't show the server
+        going stale the way a crashed remote worker would. Distinct from
+        register_local_node which also re-detects capabilities (expensive).
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        db = await self._db()
+        try:
+            # Don't clobber 'error' state on a routine heartbeat — same rule
+            # we apply for remote worker heartbeats.
+            await db.execute(
+                "UPDATE worker_nodes SET last_heartbeat = ?, "
+                "status = CASE "
+                "    WHEN status = 'error' THEN 'error' "
+                "    WHEN current_job_id IS NOT NULL THEN 'working' "
+                "    ELSE 'online' "
+                "END "
+                "WHERE id = 'local'",
+                (now,),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
     async def register_local_node(self) -> None:
         """Register the built-in local worker on server startup."""
         # Auto-detect capabilities
@@ -163,6 +189,37 @@ class NodeManager:
             max_jobs=default_max,  # only used on first registration — user controls after that
         )
         print(f"[NODES] Local node registered: capabilities={capabilities}, gpu={gpu_name}, default_max_jobs={default_max}", flush=True)
+
+        # Backfill historical stats from the jobs table. Jobs completed by
+        # the local worker have assigned_node_id NULL (the remote-worker
+        # request-job flow is the only thing that sets it). Idempotent:
+        # each run SETs the stats to the authoritative count rather than
+        # incrementing, so re-running never double-counts.
+        db = await self._db()
+        try:
+            async with db.execute(
+                "SELECT COUNT(*) AS cnt, "
+                "COALESCE(SUM(CASE WHEN space_saved > 0 THEN space_saved ELSE 0 END), 0) AS saved "
+                "FROM jobs "
+                "WHERE status = 'completed' "
+                "AND (assigned_node_id IS NULL OR assigned_node_id = 'local') "
+                "AND COALESCE(job_type, 'convert') <> 'health_check'"
+            ) as cur:
+                row = await cur.fetchone()
+            if row:
+                cnt = int(row["cnt"] or 0)
+                saved = int(row["saved"] or 0)
+                await db.execute(
+                    "UPDATE worker_nodes SET jobs_completed = ?, total_space_saved = ? "
+                    "WHERE id = 'local'",
+                    (cnt, saved),
+                )
+                await db.commit()
+                print(f"[NODES] Local node stats backfilled: {cnt} completed, {saved / (1024**3):.2f} GB saved", flush=True)
+        except Exception as exc:
+            print(f"[NODES] Local stats backfill failed (non-fatal): {exc}", flush=True)
+        finally:
+            await db.close()
 
     # ------------------------------------------------------------------
     # Node queries

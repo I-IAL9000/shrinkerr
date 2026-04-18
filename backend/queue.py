@@ -969,6 +969,41 @@ class QueueWorker:
             except Exception:
                 pass
         finally:
+            # Record this job against the built-in "local" node so the
+            # Nodes page shows accurate Completed / Saved stats for the
+            # server itself. Remote workers do this via the /report-complete
+            # endpoint; the local worker doesn't go through that path, so
+            # without this hook the Local card was stuck at 0 completed.
+            try:
+                from backend.main import app as _app
+                nm = getattr(_app.state, "node_manager", None)
+                if nm is not None:
+                    db = await self.queue._connect()
+                    try:
+                        async with db.execute(
+                            "SELECT status, space_saved FROM jobs WHERE id = ?",
+                            (job_id,),
+                        ) as cur:
+                            r = await cur.fetchone()
+                    finally:
+                        await db.close()
+                    if r:
+                        # r is a Row object (dict-like)
+                        final_status = r["status"]
+                        saved = int(r["space_saved"] or 0)
+                        success = (final_status == "completed")
+                        # Skip health_check jobs — they don't represent work
+                        # in the useful sense (they don't transcode anything)
+                        # and inflating jobs_completed on the local card with
+                        # them would be misleading.
+                        if job.get("job_type") != "health_check":
+                            await nm.complete_job_on_node(
+                                "local", job_id,
+                                success=success, space_saved=saved,
+                            )
+            except Exception as exc:
+                print(f"[WORKER] Failed to update local node stats: {exc}", flush=True)
+
             self._active_procs.pop(job_id, None)
             self._active_tasks.pop(job_id, None)
             self._cancel_flags.discard(job_id)
