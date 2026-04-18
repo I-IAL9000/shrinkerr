@@ -319,6 +319,61 @@ export const researchFilesBulk = (filePaths: string[], deleteFile: boolean = tru
     { method: "POST", body: JSON.stringify({ file_paths: filePaths, delete_file: deleteFile }) },
   );
 
+// Unified *arr actions: replace | upgrade | missing
+export type ArrAction = "replace" | "upgrade" | "missing";
+
+export interface ArrActionSingleResult extends ResearchResult {
+  action?: ArrAction;
+}
+
+export interface ArrMissingDetail {
+  series_id: number;
+  series_title: string;
+  missing_count: number;
+  searched: boolean;
+  note?: string | null;
+}
+
+export interface ArrMissingResult {
+  success: boolean;
+  service?: "sonarr";
+  action: "missing";
+  series_searched?: number;
+  series_resolved?: number;
+  total_episode_ids?: number;
+  skipped_movie?: number;
+  skipped_unknown?: number;
+  unresolved?: number;
+  details?: ArrMissingDetail[];
+  error?: string;
+}
+
+export interface ArrActionBulkResult {
+  total: number;
+  succeeded: number;
+  failed: number;
+  action: ArrAction;
+  results: (ArrActionSingleResult & { file_path: string })[];
+}
+
+export const arrAction = (filePath: string, action: ArrAction, deleteFile: boolean = true) =>
+  apiFetch<ArrActionSingleResult | ArrMissingResult>(
+    "/arr/action",
+    {
+      method: "POST",
+      body: JSON.stringify({ file_path: filePath, action, delete_file: deleteFile }),
+    },
+  );
+
+export const arrActionBulk = (filePaths: string[], action: ArrAction, deleteFile: boolean = true) =>
+  apiFetch<ArrActionBulkResult | ArrMissingResult>(
+    "/arr/action/bulk",
+    {
+      method: "POST",
+      body: JSON.stringify({ file_paths: filePaths, action, delete_file: deleteFile }),
+    },
+  );
+
 // Plex Connect (PIN-based OAuth)
 export interface PlexUser {
   email: string;

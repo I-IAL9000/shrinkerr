@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getTracksByPath, getFileHistory, researchFile, type FileEvent } from "../api";
+import { getTracksByPath, getFileHistory, researchFile, arrAction, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import EventTimeline from "./EventTimeline";
 import { useToast } from "../useToast";
@@ -22,10 +22,30 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const [history, setHistory] = useState<FileEvent[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [researching, setResearching] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
 
   const isCorrupt = file.probe_status === "corrupt" || file.health_status === "corrupt";
+
+  const handleUpgradeSearch = async () => {
+    setUpgrading(true);
+    try {
+      const r: any = await arrAction(file.file_path, "upgrade");
+      if (r?.success) {
+        const label = r.service === "sonarr"
+          ? `${r.series} — ${(r.episode_ids || []).length} ep(s)`
+          : `${r.movie}`;
+        toast(`Upgrade search triggered (${r.service}): ${label}`, "success");
+      } else {
+        toast(`Upgrade search failed: ${r?.error || "unknown error"}`, "error");
+      }
+    } catch (exc: any) {
+      toast(`Upgrade search error: ${exc?.message || exc}`, "error");
+    } finally {
+      setUpgrading(false);
+    }
+  };
 
   const handleResearch = async () => {
     const label = isCorrupt ? "Re-download (file is corrupt)" : "Re-download (replace with different release)";
@@ -184,12 +204,12 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
             Total est. savings: ~{file.estimated_savings_gb} GB
           </div>
 
-          {/* Re-download from *arr — prominent red for corrupt, quiet for healthy */}
-          <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
+          {/* *arr actions — Replace (red when corrupt) + Search upgrade (quiet) */}
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", flexWrap: "wrap", gap: 6 }}>
             <button
               type="button"
               onClick={handleResearch}
-              disabled={researching}
+              disabled={researching || upgrading}
               title={isCorrupt
                 ? "This file appears corrupt — blocklist the release and ask Sonarr/Radarr for a replacement"
                 : "Replace this file with a different release (blocklists current, triggers new search)"}
@@ -217,12 +237,37 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                   ? "Re-download (corrupt file)"
                   : "Request replacement"}
             </button>
-            {isCorrupt && (
-              <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr.
-              </div>
-            )}
+
+            <button
+              type="button"
+              onClick={handleUpgradeSearch}
+              disabled={researching || upgrading}
+              title="Ask Sonarr/Radarr to search for a better release per your quality profile. Does NOT blocklist or delete the current file."
+              style={{
+                background: "transparent",
+                color: "var(--text-muted)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                padding: "4px 10px",
+                fontSize: 11,
+                cursor: upgrading ? "wait" : "pointer",
+                opacity: upgrading ? 0.6 : 1,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
+              </svg>
+              {upgrading ? "Searching…" : "Search for upgrade"}
+            </button>
           </div>
+          {isCorrupt && (
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+              ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr.
+            </div>
+          )}
         </>
       )}
 

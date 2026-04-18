@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
@@ -17,6 +17,20 @@ import type { ScannedFile, ScanProgress } from "../types";
 let _cachedFolders: FolderInfo[] | null = null;
 let _cachedFilter: string = "all";
 let _cacheTimestamp: number = 0;
+
+// Shared style for dropdown menu items (arr actions menu, etc)
+const menuItemStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: 10,
+  padding: "8px 10px",
+  background: "transparent",
+  border: "none",
+  borderRadius: 4,
+  cursor: "pointer",
+  textAlign: "left",
+  width: "100%",
+};
 
 interface ScannerPageProps {
   scanProgress: ScanProgress | null;
@@ -48,6 +62,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [encodingSettings, setEncodingSettings] = useState<any>(null);
   const [bulkAction, setBulkAction] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [arrMenuOpen, setArrMenuOpen] = useState(false);
+  const arrMenuRef = useRef<HTMLDivElement | null>(null);
   const [viewMode, setViewMode] = useState<"tree" | "poster">(() => (localStorage.getItem("squeezarr_viewMode") as "tree" | "poster") || "tree");
   const [posterPrefetching, setPosterPrefetching] = useState(false);
   const [posterProgress, setPosterProgress] = useState({ total: 0, resolved: 0 });
@@ -183,6 +199,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }, 30000);
     return () => clearInterval(interval);
   }, [scanning, loadTree]);
+
+  // Close the *arr actions dropdown when clicking outside it.
+  useEffect(() => {
+    if (!arrMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (arrMenuRef.current && !arrMenuRef.current.contains(e.target as Node)) {
+        setArrMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [arrMenuOpen]);
 
   // Poll poster prefetch progress
   useEffect(() => {
@@ -578,6 +606,100 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       }
     } catch (err: any) {
       toast(`Failed to queue health checks: ${err.message || "unknown error"}`);
+    }
+  };
+
+  const handleBulkArrAction = async (action: "replace" | "upgrade" | "missing") => {
+    const { arrActionBulk } = await import("../api");
+
+    // Flatten selection to file paths. Folders are handled differently per action:
+    //  * replace/upgrade operate on files → expand selected folders to their files
+    //  * missing operates at series level → we pass folder paths through, backend
+    //    resolves each to its owning series via path walking
+    const allSelected = Array.from(selectedPaths);
+    const fileSel = allSelected.filter(p => !p.endsWith("/"));
+    const folderSel = allSelected.filter(p => p.endsWith("/"));
+
+    let filePaths: string[] = fileSel.slice();
+
+    if (action === "missing") {
+      // Backend can resolve folder-paths directly. But it also accepts file
+      // paths and uses the owning series — so we pass whatever is selected.
+      filePaths = allSelected;
+    } else if (folderSel.length > 0) {
+      // For replace/upgrade we need concrete files. Expand folders by looking
+      // them up in loadedFiles (already loaded from the tree).
+      const seen = new Set(filePaths);
+      for (const folder of folderSel) {
+        const files = loadedFiles.get(folder.replace(/\/$/, ""));
+        if (files) {
+          for (const f of files) {
+            if (!seen.has(f.file_path)) {
+              seen.add(f.file_path);
+              filePaths.push(f.file_path);
+            }
+          }
+        }
+      }
+      if (folderSel.length > 0 && !selectAllActive) {
+        // If folders weren't pre-loaded, warn the user.
+        const unresolvedFolders = folderSel.filter(f => !loadedFiles.has(f.replace(/\/$/, "")));
+        if (unresolvedFolders.length > 0) {
+          toast(`Expand folders first so their files can be included — ${unresolvedFolders.length} folder(s) skipped`, "info");
+        }
+      }
+    }
+
+    if (filePaths.length === 0) {
+      toast("No files or folders selected");
+      return;
+    }
+
+    const labels = {
+      replace: { name: "Request replacement", danger: true, verb: "re-requested" },
+      upgrade: { name: "Search for upgrade", danger: false, verb: "upgrade-searched" },
+      missing: { name: "Search missing episodes", danger: false, verb: "searched" },
+    };
+    const cfg = labels[action];
+
+    // Only replace needs a confirmation (destructive: deletes + blocklists)
+    if (action === "replace") {
+      if (!await confirm({
+        message: `${cfg.name} for ${filePaths.length} file(s)?\n\nThis will blocklist the current release, delete each file, and trigger a fresh search.`,
+        confirmLabel: `Replace ${filePaths.length}`,
+        danger: true,
+      })) return;
+    } else if (action === "missing") {
+      if (!await confirm({
+        message: `Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from ${filePaths.length} path(s) and ask Sonarr to search for any missing monitored episodes.`,
+        confirmLabel: "Search missing",
+      })) return;
+    }
+
+    try {
+      const res: any = await arrActionBulk(filePaths, action, true);
+
+      if (action === "missing") {
+        // Aggregate response shape from search_missing_episodes
+        if (res.success) {
+          const summary = `${res.series_searched || 0}/${res.series_resolved || 0} series searched, ${res.total_episode_ids || 0} missing episode(s)`
+            + (res.skipped_movie ? ` · skipped ${res.skipped_movie} movie(s)` : "")
+            + (res.unresolved ? ` · ${res.unresolved} unresolved path(s)` : "");
+          toast(summary, "success");
+        } else {
+          toast(`Missing search failed: ${res.error || "unknown error"}`, "error");
+        }
+        return;
+      }
+
+      // replace/upgrade: per-file results
+      if (res.failed === 0) {
+        toast(`${cfg.name}: ${res.succeeded} file(s) ${cfg.verb}`, "success");
+      } else {
+        toast(`${res.succeeded} ${cfg.verb}, ${res.failed} failed (check logs)`, res.succeeded > 0 ? "success" : "error");
+      }
+    } catch (exc: any) {
+      toast(`${cfg.name} failed: ${exc?.message || exc}`, "error");
     }
   };
 
@@ -1304,6 +1426,78 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   Thorough check
                 </button>
+
+                {/* *arr actions dropdown: upgrade / missing / replace */}
+                <div ref={arrMenuRef} style={{ position: "relative", display: "inline-flex" }}>
+                  <button
+                    className="btn btn-secondary"
+                    title="Sonarr/Radarr actions: upgrade, missing episodes, replacement"
+                    style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                    onClick={() => setArrMenuOpen(o => !o)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                    </svg>
+                    *arr actions
+                    <span style={{ fontSize: 9, opacity: 0.6 }}>{arrMenuOpen ? "▲" : "▼"}</span>
+                  </button>
+                  {arrMenuOpen && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 4px)",
+                        right: 0,
+                        zIndex: 100,
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+                        padding: 4,
+                        minWidth: 240,
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <button
+                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("upgrade"); }}
+                        style={menuItemStyle}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#6ce5b0" }}>
+                          <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
+                        </svg>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Search for upgrades</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Find better releases per quality profile. No delete.</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("missing"); }}
+                        style={menuItemStyle}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#7cb4ff" }}>
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Search missing episodes</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Per series covered by selection. Sonarr only.</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => { setArrMenuOpen(false); handleBulkArrAction("replace"); }}
+                        style={menuItemStyle}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#e94560" }}>
+                          <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+                        </svg>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Request replacements</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Blocklist + delete + search fresh. Destructive.</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {allSelectedIgnored ? (
                   <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
