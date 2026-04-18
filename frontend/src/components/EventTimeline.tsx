@@ -15,6 +15,7 @@ const EVENT_META: Record<string, EventMeta> = {
   health_check: { color: "var(--success)",    label: "Health check" },
   vmaf:         { color: "var(--accent)",     label: "VMAF" },
   reverted:     { color: "var(--warning)",    label: "Reverted" },
+  arr_action:   { color: "#e5a00d",           label: "*arr action" },
 };
 
 function EventIcon({ type, color, size = 14 }: { type: string; color: string; size?: number }) {
@@ -75,6 +76,11 @@ function EventIcon({ type, color, size = 14 }: { type: string; color: string; si
     case "reverted":
       return (
         <svg {...common}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      );
+    case "arr_action":
+      // Download-rotating icon — evokes "ask the *arr for a fresh grab"
+      return (
+        <svg {...common}><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
       );
     default:
       return (

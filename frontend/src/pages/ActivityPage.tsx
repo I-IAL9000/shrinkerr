@@ -11,6 +11,7 @@ const EVENT_OPTIONS = [
   { value: "vmaf", label: "VMAF analysis" },
   { value: "ignored,unignored", label: "Ignore changes" },
   { value: "reverted", label: "Reverts" },
+  { value: "arr_action", label: "Sonarr / Radarr actions" },
 ];
 
 const PAGE_SIZE = 100;

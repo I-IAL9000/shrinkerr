@@ -2,7 +2,7 @@
 
 Records key decisions and outcomes for each media file:
     scanned, queued, started, completed, failed, skipped, ignored,
-    unignored, health_check, reverted, rescanned
+    unignored, health_check, reverted, rescanned, arr_action
 
 Used by:
 - Per-file "History" tab in the FileDetail panel
@@ -34,11 +34,13 @@ EVENT_UNIGNORED = "unignored"
 EVENT_HEALTH_CHECK = "health_check"
 EVENT_VMAF = "vmaf"
 EVENT_REVERTED = "reverted"
+EVENT_ARR_ACTION = "arr_action"  # Sonarr/Radarr replace / upgrade / missing trigger
 
 EVENT_TYPES = (
     EVENT_SCANNED, EVENT_RESCANNED, EVENT_QUEUED, EVENT_STARTED,
     EVENT_COMPLETED, EVENT_FAILED, EVENT_SKIPPED, EVENT_IGNORED,
     EVENT_UNIGNORED, EVENT_HEALTH_CHECK, EVENT_VMAF, EVENT_REVERTED,
+    EVENT_ARR_ACTION,
 )
 
 
