@@ -12,6 +12,7 @@ from backend.arr import (
     search_missing_episodes,
     dispatch_action,
 )
+from backend.database import connect_db
 
 
 router = APIRouter(prefix="/api/arr")
@@ -30,6 +31,44 @@ class BulkActionRequest(BaseModel):
     file_paths: list[str]
     action: Action = "replace"
     delete_file: bool = True  # only used when action == "replace"
+
+
+async def _expand_folder_paths(paths: list[str]) -> list[str]:
+    """Expand any folder paths (ending with /) to the files inside them by
+    looking them up in scan_results. File paths pass through unchanged.
+
+    This is what makes per-file actions (upgrade / replace) work on folder
+    selections like "/TV/Bluey/" — the backend fans out to every episode in
+    scan_results rather than requiring the frontend to have pre-loaded the
+    folder's children.
+    """
+    folders = [p for p in paths if p.endswith("/")]
+    files = [p for p in paths if not p.endswith("/")]
+    if not folders:
+        return files
+
+    expanded: list[str] = list(files)
+    seen: set[str] = set(files)
+
+    db = await connect_db()
+    try:
+        for folder in folders:
+            # scan_results file_path is the full absolute path; folders end
+            # with "/" and every file inside starts with that prefix.
+            async with db.execute(
+                "SELECT file_path FROM scan_results "
+                "WHERE file_path LIKE ? AND removed_from_list = 0",
+                (folder + "%",),
+            ) as cur:
+                async for row in cur:
+                    fp = row["file_path"]
+                    if fp not in seen:
+                        seen.add(fp)
+                        expanded.append(fp)
+    finally:
+        await db.close()
+
+    return expanded
 
 
 # ── Unified action endpoint ───────────────────────────────────────────────
@@ -56,20 +95,36 @@ async def action_single(payload: ActionRequest):
 async def action_bulk(payload: BulkActionRequest):
     """Run an *arr action on a batch of files.
 
-    For `missing` the batch is deduped to unique series first, so selecting
-    154 files from one show fires exactly one per-series missing search.
+    Folder paths (those ending with "/") are accepted and expanded to file
+    paths via scan_results so selecting a whole series folder works without
+    the frontend having to pre-load its children. For `missing` the batch
+    is deduped to unique series first, so selecting 154 files from one show
+    fires exactly one per-series missing search.
     """
     if not payload.file_paths:
         raise HTTPException(status_code=400, detail="file_paths required")
 
-    # "missing" is inherently bulk — dedup happens inside search_missing_episodes
+    # "missing" is inherently bulk + series-level — search_missing_episodes
+    # handles folder paths directly (walks up to find the containing series)
     if payload.action == "missing":
         return await search_missing_episodes(payload.file_paths)
 
-    # "replace" and "upgrade" operate per-file
+    # "replace" and "upgrade" operate per-file — expand any folder selections
+    # into the files they contain before we process each one.
+    file_paths = await _expand_folder_paths(payload.file_paths)
+    if not file_paths:
+        return {
+            "total": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "action": payload.action,
+            "results": [],
+            "error": "No files to process — selected folders had no known files in scan_results",
+        }
+
     results: list[dict] = []
     ok_count = 0
-    for path in payload.file_paths:
+    for path in file_paths:
         try:
             if payload.action == "replace":
                 r = await research_file(path, delete_file=payload.delete_file)
@@ -85,9 +140,9 @@ async def action_bulk(payload: BulkActionRequest):
             ok_count += 1
 
     return {
-        "total": len(payload.file_paths),
+        "total": len(file_paths),
         "succeeded": ok_count,
-        "failed": len(payload.file_paths) - ok_count,
+        "failed": len(file_paths) - ok_count,
         "action": payload.action,
         "results": results,
     }
@@ -119,13 +174,15 @@ async def research_single(payload: ResearchRequest):
 
 @router.post("/research/bulk")
 async def research_bulk(payload: BulkResearchRequest):
-    """Alias for /action/bulk with action=replace."""
+    """Alias for /action/bulk with action=replace. Also expands folder paths."""
     if not payload.file_paths:
         raise HTTPException(status_code=400, detail="file_paths required")
 
+    file_paths = await _expand_folder_paths(payload.file_paths)
+
     results: list[dict] = []
     ok_count = 0
-    for path in payload.file_paths:
+    for path in file_paths:
         try:
             r = await research_file(path, delete_file=payload.delete_file)
         except Exception as exc:
@@ -136,8 +193,8 @@ async def research_bulk(payload: BulkResearchRequest):
             ok_count += 1
 
     return {
-        "total": len(payload.file_paths),
+        "total": len(file_paths),
         "succeeded": ok_count,
-        "failed": len(payload.file_paths) - ok_count,
+        "failed": len(file_paths) - ok_count,
         "results": results,
     }

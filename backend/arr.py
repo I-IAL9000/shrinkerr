@@ -272,7 +272,12 @@ async def trigger_arr_rescan(file_path: str) -> dict:
 
 async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_key: str,
                                         arr_path: str) -> dict | None:
-    """Locate the Sonarr series record whose folder contains the given file path."""
+    """Locate the Sonarr series record whose folder contains (or equals) the given path.
+
+    Handles both file paths (walks up the parent chain to find the containing
+    series folder) and directory paths (matches directly when the selection
+    IS the series folder, e.g. "/TV/Bluey/" from a folder-selection in the UI).
+    """
     headers = {"X-Api-Key": api_key}
     now = time.monotonic()
     if _sonarr_cache.get("data") and (now - _sonarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
@@ -284,11 +289,15 @@ async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_
         _sonarr_cache["data"] = series_list
         _sonarr_cache["fetched_at"] = now
 
-    check_path = str(Path(arr_path).parent)
+    # Start from the path itself (without trailing slash) rather than its
+    # parent — so a selected series folder matches on the first iteration.
+    # For file paths, the first iteration misses and we walk up into the
+    # containing series folder naturally.
+    check_path = arr_path.rstrip("/")
     while check_path and check_path != "/":
         for s in series_list:
             s_path = s.get("path", "").rstrip("/")
-            if check_path.rstrip("/") == s_path:
+            if check_path == s_path:
                 return s
         check_path = str(Path(check_path).parent)
     return None
@@ -296,7 +305,11 @@ async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_
 
 async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_key: str,
                                        arr_path: str) -> dict | None:
-    """Locate the Radarr movie record whose folder contains the given file path."""
+    """Locate the Radarr movie record whose folder contains (or equals) the given path.
+
+    Handles both file paths (walks up) and directory paths (direct match
+    when the selection IS the movie folder).
+    """
     headers = {"X-Api-Key": api_key}
     now = time.monotonic()
     if _radarr_cache.get("data") and (now - _radarr_cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
@@ -308,11 +321,11 @@ async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_k
         _radarr_cache["data"] = movie_list
         _radarr_cache["fetched_at"] = now
 
-    check_path = str(Path(arr_path).parent)
+    check_path = arr_path.rstrip("/")
     while check_path and check_path != "/":
         for m in movie_list:
             m_path = m.get("path", "").rstrip("/")
-            if check_path.rstrip("/") == m_path:
+            if check_path == m_path:
                 return m
         check_path = str(Path(check_path).parent)
     return None

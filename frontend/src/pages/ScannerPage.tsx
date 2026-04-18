@@ -612,45 +612,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkArrAction = async (action: "replace" | "upgrade" | "missing") => {
     const { arrActionBulk } = await import("../api");
 
-    // Flatten selection to file paths. Folders are handled differently per action:
-    //  * replace/upgrade operate on files → expand selected folders to their files
-    //  * missing operates at series level → we pass folder paths through, backend
-    //    resolves each to its owning series via path walking
-    const allSelected = Array.from(selectedPaths);
-    const fileSel = allSelected.filter(p => !p.endsWith("/"));
-    const folderSel = allSelected.filter(p => p.endsWith("/"));
-
-    let filePaths: string[] = fileSel.slice();
-
-    if (action === "missing") {
-      // Backend can resolve folder-paths directly. But it also accepts file
-      // paths and uses the owning series — so we pass whatever is selected.
-      filePaths = allSelected;
-    } else if (folderSel.length > 0) {
-      // For replace/upgrade we need concrete files. Expand folders by looking
-      // them up in loadedFiles (already loaded from the tree).
-      const seen = new Set(filePaths);
-      for (const folder of folderSel) {
-        const files = loadedFiles.get(folder.replace(/\/$/, ""));
-        if (files) {
-          for (const f of files) {
-            if (!seen.has(f.file_path)) {
-              seen.add(f.file_path);
-              filePaths.push(f.file_path);
-            }
-          }
-        }
-      }
-      if (folderSel.length > 0 && !selectAllActive) {
-        // If folders weren't pre-loaded, warn the user.
-        const unresolvedFolders = folderSel.filter(f => !loadedFiles.has(f.replace(/\/$/, "")));
-        if (unresolvedFolders.length > 0) {
-          toast(`Expand folders first so their files can be included — ${unresolvedFolders.length} folder(s) skipped`, "info");
-        }
-      }
-    }
-
-    if (filePaths.length === 0) {
+    // Pass the raw selection through — the backend now expands folder paths
+    // to their files via scan_results (for replace/upgrade) and resolves
+    // folder paths to the owning series via path-walking (for missing).
+    // No frontend tree-expansion required.
+    const paths = Array.from(selectedPaths);
+    if (paths.length === 0) {
       toast("No files or folders selected");
       return;
     }
@@ -665,19 +632,19 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // Only replace needs a confirmation (destructive: deletes + blocklists)
     if (action === "replace") {
       if (!await confirm({
-        message: `${cfg.name} for ${filePaths.length} file(s)?\n\nThis will blocklist the current release, delete each file, and trigger a fresh search.`,
-        confirmLabel: `Replace ${filePaths.length}`,
+        message: `${cfg.name} for ${paths.length} file(s)?\n\nThis will blocklist the current release, delete each file, and trigger a fresh search.`,
+        confirmLabel: `Replace ${paths.length}`,
         danger: true,
       })) return;
     } else if (action === "missing") {
       if (!await confirm({
-        message: `Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from ${filePaths.length} path(s) and ask Sonarr to search for any missing monitored episodes.`,
+        message: `Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from ${paths.length} path(s) and ask Sonarr to search for any missing monitored episodes.`,
         confirmLabel: "Search missing",
       })) return;
     }
 
     try {
-      const res: any = await arrActionBulk(filePaths, action, true);
+      const res: any = await arrActionBulk(paths, action, true);
 
       if (action === "missing") {
         // Aggregate response shape from search_missing_episodes
