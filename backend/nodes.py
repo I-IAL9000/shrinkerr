@@ -23,6 +23,45 @@ class NodeManager:
     def __init__(self):
         self._cancel_flags: set[int] = set()  # job_ids with cancel requested
         self._requeue_on_cancel: set[int] = set()  # job_ids that should return to pending (not failed)
+        # Per-node live metrics. Workers POST these ~every 5s. Purely in
+        # memory — metrics are volatile, no reason to persist each sample to
+        # disk. Shape: { node_id: { "metrics": <all-metrics dict>, "received_at": epoch } }
+        self._node_metrics: dict[str, dict] = {}
+
+    # ------------------------------------------------------------------
+    # Live metrics (CPU / RAM / GPU / disk / network) — volatile
+    # ------------------------------------------------------------------
+
+    def update_metrics(self, node_id: str, metrics: dict) -> None:
+        """Store the latest metrics sample for a node."""
+        import time as _time
+        self._node_metrics[node_id] = {
+            "metrics": metrics,
+            "received_at": _time.time(),
+        }
+
+    def get_metrics(self, node_id: str, max_age_seconds: float = 60.0) -> dict | None:
+        """Return the latest metrics for a node, or None if missing/stale."""
+        import time as _time
+        entry = self._node_metrics.get(node_id)
+        if not entry:
+            return None
+        age = _time.time() - entry.get("received_at", 0)
+        if age > max_age_seconds:
+            return None
+        return {
+            "metrics": entry["metrics"],
+            "age_seconds": round(age, 2),
+        }
+
+    def get_all_metrics(self, max_age_seconds: float = 60.0) -> dict[str, dict]:
+        """Return a {node_id: {metrics, age_seconds}} map of all fresh nodes."""
+        result: dict[str, dict] = {}
+        for node_id in list(self._node_metrics.keys()):
+            sample = self.get_metrics(node_id, max_age_seconds=max_age_seconds)
+            if sample is not None:
+                result[node_id] = sample
+        return result
 
     async def _db(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(DB_PATH)

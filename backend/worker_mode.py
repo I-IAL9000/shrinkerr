@@ -165,6 +165,18 @@ class ServerClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def report_metrics(self, node_id: str, metrics: dict) -> None:
+        """Push live CPU/RAM/GPU metrics to the server. Fire-and-forget —
+        silently ignores errors so a flaky coordinator doesn't kill the loop.
+        """
+        try:
+            await self._client.post(
+                f"{self.base_url}/api/nodes/report-metrics",
+                json={"node_id": node_id, "metrics": metrics},
+            )
+        except Exception:
+            pass  # transient — next tick will retry
+
     async def close(self):
         await self._client.aclose()
 
@@ -487,6 +499,27 @@ async def run_worker():
                 await asyncio.sleep(min(backoff * 2, 30))
                 backoff = min(backoff * 2, 30)
 
+    # Metrics reporting loop — pushes CPU/RAM/GPU to the server so the
+    # central Monitor page can show this worker's utilisation alongside
+    # everyone else's. Cheaper than a full heartbeat because we skip the
+    # static fields; runs every 5s.
+    METRICS_INTERVAL = int(os.environ.get("METRICS_INTERVAL", "5"))
+
+    async def metrics_loop():
+        try:
+            from backend.system_metrics import get_all_metrics
+        except Exception as exc:
+            print(f"[WORKER] Metrics loop disabled — couldn't import system_metrics: {exc}", flush=True)
+            return
+        while running:
+            try:
+                metrics = await get_all_metrics()
+                await client.report_metrics(node_id, metrics)
+            except Exception as exc:
+                # Don't spam logs — next tick will retry.
+                print(f"[WORKER] metrics_loop tick failed: {exc}", flush=True)
+            await asyncio.sleep(METRICS_INTERVAL)
+
     try:
         # Send initial heartbeat
         try:
@@ -501,10 +534,11 @@ async def run_worker():
             print(f"[WORKER] Initial connection failed: {exc}", flush=True)
             print(f"[WORKER] Will retry in background...", flush=True)
 
-        # Run both loops concurrently
+        # Run all loops concurrently
         await asyncio.gather(
             heartbeat_loop(),
             job_loop(),
+            metrics_loop(),
         )
     except asyncio.CancelledError:
         pass

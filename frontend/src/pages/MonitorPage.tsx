@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getSystemMetrics } from "../api";
+import { getSystemMetrics, getNodeMetrics, type NodeMetricsEntry } from "../api";
 import { fmtNum } from "../fmt";
 
 function Gauge({ value, max, label, unit, size = 100, color }: { value: number; max: number; label: string; unit?: string; size?: number; color?: string }) {
@@ -74,11 +74,14 @@ function StatRow({ label, value, color }: { label: string; value: string | numbe
 
 export default function MonitorPage() {
   const [metrics, setMetrics] = useState<any>(null);
+  const [nodeMetrics, setNodeMetrics] = useState<NodeMetricsEntry[]>([]);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     const load = () => {
       getSystemMetrics().then(setMetrics).catch(() => setError(true));
+      // Node metrics are optional — no error state if none are registered.
+      getNodeMetrics().then(r => setNodeMetrics(r.nodes || [])).catch(() => setNodeMetrics([]));
     };
     load();
     const interval = setInterval(load, 3000); // Refresh every 3 seconds
@@ -256,9 +259,108 @@ export default function MonitorPage() {
         </div>
       </div>
 
+      {/* ── Worker Nodes ─────────────────────────────────────────────── */}
+      {nodeMetrics.length > 0 && (
+        <>
+          <h3 style={{ color: "var(--text-primary)", fontSize: 16, marginTop: 28, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            Worker Nodes
+            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>
+              {nodeMetrics.filter(n => n.metrics).length} of {nodeMetrics.length} reporting
+            </span>
+          </h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+            {nodeMetrics.map(n => <NodeMetricCard key={n.node_id} entry={n} />)}
+          </div>
+        </>
+      )}
+
       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 12, textAlign: "center", opacity: 0.5 }}>
         Auto-refreshing every 3 seconds
       </div>
+    </div>
+  );
+}
+
+
+// Single worker-node card. Uses the same Gauge/StatRow building blocks as
+// the server cards above so the Monitor page stays visually consistent.
+function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
+  const m = entry.metrics;
+  const stale = m && entry.age_seconds !== null && (entry.age_seconds ?? 0) > 15;
+
+  // Status badge color
+  const statusColor = entry.status === "working" ? "var(--accent)"
+    : entry.status === "online" ? "var(--success)"
+    : entry.status === "error" ? "#e94560"
+    : "var(--text-muted)";
+
+  return (
+    <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, border: entry.status === "working" ? "1px solid var(--accent)" : "1px solid transparent" }}>
+      {/* Header: name + status + hostname */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: "50%", background: statusColor,
+          boxShadow: entry.status === "working" ? `0 0 6px ${statusColor}` : "none",
+          flexShrink: 0,
+        }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {entry.name}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {entry.hostname || entry.node_id}
+            {entry.current_job_id != null && <> · job #{entry.current_job_id}</>}
+          </div>
+        </div>
+        {stale && (
+          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(231,76,60,0.15)", color: "#e94560" }}>
+            {Math.round(entry.age_seconds ?? 0)}s stale
+          </span>
+        )}
+        {!m && (
+          <span style={{ fontSize: 10, color: "var(--text-muted)", fontStyle: "italic" }}>
+            no metrics yet
+          </span>
+        )}
+      </div>
+
+      {m && (
+        <>
+          {/* CPU + RAM gauges (always) */}
+          <div style={{ display: "flex", justifyContent: "space-evenly", margin: "4px 0 10px" }}>
+            <Gauge value={m.cpu.cpu_percent} max={100} label="CPU" unit="%" size={88} />
+            <Gauge value={m.memory.ram_used_gb} max={m.memory.ram_total_gb} label="RAM" unit=" GB" size={88} color="#74c0fc" />
+            {m.gpu && (
+              <Gauge value={m.gpu.gpu_util} max={100} label="GPU" unit="%" size={88} color="var(--accent)" />
+            )}
+          </div>
+
+          {/* GPU details */}
+          {m.gpu && (
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>{m.gpu.name}</div>
+              <StatRow label="VRAM" value={`${Math.round(m.gpu.memory_used_mb)} / ${Math.round(m.gpu.memory_total_mb)} MB`} color="#74c0fc" />
+              <StatRow label="Temp" value={`${m.gpu.temperature_c}°C`} color={m.gpu.temperature_c > 85 ? "#e94560" : m.gpu.temperature_c > 70 ? "#ffa94d" : "var(--success)"} />
+              <StatRow label="Power" value={`${Math.round(m.gpu.power_draw_w)} / ${Math.round(m.gpu.power_limit_w)} W`} color="#ffa94d" />
+              {m.gpu.encoder_util != null && (
+                <StatRow label="NVENC" value={`${m.gpu.encoder_util}%`} color="#74c0fc" />
+              )}
+              {m.gpu.decoder_util != null && (
+                <StatRow label="NVDEC" value={`${m.gpu.decoder_util}%`} color="#69db7c" />
+              )}
+            </div>
+          )}
+
+          {/* CPU details if no GPU (keep card balanced) */}
+          {!m.gpu && (
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border)" }}>
+              <StatRow label="Cores" value={m.cpu.cpu_count} />
+              <StatRow label="Load" value={m.cpu.load_avg.map(l => l.toFixed(2)).join(" / ")} />
+              {m.cpu.cpu_freq_mhz && <StatRow label="Frequency" value={`${m.cpu.cpu_freq_mhz} MHz`} />}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

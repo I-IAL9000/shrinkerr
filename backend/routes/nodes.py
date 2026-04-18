@@ -68,6 +68,14 @@ class CompletionReport(BaseModel):
     encoding_stats: dict | None = None
 
 
+class MetricsReport(BaseModel):
+    node_id: str
+    # Accept the whole metrics dict straight from get_all_metrics() on the
+    # worker. We don't enforce a schema here — if a worker sends extra fields
+    # (future GPU features, etc) we just pass them through to the frontend.
+    metrics: dict
+
+
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
@@ -401,6 +409,53 @@ async def report_complete(req: CompletionReport, request: Request):
         })
 
     return {"ok": True}
+
+
+@router.post("/report-metrics")
+async def report_metrics(req: MetricsReport, request: Request):
+    """Worker pushes CPU/RAM/GPU/disk/net metrics.
+
+    Called every ~5 seconds so the Monitor page can show live per-node
+    utilisation. We store these in memory only — persisting every sample
+    to disk would be wasteful churn.
+    """
+    nm = _get_nm(request)
+    # Sanity check: the worker must have registered first.
+    node = await nm.get_node(req.node_id)
+    if not node:
+        raise HTTPException(404, "Node not registered — send a heartbeat first")
+    nm.update_metrics(req.node_id, req.metrics)
+    return {"ok": True}
+
+
+@router.get("/metrics")
+async def get_all_node_metrics(request: Request):
+    """Return the latest metrics for every active worker node.
+
+    Used by the Monitor page. Returns a list so the frontend can render
+    stable per-node cards; includes the node record (name, hostname,
+    gpu_name, status, current_job_id) so the UI doesn't need a separate
+    fetch to get node labels.
+    """
+    nm = _get_nm(request)
+    nodes = await nm.get_all_nodes()
+    metrics_map = nm.get_all_metrics()
+    result = []
+    for node in nodes:
+        sample = metrics_map.get(node["id"])
+        result.append({
+            "node_id": node["id"],
+            "name": node.get("name") or node.get("hostname") or node["id"],
+            "hostname": node.get("hostname", ""),
+            "status": node.get("status", "offline"),
+            "gpu_name": node.get("gpu_name"),
+            "os_info": node.get("os_info"),
+            "current_job_id": node.get("current_job_id"),
+            "capabilities": node.get("capabilities", []),
+            "metrics": sample["metrics"] if sample else None,
+            "age_seconds": sample["age_seconds"] if sample else None,
+        })
+    return {"nodes": result}
 
 
 @router.get("")

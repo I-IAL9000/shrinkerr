@@ -171,6 +171,49 @@ export const clearPendingHealthChecks = () =>
 // Worker nodes
 import type { WorkerNode } from "./types";
 export const getNodes = () => apiFetch<{ nodes: WorkerNode[] }>("/nodes");
+export interface NodeMetrics {
+  gpu: {
+    gpu_util: number;
+    memory_used_mb: number;
+    memory_total_mb: number;
+    memory_percent: number;
+    temperature_c: number;
+    power_draw_w: number;
+    power_limit_w: number;
+    name: string;
+    encoder_util: number | null;
+    decoder_util: number | null;
+  } | null;
+  cpu: {
+    cpu_percent: number;
+    cpu_count: number;
+    load_avg: number[];
+    cpu_freq_mhz: number | null;
+  };
+  memory: {
+    ram_total_gb: number;
+    ram_used_gb: number;
+    ram_percent: number;
+    swap_used_gb: number;
+    swap_percent: number;
+  };
+  disk_io: { read_mbps: number; write_mbps: number };
+  network: { download_mbps: number; upload_mbps: number };
+  timestamp: number;
+}
+export interface NodeMetricsEntry {
+  node_id: string;
+  name: string;
+  hostname: string;
+  status: string;
+  gpu_name: string | null;
+  os_info: string | null;
+  current_job_id: number | null;
+  capabilities: string[];
+  metrics: NodeMetrics | null;
+  age_seconds: number | null;
+}
+export const getNodeMetrics = () => apiFetch<{ nodes: NodeMetricsEntry[] }>("/nodes/metrics");
 export const removeNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}`, { method: "DELETE" });
 export const cancelNodeJob = (nodeId: string) => apiFetch(`/nodes/${nodeId}/cancel`, { method: "POST" });
 export const resetNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}/reset`, { method: "POST" });
