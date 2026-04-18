@@ -260,19 +260,28 @@ export default function MonitorPage() {
       </div>
 
       {/* ── Worker Nodes ─────────────────────────────────────────────── */}
-      {nodeMetrics.length > 0 && (
-        <>
-          <h3 style={{ color: "var(--text-primary)", fontSize: 16, marginTop: 28, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-            Worker Nodes
-            <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>
-              {nodeMetrics.filter(n => n.metrics).length} of {nodeMetrics.length} reporting
-            </span>
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
-            {nodeMetrics.map(n => <NodeMetricCard key={n.node_id} entry={n} />)}
-          </div>
-        </>
-      )}
+      {/* Filter out the built-in "local" node — its metrics are already
+          rendered in the System Monitor cards above, so listing it again
+          here is redundant AND always shows "no metrics yet" because the
+          server doesn't push metrics to itself. */}
+      {(() => {
+        const remote = nodeMetrics.filter(n => n.node_id !== "local");
+        if (remote.length === 0) return null;
+        const reporting = remote.filter(n => n.metrics).length;
+        return (
+          <>
+            <h3 style={{ color: "var(--text-primary)", fontSize: 16, marginTop: 28, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              Worker Nodes
+              <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>
+                {reporting} of {remote.length} reporting
+              </span>
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+              {remote.map(n => <NodeMetricCard key={n.node_id} entry={n} />)}
+            </div>
+          </>
+        );
+      })()}
 
       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 12, textAlign: "center", opacity: 0.5 }}>
         Auto-refreshing every 3 seconds
