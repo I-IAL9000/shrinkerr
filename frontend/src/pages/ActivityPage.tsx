@@ -49,7 +49,7 @@ export default function ActivityPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="main-content">
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
         <h1 style={{ color: "var(--text-primary)", fontSize: 22 }}>Activity</h1>
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
