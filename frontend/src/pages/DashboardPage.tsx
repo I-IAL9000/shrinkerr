@@ -910,11 +910,14 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
             { name: "Backblaze B2", perTB: 5 },
             { name: "Wasabi", perTB: 7 },
           ];
+          // Prices sourced from Amazon/Newegg for Seagate IronWolf NAS drives.
+          // Review every ~6 months and update — drive prices drift noticeably.
           const driveTypes = [
-            { name: "NAS Drive (8TB)", size: 8, price: 200 },
-            { name: "NAS Drive (16TB)", size: 16, price: 300 },
-            { name: "NAS Drive (20TB)", size: 20, price: 400 },
-            { name: "Desktop HDD (8TB)", size: 8, price: 140 },
+            { name: "IronWolf 4TB",  size: 4,  price: 159.99 },
+            { name: "IronWolf 8TB",  size: 8,  price: 279.99 },
+            { name: "IronWolf 12TB", size: 12, price: 349.99 },
+            { name: "IronWolf 16TB", size: 16, price: 449.99 },
+            { name: "IronWolf 20TB", size: 20, price: 569.99 },
           ];
           return (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
@@ -937,7 +940,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 </div>
                 {driveTypes.map(d => {
                   const drivesSaved = savedTB / d.size;
-                  const moneySaved = Math.floor(drivesSaved) * d.price;
+                  // Round to whole dollars for a cleaner display — these are
+                  // approximations anyway, and decimal cents on "$559.98 saved"
+                  // looks visually noisy in the table.
+                  const moneySaved = Math.round(Math.floor(drivesSaved) * d.price);
                   return (
                     <div key={d.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
                       <span style={{ color: "var(--text-muted)" }}>{d.name} · ${d.price}</span>
