@@ -829,15 +829,85 @@ async def convert_file(
             pass
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
-    # Verify output exists and has non-zero size
+    # Verify output exists and has non-zero size.
+    #
+    # Retry with a short wait: on networked filesystems (NFS, SMB) and under
+    # heavy I/O load we've occasionally seen the stat() fire a hair before
+    # ffmpeg's final flush finishes propagating the file size back to the
+    # client. Also re-scan the directory for any *.converting.mkv file —
+    # rarely, ffmpeg ends up using a slightly different path if the stem
+    # contains unusual characters. Only then give up, and include enough
+    # diagnostic detail for the user to see WHY we gave up.
     temp = Path(temp_path)
-    if not temp.exists() or temp.stat().st_size == 0:
+
+    async def _resolve_output() -> tuple[Path | None, str]:
+        # 1. Happy path — the expected temp path exists with content.
+        if temp.exists() and temp.stat().st_size > 0:
+            return temp, "expected path, first check"
+        # 2. Short wait then re-check. 3x500ms covers NFS write latency without
+        # unreasonably delaying the common case.
+        for attempt in range(3):
+            await asyncio.sleep(0.5)
+            if temp.exists() and temp.stat().st_size > 0:
+                return temp, f"expected path after {(attempt + 1) * 500}ms wait"
+        # 3. Did the final (renamed) output already appear? This can happen
+        # if a previous run completed the rename but we mis-tracked state.
+        final = Path(final_path)
+        if final.exists() and final.stat().st_size > 0:
+            return final, "already-renamed final path"
+        # 4. Scan the parent directory for any .converting.mkv file younger
+        # than when we started — ffmpeg might have written to a nearby path.
+        try:
+            parent = temp.parent
+            candidates = []
+            for f in parent.glob("*.converting.mkv"):
+                try:
+                    st = f.stat()
+                    if st.st_size > 0:
+                        candidates.append((f, st.st_size, st.st_mtime))
+                except OSError:
+                    continue
+            if candidates:
+                # Pick the most-recently-modified one.
+                candidates.sort(key=lambda x: x[2], reverse=True)
+                return candidates[0][0], f"recovered via directory scan ({candidates[0][0].name})"
+        except Exception:
+            pass
+        return None, "no output file found"
+
+    resolved, how = await _resolve_output()
+    if resolved is None:
+        # Build a diagnostic snapshot so the next failure is debuggable.
+        try:
+            parent = temp.parent
+            dir_listing = sorted([f.name for f in parent.iterdir()])[:25]
+        except Exception:
+            dir_listing = ["<unable to list directory>"]
+        input_exists = Path(input_path).exists()
+        input_size = Path(input_path).stat().st_size if input_exists else 0
+        diag = (
+            f"Output file missing or empty after conversion.\n"
+            f"- expected temp: {temp_path}\n"
+            f"- expected final: {final_path}\n"
+            f"- ffmpeg exit code: 0 (reported success)\n"
+            f"- source file intact: {input_exists} ({input_size} bytes)\n"
+            f"- nearby files: {dir_listing}\n"
+            f"Source file was NOT touched — you can safely retry."
+        )
+        print(f"[CONVERT] {diag}", flush=True)
         return {
             "success": False,
             "output_path": None,
             "space_saved": 0,
-            "error": "Output file missing or empty after conversion",
+            "error": diag,
+            "source_intact": input_exists,
         }
+
+    # Use the resolved path (may differ from `temp_path` if recovery kicked in)
+    if str(resolved) != temp_path:
+        print(f"[CONVERT] Output resolved via fallback: {how} → {resolved}", flush=True)
+        temp_path = str(resolved)
+        temp = resolved
 
     output_size = temp.stat().st_size
     space_saved = original_size - output_size

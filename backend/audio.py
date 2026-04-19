@@ -232,15 +232,55 @@ async def remux_audio(
             pass
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
-    # Verify output
+    # Verify output — same retry-and-recover logic as converter.py, since
+    # the same filesystem / timing edge cases apply to the remux path too.
+    # Never fail this check while the source is still intact without first
+    # giving ffmpeg's final flush a moment to settle.
     temp = Path(temp_path)
-    if not temp.exists() or temp.stat().st_size == 0:
-        return {
-            "success": False,
-            "output_path": None,
-            "space_saved": 0,
-            "error": "Output file missing or empty after remux",
-        }
+    if not (temp.exists() and temp.stat().st_size > 0):
+        recovered = False
+        for _attempt in range(3):
+            await asyncio.sleep(0.5)
+            if temp.exists() and temp.stat().st_size > 0:
+                recovered = True
+                break
+        if not recovered:
+            # Maybe ffmpeg wrote to a nearby .remuxing.mkv — scan directory
+            try:
+                candidates = []
+                for f in temp.parent.glob("*.remuxing.mkv"):
+                    try:
+                        st = f.stat()
+                        if st.st_size > 0:
+                            candidates.append((f, st.st_mtime))
+                    except OSError:
+                        continue
+                if candidates:
+                    candidates.sort(key=lambda x: x[1], reverse=True)
+                    temp = candidates[0][0]
+                    temp_path = str(temp)
+                    print(f"[REMUX] Output recovered via directory scan: {temp}", flush=True)
+                    recovered = True
+            except Exception:
+                pass
+        if not recovered:
+            input_exists = Path(input_path).exists()
+            input_size = Path(input_path).stat().st_size if input_exists else 0
+            diag = (
+                f"Output file missing or empty after remux.\n"
+                f"- expected temp: {temp_path}\n"
+                f"- ffmpeg exit code: 0 (reported success)\n"
+                f"- source file intact: {input_exists} ({input_size} bytes)\n"
+                f"Source file was NOT touched — you can safely retry."
+            )
+            print(f"[REMUX] {diag}", flush=True)
+            return {
+                "success": False,
+                "output_path": None,
+                "space_saved": 0,
+                "error": diag,
+                "source_intact": input_exists,
+            }
 
     output_size = temp.stat().st_size
     space_saved = original_size - output_size

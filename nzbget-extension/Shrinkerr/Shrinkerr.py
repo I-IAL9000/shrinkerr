@@ -583,4 +583,23 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Any uncaught exception in main() would exit with a non-zero code,
+    # which NZBGet interprets as a failed post-processing script and flags
+    # the download as "bad". Sonarr's "Failed download handling" then
+    # blocklists the release. That cascade should NEVER fire because
+    # Shrinkerr had a glitch — by the time this script runs, NZBGet has
+    # already verified par/unpack. Our job is just to queue a conversion
+    # as a bonus step. Convert ANY unexpected failure after the initial
+    # environment check into POSTPROCESS_NONE so NZBGet/Sonarr leave the
+    # download alone.
+    try:
+        main()
+    except SystemExit:
+        # sys.exit() calls inside main — let them propagate normally.
+        raise
+    except Exception as exc:
+        error(f"Unexpected error in Shrinkerr post-processing: {exc}")
+        error("Skipping (exiting NONE) so NZBGet/Sonarr don't treat this as a bad download.")
+        import traceback
+        error(traceback.format_exc())
+        sys.exit(POSTPROCESS_NONE)
