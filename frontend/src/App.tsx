@@ -10,6 +10,7 @@ import NodesPage from "./pages/NodesPage";
 import SchedulePage from "./pages/SchedulePage";
 import SettingsPage from "./pages/SettingsPage";
 import MonitorPage from "./pages/MonitorPage";
+import DesignPage from "./pages/DesignPage";
 import { useToastState, ToastProvider, ToastContainer } from "./useToast";
 import { ConfirmProvider } from "./components/ConfirmModal";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
@@ -445,6 +446,8 @@ export default function App() {
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/settings" element={<SettingsPage theme={theme} onToggleTheme={toggleTheme} />} />
+            {/* Design-system reference page — no sidebar link; reach it directly at /design */}
+            <Route path="/design" element={<DesignPage />} />
           </Routes>
         </main>
       </div>
