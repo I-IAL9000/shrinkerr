@@ -83,17 +83,20 @@ services:
     # =======================================================================
     # GPU passthrough — ONLY needed if you're using the :nvenc / :edge-nvenc
     # image (or building from Dockerfile.nvenc). The portable image has no
-    # CUDA runtime, so these settings do nothing for it.
+    # CUDA runtime, so this block does nothing for it.
     #
-    # Uncomment the block below + add `- NVIDIA_VISIBLE_DEVICES=all` under
-    # environment: when switching to the NVENC image. Also requires the
-    # NVIDIA Container Toolkit on the host:
-    #   https://github.com/NVIDIA/nvidia-container-toolkit
+    # Uncomment the `deploy:` block below + add `- NVIDIA_VISIBLE_DEVICES=all`
+    # under environment: when switching to the NVENC image.
     #
-    # DRIVER VERSION: :nvenc ships ffmpeg n7.1 (NVENC SDK 12.2) → needs
-    # NVIDIA driver >= 525.60.13. :edge-nvenc ships master (SDK 13.0) →
-    # needs driver 570+. If your driver is too old, the runtime test encode
-    # fails and the Monitor page tells you exactly what to upgrade to.
+    # Host-side prerequisites:
+    #   Linux:   NVIDIA Container Toolkit
+    #            https://github.com/NVIDIA/nvidia-container-toolkit
+    #   Windows: Docker Desktop in WSL2 mode + recent NVIDIA Windows driver.
+    #            (Windows 10 21H2+ / Windows 11. Nothing else to install.)
+    #   macOS:   not supported — use the portable :latest image instead.
+    #
+    # DRIVER VERSION: :nvenc → driver 525.60.13+; :edge-nvenc → driver 570+.
+    # The Monitor page shows your driver version and flags any mismatch.
     # =======================================================================
     # deploy:
     #   resources:

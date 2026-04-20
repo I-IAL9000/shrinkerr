@@ -102,23 +102,35 @@ services:
 
     # =======================================================================
     # GPU passthrough — ONLY needed for the :nvenc or :edge-nvenc image.
-    # The portable :latest / :edge image has no CUDA runtime; these settings
-    # do nothing for it.
+    # The portable :latest / :edge image has no CUDA runtime; this block
+    # does nothing for it.
     #
     # To switch to NVENC:
     #   1. Change the `image:` line above to shrinkerr:nvenc (or :edge-nvenc).
     #   2. Uncomment - NVIDIA_VISIBLE_DEVICES=all under environment above.
-    #   3. Uncomment the `runtime:` + `deploy:` blocks below.
-    #   4. Install the NVIDIA Container Toolkit on the host:
-    #        https://github.com/NVIDIA/nvidia-container-toolkit
+    #   3. Uncomment the `deploy:` block below.
+    #   4. Host-side prerequisites:
+    #        Linux:   install the NVIDIA Container Toolkit
+    #                 https://github.com/NVIDIA/nvidia-container-toolkit
+    #        Windows: Docker Desktop in its default WSL2 backend mode, plus
+    #                 a recent NVIDIA driver on Windows. Docker Desktop
+    #                 bundles what the container needs — nothing extra to
+    #                 install. Works on Windows 10 21H2+ / Windows 11.
+    #        macOS:   not supported — Apple Silicon has no NVIDIA path, and
+    #                 Docker Desktop on Mac can't pass a GPU through to
+    #                 Linux containers. Use the portable :latest image.
     #
     # DRIVER VERSION:
     #   :nvenc        → ffmpeg n7.1   → NVIDIA driver 525.60.13+
     #   :edge-nvenc   → ffmpeg master → NVIDIA driver 570.00+
     # If the driver is too old, the runtime test encode fails and the
     # Monitor page tells you exactly what to upgrade to.
+    #
+    # NOTE: we deliberately do NOT include `runtime: nvidia` here. The older
+    # runtime shim is Linux-only and Docker Desktop for Windows rejects it.
+    # The `deploy.resources.reservations.devices` spec below works on every
+    # platform (Linux with NVIDIA Container Toolkit, WSL2 on Windows).
     # =======================================================================
-    # runtime: nvidia
     # deploy:
     #   resources:
     #     reservations:
@@ -168,8 +180,9 @@ services:
   #     # Must see the media at the same path the server uses (or use PATH_MAPPINGS).
   #     - /srv/media:/media
   #   restart: unless-stopped
-  #   # Uncomment the next 7 lines only when using the :nvenc worker image:
-  #   # runtime: nvidia
+  #   # Uncomment the `deploy:` block below only when using the :nvenc
+  #   # worker image. Works on Linux (with NVIDIA Container Toolkit) and
+  #   # on Windows (Docker Desktop in WSL2 mode). Not supported on macOS.
   #   # deploy:
   #   #   resources:
   #   #     reservations:
