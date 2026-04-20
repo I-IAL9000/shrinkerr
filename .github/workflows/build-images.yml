@@ -1,26 +1,23 @@
 # ============================================================================
 # Build and publish Shrinkerr images to GHCR (GitHub Container Registry).
 #
-# This workflow is dormant until you push this repo to GitHub. Once it's
-# there, builds happen automatically on:
-#   - push to main/master (produces `:latest` and `:edge` floating tags)
-#   - push of a tag like v0.9.0 (produces `:v0.9.0` and `:v0.9.0-edge`)
+# Triggered on:
+#   - push to main/master  → floating tags (:latest, :edge, :nvenc, :edge-nvenc)
+#   - push of a v* tag     → versioned tags + matching floating ones
 #   - manual run via the Actions tab ("Run workflow" button)
 #
-# Two image variants are built in parallel:
+# Four image variants are built in parallel. Two lineages × two ffmpeg builds:
 #
-#   ghcr.io/<owner>/shrinkerr:latest
-#     ffmpeg n7.1  → NVENC SDK 12.2 → NVIDIA driver 525.60.13+
-#     The safe default. Pick this unless you have a reason not to.
+#   Lineage 1 — portable, multi-arch (linux/amd64 + linux/arm64), CPU-only:
+#     :latest        Dockerfile,        ffmpeg n7.1    — safe default, runs everywhere
+#     :edge          Dockerfile,        ffmpeg master  — bleeding-edge ffmpeg
 #
-#   ghcr.io/<owner>/shrinkerr:edge
-#     ffmpeg master → NVENC SDK 13.0 → NVIDIA driver 570.00+
-#     Bleeding-edge ffmpeg. Use if you're on a very recent driver and
-#     want the latest filters/encoders/bug fixes.
+#   Lineage 2 — CUDA + NVENC, amd64 only:
+#     :nvenc         Dockerfile.nvenc,  ffmpeg n7.1    — GPU users, driver 525.60.13+
+#     :edge-nvenc    Dockerfile.nvenc,  ffmpeg master  — GPU users on driver 570+
 #
-# Both use the same Dockerfile; the only difference is the FFMPEG_BUILD
-# build-arg. Anyone consuming the image can pin to whichever they want via
-# their docker-compose `image:` line.
+# Users pick via their compose `image:` line. Most should use :latest. Only
+# users with an NVIDIA GPU + the NVIDIA Container Toolkit benefit from :nvenc.
 # ============================================================================
 name: Build & publish images
 
@@ -54,21 +51,41 @@ jobs:
 
     strategy:
       fail-fast: false
-      # Build both variants in parallel so a slow ffmpeg-master download
-      # doesn't block the n7.1 image from being ready. Each entry is a
-      # (tag_suffix, ffmpeg_build, nvenc_min_driver) triple.
+      # Each matrix entry produces one image tag. Variants don't share cache
+      # scopes (different Dockerfiles + different ffmpeg builds → different
+      # final layers), but the `frontend-build` stage is identical across
+      # all four and the CPU-only pair can share some lower layers.
       matrix:
         variant:
+          # ── Portable lineage (multi-arch, CPU-only) ──────────────────────
           - suffix: latest
+            dockerfile: Dockerfile
             ffmpeg_build: n7.1
-            nvenc_min_driver: 525.60.13
+            platforms: linux/amd64,linux/arm64
           - suffix: edge
+            dockerfile: Dockerfile
             ffmpeg_build: master
-            nvenc_min_driver: '570.00'
+            platforms: linux/amd64,linux/arm64
+          # ── NVENC lineage (amd64 only, CUDA base) ────────────────────────
+          - suffix: nvenc
+            dockerfile: Dockerfile.nvenc
+            ffmpeg_build: n7.1
+            platforms: linux/amd64
+          - suffix: edge-nvenc
+            dockerfile: Dockerfile.nvenc
+            ffmpeg_build: master
+            platforms: linux/amd64
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        # Required for cross-arch builds (building arm64 on an amd64 runner).
+        # Cheap no-op for the :nvenc variants that are amd64-only.
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -86,8 +103,8 @@ jobs:
       - name: Compute tags
         id: tags
         # Produce a newline-separated list of tags for this variant:
-        #   - On a tag push (v0.9.0): ghcr.io/owner/shrinkerr:v0.9.0[-edge]
-        #   - On main/master push:    ghcr.io/owner/shrinkerr:latest OR :edge
+        #   - On a tag push (v0.9.0): ghcr.io/owner/shrinkerr:v0.9.0 (+ floating)
+        #   - On main/master push:    ghcr.io/owner/shrinkerr:<suffix>
         #   - workflow_dispatch:      same as main/master
         # GitHub lowercases image names but `github.repository_owner` preserves
         # case — force lowercase so GHCR accepts the tag.
@@ -118,16 +135,16 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.variant.dockerfile }}
+          platforms: ${{ matrix.variant.platforms }}
           # Push on branch/tag pushes; dry-run on workflow_dispatch unless
           # the user explicitly checks the "push" box.
           push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_images }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
-            NVENC_MIN_DRIVER=${{ matrix.variant.nvenc_min_driver }}
-          # Shared layer cache between variants so the frontend build stage
-          # isn't rebuilt twice. Scope by variant so the final-stage layer
-          # (which depends on FFMPEG_BUILD) doesn't collide.
+          # Per-variant cache scope — the final layers differ between variants
+          # (different Dockerfiles, different ffmpeg builds, different
+          # platforms), so collapsing them into one scope would thrash.
           cache-from: type=gha,scope=shrinkerr-${{ matrix.variant.suffix }}
           cache-to: type=gha,mode=max,scope=shrinkerr-${{ matrix.variant.suffix }}

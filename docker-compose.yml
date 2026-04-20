@@ -16,15 +16,26 @@
 
 services:
   shrinkerr:
-    # Build the image from the Dockerfile in this folder.
-    # To use a prebuilt image instead, comment `build:` out and uncomment one
-    # of the `image:` lines below:
-    #   shrinkerr:latest — ffmpeg n7.1 (NVIDIA driver 525.60.13+)  — default
-    #   shrinkerr:edge   — ffmpeg master (NVIDIA driver 570.00+)   — bleeding edge
-    # Or build both tags at once with: ./scripts/build-images.sh
+    # Build the portable (CPU-only, multi-arch) image from `Dockerfile`.
+    # For the GPU/NVENC image, use `Dockerfile.nvenc`:
+    #   build:
+    #     context: .
+    #     dockerfile: Dockerfile.nvenc
+    #
+    # To skip the build and pull a prebuilt image instead, comment `build:`
+    # out and uncomment one of these `image:` lines:
+    #   Portable (works on ANY host — Mac, Windows, Linux, Pi, ARM…):
+    #     shrinkerr:latest     — ffmpeg n7.1   (default, stable)
+    #     shrinkerr:edge       — ffmpeg master (bleeding edge)
+    #   NVENC (x86_64 Linux host with NVIDIA GPU + Container Toolkit):
+    #     shrinkerr:nvenc      — ffmpeg n7.1   (NVIDIA driver 525.60.13+)
+    #     shrinkerr:edge-nvenc — ffmpeg master (NVIDIA driver 570.00+)
+    # Or build every tag at once with: ./scripts/build-images.sh
     build: .
     # image: shrinkerr:latest
     # image: shrinkerr:edge
+    # image: shrinkerr:nvenc
+    # image: shrinkerr:edge-nvenc
 
     container_name: shrinkerr
 
@@ -61,40 +72,36 @@ services:
       # - /srv/downloads/completed/TV:/downloads/tv
       # - /srv/downloads/completed/Movies:/downloads/movies
 
-    environment:
-      # --- GPU passthrough hint ---
-      # This is a HINT to the Docker runtime, not a hard requirement. Leave
-      # it as-is even on CPU-only hosts — Shrinkerr detects the GPU at
-      # runtime and falls back to libx265 (CPU) cleanly when no NVIDIA
-      # device is actually present. The Monitor page will show exactly
-      # what's active (NVENC vs CPU) and why.
-      - NVIDIA_VISIBLE_DEVICES=all
-      # The app's defaults for DB path (/app/data/shrinkerr.db) and media
-      # root (/media) already match the volume mounts above, so no extra
-      # env vars are needed here. Override them with SHRINKERR_DB_PATH or
-      # SHRINKERR_MEDIA_ROOT if you really need to.
+    # No `environment:` block needed — the app's defaults for DB path
+    # (/app/data/shrinkerr.db) and media root (/media) already match the
+    # volume mounts above. Override with SHRINKERR_DB_PATH or
+    # SHRINKERR_MEDIA_ROOT by adding an `environment:` block here if
+    # you need to point elsewhere.
 
     restart: unless-stopped
 
-    # --- NVIDIA GPU passthrough ---
-    # Required for NVENC hardware encoding on NVIDIA GPUs. You must have the
+    # =======================================================================
+    # GPU passthrough — ONLY needed if you're using the :nvenc / :edge-nvenc
+    # image (or building from Dockerfile.nvenc). The portable image has no
+    # CUDA runtime, so these settings do nothing for it.
+    #
+    # Uncomment the block below + add `- NVIDIA_VISIBLE_DEVICES=all` under
+    # environment: when switching to the NVENC image. Also requires the
     # NVIDIA Container Toolkit on the host:
     #   https://github.com/NVIDIA/nvidia-container-toolkit
-    # On a CPU-only host this block is ignored (no nvidia runtime → Docker
-    # silently drops it). You can delete it if you prefer a clean file.
     #
-    # DRIVER VERSION: the image ships ffmpeg n7.1 (NVENC SDK 12.2), which
-    # requires NVIDIA driver >= 525.60.13. If your driver is older the
-    # runtime test encode will fail and the UI will tell you exactly what
-    # to upgrade to. Rebuild with --build-arg FFMPEG_BUILD=master to use the
-    # bleeding-edge build (needs driver 570+).
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu, video]
+    # DRIVER VERSION: :nvenc ships ffmpeg n7.1 (NVENC SDK 12.2) → needs
+    # NVIDIA driver >= 525.60.13. :edge-nvenc ships master (SDK 13.0) →
+    # needs driver 570+. If your driver is too old, the runtime test encode
+    # fails and the Monitor page tells you exactly what to upgrade to.
+    # =======================================================================
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, video]
 
   # ==========================================================================
   # Optional: remote worker node

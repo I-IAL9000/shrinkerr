@@ -22,13 +22,21 @@
 
 services:
   shrinkerr:
-    # Prebuilt image. Two tags are published:
-    #   shrinkerr:latest — ffmpeg n7.1, needs NVIDIA driver 525.60.13+
-    #                      (DEFAULT — widest compatibility, pick this if unsure)
-    #   shrinkerr:edge   — ffmpeg master, needs NVIDIA driver 570.00+
-    #                      (bleeding edge — latest ffmpeg features/fixes)
-    # Pin to a specific version (e.g. shrinkerr:v0.9.0) for deterministic
-    # upgrades; `:latest` and `:edge` are floating and track their branches.
+    # ----- Image tag — pick one -------------------------------------------
+    # Four tags are published, split into two lineages:
+    #
+    # Portable (multi-arch: linux/amd64 + linux/arm64, CPU encoding only)
+    # Works on ANY host — Linux server, Mac, Windows, Raspberry Pi, ARM cloud:
+    #   shrinkerr:latest      — ffmpeg n7.1   (stable, DEFAULT)
+    #   shrinkerr:edge        — ffmpeg master (bleeding edge)
+    #
+    # NVENC (linux/amd64 only, CUDA base, hardware encoding on NVIDIA GPUs)
+    # Requires an NVIDIA GPU + the NVIDIA Container Toolkit on the host:
+    #   shrinkerr:nvenc       — ffmpeg n7.1   (NVIDIA driver 525.60.13+)
+    #   shrinkerr:edge-nvenc  — ffmpeg master (NVIDIA driver 570.00+)
+    #
+    # Pin to a specific version (e.g. shrinkerr:v0.9.0-nvenc) for deterministic
+    # upgrades; the floating tags above track their branches.
     image: shrinkerr:latest
     container_name: shrinkerr
 
@@ -73,11 +81,6 @@ services:
       # - /srv/downloads/completed/Movies:/downloads/movies:rw
 
     environment:
-      # --- GPU passthrough hint ---
-      # Advisory — Shrinkerr detects the GPU at runtime. Safe to leave as-is
-      # on CPU-only hosts; the app falls back to libx265 and the Monitor
-      # page tells you exactly what's active (NVENC vs CPU) + why.
-      - NVIDIA_VISIBLE_DEVICES=all
       # The app's defaults for DB path (/app/data/shrinkerr.db) and media
       # root (/media) already match the volume mounts above, so nothing
       # else needs to go here. Override with SHRINKERR_DB_PATH or
@@ -92,28 +95,37 @@ services:
       - PGID=1000
       - PUID=1000
 
+      # If you're using the :nvenc / :edge-nvenc image, also uncomment:
+      # - NVIDIA_VISIBLE_DEVICES=all
+
     restart: unless-stopped
 
-    # --- GPU runtime ---
-    # Needs the NVIDIA Container Toolkit on the host:
-    #   https://github.com/NVIDIA/nvidia-container-toolkit
-    # On CPU-only hosts Docker will complain about runtime:nvidia if the
-    # toolkit isn't installed — in that case, comment out `runtime:` and
-    # the `deploy:` block. With the toolkit installed but no GPU, they're
-    # harmless (Docker just skips them).
+    # =======================================================================
+    # GPU passthrough — ONLY needed for the :nvenc or :edge-nvenc image.
+    # The portable :latest / :edge image has no CUDA runtime; these settings
+    # do nothing for it.
     #
-    # DRIVER VERSION: the image ships ffmpeg n7.1 (NVENC SDK 12.2), needs
-    # NVIDIA driver >= 525.60.13 for NVENC. Older driver? The Monitor
-    # page will tell you exactly what to upgrade to, or use the image tag
-    # published with an older ffmpeg build.
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu, video]
+    # To switch to NVENC:
+    #   1. Change the `image:` line above to shrinkerr:nvenc (or :edge-nvenc).
+    #   2. Uncomment - NVIDIA_VISIBLE_DEVICES=all under environment above.
+    #   3. Uncomment the `runtime:` + `deploy:` blocks below.
+    #   4. Install the NVIDIA Container Toolkit on the host:
+    #        https://github.com/NVIDIA/nvidia-container-toolkit
+    #
+    # DRIVER VERSION:
+    #   :nvenc        → ffmpeg n7.1   → NVIDIA driver 525.60.13+
+    #   :edge-nvenc   → ffmpeg master → NVIDIA driver 570.00+
+    # If the driver is too old, the runtime test encode fails and the
+    # Monitor page tells you exactly what to upgrade to.
+    # =======================================================================
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, video]
 
   # ==========================================================================
   # Optional: remote worker node
@@ -130,11 +142,12 @@ services:
   #        - Different host:                   http://<server-lan-ip>:6680
   #   4. Deploy the stack. The worker appears on the Nodes page within ~30s.
   #
-  # For an ARM64 / CPU-only worker, use `shrinkerr:arm64-worker` as the image
-  # (build with: docker build -f Dockerfile.worker-arm64 -t shrinkerr:arm64-worker .)
+  # Image choice for the worker mirrors the main service:
+  #   shrinkerr:latest / :edge       → portable, any arch, CPU-only
+  #   shrinkerr:nvenc / :edge-nvenc  → linux/amd64, CUDA+NVENC, GPU host
   # ==========================================================================
   # shrinkerr-worker:
-  #   image: shrinkerr:latest            # or shrinkerr:arm64-worker for ARM
+  #   image: shrinkerr:latest            # or shrinkerr:nvenc for a GPU worker
   #   container_name: shrinkerr-worker
   #   environment:
   #     - SHRINKERR_MODE=worker          # switches container to worker mode (no UI, no server)
@@ -145,7 +158,8 @@ services:
   #     # If the worker mounts media at a different path than the server does,
   #     # map the paths here (JSON list of [server_path, worker_path] pairs):
   #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
-  #     - NVIDIA_VISIBLE_DEVICES=all     # remove on CPU-only workers
+  #     # Only needed for the NVENC worker image:
+  #     # - NVIDIA_VISIBLE_DEVICES=all
   #     # Timing (all optional; defaults shown):
   #     # - POLL_INTERVAL=5              # seconds between job polls
   #     # - HEARTBEAT_INTERVAL=30        # seconds between "I'm alive" pings
@@ -154,11 +168,12 @@ services:
   #     # Must see the media at the same path the server uses (or use PATH_MAPPINGS).
   #     - /srv/media:/media
   #   restart: unless-stopped
-  #   runtime: nvidia                    # remove on CPU-only workers
-  #   deploy:                            # remove on CPU-only workers
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu, video]
+  #   # Uncomment the next 7 lines only when using the :nvenc worker image:
+  #   # runtime: nvidia
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu, video]
