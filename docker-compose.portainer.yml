@@ -1,25 +1,99 @@
+# ============================================================================
+# Shrinkerr — production / Portainer deploy
+#
+# This is the deployment-ready compose file. It pulls a prebuilt `shrinkerr:latest`
+# image instead of building from source. Use this one in Portainer, or on any
+# host where you just want to pull + run without a git checkout.
+#
+# Quick start (Portainer):
+#   1. Stacks → Add stack → paste this file.
+#   2. Edit the `volumes:` paths (marked "CHANGE ME") to match your host.
+#   3. Deploy. The UI is on port 6680: http://<host>:6680
+#
+# Quick start (CLI):
+#   docker compose -f docker-compose.portainer.yml pull
+#   docker compose -f docker-compose.portainer.yml up -d
+#
+# Upgrading:
+#   docker compose -f docker-compose.portainer.yml pull
+#   docker compose -f docker-compose.portainer.yml up -d
+#   (Your data in /app/data is preserved across upgrades.)
+# ============================================================================
+
 services:
   shrinkerr:
+    # Prebuilt image. If you maintain a private tag, pin it here (e.g. shrinkerr:0.8.2)
+    # instead of `latest` so upgrades are explicit.
     image: shrinkerr:latest
     container_name: shrinkerr
+
+    # --- Web UI + API port ---
+    # Left side = port on your host. Change if 6680 is already in use.
+    # Right side = port inside the container (do not change).
+    # e.g. "8080:6680" → visit http://<host>:8080
     ports:
       - "6680:6680"
+
     volumes:
+      # --- Required: persistent app data ---
+      # SQLite database, logs, encoding history, backups. Back this up.
+      # CHANGE ME: set the left side to a real path on your host.
+      # Linux/Mac: - /home/youruser/shrinkerr/data:/app/data
+      # Windows:   - C:\ProgramData\shrinkerr\data:/app/data
       - /home/hal9000/shrinkerr/data:/app/data
+
+      # --- Required: your media library ---
+      # Must be READ + WRITE — Shrinkerr overwrites originals in place
+      # (unless you disable "trash after conversion" in Settings).
+      # `rslave` propagation makes it so Shrinkerr sees any new mounts the
+      # host attaches *under* this path after the container starts — useful
+      # if you have a NAS share that auto-mounts on boot.
+      # CHANGE ME: set `source:` to the root of your media library.
+      # Linux/Mac: source: /mnt/media
+      # Windows:   source: E:\media
       - type: bind
         source: /home/hal9000/HALHUB
         target: /media
         bind:
           propagation: rslave
+
+      # --- Optional: NZBGet / SABnzbd completed-downloads folders ---
+      # Only needed if you use the NZBGet / SABnzbd post-processing scripts
+      # (see Settings → Automation). These are the folders your downloader
+      # drops files into when a download finishes. Shrinkerr needs read+write
+      # so it can hand files off to Sonarr/Radarr after processing.
+      # Delete these two lines if you don't use nzb/sab.
+      # CHANGE ME: adjust paths to match your downloader's "completed" folders.
       - /home/hal9000/Downloads/completed/TV:/downloads/tv:rw
       - /home/hal9000/Downloads/completed/Movies:/downloads/movies:rw
+
     environment:
+      # --- NVIDIA GPU passthrough (for NVENC hardware encoding) ---
+      # Remove this line (and the `runtime:` + `deploy:` blocks below) if
+      # you're on a CPU-only host — the app falls back to libx265 on CPU.
       - NVIDIA_VISIBLE_DEVICES=all
+
+      # --- Paths inside the container ---
+      # Leave these alone. They must match the volume targets above.
+      # (SQUEEZARR_ prefix is historical — Shrinkerr was originally Squeezarr.)
       - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
       - SQUEEZARR_MEDIA_ROOT=/media
+
+      # --- File ownership for created/modified files ---
+      # Files Shrinkerr writes will be owned by this UID/GID on the host.
+      # Usually matches your regular user (run `id` on the host to check).
+      # Leaving both at 1000 is safe for almost everyone.
+      # NOTE: these are advisory — current Dockerfile runs as root regardless.
+      # Safe to keep for forward-compat, but don't rely on them for security.
       - PGID=1000
       - PUID=1000
+
     restart: unless-stopped
+
+    # --- GPU runtime ---
+    # Required for NVENC. Needs the NVIDIA Container Toolkit on the host:
+    #   https://github.com/NVIDIA/nvidia-container-toolkit
+    # Remove this line AND the `deploy:` block if you don't have an NVIDIA GPU.
     runtime: nvidia
     deploy:
       resources:
@@ -28,3 +102,51 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu, video]
+
+  # ==========================================================================
+  # Optional: remote worker node
+  #
+  # Uncomment to add a second container (on this host or another) that picks
+  # up jobs from the main server above. Useful for offloading CPU encoding
+  # to a beefier machine, or for mixing x86/NVENC + ARM/CPU workers.
+  #
+  # Setup:
+  #   1. In the main Shrinkerr UI: Settings → Nodes → create a worker API key.
+  #   2. Paste that key into API_KEY below.
+  #   3. Set SERVER_URL to how the worker reaches the server:
+  #        - Same docker network / same stack: http://shrinkerr:6680
+  #        - Different host:                   http://<server-lan-ip>:6680
+  #   4. Deploy the stack. The worker appears on the Nodes page within ~30s.
+  #
+  # For an ARM64 / CPU-only worker, use `shrinkerr:arm64-worker` as the image
+  # (build with: docker build -f Dockerfile.worker-arm64 -t shrinkerr:arm64-worker .)
+  # ==========================================================================
+  # shrinkerr-worker:
+  #   image: shrinkerr:latest            # or shrinkerr:arm64-worker for ARM
+  #   container_name: shrinkerr-worker
+  #   environment:
+  #     - SHRINKERR_MODE=worker          # switches container to worker mode (no UI, no server)
+  #     - SERVER_URL=http://shrinkerr:6680
+  #     - API_KEY=REPLACE_WITH_WORKER_KEY
+  #     - WORKER_NAME=gaming-pc          # shown on the Nodes page
+  #     - CAPABILITIES=nvenc,libx265     # advertise what this node can do. Valid: nvenc, libx265
+  #     # If the worker mounts media at a different path than the server does,
+  #     # map the paths here (JSON list of [server_path, worker_path] pairs):
+  #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
+  #     - NVIDIA_VISIBLE_DEVICES=all     # remove on CPU-only workers
+  #     # Timing (all optional; defaults shown):
+  #     # - POLL_INTERVAL=5              # seconds between job polls
+  #     # - HEARTBEAT_INTERVAL=30        # seconds between "I'm alive" pings
+  #     # - METRICS_INTERVAL=5           # seconds between CPU/GPU metric reports
+  #   volumes:
+  #     # Must see the media at the same path the server uses (or use PATH_MAPPINGS).
+  #     - /home/hal9000/HALHUB:/media
+  #   restart: unless-stopped
+  #   runtime: nvidia                    # remove on CPU-only workers
+  #   deploy:                            # remove on CPU-only workers
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu, video]

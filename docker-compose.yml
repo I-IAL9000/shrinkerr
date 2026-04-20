@@ -1,21 +1,122 @@
+# ============================================================================
+# Shrinkerr — local development compose
+#
+# This file builds the image from the Dockerfile in this directory. Use it
+# when you're hacking on Shrinkerr itself. For production / Portainer deploys
+# where you want to pull a prebuilt image instead, see `docker-compose.portainer.yml`.
+#
+# Quick start:
+#   1. Edit the two `volumes:` paths below so they point to your real data.
+#   2. Run:  docker compose up -d --build
+#   3. Open: http://localhost:6680
+#
+# First-run account: there isn't one — Shrinkerr has no auth by default. If
+# you expose it beyond localhost, set an API key in Settings → System.
+# ============================================================================
+
 services:
-  squeezarr:
+  shrinkerr:
+    # Build the image from the Dockerfile in this folder.
+    # To use a prebuilt image instead, comment `build:` out and uncomment `image:`.
     build: .
-    container_name: squeezarr
+    # image: shrinkerr:latest
+
+    container_name: shrinkerr
+
+    # Web UI + API. Change the LEFT side if 6680 is taken on your host.
+    #   "8080:6680"  → visit http://localhost:8080
+    # Don't change the right side (that's the port inside the container).
     ports:
       - "6680:6680"
+
     volumes:
+      # --- Required: database + app data ---
+      # Holds the SQLite DB, logs, backups, and the encoding history.
+      # If you delete this folder, you lose all settings and history.
+      # Linux/Mac: use a relative path (./data) or an absolute one
+      # Windows:   use C:\path\to\data:/app/data
       - ./data:/app/data
-      - /home/hal9000/HALHUB:/media:rw
+
+      # --- Required: your media library ---
+      # Point this at the folder containing your Movies/TV/etc. Shrinkerr
+      # will scan it and write converted files back to the same location
+      # (with the originals trashed or permanently deleted depending on your
+      # Settings → Automation config).
+      # Linux/Mac: - /mnt/media:/media
+      # Windows:   - E:\media:/media
+      # Shrinkerr needs READ + WRITE access — it overwrites originals in place.
+      - /home/hal9000/HALHUB:/media
+
+      # --- Optional: NZBGet / SABnzbd download folders ---
+      # If you use the NZBGet / SABnzbd post-processing scripts, mount the
+      # "completed downloads" folders here so Shrinkerr can see the files
+      # the downloader just dropped. Skip these if you don't use nzb/sab.
+      # - /home/hal9000/Downloads/completed/TV:/downloads/tv
+      # - /home/hal9000/Downloads/completed/Movies:/downloads/movies
+
     environment:
+      # --- GPU: required if you want NVENC (NVIDIA hardware encoding) ---
+      # Remove this whole block if you're on a CPU-only machine and don't
+      # have an NVIDIA GPU — the app will fall back to libx265 on CPU.
       - NVIDIA_VISIBLE_DEVICES=all
+
+      # --- Database + media paths inside the container ---
+      # Leave these alone unless you know what you're doing. They match the
+      # volume targets above. (The SQUEEZARR_ prefix is historical — Shrinkerr
+      # used to be called Squeezarr.)
       - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
       - SQUEEZARR_MEDIA_ROOT=/media
+
     restart: unless-stopped
+
+    # --- NVIDIA GPU passthrough ---
+    # Required for NVENC hardware encoding. You must have the NVIDIA Container
+    # Toolkit installed on the host (https://github.com/NVIDIA/nvidia-container-toolkit).
+    # Remove the whole `deploy:` block (and `NVIDIA_VISIBLE_DEVICES` above)
+    # if you're on a CPU-only host.
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu]
+              capabilities: [gpu, video]
+
+  # ==========================================================================
+  # Optional: remote worker node
+  #
+  # Uncomment this block to run a second container that picks up jobs from
+  # the main server above. Useful if you have a beefier machine sitting idle
+  # on the network (e.g. a gaming PC) that you want to use for CPU encoding.
+  #
+  # Steps:
+  #   1. In the main server UI: Settings → Nodes → create a worker API key.
+  #   2. Copy that key into API_KEY below.
+  #   3. Set SERVER_URL to the main container's address from the worker's POV.
+  #   4. `docker compose up -d shrinkerr-worker`
+  #   5. The node will appear on the Monitor page within ~30 seconds.
+  # ==========================================================================
+  # shrinkerr-worker:
+  #   build: .
+  #   container_name: shrinkerr-worker
+  #   environment:
+  #     - SHRINKERR_MODE=worker             # switches the container to worker mode
+  #     - SERVER_URL=http://shrinkerr:6680  # or http://<main-host-ip>:6680 if on a different host
+  #     - API_KEY=REPLACE_WITH_WORKER_KEY   # create in Settings → Nodes
+  #     - WORKER_NAME=beefy-desktop         # shows up in the Nodes page
+  #     - CAPABILITIES=nvenc,libx265        # or just "libx265" on CPU-only boxes
+  #     # If the worker sees the media at a different path than the server does,
+  #     # set PATH_MAPPINGS as a JSON list of [server_path, worker_path] pairs.
+  #     # Example: server sees /media/Movies, worker sees /mnt/nas/Movies:
+  #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #   volumes:
+  #     - /home/hal9000/HALHUB:/media       # must match what the server sees (or use PATH_MAPPINGS)
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu, video]
