@@ -1,0 +1,124 @@
+# ============================================================================
+# Build and publish Shrinkerr images to GHCR (GitHub Container Registry).
+#
+# This workflow is dormant until you push this repo to GitHub. Once it's
+# there, builds happen automatically on:
+#   - push to main/master (produces `:latest` and `:edge` floating tags)
+#   - push of a tag like v0.9.0 (produces `:v0.9.0` and `:v0.9.0-edge`)
+#   - manual run via the Actions tab ("Run workflow" button)
+#
+# Two image variants are built in parallel:
+#
+#   ghcr.io/<owner>/shrinkerr:latest
+#     ffmpeg n7.0  → NVENC SDK 12.2 → NVIDIA driver 525.60.13+
+#     The safe default. Pick this unless you have a reason not to.
+#
+#   ghcr.io/<owner>/shrinkerr:edge
+#     ffmpeg master → NVENC SDK 13.0 → NVIDIA driver 570.00+
+#     Bleeding-edge ffmpeg. Use if you're on a very recent driver and
+#     want the latest filters/encoders/bug fixes.
+#
+# Both use the same Dockerfile; the only difference is the FFMPEG_BUILD
+# build-arg. Anyone consuming the image can pin to whichever they want via
+# their docker-compose `image:` line.
+# ============================================================================
+name: Build & publish images
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      push_images:
+        description: 'Push images to GHCR (uncheck for a dry-run build)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write  # Required to push to GHCR
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      # Build both variants in parallel so a slow ffmpeg-master download
+      # doesn't block the n7.0 image from being ready. Each entry is a
+      # (tag_suffix, ffmpeg_build, nvenc_min_driver) triple.
+      matrix:
+        variant:
+          - suffix: latest
+            ffmpeg_build: n7.0
+            nvenc_min_driver: 525.60.13
+          - suffix: edge
+            ffmpeg_build: master
+            nvenc_min_driver: '570.00'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Skip login on a workflow_dispatch dry-run so this workflow is
+        # testable without needing registry credentials set up.
+        if: github.event_name != 'workflow_dispatch' || inputs.push_images
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        # Produce a newline-separated list of tags for this variant:
+        #   - On a tag push (v0.9.0): ghcr.io/owner/shrinkerr:v0.9.0[-edge]
+        #   - On main/master push:    ghcr.io/owner/shrinkerr:latest OR :edge
+        #   - workflow_dispatch:      same as main/master
+        # GitHub lowercases image names but `github.repository_owner` preserves
+        # case — force lowercase so GHCR accepts the tag.
+        run: |
+          OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          BASE="ghcr.io/${OWNER}/shrinkerr"
+          SUFFIX="${{ matrix.variant.suffix }}"
+          TAGS=""
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            if [[ "$SUFFIX" == "latest" ]]; then
+              TAGS="${BASE}:${VERSION}"$'\n'"${BASE}:latest"
+            else
+              TAGS="${BASE}:${VERSION}-${SUFFIX}"$'\n'"${BASE}:${SUFFIX}"
+            fi
+          else
+            TAGS="${BASE}:${SUFFIX}"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Will tag as:"
+          echo "$TAGS"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          # Push on branch/tag pushes; dry-run on workflow_dispatch unless
+          # the user explicitly checks the "push" box.
+          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_images }}
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
+            NVENC_MIN_DRIVER=${{ matrix.variant.nvenc_min_driver }}
+          # Shared layer cache between variants so the frontend build stage
+          # isn't rebuilt twice. Scope by variant so the final-stage layer
+          # (which depends on FFMPEG_BUILD) doesn't collide.
+          cache-from: type=gha,scope=shrinkerr-${{ matrix.variant.suffix }}
+          cache-to: type=gha,mode=max,scope=shrinkerr-${{ matrix.variant.suffix }}

@@ -22,8 +22,13 @@
 
 services:
   shrinkerr:
-    # Prebuilt image. If you maintain a private tag, pin it here (e.g. shrinkerr:0.8.2)
-    # instead of `latest` so upgrades are explicit.
+    # Prebuilt image. Two tags are published:
+    #   shrinkerr:latest — ffmpeg n7.0, needs NVIDIA driver 525.60.13+
+    #                      (DEFAULT — widest compatibility, pick this if unsure)
+    #   shrinkerr:edge   — ffmpeg master, needs NVIDIA driver 570.00+
+    #                      (bleeding edge — latest ffmpeg features/fixes)
+    # Pin to a specific version (e.g. shrinkerr:v0.9.0) for deterministic
+    # upgrades; `:latest` and `:edge` are floating and track their branches.
     image: shrinkerr:latest
     container_name: shrinkerr
 

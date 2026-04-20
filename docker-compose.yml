@@ -17,9 +17,14 @@
 services:
   shrinkerr:
     # Build the image from the Dockerfile in this folder.
-    # To use a prebuilt image instead, comment `build:` out and uncomment `image:`.
+    # To use a prebuilt image instead, comment `build:` out and uncomment one
+    # of the `image:` lines below:
+    #   shrinkerr:latest — ffmpeg n7.0 (NVIDIA driver 525.60.13+)  — default
+    #   shrinkerr:edge   — ffmpeg master (NVIDIA driver 570.00+)   — bleeding edge
+    # Or build both tags at once with: ./scripts/build-images.sh
     build: .
     # image: shrinkerr:latest
+    # image: shrinkerr:edge
 
     container_name: shrinkerr
 
