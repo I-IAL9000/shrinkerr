@@ -39,6 +39,15 @@ permissions:
   contents: read
   packages: write  # Required to push to GHCR
 
+# Opt every JavaScript-based action in this workflow into Node.js 24.
+# Node.js 20 is deprecated on GitHub runners (forced to Node 24 by default
+# on 2026-06-02, removed entirely 2026-09-16). Rather than chase major-version
+# bumps on each action individually (actions/checkout, docker/* actions) and
+# risk a breaking change, we just flip GitHub's documented opt-in flag here.
+# See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
