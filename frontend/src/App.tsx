@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { useCallback, useState, useEffect } from "react";
 import { useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats } from "./api";
+import { useVisibleInterval } from "./useVisibleInterval";
 import DashboardPage from "./pages/DashboardPage";
 import ScannerPage from "./pages/ScannerPage";
 import QueuePage from "./pages/QueuePage";
@@ -38,12 +39,11 @@ function NewFileBadge() {
   const [count, setCount] = useState(0);
   const location = useLocation();
 
-  useEffect(() => {
-    const check = () => getNewFileCount().then(r => setCount(r.count)).catch(() => {});
-    check();
-    const interval = setInterval(check, 30000);
-    return () => clearInterval(interval);
+  const check = useCallback(() => {
+    getNewFileCount().then(r => setCount(r.count)).catch(() => {});
   }, []);
+  useEffect(() => { check(); }, [check]);
+  useVisibleInterval(check, 30000);
 
   useEffect(() => {
     if (location.pathname === "/scanner") {
@@ -68,12 +68,11 @@ function NewFileBadge() {
 function FailedJobBadge() {
   const [count, setCount] = useState(0);
 
-  useEffect(() => {
-    const check = () => getFailedJobCount().then(r => setCount(r.count)).catch(() => {});
-    check();
-    const interval = setInterval(check, 30000);
-    return () => clearInterval(interval);
+  const check = useCallback(() => {
+    getFailedJobCount().then(r => setCount(r.count)).catch(() => {});
   }, []);
+  useEffect(() => { check(); }, [check]);
+  useVisibleInterval(check, 30000);
 
   if (count <= 0) return null;
   return (
@@ -336,7 +335,13 @@ export default function App() {
     localStorage.setItem("squeezarr_theme", theme);
   }, [theme]);
 
-  // Update range slider fill color via inline background gradient
+  // Update range slider fill color via inline background gradient.
+  // NOTE: We used to run a MutationObserver on document.body subtree here to
+  // catch sliders as they mount. That fired on every DOM mutation anywhere in
+  // the app (every progress tick, every text-node update) and ran a full
+  // querySelectorAll on the page — it was the primary CPU hog during encoding.
+  // Now we only listen for `input` events globally (cheap, event-delegated)
+  // and let SettingsPage initialize its own sliders via a ref on mount.
   useEffect(() => {
     const updateRange = (el: HTMLInputElement) => {
       const min = parseFloat(el.min) || 0;
@@ -346,14 +351,14 @@ export default function App() {
       el.style.background = `linear-gradient(to right, #6860fe ${pct}%, #212533 ${pct}%)`;
       el.style.borderRadius = "3px";
     };
-    const handler = (e: Event) => { if ((e.target as HTMLElement)?.tagName === "INPUT" && (e.target as HTMLInputElement).type === "range") updateRange(e.target as HTMLInputElement); };
+    const handler = (e: Event) => {
+      const tgt = e.target as HTMLElement;
+      if (tgt?.tagName === "INPUT" && (tgt as HTMLInputElement).type === "range") {
+        updateRange(tgt as HTMLInputElement);
+      }
+    };
     document.addEventListener("input", handler);
-    // Init existing sliders + re-init on navigation
-    const initSliders = () => document.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(updateRange);
-    setTimeout(initSliders, 100);
-    const observer = new MutationObserver(() => setTimeout(initSliders, 50));
-    observer.observe(document.body, { childList: true, subtree: true });
-    return () => { document.removeEventListener("input", handler); observer.disconnect(); };
+    return () => { document.removeEventListener("input", handler); };
   }, []);
 
   const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");

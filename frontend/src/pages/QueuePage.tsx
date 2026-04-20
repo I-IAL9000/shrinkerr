@@ -6,6 +6,7 @@ import JobListItem from "../components/JobListItem";
 import QueueControlPanel from "../components/QueueControlPanel";
 import { useShiftSelect } from "../useShiftSelect";
 import { useToast } from "../useToast";
+import { useVisibleInterval } from "../useVisibleInterval";
 import { useConfirm } from "../components/ConfirmModal";
 import type { Job, JobProgress } from "../types";
 
@@ -76,11 +77,10 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   // Load on mount and tab change
   useEffect(() => { load(); }, [tab]);
 
-  // Poll every 10 seconds normally, every 2s while waiting for jobs to start
-  useEffect(() => {
-    const interval = setInterval(load, queueStarting ? 2000 : 10000);
-    return () => clearInterval(interval);
-  }, [tab, queueStarting]);
+  // Poll every 10 seconds normally, every 2s while waiting for jobs to start.
+  // Uses a visibility-aware interval so we don't burn CPU while the tab is
+  // backgrounded (Chrome was flagging Shrinkerr as a heavy resource user).
+  useVisibleInterval(load, queueStarting ? 2000 : 10000);
 
   const running = jobs.filter((j) => j.status === "running");
 

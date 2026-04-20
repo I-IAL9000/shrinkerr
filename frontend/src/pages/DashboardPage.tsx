@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
 import { fmtNum } from "../fmt";
+import { useVisibleInterval } from "../useVisibleInterval";
 import {
   LineChart, Line, AreaChart, Area, BarChart as RBarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -100,6 +101,58 @@ function MiniProgress({ progress }: { progress: number }) {
     </div>
   );
 }
+
+// Live "Converting" card — the only part of the dashboard that depends on
+// jobProgressMap. Extracted so WebSocket progress ticks re-render only this
+// card, not the big Recharts surfaces below (which cost ~60% CPU in Chrome
+// when they re-render every ~500ms).
+const LiveConvertingCard = memo(function LiveConvertingCard({
+  activeJobs, jobProgressMap,
+}: {
+  activeJobs: any[];
+  jobProgressMap: Map<number, JobProgress>;
+}) {
+  const liveJobs = activeJobs.map((j: any) => {
+    const ws = jobProgressMap.get(j.id);
+    return { ...j, progress: ws?.progress ?? j.progress, fps: ws?.fps ?? j.fps };
+  });
+  const combinedFps = liveJobs.reduce((s: number, j: any) => s + (j.fps || 0), 0);
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: liveJobs.length > 0 ? 10 : 0 }}>
+        <div>
+          <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+            {liveJobs.length > 0 ? liveJobs.length : "Idle"}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
+            {liveJobs.length > 0 ? "Converting" : "No active jobs"}
+          </span>
+        </div>
+        {combinedFps > 0 && (
+          <span style={{ fontSize: 13, color: "#40ceff", fontWeight: 600 }}>{combinedFps.toFixed(0)} fps combined</span>
+        )}
+      </div>
+      {liveJobs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {liveJobs.map((j: any) => {
+            const shortName = j.file_name.length > 55 ? j.file_name.slice(0, 52) + "..." : j.file_name;
+            return (
+              <div key={j.id}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
+                  <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortName}</span>
+                  <span style={{ color: "var(--success)", flexShrink: 0, marginLeft: 8 }}>
+                    {j.progress.toFixed(0)}%{j.fps ? ` ${j.fps.toFixed(0)}fps` : ""}
+                  </span>
+                </div>
+                <MiniProgress progress={j.progress} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
 
 // --- Setup Wizard ---
 
@@ -283,13 +336,28 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
     }).catch(() => setLoading(false));
   }, []);
 
-  // Poll dashboard data every 10s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      getDashboardData().then(setDash).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
+  // Poll dashboard data every 10s, pausing when the tab is hidden so Chrome
+  // doesn't wake the page to rebuild state nothing can see.
+  const pollDash = useCallback(() => {
+    getDashboardData().then(setDash).catch(() => {});
   }, []);
+  useVisibleInterval(pollDash, 10000);
+
+  // Chart data derived from the 90-day timeline. Memoized so that a new array
+  // reference is only created when `timeline` actually changes — otherwise
+  // every jobProgressMap tick would blow out Recharts' internal memoization
+  // and force a full SVG re-render (primary cause of ~60% CPU here).
+  //
+  // NOTE: This hook MUST live above any conditional return. Placing it after
+  // the `loading` early-return caused a rules-of-hooks violation (different
+  // hook count between renders) that crashed the whole app to a blank page.
+  const chartData = useMemo(() => timeline.map((d: any) => ({
+    ...d,
+    date: d.date.slice(5),
+    avg_fps: d.avg_fps > 0 ? Math.round(d.avg_fps) : null,
+    saved_gb: +(d.space_saved / (1024 ** 3)).toFixed(1),
+    cumulative_tb: +(d.cumulative_saved / (1024 ** 4)).toFixed(2),
+  })), [timeline]);
 
   if (loading || !dash) {
     return (
@@ -315,13 +383,8 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
     }} />;
   }
 
-  // Live status data
+  // Live status data — only the LiveConvertingCard actually uses this.
   const activeJobs = dash.running_jobs || [];
-  const liveJobs = activeJobs.map((j: any) => {
-    const ws = jobProgressMap.get(j.id);
-    return { ...j, progress: ws?.progress ?? j.progress, fps: ws?.fps ?? j.fps };
-  });
-  const combinedFps = liveJobs.reduce((s: number, j: any) => s + (j.fps || 0), 0);
   const diskColor = (free: number) => {
     const gb = free / (1024 ** 3);
     if (gb > 100) return "#10B981";
@@ -334,16 +397,13 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
   // Stats shortcuts
   const s = stats;
   const totalCompleted = s?.files_processed || 0;
-  const hasNoData = totalCompleted === 0 && liveJobs.length === 0 && (dash.queue?.pending || 0) === 0 && (!s || s.scan_total === 0);
+  const hasNoData = totalCompleted === 0 && activeJobs.length === 0 && (dash.queue?.pending || 0) === 0 && (!s || s.scan_total === 0);
 
-  // Chart data from 90-day timeline
-  const chartData = timeline.map((d: any) => ({
-    ...d,
-    date: d.date.slice(5),
-    avg_fps: d.avg_fps > 0 ? Math.round(d.avg_fps) : null,
-    saved_gb: +(d.space_saved / (1024 ** 3)).toFixed(1),
-    cumulative_tb: +(d.cumulative_saved / (1024 ** 4)).toFixed(2),
-  }));
+  // "Combined fps" still used by the "Today's summary bar"; derive locally
+  // (without the jobProgressMap override) — the summary bar doesn't need
+  // real-time precision and keeping it out of the top-level render path
+  // means the rest of the dashboard stops depending on jobProgressMap.
+  const combinedFpsForSummary = activeJobs.reduce((sum: number, j: any) => sum + (j.fps || 0), 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -365,40 +425,8 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
       {/* Status cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-        {/* Converting */}
-        <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: liveJobs.length > 0 ? 10 : 0 }}>
-            <div>
-              <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent)" : "var(--text-muted)" }}>
-                {liveJobs.length > 0 ? liveJobs.length : "Idle"}
-              </span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-                {liveJobs.length > 0 ? "Converting" : "No active jobs"}
-              </span>
-            </div>
-            {combinedFps > 0 && (
-              <span style={{ fontSize: 13, color: "#40ceff", fontWeight: 600 }}>{combinedFps.toFixed(0)} fps combined</span>
-            )}
-          </div>
-          {liveJobs.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {liveJobs.map((j: any) => {
-                const shortName = j.file_name.length > 55 ? j.file_name.slice(0, 52) + "..." : j.file_name;
-                return (
-                  <div key={j.id}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 2 }}>
-                      <span style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shortName}</span>
-                      <span style={{ color: "var(--success)", flexShrink: 0, marginLeft: 8 }}>
-                        {j.progress.toFixed(0)}%{j.fps ? ` ${j.fps.toFixed(0)}fps` : ""}
-                      </span>
-                    </div>
-                    <MiniProgress progress={j.progress} />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        {/* Converting — memoed, re-renders on progress ticks only */}
+        <LiveConvertingCard activeJobs={activeJobs} jobProgressMap={jobProgressMap} />
 
         {/* Queue depth */}
         <div style={cardStyle}>
@@ -446,8 +474,8 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {(today.avg_fps || 0) > 0 && (
           <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>avg fps/job</span></span>
         )}
-        {combinedFps > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{combinedFps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>combined fps</span></span>
+        {combinedFpsForSummary > 0 && (
+          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>combined fps</span></span>
         )}
         {(today.original_size || 0) > 0 && (today.space_saved || 0) > 0 && (
           <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>avg reduction</span></span>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import {
@@ -125,6 +126,11 @@ const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 
 
 export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
   const toast = useToast();
+  const pageRef = useRef<HTMLDivElement>(null);
+  // Paint slider fills inside this page only. See useRangeFill.ts for why
+  // this replaced the old document-body MutationObserver.
+  useRangeFill(pageRef);
+
   const [dirs, setDirs] = useState<any[]>([]);
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -399,7 +405,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
 
   return (
-    <div className="settings-page">
+    <div className="settings-page" ref={pageRef}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <h2 style={{ color: "white", fontSize: 20 }}>Settings</h2>
         <div style={{ display: "flex", gap: 8 }}>

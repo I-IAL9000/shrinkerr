@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { Job } from "../types";
 import { getJobLog } from "../api";
 
@@ -32,7 +32,7 @@ const iconBtnStyle: React.CSSProperties = {
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
 
-export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults }: JobListItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [logData, setLogData] = useState<any>(null);
   const [logLoading, setLogLoading] = useState(false);
@@ -417,3 +417,72 @@ export default function JobListItem({ job, onCancel, onRetry, onRemove, onIgnore
     </div>
   );
 }
+
+// Memoize: during active encoding, the parent QueuePage re-renders on every
+// job_progress WebSocket message. Without memo, every row in the pending /
+// completed / failed lists re-renders too, which is expensive at scale.
+// A shallow compare on `job` + the callbacks is enough — Job objects are
+// treated as immutable and only replaced when the backend reports changes.
+const JobListItem = memo(JobListItemImpl, (prev, next) => {
+  // Fast path: same reference = no change.
+  if (prev.job !== next.job && !shallowJobEqual(prev.job, next.job)) return false;
+  if (prev.checked !== next.checked) return false;
+  if (prev.encodingDefaults !== next.encodingDefaults) return false;
+  // We intentionally ignore callback identity — parent recreates them on every
+  // render but their behavior is stable. If a callback changes semantics the
+  // parent also re-renders; stale closures aren't a concern here because the
+  // callbacks just call `load()` / `toast()` / setters that take their own
+  // fresh state.
+  return true;
+});
+
+function shallowJobEqual(a: Job, b: Job): boolean {
+  // Compare the fields that actually drive rendering. Avoids deep equality
+  // while still catching real changes (status transitions, progress, etc.).
+  if (
+    a.id !== b.id ||
+    a.status !== b.status ||
+    a.file_path !== b.file_path ||
+    a.space_saved !== b.space_saved ||
+    a.error_log !== b.error_log ||
+    (a as any).priority !== (b as any).priority ||
+    (a as any).original_size !== (b as any).original_size ||
+    a.job_type !== b.job_type ||
+    a.encoder !== b.encoder ||
+    a.nvenc_preset !== b.nvenc_preset ||
+    a.nvenc_cq !== b.nvenc_cq ||
+    a.libx265_preset !== b.libx265_preset ||
+    a.libx265_crf !== b.libx265_crf ||
+    a.health_status !== b.health_status ||
+    (a as any).backup_path !== (b as any).backup_path ||
+    // Fields that drive rendering in the expanded/collapsed row body:
+    // the typeBadge string depends on the track-removal lengths, and the
+    // health-check UI depends on the health_* fields. Timestamps show up
+    // in the expanded "details" section for completed / failed rows.
+    (a as any).health_check_type !== (b as any).health_check_type ||
+    (a as any).health_check_seconds !== (b as any).health_check_seconds ||
+    (a as any).health_errors_json !== (b as any).health_errors_json ||
+    (a as any).started_at !== (b as any).started_at ||
+    (a as any).completed_at !== (b as any).completed_at
+  ) return false;
+  // Compare track-removal arrays by length + elements. QueuePage.parseJobs
+  // reallocates these arrays on every 10s poll (via JSON.parse), so a
+  // reference check would force a re-render even when nothing changed.
+  if (!sameNumArray(a.audio_tracks_to_remove, b.audio_tracks_to_remove)) return false;
+  if (!sameNumArray(a.subtitle_tracks_to_remove, b.subtitle_tracks_to_remove)) return false;
+  return true;
+}
+
+function sameNumArray(a: number[] | undefined, b: number[] | undefined): boolean {
+  if (a === b) return true;
+  const al = a?.length ?? 0;
+  const bl = b?.length ?? 0;
+  if (al !== bl) return false;
+  if (!a || !b) return al === 0;
+  for (let i = 0; i < al; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export default JobListItem;

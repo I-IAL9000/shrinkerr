@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { estimateJobs, startTestEncode, getStoredApiKey } from "../api";
+import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
 
 function formatBytes(bytes: number): string {
@@ -71,6 +72,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [testProgress, setTestProgress] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Paint range-slider fill gradient for sliders mounted inside this modal.
+  // The global observer was removed for perf, so each container that owns
+  // a slider has to opt in. The CQ slider (line ~333) needs this to show
+  // correctly on first open.
+  const modalRef = useRef<HTMLDivElement>(null);
+  useRangeFill(modalRef);
+
   // Connect WebSocket on mount for test encode progress (must be open before test starts)
   useEffect(() => {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -137,7 +145,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000,
     }} onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div style={{
+      <div ref={modalRef} style={{
         background: "var(--bg-card)", borderRadius: 8, padding: "20px", width: "95%", maxWidth: 620,
         maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" as const,
         border: "1px solid var(--border)",

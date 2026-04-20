@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { JobProgress } from "../types";
 import ProgressBar from "./ProgressBar";
 import { useConfirm } from "./ConfirmModal";
@@ -37,7 +38,7 @@ interface JobCardProps {
   onCancel?: () => void;
 }
 
-export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encoder, libx265Preset, libx265Crf, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
+function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encoder, libx265Preset, libx265Crf, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
   const confirm = useConfirm();
   return (
     <div className="job-active">
@@ -114,3 +115,45 @@ export default function JobCard({ progress, jobIndex, fileSize, nvencPreset, nve
     </div>
   );
 }
+
+// Memoize: the whole card only needs to re-render when the `progress` object
+// changes (identity check — App.tsx creates a new JobProgress per message)
+// or the display-only config props change. Parent callbacks (onCancel) are
+// stable in behavior even if their identity changes each render.
+const JobCard = memo(JobCardImpl, (prev, next) => {
+  if (prev.progress !== next.progress) return false;
+  if (prev.jobIndex !== next.jobIndex) return false;
+  if (prev.fileSize !== next.fileSize) return false;
+  if (prev.nvencPreset !== next.nvencPreset) return false;
+  if (prev.nvencCq !== next.nvencCq) return false;
+  if (prev.encoder !== next.encoder) return false;
+  if (prev.libx265Preset !== next.libx265Preset) return false;
+  if (prev.libx265Crf !== next.libx265Crf) return false;
+  if (prev.jobType !== next.jobType) return false;
+  if (prev.audioCodec !== next.audioCodec) return false;
+  if (prev.audioBitrate !== next.audioBitrate) return false;
+  if (prev.losslessCodec !== next.losslessCodec) return false;
+  if (prev.losslessBitrate !== next.losslessBitrate) return false;
+  // Track-removal arrays and removedTrackLangs come from QueuePage.parseJobs,
+  // which JSON.parse()s fresh arrays on every 10s poll. A reference check
+  // would force a re-render every poll; compare by length + element-wise
+  // instead so identical contents short-circuit.
+  if (!sameArr(prev.audioTracksToRemove, next.audioTracksToRemove)) return false;
+  if (!sameArr(prev.subtitleTracksToRemove, next.subtitleTracksToRemove)) return false;
+  if (!sameArr(prev.removedTrackLangs, next.removedTrackLangs)) return false;
+  return true;
+});
+
+function sameArr<T>(a: readonly T[] | undefined, b: readonly T[] | undefined): boolean {
+  if (a === b) return true;
+  const al = a?.length ?? 0;
+  const bl = b?.length ?? 0;
+  if (al !== bl) return false;
+  if (!a || !b) return al === 0;
+  for (let i = 0; i < al; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export default JobCard;

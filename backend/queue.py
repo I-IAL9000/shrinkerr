@@ -1008,6 +1008,19 @@ class QueueWorker:
             self._active_tasks.pop(job_id, None)
             self._cancel_flags.discard(job_id)
 
+            # Release the WebSocket progress-throttle entry on every exit
+            # path (completion, cancel, requeue, exception). Without this,
+            # jobs that exit without calling `send_job_complete` (e.g. the
+            # node-pause requeue branch and unhandled-exception branch
+            # above) leak entries in ws_manager._last_job_progress_emit
+            # and retries of the same job_id get their first progress
+            # message swallowed for up to 500ms.
+            try:
+                from backend.websocket import ws_manager
+                ws_manager.release_job_throttle(job_id)
+            except Exception:
+                pass
+
     async def _run_health_check_job(self, job_id: int, file_path: str, file_name: str, job: dict, stats: dict) -> None:
         """Run a health check (quick or thorough) and persist results to scan_results."""
         import os
