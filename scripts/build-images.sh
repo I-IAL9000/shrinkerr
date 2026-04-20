@@ -2,7 +2,7 @@
 # ============================================================================
 # build-images.sh — build Shrinkerr's two image tags locally
 #
-#   shrinkerr:latest — ffmpeg n7.0 (NVENC SDK 12.2, driver 525.60.13+)
+#   shrinkerr:latest — ffmpeg n7.1 (NVENC SDK 12.2, driver 525.60.13+)
 #                      Default. Works on most hosts with a reasonably recent
 #                      NVIDIA driver. Pick this for production.
 #
@@ -70,13 +70,13 @@ build_one() {
 
 case "$TARGET" in
     latest)
-        build_one "latest" "n7.0"   "525.60.13"
+        build_one "latest" "n7.1"   "525.60.13"
         ;;
     edge)
         build_one "edge"   "master" "570.00"
         ;;
     both|"")
-        build_one "latest" "n7.0"   "525.60.13"
+        build_one "latest" "n7.1"   "525.60.13"
         build_one "edge"   "master" "570.00"
         ;;
     *)

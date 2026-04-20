@@ -20,20 +20,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #
 # FFMPEG_BUILD picks which BtbN release asset to install. The NVENC SDK baked
 # in determines the minimum NVIDIA driver required on the host:
-#   n7.0    = NVENC SDK 12.2  → driver 525.60.13+  (DEFAULT — widest compat)
-#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+
+#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+  (DEFAULT — widest compat)
+#   n8.1    = NVENC SDK 13.0  → driver 570.00+
 #   master  = NVENC SDK 13.0  → driver 570.00+     (bleeding edge)
 #
-# All three are assets of the same rolling `latest` BtbN release, so the URL
-# pattern is stable. Override at build time:
+# All are assets of the same rolling `latest` BtbN release, but the filename
+# pattern differs: `master` builds have no version suffix, while tagged
+# releases (nX.Y) append "-X.Y" to the filename.
+# Override at build time:
 #   docker build --build-arg FFMPEG_BUILD=master -t shrinkerr:edge .
-ARG FFMPEG_BUILD=n7.0
-RUN echo "Installing ffmpeg build: ${FFMPEG_BUILD}" && \
-    curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linux64-gpl.tar.xz" \
-        | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' && \
-    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \
-    echo "ffmpeg installed:" && ffmpeg -version 2>&1 | head -1 && \
-    echo "VMAF filter:" && (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
+ARG FFMPEG_BUILD=n7.1
+RUN set -e; \
+    case "${FFMPEG_BUILD}" in \
+        master) FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" ;; \
+        n*)     FF_VER="${FFMPEG_BUILD#n}"; \
+                FF_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linux64-gpl-${FF_VER}.tar.xz" ;; \
+        *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
+    esac; \
+    echo "Installing ffmpeg build: ${FFMPEG_BUILD} from ${FF_URL}"; \
+    curl -fsSL "${FF_URL}" \
+        | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
+    echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
+    echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
 
 # Record the ffmpeg lineage + its NVENC-SDK driver floor so the backend can
 # produce an actionable error message if the runtime NVENC test fails. Read

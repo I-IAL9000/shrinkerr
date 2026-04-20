@@ -10,7 +10,7 @@
 # Two image variants are built in parallel:
 #
 #   ghcr.io/<owner>/shrinkerr:latest
-#     ffmpeg n7.0  → NVENC SDK 12.2 → NVIDIA driver 525.60.13+
+#     ffmpeg n7.1  → NVENC SDK 12.2 → NVIDIA driver 525.60.13+
 #     The safe default. Pick this unless you have a reason not to.
 #
 #   ghcr.io/<owner>/shrinkerr:edge
@@ -46,12 +46,12 @@ jobs:
     strategy:
       fail-fast: false
       # Build both variants in parallel so a slow ffmpeg-master download
-      # doesn't block the n7.0 image from being ready. Each entry is a
+      # doesn't block the n7.1 image from being ready. Each entry is a
       # (tag_suffix, ffmpeg_build, nvenc_min_driver) triple.
       matrix:
         variant:
           - suffix: latest
-            ffmpeg_build: n7.0
+            ffmpeg_build: n7.1
             nvenc_min_driver: 525.60.13
           - suffix: edge
             ffmpeg_build: master

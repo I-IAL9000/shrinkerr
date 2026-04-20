@@ -19,7 +19,7 @@ services:
     # Build the image from the Dockerfile in this folder.
     # To use a prebuilt image instead, comment `build:` out and uncomment one
     # of the `image:` lines below:
-    #   shrinkerr:latest — ffmpeg n7.0 (NVIDIA driver 525.60.13+)  — default
+    #   shrinkerr:latest — ffmpeg n7.1 (NVIDIA driver 525.60.13+)  — default
     #   shrinkerr:edge   — ffmpeg master (NVIDIA driver 570.00+)   — bleeding edge
     # Or build both tags at once with: ./scripts/build-images.sh
     build: .
@@ -83,7 +83,7 @@ services:
     # On a CPU-only host this block is ignored (no nvidia runtime → Docker
     # silently drops it). You can delete it if you prefer a clean file.
     #
-    # DRIVER VERSION: the image ships ffmpeg n7.0 (NVENC SDK 12.2), which
+    # DRIVER VERSION: the image ships ffmpeg n7.1 (NVENC SDK 12.2), which
     # requires NVIDIA driver >= 525.60.13. If your driver is older the
     # runtime test encode will fail and the UI will tell you exactly what
     # to upgrade to. Rebuild with --build-arg FFMPEG_BUILD=master to use the

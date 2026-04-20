@@ -23,7 +23,7 @@
 services:
   shrinkerr:
     # Prebuilt image. Two tags are published:
-    #   shrinkerr:latest — ffmpeg n7.0, needs NVIDIA driver 525.60.13+
+    #   shrinkerr:latest — ffmpeg n7.1, needs NVIDIA driver 525.60.13+
     #                      (DEFAULT — widest compatibility, pick this if unsure)
     #   shrinkerr:edge   — ffmpeg master, needs NVIDIA driver 570.00+
     #                      (bleeding edge — latest ffmpeg features/fixes)
@@ -102,7 +102,7 @@ services:
     # the `deploy:` block. With the toolkit installed but no GPU, they're
     # harmless (Docker just skips them).
     #
-    # DRIVER VERSION: the image ships ffmpeg n7.0 (NVENC SDK 12.2), needs
+    # DRIVER VERSION: the image ships ffmpeg n7.1 (NVENC SDK 12.2), needs
     # NVIDIA driver >= 525.60.13 for NVENC. Older driver? The Monitor
     # page will tell you exactly what to upgrade to, or use the image tag
     # published with an older ffmpeg build.
