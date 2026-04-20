@@ -68,9 +68,10 @@ services:
       - /home/hal9000/Downloads/completed/Movies:/downloads/movies:rw
 
     environment:
-      # --- NVIDIA GPU passthrough (for NVENC hardware encoding) ---
-      # Remove this line (and the `runtime:` + `deploy:` blocks below) if
-      # you're on a CPU-only host — the app falls back to libx265 on CPU.
+      # --- GPU passthrough hint ---
+      # Advisory — Shrinkerr detects the GPU at runtime. Safe to leave as-is
+      # on CPU-only hosts; the app falls back to libx265 and the Monitor
+      # page tells you exactly what's active (NVENC vs CPU) + why.
       - NVIDIA_VISIBLE_DEVICES=all
 
       # --- Paths inside the container ---
@@ -91,9 +92,17 @@ services:
     restart: unless-stopped
 
     # --- GPU runtime ---
-    # Required for NVENC. Needs the NVIDIA Container Toolkit on the host:
+    # Needs the NVIDIA Container Toolkit on the host:
     #   https://github.com/NVIDIA/nvidia-container-toolkit
-    # Remove this line AND the `deploy:` block if you don't have an NVIDIA GPU.
+    # On CPU-only hosts Docker will complain about runtime:nvidia if the
+    # toolkit isn't installed — in that case, comment out `runtime:` and
+    # the `deploy:` block. With the toolkit installed but no GPU, they're
+    # harmless (Docker just skips them).
+    #
+    # DRIVER VERSION: the image ships ffmpeg n7.0 (NVENC SDK 12.2), needs
+    # NVIDIA driver >= 525.60.13 for NVENC. Older driver? The Monitor
+    # page will tell you exactly what to upgrade to, or use the image tag
+    # published with an older ffmpeg build.
     runtime: nvidia
     deploy:
       resources:

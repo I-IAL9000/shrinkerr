@@ -41,8 +41,17 @@ def _load_or_create_id() -> str:
     return wid
 
 
-async def _detect_capabilities() -> list[str]:
-    caps = []
+async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], str | None]:
+    """Return (capabilities, nvenc_unavailable_reason).
+
+    Mirror of backend.nodes.NodeManager._detect_capabilities — gate NVENC on
+    an actual NVIDIA device being present (nvidia-smi succeeded) so the
+    worker doesn't falsely advertise nvenc on CPU-only boxes. The reason
+    string is surfaced through the heartbeat payload so the server-side UI
+    can explain *why* NVENC isn't available on this worker.
+    """
+    caps: list[str] = []
+    nvenc_reason: str | None = None
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-hide_banner", "-encoders",
@@ -52,8 +61,14 @@ async def _detect_capabilities() -> list[str]:
         out = stdout.decode(errors="replace")
         if "libx265" in out:
             caps.append("libx265")
-        # Only claim nvenc if we can actually encode a frame (not just compiled-in)
-        if "hevc_nvenc" in out:
+
+        if "hevc_nvenc" not in out:
+            nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
+            print(f"[WORKER] {nvenc_reason}", flush=True)
+        elif not gpu_name:
+            nvenc_reason = "no NVIDIA GPU detected (nvidia-smi unavailable)"
+            print(f"[WORKER] NVENC not advertised: {nvenc_reason}", flush=True)
+        else:
             try:
                 test = await asyncio.create_subprocess_exec(
                     "ffmpeg", "-hide_banner", "-y",
@@ -62,24 +77,45 @@ async def _detect_capabilities() -> list[str]:
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 )
                 _, stderr_out = await asyncio.wait_for(test.communicate(), timeout=10)
-                stderr_text = stderr_out.decode(errors="replace").lower()
-                # Check both return code AND stderr for CUDA/driver errors
-                if test.returncode == 0 and "cannot load" not in stderr_text and "no cuda capable" not in stderr_text and "error" not in stderr_text:
+                if test.returncode == 0:
                     caps.append("nvenc")
                     print("[WORKER] NVENC encode test passed", flush=True)
                 else:
-                    print(f"[WORKER] NVENC test failed (rc={test.returncode}): {stderr_out.decode(errors='replace')[:200]}", flush=True)
+                    stderr_full = stderr_out.decode(errors="replace").strip()
+                    tail = [ln.strip() for ln in stderr_full.splitlines() if ln.strip()]
+                    nvenc_reason = tail[-1] if tail else f"ffmpeg exited {test.returncode}"
+                    print(f"[WORKER] NVENC test failed (rc={test.returncode}): {nvenc_reason}", flush=True)
             except Exception as exc:
-                print(f"[WORKER] NVENC test exception: {exc}", flush=True)
-    except Exception:
-        caps.append("libx265")
-    return caps or ["libx265"]
+                nvenc_reason = f"NVENC test crashed: {exc}"
+                print(f"[WORKER] {nvenc_reason}", flush=True)
+    except Exception as exc:
+        nvenc_reason = f"ffmpeg not runnable: {exc}"
+
+    return (caps or ["libx265"], nvenc_reason)
 
 
 async def _detect_gpu() -> str | None:
     try:
         proc = await asyncio.create_subprocess_exec(
             "nvidia-smi", "--query-gpu=name", "--format=csv,noheader,nounits",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        return stdout.decode(errors="replace").strip().split("\n")[0].strip() or None
+    except Exception:
+        return None
+
+
+async def _detect_driver_version() -> str | None:
+    """NVIDIA driver version string (e.g. '535.183.01'), or None if n/a.
+
+    The server-side UI pairs this with the compiled-in NVENC min-driver
+    (baked into the image via SHRINKERR_NVENC_MIN_DRIVER) to tell the user
+    exactly what they need to upgrade to.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader,nounits",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
@@ -116,12 +152,16 @@ class ServerClient:
     async def heartbeat(self, node_id: str, name: str, hostname: str,
                         capabilities: list, path_mappings: list,
                         ffmpeg_version: str | None, gpu_name: str | None,
-                        os_info: str | None, max_jobs: int) -> dict:
+                        os_info: str | None, max_jobs: int,
+                        driver_version: str | None = None,
+                        nvenc_unavailable_reason: str | None = None) -> dict:
         resp = await self._client.post(f"{self.base_url}/api/nodes/heartbeat", json={
             "node_id": node_id, "name": name, "hostname": hostname,
             "capabilities": capabilities, "path_mappings": path_mappings,
             "ffmpeg_version": ffmpeg_version, "gpu_name": gpu_name,
             "os_info": os_info, "max_jobs": max_jobs,
+            "driver_version": driver_version,
+            "nvenc_unavailable_reason": nvenc_unavailable_reason,
         })
         resp.raise_for_status()
         return resp.json()
@@ -399,12 +439,15 @@ async def run_worker():
         sys.exit(1)
 
     node_id = _load_or_create_id()
+    # Detect GPU first so capability detection can gate NVENC on real hardware.
+    gpu_name = await _detect_gpu()
+    driver_version = await _detect_driver_version()
     if CAPABILITIES_OVERRIDE:
         capabilities = [c.strip() for c in CAPABILITIES_OVERRIDE.split(",") if c.strip()]
+        nvenc_reason = "capabilities forced via CAPABILITIES env var" if "nvenc" not in capabilities else None
         print(f"[WORKER] Using CAPABILITIES override: {capabilities}", flush=True)
     else:
-        capabilities = await _detect_capabilities()
-    gpu_name = await _detect_gpu()
+        capabilities, nvenc_reason = await _detect_capabilities(gpu_name=gpu_name)
     ffmpeg_version = await _detect_ffmpeg_version()
     os_info = f"{platform.system()} {platform.release()}"
 
@@ -419,9 +462,12 @@ async def run_worker():
     print(f"[WORKER]   Server:       {SERVER_URL}", flush=True)
     print(f"[WORKER]   Capabilities: {capabilities}", flush=True)
     print(f"[WORKER]   GPU:          {gpu_name or 'None'}", flush=True)
+    print(f"[WORKER]   Driver:       {driver_version or 'n/a'}", flush=True)
     print(f"[WORKER]   ffmpeg:       {ffmpeg_version or 'unknown'}", flush=True)
+    if nvenc_reason:
+        print(f"[WORKER]   NVENC off:    {nvenc_reason}", flush=True)
     if path_mappings:
-        print(f"[WORKER]   Path maps:   {path_mappings}", flush=True)
+        print(f"[WORKER]   Path maps:    {path_mappings}", flush=True)
     print(flush=True)
 
     client = ServerClient(SERVER_URL, API_KEY)
@@ -450,6 +496,8 @@ async def run_worker():
                     gpu_name=gpu_name,
                     os_info=os_info,
                     max_jobs=1,
+                    driver_version=driver_version,
+                    nvenc_unavailable_reason=nvenc_reason,
                 )
                 backoff = 1  # Reset on success
             except Exception as exc:
@@ -528,6 +576,7 @@ async def run_worker():
                 capabilities=capabilities, path_mappings=path_mappings,
                 ffmpeg_version=ffmpeg_version, gpu_name=gpu_name,
                 os_info=os_info, max_jobs=1,
+                driver_version=driver_version, nvenc_unavailable_reason=nvenc_reason,
             )
             print(f"[WORKER] Connected to server at {SERVER_URL}", flush=True)
         except Exception as exc:

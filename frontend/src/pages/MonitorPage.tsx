@@ -106,6 +106,12 @@ export default function MonitorPage() {
   }
 
   const { gpu, cpu, memory, disk_io, plex, squeezarr } = metrics;
+  // The local node's encoding capability info rides the same /api/nodes/metrics
+  // endpoint used for remote workers. Pull it out here so we can render an
+  // "Encoding Capability" badge in the main System Monitor alongside the GPU
+  // gauges — that way CPU-only hosts and out-of-date-driver hosts see a clear
+  // status instead of a mysterious absent-NVENC.
+  const localNode = nodeMetrics.find(n => n.node_id === "local");
 
   return (
     <div>
@@ -145,7 +151,9 @@ export default function MonitorPage() {
 
       {/* Detail cards */}
       <div className="monitor-detail-grid" style={{ display: "grid", gap: 12 }}>
-        {/* GPU */}
+        {/* GPU — present only when nvidia-smi returned something real. The
+            capability strip under the gauges confirms whether NVENC itself
+            is actually working (vs. GPU visible but driver too old, etc.). */}
         {gpu && (
           <MetricCard title={`GPU — ${gpu.name}`}>
             <div style={{ display: "flex", justifyContent: "space-evenly", margin: "8px 0 12px" }}>
@@ -158,6 +166,19 @@ export default function MonitorPage() {
               {gpu.encoder_util != null && <StatRow label="NVENC (Encoder)" value={`${gpu.encoder_util}%`} color="#74c0fc" />}
               {gpu.decoder_util != null && <StatRow label="NVDEC (Decoder)" value={`${gpu.decoder_util}%`} color="#69db7c" />}
             </div>
+            {localNode && <NodeEncodingStatus entry={localNode} />}
+          </MetricCard>
+        )}
+
+        {/* No-GPU host — still show encoding capability so the user knows
+            libx265 (CPU) is what they're using and why. Avoids the old
+            "is it broken or is it just CPU-only?" ambiguity. */}
+        {!gpu && localNode && (
+          <MetricCard title="Encoding Capability">
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+              No NVIDIA GPU detected on this host — Shrinkerr will use CPU encoding (libx265).
+            </div>
+            <NodeEncodingStatus entry={localNode} />
           </MetricCard>
         )}
 
@@ -333,6 +354,12 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
         )}
       </div>
 
+      {/* Encoding capability strip — shows driver + advertised encoders and,
+          when NVENC is OFF, surfaces the specific reason so users know
+          exactly what to fix. Always rendered so CPU-only nodes show a
+          clean "Using CPU encoder (libx265)" instead of a mysterious void. */}
+      <NodeEncodingStatus entry={entry} />
+
       {m && (
         <>
           {/* CPU + RAM gauges (always) */}
@@ -369,6 +396,79 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Encoding capability strip
+//
+// Three states this needs to communicate cleanly:
+//   1. NVENC working          → green check + driver version
+//   2. NVENC off, reason known → yellow warning + actionable reason
+//   3. CPU-only host          → neutral info; libx265 is the only option anyway
+//
+// The reason string comes straight from the backend (ffmpeg's stderr tail on
+// the test-encode, or one of our sentinel strings like "no NVIDIA GPU
+// detected"). We don't try to pattern-match it — it's already terse.
+// ──────────────────────────────────────────────────────────────────────────
+function NodeEncodingStatus({ entry }: { entry: NodeMetricsEntry }) {
+  const hasNvenc = entry.capabilities.includes("nvenc");
+  const hasLibx265 = entry.capabilities.includes("libx265");
+  const reason = entry.nvenc_unavailable_reason;
+  const driver = entry.driver_version;
+
+  // Nothing advertised at all — shouldn't happen, but don't crash the card.
+  if (!hasNvenc && !hasLibx265) return null;
+
+  return (
+    <div style={{
+      marginTop: 4, marginBottom: 10, padding: "6px 8px",
+      borderRadius: 4, background: "var(--bg-primary)",
+      fontSize: 11, color: "var(--text-muted)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {/* NVENC badge */}
+        {hasNvenc ? (
+          <span style={{ color: "var(--success)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            NVENC
+          </span>
+        ) : reason ? (
+          <span title={reason} style={{ color: "#ffa94d", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            NVENC off
+          </span>
+        ) : null}
+        {/* Separator only when there's something on both sides */}
+        {hasNvenc && hasLibx265 && <span style={{ opacity: 0.4 }}>·</span>}
+        {/* libx265 always shows when available — it's the reliable CPU fallback */}
+        {hasLibx265 && (
+          <span style={{ color: hasNvenc ? "var(--text-muted)" : "var(--success)" }}>
+            libx265
+          </span>
+        )}
+        {/* Driver version when we have it (regardless of NVENC state — helps debug) */}
+        {driver && (
+          <span style={{ marginLeft: "auto", opacity: 0.7 }}>
+            driver {driver}
+          </span>
+        )}
+      </div>
+      {/* Full reason text for NVENC-off nodes. Wrap so long strings don't
+          blow out the card layout; keep it terse so it stays on one line
+          when possible. */}
+      {!hasNvenc && reason && (
+        <div style={{ marginTop: 4, fontSize: 10, color: "#ffa94d", wordBreak: "break-word", lineHeight: 1.4 }}>
+          {reason}
+        </div>
       )}
     </div>
   );

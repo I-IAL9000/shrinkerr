@@ -4,9 +4,12 @@
 
 FROM python:3.11-slim-bookworm
 
-# Install optimized ffmpeg static build for ARM64 (BtbN GPL build with x265, libvmaf)
+# Install optimized ffmpeg static build for ARM64 (BtbN GPL build with x265, libvmaf).
+# ARM64 workers don't use NVENC, so the build choice here is just about ffmpeg
+# features — `n7.0` is a stable release, `master` is bleeding edge.
+ARG FFMPEG_BUILD=n7.0
 RUN apt-get update && apt-get install -y --no-install-recommends curl xz-utils \
-    && curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz" \
+    && curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linuxarm64-gpl.tar.xz" \
         | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' \
     && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
     && apt-get purge -y curl xz-utils && apt-get autoremove -y \

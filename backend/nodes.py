@@ -85,6 +85,8 @@ class NodeManager:
         gpu_name: str | None = None,
         os_info: str | None = None,
         max_jobs: int = 1,
+        driver_version: str | None = None,
+        nvenc_unavailable_reason: str | None = None,
     ) -> dict:
         """Register a new node or update an existing one. Called on heartbeat."""
         now = datetime.now(timezone.utc).isoformat()
@@ -110,20 +112,23 @@ class NodeManager:
                 await db.execute(
                     f"UPDATE worker_nodes SET name = ?, hostname = ?, capabilities = ?, "
                     f"last_heartbeat = ?, path_mappings = ?, ffmpeg_version = ?, "
-                    f"gpu_name = ?, os_info = ?, "
+                    f"gpu_name = ?, os_info = ?, driver_version = ?, "
+                    f"nvenc_unavailable_reason = ?, "
                     f"status = {status_expr} "
                     f"WHERE id = ?",
                     (name, hostname, caps_json, now, mappings_json,
-                     ffmpeg_version, gpu_name, os_info, node_id),
+                     ffmpeg_version, gpu_name, os_info,
+                     driver_version, nvenc_unavailable_reason, node_id),
                 )
             else:
                 await db.execute(
                     "INSERT INTO worker_nodes (id, name, hostname, capabilities, status, "
                     "last_heartbeat, registered_at, path_mappings, ffmpeg_version, "
-                    "gpu_name, os_info, max_jobs) "
-                    "VALUES (?, ?, ?, ?, 'online', ?, ?, ?, ?, ?, ?, ?)",
+                    "gpu_name, os_info, max_jobs, driver_version, nvenc_unavailable_reason) "
+                    "VALUES (?, ?, ?, ?, 'online', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (node_id, name, hostname, caps_json, now, now,
-                     mappings_json, ffmpeg_version, gpu_name, os_info, max_jobs),
+                     mappings_json, ffmpeg_version, gpu_name, os_info, max_jobs,
+                     driver_version, nvenc_unavailable_reason),
                 )
             await db.commit()
 
@@ -161,9 +166,12 @@ class NodeManager:
 
     async def register_local_node(self) -> None:
         """Register the built-in local worker on server startup."""
-        # Auto-detect capabilities
-        capabilities = await self._detect_capabilities()
+        # Auto-detect capabilities. Detect the GPU FIRST so capability
+        # detection can refuse to claim NVENC when no NVIDIA device is
+        # present (the Mac false-positive fix).
         gpu_name = await self._detect_gpu()
+        driver_version = await self._detect_driver_version()
+        capabilities, nvenc_reason = await self._detect_capabilities(gpu_name=gpu_name)
         ffmpeg_ver = await self._detect_ffmpeg_version()
 
         # Default max_jobs = server's parallel_jobs setting (on first registration only)
@@ -187,8 +195,15 @@ class NodeManager:
             gpu_name=gpu_name,
             os_info=f"{platform.system()} {platform.release()}",
             max_jobs=default_max,  # only used on first registration — user controls after that
+            driver_version=driver_version,
+            nvenc_unavailable_reason=nvenc_reason,
         )
-        print(f"[NODES] Local node registered: capabilities={capabilities}, gpu={gpu_name}, default_max_jobs={default_max}", flush=True)
+        print(
+            f"[NODES] Local node registered: capabilities={capabilities}, gpu={gpu_name}, "
+            f"driver={driver_version}, nvenc_reason={nvenc_reason!r}, "
+            f"default_max_jobs={default_max}",
+            flush=True,
+        )
 
         # Backfill historical stats from the jobs table. Jobs completed by
         # the local worker have assigned_node_id NULL (the remote-worker
@@ -526,8 +541,21 @@ class NodeManager:
     # ------------------------------------------------------------------
 
     @staticmethod
-    async def _detect_capabilities() -> list[str]:
-        caps = []
+    async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], str | None]:
+        """Return (capabilities, nvenc_unavailable_reason).
+
+        Fixes the Mac false-positive: we only try the NVENC test if an NVIDIA
+        GPU is actually present (nvidia-smi succeeded upstream). The ffmpeg
+        binary reports `hevc_nvenc` in `-encoders` whether or not CUDA is
+        wired up — that's a compile-time feature, not a runtime one — so the
+        presence check is where we were getting burned.
+
+        Returns a human-readable failure reason for the UI whenever NVENC
+        isn't claimed. Callers may pass the reason through to the Monitor
+        page so users understand *why* they're stuck on CPU encoding.
+        """
+        caps: list[str] = []
+        nvenc_reason: str | None = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-hide_banner", "-encoders",
@@ -537,8 +565,16 @@ class NodeManager:
             out = stdout.decode(errors="replace")
             if "libx265" in out:
                 caps.append("libx265")
-            # Only claim nvenc if we can actually encode a frame
-            if "hevc_nvenc" in out:
+
+            if "hevc_nvenc" not in out:
+                nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
+                print(f"[NODES] {nvenc_reason}", flush=True)
+            elif not gpu_name:
+                # No NVIDIA GPU visible to this container/host. Don't even
+                # try the test encode — claiming nvenc here is the Mac bug.
+                nvenc_reason = "no NVIDIA GPU detected (nvidia-smi unavailable)"
+                print(f"[NODES] NVENC not advertised: {nvenc_reason}", flush=True)
+            else:
                 try:
                     test = await asyncio.create_subprocess_exec(
                         "ffmpeg", "-hide_banner", "-y",
@@ -547,23 +583,28 @@ class NodeManager:
                         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     )
                     _, stderr_out = await asyncio.wait_for(test.communicate(), timeout=10)
-                    stderr_text = stderr_out.decode(errors="replace").lower()
-                    # Check for specific CUDA/NVENC failure strings (not generic "error")
-                    nvenc_failures = ("cannot load", "no cuda capable", "error while opening encoder",
-                                     "could not open encoder", "cannot open", "initialization failed")
-                    has_failure = any(f in stderr_text for f in nvenc_failures)
-                    if test.returncode == 0 and not has_failure:
+                    # rc==0 is the truth — if ffmpeg couldn't actually encode
+                    # a frame it would exit non-zero. Trusting rc alone avoids
+                    # the fragile stderr-substring heuristic that let Mac
+                    # containers through before.
+                    if test.returncode == 0:
                         caps.append("nvenc")
                         print(f"[NODES] NVENC encode test passed", flush=True)
                     else:
-                        print(f"[NODES] NVENC test failed (rc={test.returncode}), stderr: {stderr_out.decode(errors='replace')[:300]}", flush=True)
+                        stderr_full = stderr_out.decode(errors="replace").strip()
+                        # Keep the last meaningful line — that's where ffmpeg
+                        # typically drops the actionable error (driver too
+                        # old, device busy, etc.). Surface it to the UI.
+                        tail = [ln.strip() for ln in stderr_full.splitlines() if ln.strip()]
+                        nvenc_reason = tail[-1] if tail else f"ffmpeg exited {test.returncode}"
+                        print(f"[NODES] NVENC test failed (rc={test.returncode}): {nvenc_reason}", flush=True)
                 except Exception as exc:
-                    print(f"[NODES] NVENC test exception: {exc}", flush=True)
-            else:
-                print(f"[NODES] hevc_nvenc not found in ffmpeg encoders", flush=True)
-        except Exception:
-            caps.append("libx265")
-        return caps or ["libx265"]
+                    nvenc_reason = f"NVENC test crashed: {exc}"
+                    print(f"[NODES] {nvenc_reason}", flush=True)
+        except Exception as exc:
+            nvenc_reason = f"ffmpeg not runnable: {exc}"
+
+        return (caps or ["libx265"], nvenc_reason)
 
     @staticmethod
     async def _detect_gpu() -> str | None:
@@ -575,6 +616,26 @@ class NodeManager:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
             name = stdout.decode(errors="replace").strip().split("\n")[0].strip()
             return name if name else None
+        except Exception:
+            return None
+
+    @staticmethod
+    async def _detect_driver_version() -> str | None:
+        """Return the NVIDIA driver version string (e.g. "535.183.01") or
+        None if nvidia-smi isn't available / reports nothing.
+
+        Used alongside the compiled-in minimum driver (SHRINKERR_NVENC_MIN_DRIVER
+        from the Dockerfile) so the UI can tell the user specifically *which*
+        version they need to upgrade to when NVENC fails.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader,nounits",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            ver = stdout.decode(errors="replace").strip().split("\n")[0].strip()
+            return ver if ver else None
         except Exception:
             return None
 

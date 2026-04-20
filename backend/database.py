@@ -375,6 +375,18 @@ async def init_db():
             await db.execute("ALTER TABLE worker_nodes ADD COLUMN consecutive_failures INTEGER DEFAULT 0")
         except Exception:
             pass
+        # Migration: NVIDIA driver version (e.g. "535.183.01") and the reason
+        # NVENC was rejected at detection time (e.g. stderr of the test encode).
+        # The UI shows these so users whose GPU is present but driver too old
+        # get an actionable message instead of silent CPU fallback.
+        for col, ctype in [
+            ("driver_version", "TEXT DEFAULT NULL"),
+            ("nvenc_unavailable_reason", "TEXT DEFAULT NULL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
         # Migration: audio reorder flag on scan_results
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN needs_audio_reorder INTEGER DEFAULT 0")

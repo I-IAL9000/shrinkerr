@@ -15,14 +15,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ffmpeg with NVENC + libvmaf
-# BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs
-# Using latest master build (SDK 13.0) — requires NVIDIA driver 570+
-RUN curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" \
+# Install ffmpeg with NVENC + libvmaf.
+# BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs.
+#
+# FFMPEG_BUILD picks which BtbN release asset to install. The NVENC SDK baked
+# in determines the minimum NVIDIA driver required on the host:
+#   n7.0    = NVENC SDK 12.2  → driver 525.60.13+  (DEFAULT — widest compat)
+#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+
+#   master  = NVENC SDK 13.0  → driver 570.00+     (bleeding edge)
+#
+# All three are assets of the same rolling `latest` BtbN release, so the URL
+# pattern is stable. Override at build time:
+#   docker build --build-arg FFMPEG_BUILD=master -t shrinkerr:edge .
+ARG FFMPEG_BUILD=n7.0
+RUN echo "Installing ffmpeg build: ${FFMPEG_BUILD}" && \
+    curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-${FFMPEG_BUILD}-latest-linux64-gpl.tar.xz" \
         | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe' && \
     chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \
     echo "ffmpeg installed:" && ffmpeg -version 2>&1 | head -1 && \
     echo "VMAF filter:" && (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")
+
+# Record the ffmpeg lineage + its NVENC-SDK driver floor so the backend can
+# produce an actionable error message if the runtime NVENC test fails. Read
+# by backend/nodes.py during startup-time capability detection.
+ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
+ARG NVENC_MIN_DRIVER=525.60.13
+ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
 
 # Use python3.11 as default
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1

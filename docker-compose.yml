@@ -55,9 +55,12 @@ services:
       # - /home/hal9000/Downloads/completed/Movies:/downloads/movies
 
     environment:
-      # --- GPU: required if you want NVENC (NVIDIA hardware encoding) ---
-      # Remove this whole block if you're on a CPU-only machine and don't
-      # have an NVIDIA GPU — the app will fall back to libx265 on CPU.
+      # --- GPU passthrough hint ---
+      # This is a HINT to the Docker runtime, not a hard requirement. Leave
+      # it as-is even on CPU-only hosts — Shrinkerr detects the GPU at
+      # runtime and falls back to libx265 (CPU) cleanly when no NVIDIA
+      # device is actually present. The Monitor page will show exactly
+      # what's active (NVENC vs CPU) and why.
       - NVIDIA_VISIBLE_DEVICES=all
 
       # --- Database + media paths inside the container ---
@@ -70,10 +73,17 @@ services:
     restart: unless-stopped
 
     # --- NVIDIA GPU passthrough ---
-    # Required for NVENC hardware encoding. You must have the NVIDIA Container
-    # Toolkit installed on the host (https://github.com/NVIDIA/nvidia-container-toolkit).
-    # Remove the whole `deploy:` block (and `NVIDIA_VISIBLE_DEVICES` above)
-    # if you're on a CPU-only host.
+    # Required for NVENC hardware encoding on NVIDIA GPUs. You must have the
+    # NVIDIA Container Toolkit on the host:
+    #   https://github.com/NVIDIA/nvidia-container-toolkit
+    # On a CPU-only host this block is ignored (no nvidia runtime → Docker
+    # silently drops it). You can delete it if you prefer a clean file.
+    #
+    # DRIVER VERSION: the image ships ffmpeg n7.0 (NVENC SDK 12.2), which
+    # requires NVIDIA driver >= 525.60.13. If your driver is older the
+    # runtime test encode will fail and the UI will tell you exactly what
+    # to upgrade to. Rebuild with --build-arg FFMPEG_BUILD=master to use the
+    # bleeding-edge build (needs driver 570+).
     deploy:
       resources:
         reservations:

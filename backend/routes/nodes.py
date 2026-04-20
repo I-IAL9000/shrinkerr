@@ -40,6 +40,11 @@ class HeartbeatRequest(BaseModel):
     gpu_name: str | None = None
     os_info: str | None = None
     max_jobs: int = 1
+    driver_version: str | None = None
+    # Human-readable reason the worker isn't advertising nvenc (e.g. driver
+    # too old, no NVIDIA device, ffmpeg build lacks the encoder). Surfaced
+    # on the Monitor page so users know what to fix.
+    nvenc_unavailable_reason: str | None = None
 
 
 class RequestJobBody(BaseModel):
@@ -94,6 +99,8 @@ async def heartbeat(req: HeartbeatRequest, request: Request):
         gpu_name=req.gpu_name,
         os_info=req.os_info,
         max_jobs=req.max_jobs,
+        driver_version=req.driver_version,
+        nvenc_unavailable_reason=req.nvenc_unavailable_reason,
     )
     # Broadcast node update to frontend
     await ws_manager.broadcast({
@@ -449,6 +456,8 @@ async def get_all_node_metrics(request: Request):
             "hostname": node.get("hostname", ""),
             "status": node.get("status", "offline"),
             "gpu_name": node.get("gpu_name"),
+            "driver_version": node.get("driver_version"),
+            "nvenc_unavailable_reason": node.get("nvenc_unavailable_reason"),
             "os_info": node.get("os_info"),
             "current_job_id": node.get("current_job_id"),
             "capabilities": node.get("capabilities", []),

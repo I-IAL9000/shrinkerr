@@ -207,6 +207,12 @@ export interface NodeMetricsEntry {
   hostname: string;
   status: string;
   gpu_name: string | null;
+  // NVIDIA driver version (e.g. "535.183.01"), null on non-NVIDIA hosts.
+  driver_version: string | null;
+  // Short human-readable reason NVENC isn't advertised on this node, or null
+  // if the node has NVENC working. Shown on the Monitor card as actionable
+  // copy so the user knows what to fix (old driver, missing GPU, etc.).
+  nvenc_unavailable_reason: string | null;
   os_info: string | null;
   current_job_id: number | null;
   capabilities: string[];
