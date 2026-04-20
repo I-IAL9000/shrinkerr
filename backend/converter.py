@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-logger = logging.getLogger("squeezarr.converter")
+logger = logging.getLogger("shrinkerr.converter")
 
 
 async def get_live_encoding_settings() -> dict:
@@ -956,7 +956,7 @@ async def convert_file(
         try:
             from backend.test_encode import check_vmaf_available
             if await check_vmaf_available():
-                vmaf_dir = Path("/tmp/squeezarr_vmaf")
+                vmaf_dir = Path("/tmp/shrinkerr_vmaf")
                 vmaf_dir.mkdir(parents=True, exist_ok=True)
                 _vmaf_id = Path(input_path).stem[:20]
                 vmaf_json_path = vmaf_dir / f"{_vmaf_id}_vmaf.json"
@@ -1035,7 +1035,7 @@ async def convert_file(
 
         result_backup_path = None
         if backup_days and backup_days > 0:
-            # Move original to backup folder (custom or .squeezarr_backup in same dir)
+            # Move original to backup folder (custom or .shrinkerr_backup in same dir)
             custom_backup = live_settings.get("backup_folder", "")
             if custom_backup:
                 # Centralized backup: preserve relative path structure
@@ -1044,7 +1044,12 @@ async def convert_file(
                 backup_dir = backup_dir / p.parent.name
                 backup_dir.mkdir(parents=True, exist_ok=True)
             else:
-                backup_dir = p.parent / ".squeezarr_backup"
+                # New per-directory backup folder. If the user already has an
+                # old .squeezarr_backup folder from a previous install, keep
+                # writing to that one so their existing backups stay in a
+                # single location until they move/clean it up themselves.
+                legacy = p.parent / ".squeezarr_backup"
+                backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
                 backup_dir.mkdir(exist_ok=True)
             backup_path = backup_dir / p.name
             p.rename(backup_path)

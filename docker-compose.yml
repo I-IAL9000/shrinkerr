@@ -47,17 +47,19 @@ services:
       # will scan it and write converted files back to the same location
       # (with the originals trashed or permanently deleted depending on your
       # Settings → Automation config).
-      # Linux/Mac: - /mnt/media:/media
-      # Windows:   - E:\media:/media
       # Shrinkerr needs READ + WRITE access — it overwrites originals in place.
-      - /home/hal9000/HALHUB:/media
+      # Examples:
+      #   Linux/Mac: - /srv/media:/media
+      #              - /mnt/nas/media:/media
+      #   Windows:   - E:\media:/media
+      - /srv/media:/media
 
       # --- Optional: NZBGet / SABnzbd download folders ---
       # If you use the NZBGet / SABnzbd post-processing scripts, mount the
       # "completed downloads" folders here so Shrinkerr can see the files
       # the downloader just dropped. Skip these if you don't use nzb/sab.
-      # - /home/hal9000/Downloads/completed/TV:/downloads/tv
-      # - /home/hal9000/Downloads/completed/Movies:/downloads/movies
+      # - /srv/downloads/completed/TV:/downloads/tv
+      # - /srv/downloads/completed/Movies:/downloads/movies
 
     environment:
       # --- GPU passthrough hint ---
@@ -67,13 +69,10 @@ services:
       # device is actually present. The Monitor page will show exactly
       # what's active (NVENC vs CPU) and why.
       - NVIDIA_VISIBLE_DEVICES=all
-
-      # --- Database + media paths inside the container ---
-      # Leave these alone unless you know what you're doing. They match the
-      # volume targets above. (The SQUEEZARR_ prefix is historical — Shrinkerr
-      # used to be called Squeezarr.)
-      - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
-      - SQUEEZARR_MEDIA_ROOT=/media
+      # The app's defaults for DB path (/app/data/shrinkerr.db) and media
+      # root (/media) already match the volume mounts above, so no extra
+      # env vars are needed here. Override them with SHRINKERR_DB_PATH or
+      # SHRINKERR_MEDIA_ROOT if you really need to.
 
     restart: unless-stopped
 
@@ -126,7 +125,7 @@ services:
   #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
   #     - NVIDIA_VISIBLE_DEVICES=all
   #   volumes:
-  #     - /home/hal9000/HALHUB:/media       # must match what the server sees (or use PATH_MAPPINGS)
+  #     - /srv/media:/media                  # must match what the server sees (or use PATH_MAPPINGS)
   #   restart: unless-stopped
   #   deploy:
   #     resources:

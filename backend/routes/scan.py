@@ -134,8 +134,8 @@ async def _write_batch(db_path_or_db, batch: list, now: str, mark_new: bool = Fa
 
 
 _scan_proc = None
-_scan_progress_file = "/tmp/squeezarr_scan_progress.json"
-_scan_cancel_file = "/tmp/squeezarr_scan_cancel"
+_scan_progress_file = "/tmp/shrinkerr_scan_progress.json"
+_scan_cancel_file = "/tmp/shrinkerr_scan_cancel"
 
 
 def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str) -> None:

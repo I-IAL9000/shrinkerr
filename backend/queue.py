@@ -7,7 +7,7 @@ from typing import Optional
 
 import aiosqlite
 
-logger = logging.getLogger("squeezarr.queue")
+logger = logging.getLogger("shrinkerr.queue")
 
 
 async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
@@ -33,20 +33,28 @@ async def _run_post_conversion_script(job_id: int, file_path: str, original_path
 
     import os
     env = {**os.environ}
-    env["SQUEEZARR_EVENT"] = "job_completed"
-    env["SQUEEZARR_JOB_ID"] = str(job_id)
-    env["SQUEEZARR_FILE_PATH"] = str(file_path)
-    env["SQUEEZARR_ORIGINAL_PATH"] = str(original_path or file_path)
-    env["SQUEEZARR_JOB_TYPE"] = str(job_data.get("job_type", ""))
-    env["SQUEEZARR_SPACE_SAVED"] = str(result.get("space_saved", 0))
-    env["SQUEEZARR_ORIGINAL_SIZE"] = str(job_data.get("original_size", 0))
-    env["SQUEEZARR_ENCODER"] = str(job_data.get("encoder", ""))
-    env["SQUEEZARR_PRESET"] = str(job_data.get("nvenc_preset", ""))
-    env["SQUEEZARR_CQ"] = str(job_data.get("nvenc_cq", ""))
-    env["SQUEEZARR_FPS"] = str(round(job_data.get("fps", 0) or 0, 1))
-    env["SQUEEZARR_VMAF_SCORE"] = str(result.get("vmaf_score", ""))
-    env["SQUEEZARR_STATUS"] = "completed" if result.get("success") else "failed"
-    env["SQUEEZARR_ERROR"] = str(result.get("error", ""))
+    # Post-conversion hook env vars. Primary names are SHRINKERR_*; legacy
+    # SQUEEZARR_* are still emitted so existing user-owned hook scripts
+    # from the old app name keep working. New scripts should read SHRINKERR_*.
+    hook_vars = {
+        "EVENT": "job_completed",
+        "JOB_ID": str(job_id),
+        "FILE_PATH": str(file_path),
+        "ORIGINAL_PATH": str(original_path or file_path),
+        "JOB_TYPE": str(job_data.get("job_type", "")),
+        "SPACE_SAVED": str(result.get("space_saved", 0)),
+        "ORIGINAL_SIZE": str(job_data.get("original_size", 0)),
+        "ENCODER": str(job_data.get("encoder", "")),
+        "PRESET": str(job_data.get("nvenc_preset", "")),
+        "CQ": str(job_data.get("nvenc_cq", "")),
+        "FPS": str(round(job_data.get("fps", 0) or 0, 1)),
+        "VMAF_SCORE": str(result.get("vmaf_score", "")),
+        "STATUS": "completed" if result.get("success") else "failed",
+        "ERROR": str(result.get("error", "")),
+    }
+    for _k, _v in hook_vars.items():
+        env[f"SHRINKERR_{_k}"] = _v
+        env[f"SQUEEZARR_{_k}"] = _v  # legacy alias — remove in a future major version
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -588,12 +596,15 @@ async def _cleanup_expired_backups():
             if entry.is_dir():
                 cleanup_dir(entry.path)
 
-    # Clean .squeezarr_backup in media dirs
+    # Clean both .shrinkerr_backup (new) and .squeezarr_backup (legacy) in
+    # media dirs so expired backups get cleaned up regardless of which name
+    # created them.
+    _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
     for media_dir in media_dirs:
         for root, dirs, _files in os.walk(media_dir):
-            if ".squeezarr_backup" in dirs:
-                cleanup_dir(os.path.join(root, ".squeezarr_backup"))
-            dirs[:] = [d for d in dirs if d != ".squeezarr_backup"]
+            for backup_name in _BACKUP_DIRNAMES & set(dirs):
+                cleanup_dir(os.path.join(root, backup_name))
+            dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
 
     if deleted > 0:
         print(f"[BACKUP] Cleaned up {deleted} expired backup(s) (older than {days} days)", flush=True)

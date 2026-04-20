@@ -7,6 +7,48 @@ DB_PATH = settings.db_path
 BUSY_TIMEOUT = 30000  # 30 seconds — wait for locks instead of failing
 
 
+def _migrate_legacy_db_filename() -> None:
+    """Rename the old `squeezarr.db` to `shrinkerr.db` if needed.
+
+    Runs at import time. The app was originally called Squeezarr and its DB
+    file lived next to it as `squeezarr.db`. If an existing deployment
+    upgrades and the user hasn't overridden SHRINKERR_DB_PATH, we transparently
+    move the old DB + its WAL/SHM sidecar files to the new canonical name so
+    nothing is lost.
+
+    Only moves the old file when the new one doesn't exist — never
+    overwrites a user's data. Silent no-op on fresh installs.
+    """
+    try:
+        new_path = Path(DB_PATH)
+        # Only auto-migrate the default canonical name. If the user is
+        # explicitly pointing at some custom path, we leave it alone.
+        if new_path.name != "shrinkerr.db":
+            return
+        old_path = new_path.with_name("squeezarr.db")
+        if old_path.exists() and not new_path.exists():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            old_path.rename(new_path)
+            # WAL mode writes two sidecar files — move them too so the
+            # checkpoint-on-first-connect doesn't get confused.
+            for suffix in ("-wal", "-shm"):
+                side_old = old_path.with_name(old_path.name + suffix)
+                side_new = new_path.with_name(new_path.name + suffix)
+                if side_old.exists() and not side_new.exists():
+                    side_old.rename(side_new)
+            print(
+                f"[DB] Migrated legacy database: {old_path.name} -> {new_path.name}",
+                flush=True,
+            )
+    except Exception as exc:
+        # Don't let a bad migration block startup — the user can always
+        # point SHRINKERR_DB_PATH at the old file manually.
+        print(f"[DB] Legacy DB-rename migration skipped: {exc}", flush=True)
+
+
+_migrate_legacy_db_filename()
+
+
 async def get_db() -> aiosqlite.Connection:
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -154,7 +196,7 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN new_detected_at TEXT DEFAULT NULL")
         except Exception:
             pass  # Column already exists
-        # Migration: add converted flag (set when Squeezarr completes a job for this file)
+        # Migration: add converted flag (set when Shrinkerr completes a job for this file)
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN converted INTEGER DEFAULT 0")
         except Exception:

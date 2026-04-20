@@ -64,7 +64,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
   const arrMenuRef = useRef<HTMLDivElement | null>(null);
-  const [viewMode, setViewMode] = useState<"tree" | "poster">(() => (localStorage.getItem("squeezarr_viewMode") as "tree" | "poster") || "tree");
+  // Fall back to the legacy squeezarr_viewMode key so users upgrading from
+  // the old app name keep their view preference. New writes use the canonical
+  // shrinkerr_viewMode key below.
+  const [viewMode, setViewMode] = useState<"tree" | "poster">(() =>
+    (localStorage.getItem("shrinkerr_viewMode") as "tree" | "poster") ||
+    (localStorage.getItem("squeezarr_viewMode") as "tree" | "poster") ||
+    "tree"
+  );
   const [posterPrefetching, setPosterPrefetching] = useState(false);
   const [posterProgress, setPosterProgress] = useState({ total: 0, resolved: 0 });
   const [serverStats, setServerStats] = useState<any>(null);
@@ -1146,7 +1153,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <span style={{ width: 1, height: 16, background: "var(--border)" }} />
                 <button
                   className="sort-pill"
-                  onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("squeezarr_viewMode", next); }}
+                  onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
                   style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
                   title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
                 >
@@ -1296,7 +1303,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <span style={{ width: 1, height: 16, background: "var(--border)" }} />
             <button
               className="sort-pill"
-              onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("squeezarr_viewMode", next); }}
+              onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
               style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
               title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
             >

@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-# Configure logging so squeezarr.* loggers output to console
+# Configure logging so shrinkerr.* loggers output to console
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 from fastapi.staticfiles import StaticFiles
 
@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI):
     local_heartbeat_task.cancel()
 
 
-app = FastAPI(title="Squeezarr", lifespan=lifespan)
+app = FastAPI(title="Shrinkerr", lifespan=lifespan)
 
 # Auth settings cache (replaces old _api_key_cache)
 _auth_cache: dict = {"settings": None, "checked_at": 0}
@@ -260,7 +260,7 @@ async def api_key_auth(request: Request, call_next):
         return await call_next(request)
 
     # Method 2: Session cookie
-    session_cookie = request.cookies.get("squeezarr_session")
+    session_cookie = request.cookies.get("shrinkerr_session")
     if session_cookie and _validate_session(session_cookie, auth_settings):
         return await call_next(request)
 
@@ -282,7 +282,7 @@ async def auth_check(request: Request):
         return {"auth_required": True, "authenticated": True, "method": "api_key"}
 
     # Check session cookie
-    session = request.cookies.get("squeezarr_session")
+    session = request.cookies.get("shrinkerr_session")
     if session and _validate_session(session, settings):
         return {"auth_required": True, "authenticated": True, "method": "session"}
 
@@ -334,7 +334,7 @@ async def auth_login(request: Request):
 
     response = JSONResponse({"success": True, "username": username})
     response.set_cookie(
-        "squeezarr_session", token, httponly=True, samesite="lax", max_age=86400 * 30
+        "shrinkerr_session", token, httponly=True, samesite="lax", max_age=86400 * 30
     )
     return response
 
@@ -343,7 +343,7 @@ async def auth_login(request: Request):
 async def auth_logout():
     """Clear the session cookie."""
     response = JSONResponse({"success": True})
-    response.delete_cookie("squeezarr_session")
+    response.delete_cookie("shrinkerr_session")
     return response
 
 
@@ -406,7 +406,7 @@ async def _check_ws_auth(websocket: WebSocket) -> bool:
     if provided and provided == auth_settings.get("api_key"):
         return True
     # Check session cookie
-    session = websocket.cookies.get("squeezarr_session")
+    session = websocket.cookies.get("shrinkerr_session")
     if session and _validate_session(session, auth_settings):
         return True
     return False

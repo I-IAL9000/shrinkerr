@@ -3,12 +3,21 @@ import type { WSMessage } from "./types";
 
 const API_BASE = "/api";
 
-// API key stored in sessionStorage for the current browser session
+// API key stored in sessionStorage for the current browser session.
+// Reads the legacy `squeezarr_api_key` key as a fallback so users upgrading
+// from the old app name don't have to log in again when they reload. New
+// writes always go to the canonical `shrinkerr_api_key` key.
 export function getStoredApiKey(): string {
-  return sessionStorage.getItem("squeezarr_api_key") || "";
+  return (
+    sessionStorage.getItem("shrinkerr_api_key") ||
+    sessionStorage.getItem("squeezarr_api_key") ||
+    ""
+  );
 }
 export function setStoredApiKey(key: string) {
-  sessionStorage.setItem("squeezarr_api_key", key);
+  sessionStorage.setItem("shrinkerr_api_key", key);
+  // Remove the legacy key if present so we don't have two copies drifting.
+  sessionStorage.removeItem("squeezarr_api_key");
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {

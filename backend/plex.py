@@ -30,7 +30,7 @@ async def _get_plex_settings() -> tuple[str, str, str]:
 def _translate_path(file_path: str, path_mapping: str) -> str:
     """Translate a container path to a Plex-visible path using the mapping.
 
-    path_mapping format: "/media=/home/hal9000/HALHUB" (container_path=host_path)
+    path_mapping format: "/media=/srv/media" (container_path=host_path)
     Multiple mappings separated by semicolons.
     """
     if not path_mapping:

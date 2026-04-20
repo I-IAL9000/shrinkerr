@@ -149,7 +149,7 @@ async def webhook_resume():
 
 @router.get("/status")
 async def webhook_status():
-    """Get current Squeezarr status."""
+    """Get current Shrinkerr status."""
     db = await connect_db()
     try:
         async with db.execute("SELECT COUNT(*) as c FROM jobs WHERE status = 'running'") as cur:

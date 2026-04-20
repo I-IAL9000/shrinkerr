@@ -153,7 +153,7 @@ async def send_notification(event: str, title: str, message: str, fields: dict |
     email_to = settings.get("email_to", "")
     if smtp_host and email_to:
         body = f"{message}\n\n" + "\n".join(f"{k}: {v}" for k, v in fields.items()) if fields else message
-        results["email"] = await _send_email(settings, f"Squeezarr: {title}", body)
+        results["email"] = await _send_email(settings, f"Shrinkerr: {title}", body)
 
     # Generic webhook
     webhook_url = settings.get("webhook_url", "")
@@ -176,20 +176,20 @@ async def test_notifications() -> dict:
 
     discord_url = settings.get("discord_webhook_url", "")
     if discord_url:
-        results["discord"] = await _send_discord(discord_url, "Squeezarr Test", "Test notification from Squeezarr", fields)
+        results["discord"] = await _send_discord(discord_url, "Shrinkerr Test", "Test notification from Shrinkerr", fields)
 
     tg_token = settings.get("telegram_bot_token", "")
     tg_chat = settings.get("telegram_chat_id", "")
     if tg_token and tg_chat:
-        results["telegram"] = await _send_telegram(tg_token, tg_chat, "Squeezarr Test", "Test notification from Squeezarr", fields)
+        results["telegram"] = await _send_telegram(tg_token, tg_chat, "Shrinkerr Test", "Test notification from Shrinkerr", fields)
 
     smtp_host = settings.get("smtp_host", "")
     email_to = settings.get("email_to", "")
     if smtp_host and email_to:
-        results["email"] = await _send_email(settings, "Squeezarr: Test Notification", "Test notification from Squeezarr")
+        results["email"] = await _send_email(settings, "Shrinkerr: Test Notification", "Test notification from Shrinkerr")
 
     webhook_url = settings.get("webhook_url", "")
     if webhook_url:
-        results["webhook"] = await _send_webhook(webhook_url, "test", "Squeezarr Test", "Test notification", fields)
+        results["webhook"] = await _send_webhook(webhook_url, "test", "Shrinkerr Test", "Test notification", fields)
 
     return results

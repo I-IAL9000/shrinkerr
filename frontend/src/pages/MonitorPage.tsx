@@ -105,7 +105,7 @@ export default function MonitorPage() {
     );
   }
 
-  const { gpu, cpu, memory, disk_io, plex, squeezarr } = metrics;
+  const { gpu, cpu, memory, disk_io, plex, shrinkerr } = metrics;
   // The local node's encoding capability info rides the same /api/nodes/metrics
   // endpoint used for remote workers. Pull it out here so we can render an
   // "Encoding Capability" badge in the main System Monitor alongside the GPU
@@ -134,16 +134,16 @@ export default function MonitorPage() {
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>RAM</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(squeezarr?.running_jobs)}</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Encoding Jobs</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
           <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(plex?.total)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Plex Streams</div>
         </div>
-        {squeezarr?.avg_fps > 0 && (
+        {shrinkerr?.avg_fps > 0 && (
           <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-            <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--text-primary)" }}>{squeezarr.avg_fps}</div>
+            <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--text-primary)" }}>{shrinkerr.avg_fps}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Encoding FPS</div>
           </div>
         )}
@@ -244,34 +244,34 @@ export default function MonitorPage() {
           <MetricCard title="Shrinkerr Workload">
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(squeezarr?.running_jobs)}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Running</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{fmtNum(squeezarr?.pending_jobs)}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-muted)" }}>{fmtNum(shrinkerr?.pending_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Pending</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(squeezarr?.completed_jobs)}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--success)" }}>{fmtNum(shrinkerr?.completed_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Completed</div>
               </div>
-              {(squeezarr?.failed_jobs || 0) > 0 && (
+              {(shrinkerr?.failed_jobs || 0) > 0 && (
                 <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{fmtNum(squeezarr.failed_jobs)}</div>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{fmtNum(shrinkerr.failed_jobs)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Failed</div>
                 </div>
               )}
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{squeezarr?.avg_fps || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{shrinkerr?.avg_fps || 0}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Live FPS</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "#74c0fc" }}>{squeezarr?.lifetime_avg_fps || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "#74c0fc" }}>{shrinkerr?.lifetime_avg_fps || 0}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Avg FPS</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
                 <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>
-                  {squeezarr?.total_saved ? `${(squeezarr.total_saved / (1024**4)).toFixed(1)} TB` : "0"}
+                  {shrinkerr?.total_saved ? `${(shrinkerr.total_saved / (1024**4)).toFixed(1)} TB` : "0"}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Total Saved</div>
               </div>

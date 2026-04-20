@@ -1679,7 +1679,7 @@ async def export_csv():
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=squeezarr-jobs-{today}.csv"},
+            headers={"Content-Disposition": f"attachment; filename=shrinkerr-jobs-{today}.csv"},
         )
     finally:
         await db.close()
@@ -1703,7 +1703,7 @@ async def export_json():
         return StreamingResponse(
             iter([json.dumps(rows, indent=2)]),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename=squeezarr-jobs-{today}.json"},
+            headers={"Content-Disposition": f"attachment; filename=shrinkerr-jobs-{today}.json"},
         )
     finally:
         await db.close()

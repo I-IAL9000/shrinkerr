@@ -181,7 +181,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
   const loadRules = () => {
     const headers: Record<string, string> = {};
-    const k = sessionStorage.getItem("squeezarr_api_key") || "";
+    const k = sessionStorage.getItem("shrinkerr_api_key") || sessionStorage.getItem("squeezarr_api_key") || "";
     if (k) headers["X-Api-Key"] = k;
     fetch("/api/rules/", { headers }).then(r => r.json()).then(data => {
       setRules(Array.isArray(data) ? data : []);
@@ -1710,7 +1710,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 type="text"
                 value={plexPathMapping}
                 onChange={(e) => setPlexPathMapping(e.target.value)}
-                placeholder="/media=/home/hal9000/HALHUB"
+                placeholder="/media=/srv/media"
                 style={{ ...inputStyle, width: "100%", marginTop: 4 }}
               />
               <div style={helpStyle}>
@@ -2781,7 +2781,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <input type="text" style={{ ...inputStyle, flex: 1 }}
                 value={encoding?.backup_folder ?? ""}
                 onChange={e => setEncoding({ ...encoding, backup_folder: e.target.value })}
-                placeholder=".squeezarr_backup (default, same dir as file)" />
+                placeholder=".shrinkerr_backup (default, same dir as file)" />
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap", flexShrink: 0 }}
@@ -2795,7 +2795,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               onCancel={() => setBackupBrowserOpen(false)}
             />
             <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 26, marginBottom: 6 }}>
-              Leave empty to use <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>.squeezarr_backup</code> in the same directory.
+              Leave empty to use <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>.shrinkerr_backup</code> in the same directory.
               Set an absolute path (e.g. <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>/media/backups</code>) for centralized storage.
               Backup files are required for the <strong>Undo Conversion</strong> feature — without backups, conversions cannot be reverted.
             </div>
@@ -2990,20 +2990,22 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Environment Variables Reference</summary>
               <div style={{ backgroundColor: "var(--bg-primary)", padding: 12, borderRadius: 4, fontFamily: "monospace", fontSize: 11, lineHeight: 1.8 }}>
                 {[
-                  "SQUEEZARR_EVENT=job_completed",
-                  "SQUEEZARR_JOB_ID=12345",
-                  "SQUEEZARR_FILE_PATH=/media/.../file.x265.mkv",
-                  "SQUEEZARR_ORIGINAL_PATH=/media/.../file.x264.mkv",
-                  "SQUEEZARR_JOB_TYPE=convert|audio|combined",
-                  "SQUEEZARR_SPACE_SAVED=1234567890 (bytes)",
-                  "SQUEEZARR_ORIGINAL_SIZE=5000000000 (bytes)",
-                  "SQUEEZARR_ENCODER=nvenc|libx265",
-                  "SQUEEZARR_PRESET=p3",
-                  "SQUEEZARR_CQ=27",
-                  "SQUEEZARR_FPS=195.5",
-                  "SQUEEZARR_VMAF_SCORE=96.2",
-                  "SQUEEZARR_STATUS=completed|failed",
-                  "SQUEEZARR_ERROR=(error message if failed)",
+                  "SHRINKERR_EVENT=job_completed",
+                  "SHRINKERR_JOB_ID=12345",
+                  "SHRINKERR_FILE_PATH=/media/.../file.x265.mkv",
+                  "SHRINKERR_ORIGINAL_PATH=/media/.../file.x264.mkv",
+                  "SHRINKERR_JOB_TYPE=convert|audio|combined",
+                  "SHRINKERR_SPACE_SAVED=1234567890 (bytes)",
+                  "SHRINKERR_ORIGINAL_SIZE=5000000000 (bytes)",
+                  "SHRINKERR_ENCODER=nvenc|libx265",
+                  "SHRINKERR_PRESET=p3",
+                  "SHRINKERR_CQ=27",
+                  "SHRINKERR_FPS=195.5",
+                  "SHRINKERR_VMAF_SCORE=96.2",
+                  "SHRINKERR_STATUS=completed|failed",
+                  "SHRINKERR_ERROR=(error message if failed)",
+                  // The legacy SQUEEZARR_* variants are also set for backward
+                  // compatibility with scripts written before the rename.
                 ].map(v => <div key={v}>{v}</div>)}
               </div>
             </details>

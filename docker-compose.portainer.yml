@@ -43,9 +43,9 @@ services:
       # --- Required: persistent app data ---
       # SQLite database, logs, encoding history, backups. Back this up.
       # CHANGE ME: set the left side to a real path on your host.
-      # Linux/Mac: - /home/youruser/shrinkerr/data:/app/data
+      # Linux/Mac: - /srv/shrinkerr/data:/app/data
       # Windows:   - C:\ProgramData\shrinkerr\data:/app/data
-      - /home/hal9000/shrinkerr/data:/app/data
+      - /srv/shrinkerr/data:/app/data
 
       # --- Required: your media library ---
       # Must be READ + WRITE — Shrinkerr overwrites originals in place
@@ -54,10 +54,10 @@ services:
       # host attaches *under* this path after the container starts — useful
       # if you have a NAS share that auto-mounts on boot.
       # CHANGE ME: set `source:` to the root of your media library.
-      # Linux/Mac: source: /mnt/media
+      # Linux/Mac: source: /srv/media  OR  /mnt/nas/media
       # Windows:   source: E:\media
       - type: bind
-        source: /home/hal9000/HALHUB
+        source: /srv/media
         target: /media
         bind:
           propagation: rslave
@@ -69,8 +69,8 @@ services:
       # so it can hand files off to Sonarr/Radarr after processing.
       # Delete these two lines if you don't use nzb/sab.
       # CHANGE ME: adjust paths to match your downloader's "completed" folders.
-      - /home/hal9000/Downloads/completed/TV:/downloads/tv:rw
-      - /home/hal9000/Downloads/completed/Movies:/downloads/movies:rw
+      # - /srv/downloads/completed/TV:/downloads/tv:rw
+      # - /srv/downloads/completed/Movies:/downloads/movies:rw
 
     environment:
       # --- GPU passthrough hint ---
@@ -78,12 +78,10 @@ services:
       # on CPU-only hosts; the app falls back to libx265 and the Monitor
       # page tells you exactly what's active (NVENC vs CPU) + why.
       - NVIDIA_VISIBLE_DEVICES=all
-
-      # --- Paths inside the container ---
-      # Leave these alone. They must match the volume targets above.
-      # (SQUEEZARR_ prefix is historical — Shrinkerr was originally Squeezarr.)
-      - SQUEEZARR_DB_PATH=/app/data/squeezarr.db
-      - SQUEEZARR_MEDIA_ROOT=/media
+      # The app's defaults for DB path (/app/data/shrinkerr.db) and media
+      # root (/media) already match the volume mounts above, so nothing
+      # else needs to go here. Override with SHRINKERR_DB_PATH or
+      # SHRINKERR_MEDIA_ROOT if you really need to point elsewhere.
 
       # --- File ownership for created/modified files ---
       # Files Shrinkerr writes will be owned by this UID/GID on the host.
@@ -154,7 +152,7 @@ services:
   #     # - METRICS_INTERVAL=5           # seconds between CPU/GPU metric reports
   #   volumes:
   #     # Must see the media at the same path the server uses (or use PATH_MAPPINGS).
-  #     - /home/hal9000/HALHUB:/media
+  #     - /srv/media:/media
   #   restart: unless-stopped
   #   runtime: nvidia                    # remove on CPU-only workers
   #   deploy:                            # remove on CPU-only workers

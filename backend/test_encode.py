@@ -12,7 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
-TEMP_DIR = Path("/tmp/squeezarr_test")
+TEMP_DIR = Path("/tmp/shrinkerr_test")
 # In-memory state for active test encodes
 _tasks: dict[str, dict] = {}
 

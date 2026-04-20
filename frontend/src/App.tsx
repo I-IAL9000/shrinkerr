@@ -328,11 +328,18 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [jobProgressMap, setJobProgressMap] = useState<Map<number, JobProgress>>(new Map());
   const { toasts, addToast } = useToastState();
-  const [theme, setTheme] = useState<"dark" | "light">(() => (localStorage.getItem("squeezarr_theme") as "dark" | "light") || "dark");
+  // Read new key first, fall back to the legacy squeezarr_theme for users
+  // upgrading from the old app name so they don't lose their theme pick.
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    (localStorage.getItem("shrinkerr_theme") as "dark" | "light") ||
+    (localStorage.getItem("squeezarr_theme") as "dark" | "light") ||
+    "dark"
+  );
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("squeezarr_theme", theme);
+    localStorage.setItem("shrinkerr_theme", theme);
+    localStorage.removeItem("squeezarr_theme");  // clean up the legacy copy
   }, [theme]);
 
   // Update range slider fill color via inline background gradient.

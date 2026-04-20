@@ -611,7 +611,7 @@ async def test_notifications_endpoint():
 # --- Version ---
 
 _VERSION_FILE = Path(__file__).parent.parent.parent / "VERSION"
-_GITHUB_REPO = "hal9000/squeezarr"  # Change when repo exists
+_GITHUB_REPO = "I-IAL9000/shrinkerr"  # upstream repo for version/update checks
 _update_cache: dict = {}  # {version, checked_at}
 
 
@@ -659,7 +659,7 @@ async def get_version():
 
 @router.get("/system")
 async def get_system_metrics():
-    """Real-time system metrics — GPU, CPU, RAM, disk I/O, network, Plex streams, Squeezarr jobs."""
+    """Real-time system metrics — GPU, CPU, RAM, disk I/O, network, Plex streams, Shrinkerr jobs."""
     from backend.system_metrics import get_all_metrics
 
     metrics = await get_all_metrics()
@@ -672,7 +672,7 @@ async def get_system_metrics():
     except Exception:
         metrics["plex"] = {"total": 0, "transcoding": 0, "direct": 0, "sessions": []}
 
-    # Add Squeezarr job info
+    # Add Shrinkerr job info
     try:
         db = await connect_db()
         try:
@@ -720,7 +720,7 @@ async def get_system_metrics():
         finally:
             await db.close()
 
-        metrics["squeezarr"] = {
+        metrics["shrinkerr"] = {
             "running_jobs": running,
             "pending_jobs": pending,
             "avg_fps": avg_fps,
@@ -732,6 +732,6 @@ async def get_system_metrics():
             "today_saved": today_saved,
         }
     except Exception:
-        metrics["squeezarr"] = {"running_jobs": 0, "pending_jobs": 0, "avg_fps": 0, "completed_jobs": 0, "failed_jobs": 0, "total_saved": 0, "lifetime_avg_fps": 0, "today_completed": 0, "today_saved": 0}
+        metrics["shrinkerr"] = {"running_jobs": 0, "pending_jobs": 0, "avg_fps": 0, "completed_jobs": 0, "failed_jobs": 0, "total_saved": 0, "lifetime_avg_fps": 0, "today_completed": 0, "today_saved": 0}
 
     return metrics

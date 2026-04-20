@@ -78,11 +78,11 @@ _ENCODING_DEFAULTS = {
     "resolution_cq_720p": "18",
     "resolution_cq_sd": "16",
     # Filename
-    "filename_suffix": "",  # e.g. "-Squeezarr" — appended to filename after conversion
+    "filename_suffix": "",  # e.g. "-Shrinkerr" — appended to filename after conversion
     # Post-conversion
     "trash_original_after_conversion": "false",
-    "backup_original_days": "0",  # 0 = disabled; keep original in .squeezarr_backup for X days
-    "backup_folder": "",  # Empty = .squeezarr_backup in same dir as file; set a path for centralized backups
+    "backup_original_days": "0",  # 0 = disabled; keep original in .shrinkerr_backup for X days
+    "backup_folder": "",  # Empty = .shrinkerr_backup in same dir as file; set a path for centralized backups
     # Advanced
     "custom_ffmpeg_flags": "",  # Extra flags appended to ffmpeg command
     "max_plex_api_calls": "0",  # 0 = unlimited; max concurrent Plex API calls
@@ -729,7 +729,7 @@ async def export_settings():
     return StreamingResponse(
         iter([json.dumps(export_data, indent=2)]),
         media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename=squeezarr-settings-{today}.json"},
+        headers={"Content-Disposition": f"attachment; filename=shrinkerr-settings-{today}.json"},
     )
 
 
@@ -861,7 +861,7 @@ async def list_backups():
             row = await cur.fetchone()
             custom_folder = row["value"] if row else ""
 
-        # Get media dirs to find .squeezarr_backup folders
+        # Get media dirs to find .shrinkerr_backup (+ legacy .squeezarr_backup) folders
         async with db.execute("SELECT path FROM media_dirs") as cur:
             media_dirs = [r["path"] for r in await cur.fetchall()]
     finally:
@@ -897,13 +897,16 @@ async def list_backups():
             if entry.is_dir():
                 scan_backup_dir(entry.path)
 
-    # Scan .squeezarr_backup folders in media dirs
+    # Scan both the new .shrinkerr_backup and the legacy .squeezarr_backup
+    # folders — users upgrading from the old name will still have backups
+    # sitting under the old folder until they clean it up.
+    _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
     for media_dir in media_dirs:
         for root, dirs, _files in os.walk(media_dir):
-            if ".squeezarr_backup" in dirs:
-                scan_backup_dir(os.path.join(root, ".squeezarr_backup"))
-            # Don't recurse into backup dirs
-            dirs[:] = [d for d in dirs if d != ".squeezarr_backup"]
+            for backup_name in _BACKUP_DIRNAMES & set(dirs):
+                scan_backup_dir(os.path.join(root, backup_name))
+            # Don't recurse into backup dirs (either flavor).
+            dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
 
     backups.sort(key=lambda b: b["mtime"], reverse=True)
     return {
@@ -932,8 +935,9 @@ async def delete_backups(req: DeleteBackupsRequest):
         for path in req.paths:
             if not os.path.exists(path):
                 continue
-            # Safety: only delete from .squeezarr_backup dirs or configured backup folder
-            if ".squeezarr_backup" not in path:
+            # Safety: only delete from a recognised backup dir (new or legacy)
+            # or the configured centralized backup folder
+            if ".shrinkerr_backup" not in path and ".squeezarr_backup" not in path:
                 db = await connect_db()
                 try:
                     async with db.execute("SELECT value FROM settings WHERE key = 'backup_folder'") as cur:
@@ -968,10 +972,8 @@ async def delete_backups(req: DeleteBackupsRequest):
     result2 = await list_backups()
     for folder in set(b["folder"] for b in result2["backups"]):
         pass  # folder still has files
-    # Find and remove now-empty dirs
-    import glob
-    for pattern_dir in [".squeezarr_backup"]:
-        pass  # Handled by the OS when empty
+    # Find and remove now-empty dirs (OS handles this when unlink leaves
+    # the dir empty — no explicit cleanup needed here).
 
     return {"deleted": deleted, "freed": freed}
 
@@ -989,8 +991,8 @@ async def get_nzbget_config(request: Request):
         await db.close()
 
     return {
-        "squeezarr_url": str(request.base_url).rstrip("/"),
-        "squeezarr_api_key": settings.get("api_key", ""),
+        "shrinkerr_url": str(request.base_url).rstrip("/"),
+        "shrinkerr_api_key": settings.get("api_key", ""),
         "sonarr_url": settings.get("sonarr_url", ""),
         "sonarr_api_key": settings.get("sonarr_api_key", ""),
         "radarr_url": settings.get("radarr_url", ""),
@@ -1007,7 +1009,7 @@ async def get_nzbget_config(request: Request):
 
 @router.get("/nzbget-script")
 async def download_nzbget_script(request: Request):
-    """Generate and download the NZBGet post-processing script with baked-in Squeezarr connection."""
+    """Generate and download the NZBGet post-processing script with baked-in Shrinkerr connection."""
     from starlette.responses import Response
 
     db = await connect_db()
@@ -1019,18 +1021,24 @@ async def download_nzbget_script(request: Request):
     finally:
         await db.close()
 
-    squeezarr_url = str(request.base_url).rstrip("/")
+    shrinkerr_url = str(request.base_url).rstrip("/")
     api_key = settings.get("api_key", "")
 
-    # Read the template script
+    # Read the template script. The NZBGet extension lives at
+    # `nzbget-extension/Shrinkerr/Shrinkerr.py` and uses `__SHRINKERR_URL__` /
+    # `__SHRINKERR_API_KEY__` placeholders (matches the canonical app name).
     import os
-    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "nzbget-extension", "Squeezarr", "main.py")
+    script_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "nzbget-extension", "Shrinkerr", "Shrinkerr.py",
+    )
     with open(script_path, "r") as f:
         script_content = f.read()
 
-    # Replace placeholder values
-    script_content = script_content.replace("__SQUEEZARR_URL__", squeezarr_url)
-    script_content = script_content.replace("__SQUEEZARR_API_KEY__", api_key)
+    # Bake the user's server URL + API key into the downloaded copy so they
+    # don't have to edit the script after drop-in.
+    script_content = script_content.replace("__SHRINKERR_URL__", shrinkerr_url)
+    script_content = script_content.replace("__SHRINKERR_API_KEY__", api_key)
 
     return Response(
         content=script_content,
