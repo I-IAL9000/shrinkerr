@@ -719,6 +719,15 @@ def _parse_changelog() -> list[dict]:
             sep = " " if current["intro"] else ""
             current["intro"] = (current["intro"] + sep + line.strip()).strip()
 
+    # Drop an "Unreleased" entry if it carries no actual content (no
+    # section bullets). Keeps the Updates UI tidy — we only surface
+    # Unreleased to users once it has real entries in it.
+    entries = [
+        e for e in entries
+        if e["version"].lower() != "unreleased"
+        or any(bullets for bullets in e["sections"].values())
+    ]
+
     _changelog_cache["mtime"] = stat.st_mtime
     _changelog_cache["entries"] = entries
     return entries
