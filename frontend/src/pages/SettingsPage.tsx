@@ -737,6 +737,65 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   </tbody>
                 </table>
 
+                {/* ─────────────────────────────────────────────────────
+                    VMAF minimum-score threshold. Only relevant when the
+                    VMAF analysis toggle above is on.
+                    ───────────────────────────────────────────────────── */}
+                {(encoding.vmaf_analysis_enabled === true || encoding.vmaf_analysis_enabled === "true" || encoding.vmaf_analysis_enabled == null) && (() => {
+                  const rawMin = encoding.vmaf_min_score;
+                  const minScore = typeof rawMin === "number" ? rawMin
+                    : (typeof rawMin === "string" && rawMin !== "" ? parseFloat(rawMin) : 0) || 0;
+                  const enabled = minScore > 0;
+                  // Tier colour mirrors the table above — gives quick visual
+                  // feedback about how strict the user's threshold is.
+                  const tierColor =
+                    minScore >= 93 ? "#18ffa5"
+                      : minScore >= 87 ? "var(--accent)"
+                        : minScore >= 80 ? "#ffa94d"
+                          : "#e94560";
+                  return (
+                    <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={enabled}
+                          onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: e.target.checked ? 85 : 0 })}
+                          style={{ accentColor: "var(--accent)" }}
+                        />
+                        <span style={labelStyle}>Reject encodes below a minimum VMAF score</span>
+                      </label>
+                      <div style={{ ...helpStyle, marginLeft: 26 }}>
+                        When enabled, any encode whose measured VMAF score is below the threshold
+                        is discarded — the encoded temp file is deleted, the original is left in
+                        place, and the job is recorded as <strong>rejected</strong> with the score and
+                        threshold visible in the job details. Useful as a safety net against
+                        overly-aggressive CQ/CRF settings.
+                      </div>
+                      {enabled && (
+                        <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
+                          <input
+                            type="range"
+                            min={60}
+                            max={100}
+                            step={1}
+                            value={minScore}
+                            onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: parseFloat(e.target.value) })}
+                            style={{ flex: 1 }}
+                          />
+                          <div style={{
+                            minWidth: 64, textAlign: "center",
+                            padding: "4px 10px", borderRadius: 4,
+                            background: "var(--bg-card)",
+                            color: tierColor, fontWeight: 700, fontSize: 14,
+                          }}>
+                            {minScore.toFixed(0)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Resolution-Aware CQ Toggle + Table */}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 8, cursor: "pointer" }}>
                   <input type="checkbox"

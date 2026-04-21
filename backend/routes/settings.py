@@ -72,6 +72,12 @@ _ENCODING_DEFAULTS = {
     # Smart encoding
     "content_type_detection": "true",
     "vmaf_analysis_enabled": "true",
+    # Minimum VMAF score (0-100) required to accept an encode. Scores below
+    # this threshold will revert the job: the encoded temp file is deleted,
+    # the original is left in place, and the job completes with a rejection
+    # notice. 0 = disabled (never reject). Only applied when vmaf_analysis_enabled
+    # is true AND an encode produced a valid VMAF score.
+    "vmaf_min_score": "0",
     "resolution_aware_cq": "false",
     "resolution_cq_4k": "24",
     "resolution_cq_1080p": "20",
@@ -286,6 +292,10 @@ async def get_encoding_settings():
     result["backup_folder"] = merged.get("backup_folder", "")
     result["filename_suffix"] = merged.get("filename_suffix", "")
     result["vmaf_analysis_enabled"] = merged.get("vmaf_analysis_enabled", "true").lower() == "true"
+    try:
+        result["vmaf_min_score"] = float(merged.get("vmaf_min_score", "0") or "0")
+    except (TypeError, ValueError):
+        result["vmaf_min_score"] = 0.0
 
     # Advanced
     result["custom_ffmpeg_flags"] = merged.get("custom_ffmpeg_flags", "")
@@ -560,6 +570,14 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["filename_suffix"] = update.filename_suffix
         if update.vmaf_analysis_enabled is not None:
             updates["vmaf_analysis_enabled"] = "true" if update.vmaf_analysis_enabled else "false"
+        if update.vmaf_min_score is not None:
+            # Clamp to 0..100 and store as plain string. 0 == disabled (never
+            # rejects). The settings GET endpoint parses back to float.
+            try:
+                _vms = max(0.0, min(100.0, float(update.vmaf_min_score)))
+            except (TypeError, ValueError):
+                _vms = 0.0
+            updates["vmaf_min_score"] = str(_vms)
         if update.api_key is not None and not update.api_key.startswith("****"):
             updates["api_key"] = update.api_key
         # Auth settings

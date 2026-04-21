@@ -29,7 +29,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 - x264 → x265 (HEVC) conversion, NVENC hardware or libx265 CPU
 - Per-resolution CQ/CRF overrides (4K, 1080p, 720p, SD)
 - Encoding rules — per-directory, per-Plex-label, or per-codec presets
-- Optional VMAF quality check — rejects and reverts an encode that scored below your threshold
+- Optional VMAF quality check with configurable minimum score — encodes scoring below the threshold are discarded and the original is kept
 - Automatic fallback from NVENC → libx265 when the requested encoder isn't available on a node
 
 **Library management**

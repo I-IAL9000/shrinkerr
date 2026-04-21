@@ -166,6 +166,8 @@ class SettingsUpdate(BaseModel):
     backup_original_days: Optional[Any] = None
     backup_folder: Optional[str] = None
     vmaf_analysis_enabled: Optional[bool] = None
+    # Min VMAF score (0-100) required to accept an encode. 0 = disabled.
+    vmaf_min_score: Optional[Any] = None
     filename_suffix: Optional[str] = None
     custom_ffmpeg_flags: Optional[str] = None
     max_plex_api_calls: Optional[Any] = None

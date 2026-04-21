@@ -1028,6 +1028,64 @@ async def convert_file(
         except Exception as vmaf_exc:
             print(f"[CONVERT] VMAF analysis failed: {vmaf_exc}", flush=True)
 
+    # ------------------------------------------------------------------
+    # VMAF threshold enforcement: if the user configured a minimum acceptable
+    # VMAF score and this encode didn't clear it, reject the output and keep
+    # the original in place. We only apply the threshold when we actually
+    # have a score — a failed/unavailable VMAF run is NOT grounds for
+    # rejection (treated the same as threshold=0).
+    # ------------------------------------------------------------------
+    try:
+        vmaf_min_raw = live_settings.get("vmaf_min_score", 0) or 0
+        vmaf_min_score = float(vmaf_min_raw)
+    except (TypeError, ValueError):
+        vmaf_min_score = 0.0
+
+    vmaf_rejected = False
+    vmaf_reject_reason = None
+    if vmaf_score is not None and vmaf_min_score > 0 and vmaf_score < vmaf_min_score:
+        vmaf_rejected = True
+        vmaf_reject_reason = (
+            f"VMAF {vmaf_score} is below the configured minimum of "
+            f"{vmaf_min_score:g} — encode rejected, original kept."
+        )
+        print(f"[CONVERT] {vmaf_reject_reason}", flush=True)
+        # Delete the encoded temp file so the user doesn't end up with a
+        # stray low-quality copy sitting next to the original.
+        try:
+            Path(temp_path).unlink(missing_ok=True)
+        except OSError as unlink_exc:
+            print(
+                f"[CONVERT] Failed to delete rejected temp file {temp_path}: {unlink_exc}",
+                flush=True,
+            )
+        # No subtitle renames to undo — those only happen on the success
+        # path after the original is replaced, and we bail before that.
+        return {
+            "success": True,              # the encode process worked; we just didn't accept the output
+            "output_path": input_path,    # original untouched
+            "space_saved": 0,
+            "error": None,
+            "vmaf_score": vmaf_score,
+            "vmaf_rejected": True,
+            "vmaf_reject_reason": vmaf_reject_reason,
+            "vmaf_min_score": vmaf_min_score,
+            "ffmpeg_command": full_command,
+            "ffmpeg_log": "\n".join(all_lines[-500:]),
+            "encoding_stats": {
+                "encoder": encoder,
+                "preset": nvenc_preset,
+                "cq": cq,
+                "crf": crf,
+                "audio_codec": audio_codec,
+                "audio_bitrate": audio_bitrate,
+                "target_resolution": target_resolution,
+                "input_size": original_size,
+                "output_size": output_size,
+                "encode_seconds": time.monotonic() - encode_start_time,
+            },
+        }
+
     # Handle original file: backup, trash, or delete
     try:
         backup_days = live_settings.get("backup_original_days", 0)

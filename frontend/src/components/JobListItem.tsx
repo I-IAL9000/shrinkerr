@@ -164,9 +164,20 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               {job.space_saved > 0 && (
                 <span style={{ color: "var(--success)", fontSize: 11 }}>saved {formatBytes(job.space_saved)}</span>
               )}
-              {job.space_saved <= 0 && (
+              {job.space_saved <= 0 && job.error_log?.startsWith("VMAF ") ? (
+                // VMAF-rejected encodes get a distinct amber badge so the
+                // user can tell at a glance WHY this file wasn't converted
+                // (vs. a generic "no savings" skip). Full reason lives in
+                // the expanded view + tooltip.
+                <span
+                  title={job.error_log}
+                  style={{ fontSize: 11, color: "#ffa94d", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
+                >
+                  VMAF rejected
+                </span>
+              ) : job.space_saved <= 0 ? (
                 <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>Ignored</span>
-              )}
+              ) : null}
             </>
           )}
           {onUndo && (job as any).backup_path && (
@@ -273,6 +284,31 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                     {logData.vmaf_score} ({logData.vmaf_score >= 93 ? "Excellent" : logData.vmaf_score >= 87 ? "Good" : logData.vmaf_score >= 80 ? "Fair" : "Poor"})
                   </span>
                 </>}
+              </div>
+            )}
+
+            {/* VMAF rejection banner — only shows when a completed job was
+                rejected for failing the VMAF threshold. Makes the reason
+                impossible to miss in the expanded details. */}
+            {job.error_log?.startsWith("VMAF ") && (
+              <div style={{
+                marginBottom: 10, padding: "8px 10px", borderRadius: 4,
+                background: "rgba(255,169,77,0.08)",
+                border: "1px solid rgba(255,169,77,0.35)",
+                display: "flex", alignItems: "center", gap: 8,
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffa94d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ffa94d" }}>Encode rejected by VMAF threshold</div>
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                    {job.error_log} The original file was kept. Retry with a lower CQ/CRF or a slower preset
+                    to get a better score, or lower the threshold in Settings → Video.
+                  </div>
+                </div>
               </div>
             )}
 

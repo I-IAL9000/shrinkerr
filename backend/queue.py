@@ -1484,6 +1484,44 @@ class QueueWorker:
                 except Exception as exc:
                     print(f"[WORKER] Failed to mark ignored: {exc}", flush=True)
 
+            if result.get("vmaf_rejected"):
+                # Encode completed cleanly but didn't meet the VMAF threshold.
+                # Store the rejection reason on the job so the UI can surface
+                # it, and emit a file-event so the Activity page has a record
+                # of why this file wasn't converted. We deliberately do NOT
+                # auto-ignore the file the way skipped_larger does — a VMAF
+                # miss usually means the user's CQ is too aggressive for this
+                # content and they may want to retry with different settings.
+                reason = result.get("vmaf_reject_reason") or "VMAF below threshold"
+                try:
+                    db = await self._db()
+                    try:
+                        await db.execute(
+                            "UPDATE jobs SET error_log = ? WHERE id = ?",
+                            (reason, job_id),
+                        )
+                        await db.commit()
+                    finally:
+                        await db.close()
+                except Exception as exc:
+                    print(f"[WORKER] Failed to store VMAF rejection reason: {exc}", flush=True)
+                try:
+                    from backend.file_events import log_event, EVENT_VMAF
+                    await log_event(
+                        file_path,
+                        EVENT_VMAF,
+                        f"Rejected: {reason}",
+                        {
+                            "vmaf_score": result.get("vmaf_score"),
+                            "vmaf_min_score": result.get("vmaf_min_score"),
+                            "rejected": True,
+                            "job_id": job_id,
+                        },
+                    )
+                except Exception:
+                    pass
+                print(f"[WORKER] {reason}", flush=True)
+
         # For "combined" jobs, track removal is now handled inline during conversion
         # (no separate remux pass). Skip the remux block unless this is an "audio"-only job.
         if job_type == "audio":
