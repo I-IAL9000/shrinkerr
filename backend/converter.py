@@ -10,85 +10,104 @@ from typing import Callable, Optional
 logger = logging.getLogger("shrinkerr.converter")
 
 
+def _str_to_bool(v) -> bool:
+    """Coerce a settings-table string to bool. Strings are stored in the DB
+    as lowercase 'true' / 'false'; anything else falls through to False."""
+    return str(v).lower() == "true"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Single source of truth for encoding-related settings the converter reads
+# at encode time. Each entry is `(key, default_if_absent, coerce_fn)`.
+#
+# `default_if_absent` semantics:
+#   - A concrete value (int, str, bool, float) → key is ALWAYS present in
+#     the returned dict; the default is used when the DB row is missing.
+#   - `_ABSENT` sentinel → key is only present in the returned dict when the
+#     DB actually has it, matching the old behavior where callers did
+#     `live.get("foo", their_own_default)`. Avoids changing existing
+#     caller assumptions about when a key will be `None` vs missing.
+#
+# Adding a new setting? One line here and it flows end-to-end to the
+# encoder. No risk of the "setting saved to DB but never read" class of bug
+# that bit vmaf_min_score (v0.3.1 fix) and had been lurking before that.
+# ─────────────────────────────────────────────────────────────────────────
+_ABSENT: object = object()
+
+_ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
+    # Encoder selection + quality
+    ("default_encoder",                  "nvenc",   str),
+    ("nvenc_cq",                         20,        int),
+    ("libx265_crf",                      20,        int),
+    ("nvenc_preset",                     "p6",      str),
+    ("libx265_preset",                   "medium",  str),
+    # Process limits
+    ("ffmpeg_timeout",                   21600,     int),
+    ("ffprobe_timeout",                  30,        int),
+    # Audio
+    ("audio_codec",                      "copy",    str),
+    ("audio_bitrate",                    128,       int),
+    ("auto_convert_lossless",            _ABSENT,   _str_to_bool),
+    ("lossless_target_codec",            _ABSENT,   str),
+    ("lossless_target_bitrate",          _ABSENT,   int),
+    # Output shaping
+    ("target_resolution",                _ABSENT,   str),
+    ("custom_ffmpeg_flags",              _ABSENT,   str),
+    ("filename_suffix",                  _ABSENT,   str),
+    # Post-conversion
+    ("trash_original_after_conversion",  _ABSENT,   _str_to_bool),
+    ("backup_original_days",             _ABSENT,   int),
+    ("backup_folder",                    _ABSENT,   str),
+    # VMAF
+    ("vmaf_analysis_enabled",            _ABSENT,   _str_to_bool),
+    ("vmaf_min_score",                   _ABSENT,   float),
+)
+
+
+def _apply_coercion(raw, coerce: Callable, fallback):
+    """Coerce a raw DB string through `coerce`, falling back to `fallback`
+    on any type error. Isolates the per-row try/except so the settings
+    loader stays readable."""
+    try:
+        return coerce(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
 async def get_live_encoding_settings() -> dict:
-    """Read encoding settings from the DB at call time (not the frozen config singleton)."""
-    import json
+    """Read encoding settings from the DB at call time (not the frozen config singleton).
+
+    Returns a dict keyed by setting name, with values coerced to the right
+    Python type per _ENCODING_SETTINGS above. On DB errors, falls back to
+    the hard-coded defaults (the ones with concrete default values; _ABSENT
+    entries are simply omitted).
+    """
     import aiosqlite
     from backend.database import DB_PATH
 
-    defaults = {
-        "default_encoder": "nvenc",
-        "nvenc_cq": 20,
-        "libx265_crf": 20,
-        "nvenc_preset": "p6",
-        "libx265_preset": "medium",
-        "ffmpeg_timeout": 21600,
-        "ffprobe_timeout": 30,
-        "audio_codec": "copy",
-        "audio_bitrate": 128,
-    }
+    # Base result = the concrete-default keys. _ABSENT entries are skipped.
+    result: dict = {key: default for key, default, _ in _ENCODING_SETTINGS if default is not _ABSENT}
+
     try:
         db = await aiosqlite.connect(DB_PATH)
         db.row_factory = aiosqlite.Row
         try:
             async with db.execute("SELECT key, value FROM settings") as cur:
-                rows = await cur.fetchall()
-                db_settings = {r["key"]: r["value"] for r in rows}
+                db_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
         finally:
             await db.close()
-
-        result = dict(defaults)
-        if "nvenc_cq" in db_settings:
-            result["nvenc_cq"] = int(db_settings["nvenc_cq"])
-        if "libx265_crf" in db_settings:
-            result["libx265_crf"] = int(db_settings["libx265_crf"])
-        if "nvenc_preset" in db_settings:
-            result["nvenc_preset"] = db_settings["nvenc_preset"]
-        if "libx265_preset" in db_settings:
-            result["libx265_preset"] = db_settings["libx265_preset"]
-        if "default_encoder" in db_settings:
-            result["default_encoder"] = db_settings["default_encoder"]
-        if "ffmpeg_timeout" in db_settings:
-            result["ffmpeg_timeout"] = int(db_settings["ffmpeg_timeout"])
-        if "audio_codec" in db_settings:
-            result["audio_codec"] = db_settings["audio_codec"]
-        if "audio_bitrate" in db_settings:
-            result["audio_bitrate"] = int(db_settings["audio_bitrate"])
-        if "auto_convert_lossless" in db_settings:
-            result["auto_convert_lossless"] = db_settings["auto_convert_lossless"].lower() == "true"
-        if "lossless_target_codec" in db_settings:
-            result["lossless_target_codec"] = db_settings["lossless_target_codec"]
-        if "lossless_target_bitrate" in db_settings:
-            result["lossless_target_bitrate"] = int(db_settings["lossless_target_bitrate"])
-        if "target_resolution" in db_settings:
-            result["target_resolution"] = db_settings["target_resolution"]
-        if "trash_original_after_conversion" in db_settings:
-            result["trash_original_after_conversion"] = db_settings["trash_original_after_conversion"].lower() == "true"
-        if "backup_original_days" in db_settings:
-            result["backup_original_days"] = int(db_settings["backup_original_days"])
-        if "custom_ffmpeg_flags" in db_settings:
-            result["custom_ffmpeg_flags"] = db_settings["custom_ffmpeg_flags"]
-        if "backup_folder" in db_settings:
-            result["backup_folder"] = db_settings["backup_folder"]
-        if "vmaf_analysis_enabled" in db_settings:
-            result["vmaf_analysis_enabled"] = db_settings["vmaf_analysis_enabled"].lower() == "true"
-        # Minimum VMAF score to accept an encode. 0 = threshold disabled. If
-        # this loader forgets to copy it from the DB, the converter's
-        # rejection check (convert_file() below) silently falls back to the
-        # default 0 and EVERY encode passes regardless of quality — caused
-        # a real-world bug where a 43.2 VMAF encode got accepted with the
-        # threshold set to 85 in the UI.
-        if "vmaf_min_score" in db_settings:
-            try:
-                result["vmaf_min_score"] = float(db_settings["vmaf_min_score"] or 0)
-            except (TypeError, ValueError):
-                result["vmaf_min_score"] = 0.0
-        if "filename_suffix" in db_settings:
-            result["filename_suffix"] = db_settings["filename_suffix"]
-        return result
     except Exception as exc:
         print(f"[CONVERT] Failed to read DB settings, using defaults: {exc}", flush=True)
-        return defaults
+        return result
+
+    for key, default, coerce in _ENCODING_SETTINGS:
+        if key not in db_settings:
+            continue  # absent in DB → leave concrete default in place or skip (for _ABSENT keys)
+        coerced = _apply_coercion(db_settings[key], coerce, default if default is not _ABSENT else None)
+        if coerced is None and default is _ABSENT:
+            continue  # malformed value on an optional key → don't introduce a None
+        result[key] = coerced
+    return result
 
 
 LOSSLESS_AUDIO_CODECS = {"truehd", "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_bluray", "flac", "mlp", "pcm_dvd"}
