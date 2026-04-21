@@ -613,6 +613,13 @@ async def test_notifications_endpoint():
 _VERSION_FILE = Path(__file__).parent.parent.parent / "VERSION"
 _CHANGELOG_FILE = Path(__file__).parent.parent.parent / "CHANGELOG.md"
 _GITHUB_REPO = "I-IAL9000/shrinkerr"  # upstream repo for version/update checks
+# TTL for the "latest version on GitHub" cache entry. Short enough that
+# newly-released versions show up as "update available" to running
+# containers within a reasonable window, long enough to stay well below
+# GitHub's 60-req/hour unauthenticated rate limit even with a background
+# refresher pinging every interval.
+_UPDATE_CHECK_TTL_SECONDS = 30 * 60  # 30 minutes
+_UPDATE_REFRESH_INTERVAL_SECONDS = 30 * 60  # background refresher cadence
 _update_cache: dict = {}  # {version, checked_at}
 _changelog_cache: dict = {}  # {mtime, entries}
 
@@ -763,21 +770,12 @@ async def get_changelog(limit: int = 0):
     }
 
 
-@router.get("/version")
-async def get_version():
-    """Return current version and check for updates (cached for 6 hours)."""
-    import time
-    current = _get_current_version()
-    result = {"current": current, "latest": None, "update_available": False}
+async def _fetch_latest_release_tag() -> str | None:
+    """Hit GitHub's releases/latest and return the tag without the leading 'v'.
 
-    # Check GitHub for latest release (cached for 6 hours)
-    now = time.time()
-    if _update_cache.get("checked_at", 0) > now - 21600:
-        result["latest"] = _update_cache.get("version")
-        if result["latest"] and result["latest"] != current:
-            result["update_available"] = True
-        return result
-
+    Returns None on network error, rate limit, or missing release. Never
+    raises — callers treat None as "no update info available".
+    """
     try:
         import httpx
         async with httpx.AsyncClient(timeout=5) as client:
@@ -786,16 +784,77 @@ async def get_version():
                 headers={"Accept": "application/vnd.github+json"},
             )
             if resp.status_code == 200:
-                tag = resp.json().get("tag_name", "").lstrip("v")
-                _update_cache["version"] = tag
-                _update_cache["checked_at"] = now
-                result["latest"] = tag
-                if tag and tag != current:
-                    result["update_available"] = True
-    except Exception:
-        pass  # GitHub unreachable, no update info
+                return resp.json().get("tag_name", "").lstrip("v") or None
+    except Exception as exc:
+        print(f"[VERSION] GitHub check failed: {exc}", flush=True)
+    return None
 
-    return result
+
+async def refresh_update_check() -> dict:
+    """Force a fresh GitHub check and update the cache. Returns the same shape
+    `/stats/version` returns. Called by the startup task, the periodic
+    background refresher, and explicit `force=1` requests to the endpoint."""
+    import time
+    current = _get_current_version()
+    tag = await _fetch_latest_release_tag()
+    if tag is not None:
+        _update_cache["version"] = tag
+        _update_cache["checked_at"] = time.time()
+    # Read from cache (fresh or stale) so we never return an outright null
+    # latest just because this one check happened to fail.
+    latest = _update_cache.get("version")
+    return {
+        "current": current,
+        "latest": latest,
+        "update_available": bool(latest) and latest != current,
+    }
+
+
+@router.get("/version")
+async def get_version(force: bool = False):
+    """Return current version and check for updates.
+
+    Cache semantics:
+      - Cached result served if it's fresher than _UPDATE_CHECK_TTL_SECONDS.
+      - `?force=1` bypasses the cache (used by the Settings "Check for
+        updates" button) so the user can always poke manually.
+      - A startup task and a background refresher keep the cache current
+        without requiring any user interaction — matching the UX of
+        Sonarr/Radarr/Plex where update notifications appear on the
+        running version, no image pull required.
+    """
+    import time
+    if force:
+        return await refresh_update_check()
+
+    current = _get_current_version()
+    now = time.time()
+    if _update_cache.get("checked_at", 0) > now - _UPDATE_CHECK_TTL_SECONDS:
+        latest = _update_cache.get("version")
+        return {
+            "current": current,
+            "latest": latest,
+            "update_available": bool(latest) and latest != current,
+        }
+    return await refresh_update_check()
+
+
+async def update_check_loop():
+    """Background task: refresh the update check at startup and every
+    _UPDATE_REFRESH_INTERVAL_SECONDS after. Means the sidebar's 'Update
+    available' button surfaces new releases within ~30 min of tag-push,
+    even if no user has visited any page that hits /stats/version. Failures
+    are logged (via _fetch_latest_release_tag) and retried next interval.
+    """
+    import asyncio
+    # Stagger startup by a few seconds so it doesn't race with DB init.
+    await asyncio.sleep(5)
+    while True:
+        try:
+            await refresh_update_check()
+        except Exception as exc:
+            print(f"[VERSION] Background update refresh failed: {exc}", flush=True)
+        await asyncio.sleep(_UPDATE_REFRESH_INTERVAL_SECONDS)
 
 
 @router.get("/system")

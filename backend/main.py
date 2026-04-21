@@ -168,12 +168,22 @@ async def lifespan(app: FastAPI):
             pass
     local_heartbeat_task = asyncio.create_task(_local_heartbeat_loop())
 
+    # Background: poll GitHub's latest-release endpoint so the sidebar's
+    # "Update available" pill surfaces new versions to the running
+    # container without the user having to docker compose pull first.
+    # Pulls once at startup and then every 30 min (see stats.py). Matches
+    # the UX of Sonarr/Radarr/Plex where updates are advertised to the
+    # running instance, not only after a manual image refresh.
+    from backend.routes.stats import update_check_loop
+    version_check_task = asyncio.create_task(update_check_loop())
+
     yield
     worker.stop()
     watcher.stop()
     backup_task.cancel()
     stale_task.cancel()
     local_heartbeat_task.cancel()
+    version_check_task.cancel()
 
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)

@@ -3532,7 +3532,9 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 onClick={async () => {
                   setUpdateCheckLoading(true);
                   try {
-                    const v = await getVersion();
+                    // force=true bypasses the 30-min server cache so the
+                    // user's click always produces a fresh GitHub check.
+                    const v = await getVersion(true);
                     setVersionInfo(v);
                     if (v.update_available) {
                       toast(`v${v.latest} is available`, "success");

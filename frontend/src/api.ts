@@ -502,7 +502,18 @@ export const estimateJobs = (filePaths: string[], overrideRules: boolean = false
   apiFetch<any>("/jobs/estimate", { method: "POST", body: JSON.stringify({ file_paths: filePaths, override_rules: overrideRules, ...overrides }) });
 export const estimateJobsWithPriority = (filePaths: string[], priority: number) =>
   apiFetch<any>("/jobs/estimate", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority }) });
-export const getVersion = () => apiFetch<{ current: string; latest: string | null; update_available: boolean }>("/stats/version");
+/**
+ * Current version + upstream update check.
+ *
+ * @param force If true, bypasses the server's 30-min cache and hits the
+ *              GitHub Releases API immediately. Used by the Settings
+ *              "Check for updates" button so users can poke manually
+ *              even when the cache says "we checked recently".
+ */
+export const getVersion = (force = false) =>
+  apiFetch<{ current: string; latest: string | null; update_available: boolean }>(
+    `/stats/version${force ? "?force=1" : ""}`,
+  );
 
 export interface ChangelogEntry {
   version: string;
