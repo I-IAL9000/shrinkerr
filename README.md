@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/logo.svg" alt="Shrinkerr" width="480">
+<img src=".github/assets/logo.svg" alt="Shrinkerr" width="360">
 
 **Save space, bandwidth & money while retaining quality.**
 
