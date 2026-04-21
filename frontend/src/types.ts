@@ -51,6 +51,11 @@ export interface ScannedFile {
   health_status?: "healthy" | "corrupt" | "warnings" | null;
   health_check_type?: "quick" | "thorough" | null;
   health_checked_at?: string | null;
+  // VMAF score for the last encode of this file. Used by the Scanner's
+  // VMAF filters and by FileDetail's History tab to always surface the
+  // score even when the corresponding file-event wasn't logged (or was
+  // logged against a pre-rename path that no longer matches).
+  vmaf_score?: number | null;
 }
 
 export interface Job {

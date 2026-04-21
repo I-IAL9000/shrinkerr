@@ -279,13 +279,59 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading history...</span>
             </div>
           ) : (
-            <EventTimeline events={history || []} compact />
+            // If the file has a VMAF score in scan_results but no VMAF event
+            // was logged for it (either pre-dates the event-logging feature,
+            // or was logged against a pre-rename path), synthesize an entry
+            // from scan_results so the score is always visible here. When
+            // VMAF filters are what led you to this file, seeing the actual
+            // number one click away is the whole point.
+            <EventTimeline events={mergeVmafIntoEvents(history || [], file)} compact />
           )}
         </div>
       )}
     </div>
   );
 }
+
+/**
+ * Ensure the file's current VMAF score always has a presence in the event
+ * timeline. Behaviour:
+ *   - If there's already a VMAF event in the fetched history, leave the
+ *     history alone (the real event has the correct timestamp + metadata).
+ *   - If there's a vmaf_score on the scan_results row but no VMAF event,
+ *     synthesize a placeholder entry so the score is visible. Uses the
+ *     file's health_checked_at timestamp as a rough chronological anchor
+ *     when available, otherwise falls back to an empty string (the
+ *     EventTimeline renders that gracefully as "just now"-ish).
+ *   - If the file has no vmaf_score at all, return the events unchanged.
+ *
+ * The synthetic entry uses id = -1 to avoid colliding with real DB ids,
+ * and event_type = "vmaf" so the existing timeline styling picks it up.
+ */
+function mergeVmafIntoEvents(events: FileEvent[], file: ScannedFile): FileEvent[] {
+  const score = file.vmaf_score;
+  if (score == null) return events;
+  const hasRealVmafEvent = events.some(e => e.event_type === "vmaf");
+  if (hasRealVmafEvent) return events;
+
+  const tier = score >= 93 ? "Excellent"
+    : score >= 87 ? "Good"
+    : score >= 80 ? "Fair"
+    : "Poor";
+  const synthetic: FileEvent = {
+    id: -1,
+    file_path: file.file_path,
+    event_type: "vmaf",
+    summary: `VMAF: ${score} (${tier})`,
+    occurred_at: file.health_checked_at || "",
+    details: null,
+  };
+  // Prepend so the synthesized score sits at the top of a short history —
+  // mirrors the normal reverse-chronological ordering (VMAF runs after
+  // Convert, so the real event would sort newest-first too).
+  return [synthetic, ...events];
+}
+
 
 function SubTrackRow({ track, filePath, onToggle, isExternal }: {
   track: SubtitleTrack;

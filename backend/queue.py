@@ -1433,26 +1433,33 @@ class QueueWorker:
                 except Exception as exc:
                     print(f"[WORKER] Failed to store conversion log: {exc}", flush=True)
 
-            # Store VMAF score from converter (analysis runs inside convert_file before original is moved)
+            # Store VMAF score from converter. By this point the scan_results
+            # row has already been renamed (above) from file_path to
+            # current_file_path when conversion changed the filename (e.g.
+            # x264 → x265 rename). So the UPDATE and the file-event MUST
+            # both use current_file_path, not file_path — otherwise they
+            # land on a row/path that doesn't exist anymore, the vmaf_score
+            # gets silently dropped, and the History tab shows no VMAF entry.
             vmaf_score = result.get("vmaf_score")
             if vmaf_score is not None:
+                vmaf_path = current_file_path  # post-rename path is authoritative
                 try:
                     db = await self._db()
                     try:
                         await db.execute("UPDATE jobs SET vmaf_score = ? WHERE id = ?", (vmaf_score, job_id))
-                        # Use original file_path — scan_results hasn't been renamed yet at this point
-                        cur = await db.execute("UPDATE scan_results SET vmaf_score = ? WHERE file_path = ?", (vmaf_score, file_path))
+                        cur = await db.execute("UPDATE scan_results SET vmaf_score = ? WHERE file_path = ?", (vmaf_score, vmaf_path))
                         rows_updated = cur.rowcount
                         await db.commit()
                         if rows_updated == 0:
-                            print(f"[WORKER] VMAF score {vmaf_score} NOT saved to scan_results — file_path not found: {file_path}", flush=True)
+                            print(f"[WORKER] VMAF score {vmaf_score} NOT saved to scan_results — path not found: {vmaf_path}", flush=True)
                         else:
                             print(f"[WORKER] VMAF score {vmaf_score} saved to scan_results for {file_name}", flush=True)
                     finally:
                         await db.close()
                 except Exception as exc:
                     print(f"[WORKER] Failed to store VMAF score: {exc}", flush=True)
-                # File-events log
+                # File-events log — use the same post-rename path so the
+                # History tab query (by current file_path) finds this event.
                 try:
                     if vmaf_score >= 93: tier = "Excellent"
                     elif vmaf_score >= 87: tier = "Good"
@@ -1460,7 +1467,7 @@ class QueueWorker:
                     else: tier = "Poor"
                     from backend.file_events import log_event, EVENT_VMAF
                     await log_event(
-                        file_path,
+                        vmaf_path,
                         EVENT_VMAF,
                         f"VMAF: {vmaf_score} ({tier})",
                         {"vmaf_score": vmaf_score, "tier": tier, "job_id": job_id},
