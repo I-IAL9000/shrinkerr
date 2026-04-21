@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet. Bullets accumulate here as changes land, then get promoted
-to a versioned release heading when we cut the next tag._
+### Changed
+- "Update available" sidebar button now uses the designer-drawn gift icon from the Figma design-system file instead of a hand-rolled lucide-style placeholder.
 
 ## [0.3.0] — 2026-04-21
 
