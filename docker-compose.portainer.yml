@@ -107,30 +107,32 @@ services:
     #
     # To switch to NVENC:
     #   1. Change the `image:` line above to shrinkerr:nvenc (or :edge-nvenc).
-    #   2. Uncomment - NVIDIA_VISIBLE_DEVICES=all under environment above.
-    #   3. Uncomment the `deploy:` block below.
-    #   4. Host-side prerequisites:
-    #        Linux:   install the NVIDIA Container Toolkit
-    #                 https://github.com/NVIDIA/nvidia-container-toolkit
-    #        Windows: Docker Desktop in its default WSL2 backend mode, plus
-    #                 a recent NVIDIA driver on Windows. Docker Desktop
-    #                 bundles what the container needs — nothing extra to
-    #                 install. Works on Windows 10 21H2+ / Windows 11.
-    #        macOS:   not supported — Apple Silicon has no NVIDIA path, and
-    #                 Docker Desktop on Mac can't pass a GPU through to
-    #                 Linux containers. Use the portable :latest image.
+    #   2. Uncomment `- NVIDIA_VISIBLE_DEVICES=all` under environment above.
+    #   3. Uncomment the GPU block below. Two scenarios:
+    #        Linux (with NVIDIA Container Toolkit):
+    #            uncomment BOTH `runtime: nvidia` AND `deploy:`
+    #        Windows (Docker Desktop in WSL2 mode):
+    #            uncomment ONLY `deploy:` — Docker Desktop does not register
+    #            a `nvidia` runtime name, so the `runtime:` line errors out
+    #            there. Windows 10 21H2+ / Windows 11 with a recent NVIDIA
+    #            Windows driver; Docker Desktop handles the rest.
+    #        macOS: not supported — use the portable :latest image.
+    #
+    # Why both on Linux? `deploy.resources.reservations.devices` is the
+    # portable compose spec and *should* be enough on a modern Docker +
+    # Compose V2. In practice, on many Linux installs (especially when the
+    # NVIDIA Container Toolkit is installed but `nvidia` isn't configured
+    # as Docker's default runtime) the `deploy:` block alone silently fails
+    # to attach the GPU. Adding `runtime: nvidia` makes the request
+    # unambiguous — the two together are belt-and-suspenders reliable.
     #
     # DRIVER VERSION:
     #   :nvenc        → ffmpeg n7.1   → NVIDIA driver 525.60.13+
     #   :edge-nvenc   → ffmpeg master → NVIDIA driver 570.00+
     # If the driver is too old, the runtime test encode fails and the
     # Monitor page tells you exactly what to upgrade to.
-    #
-    # NOTE: we deliberately do NOT include `runtime: nvidia` here. The older
-    # runtime shim is Linux-only and Docker Desktop for Windows rejects it.
-    # The `deploy.resources.reservations.devices` spec below works on every
-    # platform (Linux with NVIDIA Container Toolkit, WSL2 on Windows).
     # =======================================================================
+    # runtime: nvidia
     # deploy:
     #   resources:
     #     reservations:
@@ -180,9 +182,11 @@ services:
   #     # Must see the media at the same path the server uses (or use PATH_MAPPINGS).
   #     - /srv/media:/media
   #   restart: unless-stopped
-  #   # Uncomment the `deploy:` block below only when using the :nvenc
-  #   # worker image. Works on Linux (with NVIDIA Container Toolkit) and
-  #   # on Windows (Docker Desktop in WSL2 mode). Not supported on macOS.
+  #   # For the :nvenc worker image, uncomment the GPU block below. Same
+  #   # platform rules as the main service above: Linux needs BOTH
+  #   # `runtime: nvidia` and `deploy:`; Windows/Docker Desktop needs only
+  #   # `deploy:`; macOS is not supported.
+  #   # runtime: nvidia
   #   # deploy:
   #   #   resources:
   #   #     reservations:
