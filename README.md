@@ -1,8 +1,8 @@
 <div align="center">
 
-# Shrinkerr
+<img src="frontend/public/shrinkerr-logo.svg" alt="Shrinkerr" width="480">
 
-**Self-hosted media library transcoder — turn your x264 collection into x265 (HEVC) with a web UI, sensible defaults, and a safety net.**
+**Save space, bandwidth & money while retaining quality.**
 
 [![Build & publish images](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml/badge.svg)](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml)
 ![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
