@@ -17,6 +17,12 @@ Shrinkerr scans your media library, identifies files that are worth re-encoding,
 
 Typical result on a mixed TV + movies library: **50–65% smaller files** with no visible quality loss, fully automated, with originals optionally retained in a backup folder for easy rollback.
 
+<div align="center">
+
+<video src=".github/assets/hero.webm" width="960" autoplay loop muted playsinline></video>
+
+</div>
+
 ## Features
 
 **Encoding**
