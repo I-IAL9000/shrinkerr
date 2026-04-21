@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet. Bullets accumulate here as changes land, then get promoted
+to a versioned release heading when we cut the next tag._
+
+## [0.3.1] — 2026-04-21
+
+A small quality-of-life release: one visual polish item and three bug
+fixes, including a real-world VMAF-threshold regression that slipped
+through in 0.3.0.
+
 ### Changed
 - "Update available" sidebar button now uses the designer-drawn gift icon from the Figma design-system file instead of a hand-rolled lucide-style placeholder.
 
@@ -118,4 +127,5 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.1]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.0
