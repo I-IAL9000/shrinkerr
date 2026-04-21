@@ -26,28 +26,39 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 ## Features
 
 **Encoding**
-- x264 → x265 (HEVC) conversion, NVENC hardware or libx265 CPU
+- x264 (or any other source codec) → x265 (HEVC) conversion, NVENC hardware or libx265 CPU
 - Per-resolution CQ/CRF overrides (4K, 1080p, 720p, SD)
-- Encoding rules — per-directory, per-Plex-label, or per-codec presets
-- Optional VMAF quality check with configurable minimum score — encodes scoring below the threshold are discarded and the original is kept
+- Encoding rules — by directory / source / resolution / file size / codec, by Plex label / collection / genre / library, or by Sonarr / Radarr tag
+- Optional [VMAF](https://github.com/Netflix/vmaf) quality check with a configurable minimum score — encodes that score below the threshold are discarded and the original is kept
+- **Dry run** — fire off a 30-second test encode before committing to a full job and get its VMAF score back, so you can validate your settings on a single clip without burning 20 minutes on a bad preset
 - Automatic fallback from NVENC → libx265 when the requested encoder isn't available on a node
+- Multiple parallel jobs per host, capped by a `parallel_jobs` setting
+- Built-in conversion guide + quick-action presets for common scenarios
 
 **Library management**
-- Recursive scanner with ffprobe-based codec/bitrate analysis
-- Audio track cleanup — keep only the languages you want, drop commentary/descriptive tracks
-- Subtitle track cleanup — same, plus detection of forced/SDH/CC variants
-- External subtitle detection — sidecar `.srt`/`.ass`/`.sub` files show up next to embedded ones
+- Recursive scanner with ffprobe-based codec / bitrate analysis
+- TMDB metadata + native-language lookup so the audio/subtitle cleanup rules know which language is the original
+- Audio track cleanup — keep only the languages you want, drop commentary / descriptive tracks
+- Subtitle track cleanup — same as audio, plus detection of forced / SDH / CC variants
+- External subtitle detection — sidecar `.srt` / `.ass` / `.sub` files show up next to embedded ones and can be merged into the output during conversion
 - Health check — probes files for corruption before (and optionally after) encoding
 - File-level ignore list with one-click restore
+- Extensive filter system + advanced search — match on any attribute (codec, resolution, size, bitrate, audio languages, native language, Plex metadata, …)
+- Watch folders — new files appear in the scanner view automatically
+- Poster grid view with TMDB artwork for visual browsing
 
 **Automation**
 - Queue with drag-and-drop reordering, bulk apply, priority levels, and scheduling
 - Watch folders — auto-queue newly-added files in real time
-- NZBGet / SABnzbd post-processing scripts — auto-queue freshly downloaded releases
-- Sonarr/Radarr integration — trigger replacement searches, upgrade searches, and missing-episode searches without leaving the UI
-- Plex integration — label-based rules, library refresh on completion, trash cleanup
-- Scheduling — only encode during off-peak hours, pause around Plex prime-time
-- Post-conversion hook scripts with rich env-var context (job details, space saved, VMAF score, etc.)
+- NZBGet / SABnzbd post-processing scripts — auto-queue freshly-downloaded releases
+- Sonarr / Radarr integration — trigger replacement searches, upgrade searches, and missing-episode searches without leaving the UI; library refresh on completion
+- Plex / Jellyfin integration — label / collection / genre / library-based rules, watch-status sync, library refresh on completion, trash cleanup
+- Scheduling — only encode during off-peak hours, pause around Plex / Jellyfin prime-time
+- Post-conversion hook scripts with rich env-var context (job details, space saved, [VMAF](https://github.com/Netflix/vmaf) score, etc.)
+- Batch rename with Plex-friendly patterns, with optional auto-rename after conversion
+- File-size / bitrate threshold filters on the conversion queue (skip tiny files, skip already-low-bitrate files)
+- Custom ffmpeg flags per job or per rule
+- Notifications via Discord / Telegram / email / webhook
 
 **Distributed workers**
 - Offload encoding to remote hosts (second machine, gaming PC, ARM box)
@@ -61,7 +72,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 - System monitor — GPU (utilization, VRAM, temp, NVENC/NVDEC load), CPU, RAM, disk I/O, network, Plex stream count
 - 90-day trend charts — cumulative savings, daily encodes, avg FPS per job
 - Library breakdown — codecs, resolutions, source types, native languages, audio track languages
-- VMAF score distribution + per-job quality breakdown
+- [VMAF](https://github.com/Netflix/vmaf) score distribution + per-job quality breakdown
 - Activity log — every scan, encode, ignore, arr action, Plex sync — with timestamps
 
 **Safety net**
@@ -135,7 +146,7 @@ services:
 docker compose up -d
 ```
 
-Open <http://localhost:6680> — no login needed by default (set an API key in Settings → System if you expose the port beyond localhost).
+Open <http://localhost:6680>. On first launch, go to **Settings → System → Authentication** and set a username and password before exposing the port beyond localhost.
 
 ### Option B — With NVENC (Linux + NVIDIA GPU)
 
@@ -187,7 +198,7 @@ You can skip 1 and 3 and go straight to manual encoding via Scanner → Add sele
 <summary><b>Encode a library</b></summary>
 
 1. **Scanner** → pick directories → **Scan**. Takes 5-30 minutes per 10k files depending on disk speed.
-2. Filter by codec (show x264 only), by resolution (1080p+), or by size.
+2. Filter by codec (show x264 only), by resolution (1080p+), by size, or by any attribute via the search bar / advanced filter panel.
 3. Select a subset → **Add selected to queue**. An estimate modal shows expected space saved + estimated time.
 4. **Queue** → **Start**. Shrinkerr encodes in the background and updates the UI live via WebSocket.
 5. Files are replaced in place. Originals go to `.shrinkerr_backup` (or the trash, or permanently deleted — configurable).
