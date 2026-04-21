@@ -1108,94 +1108,97 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 Clear
               </button>
             )}
-            {/* Search inline when filters collapsed */}
-            {!filtersOpen && (
-              <>
-                <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 300 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                    style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
-                    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-                  </svg>
-                  <input type="text" placeholder="Search folders..." value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)}
-                    style={{ width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
-                  {searchInput && (
-                    <button onClick={() => { setSearchInput(""); setSearch(""); }}
-                      style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>&times;</button>
-                  )}
-                </div>
-                <button
-                  className="sort-pill"
-                  title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
-                  onClick={() => setAdvSearchOpen(true)}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-                    background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
-                    color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
-                    borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
-                  }}
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    {/* Microscope icon */}
-                    <path d="M6 18h8"/>
-                    <path d="M3 22h18"/>
-                    <path d="M14 22a7 7 0 1 0 0-14h-1"/>
-                    <path d="M9 14h2"/>
-                    <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
-                    <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
-                  </svg>
-                  Advanced
-                  {advSearchPredicates.length > 0 && (
-                    <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
-                      {advSearchPredicates.length}
-                    </span>
-                  )}
-                </button>
-                <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-                <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
-                {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
-                  <button key={val}
-                    className={`sort-pill ${sortBy === val ? "active" : ""}`}
-                    onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
-                    {label} {sortBy === val && (sortDir === "asc"
-                      ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
-                      : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
-                    )}
-                  </button>
-                ))}
-                {/* View toggle */}
-                <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-                <button
-                  className="sort-pill"
-                  onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-                  title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
-                >
-                  {viewMode === "tree" ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                  ) : (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                  )}
-                  {viewMode === "tree" ? "Posters" : "Tree"}
-                </button>
-                {viewMode === "poster" && (
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                    disabled={posterPrefetching}
-                    onClick={async () => {
-                      const { startPosterPrefetch } = await import("../api");
-                      await startPosterPrefetch();
-                      setPosterPrefetching(true);
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                    </svg>
-                    {posterPrefetching ? `Fetching ${posterProgress.resolved}/${posterProgress.total}...` : "Refresh Posters"}
-                  </button>
+            {/* Search + advanced + sort + view-toggle + refresh-posters.
+                Lives in the same flex row as the filter toggle so controls
+                are always visible regardless of whether the filter panel
+                is expanded. Previously this block existed in TWO forked
+                copies (collapsed state inline here, expanded state in a
+                second row below the FilterBar) — they drifted (the
+                Advanced button was missing from the expanded copy) until
+                we collapsed them into a single render. */}
+            <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 300 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input type="text" placeholder="Search folders..." value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{ width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
+              {searchInput && (
+                <button onClick={() => { setSearchInput(""); setSearch(""); }}
+                  style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>&times;</button>
+              )}
+            </div>
+            <button
+              className="sort-pill"
+              title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
+              onClick={() => setAdvSearchOpen(true)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+                background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
+                color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+                borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {/* Microscope icon */}
+                <path d="M6 18h8"/>
+                <path d="M3 22h18"/>
+                <path d="M14 22a7 7 0 1 0 0-14h-1"/>
+                <path d="M9 14h2"/>
+                <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
+                <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
+              </svg>
+              Advanced
+              {advSearchPredicates.length > 0 && (
+                <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
+                  {advSearchPredicates.length}
+                </span>
+              )}
+            </button>
+            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
+            <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
+            {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
+              <button key={val}
+                className={`sort-pill ${sortBy === val ? "active" : ""}`}
+                onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
+                {label} {sortBy === val && (sortDir === "asc"
+                  ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+                  : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
                 )}
-              </>
+              </button>
+            ))}
+            {/* View toggle */}
+            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
+            <button
+              className="sort-pill"
+              onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+              title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
+            >
+              {viewMode === "tree" ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              )}
+              {viewMode === "tree" ? "Posters" : "Tree"}
+            </button>
+            {viewMode === "poster" && (
+              <button
+                className="btn btn-secondary"
+                style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                disabled={posterPrefetching}
+                onClick={async () => {
+                  const { startPosterPrefetch } = await import("../api");
+                  await startPosterPrefetch();
+                  setPosterPrefetching(true);
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                {posterPrefetching ? `Fetching ${posterProgress.resolved}/${posterProgress.total}...` : "Refresh Posters"}
+              </button>
             )}
           </div>
 
@@ -1242,144 +1245,30 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             </div>
           )}
 
-          {/* Collapsible filter panel */}
+          {/* Collapsible filter panel. Previously this block also carried
+              a second copy of the search / sort / view-toggle controls —
+              those now live in the always-rendered control row above, so
+              this only renders the filter-pill grid. */}
           {filtersOpen && (
-            <>
-              <FilterBar
-                activeFilters={filters}
-                onFilterToggle={(f) => {
-                  if (f === "all") {
-                    setFilters(["all"]);
-                  } else {
-                    setFilters(prev => {
-                      const active = prev.filter(x => x !== "all");
-                      if (active.includes(f)) {
-                        const next = active.filter(x => x !== f);
-                        return next.length === 0 ? ["all"] : next;
-                      }
-                      return [...active, f];
-                    });
-                  }
-                }}
-                newCount={newCount}
-                counts={filterCounts}
-              />
-              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-            <div style={{ position: "relative", flex: "1 1 200px", minWidth: 160, maxWidth: 300 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-              </svg>
-              <input
-                type="text"
-                placeholder="Search folders..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                style={{
-                  width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4",
-                  background: "var(--bg-card)", color: "var(--text-secondary)",
-                  border: "1px solid var(--border)", borderRadius: 16,
-                  outline: "none", boxSizing: "border-box",
-                }}
-              />
-              {searchInput && (
-                <button
-                  onClick={() => { setSearchInput(""); setSearch(""); }}
-                  style={{
-                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-                    background: "none", border: "none", color: "var(--text-muted)",
-                    cursor: "pointer", fontSize: 14, lineHeight: 1,
-                  }}
-                >&times;</button>
-              )}
-            </div>
-            {/* Advanced search button — same behaviour as in the collapsed
-                state layout, rendered here too so the filter-panel-open view
-                doesn't drop the entry point. (The button going missing when
-                filters were expanded was a layout fork bug — only the
-                collapsed-state row had this button.) */}
-            <button
-              className="sort-pill"
-              title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
-              onClick={() => setAdvSearchOpen(true)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-                background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
-                color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
-                borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+            <FilterBar
+              activeFilters={filters}
+              onFilterToggle={(f) => {
+                if (f === "all") {
+                  setFilters(["all"]);
+                } else {
+                  setFilters(prev => {
+                    const active = prev.filter(x => x !== "all");
+                    if (active.includes(f)) {
+                      const next = active.filter(x => x !== f);
+                      return next.length === 0 ? ["all"] : next;
+                    }
+                    return [...active, f];
+                  });
+                }
               }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {/* Microscope icon */}
-                <path d="M6 18h8"/>
-                <path d="M3 22h18"/>
-                <path d="M14 22a7 7 0 1 0 0-14h-1"/>
-                <path d="M9 14h2"/>
-                <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
-                <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
-              </svg>
-              Advanced
-              {advSearchPredicates.length > 0 && (
-                <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
-                  {advSearchPredicates.length}
-                </span>
-              )}
-            </button>
-            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-            <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
-            {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
-              <button
-                key={val}
-                className={`sort-pill ${sortBy === val ? "active" : ""}`}
-                onClick={() => {
-                  if (sortBy === val) {
-                    setSortDir(d => d === "asc" ? "desc" : "asc");
-                  } else {
-                    setSortBy(val);
-                    setSortDir(val === "size" || val === "date" ? "desc" : "asc");
-                  }
-                }}
-              >
-                {label} {sortBy === val && (sortDir === "asc"
-                  ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
-                  : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
-                )}
-              </button>
-            ))}
-            {/* View toggle (same as in collapsed view) */}
-            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-            <button
-              className="sort-pill"
-              onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-              title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
-            >
-              {viewMode === "tree" ? (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-              ) : (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-              )}
-              {viewMode === "tree" ? "Posters" : "Tree"}
-            </button>
-            {viewMode === "poster" && (
-              <button
-                className="btn btn-secondary"
-                style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                disabled={posterPrefetching}
-                onClick={async () => {
-                  const { startPosterPrefetch } = await import("../api");
-                  await startPosterPrefetch();
-                  setPosterPrefetching(true);
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                </svg>
-                {posterPrefetching ? `Fetching ${posterProgress.resolved}/${posterProgress.total}...` : "Refresh Posters"}
-              </button>
-            )}
-          </div>
-            </>
+              newCount={newCount}
+              counts={filterCounts}
+            />
           )}
 
           {/* Selection control panel */}
