@@ -72,6 +72,17 @@ async def get_live_encoding_settings() -> dict:
             result["backup_folder"] = db_settings["backup_folder"]
         if "vmaf_analysis_enabled" in db_settings:
             result["vmaf_analysis_enabled"] = db_settings["vmaf_analysis_enabled"].lower() == "true"
+        # Minimum VMAF score to accept an encode. 0 = threshold disabled. If
+        # this loader forgets to copy it from the DB, the converter's
+        # rejection check (convert_file() below) silently falls back to the
+        # default 0 and EVERY encode passes regardless of quality — caused
+        # a real-world bug where a 43.2 VMAF encode got accepted with the
+        # threshold set to 85 in the UI.
+        if "vmaf_min_score" in db_settings:
+            try:
+                result["vmaf_min_score"] = float(db_settings["vmaf_min_score"] or 0)
+            except (TypeError, ValueError):
+                result["vmaf_min_score"] = 0.0
         if "filename_suffix" in db_settings:
             result["filename_suffix"] = db_settings["filename_suffix"]
         return result
