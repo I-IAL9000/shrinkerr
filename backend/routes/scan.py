@@ -1136,6 +1136,15 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "audio_tracks": json.loads(row.get("audio_tracks_json") or "[]"),
         "subtitle_tracks": json.loads(row.get("subtitle_tracks_json") or "[]"),
         "language_source": row.get("language_source", "heuristic"),
+        # Health-check status. Without these fields, the "corrupt" filter
+        # in _matches_single_filter (which looks at health_status == 'corrupt')
+        # silently missed every file flagged corrupt by a health check rather
+        # than by a probe failure. _enrich_row_minimal had these fields from
+        # the start; _enrich_row simply forgot them. Mirrored here so the
+        # two enrichers return compatible dicts.
+        "health_status": row.get("health_status"),
+        "health_check_type": row.get("health_check_type"),
+        "health_checked_at": row.get("health_checked_at"),
     }
 
 
