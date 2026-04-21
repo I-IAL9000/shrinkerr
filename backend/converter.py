@@ -958,7 +958,16 @@ async def convert_file(
             if await check_vmaf_available():
                 vmaf_dir = Path("/tmp/shrinkerr_vmaf")
                 vmaf_dir.mkdir(parents=True, exist_ok=True)
-                _vmaf_id = Path(input_path).stem[:20]
+                # Unique per-job filename. Previously we used `stem[:20]`,
+                # which collided whenever two concurrent jobs' filenames
+                # shared a 20-char prefix (same-series TV episodes, same
+                # movie franchise, etc.) — the collision meant one of the
+                # two libvmaf outputs clobbered the other, and the loser
+                # recorded no VMAF score. The stem prefix is preserved for
+                # human-debuggable leftover-file names in /tmp; the uuid
+                # suffix guarantees collision-free concurrent writes.
+                import uuid as _uuid
+                _vmaf_id = f"{Path(input_path).stem[:20]}_{_uuid.uuid4().hex[:8]}"
                 vmaf_json_path = vmaf_dir / f"{_vmaf_id}_vmaf.json"
 
                 # Use -ss AFTER -i for frame-accurate decode seeking (not keyframe-based)
