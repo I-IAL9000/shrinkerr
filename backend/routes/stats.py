@@ -608,11 +608,13 @@ async def test_notifications_endpoint():
     return {"results": results}
 
 
-# --- Version ---
+# --- Version / Changelog ---
 
 _VERSION_FILE = Path(__file__).parent.parent.parent / "VERSION"
+_CHANGELOG_FILE = Path(__file__).parent.parent.parent / "CHANGELOG.md"
 _GITHUB_REPO = "I-IAL9000/shrinkerr"  # upstream repo for version/update checks
 _update_cache: dict = {}  # {version, checked_at}
+_changelog_cache: dict = {}  # {mtime, entries}
 
 
 def _get_current_version() -> str:
@@ -620,6 +622,136 @@ def _get_current_version() -> str:
         return _VERSION_FILE.read_text().strip()
     except Exception:
         return "0.0.0"
+
+
+def _parse_changelog() -> list[dict]:
+    """Parse CHANGELOG.md into a list of release entries, newest first.
+
+    Expected format (Keep-a-Changelog):
+        ## [VERSION] — YYYY-MM-DD
+        Optional free-form intro paragraph.
+        ### Added / Changed / Fixed / Removed / Deprecated / Security
+        - bullet
+        - bullet
+
+    Returns:
+        [
+          {
+            "version": "0.3.0",
+            "date": "2026-04-21",
+            "intro": "First public tagged release...",  # optional
+            "sections": {"Added": [...], "Fixed": [...], ...}
+          },
+          ...
+        ]
+
+    Results are cached by the changelog file's mtime so repeat calls are
+    cheap. Returns an empty list if CHANGELOG.md isn't present (e.g. on
+    development installs that haven't committed a changelog yet).
+    """
+    import re
+
+    try:
+        stat = _CHANGELOG_FILE.stat()
+    except OSError:
+        return []
+
+    if _changelog_cache.get("mtime") == stat.st_mtime:
+        return _changelog_cache.get("entries", [])
+
+    try:
+        text = _CHANGELOG_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    entries: list[dict] = []
+    current: dict | None = None
+    current_section: str | None = None
+
+    # Match both "## [0.3.0] — 2026-04-21" and "## 0.3.0 — 2026-04-21" and
+    # plain "## [Unreleased]" (no date). Em dash, en dash, and plain hyphen
+    # are all accepted as the separator between version and date.
+    ver_pattern = re.compile(
+        r"^##\s+\[?(?P<version>[^\]\s]+?)\]?(?:\s*[—–-]\s*(?P<date>\d{4}-\d{2}-\d{2}))?\s*$"
+    )
+    section_pattern = re.compile(r"^###\s+(?P<name>\S.*?)\s*$")
+    bullet_pattern = re.compile(r"^[-*]\s+(?P<text>.+?)\s*$")
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        m = ver_pattern.match(line)
+        if m:
+            # Skip the document-level "# Changelog" heading by only accepting
+            # ## (H2) matches; further filter out obviously non-version
+            # headings (e.g. if someone wrote "## Links" at the bottom).
+            version = m.group("version")
+            if not re.match(r"^\d", version) and version.lower() != "unreleased":
+                continue
+            current = {
+                "version": version,
+                "date": m.group("date"),
+                "intro": "",
+                "sections": {},
+            }
+            current_section = None
+            entries.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        m = section_pattern.match(line)
+        if m:
+            current_section = m.group("name")
+            current["sections"].setdefault(current_section, [])
+            continue
+
+        m = bullet_pattern.match(line)
+        if m and current_section:
+            current["sections"][current_section].append(m.group("text"))
+            continue
+
+        # Collect non-bullet, non-section text before the first ### as intro.
+        if current_section is None and line.strip():
+            # Skip horizontal rules and link-reference-definition lines.
+            if line.strip().startswith("---") or re.match(r"^\[[^\]]+\]:\s", line):
+                continue
+            sep = " " if current["intro"] else ""
+            current["intro"] = (current["intro"] + sep + line.strip()).strip()
+
+    _changelog_cache["mtime"] = stat.st_mtime
+    _changelog_cache["entries"] = entries
+    return entries
+
+
+@router.get("/changelog")
+async def get_changelog(limit: int = 0):
+    """Return the parsed CHANGELOG.md as a list of release entries, newest first.
+
+    Query params:
+        limit — optional cap on number of entries returned. 0 / missing = all.
+
+    Response:
+        {
+          "current": "0.3.0",
+          "entries": [
+            {
+              "version": "0.3.0",
+              "date": "2026-04-21",
+              "intro": "First public tagged release ...",
+              "sections": {"Added": [...], "Fixed": [...], ...}
+            },
+            ...
+          ]
+        }
+    """
+    entries = _parse_changelog()
+    if limit and limit > 0:
+        entries = entries[:limit]
+    return {
+        "current": _get_current_version(),
+        "entries": entries,
+    }
 
 
 @router.get("/version")

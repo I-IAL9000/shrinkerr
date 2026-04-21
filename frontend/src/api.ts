@@ -503,6 +503,17 @@ export const estimateJobs = (filePaths: string[], overrideRules: boolean = false
 export const estimateJobsWithPriority = (filePaths: string[], priority: number) =>
   apiFetch<any>("/jobs/estimate", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority }) });
 export const getVersion = () => apiFetch<{ current: string; latest: string | null; update_available: boolean }>("/stats/version");
+
+export interface ChangelogEntry {
+  version: string;
+  date: string | null;
+  intro: string;
+  sections: Record<string, string[]>;
+}
+export const getChangelog = (limit = 0) =>
+  apiFetch<{ current: string; entries: ChangelogEntry[] }>(
+    `/stats/changelog${limit > 0 ? `?limit=${limit}` : ""}`,
+  );
 export const startQueue = () => apiFetch("/jobs/start", { method: "POST" });
 export const pauseQueue = () => apiFetch("/jobs/pause", { method: "POST" });
 export const resumeQueue = () => apiFetch("/jobs/resume", { method: "POST" });

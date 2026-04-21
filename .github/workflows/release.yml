@@ -1,0 +1,105 @@
+# ============================================================================
+# Create a GitHub Release when a v* tag is pushed.
+#
+# Trigger:
+#   git tag v0.4.0 && git push --tags
+#
+# What this workflow does:
+#   1. Extracts the matching version's section from CHANGELOG.md.
+#   2. Creates a GitHub Release with that section as the body and links to
+#      the four Docker images that the build-images.yml workflow publishes
+#      for this tag (latest / edge / nvenc / edge-nvenc variants).
+#
+# The image-build workflow (.github/workflows/build-images.yml) runs in
+# parallel on the same tag push — no dependency between the two.
+# ============================================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # Required to create a GitHub Release
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract changelog section for this tag
+        id: changelog
+        # Pull the section of CHANGELOG.md that matches the pushed tag.
+        # Matches both `## [0.4.0] — 2026-05-01` and
+        # `## 0.4.0 — 2026-05-01` heading formats, case-insensitive.
+        # Writes to step output `notes` as a multiline string.
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Version: $VERSION"
+          python3 <<'PY' >> "$GITHUB_OUTPUT"
+          import os, re, sys
+          version = os.environ["GITHUB_REF"].removeprefix("refs/tags/v")
+          with open("CHANGELOG.md", "r", encoding="utf-8") as f:
+              text = f.read()
+          # Match `## [X.Y.Z]` or `## X.Y.Z` at the start of a heading,
+          # capturing everything up to the next `## ` heading.
+          pattern = rf"^##\s+\[?{re.escape(version)}\]?.*?(?=^##\s+\[?\d|\Z)"
+          m = re.search(pattern, text, re.MULTILINE | re.DOTALL)
+          if not m:
+              body = (
+                  f"Release v{version}. No changelog entry found in CHANGELOG.md "
+                  "for this version — update CHANGELOG.md before tagging to get "
+                  "richer release notes here."
+              )
+          else:
+              # Strip the header line itself; keep the section body.
+              section = m.group(0)
+              body = re.sub(r"^##\s+.*\n", "", section, count=1).strip()
+          # Write using the multiline delimiter syntax for GITHUB_OUTPUT
+          delim = "EOF_RELEASE_NOTES_DELIM"
+          print(f"notes<<{delim}")
+          print(body)
+          print(delim)
+          PY
+
+      - name: Compose Docker pull instructions
+        id: images
+        # GHCR lowercases the owner; force that here so copy-paste works.
+        run: |
+          OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          {
+            echo "body<<EOF_IMAGES"
+            echo ""
+            echo "## Docker images"
+            echo ""
+            echo "Pinned to this release:"
+            echo ""
+            echo '```bash'
+            echo "docker pull ghcr.io/${OWNER}/shrinkerr:${VERSION}         # portable (amd64 + arm64, CPU)"
+            echo "docker pull ghcr.io/${OWNER}/shrinkerr:${VERSION}-nvenc   # x86_64 + NVIDIA GPU (NVENC)"
+            echo "docker pull ghcr.io/${OWNER}/shrinkerr:${VERSION}-edge    # as above but ffmpeg master"
+            echo "docker pull ghcr.io/${OWNER}/shrinkerr:${VERSION}-edge-nvenc"
+            echo '```'
+            echo ""
+            echo "Floating tags (\`:latest\`, \`:edge\`, \`:nvenc\`, \`:edge-nvenc\`) track the most recent release of each lineage."
+            echo "EOF_IMAGES"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            ${{ steps.changelog.outputs.notes }}
+            ${{ steps.images.outputs.body }}
+          # Pre-release if the tag has a -suffix like v0.4.0-rc1
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          # Don't auto-generate notes; our CHANGELOG.md is the source of truth.
+          generate_release_notes: false

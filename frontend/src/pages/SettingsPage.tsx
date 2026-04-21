@@ -11,8 +11,11 @@ import {
   listBackups, createBackup, deleteBackup, downloadBackupUrl, restoreBackup,
   plexAuthStart, plexAuthCheck, plexAuthResources, plexAuthSave,
   plexAuthDisconnect, plexAuthStatus,
-  type PlexAuthStatus, type PlexServer,
+  getVersion, getChangelog,
+  type PlexAuthStatus, type PlexServer, type ChangelogEntry,
 } from "../api";
+import ChangelogEntryView from "../components/ChangelogEntry";
+import ChangelogModal from "../components/ChangelogModal";
 import { useToast } from "../useToast";
 
 const PRESET_INFO: Record<string, { label: string; desc: string }> = {
@@ -158,6 +161,22 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   const [plexPickedUri, setPlexPickedUri] = useState("");
   const [browserOpen, setBrowserOpen] = useState(false);
   const [backupBrowserOpen, setBackupBrowserOpen] = useState(false);
+
+  // ── Updates section state ──────────────────────────────────────────────
+  // The Updates section shows the current running version, whether a newer
+  // release is available upstream, and the 4 most recent changelog entries
+  // parsed from CHANGELOG.md shipped with the image. "Check for updates"
+  // hits /stats/version again (which is cached server-side for 6 hours,
+  // so repeated clicks are cheap).
+  const [versionInfo, setVersionInfo] = useState<{ current: string; latest: string | null; update_available: boolean } | null>(null);
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[] | null>(null);
+  const [updateCheckLoading, setUpdateCheckLoading] = useState(false);
+  const [changelogModalOpen, setChangelogModalOpen] = useState(false);
+  useEffect(() => {
+    // Load on mount. Parallel fetches — neither depends on the other.
+    getVersion().then(setVersionInfo).catch(() => {});
+    getChangelog(4).then((r) => setChangelogEntries(r.entries || [])).catch(() => setChangelogEntries([]));
+  }, []);
 
   // Encoding rules state
   const [rules, setRules] = useState<any[]>([]);
@@ -3475,6 +3494,119 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               Shortcuts are disabled when typing in input fields.
             </div>
           </div>
+
+          {/* ── Updates ───────────────────────────────────────────────── */}
+          <h2 id="updates" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Updates
+          </h2>
+
+          {/* Version summary card */}
+          <div style={{ ...sectionStyle, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 18, justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <img src="/shrinkerr-logo.svg" alt="" width="28" height="28" />
+              <div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Running version</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>
+                  v{versionInfo?.current ?? "…"}
+                </div>
+                {versionInfo?.update_available && versionInfo.latest ? (
+                  <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
+                    <strong>v{versionInfo.latest}</strong> is available upstream
+                  </div>
+                ) : versionInfo?.latest ? (
+                  <div style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>
+                    You're on the latest release ✓
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                    Couldn't check upstream — offline or rate-limited.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 12, padding: "7px 14px" }}
+                disabled={updateCheckLoading}
+                onClick={async () => {
+                  setUpdateCheckLoading(true);
+                  try {
+                    const v = await getVersion();
+                    setVersionInfo(v);
+                    if (v.update_available) {
+                      toast(`v${v.latest} is available`, "success");
+                    } else {
+                      toast("You're on the latest release", "success");
+                    }
+                  } catch {
+                    toast("Couldn't reach GitHub — try again in a moment", "error");
+                  } finally {
+                    setUpdateCheckLoading(false);
+                  }
+                }}
+              >
+                {updateCheckLoading ? "Checking…" : "Check for updates"}
+              </button>
+              {versionInfo?.update_available && (
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: 12, padding: "7px 14px" }}
+                  onClick={() => setChangelogModalOpen(true)}
+                >
+                  View v{versionInfo.latest} release notes
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Recent releases — the 4 most recent changelog entries inline.
+              "View full history" link sits at the bottom to reach the
+              full CHANGELOG.md on GitHub. */}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10, padding: "0 2px" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Recent releases
+              </div>
+              <a
+                href="https://github.com/I-IAL9000/shrinkerr/blob/main/CHANGELOG.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none" }}
+              >
+                Full history on GitHub ↗
+              </a>
+            </div>
+            {changelogEntries === null && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 24 }}>
+                <div className="spinner" style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading changelog…</span>
+              </div>
+            )}
+            {changelogEntries && changelogEntries.length === 0 && (
+              <div style={{ padding: 20, fontSize: 12, color: "var(--text-muted)", textAlign: "center", background: "var(--bg-card)", borderRadius: 6 }}>
+                No changelog entries available.
+              </div>
+            )}
+            {changelogEntries && changelogEntries.map((e, i) => (
+              // Highlight the card that matches the currently-running
+              // version so users can orient themselves at a glance.
+              <ChangelogEntryView
+                key={e.version}
+                entry={e}
+                highlight={i === 0 && (versionInfo?.current === e.version || !versionInfo)}
+              />
+            ))}
+          </div>
+
+          {/* Full-history modal reused from the sidebar; the "View release
+              notes" button above triggers it. */}
+          <ChangelogModal
+            open={changelogModalOpen}
+            onClose={() => setChangelogModalOpen(false)}
+            latestVersion={versionInfo?.latest ?? null}
+            showLatestOnly
+          />
         </>
       )}
     </div>

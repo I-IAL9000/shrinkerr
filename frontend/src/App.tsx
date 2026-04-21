@@ -14,17 +14,64 @@ import MonitorPage from "./pages/MonitorPage";
 import DesignPage from "./pages/DesignPage";
 import { useToastState, ToastProvider, ToastContainer } from "./useToast";
 import { ConfirmProvider } from "./components/ConfirmModal";
+import ChangelogModal from "./components/ChangelogModal";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import "./theme.css";
 
 function VersionBadge() {
   const [version, setVersion] = useState<{ current: string; latest: string | null; update_available: boolean } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {});
   }, []);
 
   if (!version) return null;
+
+  // When a newer release exists on GitHub, swap the plain version line for
+  // a clickable "Update available" pill that opens the changelog modal.
+  // Matches the Figma design at sidebar bottom (gift icon + accent pill).
+  if (version.update_available) {
+    return (
+      <>
+        <div style={{ padding: "12px 12px 24px", marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }} className="version-badge">
+          <button
+            onClick={() => setModalOpen(true)}
+            title={`A newer version is available: v${version.latest} (you're on v${version.current})`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "7px 14px", borderRadius: 20,
+              background: "linear-gradient(90deg, #4920F0, #6A64FF)",
+              color: "#ffffff", border: "none", cursor: "pointer",
+              fontSize: 12, fontWeight: 600,
+              boxShadow: "0 2px 8px rgba(73,32,240,0.35)",
+            }}
+          >
+            {/* Gift icon */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 12 20 22 4 22 4 12" />
+              <rect x="2" y="7" width="20" height="5" />
+              <line x1="12" y1="22" x2="12" y2="7" />
+              <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+              <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
+            </svg>
+            Update available
+          </button>
+          <span style={{ fontSize: 10, color: "#5c6778" }}>
+            v{version.current} → v{version.latest}
+          </span>
+        </div>
+        <ChangelogModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          latestVersion={version.latest}
+          showLatestOnly
+        />
+      </>
+    );
+  }
+
+  // Up-to-date: plain version line (original behaviour, unchanged visually).
   return (
     <div style={{ padding: "12px 0 24px", marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} className="version-badge">
       <img src="/favicon.svg" alt="" width="16" height="17" />
@@ -95,6 +142,7 @@ const SETTINGS_SECTIONS = [
   { id: "renaming", label: "Renaming" },
   { id: "automation", label: "Automation" },
   { id: "system", label: "System" },
+  { id: "updates", label: "Updates" },
 ];
 
 interface NavItem {

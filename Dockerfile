@@ -81,6 +81,9 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY backend/ backend/
 COPY VERSION .
+# CHANGELOG is read at runtime by /api/stats/changelog so the Updates
+# section in Settings can show release notes without a network call.
+COPY CHANGELOG.md .
 COPY --from=frontend-build /app/frontend/dist frontend/dist
 
 RUN mkdir -p /app/data
