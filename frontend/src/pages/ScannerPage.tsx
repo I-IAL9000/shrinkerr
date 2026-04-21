@@ -64,6 +64,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
   const arrMenuRef = useRef<HTMLDivElement | null>(null);
+  const [healthMenuOpen, setHealthMenuOpen] = useState(false);
+  const healthMenuRef = useRef<HTMLDivElement | null>(null);
   // Fall back to the legacy squeezarr_viewMode key so users upgrading from
   // the old app name keep their view preference. New writes use the canonical
   // shrinkerr_viewMode key below.
@@ -218,6 +220,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [arrMenuOpen]);
+
+  // Close the Health-check dropdown when clicking outside it.
+  useEffect(() => {
+    if (!healthMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (healthMenuRef.current && !healthMenuRef.current.contains(e.target as Node)) {
+        setHealthMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [healthMenuOpen]);
 
   // Poll poster prefetch progress
   useEffect(() => {
@@ -1382,24 +1396,64 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   </svg>
                   Rename
                 </button>
-                <button
-                  className="btn btn-secondary"
-                  title="Quick check (header/metadata parse) — fast"
-                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                  onClick={() => handleHealthCheck("quick")}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  Quick check
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  title="Thorough check (full frame-by-frame decode) — slow"
-                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                  onClick={() => handleHealthCheck("thorough")}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Thorough check
-                </button>
+                {/* Health check dropdown: quick / thorough */}
+                <div ref={healthMenuRef} style={{ position: "relative", display: "inline-flex" }}>
+                  <button
+                    className="btn btn-secondary"
+                    title="Run a health check on the selected files"
+                    style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                    onClick={() => setHealthMenuOpen(o => !o)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                    Health check
+                    <span style={{ fontSize: 9, opacity: 0.6 }}>{healthMenuOpen ? "▲" : "▼"}</span>
+                  </button>
+                  {healthMenuOpen && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 4px)",
+                        right: 0,
+                        zIndex: 100,
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        boxShadow: "0 6px 20px rgba(0,0,0,0.4)",
+                        padding: 4,
+                        minWidth: 240,
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <button
+                        onClick={() => { setHealthMenuOpen(false); handleHealthCheck("quick"); }}
+                        style={menuItemStyle}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#6ce5b0" }}>
+                          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Quick check</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Header / metadata parse. Fast — a few seconds per file.</div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => { setHealthMenuOpen(false); handleHealthCheck("thorough"); }}
+                        style={menuItemStyle}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#ffa94d" }}>
+                          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <div style={{ textAlign: "left" }}>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Thorough check</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Full frame-by-frame decode. Slow — roughly duration / 10 per file.</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {/* *arr actions dropdown: upgrade / missing / replace */}
                 <div ref={arrMenuRef} style={{ position: "relative", display: "inline-flex" }}>
