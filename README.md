@@ -7,6 +7,7 @@
 [![Build & publish images](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml/badge.svg)](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml)
 ![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
 ![Docker: multi-arch](https://img.shields.io/badge/docker-multi--arch-0db7ed?logo=docker)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 </div>
 
@@ -452,7 +453,7 @@ Most coverage is in the converter, scanner, and health-check paths — the place
 
 ## License
 
-Not yet set. Until a license is added, default copyright rules apply — source is viewable but not licensed for redistribution or derivative works. A license will be added before the `v1.0` release; until then, feel free to open issues but please don't fork for distribution.
+Shrinkerr is released under the [Apache License 2.0](LICENSE). TL;DR: you can use it, modify it, redistribute it, and build commercial products on top of it — just keep the license notice, state your changes, and don't sue contributors over patent claims. See [LICENSE](LICENSE) for the full text.
 
 ---
 
