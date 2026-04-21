@@ -1000,15 +1000,38 @@ async def convert_file(
                 _vmaf_id = f"{Path(input_path).stem[:20]}_{_uuid.uuid4().hex[:8]}"
                 vmaf_json_path = vmaf_dir / f"{_vmaf_id}_vmaf.json"
 
-                # Use -ss AFTER -i for frame-accurate decode seeking (not keyframe-based)
-                # Both files have the same content at the same timestamps
+                # Robust VMAF filter chain. History: a previous simpler
+                # version regularly produced absurd mean scores (e.g. 43
+                # on content that visually inspected as near-transparent).
+                # Two class of failures caused that:
+                #   1. Pixel-format mismatch — source 8-bit yuv420p vs
+                #      NVENC-encoded 10-bit p010le. VMAF model v0.6.1 is
+                #      trained on 8-bit; auto-conversion works but with
+                #      artefacts on dark scenes. We explicitly normalise
+                #      both streams to yuv420p.
+                #   2. Resolution drift — if an encoding rule downscales
+                #      (e.g. 2160p → 1080p), libvmaf compares different
+                #      frame sizes as if identical = garbage. scale2ref
+                #      scales the distorted stream to the reference's
+                #      dimensions so the comparison is always apples-to-
+                #      apples, no-op when they already match.
+                # Also added shortest=1 to cap at whichever stream ends
+                # first — prevents repeat-last-frame inflation of the
+                # tail, which can happen when an encode drops a trailing
+                # frame and libvmaf pads to match.
+                vmaf_filter = (
+                    f"[0:v]trim=start={vmaf_seek}:duration={vmaf_duration},"
+                    f"setpts=PTS-STARTPTS,format=yuv420p[ref_fmt];"
+                    f"[1:v]trim=start={vmaf_seek}:duration={vmaf_duration},"
+                    f"setpts=PTS-STARTPTS,format=yuv420p[dist_fmt];"
+                    f"[dist_fmt][ref_fmt]scale2ref=flags=bicubic[dist][ref];"
+                    f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
+                    f"log_fmt=json:log_path={vmaf_json_path}:shortest=1"
+                )
                 vmaf_cmd = [
                     "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                     "-i", input_path, "-i", temp_path,
-                    "-filter_complex",
-                    f"[0:v]trim=start={vmaf_seek}:duration={vmaf_duration},setpts=PTS-STARTPTS[ref];"
-                    f"[1:v]trim=start={vmaf_seek}:duration={vmaf_duration},setpts=PTS-STARTPTS[dist];"
-                    f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:log_fmt=json:log_path={vmaf_json_path}",
+                    "-filter_complex", vmaf_filter,
                     "-f", "null", "-",
                 ]
                 print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s)...", flush=True)
@@ -1057,10 +1080,38 @@ async def convert_file(
                 elif vmaf_json_path.exists():
                     import json as _vjson
                     vdata = _vjson.loads(vmaf_json_path.read_text())
-                    vs = vdata.get("pooled_metrics", {}).get("vmaf", {}).get("mean")
+                    pooled = vdata.get("pooled_metrics", {}).get("vmaf", {})
+                    vs = pooled.get("mean")
                     if vs is not None:
                         vmaf_score = round(vs, 1)
-                        print(f"[CONVERT] VMAF score: {vmaf_score}", flush=True)
+                        # Log min / max / harmonic_mean alongside the mean
+                        # so misalignment is diagnosable from the logs. If
+                        # the encode is genuinely bad the distribution is
+                        # tight (min ≈ mean ≈ max); if it's a temporal or
+                        # resolution mismatch, min crashes into single
+                        # digits while max stays near-perfect — obvious
+                        # bimodal signature in a single log line.
+                        _min = pooled.get("min")
+                        _max = pooled.get("max")
+                        _hm = pooled.get("harmonic_mean")
+                        extra = []
+                        if _min is not None: extra.append(f"min={_min:.1f}")
+                        if _max is not None: extra.append(f"max={_max:.1f}")
+                        if _hm is not None: extra.append(f"harmonic_mean={_hm:.1f}")
+                        suffix = (" [" + " ".join(extra) + "]") if extra else ""
+                        print(f"[CONVERT] VMAF score: {vmaf_score}{suffix}", flush=True)
+                        # Flag a suspicious spread — mean below good
+                        # territory but max near-perfect is almost always
+                        # a measurement artefact, not a real quality drop.
+                        if _min is not None and _max is not None and vmaf_score < 80 and _max >= 90:
+                            print(
+                                "[CONVERT] VMAF distribution looks bimodal "
+                                f"(mean {vmaf_score}, max {_max:.1f}). "
+                                "This often indicates temporal/resolution "
+                                "misalignment rather than a real quality "
+                                "problem — manual spot-check recommended.",
+                                flush=True,
+                            )
                     vmaf_json_path.unlink(missing_ok=True)
             else:
                 print(f"[CONVERT] VMAF skipped — libvmaf not available", flush=True)
