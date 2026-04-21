@@ -1293,6 +1293,39 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 >&times;</button>
               )}
             </div>
+            {/* Advanced search button — same behaviour as in the collapsed
+                state layout, rendered here too so the filter-panel-open view
+                doesn't drop the entry point. (The button going missing when
+                filters were expanded was a layout fork bug — only the
+                collapsed-state row had this button.) */}
+            <button
+              className="sort-pill"
+              title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
+              onClick={() => setAdvSearchOpen(true)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
+                background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
+                color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+                borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {/* Microscope icon */}
+                <path d="M6 18h8"/>
+                <path d="M3 22h18"/>
+                <path d="M14 22a7 7 0 1 0 0-14h-1"/>
+                <path d="M9 14h2"/>
+                <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
+                <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
+              </svg>
+              Advanced
+              {advSearchPredicates.length > 0 && (
+                <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
+                  {advSearchPredicates.length}
+                </span>
+              )}
+            </button>
+            <span style={{ width: 1, height: 16, background: "var(--border)" }} />
             <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
             {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
               <button
