@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet. Bullets accumulate here as changes land, then get promoted
+to a versioned release heading when we cut the next tag._
+
+## [0.3.2] — 2026-04-21
+
+VMAF-focused release. Fixes three real-world VMAF bugs observed in
+production (bimodal scores on sibling episodes, score/event lost on
+rename, no in-app way to verify the score per file) and closes a
+UX gap in the update-notification system so new releases surface on
+running containers without a manual image pull.
+
 ### Changed
 - File-detail **History** tab now always shows the VMAF score when the file has one in `scan_results`, synthesising an entry if the original VMAF file-event is missing (older conversions pre-dating the logging feature, or events logged against a pre-rename path). Makes it easy to spot-check individual files surfaced by the VMAF filters without opening the job's full encoding log.
 - Update-available notification now surfaces on the running container within ~30 minutes of a new GitHub release, no manual `docker compose pull` required. Previously the server-side cache window was 6 hours AND there was no background refresher, so the "Update available" pill could take most of a day to appear — or never, if the container happened to check just before the release. Matches how Sonarr / Radarr / Plex advertise updates. The Settings → Updates "Check for updates" button now also bypasses the cache so a manual click always reflects live GitHub state.
 
 ### Fixed
-- VMAF analysis: reported suspiciously low scores (e.g. 43 on visibly near-transparent encodes) due to pixel-format or resolution mismatch between the reference and encoded streams inside the libvmaf filter graph. The filter now explicitly normalises both sides to 8-bit `yuv420p` and uses `scale2ref` so resolution drift can't silently break the comparison. Also caps on the shortest stream with `shortest=1` so a trailing-frame discrepancy no longer inflates error. Logs now include min / max / harmonic-mean alongside the mean score, and emit a "distribution looks bimodal" warning when a sub-80 mean coexists with a ≥90 max — a signature of measurement artefacts rather than genuine quality loss.
+- VMAF analysis: reported suspiciously low scores (e.g. 43 on visibly near-transparent encodes; back-to-back same-show episodes at 57.7 and 97.7) due to pixel-format or resolution mismatch between the reference and encoded streams inside the libvmaf filter graph. The filter now explicitly normalises both sides to 8-bit `yuv420p` and uses `scale2ref` so resolution drift can't silently break the comparison. Also caps on the shortest stream with `shortest=1` so a trailing-frame discrepancy no longer inflates error. Logs now include min / max / harmonic-mean alongside the mean score, and emit a "distribution looks bimodal" warning when a sub-80 mean coexists with a ≥90 max — a signature of measurement artefacts rather than genuine quality loss.
 - VMAF score / event no longer lost on files whose name changes during conversion (e.g. `x264` → `x265` rename): the backend was writing the score + event against the pre-rename path, so the updated `scan_results` row and the file-history query — both keyed on the post-rename path — never saw them. Both writes now use the post-rename path.
 
 ## [0.3.1] — 2026-04-21
@@ -132,5 +143,6 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.2]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.0
