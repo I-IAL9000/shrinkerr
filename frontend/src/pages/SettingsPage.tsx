@@ -3503,7 +3503,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           {/* Version summary card */}
           <div style={{ ...sectionStyle, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 18, justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <img src="/shrinkerr-logo.svg" alt="" width="28" height="28" />
+              <img src="/favicon.svg" alt="" width="28" height="28" />
               <div>
                 <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Running version</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>

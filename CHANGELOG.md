@@ -7,70 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet. Bullets accumulate here as changes land, then get promoted
-to a versioned release heading when we cut the next tag._
+### Changed
+- Settings → Updates card now uses the logomark instead of the shrunk full logo.
 
 ## [0.3.8] — 2026-04-22
 
 ### Fixed
-- Settings page no longer spawns a page-wide scrollbar on short viewports (≤ 900 px tall). When the Settings sub-nav was expanded — Directories, Video, Audio, Subtitles, Connections, Rules, Renaming, Automation, System — the sidebar pushed the layout past viewport height, and because the main content area already scrolls internally, the outer `<body>` scrollbar only ended up scrolling the sidebar. Sidebar now caps its own height at `100vh` and scrolls internally when content overflows, leaving the main-content scroll untouched.
+- Settings page no longer spawns a page-wide scrollbar on short viewports.
 
 ## [0.3.7] — 2026-04-22
 
 ### Changed
-- **README hero is now an animated WebP instead of a WebM video.** GitHub's README HTML sanitizer silently strips the `autoplay` attribute from `<video>` tags in some cases, leaving the hero showing a manual play button. Animated WebP is served as an image so it autoplays by nature of the format (like an animated GIF, but with modern compression — the replacement is 1.4 MB for 5 screenshots at 1440 px wide, smaller than the WebM was). Committed to the repo at `.github/assets/hero.webp` and referenced via a relative path, so no external hosting dance is needed.
+- README hero is now an animated WebP instead of a WebM video, so it autoplays on GitHub.
 
 ## [0.3.6] — 2026-04-22
 
 ### Fixed
-- **README hero video now actually plays** for unauthenticated visitors. Short version: the video's URL was session-gated, so incognito/logged-out views got a blank 0:00 player. Replaced with a public `user-attachments` URL (posted to a real issue, not just drafted — the difference is whether the asset gets flipped from gated-to-uploader to public) that returns the video with `Content-Type: video/webm` to everyone.
-- Release workflow no longer tries to upload `hero.webm` as a release asset. 0.3.5 tried this approach, but release-asset URLs are served with `Content-Type: application/octet-stream` and `Content-Disposition: attachment`, which several browsers refuse to play inline via `<video>` tags. Reverted to keep releases lean.
+- README hero video now renders for unauthenticated visitors (the previous URL was session-gated).
 
 ## [0.3.5] — 2026-04-22
 
 ### Fixed
-- Attempted fix for the README hero video that didn't land (see 0.3.6). Release-asset URLs turned out not to work for inline video playback.
+- Attempted fix for the README hero video that didn't land (see 0.3.6).
 
 ## [0.3.4] — 2026-04-22
 
-Quality-of-life follow-up to 0.3.3. Now that VMAF is producing correct
-scores, there's no need for the conservative whole-file compare — this
-release reverts to the fast 30-second sample and fixes the progress-
-bar hang that was pinning the UI at 100% for several minutes during
-analysis.
-
 ### Changed
-- **VMAF analysis is ~50× faster on TV episodes.** Reverted the 0.3.3 whole-file compare (which was belt-and-suspenders insurance while we hunted the real cause of the wrong scores) back to a 30-second sample at 33% into the file, applied identically to both inputs via input-level `-ss` (accurate seek, no filter-level `trim`). The fps + colour-range normalisation from 0.3.3 is what actually fixed the scores, and it works just as well on a 30-second window as on the whole file. A 25-minute Croods episode now finishes VMAF in ~6 seconds instead of ~6 minutes.
+- VMAF analysis is much faster on TV episodes — reverted to a 30-second sample now that 0.3.3's normalisation fixed the accuracy problem.
 
 ### Fixed
-- **VMAF progress bar no longer hangs at 100%.** Two bugs combined to freeze the progress indicator for the entire VMAF run:
-  1. The code was seeding `progress=100` at the start of the VMAF phase as a "we're analysing" signal, then trying to reduce it as frames came in — except
-  2. `-loglevel error` was suppressing ffmpeg's `frame=N fps=X …` progress output, so the frame-count parser never ran and progress stayed stuck at the seed value.
-  Now seeds `progress=0`, adds `-stats` to force per-second progress output regardless of loglevel, and computes percentage against the real source fps from the probe (previously hardcoded to 24fps, which under-counted frames on 29.97/30fps content). The cross-check pass (when VMAF < 80) now also has its own progress phase labelled "Quality cross-check" instead of continuing to show a stale "VMAF analysis" at 99%.
-- **ETA during VMAF.** The analysis fps and elapsed time are now shown via the progress callback, so the UI can surface something like "VMAF analysis — 90fps — 12s remaining" instead of a bare percentage.
+- VMAF progress bar no longer hangs at 100%; now shows fps + ETA during analysis.
 
 ## [0.3.3] — 2026-04-22
 
-Follow-up release to chase down the last real-world VMAF failure mode:
-animated content (The Croods et al.) was still scoring under 50 on
-encodes that visually inspected as flawless. Adds proper stream
-normalization in the VMAF filter graph, a whole-file compare for TV-
-sized content, and a diagnostic cross-check so future suspicious scores
-can be verified against independent metrics without guesswork. Also a
-small UI wording fix for the VMAF-rejected case.
-
 ### Changed
-- **VMAF filter graph now normalises frame rate and colour range on both streams.** Source fps is probed up front and used as the target for an `fps=fps=N` clause on both the reference and distorted streams, which guarantees matching frame counts regardless of VFR/CFR mix. Both streams also run through `scale=in_range=auto:out_range=tv` so a source-vs-encode range-tag mismatch can't silently stretch luma values (the classic "looks fine, scores 49" signature on some WEBDL captures). The side-by-side probe summary (`VMAF inputs — ref: 1920x1080 23.976fps yuv420p range=tv | dist: ...`) is logged before every VMAF run so any future mismatch is visible at a glance.
-- **VMAF subprocess timeout now scales with analysed window** (`max(5 min, 3× duration)`). A full-file compare on a 45-minute episode can't time out any more.
+- VMAF filter graph now normalises frame rate and colour range on both streams, so scores are accurate regardless of VFR/CFR mix or range-tag drift.
 
 ### Added
-- **SSIM + PSNR cross-check on suspicious VMAF scores.** Whenever VMAF reports under 80 on the mean, a second ffmpeg pass computes SSIM and PSNR over a 30-second sample. All three metrics are derived from the same pixel data but with different algorithms — if VMAF says "poor" but SSIM ≥ 0.98 or PSNR ≥ 40 dB, the encode is actually fine and VMAF is producing a measurement artefact (common on animation and other flat-coloured content, which is outside VMAF's training distribution). The log emits an explicit verdict line in that case: `→ SSIM/PSNR say the encode is actually fine; VMAF score is a measurement artefact`. The VMAF-threshold rejection still fires on the raw VMAF score — the cross-check is purely diagnostic — so users debugging a rejection can open the job's ffmpeg output, see the numbers, and decide whether to lower the threshold for this kind of content.
+- SSIM + PSNR cross-check runs automatically on any VMAF score below 80, so you can tell a real quality regression from a VMAF measurement artefact (common on animation / flat-coloured content).
 
 ### Fixed
-- VMAF analysis: bimodal scores on visually-identical encodes (e.g. sibling TV episodes scoring 49.5 and 96.3 at the same CQ and preset) traced to the filter-graph `trim=start:duration` approach picking different first frames in the reference vs encoded streams when the source had any of: VFR timestamps, non-zero container `start_pts`, interlaced fields, or keyframe-offset boundaries. Once the first frame misaligned, every subsequent pairwise compare was time-shifted and the score cratered. The 0.3.2 fix normalised pixel format and resolution but didn't touch temporal alignment, which is what was actually breaking. New behaviour:
-  - For content ≤ 45 minutes (all TV episodes and most documentaries): VMAF compares the **whole file** — no trim, no sampling, no PTS math. The most reliable configuration possible.
-  - For longer content (movies): sample a 90-second window at 33% into the file using input-level `-ss` (accurate seek in modern ffmpeg) applied identically to both inputs plus `-t` on the output — both streams are seeked to the same PTS *before* the filter graph sees them, so no in-filter trim is needed.
-- History tab no longer labels VMAF-rejected jobs as "Converted (no savings)". A job whose encode scored below the minimum VMAF threshold is now recorded as `Kept original — VMAF below threshold`, which matches reality (the converted file was discarded and the source left in place). Encodes discarded because the output was larger than the source now read `Kept original — encode was larger than source` for the same reason. The plain `Converted (no savings)` label is reserved for real conversions that happened to break even on disk usage.
+- VMAF no longer produces bimodal scores (e.g. sibling TV episodes scoring 49 and 96 at identical settings).
+- History tab no longer labels VMAF-rejected jobs as "Converted (no savings)" — now reads "Kept original — VMAF below threshold".
 
 ## [0.3.2] — 2026-04-21
 

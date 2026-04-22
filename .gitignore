@@ -31,6 +31,10 @@ htmlcov/
 node_modules/
 frontend/dist/
 
+# Local-only Docker + test data (Mac dev builds)
+docker-compose.override.yml
+test-media/
+
 # macOS
 .DS_Store
 
