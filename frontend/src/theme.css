@@ -189,6 +189,17 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  /* Cap height at viewport and scroll internally when content overflows.
+     Without this, an expanded Settings sub-nav on a short viewport (≤ 900px)
+     pushes the sidebar past 100vh, which grows the whole .app-layout past
+     the viewport and spawns a <body> scrollbar — the main-content already
+     scrolls internally via its own max-height:100vh, so that outer
+     scrollbar only ends up scrolling the sidebar content, which is
+     confusing. Keeping the scroll local to the sidebar fixes it. Mobile
+     is unaffected because .sidebar-desktop is display:none below 768px. */
+  max-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-logo {

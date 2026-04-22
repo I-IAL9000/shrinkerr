@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _Nothing yet. Bullets accumulate here as changes land, then get promoted
 to a versioned release heading when we cut the next tag._
 
+## [0.3.8] — 2026-04-22
+
+### Fixed
+- Settings page no longer spawns a page-wide scrollbar on short viewports (≤ 900 px tall). When the Settings sub-nav was expanded — Directories, Video, Audio, Subtitles, Connections, Rules, Renaming, Automation, System — the sidebar pushed the layout past viewport height, and because the main content area already scrolls internally, the outer `<body>` scrollbar only ended up scrolling the sidebar. Sidebar now caps its own height at `100vh` and scrolls internally when content overflows, leaving the main-content scroll untouched.
+
 ## [0.3.7] — 2026-04-22
 
 ### Changed
@@ -200,6 +205,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.8]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.8
 [0.3.7]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.7
 [0.3.6]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.6
 [0.3.5]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.5
