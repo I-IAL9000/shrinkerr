@@ -183,6 +183,15 @@ class NodeManager:
                     default_max = int(row["value"]) if row else 2
                 except (ValueError, TypeError):
                     default_max = 2
+            # Seed default_encoder based on detected local capabilities when no
+            # value has ever been stored — so CPU-only boxes don't land on
+            # NVENC as the default. INSERT OR IGNORE preserves any prior user choice.
+            seed_encoder = "nvenc" if "nvenc" in capabilities else "libx265"
+            await db.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES ('default_encoder', ?)",
+                (seed_encoder,),
+            )
+            await db.commit()
         finally:
             await db.close()
 

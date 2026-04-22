@@ -29,14 +29,14 @@ _ENCODING_DEFAULTS = {
     "ffmpeg_timeout": "21600",
     "ffprobe_timeout": "30",
     "audio_cleanup_enabled": "true",
-    "always_keep_languages": '["eng", "isl", "ice"]',
+    "always_keep_languages": '[]',
     "ignore_unknown_tracks": "true",
     "keep_native_language": "true",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
     "sub_cleanup_enabled": "true",
-    "sub_keep_languages": '["eng", "isl", "ice"]',
+    "sub_keep_languages": '[]',
     "sub_keep_unknown": "true",
     "audio_codec": "copy",
     "audio_bitrate": "128",
@@ -134,8 +134,8 @@ _ENCODING_DEFAULTS = {
     "disk_space_threshold_gb": "50",
     # NZBGet integration
     "nzbget_enabled": "false",
-    "nzbget_tags": '["convert"]',
-    "nzbget_categories": '["TV", "Movies"]',
+    "nzbget_tags": '[]',
+    "nzbget_categories": '[]',
     "nzbget_path_mappings": '[]',
     "nzbget_priority": "High",
     "nzbget_wait_for_completion": "true",
@@ -244,10 +244,10 @@ async def get_encoding_settings():
     }
     try:
         result["always_keep_languages"] = json.loads(
-            merged.get("always_keep_languages", '["eng", "isl", "ice"]')
+            merged.get("always_keep_languages", '[]')
         )
     except (json.JSONDecodeError, ValueError):
-        result["always_keep_languages"] = ["eng", "isl", "ice"]
+        result["always_keep_languages"] = []
     try:
         result["source_codecs"] = json.loads(
             merged.get("source_codecs", '["h264"]')
@@ -256,10 +256,10 @@ async def get_encoding_settings():
         result["source_codecs"] = ["h264"]
     try:
         result["sub_keep_languages"] = json.loads(
-            merged.get("sub_keep_languages", '["eng", "isl", "ice"]')
+            merged.get("sub_keep_languages", '[]')
         )
     except (json.JSONDecodeError, ValueError):
-        result["sub_keep_languages"] = ["eng", "isl", "ice"]
+        result["sub_keep_languages"] = []
     result["sub_cleanup_enabled"] = merged.get("sub_cleanup_enabled", "true").lower() == "true"
     result["sub_keep_unknown"] = merged.get("sub_keep_unknown", "true").lower() == "true"
 
@@ -345,8 +345,8 @@ async def get_encoding_settings():
 
     # NZBGet integration
     result["nzbget_enabled"] = merged.get("nzbget_enabled", "false").lower() == "true"
-    result["nzbget_tags"] = json.loads(merged.get("nzbget_tags", '["convert"]'))
-    result["nzbget_categories"] = json.loads(merged.get("nzbget_categories", '["TV", "Movies"]'))
+    result["nzbget_tags"] = json.loads(merged.get("nzbget_tags", '[]'))
+    result["nzbget_categories"] = json.loads(merged.get("nzbget_categories", '[]'))
     result["nzbget_path_mappings"] = json.loads(merged.get("nzbget_path_mappings", '[]'))
     result["nzbget_priority"] = merged.get("nzbget_priority", "High")
     result["nzbget_wait_for_completion"] = merged.get("nzbget_wait_for_completion", "true").lower() == "true"
@@ -1015,8 +1015,8 @@ async def get_nzbget_config(request: Request):
         "sonarr_api_key": settings.get("sonarr_api_key", ""),
         "radarr_url": settings.get("radarr_url", ""),
         "radarr_api_key": settings.get("radarr_api_key", ""),
-        "tags": json.loads(settings.get("nzbget_tags", '["convert"]')),
-        "categories": json.loads(settings.get("nzbget_categories", '["TV", "Movies"]')),
+        "tags": json.loads(settings.get("nzbget_tags", '[]')),
+        "categories": json.loads(settings.get("nzbget_categories", '[]')),
         "path_mappings": json.loads(settings.get("nzbget_path_mappings", '[]')),
         "priority": {"Normal": 0, "High": 1, "Highest": 2}.get(settings.get("nzbget_priority", "High"), 1),
         "wait_for_completion": settings.get("nzbget_wait_for_completion", "true").lower() == "true",

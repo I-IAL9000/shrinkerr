@@ -547,6 +547,8 @@ export const bulkUpdateJobSettings = (data: {
   job_ids: number[];
   nvenc_preset?: string;
   nvenc_cq?: number;
+  libx265_preset?: string;
+  libx265_crf?: number;
   audio_codec?: string;
   audio_bitrate?: number;
   priority?: number;

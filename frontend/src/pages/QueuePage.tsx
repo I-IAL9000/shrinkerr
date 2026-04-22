@@ -143,13 +143,21 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   };
 
   const handleBulkVideoPreset = async (preset: string, cq: number) => {
-    // Optimistic UI update — apply immediately, then sync in background
+    // Optimistic UI update — apply immediately, then sync in background.
+    // Route to libx265_* vs nvenc_* based on the configured default encoder
+    // so CPU-only installs pick up the CRF slider instead of NVENC's CQ.
+    const isCpu = encodingDefaults?.default_encoder === "libx265";
     const selectedSet = new Set(selectedIds);
-    setJobs(prev => prev.map(j =>
-      selectedSet.has(j.id) ? { ...j, nvenc_preset: preset, nvenc_cq: cq } : j
-    ));
+    setJobs(prev => prev.map(j => {
+      if (!selectedSet.has(j.id)) return j;
+      return isCpu
+        ? { ...j, libx265_preset: preset, libx265_crf: cq }
+        : { ...j, nvenc_preset: preset, nvenc_cq: cq };
+    }));
     toast(`Video preset applied to ${selectedIds.length} job(s)`, "success");
-    bulkUpdateJobSettings({ job_ids: selectedIds, nvenc_preset: preset, nvenc_cq: cq });
+    bulkUpdateJobSettings(isCpu
+      ? { job_ids: selectedIds, libx265_preset: preset, libx265_crf: cq }
+      : { job_ids: selectedIds, nvenc_preset: preset, nvenc_cq: cq });
   };
 
   const handleBulkAudioPreset = async (codec: string, bitrate: number) => {
@@ -391,6 +399,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               onMoveBottom={() => handleBulkMove("bottom")}
               onChangeVideoPreset={handleBulkVideoPreset}
               onChangeAudioPreset={handleBulkAudioPreset}
+              defaultEncoder={encodingDefaults?.default_encoder}
               onChangePriority={async (priority: number) => {
                 await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
                 toast(`Priority set to ${["Normal", "High", "Highest"][priority]}`);

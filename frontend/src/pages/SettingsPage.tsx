@@ -134,6 +134,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   // this replaced the old document-body MutationObserver.
   useRangeFill(pageRef);
 
+  // Scroll to section when arriving with a hash (e.g. /settings#connections).
+  // Delayed so the target heading has rendered.
+  useEffect(() => {
+    if (!window.location.hash) return;
+    const id = window.location.hash.slice(1);
+    const t = setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+    }, 150);
+    return () => clearTimeout(t);
+  }, []);
+
   const [dirs, setDirs] = useState<any[]>([]);
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");

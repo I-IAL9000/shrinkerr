@@ -27,6 +27,9 @@ interface TitleGroup {
   folders: FolderInfo[];
   fileCount: number;
   totalSize: number;
+  // True when the group represents a single stray file (key is the file
+  // path, not a directory prefix). Selection must use the exact path.
+  isFile?: boolean;
 }
 
 interface PosterGridProps {
@@ -42,13 +45,17 @@ interface PosterGridProps {
   onRescanFolder?: (folderPath: string) => void;
   onDeleteFile?: (filePath: string) => void;
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
+  mediaDirs?: string[];
   sortBy?: "name" | "size" | "files" | "date";
   sortDir?: "asc" | "desc";
 }
 
-function groupFolders(folders: FolderInfo[]): TitleGroup[] {
+function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
   const groups = new Map<string, TitleGroup>();
   for (const folder of folders) {
+    // Skip the aggregated media-root entry — stray files under it are already
+    // represented as individual is_file pseudo-folders (one card per file).
+    if (mediaRoots.has(folder.path.replace(/\/$/, ""))) continue;
     const parts = folder.path.split("/").filter(Boolean);
     let titleIdx = -1;
     for (let i = 0; i < parts.length; i++) {
@@ -65,7 +72,7 @@ function groupFolders(folders: FolderInfo[]): TitleGroup[] {
     if (!groups.has(groupPath)) {
       const yearMatch = name.match(/\((\d{4})\)/);
       let title = name.replace(/\s*\[(?:tt\d+|tvdb-\d+)\]/, "").replace(/\s*\(\d{4}\)/, "").trim();
-      groups.set(groupPath, { key: groupPath, title: title || name, year: yearMatch ? yearMatch[1] : null, folders: [], fileCount: 0, totalSize: 0 });
+      groups.set(groupPath, { key: groupPath, title: title || name, year: yearMatch ? yearMatch[1] : null, folders: [], fileCount: 0, totalSize: 0, isFile: folder.is_file });
     }
     const g = groups.get(groupPath)!;
     g.folders.push(folder);
@@ -73,6 +80,12 @@ function groupFolders(folders: FolderInfo[]): TitleGroup[] {
     g.totalSize += folder.total_size;
   }
   return Array.from(groups.values());
+}
+
+// Selection path for a group — folders use a trailing "/" (prefix match),
+// stray-file groups use the exact file path.
+function groupSelectPath(g: TitleGroup): string {
+  return g.isFile ? g.key : g.key + "/";
 }
 
 function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string): TitleGroup[] {
@@ -112,8 +125,13 @@ export default function PosterGrid({
   isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onDeleteFile,
   onFolderFilesLoaded,
+  mediaDirs,
   sortBy = "name", sortDir = "asc",
 }: PosterGridProps) {
+  const mediaRoots = useMemo(
+    () => new Set((mediaDirs || []).map(d => d.replace(/\/$/, ""))),
+    [mediaDirs],
+  );
   const [posterMeta, setPosterMeta] = useState<Map<string, PosterMeta>>(new Map());
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [fixModalGroup, setFixModalGroup] = useState<{ key: string; title: string; year: string | null } | null>(null);
@@ -130,7 +148,7 @@ export default function PosterGrid({
   const resolveQueue = useRef<string[]>([]);
   const lastClickedGroup = useRef<string | null>(null);
 
-  const groups = useMemo(() => sortGroups(groupFolders(folders), sortBy, sortDir), [folders, sortBy, sortDir]);
+  const groups = useMemo(() => sortGroups(groupFolders(folders, mediaRoots), sortBy, sortDir), [folders, mediaRoots, sortBy, sortDir]);
 
   // Wrap the track toggle handlers so we also update PosterGrid's local
   // `expandedFiles` copy. Without this, the parent's loadedFiles gets updated
@@ -170,7 +188,7 @@ export default function PosterGrid({
         const start = Math.min(lastIdx, curIdx);
         const end = Math.max(lastIdx, curIdx);
         for (let i = start; i <= end; i++) {
-          const path = groups[i].key + "/";
+          const path = groupSelectPath(groups[i]);
           if (!isSelected(path)) {
             onToggleSelect(path);
           }
@@ -180,7 +198,8 @@ export default function PosterGrid({
       }
     }
     lastClickedGroup.current = groupKey;
-    onToggleSelect(groupKey + "/");
+    const g = groups.find(x => x.key === groupKey);
+    onToggleSelect(g ? groupSelectPath(g) : groupKey + "/");
   }, [groups, isSelected, onToggleSelect]);
 
   // Reset pending set when folders change (e.g. after rescan)
@@ -379,7 +398,7 @@ export default function PosterGrid({
           posterUrl={meta?.poster_url}
           fileCount={group.fileCount}
           totalSize={group.totalSize}
-          isSelected={isSelected(group.key + "/")}
+          isSelected={isSelected(groupSelectPath(group))}
           onSelect={(shiftKey) => handlePosterSelect(group.key, shiftKey)}
           onClick={() => handleExpand(group)}
           isExpanded={expandedKey === group.key}
@@ -522,8 +541,11 @@ export default function PosterGrid({
       {renderedRows}
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-          <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
-          Loading files...
+          {filter && filter !== "all" ? (
+            <div style={{ fontSize: 13 }}>No files match the current filter.</div>
+          ) : (
+            <div style={{ fontSize: 13 }}>No files scanned yet. Run a scan to get started.</div>
+          )}
         </div>
       )}
       {fixModalGroup && (

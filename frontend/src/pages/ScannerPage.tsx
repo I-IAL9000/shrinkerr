@@ -808,6 +808,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.encoder) extra.encoder_override = encodingOverrides.encoder;
         if (encodingOverrides.nvenc_preset) extra.nvenc_preset_override = encodingOverrides.nvenc_preset;
         if (encodingOverrides.nvenc_cq != null) extra.nvenc_cq_override = encodingOverrides.nvenc_cq;
+        if (encodingOverrides.libx265_preset) extra.libx265_preset_override = encodingOverrides.libx265_preset;
         if (encodingOverrides.libx265_crf != null) extra.libx265_crf_override = encodingOverrides.libx265_crf;
         if (encodingOverrides.audio_codec) extra.audio_codec_override = encodingOverrides.audio_codec;
         if (encodingOverrides.audio_bitrate != null) extra.audio_bitrate_override = encodingOverrides.audio_bitrate;
@@ -1580,6 +1581,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onUnignoreFile={handleUnignoreFile}
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
+              mediaDirs={dirs.map((d: any) => d.path)}
               sortBy={sortBy}
               sortDir={sortDir}
             />

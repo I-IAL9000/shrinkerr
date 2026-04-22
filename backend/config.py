@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     nvenc_cq: int = 20
     libx265_crf: int = 20
     nvenc_preset: str = "p6"
-    always_keep_languages: list[str] = ["eng", "isl", "ice"]
+    always_keep_languages: list[str] = []
     ignore_unknown_tracks: bool = True
     ffprobe_timeout: int = 30
     ffmpeg_timeout: int = 21600

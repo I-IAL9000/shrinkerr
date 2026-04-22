@@ -32,6 +32,8 @@ class BulkUpdateSettingsRequest(BaseModel):
     job_ids: list[int]
     nvenc_preset: Optional[str] = None
     nvenc_cq: Optional[int] = None
+    libx265_preset: Optional[str] = None
+    libx265_crf: Optional[int] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
     priority: Optional[int] = None
@@ -475,6 +477,12 @@ async def bulk_update_settings(payload: BulkUpdateSettingsRequest):
     if payload.nvenc_cq is not None:
         updates.append("nvenc_cq = ?")
         params.append(payload.nvenc_cq)
+    if payload.libx265_preset is not None:
+        updates.append("libx265_preset = ?")
+        params.append(payload.libx265_preset)
+    if payload.libx265_crf is not None:
+        updates.append("libx265_crf = ?")
+        params.append(payload.libx265_crf)
     if payload.audio_codec is not None:
         updates.append("audio_codec = ?")
         params.append(payload.audio_codec)

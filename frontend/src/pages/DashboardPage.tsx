@@ -188,16 +188,16 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
       ),
     },
     {
-      key: "plex",
-      title: "Connect Plex (optional)",
-      description: "Link your Plex server to enable label-based rules, automatic library scans, and trash cleanup.",
+      key: "connections",
+      title: "Add connections",
+      description: "Connect to TMDB to fetch movie and TV show metadata. Link your Plex / Jellyfin server and Sonarr / Radarr to enable app-specific rules, automatic library scans, and trash cleanup.",
       done: setup.has_plex,
-      action: () => navigate("/settings"),
-      actionLabel: "Configure Plex",
+      action: () => navigate("/settings#connections"),
+      actionLabel: "Add connections",
       optional: true,
       icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M21.7803 3.28033C22.0732 2.98744 22.0732 2.51256 21.7803 2.21967C21.4874 1.92678 21.0126 1.92678 20.7197 2.21967L18.7077 4.23161C17.0483 3.05263 14.7323 3.20693 13.2448 4.6945L12.1767 5.76252C11.4933 6.44594 11.4933 7.55398 12.1767 8.2374L15.7625 11.8232C16.446 12.5066 17.554 12.5066 18.2374 11.8232L19.3054 10.7552C20.793 9.26761 20.9473 6.9517 19.7684 5.29228L21.7803 3.28033ZM18.1945 5.75516L18.2173 5.77798L18.2197 5.78033L18.222 5.78267L18.2448 5.80542C19.3187 6.87936 19.3187 8.62056 18.2448 9.6945L17.1767 10.7625C17.0791 10.8602 16.9208 10.8602 16.8232 10.7625L13.2374 7.17674C13.1398 7.07911 13.1398 6.92082 13.2374 6.82318L14.3054 5.75516C15.3794 4.68122 17.1206 4.68122 18.1945 5.75516ZM10.7803 11.2803C11.0732 10.9874 11.0732 10.5126 10.7803 10.2197C10.4874 9.92678 10.0126 9.92678 9.71967 10.2197L8.00001 11.9393L7.53035 11.4697C7.23746 11.1768 6.76258 11.1768 6.46969 11.4697L4.69456 13.2448C3.20701 14.7324 3.0527 17.0483 4.23163 18.7077L2.21967 20.7197C1.92678 21.0126 1.92678 21.4874 2.21967 21.7803C2.51256 22.0732 2.98744 22.0732 3.28033 21.7803L5.29229 19.7684C6.95171 20.9473 9.26766 20.793 10.7552 19.3055L12.5303 17.5303C12.8232 17.2374 12.8232 16.7626 12.5303 16.4697L12.0607 16L13.7803 14.2803C14.0732 13.9874 14.0732 13.5126 13.7803 13.2197C13.4874 12.9268 13.0126 12.9268 12.7197 13.2197L11 14.9393L9.06067 13L10.7803 11.2803ZM7.46631 13.527L7.46967 13.5303L7.47305 13.5337L10.4664 16.527L10.4697 16.5303L10.473 16.5336L10.9394 17L9.69456 18.2448C8.62062 19.3187 6.87942 19.3187 5.80548 18.2448L5.75522 18.1945C4.68128 17.1206 4.68128 15.3794 5.75522 14.3055L7.00002 13.0607L7.46631 13.527Z"/>
         </svg>
       ),
     },
@@ -222,7 +222,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
   return (
     <div>
       <div style={{ textAlign: "center", padding: "40px 20px 20px" }}>
-        <img src="/shrinkerr-logo.svg" alt="" width="48" height="48" style={{ marginBottom: 16 }} />
+        <img src="/favicon.svg" alt="" width="100" height="100" style={{ marginBottom: 16 }} />
         <h1 style={{
           fontSize: 28, fontWeight: "bold", margin: "0 0 8px",
           background: "linear-gradient(90deg, #6860fe, #5089F7)",
@@ -231,8 +231,8 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
           Welcome to Shrinkerr
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0, maxWidth: 500, marginInline: "auto" }}>
-          Convert your media library from x264 to x265 with NVENC hardware encoding.
-          Follow these steps to get started.
+          Convert your media library to x265 and reduce file size by 50-65% with no visible quality loss.
+          Save space, bandwidth & money while retaining quality. Follow these steps to get started.
         </p>
       </div>
 
@@ -252,24 +252,24 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
         {steps.map((step, i) => (
           <div key={step.key} style={{
             background: "var(--bg-card)", borderRadius: 8, padding: "16px 20px",
-            display: "flex", alignItems: "center", gap: 16,
+            display: "flex", alignItems: "stretch", gap: 16,
             border: step.done ? "1px solid rgba(104,96,254,0.2)" : "1px solid var(--border)",
             opacity: step.done ? 0.6 : 1,
           }}>
             {/* Step number / checkmark */}
             <div style={{
-              width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+              width: 58, height: 58, borderRadius: 4, flexShrink: 0, alignSelf: "flex-start",
               display: "flex", alignItems: "center", justifyContent: "center",
               background: step.done ? "rgba(24,255,165,0.15)" : "rgba(104,96,254,0.15)",
               color: step.done ? "#10B981" : "var(--accent)",
               fontSize: 14, fontWeight: "bold",
             }}>
               {step.done ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="20 6 9 17 4 12"/>
                 </svg>
               ) : (
-                <span style={{ opacity: 0.7 }}>{step.icon}</span>
+                <span style={{ opacity: 0.7, display: "flex" }}>{step.icon}</span>
               )}
             </div>
 
@@ -286,7 +286,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
             {!step.done && (
               <button
                 className={i === steps.findIndex(s => !s.done) ? "btn btn-primary" : "btn btn-secondary"}
-                style={{ fontSize: 12, padding: "6px 14px", whiteSpace: "nowrap", flexShrink: 0 }}
+                style={{ fontSize: 12, padding: "6px 14px", whiteSpace: "nowrap", flexShrink: 0, alignSelf: "center" }}
                 onClick={step.action}
               >
                 {step.actionLabel}

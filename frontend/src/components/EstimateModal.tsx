@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { estimateJobs, startTestEncode, getStoredApiKey } from "../api";
+import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
 
@@ -59,8 +59,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [overrideRules, setOverrideRules] = useState(!!hasIgnoredFiles);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Encoding overrides — null = auto
+  // Encoding overrides — null = auto (falls back to the user's configured
+  // default encoder, fetched below)
   const [encoder, setEncoder] = useState<string | null>(null);
+  const [defaultEncoder, setDefaultEncoder] = useState<string>("nvenc");
+
+  useEffect(() => {
+    getEncodingSettings().then(s => {
+      if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
+    }).catch(() => {});
+  }, []);
   const [preset, setPreset] = useState<string | null>(null);
   const [cq, setCq] = useState<number | null>(null);
   const [cqSlider, setCqSlider] = useState<number | null>(null); // visual only, committed on release
@@ -101,12 +109,19 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [resolution, setResolution] = useState<string | null>(null);
   const [forceReencode, setForceReencode] = useState(false);
 
+  // Effective encoder for UI branching — explicit override wins, otherwise
+  // follow the user's configured default. Previously we compared against
+  // "libx265" literally, which made auto always fall into the NVENC branch
+  // even on CPU-only installs.
+  const effectiveEncoder = encoder ?? defaultEncoder;
+  const isCpu = effectiveEncoder === "libx265";
+
   // Debounced estimate refresh
   useEffect(() => {
     setLoading(true);
     const overrides: Record<string, any> = {};
     if (cq !== null) {
-      if (encoder === "libx265") overrides.libx265_crf_override = cq;
+      if (isCpu) overrides.libx265_crf_override = cq;
       else overrides.nvenc_cq_override = cq;
     }
     if (forceReencode) overrides.force_reencode = true;
@@ -119,9 +134,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || "Unknown error" });
       setLoading(false);
     });
-  }, [overrideRules, cq, forceReencode]);
-
-  const isCpu = encoder === "libx265";
+  }, [overrideRules, cq, forceReencode, isCpu]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;

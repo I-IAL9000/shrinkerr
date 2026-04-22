@@ -14,6 +14,10 @@ export interface FolderInfo {
   file_count: number;
   total_size: number;
   newest_mtime: number;
+  // Set when this entry represents a stray file at a media root (emitted so
+  // the poster view can render per-file cards). FileTree ignores these — the
+  // file surfaces naturally when its parent folder is expanded.
+  is_file?: boolean;
 }
 
 interface FileTreeProps {
@@ -63,6 +67,7 @@ function buildTreeFromFolders(folders: FolderInfo[]): TreeNode {
   };
 
   for (const folder of folders) {
+    if (folder.is_file) continue; // poster-only synthetic entry; not a real folder
     const parts = folder.path.split("/").filter(Boolean);
     let node = root;
     for (let i = 0; i < parts.length; i++) {
@@ -118,6 +123,7 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
   // Group folders by their title-level parent
   const groups = new Map<string, { name: string; folders: FolderInfo[] }>();
   for (const folder of folders) {
+    if (folder.is_file) continue; // poster-only synthetic entry
     const parts = folder.path.split("/").filter(Boolean);
     let titleIdx = -1;
     for (let i = 0; i < parts.length; i++) {
@@ -995,13 +1001,9 @@ export default function FileTree({
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
           {search || allowedPaths || (filter && filter !== "all") ? (
-            // Empty because of a filter/search — not loading
             <div style={{ fontSize: 13 }}>No files match the current filter.</div>
           ) : (
-            <>
-              <div className="spinner" style={{ width: 20, height: 20, margin: "0 auto 12px" }} />
-              Loading files...
-            </>
+            <div style={{ fontSize: 13 }}>No files scanned yet. Run a scan to get started.</div>
           )}
         </div>
       )}

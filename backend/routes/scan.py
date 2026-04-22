@@ -1517,6 +1517,13 @@ async def get_scan_tree(filter: str = "all"):
         async with db.execute(query, sql_params) as cur:
             rows = await cur.fetchall()
 
+        # Files directly at a media root (no title folder) are grouped under
+        # their full file path, so each stray file becomes its own "folder"
+        # entry. Without this, they'd collapse under `/media` as a single row
+        # whose prefix match then pulls in every sibling title.
+        async with db.execute("SELECT path FROM media_dirs") as cur:
+            media_roots = {r["path"].rstrip("/") for r in await cur.fetchall()}
+
         # Group by parent folder, applying any remaining Python filters
         folders: dict[str, dict] = {}
         LOW_BR = ctx["LOW_BITRATE_THRESHOLD"] if ctx else 0
@@ -1600,6 +1607,20 @@ async def get_scan_tree(filter: str = "all"):
             if mt > fd["newest_mtime"]:
                 fd["newest_mtime"] = mt
 
+            # Stray file directly at a media root also gets emitted as its
+            # own pseudo-folder entry so the poster view can render one card
+            # per loose file instead of collapsing them under the media root.
+            # FileTree filters these out via `is_file` and keeps using the
+            # parent folder entry above.
+            if parent in media_roots:
+                folders[fp] = {
+                    "path": fp,
+                    "file_count": 1,
+                    "total_size": sz,
+                    "newest_mtime": mt,
+                    "is_file": True,
+                }
+
         return {"folders": list(folders.values())}
     finally:
         await db.close()
@@ -1607,7 +1628,12 @@ async def get_scan_tree(filter: str = "all"):
 
 @router.get("/files-by-title")
 async def get_files_by_title(prefix: str, filter: str = "all"):
-    """Return all enriched files under a title prefix (all seasons). Single DB call."""
+    """Return all enriched files under a title prefix (all seasons). Single DB call.
+
+    When the prefix is itself a full file path (stray file at a media root),
+    return just that file — prevents the LIKE from matching sibling titles
+    that happen to share the media-root prefix.
+    """
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
@@ -1616,9 +1642,9 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
                 WHERE {_SCAN_WHERE}
-                  AND file_path LIKE ?
+                  AND (file_path = ? OR file_path LIKE ?)
                 ORDER BY file_path ASC""",
-            (title_prefix + "%",),
+            (prefix, title_prefix + "%"),
         ) as cur:
             rows = await cur.fetchall()
 
@@ -1676,21 +1702,28 @@ async def get_scan_files_by_paths(body: _FilesByPathsBody):
 
 @router.get("/files")
 async def get_scan_files(folder: str, filter: str = "all"):
-    """Return enriched files for a single folder. Typically 5-50 files per call."""
+    """Return enriched files for a single folder. Typically 5-50 files per call.
+
+    Also handles the `folder` being a full file path (stray file at a media
+    root grouped as its own entry) — returns just that file.
+    """
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
 
-        # Get direct children only (files in this folder, not subfolders)
+        # Direct children of the folder OR an exact file match for stray-file
+        # pseudo-folders that are keyed by the file path itself.
         folder_prefix = folder.rstrip("/") + "/"
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
                 WHERE {_SCAN_WHERE}
-                  AND file_path LIKE ?
-                  AND file_path NOT LIKE ?
+                  AND (
+                    file_path = ?
+                    OR (file_path LIKE ? AND file_path NOT LIKE ?)
+                  )
                 ORDER BY file_path ASC""",
-            (folder_prefix + "%", folder_prefix + "%/%"),
+            (folder, folder_prefix + "%", folder_prefix + "%/%"),
         ) as cur:
             rows = await cur.fetchall()
 

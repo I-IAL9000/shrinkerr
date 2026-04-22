@@ -13,6 +13,7 @@ interface QueueControlPanelProps {
   onRemove: () => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
+  defaultEncoder?: string;
 }
 
 const PRIORITIES = [
@@ -21,13 +22,22 @@ const PRIORITIES = [
   { label: "Highest", value: 2 },
 ];
 
-const VIDEO_PRESETS = [
+const NVENC_VIDEO_PRESETS = [
   { label: "Max quality — p7 / CQ 20", preset: "p7", cq: 20 },
   { label: "Quality first — p6 / CQ 21", preset: "p6", cq: 21 },
   { label: "Balanced — p5 / CQ 23", preset: "p5", cq: 23 },
   { label: "Space saver — p4 / CQ 25", preset: "p4", cq: 25 },
   { label: "Max compression — p3 / CQ 27", preset: "p3", cq: 27 },
   { label: "Potato mode 🥔 — p1 / CQ 30", preset: "p1", cq: 30 },
+];
+
+const LIBX265_VIDEO_PRESETS = [
+  { label: "Max quality — veryslow / CRF 20", preset: "veryslow", cq: 20 },
+  { label: "Quality first — slower / CRF 21", preset: "slower", cq: 21 },
+  { label: "Balanced — medium / CRF 23", preset: "medium", cq: 23 },
+  { label: "Space saver — fast / CRF 25", preset: "fast", cq: 25 },
+  { label: "Max compression — veryfast / CRF 27", preset: "veryfast", cq: 27 },
+  { label: "Potato mode 🥔 — ultrafast / CRF 30", preset: "ultrafast", cq: 30 },
 ];
 
 const AUDIO_PRESETS = [
@@ -88,9 +98,11 @@ export default function QueueControlPanel({
   onRemove,
   onSelectAll,
   onDeselectAll,
+  defaultEncoder = "nvenc",
 }: QueueControlPanelProps) {
   const [videoValue, setVideoValue] = useState("");
   const [audioValue, setAudioValue] = useState("");
+  const VIDEO_PRESETS = defaultEncoder === "libx265" ? LIBX265_VIDEO_PRESETS : NVENC_VIDEO_PRESETS;
 
   return (
     <div

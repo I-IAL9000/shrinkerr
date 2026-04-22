@@ -7,8 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] — 2026-04-22
+
 ### Changed
+- Default encoder is now auto-picked from detected hardware on first launch — CPU-only boxes land on libx265 instead of NVENC.
+- Always-keep audio/subtitle languages and NZBGet/SABnzbd tags & categories no longer come pre-populated.
 - Settings → Updates card now uses the logomark instead of the shrunk full logo.
+- Scanner empty state no longer shows an endless "Loading files..." spinner on fresh installs.
+- Setup wizard: larger logomark, reworded intro, square icon tiles, and Plex step broadened to "Add connections" (TMDB / Plex / Jellyfin / Sonarr / Radarr) deep-linking to Settings → Connections.
+- Queue page's video-preset dropdown now follows the selected default encoder (libx265 preset / CRF vs NVENC preset / CQ).
+
+### Fixed
+- Dashboard no longer hangs on the loading spinner on fresh installs, so the setup wizard renders as intended.
+- Loose files directly in a media root now each get their own poster card and are individually selectable, instead of being collapsed under the root folder.
+- Estimate modal's "Auto" encoder now respects the saved default encoder — previously it always routed CPU/libx265 installs through the NVENC UI.
+- libx265 preset override from the estimate modal is now actually applied to queued jobs (the field was being dropped).
 
 ## [0.3.8] — 2026-04-22
 
