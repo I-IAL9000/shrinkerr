@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _Nothing yet. Bullets accumulate here as changes land, then get promoted
 to a versioned release heading when we cut the next tag._
 
+## [0.3.7] — 2026-04-22
+
+### Changed
+- **README hero is now an animated WebP instead of a WebM video.** GitHub's README HTML sanitizer silently strips the `autoplay` attribute from `<video>` tags in some cases, leaving the hero showing a manual play button. Animated WebP is served as an image so it autoplays by nature of the format (like an animated GIF, but with modern compression — the replacement is 1.4 MB for 5 screenshots at 1440 px wide, smaller than the WebM was). Committed to the repo at `.github/assets/hero.webp` and referenced via a relative path, so no external hosting dance is needed.
+
 ## [0.3.6] — 2026-04-22
 
 ### Fixed
@@ -195,6 +200,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.7]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.7
 [0.3.6]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.6
 [0.3.5]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.5
 [0.3.4]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.4
