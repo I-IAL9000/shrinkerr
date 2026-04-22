@@ -103,17 +103,3 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           # Don't auto-generate notes; our CHANGELOG.md is the source of truth.
           generate_release_notes: false
-          # Attach the README's hero video as a release asset. Release-
-          # asset URLs are the only way to get a publicly-accessible video
-          # URL on GitHub that works in `<video>` tags. The `user-
-          # attachments` URLs (the drag-drop-into-issue kind) are gated to
-          # the GitHub session that uploaded them if the hosting comment
-          # was never posted — so they render fine for the project owner
-          # but 404 for every unauthenticated visitor. `raw.githubusercontent.com`
-          # serves the file with `content-disposition: attachment` and a
-          # sandbox CSP, which browsers refuse to play inline. Release
-          # assets have no such restrictions. The README references this
-          # via the `/releases/latest/download/hero.webm` redirect so the
-          # URL doesn't need updating for each new tag.
-          files: |
-            .github/assets/hero.webm

@@ -19,7 +19,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 
 <div align="center">
 
-<video src="https://github.com/I-IAL9000/shrinkerr/releases/latest/download/hero.webm" width="960" autoplay loop muted playsinline></video>
+<video src="https://github.com/user-attachments/assets/deaeb0c4-16ed-4018-a915-b351b64fcdad" width="960" autoplay loop muted playsinline></video>
 
 </div>
 
