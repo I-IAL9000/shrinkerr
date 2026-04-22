@@ -860,34 +860,29 @@ async def convert_file(
     _vmaf_setting = live_settings.get("vmaf_analysis_enabled", "true")
     vmaf_enabled = _vmaf_setting if isinstance(_vmaf_setting, bool) else str(_vmaf_setting).lower() == "true"
     vmaf_original_path = input_path if vmaf_enabled else None
-    # VMAF sampling strategy:
-    #   - TV-episode-sized files (≤ 45 minutes, including commercials/ads):
-    #     compare the WHOLE file. No trim, no sampling, no PTS math — the
-    #     most reliable configuration possible. Eliminates the bimodal-score
-    #     failure mode where filter-level trim + setpts would land on
-    #     different frames in the reference vs encoded streams when the
-    #     source has VFR timestamps, non-zero start_pts, interlaced fields,
-    #     or keyframe positioning that doesn't match the encode.
-    #   - Feature-length content (> 45 minutes): sample a 90-second window
-    #     at 33% into the file using input-level `-ss` (accurate seek,
-    #     default in modern ffmpeg) applied identically to both inputs,
-    #     plus `-t` on the output. Both streams get seeked before the
-    #     filter graph sees them, so their PTS line up cleanly without a
-    #     trim filter.
-    VMAF_FULL_FILE_MAX_SECONDS = 45 * 60  # 2700s — covers TV + some long episodes
-    if duration > 0 and duration <= VMAF_FULL_FILE_MAX_SECONDS:
+    # VMAF sampling strategy: 30-second window at 33% into the file, seeked
+    # via input-level `-ss` on both inputs (accurate seek, default in modern
+    # ffmpeg) so both streams emerge from the decoder with matching PTS
+    # before the filter graph touches them. No filter-level `trim` — that's
+    # what used to cause the bimodal-score failure mode when source had
+    # VFR timestamps, non-zero start_pts, or interlaced field ordering.
+    #
+    # 0.3.3 briefly switched to whole-file compare for TV-sized content as
+    # belt-and-suspenders while we were chasing the real cause (which turned
+    # out to be fps + colour-range mismatch, not sampling). Now that those
+    # are normalised in the filter graph, 30-second sampling is reliable
+    # again and roughly 50× faster on a 25-minute episode.
+    if duration > 30:
+        vmaf_seek = max(0.0, duration * 0.33)
+        vmaf_duration = 30.0
+    elif duration > 0:
+        # Very short file — compare the whole thing from frame zero.
         vmaf_seek = 0.0
         vmaf_duration = duration
-        vmaf_full_file = True
-    elif duration > 0:
-        vmaf_seek = max(0.0, duration * 0.33)
-        vmaf_duration = min(90.0, max(30.0, duration - vmaf_seek))
-        vmaf_full_file = False
     else:
-        # Duration unknown (probe failed) — fall back to full-file compare.
+        # Duration unknown (probe failed) — sample the first 30s.
         vmaf_seek = 0.0
-        vmaf_duration = 0.0
-        vmaf_full_file = True
+        vmaf_duration = 30.0
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -1181,32 +1176,36 @@ async def convert_file(
                     f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
                     f"log_fmt=json:log_path={vmaf_json_path}:shortest=1"
                 )
-                vmaf_cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
-                if vmaf_full_file:
-                    # Whole-file compare: both inputs from frame zero. The
-                    # safest possible configuration — impossible to misalign.
-                    vmaf_cmd += ["-i", input_path, "-i", temp_path]
-                else:
-                    # Long-file sample: input-level `-ss` seeks both streams
-                    # identically BEFORE decoding, so they emerge from the
-                    # decoder with matching PTS. `-t` after the inputs caps
-                    # the duration on the output side.
-                    vmaf_cmd += [
-                        "-ss", f"{vmaf_seek:.3f}", "-i", input_path,
-                        "-ss", f"{vmaf_seek:.3f}", "-i", temp_path,
-                        "-t", f"{vmaf_duration:.3f}",
-                    ]
-                vmaf_cmd += ["-filter_complex", vmaf_filter, "-f", "null", "-"]
-                if vmaf_full_file:
-                    print(f"[CONVERT] Running VMAF analysis (full file, {vmaf_duration:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
-                else:
-                    print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
-                # Signal the UI that we're analyzing quality
+                # Command: input-level `-ss` seeks both streams identically
+                # BEFORE decoding (modern ffmpeg does accurate seek by default),
+                # `-t` caps the output duration. `-stats` forces per-second
+                # progress output even at `-loglevel error`, otherwise stats
+                # would be suppressed and the UI progress bar would freeze for
+                # the entire libvmaf run (the original "hangs at 100%" bug).
+                vmaf_cmd = [
+                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
+                    "-ss", f"{vmaf_seek:.3f}", "-i", input_path,
+                    "-ss", f"{vmaf_seek:.3f}", "-i", temp_path,
+                    "-t", f"{vmaf_duration:.3f}",
+                    "-filter_complex", vmaf_filter,
+                    "-f", "null", "-",
+                ]
+                print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
+                # Total frame count for the sampled window — used to map the
+                # frame=NN progress lines to 0–100%. Prefer the real source
+                # fps from the probe, fall back to 24 only if the probe
+                # failed. Previously hardcoded to 24fps, which underestimated
+                # total frames on 29.97/30fps content and made the progress
+                # bar peg at 99% long before the run actually finished.
+                vmaf_fps_for_progress = (src_info.get("fps") or dst_info.get("fps") or 24.0)
+                vmaf_total_frames = max(1, int(vmaf_duration * vmaf_fps_for_progress))
+                # Seed the UI step now so users see "VMAF analysis" label
+                # while ffmpeg is still warming up (decoders, filter graph
+                # initialisation), not a stale "converting" label from the
+                # previous phase. Progress starts at 0 — we were previously
+                # setting 100 here, which is where "stuck at 100%" came from.
                 if progress_callback:
-                    await progress_callback(progress=100, fps=0, eta_seconds=0, step="vmaf analysis")
-                # Estimate total frames for progress tracking
-                # Use ~24fps as a reasonable default for the analysed window
-                vmaf_total_frames = max(1, int(vmaf_duration * 24))
+                    await progress_callback(progress=0, fps=0, eta_seconds=None, step="VMAF analysis")
 
                 vmaf_proc = await asyncio.create_subprocess_exec(
                     *vmaf_cmd,
@@ -1214,9 +1213,16 @@ async def convert_file(
                     stderr=asyncio.subprocess.PIPE,
                 )
 
-                # Parse stderr for frame progress
+                # Parse stderr for frame progress. The `-stats` flag makes
+                # ffmpeg emit a `frame=N fps=X q=-0.0 size=... time=... speed=Y`
+                # one-liner roughly every second even at `-loglevel error`. We
+                # extract frame count (for progress %), fps (for UI
+                # readout), and speed (to estimate ETA). Previously this
+                # loop existed but never fired because `-stats` wasn't set.
+                import re as _re
                 vmaf_buf = ""
                 vmaf_err_lines = []
+                _vmaf_start = time.monotonic()
                 while True:
                     chunk = await vmaf_proc.stderr.read(4096)
                     if not chunk:
@@ -1230,15 +1236,38 @@ async def convert_file(
                         else: pos = min(r_pos, n_pos)
                         line = vmaf_buf[:pos].strip()
                         vmaf_buf = vmaf_buf[pos + 1:]
-                        if line:
-                            vmaf_err_lines.append(line)
-                            # Parse "frame= 123" from ffmpeg progress
-                            import re as _re
-                            fm = _re.search(r'frame=\s*(\d+)', line)
-                            if fm and progress_callback:
-                                frame = int(fm.group(1))
-                                pct = min(99, frame / vmaf_total_frames * 100)
-                                await progress_callback(progress=pct, fps=0, eta_seconds=0, step="vmaf analysis")
+                        if not line:
+                            continue
+                        vmaf_err_lines.append(line)
+                        # Frame count line → progress + ETA. Skip lines
+                        # that don't contain `frame=` (error messages,
+                        # banner, etc.).
+                        fm = _re.search(r'frame=\s*(\d+)', line)
+                        if not fm or not progress_callback:
+                            continue
+                        frame = int(fm.group(1))
+                        pct = min(99.0, frame / vmaf_total_frames * 100)
+                        # fps field from ffmpeg's progress line (the rate
+                        # at which libvmaf is analysing, not the file's
+                        # native fps).
+                        fps_match = _re.search(r'fps=\s*([\d.]+)', line)
+                        analyse_fps = float(fps_match.group(1)) if fps_match else 0.0
+                        # ETA: use wall-clock rate rather than ffmpeg's
+                        # `speed=` field because speed is relative to
+                        # playback, which is meaningless for a non-realtime
+                        # analysis pass. elapsed/progress * (1 - progress)
+                        # gives a smooth remaining estimate that converges
+                        # as the run proceeds.
+                        eta = None
+                        elapsed = time.monotonic() - _vmaf_start
+                        if pct > 1.0:
+                            eta = int(elapsed / (pct / 100) * (1 - pct / 100))
+                        await progress_callback(
+                            progress=pct,
+                            fps=analyse_fps,
+                            eta_seconds=eta,
+                            step="VMAF analysis",
+                        )
 
                 # Timeout scales with analysed window. libvmaf on a modern
                 # CPU at n_threads=4 does ~80-120 fps on 1080p, so even a
@@ -1296,20 +1325,33 @@ async def convert_file(
                         # doesn't slow down the 99% case.
                         if vmaf_score < 80:
                             try:
-                                # Use a short 30-second sample for the cross-
-                                # check (full-file would double VMAF runtime).
-                                xcheck_seek = vmaf_seek if not vmaf_full_file else max(0, (duration or 0) * 0.33)
-                                xcheck_dur = min(30.0, vmaf_duration if not vmaf_full_file else (duration or 30))
+                                # Cross-check sample: reuse the same window
+                                # libvmaf just analysed, or fall back to a
+                                # 30s slice at 33% when vmaf_duration was
+                                # something unusual.
+                                xcheck_seek = vmaf_seek
+                                xcheck_dur = min(30.0, vmaf_duration) if vmaf_duration > 0 else 30.0
                                 xcheck_filter = (
                                     f"[0:v]{ref_pipeline}[ref_x];"
                                     f"[1:v]{dist_pipeline}[dist_x];"
                                     f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
                                     f"[dx][rx]ssim;[dx][rx]psnr"
                                 )
+                                # Dedicated progress phase for the cross-check
+                                # — different step label so the UI shows this
+                                # is a separate stage, and progress resets
+                                # from 0 rather than jumping back from 99%.
+                                if progress_callback:
+                                    await progress_callback(
+                                        progress=0, fps=0, eta_seconds=None,
+                                        step="Quality cross-check",
+                                    )
+                                xc_total_frames = max(1, int(xcheck_dur * vmaf_fps_for_progress))
                                 # ffmpeg's `ssim` and `psnr` filters print
-                                # results to stderr on exit, no JSON output.
+                                # results to stderr on exit. `-stats` gives
+                                # us frame progress lines alongside.
                                 xcheck_cmd = [
-                                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+                                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "info", "-stats",
                                     "-ss", f"{xcheck_seek:.3f}", "-i", input_path,
                                     "-ss", f"{xcheck_seek:.3f}", "-i", temp_path,
                                     "-t", f"{xcheck_dur:.3f}",
@@ -1321,10 +1363,49 @@ async def convert_file(
                                     stdout=asyncio.subprocess.DEVNULL,
                                     stderr=asyncio.subprocess.PIPE,
                                 )
-                                _, xc_stderr = await asyncio.wait_for(
-                                    xc_proc.communicate(), timeout=120
-                                )
-                                xc_text = xc_stderr.decode(errors="replace") if xc_stderr else ""
+                                # Stream stderr so we can emit progress as
+                                # the cross-check runs, rather than blocking
+                                # in `communicate()` for up to 2 minutes with
+                                # a dead progress bar.
+                                xc_buf = ""
+                                xc_stderr_chunks: list[str] = []
+                                _xc_start = time.monotonic()
+                                while True:
+                                    xc_chunk = await xc_proc.stderr.read(4096)
+                                    if not xc_chunk:
+                                        break
+                                    xc_dec = xc_chunk.decode(errors="replace")
+                                    xc_stderr_chunks.append(xc_dec)
+                                    xc_buf += xc_dec
+                                    while "\r" in xc_buf or "\n" in xc_buf:
+                                        r_pos = xc_buf.find("\r")
+                                        n_pos = xc_buf.find("\n")
+                                        if r_pos == -1: pos = n_pos
+                                        elif n_pos == -1: pos = r_pos
+                                        else: pos = min(r_pos, n_pos)
+                                        xc_line = xc_buf[:pos].strip()
+                                        xc_buf = xc_buf[pos + 1:]
+                                        if not xc_line or not progress_callback:
+                                            continue
+                                        fm2 = _re.search(r'frame=\s*(\d+)', xc_line)
+                                        if not fm2:
+                                            continue
+                                        xc_frame = int(fm2.group(1))
+                                        xc_pct = min(99.0, xc_frame / xc_total_frames * 100)
+                                        fps_m2 = _re.search(r'fps=\s*([\d.]+)', xc_line)
+                                        xc_analyse_fps = float(fps_m2.group(1)) if fps_m2 else 0.0
+                                        xc_elapsed = time.monotonic() - _xc_start
+                                        xc_eta = None
+                                        if xc_pct > 1.0:
+                                            xc_eta = int(xc_elapsed / (xc_pct / 100) * (1 - xc_pct / 100))
+                                        await progress_callback(
+                                            progress=xc_pct,
+                                            fps=xc_analyse_fps,
+                                            eta_seconds=xc_eta,
+                                            step="Quality cross-check",
+                                        )
+                                await asyncio.wait_for(xc_proc.wait(), timeout=120)
+                                xc_text = "".join(xc_stderr_chunks)
                                 import re as _xre
                                 ssim_m = _xre.search(r"SSIM[^A]*All:\s*([\d.]+)", xc_text)
                                 psnr_m = _xre.search(r"PSNR[^a]*average:\s*([\d.]+)", xc_text)

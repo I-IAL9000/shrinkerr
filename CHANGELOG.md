@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _Nothing yet. Bullets accumulate here as changes land, then get promoted
 to a versioned release heading when we cut the next tag._
 
+## [0.3.4] — 2026-04-22
+
+Quality-of-life follow-up to 0.3.3. Now that VMAF is producing correct
+scores, there's no need for the conservative whole-file compare — this
+release reverts to the fast 30-second sample and fixes the progress-
+bar hang that was pinning the UI at 100% for several minutes during
+analysis.
+
+### Changed
+- **VMAF analysis is ~50× faster on TV episodes.** Reverted the 0.3.3 whole-file compare (which was belt-and-suspenders insurance while we hunted the real cause of the wrong scores) back to a 30-second sample at 33% into the file, applied identically to both inputs via input-level `-ss` (accurate seek, no filter-level `trim`). The fps + colour-range normalisation from 0.3.3 is what actually fixed the scores, and it works just as well on a 30-second window as on the whole file. A 25-minute Croods episode now finishes VMAF in ~6 seconds instead of ~6 minutes.
+
+### Fixed
+- **VMAF progress bar no longer hangs at 100%.** Two bugs combined to freeze the progress indicator for the entire VMAF run:
+  1. The code was seeding `progress=100` at the start of the VMAF phase as a "we're analysing" signal, then trying to reduce it as frames came in — except
+  2. `-loglevel error` was suppressing ffmpeg's `frame=N fps=X …` progress output, so the frame-count parser never ran and progress stayed stuck at the seed value.
+  Now seeds `progress=0`, adds `-stats` to force per-second progress output regardless of loglevel, and computes percentage against the real source fps from the probe (previously hardcoded to 24fps, which under-counted frames on 29.97/30fps content). The cross-check pass (when VMAF < 80) now also has its own progress phase labelled "Quality cross-check" instead of continuing to show a stale "VMAF analysis" at 99%.
+- **ETA during VMAF.** The analysis fps and elapsed time are now shown via the progress callback, so the UI can surface something like "VMAF analysis — 90fps — 12s remaining" instead of a bare percentage.
+
 ## [0.3.3] — 2026-04-22
 
 Follow-up release to chase down the last real-world VMAF failure mode:
@@ -166,6 +184,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.4]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.4
 [0.3.3]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.3
 [0.3.2]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.1
