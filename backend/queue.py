@@ -1753,10 +1753,20 @@ class QueueWorker:
 
         await self.queue.update_status(job_id, "completed")
 
-        # Log the completed conversion to file_events
+        # Log the completed conversion to file_events. Three outcomes:
+        #   1) Real conversion that saved space → "Converted: saved X GB"
+        #   2) VMAF-rejected — encode completed but scored below threshold,
+        #      original kept in place → "Kept original (VMAF below threshold)"
+        #   3) skipped_larger — encode completed but was larger than source,
+        #      original kept in place → "Kept original (encode was larger)"
+        #   4) Fallback: conversion with zero savings → "Converted (no savings)"
         try:
             from backend.file_events import log_event, EVENT_COMPLETED
-            if space_saved > 0:
+            if result.get("vmaf_rejected"):
+                summary = "Kept original — VMAF below threshold"
+            elif result.get("skipped_larger"):
+                summary = "Kept original — encode was larger than source"
+            elif space_saved > 0:
                 gb = space_saved / (1024 ** 3)
                 pct = (space_saved / file_size * 100) if file_size else 0
                 summary = f"Converted: saved {gb:.2f} GB ({pct:.0f}%)"
@@ -1773,6 +1783,8 @@ class QueueWorker:
                     "original_size": file_size,
                     "encoder": encoder,
                     "vmaf_score": locals().get("vmaf_score"),
+                    "vmaf_rejected": bool(result.get("vmaf_rejected")),
+                    "skipped_larger": bool(result.get("skipped_larger")),
                     "original_path": file_path if current_file_path != file_path else None,
                 },
             )

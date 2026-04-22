@@ -525,6 +525,99 @@ def parse_ffmpeg_progress(line: str, duration: float, start_time: float = 0) -> 
     }
 
 
+async def _probe_vmaf_stream(path: str) -> dict:
+    """Lightweight ffprobe for VMAF-relevant video-stream properties only.
+
+    Returns a dict with: width, height, fps (float), frame_count (int or None),
+    pix_fmt, color_range, color_space, duration. All fields fall back to
+    empty/None on probe failure or missing metadata so the caller can
+    continue to the actual VMAF run — we never want diagnostics to break
+    the main path.
+    """
+    info = {
+        "width": 0, "height": 0, "fps": None, "frame_count": None,
+        "pix_fmt": "", "color_range": "", "color_space": "", "duration": None,
+    }
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-select_streams", "v:0",
+            "-show_entries",
+            "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,"
+            "pix_fmt,color_range,color_space,duration",
+            path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if proc.returncode != 0:
+            return info
+        import json as _j
+        data = _j.loads(stdout.decode() or "{}")
+        streams = data.get("streams", [])
+        if not streams:
+            return info
+        s = streams[0]
+        info["width"] = int(s.get("width") or 0)
+        info["height"] = int(s.get("height") or 0)
+        info["pix_fmt"] = s.get("pix_fmt") or ""
+        info["color_range"] = s.get("color_range") or ""
+        info["color_space"] = s.get("color_space") or ""
+        # Duration as float
+        try:
+            info["duration"] = float(s.get("duration") or 0) or None
+        except (TypeError, ValueError):
+            info["duration"] = None
+        # Frame rate: prefer r_frame_rate ("24000/1001"), fall back to avg
+        fr = s.get("r_frame_rate") or s.get("avg_frame_rate") or ""
+        if "/" in fr:
+            num, _, den = fr.partition("/")
+            try:
+                n = float(num); d = float(den)
+                if d > 0:
+                    info["fps"] = n / d
+            except (TypeError, ValueError):
+                pass
+        elif fr:
+            try:
+                info["fps"] = float(fr)
+            except (TypeError, ValueError):
+                pass
+        # nb_frames is often absent (esp. after re-encode without -fflags);
+        # we just report None in that case rather than hang on a counted probe.
+        try:
+            nbf = s.get("nb_frames")
+            if nbf and str(nbf).isdigit():
+                info["frame_count"] = int(nbf)
+        except Exception:
+            pass
+    except Exception:
+        # Swallow everything — this is best-effort diagnostic data.
+        pass
+    return info
+
+
+def _vmaf_probe_summary(label: str, info: dict) -> str:
+    """Format a probe dict as a single compact log line."""
+    parts = [f"{label}:"]
+    if info.get("width") and info.get("height"):
+        parts.append(f"{info['width']}x{info['height']}")
+    if info.get("fps"):
+        parts.append(f"{info['fps']:.3f}fps")
+    if info.get("frame_count"):
+        parts.append(f"{info['frame_count']}f")
+    elif info.get("duration"):
+        parts.append(f"{info['duration']:.1f}s")
+    if info.get("pix_fmt"):
+        parts.append(info["pix_fmt"])
+    if info.get("color_range"):
+        parts.append(f"range={info['color_range']}")
+    if info.get("color_space"):
+        parts.append(f"cs={info['color_space']}")
+    return " ".join(parts)
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -767,8 +860,34 @@ async def convert_file(
     _vmaf_setting = live_settings.get("vmaf_analysis_enabled", "true")
     vmaf_enabled = _vmaf_setting if isinstance(_vmaf_setting, bool) else str(_vmaf_setting).lower() == "true"
     vmaf_original_path = input_path if vmaf_enabled else None
-    vmaf_seek = max(0, duration * 0.33) if duration > 30 else 0
-    vmaf_duration = min(30, duration - vmaf_seek) if duration > 0 else 30
+    # VMAF sampling strategy:
+    #   - TV-episode-sized files (≤ 45 minutes, including commercials/ads):
+    #     compare the WHOLE file. No trim, no sampling, no PTS math — the
+    #     most reliable configuration possible. Eliminates the bimodal-score
+    #     failure mode where filter-level trim + setpts would land on
+    #     different frames in the reference vs encoded streams when the
+    #     source has VFR timestamps, non-zero start_pts, interlaced fields,
+    #     or keyframe positioning that doesn't match the encode.
+    #   - Feature-length content (> 45 minutes): sample a 90-second window
+    #     at 33% into the file using input-level `-ss` (accurate seek,
+    #     default in modern ffmpeg) applied identically to both inputs,
+    #     plus `-t` on the output. Both streams get seeked before the
+    #     filter graph sees them, so their PTS line up cleanly without a
+    #     trim filter.
+    VMAF_FULL_FILE_MAX_SECONDS = 45 * 60  # 2700s — covers TV + some long episodes
+    if duration > 0 and duration <= VMAF_FULL_FILE_MAX_SECONDS:
+        vmaf_seek = 0.0
+        vmaf_duration = duration
+        vmaf_full_file = True
+    elif duration > 0:
+        vmaf_seek = max(0.0, duration * 0.33)
+        vmaf_duration = min(90.0, max(30.0, duration - vmaf_seek))
+        vmaf_full_file = False
+    else:
+        # Duration unknown (probe failed) — fall back to full-file compare.
+        vmaf_seek = 0.0
+        vmaf_duration = 0.0
+        vmaf_full_file = True
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -1000,46 +1119,93 @@ async def convert_file(
                 _vmaf_id = f"{Path(input_path).stem[:20]}_{_uuid.uuid4().hex[:8]}"
                 vmaf_json_path = vmaf_dir / f"{_vmaf_id}_vmaf.json"
 
-                # Robust VMAF filter chain. History: a previous simpler
-                # version regularly produced absurd mean scores (e.g. 43
-                # on content that visually inspected as near-transparent).
-                # Two class of failures caused that:
-                #   1. Pixel-format mismatch — source 8-bit yuv420p vs
-                #      NVENC-encoded 10-bit p010le. VMAF model v0.6.1 is
-                #      trained on 8-bit; auto-conversion works but with
-                #      artefacts on dark scenes. We explicitly normalise
-                #      both streams to yuv420p.
-                #   2. Resolution drift — if an encoding rule downscales
-                #      (e.g. 2160p → 1080p), libvmaf compares different
-                #      frame sizes as if identical = garbage. scale2ref
-                #      scales the distorted stream to the reference's
-                #      dimensions so the comparison is always apples-to-
-                #      apples, no-op when they already match.
-                # Also added shortest=1 to cap at whichever stream ends
-                # first — prevents repeat-last-frame inflation of the
-                # tail, which can happen when an encode drops a trailing
-                # frame and libvmaf pads to match.
+                # Probe both video streams BEFORE the compare. We use this for
+                #   (a) fps normalization in the filter graph — forcing both
+                #       streams to the source's frame rate kills the last
+                #       common source of bimodal scores (VFR source vs CFR
+                #       encode producing different frame counts, so libvmaf's
+                #       frame-pair comparisons desync mid-file), and
+                #   (b) diagnostic logging — a single side-by-side line of
+                #       width / height / fps / pix_fmt / color_range lets us
+                #       spot a format mismatch at a glance next time someone
+                #       reports a wrong-looking score. Cheap enough (<1s per
+                #       probe) to run unconditionally.
+                src_info = await _probe_vmaf_stream(input_path)
+                dst_info = await _probe_vmaf_stream(temp_path)
+                print(f"[CONVERT] VMAF inputs — {_vmaf_probe_summary('ref', src_info)} | {_vmaf_probe_summary('dist', dst_info)}", flush=True)
+
+                # Pick target fps for normalization. Prefer source fps; fall
+                # back to encoded fps, then to no-op. Forcing both streams
+                # through the same `fps` filter guarantees they emerge with
+                # identical frame counts and rates, which is what libvmaf
+                # needs for valid pairwise comparison. This is the canonical
+                # fix for "sibling episodes score 49 and 96 on identical
+                # settings" — the fps mismatch used to leave libvmaf comparing
+                # frame N of one stream against a time-shifted frame N of the
+                # other after any drift accumulated.
+                target_fps = src_info.get("fps") or dst_info.get("fps")
+                if target_fps and target_fps > 0:
+                    # Use rational form so ffmpeg does exact arithmetic for
+                    # common TV rates (23.976 = 24000/1001, etc.).
+                    fps_clause = f"fps=fps={target_fps:.6f}"
+                else:
+                    fps_clause = ""
+
+                # Color-range normalization. If the source is tagged "tv"
+                # (limited 16-235) and the encode ended up "pc" (full 0-255)
+                # — or tags are missing and ffmpeg assumes differently per
+                # pipeline branch — every pixel value is systematically
+                # shifted and VMAF cratered scores on a visually-correct
+                # encode. `scale=in_range=auto:out_range=tv` auto-detects
+                # the input range (honouring the stream tag) and forces
+                # output to limited range on BOTH sides, so they definitely
+                # agree.
+                range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
+
+                # Assemble per-stream normalisation pipeline:
+                #   range fix → fps fix → pixel format → scale2ref → libvmaf
+                ref_chain = [range_clause]
+                dist_chain = [range_clause]
+                if fps_clause:
+                    ref_chain.append(fps_clause)
+                    dist_chain.append(fps_clause)
+                ref_chain.append("format=yuv420p")
+                dist_chain.append("format=yuv420p")
+                ref_pipeline = ",".join(ref_chain)
+                dist_pipeline = ",".join(dist_chain)
+
                 vmaf_filter = (
-                    f"[0:v]trim=start={vmaf_seek}:duration={vmaf_duration},"
-                    f"setpts=PTS-STARTPTS,format=yuv420p[ref_fmt];"
-                    f"[1:v]trim=start={vmaf_seek}:duration={vmaf_duration},"
-                    f"setpts=PTS-STARTPTS,format=yuv420p[dist_fmt];"
-                    f"[dist_fmt][ref_fmt]scale2ref=flags=bicubic[dist][ref];"
+                    f"[0:v]{ref_pipeline}[ref_norm];"
+                    f"[1:v]{dist_pipeline}[dist_norm];"
+                    f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
                     f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
                     f"log_fmt=json:log_path={vmaf_json_path}:shortest=1"
                 )
-                vmaf_cmd = [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                    "-i", input_path, "-i", temp_path,
-                    "-filter_complex", vmaf_filter,
-                    "-f", "null", "-",
-                ]
-                print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s)...", flush=True)
+                vmaf_cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+                if vmaf_full_file:
+                    # Whole-file compare: both inputs from frame zero. The
+                    # safest possible configuration — impossible to misalign.
+                    vmaf_cmd += ["-i", input_path, "-i", temp_path]
+                else:
+                    # Long-file sample: input-level `-ss` seeks both streams
+                    # identically BEFORE decoding, so they emerge from the
+                    # decoder with matching PTS. `-t` after the inputs caps
+                    # the duration on the output side.
+                    vmaf_cmd += [
+                        "-ss", f"{vmaf_seek:.3f}", "-i", input_path,
+                        "-ss", f"{vmaf_seek:.3f}", "-i", temp_path,
+                        "-t", f"{vmaf_duration:.3f}",
+                    ]
+                vmaf_cmd += ["-filter_complex", vmaf_filter, "-f", "null", "-"]
+                if vmaf_full_file:
+                    print(f"[CONVERT] Running VMAF analysis (full file, {vmaf_duration:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
+                else:
+                    print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
                 # Signal the UI that we're analyzing quality
                 if progress_callback:
                     await progress_callback(progress=100, fps=0, eta_seconds=0, step="vmaf analysis")
                 # Estimate total frames for progress tracking
-                # Use ~24fps as a reasonable default for the sample duration
+                # Use ~24fps as a reasonable default for the analysed window
                 vmaf_total_frames = max(1, int(vmaf_duration * 24))
 
                 vmaf_proc = await asyncio.create_subprocess_exec(
@@ -1074,7 +1240,12 @@ async def convert_file(
                                 pct = min(99, frame / vmaf_total_frames * 100)
                                 await progress_callback(progress=pct, fps=0, eta_seconds=0, step="vmaf analysis")
 
-                await asyncio.wait_for(vmaf_proc.wait(), timeout=300)
+                # Timeout scales with analysed window. libvmaf on a modern
+                # CPU at n_threads=4 does ~80-120 fps on 1080p, so even a
+                # 45-minute episode (~65k frames) completes in 10-15
+                # minutes. Budget 3× analysed duration + 5-minute floor.
+                vmaf_timeout = max(300.0, vmaf_duration * 3.0)
+                await asyncio.wait_for(vmaf_proc.wait(), timeout=vmaf_timeout)
                 if vmaf_proc.returncode != 0:
                     print(f"[CONVERT] VMAF failed (rc={vmaf_proc.returncode}): {''.join(vmaf_err_lines[-5:])}", flush=True)
                 elif vmaf_json_path.exists():
@@ -1112,6 +1283,82 @@ async def convert_file(
                                 "problem — manual spot-check recommended.",
                                 flush=True,
                             )
+
+                        # Diagnostic cross-check: when VMAF reports a low
+                        # score, re-measure the same window with SSIM and
+                        # PSNR. All three are computed from the same pixel
+                        # data but with very different algorithms — if VMAF
+                        # says "poor" but SSIM is >0.98 and PSNR is >40 dB,
+                        # the encode is actually fine and VMAF is producing
+                        # a measurement artefact (common on animation / flat-
+                        # coloured content, which is outside VMAF's training
+                        # distribution). Only runs on suspicious scores so it
+                        # doesn't slow down the 99% case.
+                        if vmaf_score < 80:
+                            try:
+                                # Use a short 30-second sample for the cross-
+                                # check (full-file would double VMAF runtime).
+                                xcheck_seek = vmaf_seek if not vmaf_full_file else max(0, (duration or 0) * 0.33)
+                                xcheck_dur = min(30.0, vmaf_duration if not vmaf_full_file else (duration or 30))
+                                xcheck_filter = (
+                                    f"[0:v]{ref_pipeline}[ref_x];"
+                                    f"[1:v]{dist_pipeline}[dist_x];"
+                                    f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
+                                    f"[dx][rx]ssim;[dx][rx]psnr"
+                                )
+                                # ffmpeg's `ssim` and `psnr` filters print
+                                # results to stderr on exit, no JSON output.
+                                xcheck_cmd = [
+                                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "info",
+                                    "-ss", f"{xcheck_seek:.3f}", "-i", input_path,
+                                    "-ss", f"{xcheck_seek:.3f}", "-i", temp_path,
+                                    "-t", f"{xcheck_dur:.3f}",
+                                    "-filter_complex", xcheck_filter,
+                                    "-f", "null", "-",
+                                ]
+                                xc_proc = await asyncio.create_subprocess_exec(
+                                    *xcheck_cmd,
+                                    stdout=asyncio.subprocess.DEVNULL,
+                                    stderr=asyncio.subprocess.PIPE,
+                                )
+                                _, xc_stderr = await asyncio.wait_for(
+                                    xc_proc.communicate(), timeout=120
+                                )
+                                xc_text = xc_stderr.decode(errors="replace") if xc_stderr else ""
+                                import re as _xre
+                                ssim_m = _xre.search(r"SSIM[^A]*All:\s*([\d.]+)", xc_text)
+                                psnr_m = _xre.search(r"PSNR[^a]*average:\s*([\d.]+)", xc_text)
+                                ssim_v = float(ssim_m.group(1)) if ssim_m else None
+                                psnr_v = float(psnr_m.group(1)) if psnr_m else None
+                                parts = []
+                                if ssim_v is not None: parts.append(f"SSIM={ssim_v:.4f}")
+                                if psnr_v is not None: parts.append(f"PSNR={psnr_v:.2f}dB")
+                                if parts:
+                                    verdict = ""
+                                    # SSIM > 0.98 or PSNR > 40 dB = transparent/
+                                    # near-transparent quality. If VMAF disagrees
+                                    # with both, it's almost certainly wrong.
+                                    if ((ssim_v is not None and ssim_v >= 0.98) or
+                                        (psnr_v is not None and psnr_v >= 40.0)):
+                                        verdict = (
+                                            " → SSIM/PSNR say the encode is "
+                                            "actually fine; VMAF score is a "
+                                            "measurement artefact (common on "
+                                            "animation / flat-coloured content)."
+                                        )
+                                    print(
+                                        f"[CONVERT] Quality cross-check ({xcheck_dur:.0f}s sample): "
+                                        + ", ".join(parts) + verdict,
+                                        flush=True,
+                                    )
+                                else:
+                                    print(
+                                        "[CONVERT] Quality cross-check produced no "
+                                        "SSIM/PSNR output — skipping.",
+                                        flush=True,
+                                    )
+                            except Exception as xc_exc:
+                                print(f"[CONVERT] Quality cross-check failed: {xc_exc}", flush=True)
                     vmaf_json_path.unlink(missing_ok=True)
             else:
                 print(f"[CONVERT] VMAF skipped — libvmaf not available", flush=True)

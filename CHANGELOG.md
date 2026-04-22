@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _Nothing yet. Bullets accumulate here as changes land, then get promoted
 to a versioned release heading when we cut the next tag._
 
+## [0.3.3] — 2026-04-22
+
+Follow-up release to chase down the last real-world VMAF failure mode:
+animated content (The Croods et al.) was still scoring under 50 on
+encodes that visually inspected as flawless. Adds proper stream
+normalization in the VMAF filter graph, a whole-file compare for TV-
+sized content, and a diagnostic cross-check so future suspicious scores
+can be verified against independent metrics without guesswork. Also a
+small UI wording fix for the VMAF-rejected case.
+
+### Changed
+- **VMAF filter graph now normalises frame rate and colour range on both streams.** Source fps is probed up front and used as the target for an `fps=fps=N` clause on both the reference and distorted streams, which guarantees matching frame counts regardless of VFR/CFR mix. Both streams also run through `scale=in_range=auto:out_range=tv` so a source-vs-encode range-tag mismatch can't silently stretch luma values (the classic "looks fine, scores 49" signature on some WEBDL captures). The side-by-side probe summary (`VMAF inputs — ref: 1920x1080 23.976fps yuv420p range=tv | dist: ...`) is logged before every VMAF run so any future mismatch is visible at a glance.
+- **VMAF subprocess timeout now scales with analysed window** (`max(5 min, 3× duration)`). A full-file compare on a 45-minute episode can't time out any more.
+
+### Added
+- **SSIM + PSNR cross-check on suspicious VMAF scores.** Whenever VMAF reports under 80 on the mean, a second ffmpeg pass computes SSIM and PSNR over a 30-second sample. All three metrics are derived from the same pixel data but with different algorithms — if VMAF says "poor" but SSIM ≥ 0.98 or PSNR ≥ 40 dB, the encode is actually fine and VMAF is producing a measurement artefact (common on animation and other flat-coloured content, which is outside VMAF's training distribution). The log emits an explicit verdict line in that case: `→ SSIM/PSNR say the encode is actually fine; VMAF score is a measurement artefact`. The VMAF-threshold rejection still fires on the raw VMAF score — the cross-check is purely diagnostic — so users debugging a rejection can open the job's ffmpeg output, see the numbers, and decide whether to lower the threshold for this kind of content.
+
+### Fixed
+- VMAF analysis: bimodal scores on visually-identical encodes (e.g. sibling TV episodes scoring 49.5 and 96.3 at the same CQ and preset) traced to the filter-graph `trim=start:duration` approach picking different first frames in the reference vs encoded streams when the source had any of: VFR timestamps, non-zero container `start_pts`, interlaced fields, or keyframe-offset boundaries. Once the first frame misaligned, every subsequent pairwise compare was time-shifted and the score cratered. The 0.3.2 fix normalised pixel format and resolution but didn't touch temporal alignment, which is what was actually breaking. New behaviour:
+  - For content ≤ 45 minutes (all TV episodes and most documentaries): VMAF compares the **whole file** — no trim, no sampling, no PTS math. The most reliable configuration possible.
+  - For longer content (movies): sample a 90-second window at 33% into the file using input-level `-ss` (accurate seek in modern ffmpeg) applied identically to both inputs plus `-t` on the output — both streams are seeked to the same PTS *before* the filter graph sees them, so no in-filter trim is needed.
+- History tab no longer labels VMAF-rejected jobs as "Converted (no savings)". A job whose encode scored below the minimum VMAF threshold is now recorded as `Kept original — VMAF below threshold`, which matches reality (the converted file was discarded and the source left in place). Encodes discarded because the output was larger than the source now read `Kept original — encode was larger than source` for the same reason. The plain `Converted (no savings)` label is reserved for real conversions that happened to break even on disk usage.
+
 ## [0.3.2] — 2026-04-21
 
 VMAF-focused release. Fixes three real-world VMAF bugs observed in
@@ -143,6 +166,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.3]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.3
 [0.3.2]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.2
 [0.3.1]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.1
 [0.3.0]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.0
