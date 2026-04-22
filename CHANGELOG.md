@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 _Nothing yet. Bullets accumulate here as changes land, then get promoted
 to a versioned release heading when we cut the next tag._
 
+## [0.3.5] — 2026-04-22
+
+### Fixed
+- **README hero video now renders for everyone**, not just the repo owner. The previous `user-attachments` URL was uploaded via a draft issue-comment that was never actually posted, so the asset stayed gated to the uploader's GitHub session — `curl` from an unauthenticated client returned 404, and the `<video>` element showed a blank 0:00 player to every logged-out visitor. The README now points at `https://github.com/I-IAL9000/shrinkerr/releases/latest/download/hero.webm`, which is a public release-asset URL that always resolves to the most recent release. The release workflow automatically attaches `hero.webm` to every tagged release going forward, so the `/latest/` redirect keeps working without manual intervention.
+
 ## [0.3.4] — 2026-04-22
 
 Quality-of-life follow-up to 0.3.3. Now that VMAF is producing correct
@@ -184,6 +189,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.5]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.5
 [0.3.4]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.4
 [0.3.3]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.3
 [0.3.2]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.2
