@@ -756,6 +756,50 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       CRF 18-20 is typically transparent to the original.
                     </div>
                   </div>
+
+                  {/* GPU fallback for libx265 jobs picked up by NVENC workers */}
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
+                      GPU fallback
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                      When a libx265 job is picked up by a GPU-capable worker, use these NVENC settings instead of the hardcoded defaults. Leave blank for automatic.
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={labelStyle}>Preset</div>
+                        <select
+                          value={encoding.libx265_gpu_fallback_preset || ""}
+                          onChange={(e) => setEncoding({ ...encoding, libx265_gpu_fallback_preset: e.target.value })}
+                          style={{ ...inputStyle, width: "100%" }}
+                        >
+                          <option value="">Auto</option>
+                          <option value="p1">P1 — Fastest</option>
+                          <option value="p2">P2 — Very Fast</option>
+                          <option value="p3">P3 — Fast</option>
+                          <option value="p4">P4 — Medium</option>
+                          <option value="p5">P5 — Slow</option>
+                          <option value="p6">P6 — Very Slow</option>
+                          <option value="p7">P7 — Slowest</option>
+                        </select>
+                      </div>
+                      <div style={{ width: 100 }}>
+                        <div style={labelStyle}>CQ</div>
+                        <input
+                          type="number"
+                          min={15}
+                          max={30}
+                          placeholder="auto"
+                          value={encoding.libx265_gpu_fallback_cq ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEncoding({ ...encoding, libx265_gpu_fallback_cq: v === "" ? "" : parseInt(v) });
+                          }}
+                          style={{ ...inputStyle, width: "100%" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
 

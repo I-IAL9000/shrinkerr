@@ -217,7 +217,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', "
             "              'libx265_preset', 'libx265_crf', "
             "              'nvenc_preset', 'nvenc_cq', 'default_encoder', "
-            "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf')"
+            "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf', "
+            "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -254,14 +255,27 @@ async def request_job(req: RequestJobBody, request: Request):
     else:
         assigned["default_libx265_preset"] = None
         assigned["default_libx265_crf"] = None
-    # Server's NVENC defaults so a remote worker translating an NVENC job
-    # with NULL per-job settings uses the user's global choice instead of
-    # the old hardcoded "p6/CQ20" fallback.
-    assigned["default_nvenc_preset"] = srv_settings.get("nvenc_preset")
-    try:
-        _cq = srv_settings.get("nvenc_cq")
-        assigned["default_nvenc_cq"] = int(_cq) if _cq is not None else None
-    except (TypeError, ValueError):
+    # Mirror of the libx265-defaults logic above, for NVENC workers picking
+    # up libx265 jobs. Priority: explicit "libx265→GPU fallback" (intentionally
+    # tuned) > main nvenc settings IF nvenc is the default encoder > None
+    # (worker falls back to hardcoded p6/CQ20).
+    gpu_fallback_preset = (srv_settings.get("libx265_gpu_fallback_preset") or "").strip()
+    gpu_fallback_cq_raw = (srv_settings.get("libx265_gpu_fallback_cq") or "").strip()
+    if gpu_fallback_preset:
+        assigned["default_nvenc_preset"] = gpu_fallback_preset
+        try:
+            assigned["default_nvenc_cq"] = int(gpu_fallback_cq_raw) if gpu_fallback_cq_raw else None
+        except (TypeError, ValueError):
+            assigned["default_nvenc_cq"] = None
+    elif srv_settings.get("default_encoder", "").lower() == "nvenc":
+        assigned["default_nvenc_preset"] = srv_settings.get("nvenc_preset")
+        try:
+            _cq = srv_settings.get("nvenc_cq")
+            assigned["default_nvenc_cq"] = int(_cq) if _cq is not None else None
+        except (TypeError, ValueError):
+            assigned["default_nvenc_cq"] = None
+    else:
+        assigned["default_nvenc_preset"] = None
         assigned["default_nvenc_cq"] = None
     print(f"[NODES] Assigned job {job['id']} ({job.get('encoder') or 'default'}) to node '{req.node_id}' ({node['name']})", flush=True)
 

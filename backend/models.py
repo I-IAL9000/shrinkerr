@@ -122,6 +122,8 @@ class SettingsUpdate(BaseModel):
     nvenc_cpu_fallback_preset: Optional[str] = None
     # Accept int OR empty string (empty = clear the setting)
     nvenc_cpu_fallback_crf: Optional[int | str] = None
+    libx265_gpu_fallback_preset: Optional[str] = None
+    libx265_gpu_fallback_cq: Optional[int | str] = None
     parallel_jobs: Optional[int] = None
     ffmpeg_timeout: Optional[int] = None
     ffprobe_timeout: Optional[int] = None

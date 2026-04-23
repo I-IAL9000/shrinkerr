@@ -29,6 +29,10 @@ _ENCODING_DEFAULTS = {
     # job. Empty = fall back to the NVENC→libx265 translation table.
     "nvenc_cpu_fallback_preset": "",
     "nvenc_cpu_fallback_crf": "",
+    # NVENC fallback used by GPU workers when they have to take a libx265
+    # job. Empty = fall back to the server's nvenc defaults or hardcoded p6/20.
+    "libx265_gpu_fallback_preset": "",
+    "libx265_gpu_fallback_cq": "",
     "parallel_jobs": "1",
     "ffmpeg_timeout": "21600",
     "ffprobe_timeout": "30",
@@ -229,6 +233,8 @@ async def get_encoding_settings():
         "libx265_preset": merged.get("libx265_preset", "medium"),
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
         "nvenc_cpu_fallback_crf": merged.get("nvenc_cpu_fallback_crf", ""),
+        "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
+        "libx265_gpu_fallback_cq": merged.get("libx265_gpu_fallback_cq", ""),
         "parallel_jobs": int(merged.get("parallel_jobs", 1)),
         "ffmpeg_timeout": int(merged.get("ffmpeg_timeout", 21600)),
         "ffprobe_timeout": int(merged.get("ffprobe_timeout", 30)),
@@ -517,6 +523,17 @@ async def update_encoding_settings(update: SettingsUpdate):
                     updates["nvenc_cpu_fallback_crf"] = str(int(raw))
                 except (TypeError, ValueError):
                     updates["nvenc_cpu_fallback_crf"] = ""
+        if update.libx265_gpu_fallback_preset is not None:
+            updates["libx265_gpu_fallback_preset"] = update.libx265_gpu_fallback_preset.strip()
+        if update.libx265_gpu_fallback_cq is not None:
+            raw = update.libx265_gpu_fallback_cq
+            if isinstance(raw, str) and not raw.strip():
+                updates["libx265_gpu_fallback_cq"] = ""
+            else:
+                try:
+                    updates["libx265_gpu_fallback_cq"] = str(int(raw))
+                except (TypeError, ValueError):
+                    updates["libx265_gpu_fallback_cq"] = ""
         if update.parallel_jobs is not None:
             updates["parallel_jobs"] = str(max(1, min(16, update.parallel_jobs)))
         if update.ffmpeg_timeout is not None:

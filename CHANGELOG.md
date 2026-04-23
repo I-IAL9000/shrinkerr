@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19] — 2026-04-23
+
+### Added
+- Symmetric "GPU fallback" preset + CQ fields in Settings → Video (libx265 section), matching the "CPU fallback" pair. Lets libx265-first users pin specific NVENC settings for when a GPU-capable worker picks up a libx265 job. Worker now also only forwards main NVENC defaults when `default_encoder` is nvenc — mirror of the libx265 side.
+
 ## [0.3.18] — 2026-04-23
 
 ### Added
