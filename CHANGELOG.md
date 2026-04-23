@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] — 2026-04-23
+
+### Fixed
+- Remote CPU workers handed an NVENC job no longer pick catastrophic libx265 settings. The old translation mapped `nvenc p6 / CQ 20` to `libx265 slower / CRF 16` — a near-lossless preset 40× slower than `fast`. Workers now prefer the server's configured libx265 defaults, fall back to a conservative translation capped at `slow`, and use `CRF = CQ + 3` (matching libx265's higher per-bit efficiency, instead of the inverted sign the old code had).
+
 ## [0.3.10] — 2026-04-23
 
 ### Fixed
