@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk } from "../api";
+import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -27,11 +27,18 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
   const [encodingDefaults, setEncodingDefaults] = useState<any>(null);
+  const [nodes, setNodes] = useState<any[]>([]);
 
-  // Load encoding defaults once
+  // Load encoding defaults once. Nodes are polled so placeholder logic can
+  // react to pauses — a paused local node shouldn't claim an encoding slot.
   useEffect(() => {
     getEncodingSettings().then(setEncodingDefaults).catch(() => {});
   }, []);
+  const loadNodes = () => {
+    getNodes().then(r => setNodes(r?.nodes || [])).catch(() => {});
+  };
+  useEffect(loadNodes, []);
+  useVisibleInterval(loadNodes, 10000);
 
   const parseJobs = (data: any[]) =>
     (Array.isArray(data) ? data : []).map((job: any) => ({
@@ -314,7 +321,17 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
       {/* Starting / loading next job placeholders */}
       {(() => {
-        const parallelLimit = encodingDefaults?.parallel_jobs ?? 2;
+        // Effective capacity = sum of max_jobs across nodes that can actually
+        // pick up work right now. Previously this used the global
+        // `parallel_jobs` setting, which ignored paused / offline nodes —
+        // producing phantom "Starting…" cards when e.g. the local node was
+        // paused but a remote worker was busy.
+        const availableNodes = nodes.filter(n =>
+          !n.paused && (n.status === "online" || n.status === "working")
+        );
+        const effectiveCapacity = availableNodes.length > 0
+          ? availableNodes.reduce((s: number, n: any) => s + (n.max_jobs || 1), 0)
+          : (encodingDefaults?.parallel_jobs ?? 2); // no nodes API data yet — fall back to legacy global
         const jobCardsShowing = running.filter(j => jobProgressMap.has(j.id)).length;
         const runningSansProgress = running.filter(j => !jobProgressMap.has(j.id));
         const totalActive = jobCardsShowing + runningSansProgress.length;
@@ -330,11 +347,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
         // Show "Starting..." placeholders when:
         // 1. Queue is initially starting, OR
-        // 2. We have fewer active jobs than parallel limit and there are pending jobs
+        // 2. We have fewer active jobs than available capacity and there
+        //    are pending jobs that could actually be dispatched.
         const queueIsRunning = running.length > 0 || jobProgressMap.size > 0;
-        const showPlaceholders = queueStarting || (queueIsRunning && hasPending && totalActive < parallelLimit);
+        const showPlaceholders = queueStarting || (queueIsRunning && hasPending && totalActive < effectiveCapacity);
         if (showPlaceholders) {
-          const slotsNeeded = Math.max(0, parallelLimit - totalActive);
+          const slotsNeeded = Math.max(0, effectiveCapacity - totalActive);
           for (let i = 0; i < slotsNeeded; i++) {
             spinners.push(
               <div key={`starting-${i}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>

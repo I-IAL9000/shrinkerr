@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.16] — 2026-04-23
+
+### Fixed
+- Queue page's "Starting…" placeholder cards no longer appear for paused / offline worker nodes. Capacity is now summed from nodes that can actually pick up work, instead of blindly using the global `parallel_jobs` setting.
+
 ## [0.3.15] — 2026-04-23
 
 ### Fixed
