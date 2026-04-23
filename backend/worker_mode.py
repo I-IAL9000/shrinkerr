@@ -304,9 +304,14 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 )
                 return
 
-            # When falling back from nvenc to libx265, translate quality settings
-            nvenc_preset = job.get("nvenc_preset") or "p6"
-            nvenc_cq = job.get("nvenc_cq") or 20
+            # Per-job nvenc settings first, then server globals (for jobs
+            # that deferred to live settings at encode time and so stored
+            # NULL), then a hardcoded fallback as last resort. Without the
+            # server-globals tier, a CPU worker translating a NULL-settings
+            # NVENC job was silently using p6/CQ20 instead of the user's
+            # actual global NVENC config.
+            nvenc_preset = job.get("nvenc_preset") or job.get("default_nvenc_preset") or "p6"
+            nvenc_cq = job.get("nvenc_cq") or job.get("default_nvenc_cq") or 20
             libx265_preset = job.get("libx265_preset")
             libx265_crf = job.get("libx265_crf")
 

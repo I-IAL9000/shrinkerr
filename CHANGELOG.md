@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.15] — 2026-04-23
+
+### Fixed
+- Remote CPU worker translating an NVENC job with no per-job encoder settings now uses the server's global NVENC defaults (e.g. `p3 / CQ 27`) instead of the old hardcoded `p6 / CQ 20` fallback — the translated libx265 output matches the user's actual quality target.
+
 ## [0.3.14] — 2026-04-23
 
 ### Fixed

@@ -215,7 +215,8 @@ async def request_job(req: RequestJobBody, request: Request):
         async with db.execute(
             "SELECT key, value FROM settings "
             "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', "
-            "              'libx265_preset', 'libx265_crf')"
+            "              'libx265_preset', 'libx265_crf', "
+            "              'nvenc_preset', 'nvenc_cq')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -236,6 +237,15 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["default_libx265_crf"] = int(_crf) if _crf is not None else None
     except (TypeError, ValueError):
         assigned["default_libx265_crf"] = None
+    # Server's NVENC defaults so a remote worker translating an NVENC job
+    # with NULL per-job settings uses the user's global choice instead of
+    # the old hardcoded "p6/CQ20" fallback.
+    assigned["default_nvenc_preset"] = srv_settings.get("nvenc_preset")
+    try:
+        _cq = srv_settings.get("nvenc_cq")
+        assigned["default_nvenc_cq"] = int(_cq) if _cq is not None else None
+    except (TypeError, ValueError):
+        assigned["default_nvenc_cq"] = None
     print(f"[NODES] Assigned job {job['id']} ({job.get('encoder') or 'default'}) to node '{req.node_id}' ({node['name']})", flush=True)
 
     # Broadcast that this node is now working
