@@ -23,6 +23,10 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 
 </div>
 
+> 📚 **[Full documentation in `/docs`](docs/README.md)** — installation
+> scenarios, encoding guide, remote-worker setup, rules & automation,
+> best practices, troubleshooting, FAQ.
+
 ## Features
 
 **Encoding**
