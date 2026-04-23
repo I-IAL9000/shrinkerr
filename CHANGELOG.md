@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.18] — 2026-04-23
+
+### Added
+- "CPU fallback" preset + CRF fields in Settings → Video (NVENC section). When set, they override the NVENC→libx265 translation for CPU workers — lets NVENC-first users pin a specific libx265 profile for CPU fallback without changing their primary encoder.
+
 ## [0.3.17] — 2026-04-23
 
 ### Fixed

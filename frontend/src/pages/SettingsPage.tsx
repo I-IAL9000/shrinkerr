@@ -663,6 +663,52 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <strong> 25+:</strong> Visible quality loss, maximum compression.
                     </div>
                   </div>
+
+                  {/* CPU fallback for NVENC jobs picked up by CPU-only workers */}
+                  <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
+                      CPU fallback
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+                      When an NVENC job is picked up by a CPU-only worker, use these libx265 settings instead of auto-translating from the NVENC preset/CQ. Leave blank for automatic translation.
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={labelStyle}>Preset</div>
+                        <select
+                          value={encoding.nvenc_cpu_fallback_preset || ""}
+                          onChange={(e) => setEncoding({ ...encoding, nvenc_cpu_fallback_preset: e.target.value })}
+                          style={{ ...inputStyle, width: "100%" }}
+                        >
+                          <option value="">Auto (translate)</option>
+                          <option value="ultrafast">Ultrafast</option>
+                          <option value="superfast">Superfast</option>
+                          <option value="veryfast">Very Fast</option>
+                          <option value="faster">Faster</option>
+                          <option value="fast">Fast</option>
+                          <option value="medium">Medium</option>
+                          <option value="slow">Slow</option>
+                          <option value="slower">Slower</option>
+                          <option value="veryslow">Very Slow</option>
+                        </select>
+                      </div>
+                      <div style={{ width: 100 }}>
+                        <div style={labelStyle}>CRF</div>
+                        <input
+                          type="number"
+                          min={15}
+                          max={30}
+                          placeholder="auto"
+                          value={encoding.nvenc_cpu_fallback_crf ?? ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEncoding({ ...encoding, nvenc_cpu_fallback_crf: v === "" ? "" : parseInt(v) });
+                          }}
+                          style={{ ...inputStyle, width: "100%" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <>

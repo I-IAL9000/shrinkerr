@@ -216,7 +216,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "SELECT key, value FROM settings "
             "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', "
             "              'libx265_preset', 'libx265_crf', "
-            "              'nvenc_preset', 'nvenc_cq', 'default_encoder')"
+            "              'nvenc_preset', 'nvenc_cq', 'default_encoder', "
+            "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -228,13 +229,22 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
         assigned["vmaf_min_score"] = 0.0
-    # Server's configured libx265 defaults — only forwarded when libx265 is
-    # the server's chosen default encoder. That's the signal the user has
-    # intentionally tuned these values. On NVENC-first servers the libx265
-    # columns are just the shipped hardcoded defaults (medium/CRF20), and
-    # sending them would override the NVENC→libx265 translation the user
-    # actually wants on CPU workers.
-    if srv_settings.get("default_encoder", "").lower() == "libx265":
+    # libx265 defaults the CPU worker should use for an NVENC job:
+    #   1. Explicit "NVENC→CPU fallback" (user intentionally tuned these)
+    #   2. Main libx265 settings IF libx265 is the server's default encoder
+    #      (those settings are the user's primary choice)
+    #   3. None — worker falls back to the NVENC→libx265 translation table
+    # Leaking main libx265 settings on an NVENC-first server would override
+    # the translation with what are usually just shipped defaults.
+    fallback_preset = (srv_settings.get("nvenc_cpu_fallback_preset") or "").strip()
+    fallback_crf_raw = (srv_settings.get("nvenc_cpu_fallback_crf") or "").strip()
+    if fallback_preset:
+        assigned["default_libx265_preset"] = fallback_preset
+        try:
+            assigned["default_libx265_crf"] = int(fallback_crf_raw) if fallback_crf_raw else None
+        except (TypeError, ValueError):
+            assigned["default_libx265_crf"] = None
+    elif srv_settings.get("default_encoder", "").lower() == "libx265":
         assigned["default_libx265_preset"] = srv_settings.get("libx265_preset")
         try:
             _crf = srv_settings.get("libx265_crf")
