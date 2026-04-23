@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.22] — 2026-04-23
+
+### Fixed
+- Checkmark finally renders on every checkbox (was missing in the Settings page and in the File tree). Two scoped selectors (`.settings-page input[type="checkbox"]` and `.poster-accordion input[type="checkbox"]:checked`) were setting `background:` shorthand at higher specificity than the base `:checked` rule, silently clearing the SVG tick image. Removed the scoped background overrides — base rule now styles every checkbox uniformly.
+
 ## [0.3.21] — 2026-04-23
 
 ### Fixed

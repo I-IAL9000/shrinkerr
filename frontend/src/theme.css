@@ -115,7 +115,6 @@
 /* background-color only — the SVG checkmark set via `background-image` in the
    global :checked rule must survive this override */
 [data-theme="light"] input[type="checkbox"]:checked { background-color: var(--accent-btn); border-color: var(--accent-btn); }
-[data-theme="light"] .settings-page input[type="checkbox"] { background-color: #ffffff; border-color: var(--border-strong); }
 
 /* Form inputs stay white so they read as fields, not as buttons */
 [data-theme="light"] input[type="text"],
@@ -194,8 +193,9 @@ input[type="checkbox"] {
   justify-content: center;
 }
 .settings-page input[type="checkbox"] {
-  background: var(--bg-secondary);
-  border-color: #212533;
+  /* Layout-only overrides — background/border intentionally left to the base
+     rule so :checked (which sets background-color + an SVG background-image)
+     isn't overridden by a higher-specificity class selector */
   flex-shrink: 0;
   display: flex;
 }
@@ -590,14 +590,9 @@ input[type="checkbox"] { cursor: pointer; }
   overflow: hidden;
   margin-top: -2px;
 }
-.poster-accordion input[type="checkbox"] {
-  background: var(--bg-secondary);
-  border-color: #212533;
-}
-.poster-accordion input[type="checkbox"]:checked {
-  background: #4920f0;
-  border-color: #4920f0;
-}
+/* No scoped checkbox overrides in .poster-accordion — base rule styles the
+   checked state (including the SVG checkmark); any `background:` shorthand
+   here would clear the tick image. */
 
 /* Sidebar links */
 .sidebar-link { transition: background 0.15s, color 0.15s; }
