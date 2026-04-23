@@ -216,7 +216,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "SELECT key, value FROM settings "
             "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', "
             "              'libx265_preset', 'libx265_crf', "
-            "              'nvenc_preset', 'nvenc_cq')"
+            "              'nvenc_preset', 'nvenc_cq', 'default_encoder')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -228,14 +228,21 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
         assigned["vmaf_min_score"] = 0.0
-    # Server's configured libx265 defaults — the worker uses these when a job
-    # doesn't carry explicit libx265_preset/crf (e.g. an NVENC job dispatched
-    # to a CPU-only worker). Optional; absent on older servers.
-    assigned["default_libx265_preset"] = srv_settings.get("libx265_preset")
-    try:
-        _crf = srv_settings.get("libx265_crf")
-        assigned["default_libx265_crf"] = int(_crf) if _crf is not None else None
-    except (TypeError, ValueError):
+    # Server's configured libx265 defaults — only forwarded when libx265 is
+    # the server's chosen default encoder. That's the signal the user has
+    # intentionally tuned these values. On NVENC-first servers the libx265
+    # columns are just the shipped hardcoded defaults (medium/CRF20), and
+    # sending them would override the NVENC→libx265 translation the user
+    # actually wants on CPU workers.
+    if srv_settings.get("default_encoder", "").lower() == "libx265":
+        assigned["default_libx265_preset"] = srv_settings.get("libx265_preset")
+        try:
+            _crf = srv_settings.get("libx265_crf")
+            assigned["default_libx265_crf"] = int(_crf) if _crf is not None else None
+        except (TypeError, ValueError):
+            assigned["default_libx265_crf"] = None
+    else:
+        assigned["default_libx265_preset"] = None
         assigned["default_libx265_crf"] = None
     # Server's NVENC defaults so a remote worker translating an NVENC job
     # with NULL per-job settings uses the user's global choice instead of

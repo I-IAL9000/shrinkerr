@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.17] — 2026-04-23
+
+### Fixed
+- Server now only ships its `libx265_preset` / `libx265_crf` values to a remote worker when libx265 is the configured default encoder. NVENC-first servers were previously leaking the shipped hardcoded libx265 defaults (`medium / CRF 20`) to CPU workers, short-circuiting the NVENC→libx265 translation of the user's actual NVENC settings.
+
 ## [0.3.16] — 2026-04-23
 
 ### Fixed
