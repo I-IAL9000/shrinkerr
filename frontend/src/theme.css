@@ -28,28 +28,33 @@
 }
 
 [data-theme="light"] {
-  /* Light palette derived from Figma mockup (node 48:33) */
-  --bg-primary: #f0f1f4;      /* main content area */
-  --bg-secondary: #e3e2ed;    /* sidebar */
-  --bg-tertiary: #dcdce6;     /* hover / subtle raised */
-  --bg-card: #e7e6ed;         /* stat cards, filter bars */
-  --border: #c7c8cc;          /* pill / input borders */
-  --accent: #6860fe;          /* primary accent (brand) */
-  --accent-hover: #4920f0;    /* deeper accent for hover on light */
-  --accent-bg: rgba(104, 96, 254, 0.12);
-  --accent-btn: #4920f0;      /* darker variant for buttons on light bg */
-  --success: #10b981;
-  --warning: #d97706;
+  /* Light palette — tuned for WCAG AA contrast on all muted text surfaces.
+     Backgrounds go primary → tertiary (subtle warm greys). Buttons and
+     pills use bg-card (light grey) rather than pure white, per user feedback
+     that stark white buttons read as "empty" rather than as controls. */
+  --bg-primary: #f3f4f8;      /* main content area */
+  --bg-secondary: #e7e8f0;    /* sidebar / nav surfaces */
+  --bg-tertiary: #dcdde6;     /* hover / subtle raised */
+  --bg-card: #ebecf2;         /* stat cards, filter bars, buttons */
+  --bg-card-hover: #dfe0e8;   /* slight darken on interactive cards */
+  --border: #c2c4cf;          /* pill / input borders (darkened for contrast) */
+  --border-strong: #a8abb8;   /* active state borders */
+  --accent: #5048d9;          /* primary accent — darker than dark-mode brand so 4.5:1 on light bg */
+  --accent-hover: #3c34c4;    /* deeper on hover */
+  --accent-bg: rgba(80, 72, 217, 0.12);
+  --accent-btn: #3c34c4;      /* dark enough to keep white text readable */
+  --success: #0f8a62;         /* darker than dark-mode #10b981 for contrast */
+  --success-bg: #d2ebdf;
+  --warning: #b8590a;
+  --danger: #c02448;          /* darker than #e94560 for contrast on light bg */
+  --danger-bg: #fbdde3;
   --text-primary: #11111a;
-  --text-secondary: #1e1e29;
-  --text-muted: #827b9a;
-  --text-dim: rgba(0, 0, 0, 0.2);
-  --danger: #e94560;
-  --danger-bg: #fde4e8;
-  --success-bg: #dcf5ea;
-  --folder-root: #4920f0;
-  --folder-show: #6860fe;
-  --folder-season: #6860fe;
+  --text-secondary: #2b2d3a;
+  --text-muted: #5b6375;      /* 4.6:1 on --bg-primary (was #827b9a: 3.3:1 — failed AA) */
+  --text-dim: rgba(17, 17, 26, 0.35);
+  --folder-root: #3c34c4;
+  --folder-show: #5048d9;
+  --folder-season: #5048d9;
 }
 /* Light mode overrides */
 [data-theme="light"] h1, [data-theme="light"] h2, [data-theme="light"] h3, [data-theme="light"] h4 {
@@ -58,7 +63,9 @@
 [data-theme="light"] body { color: var(--text-secondary); }
 [data-theme="light"] .stat-value { color: var(--accent) !important; }
 [data-theme="light"] .stat-value.success { color: var(--success) !important; }
-[data-theme="light"] .sidebar { background: var(--bg-secondary); border-right: 1px solid #c7c8d4; }
+
+/* Sidebar */
+[data-theme="light"] .sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border); }
 [data-theme="light"] .sidebar-link { color: var(--text-secondary); }
 [data-theme="light"] .sidebar-link img { filter: brightness(0) saturate(100%) invert(17%) sepia(15%) saturate(600%) hue-rotate(210deg) brightness(95%) contrast(95%); }
 [data-theme="light"] .sidebar-link:hover { background: rgba(30, 30, 41, 0.05); color: var(--text-primary); }
@@ -68,29 +75,47 @@
   border-left-color: var(--accent-btn);
 }
 [data-theme="light"] .sidebar-link.active img { filter: brightness(0) saturate(100%) invert(14%) sepia(99%) saturate(5500%) hue-rotate(253deg) brightness(92%) contrast(110%); }
-[data-theme="light"] .sidebar-section-label { color: #5c6778; }
+[data-theme="light"] .sidebar-section-label { color: var(--text-muted); }
+
+/* Job cards */
 [data-theme="light"] .job-active { border-color: var(--border); background: var(--bg-card); }
+
+/* Buttons — no pure white, use bg-card (light grey) so controls read as controls */
 [data-theme="light"] .btn-primary { background: var(--accent-btn); color: #ffffff; }
-[data-theme="light"] .btn-primary:hover { background: var(--accent); }
-[data-theme="light"] .btn-secondary { background: #ffffff; color: var(--text-muted); border: 1px solid var(--border); }
-[data-theme="light"] .btn-secondary:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-[data-theme="light"] .filter-pill { background: #ffffff; color: var(--text-muted); border: 1px solid var(--border); }
-[data-theme="light"] .filter-pill:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
-[data-theme="light"] .filter-pill.active { background: var(--accent); color: #ffffff; border-color: var(--accent); }
-[data-theme="light"] .filter-pill.active:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-[data-theme="light"] .sort-pill { background: #ffffff; color: var(--text-muted); border-color: var(--border); }
-[data-theme="light"] .sort-pill:not(.active):hover { background: var(--bg-tertiary); color: var(--text-primary); }
+[data-theme="light"] .btn-primary:hover { background: var(--accent-hover); }
+[data-theme="light"] .btn-secondary { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
+[data-theme="light"] .btn-secondary:hover { background: var(--bg-card-hover); color: var(--text-primary); border-color: var(--border-strong); }
+
+/* Filter / sort pills — also light grey, not white */
+[data-theme="light"] .filter-pill { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); }
+[data-theme="light"] .filter-pill:hover { background: var(--bg-card-hover); color: var(--text-secondary); border-color: var(--border-strong); }
+[data-theme="light"] .filter-pill.active { background: var(--accent-bg); color: var(--accent-btn); border-color: var(--accent); }
+[data-theme="light"] .filter-pill.active:hover { background: var(--accent-bg); border-color: var(--accent-hover); color: var(--accent-hover); }
+[data-theme="light"] .sort-pill { background: var(--bg-card); color: var(--text-muted); border-color: var(--border); }
+[data-theme="light"] .sort-pill:not(.active):hover { background: var(--bg-card-hover); color: var(--text-primary); border-color: var(--border-strong); }
+[data-theme="light"] .sort-pill.active { background: var(--accent-btn) !important; color: #ffffff !important; border-color: var(--accent-btn) !important; }
+
+/* Tree */
 [data-theme="light"] .tree-container { background: transparent; }
-[data-theme="light"] .tree-row:hover { background: rgba(73, 32, 240, 0.06); }
+[data-theme="light"] .tree-row:hover { background: rgba(60, 52, 196, 0.06); }
 [data-theme="light"] .tree-folder { color: var(--accent-btn); }
 [data-theme="light"] .tree-subfolder,
 [data-theme="light"] .tree-season { color: var(--accent); }
-[data-theme="light"] .codec-badge.x264 { background: var(--danger); color: #ffffff; }
-[data-theme="light"] .codec-badge.x265 { background: var(--success); color: #ffffff; }
+
+/* Codec badges — pale background + colored text (mirror of dark-mode style, which
+   the old light overrides were solid-color-with-white-text and felt heavy). The
+   pale surfaces tint the whole pill, and the darker light-mode --danger/--success
+   hues keep the text at 4.5:1+ */
+[data-theme="light"] .codec-badge.x264 { background: var(--danger-bg); color: var(--danger); }
+[data-theme="light"] .codec-badge.x265 { background: var(--success-bg); color: var(--success); }
+
+/* Progress + checkboxes */
 [data-theme="light"] .progress-bar-track { background: var(--border); }
-[data-theme="light"] input[type="checkbox"] { background: var(--bg-card); border: 1px solid var(--border); }
+[data-theme="light"] input[type="checkbox"] { background: #ffffff; border: 1px solid var(--border-strong); }
 [data-theme="light"] input[type="checkbox"]:checked { background: var(--accent-btn); border-color: var(--accent-btn); }
-[data-theme="light"] .settings-page input[type="checkbox"] { background: var(--bg-card); border-color: var(--border); }
+[data-theme="light"] .settings-page input[type="checkbox"] { background: #ffffff; border-color: var(--border-strong); }
+
+/* Form inputs stay white so they read as fields, not as buttons */
 [data-theme="light"] input[type="text"],
 [data-theme="light"] input[type="number"],
 [data-theme="light"] input[type="password"],
@@ -98,21 +123,51 @@
 [data-theme="light"] textarea {
   background: #ffffff;
   color: var(--text-primary);
-  border: 1px solid rgba(33, 37, 51, 0.25);
+  border: 1px solid var(--border-strong);
 }
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder { color: var(--text-muted); }
+
+/* Poster / stat cards */
 [data-theme="light"] .poster-card { border-color: var(--border); background: var(--bg-card); }
-[data-theme="light"] .poster-card:hover { box-shadow: 0 4px 16px rgba(17, 17, 26, 0.1); }
+[data-theme="light"] .poster-card:hover { box-shadow: 0 4px 16px rgba(17, 17, 26, 0.12); }
 [data-theme="light"] .poster-placeholder { background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--accent) 200%); }
 [data-theme="light"] .stat-card { background: var(--bg-card); }
+
+/* Scrollbar */
 [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-primary); }
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border); }
-/* Queue control panel + job type badges */
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+/* Job rows + badges */
 [data-theme="light"] .job-row { border-bottom-color: var(--border); }
-[data-theme="light"] .job-row:hover { background: rgba(30, 30, 41, 0.03); }
-[data-theme="light"] .job-type-badge { background: #ffffff !important; color: var(--text-muted) !important; border: 1px solid var(--border); }
-[data-theme="light"] .toast { background: #ffffff; color: var(--text-secondary); box-shadow: 0 4px 12px rgba(17, 17, 26, 0.1); }
+[data-theme="light"] .job-row:hover { background: rgba(30, 30, 41, 0.04); }
+[data-theme="light"] .job-type-badge { background: var(--bg-card) !important; color: var(--text-secondary) !important; border: 1px solid var(--border); }
+
+/* Toasts */
+[data-theme="light"] .toast { background: var(--bg-card); color: var(--text-secondary); border-color: var(--border); box-shadow: 0 4px 12px rgba(17, 17, 26, 0.12); }
+
+/* Mobile header/menu */
 [data-theme="light"] .mobile-header { background: var(--bg-secondary); border-bottom-color: var(--border); }
 [data-theme="light"] .mobile-menu { background: var(--bg-secondary); border-color: var(--border); }
+
+/* Modal overlays — use a lighter scrim in light mode, not 50% black */
+[data-theme="light"] .mobile-menu-overlay { background: rgba(17, 17, 26, 0.25); }
+
+/* Safety net: many components hardcode `color: "white"` / `#fff` / `#ffffff`
+   inline for headings and section labels assuming dark mode. When the element
+   doesn't also set a background inline (so we're not nuking white-on-accent
+   badges), force those to text-primary in light mode. Fixes a large batch of
+   invisible labels without touching every component. */
+[data-theme="light"] [style*="color: white"]:not([style*="background"]),
+[data-theme="light"] [style*="color:white"]:not([style*="background"]),
+[data-theme="light"] [style*="color: #fff"]:not([style*="background"]),
+[data-theme="light"] [style*="color:#fff"]:not([style*="background"]),
+[data-theme="light"] [style*="color: #ffffff"]:not([style*="background"]),
+[data-theme="light"] [style*="color:#ffffff"]:not([style*="background"]),
+[data-theme="light"] [style*="color: #FDFDFE"]:not([style*="background"]),
+[data-theme="light"] [style*="color:#FDFDFE"]:not([style*="background"]) {
+  color: var(--text-primary) !important;
+}
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 button, input, select, textarea { font-family: inherit; }

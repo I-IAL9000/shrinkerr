@@ -474,7 +474,7 @@ export default function App() {
         {/* Desktop sidebar */}
         <aside className="sidebar sidebar-desktop">
           <div className="sidebar-logo">
-            <img src="/shrinkerr-logo.svg" alt="Shrinkerr" width="160" style={{ flexShrink: 0 }} />
+            <img src={theme === "light" ? "/shrinkerr-logo-light.svg" : "/shrinkerr-logo.svg"} alt="Shrinkerr" width="160" style={{ flexShrink: 0 }} />
           </div>
           <nav className="sidebar-nav">
             <SidebarNavItems />
@@ -485,7 +485,7 @@ export default function App() {
         {/* Mobile header */}
         <header className="mobile-header">
           <div className="sidebar-logo" style={{ margin: 0, padding: 0 }}>
-            <img src="/shrinkerr-logo.svg" alt="Shrinkerr" height="22" style={{ flexShrink: 0 }} />
+            <img src={theme === "light" ? "/shrinkerr-logo-light.svg" : "/shrinkerr-logo.svg"} alt="Shrinkerr" height="22" style={{ flexShrink: 0 }} />
           </div>
           <MobileMenu />
         </header>

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.20] — 2026-04-23
+
+### Changed
+- Light mode overhauled. New palette tuned for WCAG AA contrast (muted text, accent and status colors darkened), buttons / filter pills / sort pills / job-type badges now render as light grey instead of stark white, codec badges use pale-tinted backgrounds with colored text instead of heavy solid blocks, and a safety rule catches components with hardcoded `color: white` inline so section labels no longer disappear. Logo wordmark swaps to a dark variant in light mode.
+
 ## [0.3.19] — 2026-04-23
 
 ### Added
