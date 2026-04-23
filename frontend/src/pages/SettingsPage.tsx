@@ -4,7 +4,7 @@ import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import {
   getMediaDirs, addMediaDir, removeMediaDir,
-  getEncodingSettings, updateEncodingSettings, testApiKey,
+  getEncodingSettings, updateEncodingSettings, testApiKey, getApiKey,
   createEncodingRule, updateEncodingRule, deleteEncodingRule,
   reorderEncodingRules, syncPlexRuleMetadata, getPlexOptions,
   getConditionOptions, testNotifications, importSettings,
@@ -3254,7 +3254,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </>
             )}
 
-            {/* API Key section — always visible */}
+            {/* API Key section — masked by default, reveal or copy pulls
+                 the real value via a dedicated endpoint so the bulk GET
+                 response can stay masked against session-hijack / XSS
+                 exfil. */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
               <div style={labelStyle}>API Key</div>
               <div style={{ display: "flex", gap: 0, alignItems: "center", marginBottom: 4, maxWidth: 500 }}>
@@ -3265,12 +3268,49 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     borderRadius: "4px 0 0 4px", borderRight: "none",
                   }} />
                 <button
+                  title="Reveal"
+                  onClick={async () => {
+                    try {
+                      const r = await getApiKey();
+                      if (r?.api_key) {
+                        setEncoding({ ...encoding, api_key: r.api_key });
+                      } else {
+                        toast("No API key configured", "error");
+                      }
+                    } catch (e: any) {
+                      toast(`Failed to fetch key: ${e?.message || e}`, "error");
+                    }
+                  }}
+                  style={{
+                    height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",
+                    backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)",
+                    borderLeft: "none", borderRight: "none", cursor: "pointer", color: "var(--text-muted)",
+                  }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+                <button
                   title="Copy to clipboard"
-                  onClick={() => {
-                    const text = encoding?.api_key || "";
+                  onClick={async () => {
+                    // Always pull the unmasked value from the server on
+                    // click — the React state may be showing the masked
+                    // form (`****xxxx`) which would be useless when
+                    // pasted into a worker config or integration script.
+                    let text = "";
+                    try {
+                      const r = await getApiKey();
+                      text = r?.api_key || "";
+                    } catch (e: any) {
+                      toast(`Failed to fetch key: ${e?.message || e}`, "error");
+                      return;
+                    }
+                    if (!text) {
+                      toast("No API key configured", "error");
+                      return;
+                    }
                     if (navigator.clipboard?.writeText) {
                       navigator.clipboard.writeText(text).then(() => toast("API key copied", "success")).catch(() => {
-                        // Fallback for non-HTTPS
                         const ta = document.createElement("textarea");
                         ta.value = text;
                         ta.style.position = "fixed";
@@ -3319,7 +3359,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </button>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                Used by NZBGet, SABnzbd, and other external integrations. Not required for browser login.
+                Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.
               </div>
             </div>
 

@@ -33,15 +33,36 @@ async def webhook_scan(request: WebhookScanRequest = WebhookScanRequest()):
         raise HTTPException(status_code=409, detail="Scan already in progress")
 
     paths = request.paths
+    # Load configured media directories — used either as the full scan set
+    # (when caller passed nothing) or as the allowlist (when they did).
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT path FROM media_dirs") as cur:
+            rows = await cur.fetchall()
+            configured = [r["path"] for r in rows]
+    finally:
+        await db.close()
+
     if not paths:
-        # Load all configured media directories
-        db = await connect_db()
-        try:
-            async with db.execute("SELECT path FROM media_dirs") as cur:
-                rows = await cur.fetchall()
-                paths = [r["path"] for r in rows]
-        finally:
-            await db.close()
+        paths = configured
+    else:
+        # Reject caller-supplied paths that aren't under a configured media
+        # dir. Stops the webhook from being used to scan `/etc` or bind-
+        # mounted secrets.
+        from backend.media_paths import is_in_any, _resolve
+        if not configured:
+            raise HTTPException(
+                status_code=400,
+                detail="No media directories configured",
+            )
+        resolved = [_resolve(p) for p in paths]
+        bad = [p for p, r in zip(paths, resolved) if not is_in_any(r, configured)]
+        if bad:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Paths outside configured media directories: {bad}",
+            )
+        paths = resolved
 
     if not paths:
         raise HTTPException(status_code=400, detail="No paths to scan")
@@ -56,6 +77,7 @@ async def webhook_queue(request: WebhookQueueRequest):
     from backend.routes.jobs import _queue, _os
     from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
     from backend.config import settings
+    from backend.media_paths import load_media_dirs, is_in_any, _resolve
 
     if _queue is None:
         raise HTTPException(status_code=503, detail="Queue not initialized")
@@ -71,11 +93,30 @@ async def webhook_queue(request: WebhookQueueRequest):
     except Exception:
         pass
 
+    # Refuse to operate on paths outside the configured media directories.
+    # This endpoint is reachable via NZBGet/SABnzbd post-processing scripts;
+    # without this guard, anyone who can reach the webhook surface could
+    # coerce ffprobe/ffmpeg into running against arbitrary container-
+    # readable files (e.g. /proc/*, mounted secrets).
+    allowed_dirs = await load_media_dirs()
+    if not allowed_dirs:
+        raise HTTPException(
+            status_code=400,
+            detail="No media directories configured",
+        )
+
     added = 0
     errors = []
 
-    for fp in request.paths:
+    for raw_fp in request.paths:
         import os
+        # Canonicalise before every downstream check — stops
+        # `/media/../etc/hostname` from slipping past the is_in_any guard
+        # only to be used in the pre-resolution form by probe_file / queue.
+        fp = _resolve(raw_fp)
+        if not is_in_any(fp, allowed_dirs):
+            errors.append(f"Outside media dirs: {raw_fp}")
+            continue
         if not os.path.exists(fp):
             errors.append(f"File not found: {fp}")
             continue

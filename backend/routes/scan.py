@@ -1995,9 +1995,14 @@ class DeleteFileRequest(BaseModel):
 async def delete_file_from_disk(req: DeleteFileRequest):
     """Delete a file from disk AND remove from scan_results. Use with caution."""
     import os
+    from pathlib import Path as _P
     file_path = req.file_path
 
-    # Safety: only allow deleting files under configured media directories
+    # Safety: only allow deleting files under configured media directories.
+    # The old check was `file_path.startswith(media_dir + "/")` which a
+    # literal `/media/../etc/hostname` passed trivially. Now we resolve
+    # both sides (following symlinks) and use commonpath for a true
+    # ancestor relationship.
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
@@ -2006,8 +2011,25 @@ async def delete_file_from_disk(req: DeleteFileRequest):
     finally:
         await db.close()
 
-    if not any(file_path.startswith(d.rstrip("/") + "/") for d in dirs):
+    try:
+        resolved_target = _P(file_path).resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(400, f"Invalid file path: {exc}")
+    resolved_target_str = str(resolved_target)
+
+    def _is_inside(child: str, parent: str) -> bool:
+        try:
+            common = os.path.commonpath([child, str(_P(parent).resolve(strict=False))])
+        except ValueError:
+            return False  # different drives / mount points
+        return common == str(_P(parent).resolve(strict=False))
+
+    if not any(_is_inside(resolved_target_str, d) for d in dirs):
         raise HTTPException(403, "File is not under a configured media directory")
+
+    # Use the resolved path downstream so an attacker can't smuggle a path
+    # with traversal components past the DB lookups either.
+    file_path = resolved_target_str
 
     # Check file exists
     if not os.path.isfile(file_path):

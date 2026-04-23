@@ -5,6 +5,26 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.28] — 2026-04-23
+
+### Security
+
+Phase 1 of a security hardening pass — closes the most severe findings from the internal audit. No breaking changes for existing installs; a few previously permissive defaults tighten up on fresh installs.
+
+#### Fixed
+- Auth middleware no longer fails **open** when the settings DB read raises — returns 503. A transient SQLite lock could previously disable auth for the whole process.
+- Auth middleware now enforces when a non-empty `api_key` is configured, independent of the `auth_enabled` flag. The old behaviour gated only when password auth was toggled on, so setting a key without flipping the toggle left the app wide open.
+- `api_key` is masked (`****xxxx`) in `/api/settings/encoding` GET, matching every other stored secret. Dedicated `GET /api/settings/api-key` returns the unmasked key on demand for the Settings → System page and the copy-to-clipboard button.
+- Integration endpoints (`/api/webhooks/*`, `/api/nodes/*`, `/api/settings/backup/{download,restore}`, `/api/settings/nzbget-config`, `/api/settings/{nzbget,sabnzbd}-script`) always require an API key — even when `auth_enabled=false`. Previously a LAN-exposed install handed out RCE-adjacent primitives to anyone who could reach port 6680.
+- `/api/settings/dirs` POST now validates the path: must be absolute, must be an existing directory, must not be the filesystem root or under `/etc`, `/root`, `/proc`, `/sys`, `/boot`, `/dev`, `/app/data`. Stops an attacker bypassing every downstream containment check by adding `"/"` as a media directory.
+- `backup_folder` setting validated the same way. Stops the conversion pipeline from being coerced into renaming originals into privileged directories.
+- `/api/scan/delete-file` containment check rewritten with `Path.resolve()` + `os.path.commonpath` — the old `startswith` check was defeatable by `"/media/../etc/hostname"` (literally starts with `/media/`).
+- `/api/webhooks/{scan,queue}` and `/api/jobs/add-by-path` now verify every supplied path resolves inside a configured media directory before running ffprobe/ffmpeg.
+
+#### Added
+- Fresh installs auto-generate a strong `api_key` + `session_secret` and enable password auth on first startup. The generated key is printed once, prominently, to the container logs.
+- Existing installs with both `api_key=""` and `auth_enabled=false` now get a loud `[SECURITY]` warning banner on every startup so the operator knows they're running unauthenticated.
+
 ## [0.3.27] — 2026-04-23
 
 ### Changed
@@ -295,6 +315,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.28]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.28
 [0.3.27]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.27
 [0.3.26]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.26
 [0.3.25]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.25

@@ -167,14 +167,71 @@ async def list_media_dirs():
         await db.close()
 
 
+_DISALLOWED_MEDIA_DIR_PREFIXES = (
+    "/etc", "/root", "/proc", "/sys", "/boot", "/dev", "/app/data",
+)
+
+
+def _validate_filesystem_path(
+    raw_path: str,
+    *,
+    label: str,
+    must_exist: bool = True,
+    forbid_system_dirs: bool = True,
+) -> str:
+    """Normalise and validate a filesystem path from settings input.
+
+    Returns the resolved (symlink-followed, absolute) path. Raises
+    HTTPException(400) with a descriptive message on any violation.
+
+    Every path-bearing setting (media directories, backup folder, etc.)
+    funnels through this so the same rules apply everywhere: must be
+    absolute, must resolve to an existing directory (when asked), must
+    not land inside a privileged filesystem root. Previously the only
+    check was "is a string" — an attacker could post `/` as a media dir
+    and bypass every downstream containment guard.
+    """
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise HTTPException(status_code=400, detail=f"{label} must be a non-empty string")
+    raw_path = raw_path.strip()
+    p = Path(raw_path)
+    if not p.is_absolute():
+        raise HTTPException(status_code=400, detail=f"{label} must be an absolute path")
+    try:
+        resolved = p.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=f"{label} cannot be resolved: {exc}")
+    if must_exist:
+        if not resolved.exists():
+            raise HTTPException(status_code=400, detail=f"{label} does not exist: {resolved}")
+        if not resolved.is_dir():
+            raise HTTPException(status_code=400, detail=f"{label} is not a directory: {resolved}")
+    if forbid_system_dirs:
+        resolved_str = str(resolved)
+        if resolved_str == "/":
+            raise HTTPException(status_code=400, detail=f"{label} cannot be the filesystem root")
+        for forbidden in _DISALLOWED_MEDIA_DIR_PREFIXES:
+            if resolved_str == forbidden or resolved_str.startswith(forbidden + "/"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{label} is not allowed under {forbidden} (system directory)",
+                )
+    return str(resolved)
+
+
 @router.post("/dirs")
 async def add_media_dir(media_dir: MediaDir):
+    # Validate the path before persisting — without this every downstream
+    # containment check (is-this-file-inside-a-configured-media-dir) was
+    # trivially defeatable by POSTing `{"path": "/"}` and then referencing
+    # any path on the host.
+    resolved_path = _validate_filesystem_path(media_dir.path, label="Media directory")
     db = await aiosqlite.connect(DB_PATH)
     try:
         try:
             async with db.execute(
                 "INSERT INTO media_dirs (path, label, enabled) VALUES (?, ?, ?)",
-                (media_dir.path, media_dir.label, 1 if media_dir.enabled else 0),
+                (resolved_path, media_dir.label, 1 if media_dir.enabled else 0),
             ) as cur:
                 new_id = cur.lastrowid
             await db.commit()
@@ -182,7 +239,7 @@ async def add_media_dir(media_dir: MediaDir):
             raise HTTPException(status_code=409, detail="Directory already exists")
     finally:
         await db.close()
-    return {"id": new_id, "path": media_dir.path, "label": media_dir.label, "enabled": media_dir.enabled}
+    return {"id": new_id, "path": resolved_path, "label": media_dir.label, "enabled": media_dir.enabled}
 
 
 @router.delete("/dirs/{dir_id}")
@@ -208,6 +265,29 @@ async def delete_media_dir(dir_id: int):
     finally:
         await db.close()
     return {"status": "deleted", "id": dir_id}
+
+
+@router.get("/api-key")
+async def get_api_key():
+    """Return the full (unmasked) Shrinkerr API key.
+
+    Exposed separately from the main settings GET so the bulk response can
+    mask it like every other secret (defense-in-depth against session
+    hijack / XSS / cached responses). The admin still needs to copy the
+    key out for NZBGet / SABnzbd / worker setup, so this endpoint returns
+    it in the clear — reachable only with valid auth via the same
+    middleware that gates the rest of /api/settings/*.
+    """
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'api_key'"
+        ) as cur:
+            row = await cur.fetchone()
+        return {"api_key": (row["value"] if row else "") or ""}
+    finally:
+        await db.close()
 
 
 @router.get("/encoding")
@@ -325,9 +405,12 @@ async def get_encoding_settings():
     result["plex_pause_stream_threshold"] = int(merged.get("plex_pause_stream_threshold", "1"))
     result["plex_pause_transcode_only"] = merged.get("plex_pause_transcode_only", "true").lower() == "true"
 
-    # Authentication
+    # Authentication — mask the api_key the same way we mask TMDB / Plex /
+    # Sonarr / Radarr keys. Previously this endpoint returned the key in
+    # full, which meant any authenticated session could exfiltrate the
+    # raw credential used by workers + integration scripts.
     api_key_val = merged.get("api_key", "")
-    result["api_key"] = api_key_val
+    result["api_key"] = ("****" + api_key_val[-4:]) if api_key_val else ""
     result["api_key_configured"] = bool(api_key_val)
     result["auth_enabled"] = merged.get("auth_enabled", "false").lower() == "true"
     result["auth_username"] = merged.get("auth_username", "")
@@ -606,7 +689,18 @@ async def update_encoding_settings(update: SettingsUpdate):
         if update.custom_ffmpeg_flags is not None:
             updates["custom_ffmpeg_flags"] = update.custom_ffmpeg_flags
         if update.backup_folder is not None:
-            updates["backup_folder"] = update.backup_folder
+            # Empty string is valid (means "sprinkle .shrinkerr_backup next to
+            # each file"); any non-empty value must be an absolute, existing,
+            # non-system directory. Without this an attacker with settings
+            # write could coerce the conversion pipeline into renaming
+            # originals into /etc/cron.d/ etc.
+            raw = update.backup_folder.strip()
+            if raw:
+                updates["backup_folder"] = _validate_filesystem_path(
+                    raw, label="Backup folder"
+                )
+            else:
+                updates["backup_folder"] = ""
         if update.filename_suffix is not None:
             updates["filename_suffix"] = update.filename_suffix
         if update.vmaf_analysis_enabled is not None:

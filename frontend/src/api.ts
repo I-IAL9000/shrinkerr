@@ -613,6 +613,12 @@ export const browseDirectory = (path: string = "/") =>
     `/settings/browse?path=${encodeURIComponent(path)}`
   );
 export const getEncodingSettings = () => apiFetch<any>("/settings/encoding");
+// Dedicated endpoint for the unmasked Shrinkerr API key. The bulk
+// /settings/encoding response masks it (`****xxxx`) to keep session-
+// hijack / XSS exfiltration from trivially grabbing the real value; UI
+// surfaces that need the real key (copy-to-clipboard, worker snippet)
+// pull it from here on demand.
+export const getApiKey = () => apiFetch<{ api_key: string }>("/settings/api-key");
 export const updateEncodingSettings = (settings: any) =>
   apiFetch("/settings/encoding", {
     method: "PUT",

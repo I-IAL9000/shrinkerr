@@ -100,6 +100,71 @@ async def backfill_ignored_files() -> None:
         await db.close()
 
 
+async def _bootstrap_auth_defaults() -> None:
+    """Generate an api_key on a true fresh install, warn on insecure upgrades.
+
+    Two scenarios:
+
+    * Fresh install (settings table completely empty): mint a strong random
+      api_key + a session_secret, enable password-auth by default, and print
+      the generated key prominently so the user can configure their client.
+    * Existing install with api_key='' and auth_enabled=false: leave state
+      alone (don't lock out an existing deployment mid-upgrade) but print a
+      loud warning so the admin knows they're running unauthenticated.
+    """
+    import secrets
+    import sqlite3
+    try:
+        db = sqlite3.connect(DB_PATH)
+        try:
+            row_count = db.execute("SELECT COUNT(*) FROM settings").fetchone()[0]
+            existing = {
+                r[0]: r[1]
+                for r in db.execute(
+                    "SELECT key, value FROM settings "
+                    "WHERE key IN ('api_key','auth_enabled','session_secret')"
+                ).fetchall()
+            }
+            if row_count == 0:
+                # True fresh install — secure-by-default.
+                generated_key = secrets.token_hex(24)
+                generated_secret = secrets.token_hex(32)
+                db.executemany(
+                    "INSERT INTO settings (key, value) VALUES (?, ?)",
+                    [
+                        ("api_key", generated_key),
+                        ("auth_enabled", "true"),
+                        ("session_secret", generated_secret),
+                    ],
+                )
+                db.commit()
+                banner = "!" * 78
+                print(banner, flush=True)
+                print("[SECURITY] Fresh install detected — generated an API key.", flush=True)
+                print(f"[SECURITY] API KEY: {generated_key}", flush=True)
+                print("[SECURITY] Use it as the X-Api-Key header, or set a password in", flush=True)
+                print("[SECURITY] Settings → System → Authentication.", flush=True)
+                print(banner, flush=True)
+                return
+
+            api_key = (existing.get("api_key") or "").strip()
+            auth_enabled = (existing.get("auth_enabled") or "false").strip().lower() == "true"
+            if not api_key and not auth_enabled:
+                banner = "!" * 78
+                print(banner, flush=True)
+                print("[SECURITY] WARNING: this instance is running WITHOUT authentication.", flush=True)
+                print("[SECURITY] Anyone with network access can read your library, queue", flush=True)
+                print("[SECURITY] transcodes against arbitrary paths, and change dangerous", flush=True)
+                print("[SECURITY] settings like `post_conversion_script` (RCE vector).", flush=True)
+                print("[SECURITY] Set an API key in Settings → System → Authentication, or", flush=True)
+                print("[SECURITY] bind the port to 127.0.0.1 and front with a reverse proxy.", flush=True)
+                print(banner, flush=True)
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[SECURITY] Bootstrap skipped ({exc}); continuing.", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Init log capture BEFORE anything else prints
@@ -107,6 +172,7 @@ async def lifespan(app: FastAPI):
     init_logstream()
 
     await init_db()
+    await _bootstrap_auth_defaults()
     from backend.database import backfill_daily_stats
     await backfill_daily_stats()
     # Backfill file_events from existing jobs — run in BACKGROUND so a huge
@@ -192,8 +258,14 @@ app = FastAPI(title="Shrinkerr", lifespan=lifespan)
 _auth_cache: dict = {"settings": None, "checked_at": 0}
 
 
-def _get_auth_settings_sync() -> dict:
-    """Synchronous auth settings check -- cached for 60s."""
+def _get_auth_settings_sync() -> dict | None:
+    """Synchronous auth settings check — cached for 60s.
+
+    Returns None when the auth settings can't be read (DB locked, missing, etc.).
+    The middleware uses that to **fail closed** with a 503 rather than admit
+    traffic under a permissive default — the old behaviour turned a transient
+    DB error into a full auth bypass.
+    """
     now = time.monotonic()
     if now - _auth_cache.get("checked_at", 0) < 60 and _auth_cache.get("settings"):
         return _auth_cache["settings"]
@@ -216,10 +288,16 @@ def _get_auth_settings_sync() -> dict:
             "session_secret": settings.get("session_secret", ""),
         }
         _auth_cache["checked_at"] = now
-    except Exception:
-        if not _auth_cache.get("settings"):
-            _auth_cache["settings"] = {"auth_enabled": False, "api_key": "", "session_secret": ""}
-    return _auth_cache["settings"]
+        return _auth_cache["settings"]
+    except Exception as exc:
+        # Fail closed if we've never successfully loaded settings. If we have
+        # a cached copy from a previous successful read, serve that — stale
+        # but authoritative — rather than flipping to unauthenticated.
+        if _auth_cache.get("settings"):
+            print(f"[AUTH] settings read failed, serving cached: {exc}", flush=True)
+            return _auth_cache["settings"]
+        print(f"[AUTH] settings read failed and no cached copy: {exc}", flush=True)
+        return None
 
 
 def _validate_session(token: str, auth_settings: dict) -> bool:
@@ -242,6 +320,21 @@ def _validate_session(token: str, auth_settings: dict) -> bool:
         return False
 
 
+# Endpoints that require an API key even when the UI password-auth
+# (`auth_enabled`) is off. These are machine-to-machine integration surfaces
+# where anonymous access is dangerous regardless of the user's top-level
+# auth toggle — we always want to demand a shared secret on them.
+_AUTH_ALWAYS_REQUIRED_PREFIXES = (
+    "/api/webhooks/",                   # NZBGet / SABnzbd / arr post-processing
+    "/api/nodes/",                       # remote worker registration + job pull
+    "/api/settings/backup/download",     # DB snapshot incl. every stored secret
+    "/api/settings/backup/restore",      # replaces the DB — trivial takeover if open
+    "/api/settings/nzbget-config",       # returns unmasked integration api_keys
+    "/api/settings/nzbget-script",       # script with the api_key baked in
+    "/api/settings/sabnzbd-script",      # same
+)
+
+
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):
     path = request.url.path
@@ -259,21 +352,53 @@ async def api_key_auth(request: Request, call_next):
     if path in ("/api/auth/check", "/api/auth/login", "/api/auth/logout"):
         return await call_next(request)
 
-    # Check if auth is enabled
+    # Fail closed on DB errors. The old code flipped to unauthenticated here
+    # whenever the settings read raised — a transient SQLite lock was enough
+    # to drop auth for the whole process. Now a read failure is a 503 and
+    # the request is rejected, not admitted.
     auth_settings = _get_auth_settings_sync()
-    if not auth_settings.get("auth_enabled"):
+    if auth_settings is None:
+        return JSONResponse(status_code=503, content={"detail": "Auth subsystem unavailable"})
+
+    configured_api_key = auth_settings.get("api_key") or ""
+    password_auth_on = bool(auth_settings.get("auth_enabled"))
+
+    # Integration endpoints always require the api_key even when password
+    # auth is off — otherwise a LAN-exposed install hands out RCE-adjacent
+    # primitives (webhook path injection, worker-node spoofing, backup
+    # download) to anyone who can reach port 6680.
+    needs_auth = False
+    if any(path.startswith(p) for p in _AUTH_ALWAYS_REQUIRED_PREFIXES):
+        needs_auth = True
+    elif configured_api_key or password_auth_on:
+        # General case: gate the whole /api/ surface whenever ANY auth is
+        # configured. The old fail-open behaviour (only gating when
+        # `auth_enabled=true`) meant setting an api_key without flipping
+        # the password toggle left the app wide open.
+        needs_auth = True
+
+    if not needs_auth:
         return await call_next(request)
 
-    # Method 1: API key in header or query param
-    api_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
-    if api_key and api_key == auth_settings.get("api_key"):
+    # Method 1: API key (constant-time compare — plain `==` leaks timing).
+    supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
+    if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
         return await call_next(request)
 
-    # Method 2: Session cookie
-    session_cookie = request.cookies.get("shrinkerr_session")
-    if session_cookie and _validate_session(session_cookie, auth_settings):
-        return await call_next(request)
+    # Method 2: UI session cookie — only meaningful when the user has
+    # enabled password auth.
+    if password_auth_on:
+        session_cookie = request.cookies.get("shrinkerr_session")
+        if session_cookie and _validate_session(session_cookie, auth_settings):
+            return await call_next(request)
 
+    # Endpoint needed auth but got none (or needed a key specifically but
+    # caller sent only a session). No configured credential path = 503
+    # rather than locking the admin out.
+    if not configured_api_key and not password_auth_on:
+        return JSONResponse(status_code=503, content={
+            "detail": "This endpoint requires an API key. Set one in Settings → System → Authentication.",
+        })
     return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
 

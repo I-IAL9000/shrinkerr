@@ -805,6 +805,7 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
     from backend.rule_resolver import resolve_rules_for_batch
     from backend.config import settings
+    from backend.media_paths import load_media_dirs, is_in_any, _resolve
 
     # Load source codecs and default encoder from settings
     source_codecs = ["h264"]
@@ -820,16 +821,34 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     except Exception:
         pass
 
-    # Resolve encoding rules for all files
+    # Containment check — stops callers from queuing `/etc/hostname` etc.
+    allowed_dirs = await load_media_dirs()
+    if not allowed_dirs:
+        raise HTTPException(
+            status_code=400,
+            detail="No media directories configured",
+        )
+    safe_file_paths: list[str] = []
+    early_errors: list[str] = []
+    for raw_fp in payload.file_paths:
+        resolved = _resolve(raw_fp)
+        if not is_in_any(resolved, allowed_dirs):
+            early_errors.append(f"Outside media dirs: {raw_fp}")
+            continue
+        safe_file_paths.append(resolved)
+
+    # Resolve encoding rules for allowlisted paths only (skip any that
+    # failed the containment check so rules aren't evaluated against
+    # attacker-supplied paths).
     extra_context = {}
     if payload.nzbget_category:
         extra_context["nzbget_category"] = payload.nzbget_category
-    rule_results = await resolve_rules_for_batch(payload.file_paths, extra_context=extra_context)
+    rule_results = await resolve_rules_for_batch(safe_file_paths, extra_context=extra_context)
 
     added = 0
-    errors = []
+    errors = list(early_errors)
 
-    for fp in payload.file_paths:
+    for fp in safe_file_paths:
         if not _os.path.exists(fp):
             errors.append(f"File not found: {fp}")
             continue
