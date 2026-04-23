@@ -1475,6 +1475,22 @@ class QueueWorker:
                 except Exception:
                     pass
 
+            # Surface VMAF *failures* (not just scores) in Activity. Previously a
+            # silent VMAF failure left no trace anywhere the user could see —
+            # docker logs if they checked, nothing in the UI.
+            vmaf_err = result.get("vmaf_error")
+            if vmaf_score is None and vmaf_err:
+                try:
+                    from backend.file_events import log_event, EVENT_VMAF
+                    await log_event(
+                        current_file_path,
+                        EVENT_VMAF,
+                        f"VMAF failed — {vmaf_err[:200]}",
+                        {"vmaf_error": vmaf_err, "job_id": job_id},
+                    )
+                except Exception:
+                    pass
+
             if result.get("skipped_larger"):
                 # Mark file as ignored so future scans tag it
                 try:

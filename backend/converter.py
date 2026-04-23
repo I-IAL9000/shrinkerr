@@ -1094,8 +1094,20 @@ async def convert_file(
         print(f"[CONVERT] Output is larger but keeping it — tracks were removed inline ({abs(space_saved)} bytes growth, but unwanted tracks are gone)", flush=True)
         space_saved = 0  # Don't report negative savings
 
-    # VMAF analysis — compare original vs encoded BEFORE the original is moved/deleted
+    # VMAF analysis — compare original vs encoded BEFORE the original is moved/deleted.
+    # `vmaf_error` carries the reason to the caller (queue.py / worker_mode.py) so a
+    # file_event can be logged to the Activity page even when VMAF fails silently
+    # inside ffmpeg. Without this, a failure would leave no trace in the UI.
     vmaf_score = None
+    vmaf_error: str | None = None
+    # Always log the decision — previously a false `vmaf_enabled` silently skipped
+    # the whole block, making "why didn't VMAF run?" impossible to answer without
+    # re-reading settings and re-running.
+    print(
+        f"[CONVERT] VMAF decision: enabled={vmaf_enabled} "
+        f"(raw setting={_vmaf_setting!r})",
+        flush=True,
+    )
     if vmaf_enabled:
         try:
             from backend.test_encode import check_vmaf_available
@@ -1110,8 +1122,18 @@ async def convert_file(
                 # recorded no VMAF score. The stem prefix is preserved for
                 # human-debuggable leftover-file names in /tmp; the uuid
                 # suffix guarantees collision-free concurrent writes.
+                #
+                # Sanitize the stem — the json path is inlined into
+                # ffmpeg's -filter_complex as `libvmaf=...:log_path=X:...`,
+                # and filter-arg syntax treats apostrophes, backslashes,
+                # colons, spaces and brackets as structural. Unbalanced
+                # quotes (e.g. "Grey's Anatomy...") silently break the
+                # libvmaf arg, the ffmpeg process exits non-zero, and
+                # the job completes with no score. Keep only alnum / _ / - .
+                import re as _re_vmaf
                 import uuid as _uuid
-                _vmaf_id = f"{Path(input_path).stem[:20]}_{_uuid.uuid4().hex[:8]}"
+                _safe_stem = _re_vmaf.sub(r"[^A-Za-z0-9._-]", "_", Path(input_path).stem)[:20]
+                _vmaf_id = f"{_safe_stem}_{_uuid.uuid4().hex[:8]}"
                 vmaf_json_path = vmaf_dir / f"{_vmaf_id}_vmaf.json"
 
                 # Probe both video streams BEFORE the compare. We use this for
@@ -1276,7 +1298,9 @@ async def convert_file(
                 vmaf_timeout = max(300.0, vmaf_duration * 3.0)
                 await asyncio.wait_for(vmaf_proc.wait(), timeout=vmaf_timeout)
                 if vmaf_proc.returncode != 0:
-                    print(f"[CONVERT] VMAF failed (rc={vmaf_proc.returncode}): {''.join(vmaf_err_lines[-5:])}", flush=True)
+                    tail = " | ".join(vmaf_err_lines[-5:])[:500]
+                    vmaf_error = f"ffmpeg rc={vmaf_proc.returncode}: {tail}" if tail else f"ffmpeg rc={vmaf_proc.returncode}"
+                    print(f"[CONVERT] VMAF failed ({vmaf_error})", flush=True)
                 elif vmaf_json_path.exists():
                     import json as _vjson
                     vdata = _vjson.loads(vmaf_json_path.read_text())
@@ -1442,9 +1466,18 @@ async def convert_file(
                                 print(f"[CONVERT] Quality cross-check failed: {xc_exc}", flush=True)
                     vmaf_json_path.unlink(missing_ok=True)
             else:
-                print(f"[CONVERT] VMAF skipped — libvmaf not available", flush=True)
+                vmaf_error = "libvmaf not available"
+                print(f"[CONVERT] VMAF skipped — {vmaf_error}", flush=True)
         except Exception as vmaf_exc:
-            print(f"[CONVERT] VMAF analysis failed: {vmaf_exc}", flush=True)
+            import traceback as _tb
+            vmaf_error = f"{type(vmaf_exc).__name__}: {vmaf_exc}"
+            print(f"[CONVERT] VMAF analysis failed: {vmaf_error}\n{_tb.format_exc()}", flush=True)
+    else:
+        print(
+            f"[CONVERT] VMAF skipped — vmaf_analysis_enabled is false "
+            f"(raw setting={_vmaf_setting!r})",
+            flush=True,
+        )
 
     # ------------------------------------------------------------------
     # VMAF threshold enforcement: if the user configured a minimum acceptable
@@ -1576,6 +1609,7 @@ async def convert_file(
         "error": None,
         "backup_path": result_backup_path,
         "vmaf_score": vmaf_score,
+        "vmaf_error": vmaf_error,
         "ffmpeg_command": full_command,
         "ffmpeg_log": "\n".join(all_lines[-500:]),  # Cap at 500 lines
         "encoding_stats": {

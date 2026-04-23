@@ -204,6 +204,26 @@ async def request_job(req: RequestJobBody, request: Request):
     # Include the node's translate_encoder flag so the worker knows whether to
     # fall back to libx265 for nvenc jobs (vs. reject them)
     assigned["translate_encoder"] = bool(translate)
+
+    # Pass VMAF settings through to the worker so remote nodes honour the
+    # server's configured VMAF analysis policy. Previously worker_mode.py
+    # hardcoded VMAF off because these fields weren't plumbed through — which
+    # meant users had no way to enable VMAF for remote workers.
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT key, value FROM settings WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score')"
+        ) as cur:
+            vmaf_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
+    finally:
+        await db.close()
+    assigned["vmaf_analysis_enabled"] = (
+        vmaf_settings.get("vmaf_analysis_enabled", "true").lower() == "true"
+    )
+    try:
+        assigned["vmaf_min_score"] = float(vmaf_settings.get("vmaf_min_score", "0") or 0)
+    except (TypeError, ValueError):
+        assigned["vmaf_min_score"] = 0.0
     print(f"[NODES] Assigned job {job['id']} ({job.get('encoder') or 'default'}) to node '{req.node_id}' ({node['name']})", flush=True)
 
     # Broadcast that this node is now working

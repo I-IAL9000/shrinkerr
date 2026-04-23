@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] — 2026-04-23
+
+### Fixed
+- VMAF analysis now handles filenames with apostrophes, spaces or brackets (e.g. "Grey's Anatomy - S01E01"). The derived log path was previously inlined raw into ffmpeg's `-filter_complex` and the apostrophe opened an unbalanced quoted region, so libvmaf exited non-zero and the score was silently dropped.
+
+### Changed
+- Remote worker nodes now honour the server's `vmaf_analysis_enabled` / `vmaf_min_score` settings (previously hardcoded off).
+- VMAF failures are now surfaced on the Activity page with the ffmpeg error, not just the successful scores.
+- Converter always logs its VMAF decision (`enabled=… raw setting=…`) and the exception traceback on failure, so "VMAF didn't run" is diagnosable from docker logs without rerunning.
+
 ## [0.3.9] — 2026-04-22
 
 ### Changed
