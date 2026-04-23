@@ -7,3 +7,10 @@ frontend/node_modules/
 frontend/dist/
 .superpowers/
 .venv/
+# Keep local secrets out of the build context so they don't end up in
+# image layers. The only "bundled secret" that reaches the image is
+# SHRINKERR_TMDB_API_KEY, passed in via --build-arg.
+.env
+.env.*
+**/.env
+**/.env.*

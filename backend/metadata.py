@@ -112,11 +112,12 @@ async def _lookup_tmdb(
     imdb_id: str, api_key: str, client: httpx.AsyncClient
 ) -> str | None:
     """Look up original language on TMDB via IMDb ID."""
-    url = (
-        f"https://api.themoviedb.org/3/find/{imdb_id}"
-        f"?external_source=imdb_id&api_key={api_key}"
+    # params= instead of URL-interpolated `?api_key=…` so httpx exception
+    # messages don't carry the raw key if something upstream logs them.
+    resp = await client.get(
+        f"https://api.themoviedb.org/3/find/{imdb_id}",
+        params={"external_source": "imdb_id", "api_key": api_key},
     )
-    resp = await client.get(url)
     resp.raise_for_status()
     data = resp.json()
 
@@ -188,10 +189,15 @@ async def lookup_original_language(file_path: str) -> str | None:
             if id_type == "imdb":
                 raw_lang = await _lookup_tmdb(media_id, tmdb_key, client)
             elif id_type == "tvdb":
-                # TMDB's find endpoint supports tvdb_id as external source
-                url = f"https://api.themoviedb.org/3/find/{media_id}?external_source=tvdb_id&api_key={tmdb_key}"
+                # TMDB's find endpoint supports tvdb_id as external source.
+                # Pass the key as params= rather than interpolating it into
+                # the URL string — means httpx exception messages don't
+                # carry the raw key even if something upstream prints them.
                 try:
-                    resp = await client.get(url)
+                    resp = await client.get(
+                        f"https://api.themoviedb.org/3/find/{media_id}",
+                        params={"external_source": "tvdb_id", "api_key": tmdb_key},
+                    )
                     resp.raise_for_status()
                     data = resp.json()
                     for bucket in ("tv_results", "movie_results"):

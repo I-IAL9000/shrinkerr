@@ -27,6 +27,8 @@ deeper.
   the VMAF and worker-performance saga from v0.3.10 through v0.3.19 plus
   classic issues (spinner on first launch, NVENC unavailable, AFP / NFS
   quirks).
+- [**Security**](security.md) — threat model, in-app defences, and
+  hardening checklist for production deployments.
 - [**FAQ**](faq.md) — quick answers to recurring questions.
 
 ## Something missing?

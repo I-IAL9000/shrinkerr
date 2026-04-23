@@ -664,7 +664,10 @@ async def update_encoding_settings(update: SettingsUpdate):
         if update.tmdb_api_key is not None and not update.tmdb_api_key.startswith("****"):
             updates["tmdb_api_key"] = update.tmdb_api_key
         if update.plex_url is not None:
-            updates["plex_url"] = update.plex_url.rstrip("/")
+            from backend.ssrf_guard import validate_outbound_url
+            updates["plex_url"] = validate_outbound_url(
+                update.plex_url.rstrip("/"), label="Plex URL",
+            )
         if update.plex_token is not None and not update.plex_token.startswith("****"):
             updates["plex_token"] = update.plex_token
         if update.plex_path_mapping is not None:
@@ -721,14 +724,12 @@ async def update_encoding_settings(update: SettingsUpdate):
         if update.auth_username is not None:
             updates["auth_username"] = update.auth_username
         if update.auth_password is not None and update.auth_password:
-            import hashlib
-            username = update.auth_username or ""
-            # If username not provided in this update, read current from DB
-            if not username:
-                async with db.execute("SELECT value FROM settings WHERE key = 'auth_username'") as cur:
-                    row = await cur.fetchone()
-                    username = row[0] if row else ""
-            updates["auth_password_hash"] = hashlib.sha256((update.auth_password + username).encode()).hexdigest()
+            # New passwords are hashed with bcrypt (cost 12). Legacy
+            # SHA-256 hashes already in the DB keep working via the
+            # compat path in backend/main.py::_verify_password and get
+            # transparently upgraded on next successful login.
+            from backend.main import _hash_password
+            updates["auth_password_hash"] = _hash_password(update.auth_password)
         # Generate session_secret if not yet set
         async with db.execute("SELECT value FROM settings WHERE key = 'session_secret'") as cur:
             row = await cur.fetchone()
@@ -757,13 +758,19 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["health_check_after_conversion"] = v
         # Sonarr / Radarr
         if update.sonarr_url is not None:
-            updates["sonarr_url"] = update.sonarr_url.rstrip("/")
+            from backend.ssrf_guard import validate_outbound_url
+            updates["sonarr_url"] = validate_outbound_url(
+                update.sonarr_url.rstrip("/"), label="Sonarr URL",
+            )
         if update.sonarr_api_key is not None and not update.sonarr_api_key.startswith("****"):
             updates["sonarr_api_key"] = update.sonarr_api_key
         if update.sonarr_path_mapping is not None:
             updates["sonarr_path_mapping"] = update.sonarr_path_mapping
         if update.radarr_url is not None:
-            updates["radarr_url"] = update.radarr_url.rstrip("/")
+            from backend.ssrf_guard import validate_outbound_url
+            updates["radarr_url"] = validate_outbound_url(
+                update.radarr_url.rstrip("/"), label="Radarr URL",
+            )
         if update.radarr_api_key is not None and not update.radarr_api_key.startswith("****"):
             updates["radarr_api_key"] = update.radarr_api_key
         if update.radarr_path_mapping is not None:
@@ -787,7 +794,28 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["nzbget_check_radarr_tags"] = "true" if update.nzbget_check_radarr_tags else "false"
         # Post-conversion script
         if update.post_conversion_script is not None:
-            updates["post_conversion_script"] = update.post_conversion_script
+            # Arbitrary-binary-execution vector: ffmpeg-worker runs this
+            # command after every successful encode. Changing it requires
+            # the UI-level password login so a leaked API key alone can't
+            # flip an installation into an RCE posture. Setting it empty
+            # is always allowed (disables the feature).
+            new_script = update.post_conversion_script
+            if new_script:
+                async with db.execute(
+                    "SELECT value FROM settings WHERE key = 'auth_enabled'"
+                ) as cur:
+                    row = await cur.fetchone()
+                auth_enabled = bool(row) and (row[0] == "true")
+                if not auth_enabled:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            "post_conversion_script runs arbitrary commands after every job. "
+                            "Enable password auth (Settings → System → Authentication) before "
+                            "configuring this setting so it can't be changed with just an API key."
+                        ),
+                    )
+            updates["post_conversion_script"] = new_script
         if update.post_conversion_script_timeout is not None:
             updates["post_conversion_script_timeout"] = str(update.post_conversion_script_timeout)
         # Quiet hours
@@ -799,11 +827,17 @@ async def update_encoding_settings(update: SettingsUpdate):
             val = getattr(update, key, None)
             if val is not None:
                 updates[key] = "true" if val else "false"
-        # Notifications — string fields
+        # Notifications — string fields. URL fields go through SSRF
+        # validation so pointing a webhook at 169.254.169.254 / ::ffff:
+        # cloud-metadata endpoints is rejected at save time.
+        from backend.ssrf_guard import validate_outbound_url
+        _url_notify_keys = {"discord_webhook_url", "webhook_url"}
         for key in ["discord_webhook_url", "telegram_bot_token", "telegram_chat_id",
                      "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to", "webhook_url", "disk_space_threshold_gb"]:
             val = getattr(update, key, None)
             if val is not None:
+                if key in _url_notify_keys and val:
+                    val = validate_outbound_url(val, label=f"{key} URL")
                 updates[key] = val
         if update.smtp_pass is not None and not update.smtp_pass.startswith("****"):
             updates["smtp_pass"] = update.smtp_pass
@@ -835,20 +869,69 @@ async def update_encoding_settings(update: SettingsUpdate):
 
 @router.get("/browse")
 async def browse_directory(path: str = "/"):
-    """List directories at the given path for the file browser."""
+    """List directories at the given path for the media-dir picker.
+
+    Previously this was an unrestricted filesystem enumerator — `?path=/etc`
+    returned every config file name, `?path=/proc/self` exposed container
+    runtime information. Now we refuse anything under system-only prefixes
+    (the same `_DISALLOWED_MEDIA_DIR_PREFIXES` used for media-dir input
+    validation) so the picker can't be used as a recon tool.
+    """
     from pathlib import Path as P
-    target = P(path)
+    try:
+        target = P(path).resolve(strict=False)
+    except (OSError, RuntimeError):
+        return {"path": path, "dirs": [], "error": "Invalid path"}
+
+    target_str = str(target)
+    # The picker is meant for choosing a directory the user will register
+    # as a media root. Block the usual system-only roots explicitly (same
+    # list we reject in /dirs POST) and refuse `/` (lists everything).
+    if target_str == "/":
+        return {"path": "/", "dirs": [], "error": "Refusing to list filesystem root"}
+    for forbidden in _DISALLOWED_MEDIA_DIR_PREFIXES:
+        if target_str == forbidden or target_str.startswith(forbidden + "/"):
+            return {
+                "path": target_str,
+                "dirs": [],
+                "error": f"{forbidden} is a restricted path",
+            }
+
     if not target.exists() or not target.is_dir():
-        return {"path": path, "dirs": [], "error": "Directory not found"}
+        return {"path": target_str, "dirs": [], "error": "Directory not found"}
     dirs = []
     try:
         for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
             if entry.is_dir() and not entry.name.startswith("."):
                 dirs.append({"name": entry.name, "path": str(entry)})
     except PermissionError:
-        return {"path": path, "dirs": [], "error": "Permission denied"}
-    parent = str(target.parent) if str(target) != "/" else None
-    return {"path": str(target), "parent": parent, "dirs": dirs}
+        return {"path": target_str, "dirs": [], "error": "Permission denied"}
+    parent = str(target.parent) if target_str != "/" else None
+    return {"path": target_str, "parent": parent, "dirs": dirs}
+
+
+# Settings keys that NEVER belong in an exported / backup bundle — they
+# are either auth credentials or session-signing material. A leaked
+# export file previously handed an attacker:
+#   - api_key        (full Shrinkerr API access)
+#   - session_secret (forge any session cookie permanently)
+#   - auth_password_hash (offline cracking target)
+#   - *_api_key / *_token / smtp_pass (every integrated service)
+# Exports now omit this allowlist; restore leaves the live values alone.
+_SECRET_SETTINGS_KEYS = frozenset({
+    "api_key",
+    "session_secret",
+    "auth_password_hash",
+    "tmdb_api_key",
+    "plex_token",
+    "jellyfin_api_key",
+    "sonarr_api_key",
+    "radarr_api_key",
+    "smtp_pass",
+    "discord_webhook_url",  # contains the secret path component
+    "telegram_bot_token",
+    "webhook_url",          # often signed / secret URL
+})
 
 
 @router.get("/export")
@@ -861,6 +944,8 @@ async def export_settings():
         settings = {}
         async with db.execute("SELECT key, value FROM settings") as cur:
             for row in await cur.fetchall():
+                if row["key"] in _SECRET_SETTINGS_KEYS:
+                    continue
                 settings[row["key"]] = row["value"]
         # Also export media dirs
         async with db.execute("SELECT path, label FROM media_dirs") as cur:

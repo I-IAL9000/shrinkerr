@@ -20,6 +20,12 @@ from backend.database import connect_db
 router = APIRouter(prefix="/api/scan")
 
 
+def _escape_like(s: str) -> str:
+    """Escape `%`, `_`, and `\\` so user-supplied search strings don't
+    behave as LIKE wildcards. Paired with `ESCAPE '\\'` in the SQL."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 # ---- Property catalog --------------------------------------------------------
 # Each property declares: kind ('column' | 'computed' | 'audio' | 'subtitle' | 'filename'),
 # optional column expression, value type, allowed operators, and label/group for the UI.
@@ -171,10 +177,15 @@ def _build_sql_clause(pred: Predicate, prop: dict) -> Optional[tuple[str, list]]
         lo, hi = sorted([val, val2])
         return (f"{col} BETWEEN ? AND ?", [lo, hi])
     if op == "contains":
-        return (f"{col} LIKE ?", [f"%{val}%"])
+        # Escape LIKE metacharacters in user input so `%` and `_` don't act
+        # as wildcards (otherwise an attacker can enumerate file_paths one
+        # character at a time).
+        safe = _escape_like(str(val))
+        return (f"{col} LIKE ? ESCAPE '\\'", [f"%{safe}%"])
     if op == "regex":
         # SQLite REGEXP isn't built-in; fall back to LIKE with manual fallback in Python
-        return (f"{col} LIKE ?", [f"%{val}%"])
+        safe = _escape_like(str(val))
+        return (f"{col} LIKE ? ESCAPE '\\'", [f"%{safe}%"])
     if op == "in" and isinstance(val, (list, tuple)) and val:
         placeholders = ",".join("?" for _ in val)
         if prop.get("type") == "string":

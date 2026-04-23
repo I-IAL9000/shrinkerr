@@ -1561,6 +1561,16 @@ async def convert_file(
                 backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
                 backup_dir.mkdir(exist_ok=True)
             backup_path = backup_dir / p.name
+            # Refuse if the target path is a symlink — an attacker who can
+            # place a symlink in the backup folder named like the source
+            # file could otherwise redirect the rename to anywhere the
+            # container user can write (e.g. /etc/cron.d/root). Explicit
+            # check before rename closes the gap since Path.rename happily
+            # follows a pre-existing symlink on Linux.
+            if backup_path.is_symlink():
+                raise OSError(
+                    f"Refusing to rename into backup path — destination is a symlink: {backup_path}"
+                )
             p.rename(backup_path)
             result_backup_path = str(backup_path)
             print(f"[CONVERT] Original backed up to: {backup_path}", flush=True)
@@ -1574,6 +1584,15 @@ async def convert_file(
                 p.unlink()
         else:
             p.unlink()
+        # Same symlink check for the final output rename. The common case
+        # is benign (final_path doesn't exist at all) but defense-in-depth
+        # catches the case where an attacker placed a symlink that the
+        # converter would follow.
+        _final = Path(final_path)
+        if _final.is_symlink():
+            raise OSError(
+                f"Refusing to overwrite symlink at final output path: {final_path}"
+            )
         temp.rename(final_path)
     except OSError as exc:
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}

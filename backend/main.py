@@ -149,6 +149,23 @@ async def _bootstrap_auth_defaults() -> None:
 
             api_key = (existing.get("api_key") or "").strip()
             auth_enabled = (existing.get("auth_enabled") or "false").strip().lower() == "true"
+            session_secret = (existing.get("session_secret") or "").strip()
+
+            # Always ensure `session_secret` exists. The HMAC signing path
+            # now refuses to issue/validate sessions when it's empty (old
+            # code fell back to the literal string "default-secret",
+            # which meant every install that hadn't touched settings used
+            # an identical forgeable key). Auto-generate so the fail-
+            # closed path never fires for a legitimate user.
+            if not session_secret:
+                db.execute(
+                    "INSERT INTO settings (key, value) VALUES ('session_secret', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (secrets.token_hex(32),),
+                )
+                db.commit()
+                print("[SECURITY] Generated session_secret (was empty).", flush=True)
+
             if not api_key and not auth_enabled:
                 banner = "!" * 78
                 print(banner, flush=True)
@@ -301,13 +318,21 @@ def _get_auth_settings_sync() -> dict | None:
 
 
 def _validate_session(token: str, auth_settings: dict) -> bool:
-    """Validate a session cookie token."""
+    """Validate a session cookie token.
+
+    Refuses the token if `session_secret` is empty — the old code fell
+    back to the literal string `"default-secret"` which made every
+    install's sessions trivially forgeable whenever the secret hadn't
+    been generated yet.
+    """
     try:
         parts = token.split(":")
         if len(parts) != 3:
             return False
         username, timestamp, signature = parts
-        secret = auth_settings.get("session_secret", "default-secret")
+        secret = (auth_settings.get("session_secret") or "").strip()
+        if not secret:
+            return False  # fail closed — no silent fallback to a known constant
         expected = hmac.new(
             secret.encode(), f"{username}:{timestamp}".encode(), hashlib.sha256
         ).hexdigest()
@@ -318,6 +343,104 @@ def _validate_session(token: str, auth_settings: dict) -> bool:
         return age < 86400 * 30
     except Exception:
         return False
+
+
+# -----------------------------------------------------------------------
+# Password hashing
+# -----------------------------------------------------------------------
+# bcrypt replaces the legacy unsalted SHA-256 scheme. The verify path
+# handles both formats so existing installs keep working: a successful
+# login with a legacy SHA-256 hash triggers a one-shot re-hash to bcrypt
+# at that moment, transparent to the user.
+
+_BCRYPT_PREFIXES = (b"$2a$", b"$2b$", b"$2y$")
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password with bcrypt (cost 12)."""
+    import bcrypt
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
+
+
+def _verify_password(password: str, username: str, stored_hash: str) -> bool:
+    """Verify a password against either a bcrypt hash or the legacy
+    SHA-256(password + username) hash. Callers should call
+    `_maybe_upgrade_password_hash` after a successful legacy match to
+    move the stored value over to bcrypt."""
+    import bcrypt
+    if not stored_hash:
+        return False
+    stored_bytes = stored_hash.encode("utf-8")
+    if any(stored_bytes.startswith(p) for p in _BCRYPT_PREFIXES):
+        try:
+            return bcrypt.checkpw(password.encode("utf-8"), stored_bytes)
+        except (ValueError, TypeError):
+            return False
+    # Legacy path: SHA-256(password + username) hex
+    legacy = hashlib.sha256((password + username).encode()).hexdigest()
+    return hmac.compare_digest(legacy, stored_hash)
+
+
+async def _maybe_upgrade_password_hash(username: str, password: str, stored_hash: str) -> None:
+    """If the stored hash is in the legacy format, rewrite it with bcrypt
+    transparently during a successful login."""
+    if not stored_hash:
+        return
+    if any(stored_hash.encode().startswith(p) for p in _BCRYPT_PREFIXES):
+        return  # already on bcrypt
+    try:
+        import aiosqlite
+        new_hash = _hash_password(password)
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute(
+                "UPDATE settings SET value = ? WHERE key = 'auth_password_hash'",
+                (new_hash,),
+            )
+            await db.commit()
+            print(f"[AUTH] Upgraded password hash for '{username}' to bcrypt", flush=True)
+        finally:
+            await db.close()
+        # Kick the auth cache so subsequent middleware lookups see the new hash
+        _auth_cache["checked_at"] = 0
+    except Exception as exc:
+        print(f"[AUTH] Password hash upgrade failed (will retry next login): {exc}", flush=True)
+
+
+# -----------------------------------------------------------------------
+# Login rate limiter — in-memory per-IP leaky bucket.
+# -----------------------------------------------------------------------
+# Small enough to hand-roll rather than pull slowapi. Guards against
+# online password guessing; not an answer to a real distributed attack,
+# but with bcrypt behind it a single source can't burn through the
+# keyspace. Cleared when the process restarts; that's fine — attacks
+# survive restarts much less often than the legitimate admin does.
+
+_LOGIN_BUCKET: dict[str, list[float]] = {}
+_LOGIN_BUCKET_WINDOW = 60.0       # seconds
+_LOGIN_BUCKET_MAX = 8              # attempts per window per IP
+
+
+def _login_allowed(remote_ip: str) -> bool:
+    """Return True if another login attempt from this IP is allowed.
+    Records the attempt on return-True."""
+    now = time.time()
+    bucket = _LOGIN_BUCKET.setdefault(remote_ip, [])
+    # Drop old entries
+    cutoff = now - _LOGIN_BUCKET_WINDOW
+    bucket[:] = [t for t in bucket if t >= cutoff]
+    if len(bucket) >= _LOGIN_BUCKET_MAX:
+        return False
+    bucket.append(now)
+    # Opportunistic cleanup — prevent the dict growing unbounded
+    if len(_LOGIN_BUCKET) > 2048:
+        for ip in list(_LOGIN_BUCKET.keys()):
+            entries = [t for t in _LOGIN_BUCKET[ip] if t >= cutoff]
+            if entries:
+                _LOGIN_BUCKET[ip] = entries
+            else:
+                _LOGIN_BUCKET.pop(ip, None)
+    return True
 
 
 # Endpoints that require an API key even when the UI password-auth
@@ -333,6 +456,26 @@ _AUTH_ALWAYS_REQUIRED_PREFIXES = (
     "/api/settings/nzbget-script",       # script with the api_key baked in
     "/api/settings/sabnzbd-script",      # same
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Attach baseline security headers to every response.
+
+    None of these meaningfully restrict the self-hosted SPA's own
+    behaviour; they just make sure that if the app is ever loaded in a
+    hostile iframe / MIME-sniffed / reflected-content scenario, the
+    browser treats it sensibly. No CSP script-src is set because the
+    React bundle relies on inline-style attributes.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    # frame-ancestors 'none' is the CSP-native equivalent of X-Frame-Options
+    # DENY and also works on newer browsers that ignore the older header.
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
 
 
 @app.middleware("http")
@@ -407,19 +550,31 @@ async def api_key_auth(request: Request, call_next):
 async def auth_check(request: Request):
     """Check if authentication is required and if the current request is authenticated."""
     settings = _get_auth_settings_sync()
+    if settings is None:
+        return JSONResponse(
+            status_code=503,
+            content={"auth_required": True, "authenticated": False, "method": None,
+                     "error": "Auth subsystem unavailable"},
+        )
 
-    if not settings.get("auth_enabled"):
+    configured_api_key = (settings.get("api_key") or "").strip()
+    password_auth_on = bool(settings.get("auth_enabled"))
+
+    # No auth configured at all — treat as "nothing required".
+    if not configured_api_key and not password_auth_on:
         return {"auth_required": False, "authenticated": True, "method": None}
 
-    # Check API key
-    api_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key")
-    if api_key and api_key == settings.get("api_key"):
+    # Check API key (constant-time; old `==` comparison was an online
+    # timing oracle against this unauthenticated endpoint).
+    supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
+    if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
         return {"auth_required": True, "authenticated": True, "method": "api_key"}
 
-    # Check session cookie
-    session = request.cookies.get("shrinkerr_session")
-    if session and _validate_session(session, settings):
-        return {"auth_required": True, "authenticated": True, "method": "session"}
+    # Check session cookie — only when password auth is enabled.
+    if password_auth_on:
+        session = request.cookies.get("shrinkerr_session")
+        if session and _validate_session(session, settings):
+            return {"auth_required": True, "authenticated": True, "method": "session"}
 
     return {"auth_required": True, "authenticated": False, "method": None}
 
@@ -427,6 +582,16 @@ async def auth_check(request: Request):
 @app.post("/api/auth/login")
 async def auth_login(request: Request):
     """Authenticate with username/password and set a session cookie."""
+    # Rate limit — 8 attempts per minute per IP. Blunts online
+    # brute-force against weak passwords; combined with bcrypt (cost 12)
+    # a single source can't make meaningful progress.
+    remote_ip = (request.client.host if request.client else "unknown") or "unknown"
+    if not _login_allowed(remote_ip):
+        return JSONResponse(
+            {"error": "Too many login attempts. Try again in a minute."},
+            status_code=429,
+        )
+
     body = await request.json()
     username = body.get("username", "")
     password = body.get("password", "")
@@ -450,17 +615,32 @@ async def auth_login(request: Request):
 
     stored_username = settings.get("auth_username", "")
     stored_hash = settings.get("auth_password_hash", "")
+    secret = (settings.get("session_secret") or "").strip()
+    if not secret:
+        # Fail closed — without a session secret we can't safely issue a
+        # session cookie (old code fell back to the literal string
+        # "default-secret" → every install's sessions were forgeable).
+        return JSONResponse(
+            {"error": "Server misconfiguration: session secret not set"},
+            status_code=503,
+        )
 
-    if username != stored_username:
+    # Always hash the candidate password (even when username is wrong) so
+    # timing can't be used to enumerate usernames. The _verify_password
+    # call does the bcrypt/SHA-256 dispatch; we only accept the result
+    # when the username also matches.
+    password_ok = _verify_password(password, stored_username, stored_hash)
+    username_ok = bool(stored_username) and hmac.compare_digest(username, stored_username)
+    if not (username_ok and password_ok):
         return JSONResponse({"error": "Invalid credentials"}, status_code=401)
 
-    # Verify password
-    password_hash = hashlib.sha256((password + stored_username).encode()).hexdigest()
-    if password_hash != stored_hash:
-        return JSONResponse({"error": "Invalid credentials"}, status_code=401)
+    # One-shot upgrade of legacy SHA-256 hashes to bcrypt on first
+    # successful login. Runs in the background; the response doesn't
+    # wait for the DB update.
+    import asyncio as _asyncio
+    _asyncio.create_task(_maybe_upgrade_password_hash(stored_username, password, stored_hash))
 
     # Create session token
-    secret = settings.get("session_secret", "default-secret")
     timestamp = str(int(time.time()))
     signature = hmac.new(
         secret.encode(), f"{username}:{timestamp}".encode(), hashlib.sha256
@@ -468,8 +648,16 @@ async def auth_login(request: Request):
     token = f"{username}:{timestamp}:{signature}"
 
     response = JSONResponse({"success": True, "username": username})
+    # Set Secure when the request came in over HTTPS — reverse-proxy users
+    # on HTTPS get the stricter cookie, local HTTP dev stays functional.
+    is_https = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto", "").lower() == "https"
+    )
     response.set_cookie(
-        "shrinkerr_session", token, httponly=True, samesite="lax", max_age=86400 * 30
+        "shrinkerr_session", token,
+        httponly=True, samesite="lax", max_age=86400 * 30,
+        secure=is_https,
     )
     return response
 

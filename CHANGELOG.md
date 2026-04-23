@@ -5,6 +5,36 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.29] — 2026-04-23
+
+### Security
+
+Phases 2 + 3 of the security hardening pass. New [`docs/security.md`](docs/security.md) documents the threat model and a hardening checklist.
+
+#### Fixed
+- **Passwords** now hashed with bcrypt (cost 12). Legacy SHA-256 hashes from older installs are transparently upgraded on first successful login.
+- **Secret comparisons** (API key, password hash, session signature) all use `hmac.compare_digest` — no more timing oracles.
+- **Session signing** fails closed when `session_secret` is empty; the old code fell back to a literal `"default-secret"` constant that made every un-configured install's sessions forgeable. Startup now auto-generates `session_secret` on any DB that's missing it, not only on fresh installs.
+- **Login rate-limited** to 8 attempts/minute/IP.
+- **`post_conversion_script` setting** refuses to save a non-empty value when `auth_enabled=false`. Changing this setting runs arbitrary commands after every encode — now it requires the password-auth gate, not just an API key.
+- **SSRF protection** on user-configured outbound URLs (Plex, Sonarr, Radarr, Discord webhook, generic webhook). Link-local (`169.254.0.0/16` — covers AWS / Azure / GCP / Alibaba metadata endpoints), IPv6 link-local, and IPv6 site-local ranges are rejected at save time.
+- **Session cookies** set `Secure` flag when the request arrived over HTTPS (detected via scheme + `X-Forwarded-Proto`).
+- **Settings export** now strips every secret row (`api_key`, `session_secret`, `auth_password_hash`, integration API keys, SMTP password, path-tokened URLs). Previously a leaked export file handed over every stored credential.
+- **`/api/settings/browse`** refuses to list the filesystem root or any system directory (`/etc`, `/root`, `/proc`, `/sys`, `/boot`, `/dev`). The old picker could be used as an unauthenticated filesystem enumerator before v0.3.28's auth middleware fixes; now it's locked regardless of auth state.
+- **LIKE search patterns** escape `%` and `_` metacharacters with `ESCAPE '\\'`. Stops user-supplied search strings from enumerating scan_results via wildcard patterns.
+- **Symlink guards** on rename / backup write destinations. Refuses to follow a pre-existing symlink at the target path — closes the window where an attacker with write access to the backup folder could redirect the rename.
+- **TMDB API key** passed as `params={...}` rather than interpolated into the URL string — httpx exception messages no longer carry the raw key.
+- **python-multipart bumped** to 0.0.18 (CVE-2024-53981 DoS).
+- **`.env` / `.env.*`** added to `.dockerignore` so local secrets never leak into image layers.
+
+#### Added
+- **Baseline security headers** on every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Referrer-Policy: strict-origin-when-cross-origin`.
+- **`backend/ssrf_guard.py`** — reusable URL validator; can also block RFC 1918 private ranges when `block_private=True` for cloud deployments.
+- **`docs/security.md`** — threat model, list of in-app defences, hardening checklist for production deployments.
+
+#### Remaining (tracked for the next release)
+- **Per-node worker tokens.** Anyone who holds the shared `api_key` can currently impersonate any registered worker by sending its `node_id` in a heartbeat. The fix (issue per-node tokens at registration, bind them to `node_id` on every subsequent call) is a bigger change that touches worker-mode and is deferred to keep this release scoped.
+
 ## [0.3.28] — 2026-04-23
 
 ### Security
@@ -315,6 +345,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.29]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.29
 [0.3.28]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.28
 [0.3.27]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.27
 [0.3.26]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.26
