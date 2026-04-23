@@ -111,9 +111,11 @@
 
 /* Progress + checkboxes */
 [data-theme="light"] .progress-bar-track { background: var(--border); }
-[data-theme="light"] input[type="checkbox"] { background: #ffffff; border: 1px solid var(--border-strong); }
-[data-theme="light"] input[type="checkbox"]:checked { background: var(--accent-btn); border-color: var(--accent-btn); }
-[data-theme="light"] .settings-page input[type="checkbox"] { background: #ffffff; border-color: var(--border-strong); }
+[data-theme="light"] input[type="checkbox"] { background-color: #ffffff; border: 1px solid var(--border-strong); }
+/* background-color only — the SVG checkmark set via `background-image` in the
+   global :checked rule must survive this override */
+[data-theme="light"] input[type="checkbox"]:checked { background-color: var(--accent-btn); border-color: var(--accent-btn); }
+[data-theme="light"] .settings-page input[type="checkbox"] { background-color: #ffffff; border-color: var(--border-strong); }
 
 /* Form inputs stay white so they read as fields, not as buttons */
 [data-theme="light"] input[type="text"],
@@ -203,19 +205,14 @@ input[type="checkbox"] {
   gap: 8px;
 }
 input[type="checkbox"]:checked {
-  background: #4920f0;
+  background-color: #4920f0;
   border-color: #4920f0;
-}
-input[type="checkbox"]:checked::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 0px;
-  width: 5px;
-  height: 9px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  /* Inline-SVG checkmark so it renders reliably regardless of appearance:none
+     quirks or safety-net CSS that might touch ::after pseudo-elements. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='4 11 8 15 16 6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 80% 80%;
 }
 
 body {

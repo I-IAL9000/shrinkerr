@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.21] — 2026-04-23
+
+### Fixed
+- Checked checkboxes in light mode now show their tick. The old `::after` rotated-border checkmark was brittle; replaced with an inline-SVG background image. Also fixed the light-mode `:checked` override using the `background` shorthand (which was clearing the SVG) in favour of `background-color`.
+
 ## [0.3.20] — 2026-04-23
 
 ### Changed
