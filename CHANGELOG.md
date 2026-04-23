@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12] — 2026-04-23
+
+### Changed
+- NVENC→libx265 translation on CPU workers now targets similar perceptual quality instead of similar file size: CRF matches the NVENC CQ value 1:1, so libx265's extra per-bit efficiency shows up as a smaller file rather than a quality drop. A typical `p3 / CQ 27` job now runs as `libx265 veryfast / CRF 27`.
+
 ## [0.3.11] — 2026-04-23
 
 ### Fixed

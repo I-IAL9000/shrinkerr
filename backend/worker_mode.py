@@ -321,22 +321,21 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 srv_crf = job.get("default_libx265_crf")
                 if srv_preset:
                     libx265_preset = srv_preset
-                    libx265_crf = int(srv_crf) if srv_crf is not None else max(18, min(30, (nvenc_cq or 20) + 3))
+                    libx265_crf = int(srv_crf) if srv_crf is not None else max(18, min(30, nvenc_cq or 23))
                     print(f"[WORKER] Using server libx265 defaults: {libx265_preset}/CRF{libx265_crf} (nvenc job was {nvenc_preset}/CQ{nvenc_cq})", flush=True)
                 else:
-                    # Conservative translation. libx265 presets are EXPONENTIALLY
-                    # slower as you go right, unlike NVENC where p1..p7 barely
-                    # change GPU cost. Cap CPU encoding at `slow` for safety.
-                    # CRF is `nvenc_cq + 3` because libx265 is more efficient
-                    # per-bit than NVENC (matches the original comment's intent;
-                    # the old code had the sign inverted and dropped CRF to 16,
-                    # a near-lossless setting that killed throughput).
+                    # Quality-matched translation. libx265 presets scale
+                    # exponentially (unlike NVENC where p1..p7 barely change
+                    # GPU cost), so we cap CPU encoding at `slow`. CRF is
+                    # taken 1:1 from NVENC CQ — libx265's extra per-bit
+                    # efficiency then shows up as a smaller file at similar
+                    # perceptual quality, rather than as a quality change.
                     PRESET_MAP = {
                         "p1": "ultrafast", "p2": "superfast", "p3": "veryfast",
                         "p4": "fast", "p5": "fast", "p6": "medium", "p7": "slow",
                     }
                     libx265_preset = PRESET_MAP.get(nvenc_preset, "fast")
-                    libx265_crf = max(18, min(30, (nvenc_cq or 20) + 3))
+                    libx265_crf = max(18, min(30, nvenc_cq or 23))
                     print(f"[WORKER] Translated nvenc {nvenc_preset}/CQ{nvenc_cq} → libx265 {libx265_preset}/CRF{libx265_crf}", flush=True)
 
             if job_encoder and job_encoder != encoder:
