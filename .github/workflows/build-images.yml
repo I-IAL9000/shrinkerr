@@ -143,6 +143,7 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
+            TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
           # Per-variant cache scope — the final layers differ between variants
           # (different Dockerfiles, different ffmpeg builds, different
           # platforms), so collapsing them into one scope would thrash.

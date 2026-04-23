@@ -3788,6 +3788,30 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </a>
               ))}
             </div>
+
+            {/* TMDB attribution — required by TMDB's non-commercial API
+                terms of use. Always rendered so the attribution doesn't
+                depend on whether the user has their own key vs. the
+                bundled one. */}
+            <div style={{
+              marginTop: 16, paddingTop: 14,
+              borderTop: "1px solid var(--border)",
+              fontSize: 11, color: "var(--text-muted)",
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span>
+                This product uses the TMDB API but is not endorsed or
+                certified by TMDB.
+              </span>
+              <a
+                href="https://www.themoviedb.org/"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--accent)", textDecoration: "none" }}
+              >
+                themoviedb.org ↗
+              </a>
+            </div>
           </div>
         </>
       )}

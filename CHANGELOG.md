@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.25] — 2026-04-23
+
+### Added
+- TMDB non-commercial API key now baked into the published images (`:latest` / `:nvenc` / `:edge` / `:edge-nvenc`). Fresh installs get poster artwork and native-language detection without the user having to register with TMDB first — user-saved keys in Settings still win. Key comes from the `TMDB_API_KEY` GitHub secret at build time via a `--build-arg` into both Dockerfiles; local self-builds without the secret behave as before.
+- TMDB attribution in Settings → Support, per TMDB's non-commercial API terms of use.
+
 ## [0.3.24] — 2026-04-23
 
 ### Changed
@@ -277,6 +283,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.25]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.25
 [0.3.24]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.24
 [0.3.23]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.23
 [0.3.22]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.22

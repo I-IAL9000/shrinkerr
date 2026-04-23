@@ -90,6 +90,14 @@ RUN mkdir -p /app/data
 
 EXPOSE 6680
 
+# Bundled TMDB non-commercial API key — passed in at build time from the
+# TMDB_API_KEY GitHub Actions secret so the image ships with a working
+# default. User-saved keys in Settings always win (see
+# backend/metadata.py::resolve_tmdb_key). Builds without the secret set
+# leave this empty and behave as before.
+ARG TMDB_API_KEY=""
+ENV SHRINKERR_TMDB_API_KEY=${TMDB_API_KEY}
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:6680/api/health')" || exit 1
 
