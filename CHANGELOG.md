@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.14] — 2026-04-23
+
+### Fixed
+- "Add a remote worker" snippet on the Nodes page now references the published GHCR images (`:nvenc` for GPU, `:latest` for CPU) instead of the non-existent `shrinkerr:latest` local build tag, so the copy-paste command actually pulls something.
+
 ## [0.3.13] — 2026-04-23
 
 ### Changed

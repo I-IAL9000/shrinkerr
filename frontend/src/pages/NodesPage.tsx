@@ -107,23 +107,24 @@ export default function NodesPage() {
           background: "var(--bg-primary)", border: "1px solid var(--border)",
           color: "var(--text-secondary)", overflow: "auto", lineHeight: 1.6,
         }}>
-{`docker run -d \\
+{`# GPU worker (NVIDIA + NVENC):
+docker run -d \\
   -e SHRINKERR_MODE=worker \\
   -e SERVER_URL=http://${window.location.hostname}:${window.location.port || "6680"} \\
   -e API_KEY=<your-api-key> \\
   -v /path/to/media:/media:rw \\
   --runtime=nvidia \\
   --gpus all \\
-  shrinkerr:latest
+  ghcr.io/i-ial9000/shrinkerr:nvenc
 
-# CPU-only worker (no GPU):
+# CPU-only worker (no GPU, any architecture):
 docker run -d \\
   -e SHRINKERR_MODE=worker \\
   -e SERVER_URL=http://${window.location.hostname}:${window.location.port || "6680"} \\
   -e API_KEY=<your-api-key> \\
   -e CAPABILITIES=libx265 \\
   -v /path/to/media:/media:rw \\
-  shrinkerr:latest`}
+  ghcr.io/i-ial9000/shrinkerr:latest`}
         </pre>
         <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
           The worker will auto-detect GPU capabilities and appear here within 30 seconds.
