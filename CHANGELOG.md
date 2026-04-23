@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.23] — 2026-04-23
+
+### Added
+- Support section in Settings with links to the documentation, GitHub repo, and issue tracker. Surfaces the new `/docs/` tree from inside the app so users don't have to go hunting for the README.
+
 ## [0.3.22] — 2026-04-23
 
 ### Fixed

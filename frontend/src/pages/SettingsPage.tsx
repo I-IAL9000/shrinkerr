@@ -3710,6 +3710,85 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             latestVersion={versionInfo?.latest ?? null}
             showLatestOnly
           />
+
+          {/* ── Support ───────────────────────────────────────────────── */}
+          <h2 id="support" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+            Support
+          </h2>
+
+          <div style={sectionStyle}>
+            <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 }}>
+              Documentation, source, and where to report issues.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                {
+                  href: "https://github.com/I-IAL9000/shrinkerr/tree/main/docs",
+                  title: "Documentation",
+                  desc: "Installation, encoding guide, remote workers, rules, best practices, troubleshooting.",
+                  icon: (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    </svg>
+                  ),
+                },
+                {
+                  href: "https://github.com/I-IAL9000/shrinkerr",
+                  title: "GitHub repository",
+                  desc: "Source code, releases, discussions, and container images.",
+                  icon: (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 0.296C5.37 0.296 0 5.666 0 12.296c0 5.302 3.438 9.8 8.205 11.387 0.6 0.111 0.819-0.26 0.819-0.578 0-0.285-0.01-1.04-0.015-2.04-3.338 0.725-4.042-1.61-4.042-1.61-0.546-1.385-1.333-1.754-1.333-1.754-1.089-0.744 0.083-0.729 0.083-0.729 1.205 0.085 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492 0.997 0.108-0.775 0.418-1.305 0.762-1.605-2.665-0.302-5.466-1.332-5.466-5.93 0-1.31 0.469-2.381 1.236-3.221-0.124-0.303-0.535-1.524 0.117-3.176 0 0 1.008-0.322 3.3 1.23 0.957-0.266 1.983-0.399 3.003-0.404 1.02 0.005 2.047 0.138 3.006 0.404 2.29-1.552 3.296-1.23 3.296-1.23 0.653 1.653 0.242 2.874 0.118 3.176 0.77 0.84 1.235 1.911 1.235 3.221 0 4.609-2.805 5.624-5.478 5.921 0.43 0.371 0.814 1.103 0.814 2.222 0 1.604-0.014 2.898-0.014 3.292 0 0.321 0.217 0.696 0.826 0.578C20.565 22.092 24 17.596 24 12.296 24 5.666 18.628 0.296 12 0.296z"/>
+                    </svg>
+                  ),
+                },
+                {
+                  href: "https://github.com/I-IAL9000/shrinkerr/issues/new",
+                  title: "Report an issue",
+                  desc: "Include your version, image variant, and a relevant log excerpt (see docs → Troubleshooting).",
+                  icon: (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  ),
+                },
+              ].map(link => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 12,
+                    padding: "12px 14px", borderRadius: 6,
+                    background: "var(--bg-primary)", border: "1px solid var(--border)",
+                    textDecoration: "none", color: "var(--text-secondary)",
+                    transition: "border-color 0.15s, background 0.15s",
+                  }}
+                  onMouseOver={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--accent)";
+                  }}
+                  onMouseOut={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border)";
+                  }}
+                >
+                  <div style={{ flexShrink: 0, color: "var(--accent)", marginTop: 2 }}>{link.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                      {link.title}
+                      <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-muted)", fontWeight: 400 }}>
+                        ↗
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{link.desc}</div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
         </>
       )}
     </div>

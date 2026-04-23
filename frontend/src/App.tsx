@@ -138,6 +138,7 @@ const SETTINGS_SECTIONS = [
   { id: "automation", label: "Automation" },
   { id: "system", label: "System" },
   { id: "updates", label: "Updates" },
+  { id: "support", label: "Support" },
 ];
 
 interface NavItem {
