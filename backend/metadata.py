@@ -1,5 +1,6 @@
 """TMDB / TVDB API integration for original-language detection."""
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,43 @@ import aiosqlite
 import httpx
 
 from backend.database import DB_PATH
+
+
+# ---------------------------------------------------------------------------
+# TMDB API key resolution — central helper used by every TMDB call site.
+#
+# Precedence:
+#   1. User-saved `tmdb_api_key` setting (wins)
+#   2. `SHRINKERR_TMDB_API_KEY` environment variable — intended for image
+#      maintainers to bake a non-commercial key in at build time so fresh
+#      installs get poster/metadata lookups without the user having to
+#      register with TMDB first (Sonarr/Radarr pattern).
+#   3. Empty string — TMDB calls are skipped.
+#
+# To ship a bundled key, set ENV SHRINKERR_TMDB_API_KEY=<key> in your
+# Dockerfile or docker-compose. TMDB non-commercial keys are free and
+# issued per-user at <https://www.themoviedb.org/settings/api>. Attribution
+# ("This product uses the TMDB API but is not endorsed or certified by
+# TMDB") is required.
+# ---------------------------------------------------------------------------
+
+def _env_tmdb_key() -> str:
+    return (os.environ.get("SHRINKERR_TMDB_API_KEY") or "").strip()
+
+
+async def resolve_tmdb_key(db: aiosqlite.Connection) -> str:
+    """Return the effective TMDB API key: user setting > env fallback > ''."""
+    async with db.execute(
+        "SELECT value FROM settings WHERE key = 'tmdb_api_key'"
+    ) as cur:
+        row = await cur.fetchone()
+    user_key = (row["value"] if row else "") or ""
+    return user_key or _env_tmdb_key()
+
+
+def resolve_tmdb_key_sync(user_key: str | None) -> str:
+    """Non-async helper for call sites that already have the user key in hand."""
+    return (user_key or "").strip() or _env_tmdb_key()
 
 # ---------------------------------------------------------------------------
 # a) ID parsing
@@ -120,11 +158,7 @@ async def lookup_original_language(file_path: str) -> str | None:
             "looked_up_at TEXT NOT NULL, UNIQUE(id_type, media_id))"
         )
         # Fetch TMDB API key (TMDB resolves both IMDb and TVDB IDs via /find)
-        tmdb_key: Optional[str] = None
-        async with db.execute("SELECT value FROM settings WHERE key = 'tmdb_api_key'") as cur:
-            row = await cur.fetchone()
-            if row:
-                tmdb_key = row["value"]
+        tmdb_key = await resolve_tmdb_key(db)
 
         # Check cache
         async with db.execute(

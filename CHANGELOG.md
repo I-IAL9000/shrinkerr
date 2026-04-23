@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.24] — 2026-04-23
+
+### Changed
+- Setup wizard step order: Add directories → **Add connections** → Scan library → Start converting. TMDB connection now comes before scanning so posters and native-language detection are populated on the first scan instead of missing until the next full rescan.
+
+### Added
+- `SHRINKERR_TMDB_API_KEY` environment variable — acts as a bundled fallback TMDB key when no user key is configured. Lets image maintainers (or self-builders) ship a non-commercial key so fresh installs get posters / metadata lookups without the user having to register with TMDB first. User-saved key always wins. `tmdb_key_source` is now returned on the settings GET so the UI can distinguish user-supplied vs bundled vs absent.
+
 ## [0.3.23] — 2026-04-23
 
 ### Added
@@ -269,6 +277,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.24]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.24
 [0.3.23]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.23
 [0.3.22]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.22
 [0.3.21]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.21

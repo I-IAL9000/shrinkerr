@@ -247,12 +247,35 @@ On Unraid, map the webUI port in the template to `6680` and the two volumes
 2. **Add media directories** — click "Go to Settings", enter one or more
    absolute paths that match your compose volumes. Each directory gets a
    label (e.g. "Movies", "TV") used in the UI.
-3. **Scan your library** — return to the Scanner page, pick a directory,
-   hit Start Scan. First scan on a 10TB library typically takes 10–40
-   minutes depending on disk speed; subsequent scans are incremental.
-4. **Connect TMDB (optional but recommended)** — Settings → Connections →
-   TMDB. Powers native-language detection, poster artwork, and rule
-   conditions like "genre contains X".
+3. **Connect TMDB before scanning** — Settings → Connections → TMDB.
+   Powers native-language detection, poster artwork, and rule conditions
+   like "genre contains X". Do this *before* the first scan; scanning
+   without a TMDB key means no posters and no original-language
+   metadata for those files until you re-scan later. Free non-commercial
+   API keys are available at
+   <https://www.themoviedb.org/settings/api> after you create a TMDB
+   account.
+
+   **Bundled key (for image maintainers / self-builders):** Shrinkerr
+   honours a `SHRINKERR_TMDB_API_KEY` environment variable as a fallback
+   when the user hasn't set their own. If you're building your own image
+   or self-hosting for a small group, apply for a non-commercial key at
+   the URL above and bake it in:
+
+   ```yaml
+   services:
+     shrinkerr:
+       image: ghcr.io/i-ial9000/shrinkerr:latest
+       environment:
+         - SHRINKERR_TMDB_API_KEY=your_key_here   # bundled fallback
+   ```
+
+   TMDB's terms require attribution ("This product uses the TMDB API but
+   is not endorsed or certified by TMDB"). A user-saved key in Settings
+   always wins over the bundled one.
+4. **Scan your library** — Scanner page, pick a directory, hit Start
+   Scan. First scan on a 10TB library typically takes 10–40 minutes
+   depending on disk speed; subsequent scans are incremental.
 5. **Encoder choice** — Settings → Video. If you have an NVIDIA GPU pick
    NVENC; otherwise libx265 is the default. See the
    [Encoding guide](encoding-guide.md) for preset tuning.

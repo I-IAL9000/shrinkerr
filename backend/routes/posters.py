@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.database import DB_PATH
+from backend.metadata import resolve_tmdb_key_sync
 
 router = APIRouter(prefix="/api/posters")
 
@@ -169,7 +170,7 @@ async def resolve_posters(req: ResolveRequest):
                 settings[row["key"]] = row["value"]
 
         # Backfill media_type for cached entries missing it
-        tmdb_key = settings.get("tmdb_api_key", "")
+        tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
         plex_url_bf = settings.get("plex_url", "").rstrip("/")
         plex_token_bf = settings.get("plex_token", "")
         path_mapping_bf = settings.get("plex_path_mapping", "")
@@ -219,7 +220,7 @@ async def resolve_posters(req: ResolveRequest):
 
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")
-        tmdb_key = settings.get("tmdb_api_key", "")
+        tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
 
         for path in uncached:
             parsed = parse_folder_name(path)
@@ -373,7 +374,7 @@ async def _run_prefetch():
 
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")
-        tmdb_key = settings.get("tmdb_api_key", "")
+        tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
         path_mapping = settings.get("plex_path_mapping", "")
 
         # Step 3: Sequential resolution with rate limiting + batch DB writes

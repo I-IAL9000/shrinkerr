@@ -278,8 +278,14 @@ async def get_encoding_settings():
     # Mask API keys — show only last 4 chars if set
     tmdb_key = merged.get("tmdb_api_key", "")
     plex_token = merged.get("plex_token", "")
+    # `tmdb_key_source` lets the UI say "using bundled key" vs "using your
+    # key" so the user understands why TMDB works even when the field is
+    # blank. `tmdb_configured` now accounts for the bundled fallback too.
+    from backend.metadata import _env_tmdb_key  # avoid circular import at module load
+    _env_key = _env_tmdb_key()
     result["tmdb_api_key"] = ("****" + tmdb_key[-4:]) if tmdb_key else ""
-    result["tmdb_configured"] = bool(tmdb_key)
+    result["tmdb_configured"] = bool(tmdb_key or _env_key)
+    result["tmdb_key_source"] = "user" if tmdb_key else ("bundled" if _env_key else "none")
     result["plex_url"] = merged.get("plex_url", "")
     result["plex_token"] = ("****" + plex_token[-4:]) if plex_token else ""
     result["plex_configured"] = bool(plex_token and merged.get("plex_url", ""))

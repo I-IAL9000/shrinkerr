@@ -447,12 +447,11 @@ async def _enrich_from_radarr(meta: RenameMeta, file_path: str) -> None:
 
 async def _enrich_from_tmdb(meta: RenameMeta) -> None:
     """Fallback title + IDs from TMDB (only when *arr isn't configured or didn't match)."""
+    from backend.metadata import resolve_tmdb_key
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        async with db.execute("SELECT value FROM settings WHERE key = 'tmdb_api_key'") as cur:
-            row = await cur.fetchone()
-        tmdb_key = row["value"] if row else ""
+        tmdb_key = await resolve_tmdb_key(db)
     finally:
         await db.close()
     if not tmdb_key or not meta.title:
