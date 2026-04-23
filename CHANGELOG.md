@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.26] — 2026-04-23
+
+### Changed
+- Settings → Metadata APIs reframed now that TMDB ships with a bundled key. When a bundled key is active the copy explains TMDB already works and the input is labeled optional; the connection indicator distinguishes "using bundled key" vs "using your key".
+
 ## [0.3.25] — 2026-04-23
 
 ### Added
@@ -283,6 +288,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.26]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.26
 [0.3.25]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.25
 [0.3.24]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.24
 [0.3.23]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.23

@@ -1527,7 +1527,15 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
+              {encoding.tmdb_key_source === "bundled" ? (
+                <>
+                  TMDB metadata (posters, ratings, original-language detection, TVDB ID resolution) works out of the box using a bundled non-commercial key. You can override it below with your own key — useful if you want your own rate-limit quota, or as a fallback if the bundled key is ever rotated.
+                </>
+              ) : (
+                <>
+                  Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
+                </>
+              )}
             </div>
 
             {/* TMDB API Key */}
@@ -1536,6 +1544,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 TMDB API Key{" "}
                 <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
                   style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
+                {encoding.tmdb_key_source === "bundled" && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 8 }}>
+                    · optional
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <div style={{ position: "relative", flex: 1, maxWidth: 400 }}>
@@ -1597,8 +1610,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </div>
               {encoding.tmdb_configured && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--success)", display: "inline-block" }} />
-                  <span style={{ fontSize: 12, color: "var(--success)" }}>Connected</span>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%", display: "inline-block",
+                    background: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent)",
+                  }} />
+                  <span style={{
+                    fontSize: 12,
+                    color: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent)",
+                  }}>
+                    {encoding.tmdb_key_source === "user" ? "Connected — using your key" : "Connected — using bundled key"}
+                  </span>
                 </div>
               )}
             </div>
