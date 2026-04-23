@@ -8,15 +8,19 @@ interface Props {
   onSaved: () => void;
 }
 
-// NVENC <-> libx265 equivalence used by the worker's translation logic
+// NVENC <-> libx265 equivalence used by the worker's translation logic.
+// Targets similar *perceptual quality*: CRF = CQ one-to-one, so libx265's
+// extra per-bit efficiency shows up as a smaller file at the same visual
+// quality. Presets are capped at `slow` because libx265 preset perf scales
+// exponentially (unlike NVENC p1..p7 which barely change GPU cost).
 const CQ_CRF_TABLE: { nvenc_preset: string; libx265_preset: string; nvenc_cq: number; libx265_crf: number }[] = [
-  { nvenc_preset: "p1", libx265_preset: "veryfast", nvenc_cq: 20, libx265_crf: 16 },
-  { nvenc_preset: "p2", libx265_preset: "faster",   nvenc_cq: 22, libx265_crf: 18 },
-  { nvenc_preset: "p3", libx265_preset: "fast",     nvenc_cq: 24, libx265_crf: 20 },
-  { nvenc_preset: "p4", libx265_preset: "medium",   nvenc_cq: 26, libx265_crf: 22 },
-  { nvenc_preset: "p5", libx265_preset: "slow",     nvenc_cq: 27, libx265_crf: 23 },
-  { nvenc_preset: "p6", libx265_preset: "slower",   nvenc_cq: 28, libx265_crf: 24 },
-  { nvenc_preset: "p7", libx265_preset: "veryslow", nvenc_cq: 30, libx265_crf: 26 },
+  { nvenc_preset: "p1", libx265_preset: "ultrafast", nvenc_cq: 20, libx265_crf: 20 },
+  { nvenc_preset: "p2", libx265_preset: "superfast", nvenc_cq: 22, libx265_crf: 22 },
+  { nvenc_preset: "p3", libx265_preset: "veryfast",  nvenc_cq: 24, libx265_crf: 24 },
+  { nvenc_preset: "p4", libx265_preset: "fast",      nvenc_cq: 26, libx265_crf: 26 },
+  { nvenc_preset: "p5", libx265_preset: "fast",      nvenc_cq: 27, libx265_crf: 27 },
+  { nvenc_preset: "p6", libx265_preset: "medium",    nvenc_cq: 28, libx265_crf: 28 },
+  { nvenc_preset: "p7", libx265_preset: "slow",      nvenc_cq: 30, libx265_crf: 30 },
 ];
 
 export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {

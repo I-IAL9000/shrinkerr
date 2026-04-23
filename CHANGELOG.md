@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13] — 2026-04-23
+
+### Changed
+- Node settings → "NVENC ↔ libx265 comparison table" now reflects the quality-matched translation (CRF = CQ, presets capped at `slow`) so the UI matches the actual worker behaviour.
+
 ## [0.3.12] — 2026-04-23
 
 ### Changed
