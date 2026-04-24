@@ -71,6 +71,81 @@ class NodeManager:
         return db
 
     # ------------------------------------------------------------------
+    # Per-node auth tokens (v0.3.30+)
+    # ------------------------------------------------------------------
+    # Each registered worker gets a random token on first successful
+    # heartbeat. Subsequent calls against `/api/nodes/*` must present that
+    # token in `X-Node-Token` or the server rejects the call with 401.
+    # The shared API key still gates the HTTP surface (via the auth
+    # middleware in backend/main.py); the per-node token prevents anyone
+    # *who holds that API key* from impersonating another registered node.
+    #
+    # Stored plaintext in the `worker_nodes.token` column — it's a shared
+    # secret between the server and a single worker, same threat model as
+    # `session_secret`. Compared with `hmac.compare_digest` on every call
+    # (fast, constant-time; a per-request bcrypt verify would be too slow
+    # for heartbeat/progress endpoints hit every few seconds during encodes).
+
+    async def issue_token(self, node_id: str) -> str:
+        """Generate a new per-node token, persist it, and return the plain
+        value. Caller (the heartbeat handler) ships it back to the worker
+        in the response body so the worker can persist it locally."""
+        import secrets
+        from datetime import datetime, timezone
+        token = secrets.token_hex(24)
+        now = datetime.now(timezone.utc).isoformat()
+        db = await self._db()
+        try:
+            await db.execute(
+                "UPDATE worker_nodes SET token = ?, token_issued_at = ? WHERE id = ?",
+                (token, now, node_id),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        return token
+
+    async def get_stored_token(self, node_id: str) -> Optional[str]:
+        """Return the token recorded for this node, or None if never issued
+        (e.g. pre-v0.3.30 upgrade, or just rotated and awaiting bootstrap)."""
+        db = await self._db()
+        try:
+            async with db.execute(
+                "SELECT token FROM worker_nodes WHERE id = ?", (node_id,)
+            ) as cur:
+                row = await cur.fetchone()
+                if row is None:
+                    return None
+                return row["token"] or None
+        finally:
+            await db.close()
+
+    async def validate_token(self, node_id: str, supplied_token: str) -> bool:
+        """Constant-time compare `supplied_token` against the stored value.
+        Returns False when no token is on file (caller should treat that as
+        bootstrap-not-complete rather than auth failure — see route logic)."""
+        import hmac
+        stored = await self.get_stored_token(node_id)
+        if not stored or not supplied_token:
+            return False
+        return hmac.compare_digest(stored, supplied_token)
+
+    async def clear_token(self, node_id: str) -> None:
+        """Admin-triggered token rotation. Next heartbeat from the node
+        runs the bootstrap path and receives a fresh token. Any worker
+        still holding the old token gets 401 on its next call and drops
+        its local copy, triggering re-bootstrap."""
+        db = await self._db()
+        try:
+            await db.execute(
+                "UPDATE worker_nodes SET token = NULL, token_issued_at = NULL WHERE id = ?",
+                (node_id,),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    # ------------------------------------------------------------------
     # Node registration & heartbeat
     # ------------------------------------------------------------------
 
@@ -683,6 +758,13 @@ class NodeManager:
         for field in ("paused", "translate_encoder", "schedule_enabled"):
             if field in d:
                 d[field] = bool(d[field])
+        # Surface only a boolean indicator of whether a token is set, and
+        # the issue timestamp — never the token value itself. The token is
+        # a shared secret and must not round-trip through the read API or
+        # the websocket broadcast. `token_issued_at` is safe to expose so
+        # the UI can show "Token bootstrapped <date>".
+        has_token = bool(d.pop("token", None))
+        d["has_token"] = has_token
         return d
 
 

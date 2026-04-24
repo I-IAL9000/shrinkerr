@@ -140,14 +140,104 @@ async def _detect_ffmpeg_version() -> str | None:
 # ------------------------------------------------------------------
 # HTTP client
 # ------------------------------------------------------------------
+# Where the per-node token is persisted between restarts. Small plain-text
+# file in the worker's data volume — rotated by the admin UI or by the
+# worker itself if the server ever 401s an authenticated call (drift
+# after a token rotation the worker didn't see). File mode is 0600.
+_TOKEN_FILE = "/app/data/worker_token"
+
+
+def _load_stored_token() -> str:
+    try:
+        with open(_TOKEN_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def _save_stored_token(token: str) -> None:
+    import os
+    try:
+        os.makedirs(os.path.dirname(_TOKEN_FILE), exist_ok=True)
+        with open(_TOKEN_FILE, "w", encoding="utf-8") as f:
+            f.write(token.strip())
+        try:
+            os.chmod(_TOKEN_FILE, 0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        print(f"[WORKER] Could not persist node token: {exc}", flush=True)
+
+
+def _clear_stored_token() -> None:
+    import os
+    try:
+        os.remove(_TOKEN_FILE)
+    except OSError:
+        pass
+
+
 class ServerClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url
         self.api_key = api_key
+        # Per-node token, persisted at /app/data/worker_token. Sent as
+        # X-Node-Token on every /api/nodes/* call. Populated when the
+        # server hands one back in a heartbeat response (bootstrap or
+        # post-rotation). An empty string means "haven't bootstrapped
+        # yet" — the first heartbeat bootstraps and stores.
+        self._node_token: str = _load_stored_token()
         self._client = httpx.AsyncClient(
             timeout=30,
             headers={"X-Api-Key": api_key},
         )
+
+    # --------------------------------------------------------------
+    # Token management
+    # --------------------------------------------------------------
+
+    def _auth_headers(self) -> dict[str, str]:
+        """Headers for every call to /api/nodes/* — always send
+        X-Api-Key (middleware gate) plus X-Node-Token when available."""
+        headers: dict[str, str] = {"X-Api-Key": self.api_key}
+        if self._node_token:
+            headers["X-Node-Token"] = self._node_token
+        return headers
+
+    def _accept_token(self, token: str | None) -> None:
+        """Persist a token returned by the server (heartbeat response)."""
+        if token and token != self._node_token:
+            self._node_token = token
+            _save_stored_token(token)
+            print("[WORKER] Persisted new node auth token", flush=True)
+
+    async def _post_node(self, path: str, payload: dict) -> httpx.Response:
+        """POST to a node endpoint with the right auth headers. If the
+        server returns 401 (stale / rotated token), drop the local copy
+        so the next heartbeat re-bootstraps cleanly."""
+        resp = await self._client.post(
+            f"{self.base_url}{path}",
+            json=payload,
+            headers=self._auth_headers(),
+        )
+        if resp.status_code == 401:
+            # Token mismatch — either rotation or first-time run against
+            # a server that has an older token on file (e.g. a
+            # /app/data volume was copied across boxes). Forget our
+            # local copy; the heartbeat_loop will bootstrap a new one.
+            if self._node_token:
+                print(
+                    "[WORKER] Server rejected our node token (401) — dropping "
+                    "local copy, next heartbeat will re-bootstrap.",
+                    flush=True,
+                )
+                self._node_token = ""
+                _clear_stored_token()
+        return resp
+
+    # --------------------------------------------------------------
+    # Node endpoints
+    # --------------------------------------------------------------
 
     async def heartbeat(self, node_id: str, name: str, hostname: str,
                         capabilities: list, path_mappings: list,
@@ -155,7 +245,7 @@ class ServerClient:
                         os_info: str | None, max_jobs: int,
                         driver_version: str | None = None,
                         nvenc_unavailable_reason: str | None = None) -> dict:
-        resp = await self._client.post(f"{self.base_url}/api/nodes/heartbeat", json={
+        resp = await self._post_node("/api/nodes/heartbeat", {
             "node_id": node_id, "name": name, "hostname": hostname,
             "capabilities": capabilities, "path_mappings": path_mappings,
             "ffmpeg_version": ffmpeg_version, "gpu_name": gpu_name,
@@ -164,13 +254,18 @@ class ServerClient:
             "nvenc_unavailable_reason": nvenc_unavailable_reason,
         })
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        # The server returns a token in the response body on bootstrap
+        # or after admin rotation. Persist it so subsequent calls carry
+        # X-Node-Token.
+        self._accept_token(data.get("token"))
+        return data
 
     async def request_job(self, node_id: str) -> tuple[dict | None, dict]:
         """Request next job. Returns (job_dict_or_None, full_response_dict)."""
-        resp = await self._client.post(f"{self.base_url}/api/nodes/request-job", json={
-            "node_id": node_id,
-        })
+        resp = await self._post_node(
+            "/api/nodes/request-job", {"node_id": node_id}
+        )
         resp.raise_for_status()
         data = resp.json()
         return data.get("job"), data
@@ -180,7 +275,7 @@ class ServerClient:
                               eta_seconds: int | None = None,
                               step: str = "converting") -> bool:
         """Report progress. Returns True if job was cancelled."""
-        resp = await self._client.post(f"{self.base_url}/api/nodes/report-progress", json={
+        resp = await self._post_node("/api/nodes/report-progress", {
             "node_id": node_id, "job_id": job_id,
             "progress": progress, "fps": fps,
             "eta_seconds": eta_seconds, "step": step,
@@ -195,7 +290,7 @@ class ServerClient:
                               backup_path: str | None = None,
                               ffmpeg_command: str | None = None,
                               encoding_stats: dict | None = None) -> dict:
-        resp = await self._client.post(f"{self.base_url}/api/nodes/report-complete", json={
+        resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
             "space_saved": space_saved, "error": error,
@@ -210,9 +305,9 @@ class ServerClient:
         silently ignores errors so a flaky coordinator doesn't kill the loop.
         """
         try:
-            await self._client.post(
-                f"{self.base_url}/api/nodes/report-metrics",
-                json={"node_id": node_id, "metrics": metrics},
+            await self._post_node(
+                "/api/nodes/report-metrics",
+                {"node_id": node_id, "metrics": metrics},
             )
         except Exception:
             pass  # transient — next tick will retry

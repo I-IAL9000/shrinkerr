@@ -112,6 +112,12 @@ export interface WorkerNode {
   translate_encoder: boolean;
   schedule_enabled: boolean;
   schedule_hours: number[];
+  // Per-node auth token state (v0.3.30+). `has_token` is a bool indicator;
+  // the token value itself never leaves the server. `token_issued_at` is
+  // the ISO timestamp of the last bootstrap / rotation and is surfaced so
+  // the UI can show when the channel was last re-keyed.
+  has_token?: boolean;
+  token_issued_at?: string | null;
 }
 
 export interface NodeSettings {

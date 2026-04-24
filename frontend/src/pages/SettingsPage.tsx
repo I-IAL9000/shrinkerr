@@ -986,9 +986,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>Conversion Guide</h4>
 
               {[
+                // ── NVENC (GPU) ────────────────────────────────────────
                 {
-                  title: "Understanding Presets",
-                  desc: "Higher preset = slower encoding but better compression. The GPU works harder to find optimal ways to compress each frame.",
+                  title: "NVENC presets (GPU)",
+                  desc: "Higher preset = slower encoding but better compression. Unlike libx265, NVENC preset speed changes very little between p1 and p7 — the quality gains are also modest. Default to p3-p5 and adjust CQ for size.",
                   cols: ["Preset", "Speed", "Quality/Size"],
                   rows: [
                     ["p1-p2", "~400 fps", "Largest files"],
@@ -1000,6 +1001,46 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   note: "Speeds are approximate for 1080p on Quadro P2200.",
                 },
                 {
+                  title: "NVENC recommended combos",
+                  cols: ["Priority", "Settings", "Savings"],
+                  rows: [
+                    ["Max quality", "p7 / CQ 20", "20-30%"],
+                    ["Quality first", "p6 / CQ 21", "25-35%"],
+                    ["Balanced", "p5 / CQ 23", "35-45%"],
+                    ["Space saver", "p4 / CQ 25", "45-55%"],
+                    ["Max compression", "p3 / CQ 27", "55-65%"],
+                  ],
+                },
+                // ── libx265 (CPU) ──────────────────────────────────────
+                {
+                  title: "libx265 presets (CPU)",
+                  desc: "libx265 preset cost scales EXPONENTIALLY — each step right roughly doubles encode time. Default `medium` is the quality-per-minute sweet spot; drop to `fast` or `veryfast` for backfills, bump to `slow`/`slower` only for archival masters.",
+                  cols: ["Preset", "Speed (1080p)", "Quality/Size"],
+                  rows: [
+                    ["ultrafast", "~120 fps", "Largest files"],
+                    ["superfast", "~80 fps", "Slightly smaller"],
+                    ["veryfast", "~50 fps", "Good compression"],
+                    ["fast", "~20 fps", "Better compression"],
+                    ["medium", "~10 fps", "Great (default)"],
+                    ["slow", "~5 fps", "Very good"],
+                    ["slower", "~2 fps", "Best practical"],
+                    ["veryslow", "~1 fps", "Diminishing returns"],
+                  ],
+                  note: "Speeds are rough for 10-bit output on a modern desktop CPU. M1/M2 Macs run ~40-60% of these numbers; older CPUs slower.",
+                },
+                {
+                  title: "libx265 recommended combos",
+                  cols: ["Priority", "Settings", "Savings"],
+                  rows: [
+                    ["Max quality", "slow / CRF 18", "25-35%"],
+                    ["Quality first", "medium / CRF 20", "35-45%"],
+                    ["Balanced", "fast / CRF 23", "45-55%"],
+                    ["Space saver", "veryfast / CRF 25", "55-65%"],
+                    ["Max throughput", "superfast / CRF 26", "60-70%"],
+                  ],
+                },
+                // ── Shared quality target ──────────────────────────────
+                {
                   title: "Understanding CQ / CRF",
                   desc: "CQ (NVENC) and CRF (libx265) control the quality target. Lower = higher quality, larger files. The encoder allocates more bits to complex scenes and fewer to simple ones.",
                   cols: ["CQ/CRF", "Quality", "Savings"],
@@ -1009,17 +1050,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     ["21-23", "Excellent", "30-45%"],
                     ["24-26", "Good", "45-60%"],
                     ["27-30", "Noticeable loss", "60%+"],
-                  ],
-                },
-                {
-                  title: "Recommended Combos",
-                  cols: ["Priority", "Settings", "Savings"],
-                  rows: [
-                    ["Max quality", "p7 / CQ 20", "20-30%"],
-                    ["Quality first", "p6 / CQ 21", "25-35%"],
-                    ["Balanced", "p5 / CQ 23", "35-45%"],
-                    ["Space saver", "p4 / CQ 25", "45-55%"],
-                    ["Max compression", "p3 / CQ 27", "55-65%"],
                   ],
                 },
               ].map((section) => (
@@ -1058,11 +1088,14 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div style={{ marginBottom: 16 }}>
                 <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>Tips</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
-                  <li style={{ marginBottom: 4 }}>Blu-ray rips (15-40 GB) typically see the biggest savings</li>
-                  <li style={{ marginBottom: 4 }}>WEB-DL files (3-8 GB) are already well-compressed — expect smaller gains or use a higher CQ</li>
-                  <li style={{ marginBottom: 4 }}>Grain-heavy content (film, older movies) benefits from lower CQ values to preserve detail</li>
-                  <li style={{ marginBottom: 4 }}>Animation compresses extremely well — even CQ 25+ looks great</li>
-                  <li style={{ marginBottom: 4 }}>NVENC CQ ≈ libx265 CRF + 2 for similar quality (e.g., CQ 22 ≈ CRF 20)</li>
+                  <li style={{ marginBottom: 4 }}><strong>Sources:</strong> Blu-ray rips (15-40 GB) see the biggest savings; WEB-DL files (3-8 GB) are already well-compressed — expect smaller gains, or bump CQ/CRF 2-3 points.</li>
+                  <li style={{ marginBottom: 4 }}><strong>Grain-heavy content</strong> (film, older movies) needs lower CQ/CRF values to preserve detail, or the encoder smears grain into blocks.</li>
+                  <li style={{ marginBottom: 4 }}><strong>Animation</strong> compresses extremely well — even CQ 25+ looks great. Consider a dedicated rule targeting your anime directory.</li>
+                  <li style={{ marginBottom: 4 }}><strong>NVENC vs libx265 quality:</strong> NVENC CQ ≈ libx265 CRF + 0–2 for matched perceptual quality. libx265 still produces ~25% smaller files at the same quality, trading 5-50× encode time.</li>
+                  <li style={{ marginBottom: 4 }}><strong>libx265 preset scaling:</strong> each step slower roughly doubles encode time. Going from `fast` to `slow` is 4×, `fast` to `veryslow` is 20×+. Know your patience budget before picking.</li>
+                  <li style={{ marginBottom: 4 }}><strong>NVENC preset scaling:</strong> minimal — p7 is only ~5× slower than p1 on the same card, and the quality gap is small. Default p3-p5 is usually the right answer.</li>
+                  <li style={{ marginBottom: 4 }}><strong>Try a test encode first:</strong> the Estimate modal's <em>Test encode</em> button runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.</li>
+                  <li style={{ marginBottom: 4 }}><strong>Mixed fleets:</strong> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above.</li>
                 </ul>
               </div>
 
@@ -1070,17 +1103,53 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 background: "var(--bg-card)", padding: 10, borderRadius: 4,
                 border: "1px solid var(--border)", fontSize: 11,
               }}>
-                <strong style={{ color: "var(--success)" }}>Current: {encoding.nvenc_preset || "p6"} / CQ {encoding.nvenc_cq}</strong>
-                <span> — </span>
                 {(() => {
-                  const p = parseInt((encoding.nvenc_preset || "p6").replace("p", ""));
-                  const cq = encoding.nvenc_cq || 20;
-                  if (cq <= 20 && p >= 6) return "Maximum quality, conservative compression";
-                  if (cq <= 20) return "High quality, moderate compression";
-                  if (cq <= 23 && p >= 5) return "Great quality with good space savings";
-                  if (cq <= 23) return "Good quality, solid compression";
-                  if (cq <= 26) return "Good quality, aggressive compression";
-                  return "Maximum compression, some quality tradeoff";
+                  // The "Current" summary reads from whichever encoder's
+                  // settings are active so users who switch default_encoder
+                  // see the right values + description.
+                  const isCpu = encoding.default_encoder === "libx265";
+                  if (isCpu) {
+                    const preset: string = encoding.libx265_preset || "medium";
+                    const crf: number = encoding.libx265_crf ?? 20;
+                    const presetRank: Record<string, number> = {
+                      ultrafast: 1, superfast: 2, veryfast: 3, faster: 4,
+                      fast: 5, medium: 6, slow: 7, slower: 8, veryslow: 9,
+                    };
+                    const r = presetRank[preset] ?? 6;
+                    let desc: string;
+                    if (crf <= 20 && r >= 7) desc = "Maximum quality, conservative compression";
+                    else if (crf <= 20) desc = "High quality, moderate compression";
+                    else if (crf <= 23 && r >= 5) desc = "Great quality with good space savings";
+                    else if (crf <= 23) desc = "Good quality, solid compression";
+                    else if (crf <= 26) desc = "Good quality, aggressive compression";
+                    else desc = "Maximum compression, some quality tradeoff";
+                    return (
+                      <>
+                        <strong style={{ color: "var(--success)" }}>
+                          Current: libx265 {preset} / CRF {crf}
+                        </strong>
+                        <span> — {desc}</span>
+                      </>
+                    );
+                  }
+                  const preset: string = encoding.nvenc_preset || "p6";
+                  const cq: number = encoding.nvenc_cq || 20;
+                  const p = parseInt(preset.replace("p", ""));
+                  let desc: string;
+                  if (cq <= 20 && p >= 6) desc = "Maximum quality, conservative compression";
+                  else if (cq <= 20) desc = "High quality, moderate compression";
+                  else if (cq <= 23 && p >= 5) desc = "Great quality with good space savings";
+                  else if (cq <= 23) desc = "Good quality, solid compression";
+                  else if (cq <= 26) desc = "Good quality, aggressive compression";
+                  else desc = "Maximum compression, some quality tradeoff";
+                  return (
+                    <>
+                      <strong style={{ color: "var(--success)" }}>
+                        Current: NVENC {preset} / CQ {cq}
+                      </strong>
+                      <span> — {desc}</span>
+                    </>
+                  );
                 })()}
               </div>
             </div>
@@ -1526,17 +1595,45 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           {/* Metadata APIs */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
-            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              {encoding.tmdb_key_source === "bundled" ? (
-                <>
-                  TMDB metadata (posters, ratings, original-language detection, TVDB ID resolution) works out of the box using a bundled non-commercial key. You can override it below with your own key — useful if you want your own rate-limit quota, or as a fallback if the bundled key is ever rotated.
-                </>
-              ) : (
-                <>
-                  Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
-                </>
-              )}
-            </div>
+            {encoding.tmdb_key_source === "bundled" ? (
+              <>
+                {/* Success banner — make it visually obvious that TMDB already works
+                    so users don't feel they have to configure anything here. The
+                    input below is clearly framed as optional. */}
+                <div
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10,
+                    padding: "10px 12px", marginTop: 8, marginBottom: 14,
+                    background: "rgba(16, 185, 129, 0.1)",
+                    border: "1px solid rgba(16, 185, 129, 0.4)",
+                    borderRadius: 6, fontSize: 12, lineHeight: 1.5,
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  <svg
+                    width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--success)" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <div>
+                    <div style={{ color: "var(--success)", fontWeight: 600, marginBottom: 2 }}>
+                      TMDB is already connected
+                    </div>
+                    Posters, ratings, original-language detection, and TVDB ID resolution work out of the box using a bundled non-commercial key. You don't need to do anything.
+                  </div>
+                </div>
+                <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                  Adding your own key below is <strong>optional</strong> — useful only if you want a dedicated rate-limit quota, or as a fallback in case the bundled key is ever rotated.
+                </div>
+              </>
+            ) : (
+              <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
+              </div>
+            )}
 
             {/* TMDB API Key */}
             <div style={{ marginBottom: 20 }}>

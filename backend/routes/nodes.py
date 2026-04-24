@@ -26,6 +26,55 @@ def _get_nm(request: Request):
     return nm
 
 
+async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap: bool = False) -> None:
+    """Enforce the per-node auth token.
+
+    Behaviour (v0.3.30 onwards):
+      - If a token is already on file for `node_id`, the request MUST
+        present it in `X-Node-Token` and it must match (constant-time).
+        Wrong / missing token → 401.
+      - If no token is on file (`stored is None`):
+          * `allow_bootstrap=True`  (heartbeat only) — treat the call as
+            the node's first contact. The route handler will call
+            `nm.issue_token()` itself and return the plain token in the
+            response body, so the worker can persist it.
+          * `allow_bootstrap=False` — reject. You shouldn't be able to
+            claim jobs or report progress before the handshake is done.
+
+    This flow is backward-compatible with pre-v0.3.30 workers: their
+    first heartbeat against an upgraded server will succeed (no token on
+    either side → bootstrap), and the response starts carrying a token.
+    Once a worker version that reads + resends the token is deployed,
+    the channel is locked to that worker.
+    """
+    nm = _get_nm(request)
+    stored = await nm.get_stored_token(node_id)
+    supplied = request.headers.get("X-Node-Token") or ""
+    if stored is None:
+        if allow_bootstrap:
+            return
+        # Intermediate state: node registered but no token yet AND this
+        # isn't a heartbeat. Reject — the worker needs to re-heartbeat
+        # to get a token before it can claim jobs.
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Node has no auth token yet. Heartbeat first to bootstrap a token "
+                "(see docs/remote-workers.md for details)."
+            ),
+        )
+    # Stored token exists — must match exactly. Using the NodeManager
+    # helper which compares with hmac.compare_digest.
+    if not await nm.validate_token(node_id, supplied):
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Invalid or missing X-Node-Token header. If you rotated the "
+                "node's token in Settings, restart the worker to re-bootstrap."
+            ),
+        )
+
+
 # ------------------------------------------------------------------
 # Models
 # ------------------------------------------------------------------
@@ -87,8 +136,22 @@ class MetricsReport(BaseModel):
 
 @router.post("/heartbeat")
 async def heartbeat(req: HeartbeatRequest, request: Request):
-    """Worker registration + periodic keepalive."""
+    """Worker registration + periodic keepalive.
+
+    Also the bootstrap point for the per-node auth token. If the node
+    already has a token on file, the heartbeat must include it in
+    `X-Node-Token`. If there's no token yet — either a fresh node or an
+    admin just rotated — this call issues one and returns it in the
+    response body so the worker can persist it locally.
+    """
     nm = _get_nm(request)
+
+    # First: validate the per-node token. Heartbeat is the one endpoint
+    # that can bootstrap (allow_bootstrap=True) — every other endpoint
+    # rejects if there's no token, forcing the worker through heartbeat
+    # to re-establish one.
+    await _require_node_token(request, req.node_id, allow_bootstrap=True)
+
     node = await nm.register_or_update(
         node_id=req.node_id,
         name=req.name,
@@ -102,6 +165,19 @@ async def heartbeat(req: HeartbeatRequest, request: Request):
         driver_version=req.driver_version,
         nvenc_unavailable_reason=req.nvenc_unavailable_reason,
     )
+
+    # Issue a token if the node doesn't have one. Either genuinely fresh
+    # install, or admin just rotated. Worker persists the returned token
+    # and sends it in X-Node-Token on every subsequent call.
+    issued_token: str | None = None
+    if await nm.get_stored_token(req.node_id) is None:
+        issued_token = await nm.issue_token(req.node_id)
+        print(
+            f"[NODES] Issued fresh auth token for node '{req.node_id}' "
+            f"(bootstrap or post-rotation)",
+            flush=True,
+        )
+
     # Broadcast node update to frontend
     await ws_manager.broadcast({
         "type": "node_update",
@@ -109,12 +185,17 @@ async def heartbeat(req: HeartbeatRequest, request: Request):
         "name": req.name,
         "status": node.get("status", "online"),
     })
-    return {"status": "ok", "heartbeat_interval": 30}
+
+    response: dict[str, Any] = {"status": "ok", "heartbeat_interval": 30}
+    if issued_token:
+        response["token"] = issued_token
+    return response
 
 
 @router.post("/request-job")
 async def request_job(req: RequestJobBody, request: Request):
     """Worker polls for the next available job matching its capabilities."""
+    await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
     node = await nm.get_node(req.node_id)
     if not node:
@@ -294,6 +375,7 @@ async def request_job(req: RequestJobBody, request: Request):
 @router.post("/report-progress")
 async def report_progress(req: ProgressReport, request: Request):
     """Worker reports job progress. Returns cancel flag."""
+    await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
 
     # Update job progress in DB
@@ -367,6 +449,7 @@ async def report_progress(req: ProgressReport, request: Request):
 @router.post("/report-complete")
 async def report_complete(req: CompletionReport, request: Request):
     """Worker reports job completion or failure."""
+    await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
     nm.clear_cancel(req.job_id)
 
@@ -499,6 +582,7 @@ async def report_metrics(req: MetricsReport, request: Request):
     utilisation. We store these in memory only — persisting every sample
     to disk would be wasteful churn.
     """
+    await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
     # Sanity check: the worker must have registered first.
     node = await nm.get_node(req.node_id)
@@ -694,3 +778,39 @@ async def reset_node(node_id: str, request: Request):
             "consecutive_failures": 0,
         })
     return {"status": "reset"}
+
+
+@router.post("/{node_id}/rotate-token")
+async def rotate_node_token(node_id: str, request: Request):
+    """Invalidate a remote node's auth token, forcing a fresh handshake.
+
+    After this call the node's next heartbeat will bootstrap a new
+    token (server-side `stored is None` → issue a fresh one and return
+    it in the heartbeat response). The remote worker drops its cached
+    token on the next 401 and re-bootstraps automatically, so the
+    admin never needs to touch the worker host.
+
+    Rotating the local node's token is a no-op — the local worker
+    runs in-process and doesn't authenticate over HTTP.
+    """
+    nm = _get_nm(request)
+    node = await nm.get_node(node_id)
+    if not node:
+        raise HTTPException(404, "Node not found")
+    if node_id == "local":
+        raise HTTPException(
+            400,
+            "The local node runs in-process and does not use an auth token.",
+        )
+
+    await nm.clear_token(node_id)
+    print(f"[NODES] Rotated auth token for node '{node_id}' — next heartbeat will bootstrap a fresh one.", flush=True)
+
+    await ws_manager.broadcast({
+        "type": "node_update",
+        "node_id": node_id,
+        "name": node["name"],
+        "status": node["status"],
+        "token_rotated": True,
+    })
+    return {"status": "rotated", "note": "Node will re-bootstrap on next heartbeat."}

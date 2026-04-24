@@ -360,16 +360,44 @@ def _build_ffmpeg_cmd_impl(
     return cmd
 
 
-def rename_x264_to_x265(filename: str) -> str:
-    """Replace x264/h264/AVC codec identifiers in a filename with x265 (case-insensitive)."""
-    result = re.sub(r'\bx264\b', 'x265', filename, flags=re.IGNORECASE)
-    result = re.sub(r'\bh264\b', 'x265', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bAVC\b', 'x265', result)
+def _hevc_tag_for_encoder(encoder: str | None) -> str:
+    """Pick the right codec/encoder label for the output filename.
+
+    Scene convention distinguishes encoder from codec:
+      - x264/x265  = the specific software encoder (libx264, libx265)
+      - h264/h265  = the codec standard, encoder-agnostic
+
+    libx265 → `x265` (correct, it *is* that encoder)
+    NVENC  → `h265` (NVENC is not x265; using `x265` on NVENC output
+             misrepresents what produced the file and triggers "this
+             isn't a real x265 encode" complaints from picky users and
+             scene release-matching heuristics).
+    """
+    return "x265" if (encoder or "").lower() == "libx265" else "h265"
+
+
+def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> str:
+    """Rewrite x264/h264/AVC codec tags in `filename` for the output encoder.
+
+    The target label depends on `encoder` — see `_hevc_tag_for_encoder`.
+    Keeps the old behaviour (always `x265`) when `encoder` is None for
+    back-compat with callers that haven't been updated yet.
+    """
+    target = _hevc_tag_for_encoder(encoder) if encoder is not None else "x265"
+    result = re.sub(r'\bx264\b', target, filename, flags=re.IGNORECASE)
+    result = re.sub(r'\bh264\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bAVC\b', target, result)
     # Remove "Remux" since re-encoded files are no longer remuxes
     result = re.sub(r'\s*\bRemux\b\s*', ' ', result, flags=re.IGNORECASE).strip()
     # Clean up any double spaces left behind
     result = re.sub(r'  +', ' ', result)
     return result
+
+
+# Backwards-compat alias. Existing call sites that don't (yet) know the
+# encoder fall through to "x265" as before; new call sites should pass
+# `encoder=` and use the new name.
+rename_x264_to_x265 = rename_source_to_target_codec
 
 
 # Map ffprobe codec names to common filename tags
@@ -444,10 +472,15 @@ def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
     return result
 
 
-def get_output_path(input_path: str, suffix: str = "") -> str:
-    """Return the final output path: rename codec tag, add suffix, and change extension to .mkv."""
+def get_output_path(input_path: str, suffix: str = "", encoder: str | None = None) -> str:
+    """Return the final output path: rename codec tag, add suffix, and change extension to .mkv.
+
+    `encoder` is threaded through so libx265 output gets `x265` and
+    NVENC output gets `h265` — the scene convention that distinguishes
+    software-encoder tags from codec tags.
+    """
     p = Path(input_path)
-    new_stem = rename_x264_to_x265(p.stem)
+    new_stem = rename_source_to_target_codec(p.stem, encoder=encoder)
     if suffix:
         new_stem = new_stem + suffix
     return str(p.parent / (new_stem + ".mkv"))
@@ -680,7 +713,10 @@ async def convert_file(
     else:
         live_settings = await get_live_encoding_settings()
     filename_suffix = live_settings.get("filename_suffix", "")
-    final_path = get_output_path(input_path, suffix=filename_suffix)
+    # Pass the effective encoder so the output filename picks the right
+    # codec tag: `x265` for libx265, `h265` for NVENC (see
+    # rename_source_to_target_codec for the rationale).
+    final_path = get_output_path(input_path, suffix=filename_suffix, encoder=encoder)
     nvenc_preset = override_preset if override_preset is not None else live_settings.get("nvenc_preset", "p6")
     libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
     cq = override_cq if override_cq is not None else live_settings.get("nvenc_cq", 20)

@@ -700,20 +700,36 @@ async def scan_directory(
             if Path(name).suffix.lower() in extensions:
                 all_files.append(Path(root) / name)
 
-    # Detect duplicate x264/x265 pairs — if both exist, skip the x264
-    # (happens when conversion was interrupted after creating x265 but before deleting x264)
-    from backend.converter import rename_x264_to_x265
+    # Detect duplicate x264 / HEVC pairs — if an HEVC version of the same
+    # release already exists next to the x264 source, skip the x264. This
+    # happens when a conversion was interrupted after writing the output
+    # but before deleting the original. The HEVC output's filename tag
+    # depends on the encoder used:
+    #   - libx265 output → `x265` in the filename
+    #   - NVENC   output → `h265`
+    # so we check BOTH possibilities, not just `x265`.
+    from backend.converter import rename_source_to_target_codec
     all_paths_set = {str(f) for f in all_files}
     skip_paths: set[str] = set()
     for f in all_files:
         name = f.name
-        renamed = rename_x264_to_x265(name)
-        if renamed != name:
-            # This is an x264 file — check if the x265 version exists
-            x265_path = str(f.parent / renamed.replace(f.suffix, ".mkv") if f.suffix.lower() != ".mkv" else f.parent / renamed)
-            if x265_path in all_paths_set and str(f) != x265_path:
-                skip_paths.add(str(f))
-                print(f"[SCANNER] Skipping duplicate x264 (x265 version exists): {f.name}", flush=True)
+        candidates: set[str] = set()
+        for encoder in ("libx265", "nvenc"):
+            renamed = rename_source_to_target_codec(name, encoder=encoder)
+            if renamed != name:
+                # The conversion pipeline always writes .mkv regardless of
+                # source container, so match the HEVC sibling with that
+                # extension explicitly.
+                stem_only = renamed.rsplit(".", 1)[0] if "." in renamed else renamed
+                candidates.add(str(f.parent / f"{stem_only}.mkv"))
+        hits = [c for c in candidates if c in all_paths_set and str(f) != c]
+        if hits:
+            skip_paths.add(str(f))
+            print(
+                f"[SCANNER] Skipping duplicate x264 (HEVC version exists: "
+                f"{Path(hits[0]).name}): {f.name}",
+                flush=True,
+            )
 
     all_files = [f for f in all_files if str(f) not in skip_paths]
     total = len(all_files)

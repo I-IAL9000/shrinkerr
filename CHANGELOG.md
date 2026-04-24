@@ -5,6 +5,25 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.30] — 2026-04-23
+
+### Security
+
+Closes the last deferred item from the v0.3.28/0.3.29 hardening pass.
+
+#### Added
+- **Per-node worker tokens.** Remote workers now carry a per-node auth secret on top of the shared `X-Api-Key`. On first heartbeat the server generates a token with `secrets.token_hex(24)`, persists it in the `worker_nodes` table, and returns it in the response body. The worker writes it to `/app/data/worker_token` (mode 0600) and sends it on every subsequent call as `X-Node-Token`. The server compares with `hmac.compare_digest` and returns 401 on mismatch. Even if the shared API key leaks, an attacker who registers a fresh node can't impersonate an existing one.
+- **Admin rotation** (Nodes → [node] → Settings → **Rotate token**): invalidates the stored token immediately. The worker drops its cached copy on the next 401 and re-bootstraps on its next heartbeat — no worker restart needed.
+- `docs/remote-workers.md` documents the bootstrap + rotation flow; `docs/security.md` moves per-node tokens out of "deferred" into shipped defences.
+
+#### Fixed
+- `GET /api/nodes` no longer returns the `token` column to the frontend. The read surface now exposes a `has_token` boolean + `token_issued_at` ISO timestamp instead — the token itself never leaves the server.
+
+### Changed
+- **Encoder-aware rename.** Files encoded with NVENC now rename to `*.h265.*` instead of `*.x265.*` — `x265` is a specific libx265 binary, `h265` (a.k.a. HEVC) is the codec. libx265 jobs keep the `x265` tag. The scan dedup logic considers both siblings so existing `x265`-named NVENC outputs are still recognised on rescan. `rename_x264_to_x265` is kept as a back-compat alias.
+- **Settings → Video → Conversion Guide** now has full libx265 preset + CRF tables and a recommended-combinations table alongside the existing NVENC ones, so CPU-only users see matching guidance. Expanded the tips section with NVENC-vs-libx265 quality equivalence, preset scaling, and CRF semantics.
+- **Settings → Metadata APIs** shows a green "TMDB is already connected" banner when the bundled key is active, so users on fresh installs see that posters / native-language detection work out of the box and the TMDB input is strictly optional polish.
+
 ## [0.3.29] — 2026-04-23
 
 ### Security
@@ -33,7 +52,7 @@ Phases 2 + 3 of the security hardening pass. New [`docs/security.md`](docs/secur
 - **`docs/security.md`** — threat model, list of in-app defences, hardening checklist for production deployments.
 
 #### Remaining (tracked for the next release)
-- **Per-node worker tokens.** Anyone who holds the shared `api_key` can currently impersonate any registered worker by sending its `node_id` in a heartbeat. The fix (issue per-node tokens at registration, bind them to `node_id` on every subsequent call) is a bigger change that touches worker-mode and is deferred to keep this release scoped.
+- **Per-node worker tokens.** Shipped in [0.3.30].
 
 ## [0.3.28] — 2026-04-23
 
@@ -345,6 +364,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.30]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.30
 [0.3.29]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.29
 [0.3.28]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.28
 [0.3.27]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.27

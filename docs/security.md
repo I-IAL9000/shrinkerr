@@ -57,6 +57,16 @@ the user; there's no multi-tenant model.
 - **Integration endpoints** (`/api/webhooks/*`, `/api/nodes/*`, backup
   download/restore, NZBGet/SABnzbd config + scripts) always require
   `X-Api-Key`, regardless of whether password auth is enabled.
+- **Remote worker nodes carry a per-node auth token** on top of the
+  shared `X-Api-Key`. The server issues a fresh token on the node's
+  first heartbeat, the worker persists it in `/app/data/worker_token`
+  (mode 0600), and every subsequent call sends it as `X-Node-Token`.
+  Even if the shared API key leaks, an attacker who registers a new
+  node can't impersonate an existing one: the server compares the
+  supplied token with the stored value via `hmac.compare_digest` and
+  returns 401 on mismatch. Admins can force a fresh handshake any time
+  from **Nodes → Settings → Rotate token**; the worker drops its
+  cached copy on the next 401 and re-bootstraps automatically.
 
 ### Secrets handling
 
@@ -174,16 +184,6 @@ public GitHub issues — new-style GitHub Security Advisories also work:
 <https://github.com/I-IAL9000/shrinkerr/security/advisories/new>.
 
 ## Known limitations / roadmap
-
-### Deferred to the next release
-
-- **Per-node worker tokens.** Currently remote workers authenticate
-  with the shared `api_key` and identify themselves via a `node_id` in
-  the request body. Anyone who holds the shared key can impersonate
-  any registered node (send heartbeats, claim jobs, report completion)
-  by sending the target's `node_id`. Fix in-flight: per-node tokens
-  issued at registration, required on every subsequent call. Tracked
-  for the next security-hardening release.
 
 ### Accepted
 

@@ -232,6 +232,8 @@ export const getNodeMetrics = () => apiFetch<{ nodes: NodeMetricsEntry[] }>("/no
 export const removeNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}`, { method: "DELETE" });
 export const cancelNodeJob = (nodeId: string) => apiFetch(`/nodes/${nodeId}/cancel`, { method: "POST" });
 export const resetNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}/reset`, { method: "POST" });
+export const rotateNodeToken = (nodeId: string) =>
+  apiFetch<{ status: string; note?: string }>(`/nodes/${nodeId}/rotate-token`, { method: "POST" });
 import type { NodeSettings } from "./types";
 export const updateNodeSettings = (nodeId: string, settings: NodeSettings) =>
   apiFetch(`/nodes/${nodeId}/settings`, { method: "PATCH", body: JSON.stringify(settings) });

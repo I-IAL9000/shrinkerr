@@ -9,6 +9,7 @@ encoding.
 - [When it's worth it](#when-its-worth-it)
 - [Architecture in one paragraph](#architecture-in-one-paragraph)
 - [Setting up a worker](#setting-up-a-worker)
+- [Authentication (per-node tokens)](#authentication-per-node-tokens)
 - [Path mappings](#path-mappings)
 - [Capability-based job routing](#capability-based-job-routing)
 - [Encoder translation (NVENC ↔ libx265)](#encoder-translation-nvenc--libx265)
@@ -76,6 +77,52 @@ detected capabilities (`libx265`, `nvenc`, both).
 | `API_KEY` | yes | From Settings → System → Authentication on the primary |
 | `WORKER_NAME` | no | Display name on the Nodes page. Defaults to the container hostname. |
 | `CAPABILITIES` | no | Comma-separated override (e.g. `libx265`). If unset, the worker auto-detects. Useful to force a GPU host into CPU-only mode. |
+
+## Authentication (per-node tokens)
+
+From v0.3.30 onwards every remote worker carries a per-node auth token
+*in addition* to the shared `API_KEY`. You don't configure it — the
+handshake is automatic — but it's worth understanding what it does and
+when you'd rotate it.
+
+**Bootstrap.** The first time a worker with no cached token heartbeats
+against the primary:
+
+1. Worker sends heartbeat with only `X-Api-Key`.
+2. Server sees no stored token for this `node_id`, generates one
+   (`secrets.token_hex(24)`), persists it in the `worker_nodes` table,
+   and returns it in the response body (`{"token": "..."}`).
+3. Worker writes it to `/app/data/worker_token` (mode 0600) and sends
+   `X-Node-Token: <token>` on every subsequent call.
+
+From that point on the server rejects any call to `/api/nodes/request-job`
+or `/api/nodes/report-*` that doesn't present the matching token, with
+`hmac.compare_digest` on the compare. Even if an attacker steals the
+shared `API_KEY`, they can't impersonate an existing registered node
+without also getting the per-node token from that node's data volume.
+
+**Rotation.** Go to **Nodes → [node] → Settings → Rotate token**. The
+server NULLs the stored token immediately. On the worker's next call
+it receives a 401, drops its cached copy (`/app/data/worker_token`),
+and re-bootstraps on its next heartbeat. The worker doesn't need a
+restart — the 401 handler is self-healing.
+
+Rotating a node that's currently running a job will cause that job to
+fail and be requeued (the worker's `report-progress` POST gets the 401
+before the 200 it's expecting). Rotate during quiet hours, or pause
+the node first, if that matters to you.
+
+**Resetting a worker.** If you ever rebuild a worker host from scratch,
+delete its data volume, or otherwise lose the cached token, just let it
+reconnect — it will look like a brand-new node on the primary (new
+heartbeat, empty stored token, fresh handshake). If you want the old
+`node_id` back: **Nodes → [node] → Settings → Rotate token** before
+starting the new worker, and the server will re-bootstrap against the
+reinstalled worker on its first heartbeat.
+
+**Local node.** The local node (`id=local`) runs in-process and doesn't
+authenticate over HTTP, so it has no token. Rotating a local node is a
+no-op.
 
 ## Path mappings
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { updateNodeSettings } from "../api";
+import { updateNodeSettings, rotateNodeToken } from "../api";
 import type { WorkerNode, NodeSettings } from "../types";
 
 interface Props {
@@ -35,6 +35,8 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
+  const [rotateMessage, setRotateMessage] = useState<string | null>(null);
 
   const save = async () => {
     setSaving(true);
@@ -45,6 +47,26 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
     } catch (e: any) {
       setError(e?.message || "Save failed");
       setSaving(false);
+    }
+  };
+
+  const rotateToken = async () => {
+    if (!confirm(
+      "Rotate this node's auth token?\n\n" +
+      "The server will invalidate the current token immediately. " +
+      "The worker will drop its cached copy on the next 401 and " +
+      "automatically re-bootstrap a fresh token on its next heartbeat. " +
+      "In-flight jobs on this node will fail and be requeued."
+    )) return;
+    setRotating(true);
+    setRotateMessage(null);
+    try {
+      await rotateNodeToken(node.id);
+      setRotateMessage("Token rotated. The worker will re-bootstrap on its next heartbeat.");
+    } catch (e: any) {
+      setRotateMessage(`Rotation failed: ${e?.message || "unknown error"}`);
+    } finally {
+      setRotating(false);
     }
   };
 
@@ -177,6 +199,46 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
               </div>
             )}
           </section>
+
+          {/* Auth token (remote nodes only — local node runs in-process) */}
+          {node.id !== "local" && (
+            <section>
+              <Label
+                title="Auth token"
+                hint="Remote workers authenticate with a per-node shared secret on top of the global API key. Rotating invalidates the current token; the worker re-bootstraps on its next heartbeat."
+              />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+                {node.has_token ? (
+                  <>
+                    <span style={{ color: "var(--success, #4caf50)" }}>● Token active</span>
+                    {node.token_issued_at && (
+                      <> &middot; issued {new Date(node.token_issued_at).toLocaleString()}</>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--text-muted)" }}>
+                    No token yet — next heartbeat will bootstrap one.
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={rotateToken}
+                disabled={rotating}
+                className="btn btn-secondary"
+                style={{ fontSize: 12 }}
+              >
+                {rotating ? "Rotating..." : "Rotate token"}
+              </button>
+              {rotateMessage && (
+                <div style={{
+                  marginTop: 8, fontSize: 11,
+                  color: rotateMessage.startsWith("Rotation failed") ? "var(--danger)" : "var(--text-secondary)",
+                }}>
+                  {rotateMessage}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Per-node schedule */}
           <section>

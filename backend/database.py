@@ -451,6 +451,20 @@ async def init_db():
                 await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # Migration: per-node auth token (v0.3.30). Stored plaintext like
+        # session_secret — it's a shared secret between server and worker,
+        # protected by the DB file permissions. `token_issued_at` records
+        # the last bootstrap/rotation for UI display. A NULL `token` means
+        # "no token issued yet"; the node's next heartbeat triggers a
+        # bootstrap and receives one in the response.
+        for col, ctype in [
+            ("token", "TEXT DEFAULT NULL"),
+            ("token_issued_at", "TEXT DEFAULT NULL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
 
         # Per-file event log (history tab + global Activity feed)
         await db.executescript("""
