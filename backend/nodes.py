@@ -481,6 +481,12 @@ class NodeManager:
         """Translate a path using the node's path_mappings.
 
         direction: "to_worker" = server→worker, "to_server" = worker→server
+
+        Source priority (v0.3.31+):
+          1. `path_mappings_override` — admin-edited via the Node Settings
+             modal. Non-null means "UI has taken over", ignore env-var.
+          2. `path_mappings` — worker-reported (from its PATH_MAPPINGS env
+             var on heartbeat). Legacy / bootstrap default.
         """
         if node_id == "local":
             return path  # Local node uses same paths
@@ -489,7 +495,11 @@ class NodeManager:
         if not node:
             return path
 
-        mappings = node.get("path_mappings") or []
+        override = node.get("path_mappings_override")
+        if override is not None:
+            mappings = override
+        else:
+            mappings = node.get("path_mappings") or []
         for m in mappings:
             src = m.get("server", "").rstrip("/")
             dst = m.get("worker", "").rstrip("/")
@@ -754,6 +764,17 @@ class NodeManager:
                     d[field] = json.loads(d[field])
                 except Exception:
                     d[field] = []
+        # path_mappings_override is nullable — distinguish "not set" (None,
+        # fall back to worker-reported) from "set to empty list" (explicit
+        # "no mappings at all, ignore env-var").
+        pmo = d.get("path_mappings_override")
+        if pmo is None:
+            d["path_mappings_override"] = None
+        elif isinstance(pmo, str):
+            try:
+                d["path_mappings_override"] = json.loads(pmo)
+            except Exception:
+                d["path_mappings_override"] = None
         # Coerce integer bools to actual booleans for the frontend
         for field in ("paused", "translate_encoder", "schedule_enabled"):
             if field in d:

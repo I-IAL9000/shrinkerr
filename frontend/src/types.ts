@@ -118,6 +118,10 @@ export interface WorkerNode {
   // the UI can show when the channel was last re-keyed.
   has_token?: boolean;
   token_issued_at?: string | null;
+  // Admin path-mappings override (v0.3.31+). null means "no override — use
+  // the worker's env-var reported mappings". A list (possibly empty) means
+  // the UI has explicitly set them, bypassing env-var.
+  path_mappings_override?: { server: string; worker: string }[] | null;
 }
 
 export interface NodeSettings {
@@ -127,6 +131,10 @@ export interface NodeSettings {
   translate_encoder?: boolean;
   schedule_enabled?: boolean;
   schedule_hours?: number[];
+  // Tri-state: absent (not patching), null (clear override), array (set override).
+  // Sending this as undefined leaves the server value alone; `null` clears the
+  // override to revert to the worker's env-var mappings.
+  path_mappings_override?: { server: string; worker: string }[] | null;
 }
 
 export interface QueueStats {

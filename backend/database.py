@@ -465,6 +465,19 @@ async def init_db():
                 await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # Migration: admin-editable path mappings override (v0.3.31). The
+        # existing `path_mappings` column is the worker's own reported value
+        # (populated from its PATH_MAPPINGS env var on every heartbeat). This
+        # override column lets an admin edit mappings from the UI without
+        # bouncing the worker container. `translate_path` prefers override
+        # when non-null, else falls back to the worker-reported set.
+        for col, ctype in [
+            ("path_mappings_override", "TEXT DEFAULT NULL"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
+            except Exception:
+                pass
 
         # Per-file event log (history tab + global Activity feed)
         await db.executescript("""

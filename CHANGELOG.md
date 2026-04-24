@@ -5,6 +5,19 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.31] — 2026-04-24
+
+Follow-up release cleaning up rough edges from the v0.3.30 migration.
+
+### Added
+- **Path mappings editor in the Node Settings modal.** Admin-editable override that takes precedence over the worker's `PATH_MAPPINGS` env var. Translation stays server-side so no worker restart is needed — change a mapping, save, next job dispatch uses the new value. The worker's env-var mappings are still shown in the modal for reference, and clearing the override reverts to them.
+- **`SHRINKERR_DISABLE_NODE_TOKENS=true` escape hatch** for heterogeneous upgrades. When set on the server, per-node token enforcement is bypassed entirely, letting a v0.3.31 server talk to pre-v0.3.30 workers that haven't been updated yet. Prints a loud `[SECURITY] WARNING` on every startup so it can't silently stay on past the migration.
+- **Diagnostic logs in server output** when a worker sends a `/api/nodes/*` call with no `X-Node-Token` but the server has one on file (`[NODES] 401 for node 'X': server has a stored token but the request sent no X-Node-Token...`). Surfaces the pre-v0.3.30-worker-vs-v0.3.30-server mismatch from the server side, so admins don't have to tail worker logs to diagnose it.
+
+### Changed
+- **Settings → Metadata APIs** now shows the green "TMDB is already connected" banner when using either the bundled key or a user-configured key. Previously only the bundled case got the banner, so admins who'd saved their own key saw no visible change in v0.3.30. Banner subtext differs per source.
+- **docs/remote-workers.md** — path mappings section rewritten to cover the new UI override, the `PATH_MAPPINGS` env var fallback, and their precedence. Authentication section adds an "Upgrading server before workers" subsection documenting the escape hatch.
+
 ## [0.3.30] — 2026-04-23
 
 ### Security
@@ -364,6 +377,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.31]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.31
 [0.3.30]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.30
 [0.3.29]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.29
 [0.3.28]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.28

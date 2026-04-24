@@ -38,11 +38,37 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
   const [rotating, setRotating] = useState(false);
   const [rotateMessage, setRotateMessage] = useState<string | null>(null);
 
+  // Path mappings override — tri-state.
+  //   overrideActive=false → don't send the field; server keeps whatever
+  //                          it currently has (override or null).
+  //   overrideActive=true, touched=true → send the current rows array, OR
+  //                                       null if the admin clicked "clear".
+  // Starts populated from the node's current override (if set).
+  const initialOverride = node.path_mappings_override ?? null;
+  const [overrideActive, setOverrideActive] = useState(initialOverride !== null);
+  const [overrideRows, setOverrideRows] = useState<{ server: string; worker: string }[]>(
+    initialOverride ?? []
+  );
+  const [overrideTouched, setOverrideTouched] = useState(false);
+  const markOverrideTouched = () => setOverrideTouched(true);
+
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      await updateNodeSettings(node.id, settings);
+      // Build payload. path_mappings_override is tri-state — see declaration.
+      const payload: NodeSettings = { ...settings };
+      if (overrideTouched) {
+        if (overrideActive) {
+          // Drop blank rows and trim on client before sending.
+          payload.path_mappings_override = overrideRows
+            .map(r => ({ server: r.server.trim(), worker: r.worker.trim() }))
+            .filter(r => r.server && r.worker);
+        } else {
+          payload.path_mappings_override = null;  // clear override on server
+        }
+      }
+      await updateNodeSettings(node.id, payload);
       onSaved();  // closes modal + refreshes
     } catch (e: any) {
       setError(e?.message || "Save failed");
@@ -235,6 +261,125 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                   color: rotateMessage.startsWith("Rotation failed") ? "var(--danger)" : "var(--text-secondary)",
                 }}>
                   {rotateMessage}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Path mappings override (remote nodes only). The local node runs
+              in-process, so its paths are always identical to the server's. */}
+          {node.id !== "local" && (
+            <section>
+              <Label
+                title="Path mappings"
+                hint="Translate paths between what the server dispatches and what the worker sees on disk. Most setups don't need this if the worker's -v mounts match the server's layout 1:1."
+              />
+
+              {/* Show the worker-reported mappings as informational — these
+                  come from the worker's PATH_MAPPINGS env var on each
+                  heartbeat. Useful to confirm the worker is alive + what it
+                  thinks the mappings are even when you're about to override. */}
+              {node.path_mappings && node.path_mappings.length > 0 && (
+                <div style={{
+                  fontSize: 11, color: "var(--text-muted)", marginBottom: 8,
+                  padding: "6px 8px", background: "var(--bg-primary)",
+                  border: "1px solid var(--border)", borderRadius: 4,
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                    Reported by worker (from PATH_MAPPINGS env var):
+                  </div>
+                  {node.path_mappings.map((m, i) => (
+                    <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>
+                      {m.server} &rarr; {m.worker}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={overrideActive}
+                  onChange={e => {
+                    setOverrideActive(e.target.checked);
+                    markOverrideTouched();
+                    // When enabling for the first time with no existing rows,
+                    // seed with a blank row so the user has somewhere to type.
+                    if (e.target.checked && overrideRows.length === 0) {
+                      setOverrideRows([{ server: "", worker: "" }]);
+                    }
+                  }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  Override worker's env-var mappings
+                </span>
+              </label>
+
+              {overrideActive && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {overrideRows.map((row, i) => (
+                    <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input
+                        type="text"
+                        placeholder="/server/path"
+                        value={row.server}
+                        onChange={e => {
+                          const next = [...overrideRows];
+                          next[i] = { ...next[i], server: e.target.value };
+                          setOverrideRows(next);
+                          markOverrideTouched();
+                        }}
+                        style={{
+                          flex: 1, padding: "4px 8px", fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                          background: "var(--bg-primary)", border: "1px solid var(--border)",
+                          borderRadius: 4, color: "var(--text-primary)",
+                        }}
+                      />
+                      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
+                      <input
+                        type="text"
+                        placeholder="/worker/path"
+                        value={row.worker}
+                        onChange={e => {
+                          const next = [...overrideRows];
+                          next[i] = { ...next[i], worker: e.target.value };
+                          setOverrideRows(next);
+                          markOverrideTouched();
+                        }}
+                        style={{
+                          flex: 1, padding: "4px 8px", fontSize: 11,
+                          fontFamily: "var(--font-mono)",
+                          background: "var(--bg-primary)", border: "1px solid var(--border)",
+                          borderRadius: 4, color: "var(--text-primary)",
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          setOverrideRows(overrideRows.filter((_, idx) => idx !== i));
+                          markOverrideTouched();
+                        }}
+                        title="Remove"
+                        style={{
+                          background: "none", border: "none", color: "var(--text-muted)",
+                          cursor: "pointer", fontSize: 16, padding: "0 6px",
+                        }}
+                      >×</button>
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => {
+                      setOverrideRows([...overrideRows, { server: "", worker: "" }]);
+                      markOverrideTouched();
+                    }}
+                    style={{
+                      alignSelf: "flex-start", fontSize: 11, color: "var(--accent)",
+                      background: "none", border: "none", cursor: "pointer", padding: "4px 0",
+                    }}
+                  >+ Add mapping</button>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>
+                    Paths must be absolute (start with <code>/</code>). Translation is applied when the server dispatches a job to this node: each mapping's <em>server</em> prefix is rewritten to its <em>worker</em> prefix before the worker sees the path.
+                  </div>
                 </div>
               )}
             </section>

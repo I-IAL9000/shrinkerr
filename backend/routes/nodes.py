@@ -6,6 +6,7 @@ and report completion. The frontend uses GET /api/nodes for the Nodes page.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,6 +17,20 @@ from backend.websocket import ws_manager
 
 
 router = APIRouter(prefix="/api/nodes")
+
+
+def _node_tokens_disabled() -> bool:
+    """Admin escape hatch for heterogeneous upgrades.
+
+    When `SHRINKERR_DISABLE_NODE_TOKENS=true` is set on the server, the
+    per-node token check is bypassed entirely — useful for rolling
+    server upgrades across a fleet of workers that can't all be
+    updated to v0.3.30+ simultaneously. Comes at the cost of the
+    node-impersonation defence (anyone with the shared api_key can
+    heartbeat as any node_id), so meant as a temporary migration
+    aid, not a long-term setting. Logged loudly on startup.
+    """
+    return os.environ.get("SHRINKERR_DISABLE_NODE_TOKENS", "").strip().lower() in ("true", "1", "yes")
 
 
 def _get_nm(request: Request):
@@ -47,6 +62,12 @@ async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap
     Once a worker version that reads + resends the token is deployed,
     the channel is locked to that worker.
     """
+    # Escape hatch for heterogeneous upgrades — see _node_tokens_disabled()
+    # docstring. When set, we skip the token check entirely but still let
+    # the rest of the middleware chain (api_key_auth) run.
+    if _node_tokens_disabled():
+        return
+
     nm = _get_nm(request)
     stored = await nm.get_stored_token(node_id)
     supplied = request.headers.get("X-Node-Token") or ""
@@ -66,6 +87,27 @@ async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap
     # Stored token exists — must match exactly. Using the NodeManager
     # helper which compares with hmac.compare_digest.
     if not await nm.validate_token(node_id, supplied):
+        # Diagnostic: the two failure modes here look the same to the
+        # worker (a 401 with no detail in the httpx exception string) but
+        # have very different remedies. Log a clear hint in server logs so
+        # an admin doesn't have to chase this through worker logs.
+        if not supplied:
+            print(
+                f"[NODES] 401 for node '{node_id}': server has a stored token but the "
+                f"request sent no X-Node-Token. Either the worker is running a "
+                f"pre-v0.3.30 image (upgrade it), or its /app/data/worker_token "
+                f"was cleared while the server's copy wasn't. Fix: rotate the "
+                f"token from Nodes → Settings, or run "
+                f"`UPDATE worker_nodes SET token=NULL WHERE id='{node_id}'` to "
+                f"let the worker re-bootstrap.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[NODES] 401 for node '{node_id}': X-Node-Token mismatch. Worker "
+                f"has a stale token — rotate from Nodes → Settings to re-sync.",
+                flush=True,
+            )
         raise HTTPException(
             status_code=401,
             detail=(
@@ -671,6 +713,11 @@ async def cancel_node_job(node_id: str, request: Request):
     return {"status": "cancel_requested", "job_id": job_id}
 
 
+class PathMappingEntry(BaseModel):
+    server: str
+    worker: str
+
+
 class NodeSettingsBody(BaseModel):
     paused: bool | None = None
     max_jobs: int | None = None
@@ -678,6 +725,14 @@ class NodeSettingsBody(BaseModel):
     translate_encoder: bool | None = None
     schedule_enabled: bool | None = None
     schedule_hours: list[int] | None = None
+    # Admin path-mappings override (v0.3.31+). Pydantic can't distinguish
+    # "field absent" from "field=null" with Optional alone, so we rely on
+    # model_fields_set / PATCH handler explicitly. Semantics:
+    #   - Field absent: no change.
+    #   - Field = null: clear the override (revert to worker-reported mappings).
+    #   - Field = [...]:  set the override to that list.
+    # We accept any JSON-serializable list and validate entries in the handler.
+    path_mappings_override: list[PathMappingEntry] | None = None
 
 
 @router.patch("/{node_id}/settings")
@@ -711,6 +766,32 @@ async def update_node_settings(node_id: str, body: NodeSettingsBody, request: Re
         hours = [h for h in body.schedule_hours if isinstance(h, int) and 0 <= h <= 23]
         updates.append("schedule_hours = ?")
         params.append(json.dumps(sorted(set(hours))))
+
+    # Path mappings override — pydantic's default-to-None makes "field absent"
+    # indistinguishable from "field=null" via the value alone, so we use
+    # model_fields_set to tell them apart. Absent → no change. Explicit null
+    # → clear (revert to worker-reported mappings). List → set.
+    if "path_mappings_override" in body.model_fields_set:
+        if body.path_mappings_override is None:
+            updates.append("path_mappings_override = NULL")
+        else:
+            # Normalize: trim whitespace, drop rows where either side is empty
+            # after stripping. Reject trivially-invalid entries (no leading '/'
+            # — a relative path mapping is almost certainly a typo).
+            rows: list[dict[str, str]] = []
+            for entry in body.path_mappings_override:
+                s = (entry.server or "").strip().rstrip("/")
+                w = (entry.worker or "").strip().rstrip("/")
+                if not s or not w:
+                    continue
+                if not s.startswith("/") or not w.startswith("/"):
+                    raise HTTPException(
+                        400,
+                        f"Path mapping must use absolute paths on both sides; got server='{s}', worker='{w}'.",
+                    )
+                rows.append({"server": s, "worker": w})
+            updates.append("path_mappings_override = ?")
+            params.append(json.dumps(rows))
 
     if not updates:
         return {"status": "noop"}

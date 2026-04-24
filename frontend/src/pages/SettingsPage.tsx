@@ -1595,11 +1595,12 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           {/* Metadata APIs */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
-            {encoding.tmdb_key_source === "bundled" ? (
+            {encoding.tmdb_key_source === "bundled" || encoding.tmdb_key_source === "user" ? (
               <>
-                {/* Success banner — make it visually obvious that TMDB already works
-                    so users don't feel they have to configure anything here. The
-                    input below is clearly framed as optional. */}
+                {/* Success banner shown for BOTH sources (bundled + user) — the
+                    goal is a single "TMDB is working, don't worry about it"
+                    signal regardless of whose key is in play. Subtext differs
+                    per source so the admin knows which key is active. */}
                 <div
                   style={{
                     display: "flex", alignItems: "flex-start", gap: 10,
@@ -1622,12 +1623,22 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <div style={{ color: "var(--success)", fontWeight: 600, marginBottom: 2 }}>
                       TMDB is already connected
                     </div>
-                    Posters, ratings, original-language detection, and TVDB ID resolution work out of the box using a bundled non-commercial key. You don't need to do anything.
+                    {encoding.tmdb_key_source === "bundled" ? (
+                      <>
+                        Posters, ratings, original-language detection, and TVDB ID resolution work out of the box using a bundled non-commercial key. You don't need to do anything.
+                      </>
+                    ) : (
+                      <>
+                        Posters, ratings, original-language detection, and TVDB ID resolution are active, using the API key you've configured below.
+                      </>
+                    )}
                   </div>
                 </div>
-                <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-                  Adding your own key below is <strong>optional</strong> — useful only if you want a dedicated rate-limit quota, or as a fallback in case the bundled key is ever rotated.
-                </div>
+                {encoding.tmdb_key_source === "bundled" && (
+                  <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+                    Adding your own key below is <strong>optional</strong> — useful only if you want a dedicated rate-limit quota, or as a fallback in case the bundled key is ever rotated.
+                  </div>
+                )}
               </>
             ) : (
               <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>

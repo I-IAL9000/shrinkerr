@@ -124,26 +124,72 @@ reinstalled worker on its first heartbeat.
 authenticate over HTTP, so it has no token. Rotating a local node is a
 no-op.
 
+**Upgrading server before workers.** v0.3.30+ servers require
+`X-Node-Token` on every `/api/nodes/*` call from remote workers. A
+pre-v0.3.30 worker against a v0.3.30 server will silently lock itself
+out after its first heartbeat: the server bootstraps a token and stores
+it, the old worker ignores the `"token"` field in the response, and
+every subsequent call 401s. Server logs will print a diagnostic hint
+(`[NODES] 401 for node 'X': server has a stored token but the request
+sent no X-Node-Token...`) so you'll see it without tailing worker logs.
+
+Two ways out:
+
+1. **Upgrade the worker container** to v0.3.30+. Then clear the stale
+   server-side token either by clicking "Rotate token" in the Node
+   Settings modal, or by running
+   `UPDATE worker_nodes SET token=NULL WHERE id!='local'` on the DB.
+   The worker will re-bootstrap on its next heartbeat.
+
+2. **Temporary escape hatch** — set
+   `SHRINKERR_DISABLE_NODE_TOKENS=true` on the *server* container. This
+   bypasses the token check entirely for heterogeneous fleets that
+   can't all be upgraded simultaneously. The server prints a loud
+   `[SECURITY] WARNING` on every startup while this is active. Unset
+   it once every worker is on v0.3.30+.
+
 ## Path mappings
 
 If the primary sees the library at `/media/TV/Foo (2020)/ep.mkv` but the
 worker sees it at `/mnt/library/TV/Foo (2020)/ep.mkv`, you need a mapping
-so the worker can find the file.
+so the worker can find the file. Translation happens server-side: the
+server rewrites its dispatched path using the node's mappings before the
+worker receives it.
 
-**Nodes → [node] → Settings → Path mappings**:
+Two sources for mappings, in priority order (v0.3.31+):
+
+**1. Admin override — Nodes → [node] → Settings → Path mappings.** Tick
+"Override worker's env-var mappings" and add one row per prefix. Takes
+effect immediately on save without touching the worker container. This
+is the right choice when you want to tweak mappings without editing
+`docker run` args.
+
+**2. Worker's `PATH_MAPPINGS` env var** (fallback). JSON array of
+`{server, worker}` pairs, set when you start the container:
+
+```bash
+-e PATH_MAPPINGS='[{"server":"/media","worker":"/mnt/library"}]'
+```
+
+The worker reports its env-var mappings to the server on every heartbeat,
+and the server uses them whenever no UI override is set. Clearing the
+admin override (via the checkbox in the UI) reverts to whatever the
+worker reports.
+
+Example:
 
 ```
 Server path:  /media
 Worker path:  /mnt/library
 ```
 
-When the primary dispatches `/media/TV/Foo/ep.mkv` to this worker, the
-worker resolves it to `/mnt/library/TV/Foo/ep.mkv` before handing it to
-ffmpeg. Any written output (encoded file, backup) uses the worker path
-going out, and the primary's view of it (once it re-scans) is back under
+When the server dispatches `/media/TV/Foo/ep.mkv` to this worker, it
+rewrites to `/mnt/library/TV/Foo/ep.mkv` before sending. Any written
+output (encoded file, backup) is rewritten in the opposite direction on
+report-complete, so the server's view of the result lands back under
 `/media/`.
 
-Multiple mappings are allowed — add one line per prefix.
+Multiple mappings are allowed — add one row per prefix.
 
 **Important caveat — network mounts.** If the worker sees the library via
 SMB / NFS / AFP, encoding writes go back over the network for every

@@ -181,6 +181,14 @@ async def _bootstrap_auth_defaults() -> None:
     except Exception as exc:
         print(f"[SECURITY] Bootstrap skipped ({exc}); continuing.", flush=True)
 
+    # Secondary banner: per-node-token escape hatch. Prints every boot so it
+    # can't stay silently enabled after a migration period.
+    if os.environ.get("SHRINKERR_DISABLE_NODE_TOKENS", "").strip().lower() in ("true", "1", "yes"):
+        print("[SECURITY] WARNING: SHRINKERR_DISABLE_NODE_TOKENS=true — per-node auth tokens DISABLED.", flush=True)
+        print("[SECURITY] Anyone with the shared api_key can heartbeat / request jobs / report", flush=True)
+        print("[SECURITY] progress as ANY registered node_id. This is a migration escape hatch,", flush=True)
+        print("[SECURITY] not a permanent setting. Unset it once all workers are on v0.3.30+.", flush=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
