@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.39] — 2026-04-25
+
+### Fixed
+- **Encoding stalls on files with many unwanted subtitle streams** (Breathless 2024, Brotherhood, etc — releases that ship 30+ subrip tracks). Previous attempts (v0.3.37 muxer flags, reverted in v0.3.38) didn't address the actual cause. Live diagnostics on a stuck job showed ffmpeg's `frame=` and `fps=` advancing while `time=` froze, which means the encoder was producing output but the output-side commit position was lagging — interleave drift across the 35 input streams was wedging the muxer's per-stream queues. Single-process ffmpeg test on the same file confirmed: 5.15× speed with `-an -sn` (no streams), but the production cmd with 4 mapped + 30 dropped subs only made it through 2 minutes before drift made it diverge from steady throughput. Fix: when a job needs to drop ≥6 subtitle streams, do a fast `-c copy` remux pass *first* that strips them, then run the main encode on the cleaned 5–7 stream file. The main pass then has nothing to demux that it isn't using, no interleave drift, and runs at the same speed as the streamless test. Pre-strip is I/O-bound (~30s for a 2 GB file), runs once per qualifying job, and is automatically skipped for files with fewer drops. Falls back gracefully to single-pass on errors / timeouts.
+
 ## [0.3.38] — 2026-04-25
 
 ### Fixed
@@ -428,6 +433,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.39]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.39
 [0.3.38]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.38
 [0.3.37]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.37
 [0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36

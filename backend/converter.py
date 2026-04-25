@@ -510,6 +510,100 @@ def get_temp_path(input_path: str) -> str:
     return str(p.parent / (p.stem + ".converting.mkv"))
 
 
+async def _prestrip_subtitles(
+    *,
+    input_path: str,
+    subtitle_streams: list[dict],
+    audio_streams_to_keep: list[dict] | None,
+    subtitle_streams_to_remove: set,
+) -> str | None:
+    """Fast `-c copy` remux pass that drops unwanted subtitle streams.
+
+    Returns the path to the stripped file on success, None on failure
+    (caller falls back to single-pass encoding).
+
+    Used by `convert_file` when many subtitle streams need removal — see
+    the two-pass workflow comment there for the rationale. The output
+    file lives in the same directory as the input with a `.stripped.mkv`
+    suffix so it's adjacent to its source for filesystem-locality and
+    can be removed by the same media-dir cleanup if anything goes wrong.
+    """
+    p = Path(input_path)
+    out_path = str(p.parent / (p.stem + ".stripped.mkv"))
+
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", input_path]
+    # Always keep the first video stream and any attachments. Audio: either
+    # keep all (when no inline audio removal is in play) or only the
+    # explicitly-listed kept streams.
+    cmd += ["-map", "0:v:0"]
+    if audio_streams_to_keep is not None:
+        for stream in audio_streams_to_keep:
+            idx = stream.get("stream_index")
+            if idx is not None:
+                cmd += ["-map", f"0:{idx}"]
+    else:
+        cmd += ["-map", "0:a"]
+    # Subtitles: keep only the ones not in the removal set.
+    kept_count = 0
+    for sub in subtitle_streams:
+        idx = sub.get("index")
+        if idx is None or idx in subtitle_streams_to_remove:
+            continue
+        cmd += ["-map", f"0:{idx}"]
+        kept_count += 1
+    cmd += ["-map", "0:t?"]  # attachments (fonts etc.)
+    cmd += ["-c", "copy", out_path]
+
+    print(
+        f"[CONVERT] Pre-strip pass: drop {len(subtitle_streams_to_remove)} subs, "
+        f"keep {kept_count} subs (-c copy, no re-encode)",
+        flush=True,
+    )
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        # 5-minute ceiling — pre-strip is I/O bound and ~30s is typical for
+        # a 2 GB file; anything over 5 minutes means we hit a network mount
+        # stall or similar, in which case bailing and falling back to the
+        # single-pass encode is better than blocking the whole job.
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=300)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+            print(f"[CONVERT] Pre-strip pass timed out — falling back to single-pass encode", flush=True)
+            try:
+                Path(out_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+            return None
+
+        if proc.returncode != 0:
+            stderr_bytes = await proc.stderr.read() if proc.stderr else b""
+            stderr_tail = stderr_bytes.decode(errors="replace")[-500:]
+            print(f"[CONVERT] Pre-strip pass failed (rc={proc.returncode}): {stderr_tail}", flush=True)
+            try:
+                Path(out_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+            return None
+
+        return out_path
+    except Exception as exc:
+        print(f"[CONVERT] Pre-strip pass crashed ({exc}) — falling back to single-pass encode", flush=True)
+        try:
+            Path(out_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
 SUBTITLE_EXTENSIONS = {".srt", ".sub", ".idx", ".ass", ".ssa", ".sup", ".vtt"}
 
 
@@ -1127,6 +1221,65 @@ async def convert_file(
     if sub_remove_set:
         print(f"[CONVERT] Inline subtitle removal: {len(sub_remove_set)} track(s) to drop", flush=True)
 
+    # Two-pass workflow for files with many unwanted subtitle streams (v0.3.39+).
+    #
+    # Background: WEBDL releases of some shows ship 30+ subrip streams. Mapping
+    # most of them out in a single ffmpeg pass leaves the muxer interleaving
+    # video + audio + N kept subs, but the *demuxer* still has to read packets
+    # from every unmapped sub stream and route them to /dev/null. With ~35
+    # streams the mux/demux interleave drift accumulates over a long encode —
+    # ffmpeg's frame= keeps advancing but the time= field freezes (output-
+    # commit position lags), the progress bar pins, and ETA inflates. Test
+    # data: same Breathless episode encodes at 5.15× with `-an -sn` (drop all
+    # streams) but stalls at ~1× when 4 subs are mapped + 30 dropped.
+    #
+    # Fix: when there are >= _PRESTRIP_SUB_THRESHOLD streams to remove, do
+    # a fast `-c copy` remux pass first that strips the unwanted subs. The
+    # main encode then runs on a clean 5–6 stream file and hits the same
+    # ~5× speed as the no-streams test. The pre-strip is I/O-bound (~30s
+    # for a 2 GB file) and runs once per job. Threshold is conservative —
+    # files with a handful of subs to drop don't need this and aren't slowed.
+    _PRESTRIP_SUB_THRESHOLD = 6
+    prestrip_path: str | None = None
+    encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
+    if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
+        prestrip_path = await _prestrip_subtitles(
+            input_path=input_path,
+            subtitle_streams=subtitle_streams,
+            audio_streams_to_keep=audio_streams_to_keep,
+            subtitle_streams_to_remove=sub_remove_set,
+        )
+        if prestrip_path:
+            # Subs (and any unwanted audio) are gone from the stripped file —
+            # main encode now operates on a clean 5-7 stream input. Re-probe
+            # to discover the post-strip stream indices, then reset all the
+            # "what to drop / keep" inputs since strip already did the
+            # filtering. Don't reassign `input_path` — sidecar operations
+            # (external subtitle renames, scan_results updates) must still
+            # see the original source path.
+            from backend.scanner import probe_file as _reprobe
+            new_probe = await _reprobe(prestrip_path)
+            if new_probe:
+                new_subs = new_probe.get("subtitle_tracks") or []
+                subtitle_streams = [
+                    {"codec_name": s.get("codec", ""), "index": s.get("stream_index")}
+                    for s in new_subs
+                ]
+                # Rebuild probe_audio_tracks/audio_stream_codecs from the new
+                # layout so the main encode sees post-strip audio indices
+                # (matters when audio_codec != copy and the build_ffmpeg_cmd
+                # iterates per-audio-stream).
+                probe_audio_tracks = new_probe.get("audio_tracks") or []
+                audio_stream_codecs = [t.get("codec", "") for t in probe_audio_tracks]
+            encode_input_path = prestrip_path
+            # Reset the inline keep-lists — strip already enforced them.
+            # Default `-map 0:a` then maps everything that's left (all
+            # kept), and an empty sub_remove_set means no further filtering
+            # in the main pass.
+            audio_streams_to_keep = None
+            sub_remove_set = set()
+            print(f"[CONVERT] Pre-strip done — main encode runs on {prestrip_path}", flush=True)
+
     # Load external subtitle files to merge (if the setting is enabled)
     external_sub_files: list[dict] | None = None
     try:
@@ -1164,7 +1317,7 @@ async def convert_file(
         print(f"[CONVERT] External sub loading failed (non-fatal): {exc}", flush=True)
 
     cmd = _build_ffmpeg_cmd_impl(
-        input_path, temp_path, encoder=encoder,
+        encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
         cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,
@@ -1308,6 +1461,9 @@ async def convert_file(
             Path(temp_path).unlink(missing_ok=True)
         except OSError:
             pass
+        if prestrip_path:
+            try: Path(prestrip_path).unlink(missing_ok=True)
+            except OSError: pass
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
     # Verify output exists and has non-zero size.
@@ -1420,6 +1576,9 @@ async def convert_file(
             temp.unlink()
         except OSError:
             pass
+        if prestrip_path:
+            try: Path(prestrip_path).unlink(missing_ok=True)
+            except OSError: pass
         return {
             "success": True,  # Not an error, just no savings
             "output_path": input_path,  # Keep original path
@@ -1847,6 +2006,9 @@ async def convert_file(
             )
         # No subtitle renames to undo — those only happen on the success
         # path after the original is replaced, and we bail before that.
+        if prestrip_path:
+            try: Path(prestrip_path).unlink(missing_ok=True)
+            except OSError: pass
         return {
             "success": True,              # the encode process worked; we just didn't accept the output
             "output_path": input_path,    # original untouched
@@ -1955,6 +2117,15 @@ async def convert_file(
     # Rename remaining external subtitle files to match the new filename
     final_stem = Path(final_path).stem
     rename_external_subtitles(input_path, final_stem)
+
+    # Clean up the pre-strip temp file (if we did a two-pass run). The main
+    # encode now references temp_path → final_path; the stripped intermediate
+    # has served its purpose.
+    if prestrip_path:
+        try:
+            Path(prestrip_path).unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"[CONVERT] Could not remove pre-strip temp {prestrip_path}: {exc}", flush=True)
 
     encode_time = time.monotonic() - encode_start_time
     return {
