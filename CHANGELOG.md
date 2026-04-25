@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.41] — 2026-04-25
+
+### Fixed
+- **Reverted v0.3.40's fire-and-forget DB writes.** The fire-and-forget pattern was meant to prevent ffmpeg's stderr-read loop from blocking on contended WAL writes, but it had a worse side effect: removing the natural back-pressure between Shrinkerr and ffmpeg. With the await in place, the stderr loop briefly pauses on each DB write (every 3s per job), which keeps ffmpeg from running flat-out continuously. Without it, two concurrent NVENC ffmpeg processes both push the GPU encoder at full speed, and any external NVENC user (Plex Transcoder is the common one) exposes the GPU's scheduling unfairness — one Shrinkerr session stalls while the other runs fine, while fps and progress freeze for ~50 seconds at a time. Restored to v0.3.36's throttled-but-awaited write pattern. The actual fix for slow WAL writes is finding what holds the lock, not bypassing the await.
+
 ## [0.3.40] — 2026-04-25
 
 ### Fixed
@@ -438,6 +443,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.41]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.41
 [0.3.40]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.40
 [0.3.39]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.39
 [0.3.38]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.38

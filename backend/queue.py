@@ -1251,34 +1251,27 @@ class QueueWorker:
             #     seconds per job, plus a guaranteed write when progress
             #     reaches terminal (>= 99.99) so the persisted final value
             #     isn't off by a hair when the job lands in history.
-            # The DB write was previously awaited, so the stderr-read loop
-            # (where progress_cb is invoked synchronously) blocked whenever
-            # the WAL write lock was contended — `busy_timeout=30000` means
-            # one slow write can hold up the whole pipeline for up to 30
-            # seconds. ffmpeg's progress lines pile up unread, then burst
-            # when the DB finally returns. Fix (v0.3.39+): fire-and-forget
-            # the DB write with `asyncio.create_task` so the stderr loop
-            # never blocks on persistence. Terminal flush (>= 99.99) is
-            # still awaited so the final value is durable before we move on.
+            # Throttled, awaited DB write (v0.3.36 design, restored in v0.3.41).
+            # v0.3.40 briefly fire-and-forgot the write to avoid the stderr
+            # loop blocking on contended WAL writes. That removed the
+            # natural back-pressure between Shrinkerr and ffmpeg — without
+            # it, two concurrent NVENC ffmpeg processes had no rate-limit
+            # mediating their GPU encoder access, exposing scheduling
+            # unfairness when other NVENC users (Plex Transcoder, etc.) ran
+            # alongside. Symptom: one of the two Shrinkerr jobs would stall
+            # at the GPU level while the other ran fine. Reverting to the
+            # awaited-throttle keeps the natural rate-limit; the actual
+            # solution to slow DB writes is fixing whatever holds the lock,
+            # not bypassing the await. The 3-second throttle ensures that
+            # at most one such await happens per job per 3 seconds anyway,
+            # so even a 30-second WAL stall costs at most a 30-second pause
+            # per job rather than every-progress-line locking.
             _last_db_write = [0.0]
             async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
-                if is_terminal:
-                    # Final value — block to ensure it's persisted before the
-                    # job's completion handlers run.
+                if is_terminal or (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
                     await self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
-                    _last_db_write[0] = now
-                elif (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
-                    # Periodic snapshot — fire-and-forget so we don't block
-                    # ffmpeg's stderr loop. If WAL is contended the task
-                    # waits in the background; the next stderr line is read
-                    # immediately. Worst case under heavy contention: a few
-                    # extra in-flight tasks, none of which affect the live
-                    # WS-driven UI.
-                    asyncio.create_task(
-                        self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
-                    )
                     _last_db_write[0] = now
                 await ws_manager.send_job_progress(
                     job_id=job_id,
@@ -1670,19 +1663,14 @@ class QueueWorker:
             keep_sub_indices = [i for i in all_sub_indices if i not in subtitle_tracks_to_remove] if subtitle_tracks_to_remove else None
 
             if keep_indices != all_indices or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices):
-                # Same DB-write throttle + fire-and-forget pattern as the
-                # convert path — see comment on the convert progress_cb above.
+                # Throttled, awaited DB write — see comment on convert
+                # progress_cb above for why we DON'T use create_task here.
                 _audio_last_db = [0.0]
                 async def audio_progress_cb(progress: float, eta_seconds=None, speed=None):
                     now = time.monotonic()
                     is_terminal = progress >= 99.99
-                    if is_terminal:
+                    if is_terminal or (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
                         await self.queue.update_progress(job_id, progress, eta=eta_seconds)
-                        _audio_last_db[0] = now
-                    elif (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
-                        asyncio.create_task(
-                            self.queue.update_progress(job_id, progress, eta=eta_seconds)
-                        )
                         _audio_last_db[0] = now
                     await ws_manager.send_job_progress(
                         job_id=job_id,
