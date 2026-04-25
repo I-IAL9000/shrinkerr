@@ -65,6 +65,43 @@ def is_in_any(child_path: str, parents: list[str]) -> bool:
     return any(is_within(child_path, p) for p in parents)
 
 
+async def media_dir_label_for(path: str) -> str | None:
+    """Return the `media_dirs.label` for the directory `path` lives inside,
+    or None if it isn't under any configured root.
+
+    Used to gate metadata lookups: directories the user marked "Other"
+    contain non-tmdb content (home videos, music, lectures, miscellaneous
+    rips) and shouldn't be matched against TMDB's movie/TV catalogue —
+    the matches would be spurious and pollute scan_results with wrong
+    posters / wrong original-language tags. v0.3.33+.
+    """
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute("SELECT path, label FROM media_dirs") as cur:
+            rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    if not rows:
+        return None
+    resolved = _resolve(path)
+    # Pick the LONGEST matching prefix in case nested media dirs are
+    # configured (e.g. /media and /media/Other) — the deeper/more-specific
+    # one wins.
+    matches = [(p, label) for (p, label) in rows if is_within(resolved, p)]
+    if not matches:
+        return None
+    matches.sort(key=lambda pair: len(_resolve(pair[0])), reverse=True)
+    return matches[0][1] or None
+
+
+async def is_other_typed_dir(path: str) -> bool:
+    """Convenience for the common case: True iff `path` lives inside a
+    media dir whose label resolves to "Other" (case-insensitive)."""
+    label = await media_dir_label_for(path)
+    return bool(label and label.strip().lower() == "other")
+
+
 async def require_in_media_dirs(path: str, *, label: str = "Path") -> str:
     """Raise `HTTPException(403)` if `path` is not under a configured media dir.
 

@@ -168,7 +168,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
               onChange={e => setSettings({ ...settings, job_affinity: e.target.value as any })}
               style={{
                 width: "100%", padding: "6px 10px", fontSize: 12,
-                background: "var(--bg-primary)", border: "1px solid var(--border)",
+                backgroundColor: "var(--bg-primary)", border: "1px solid var(--border)",
                 borderRadius: 4, color: "var(--text-primary)",
               }}
             >

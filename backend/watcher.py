@@ -151,16 +151,20 @@ class FileWatcher:
             native_lang = detect_native_language(raw_tracks)
             language_source = "heuristic"
 
-            # Try TMDB/TVDB lookup for accurate native language
+            # Try TMDB/TVDB lookup for accurate native language. Skip when
+            # the file is inside an "Other"-typed media dir — those hold
+            # non-cataloguable content and would just produce spurious matches.
             try:
-                from backend.metadata import lookup_original_language
-                api_lang = await asyncio.wait_for(
-                    lookup_original_language(str(file_path)),
-                    timeout=10,
-                )
-                if api_lang:
-                    native_lang = api_lang
-                    language_source = "api"
+                from backend.media_paths import is_other_typed_dir
+                if not await is_other_typed_dir(str(file_path)):
+                    from backend.metadata import lookup_original_language
+                    api_lang = await asyncio.wait_for(
+                        lookup_original_language(str(file_path)),
+                        timeout=10,
+                    )
+                    if api_lang:
+                        native_lang = api_lang
+                        language_source = "api"
             except Exception:
                 pass
 
@@ -367,11 +371,19 @@ class FileWatcher:
 
         try:
             from backend.metadata import lookup_original_language
+            from backend.media_paths import is_other_typed_dir
         except ImportError:
             return 0
 
         updated = 0
         for file_path in file_paths[:10]:  # Max 10 per cycle
+            # Skip "Other" dirs — TMDB matches against non-movie/non-tv
+            # content produce spurious results.
+            try:
+                if await is_other_typed_dir(file_path):
+                    continue
+            except Exception:
+                pass
             try:
                 api_lang = await asyncio.wait_for(
                     lookup_original_language(file_path),

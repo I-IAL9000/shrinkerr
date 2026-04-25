@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.33] — 2026-04-25
+
+### Fixed
+- **Dropdown arrows missing on Activity / Logs / Schedule pages and a few modals.** Inline `style={{ background: "..." }}` shorthand on `<select>` elements was wiping the global `background-image: <chevron>` rule from `theme.css`, so the carat indicator never rendered. Switched the affected callsites to `backgroundColor:` instead so the global chevron survives. Same root cause as the v0.3.22 checkbox-checkmark fix.
+- **Type=Other media directories no longer trigger TMDB lookups.** When you add a folder and pick "Other" from the type dropdown, the scanner / watcher / metadata-refresh / poster-resolution paths now skip TMDB matching for files inside it. Previously a folder of home videos labelled "Other" would still get matched against TMDB's catalogue, producing spurious posters and original-language tags. New helper `backend.media_paths.is_other_typed_dir(path)` is the single gate; case-insensitive on the label.
+
 ## [0.3.32] — 2026-04-25
 
 VMAF measurement reliability + activity log readability.
@@ -396,6 +402,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.33]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.33
 [0.3.32]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.32
 [0.3.31]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.31
 [0.3.30]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.30

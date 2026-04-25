@@ -161,6 +161,44 @@ async def resolve_posters(req: ResolveRequest):
         if not uncached and not needs_media_type:
             return result
 
+        # Skip TMDB / Plex lookups for paths inside "Other"-typed media dirs
+        # (v0.3.33+). Those folders contain non-cataloguable content (home
+        # videos, music, lectures, misc rips) where TMDB matches would be
+        # spurious — we just write a placeholder result instead.
+        from backend.media_paths import is_other_typed_dir
+        other_paths: set[str] = set()
+        for p in (uncached + needs_media_type):
+            try:
+                if await is_other_typed_dir(p):
+                    other_paths.add(p)
+            except Exception:
+                pass
+        if other_paths:
+            for p in list(other_paths):
+                # Mark in cache so we don't re-check on every refresh.
+                parsed = parse_folder_name(p)
+                entry = {
+                    "title": parsed["title"], "year": parsed.get("year"),
+                    "poster_url": None, "source": "other-skipped",
+                    "rating": None, "votes": None,
+                    "genres": None, "country": None,
+                    "media_type": "other", "rating_source": None,
+                }
+                result[p] = entry
+                await db.execute(
+                    """INSERT OR REPLACE INTO poster_cache
+                       (folder_path, title, year, poster_url, source, image_data,
+                        rating, genres, country, media_type, resolved_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (p, parsed["title"], parsed.get("year"), None, "other-skipped", None,
+                     None, None, None, "other", datetime.now(timezone.utc).isoformat()),
+                )
+            await db.commit()
+            uncached = [p for p in uncached if p not in other_paths]
+            needs_media_type = [p for p in needs_media_type if p not in other_paths]
+            if not uncached and not needs_media_type:
+                return result
+
         # Load API settings
         settings = {}
         async with db.execute(

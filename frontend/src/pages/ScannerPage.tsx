@@ -1047,7 +1047,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           value={selectedDir}
           onChange={(e) => setSelectedDir(e.target.value)}
           style={{
-            background: "var(--bg-card)", color: "var(--text-secondary)",
+            // backgroundColor (not the `background` shorthand) so React
+            // doesn't emit a `background:` declaration that wipes the
+            // explicit backgroundImage chevron below it.
+            backgroundColor: "var(--bg-card)", color: "var(--text-secondary)",
             border: "1px solid var(--border)", padding: "6px 28px 6px 10px",
             borderRadius: 4, fontSize: 13, height: 36, boxSizing: "border-box" as const,
             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23827b9a' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,

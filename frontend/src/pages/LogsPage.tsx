@@ -156,7 +156,7 @@ export default function LogsPage() {
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
           style={{
-            background: "var(--bg-card)",
+            backgroundColor: "var(--bg-card)",
             color: "var(--text-secondary)",
             border: "1px solid var(--border)",
             borderRadius: "var(--radius-sm)",

@@ -859,15 +859,23 @@ async def scan_directory(
         duration = probe["duration"]
         file_size = probe["file_size"]
 
-        # Try API-based language detection first (skip if cancelled to allow fast exit)
+        # Try API-based language detection first (skip if cancelled to allow fast exit).
+        # Also skip when the file lives in a directory the user marked
+        # "Other" — those directories hold non-movie/non-tv content (home
+        # videos, music videos, lectures, etc.) and TMDB matches against
+        # them produce spurious results. v0.3.33+.
         api_lang = None
         if not (cancel_check and cancel_check()):
             try:
-                from backend.metadata import lookup_original_language
-                api_lang = await asyncio.wait_for(
-                    lookup_original_language(str(file_path)),
-                    timeout=10,
-                )
+                from backend.media_paths import is_other_typed_dir
+                if await is_other_typed_dir(str(file_path)):
+                    pass  # Skip TMDB lookup — directory is non-cataloguable
+                else:
+                    from backend.metadata import lookup_original_language
+                    api_lang = await asyncio.wait_for(
+                        lookup_original_language(str(file_path)),
+                        timeout=10,
+                    )
             except asyncio.TimeoutError:
                 print(f"[SCANNER] Metadata lookup timed out for {file_path.name}", flush=True)
             except Exception as exc:

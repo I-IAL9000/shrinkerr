@@ -1799,6 +1799,7 @@ async def _run_metadata_refresh() -> None:
             await db.close()
 
         from backend.metadata import lookup_original_language
+        from backend.media_paths import is_other_typed_dir
 
         total = len(rows)
         updated = 0
@@ -1811,6 +1812,15 @@ async def _run_metadata_refresh() -> None:
                 break
 
             file_path = row["file_path"]
+
+            # Skip files in "Other"-typed media dirs — TMDB matches there are
+            # spurious. v0.3.33+.
+            try:
+                if await is_other_typed_dir(file_path):
+                    skipped += 1
+                    continue
+            except Exception:
+                pass
 
             try:
                 api_lang = await asyncio.wait_for(

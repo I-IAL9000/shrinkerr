@@ -66,7 +66,7 @@ export default function ActivityPage() {
         <select
           value={eventType}
           onChange={e => setEventType(e.target.value)}
-          style={{ background: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12 }}
+          style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12 }}
         >
           {EVENT_OPTIONS.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>

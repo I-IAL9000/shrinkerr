@@ -74,8 +74,11 @@ const smallBtnStyle: React.CSSProperties = {
   lineHeight: 1,
 };
 
+// `backgroundColor` (not the `background` shorthand) preserves the global
+// `select { background-image: <chevron-svg> }` rule from theme.css. Using
+// the shorthand wipes background-image and the dropdown arrow disappears.
 const selectStyle: React.CSSProperties = {
-  background: "var(--bg-primary)",
+  backgroundColor: "var(--bg-primary)",
   color: "var(--text-secondary)",
   border: "1px solid var(--border)",
   borderRadius: 4,

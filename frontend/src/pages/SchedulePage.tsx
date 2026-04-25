@@ -2,8 +2,11 @@ import { useState, useEffect } from "react";
 import { getSchedule, setSchedule, cancelSchedule, startQueue, pauseQueue, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
 import { useToast } from "../useToast";
 
+// Use `backgroundColor` (not the `background` shorthand) so the global
+// `select { background-image: <chevron-svg> }` rule from theme.css survives.
+// The shorthand wipes background-image and the dropdown arrow disappears.
 const inputStyle: React.CSSProperties = {
-  background: "var(--bg-primary)", color: "var(--text-secondary)",
+  backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
   border: "1px solid var(--border)", padding: "8px 10px", borderRadius: 4, fontSize: 13,
   height: 36, boxSizing: "border-box" as const,
 };
