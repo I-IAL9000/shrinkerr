@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.42] — 2026-04-25
+
+### Fixed
+- **Reverted `-max_muxing_queue_size 9999`** that was added in v0.3.37 (and kept when v0.3.38 reverted only the `+flush_packets` half). The bumped queue, like v0.3.40's fire-and-forget DB writes, weakened ffmpeg's natural back-pressure between encoder and muxer — encoder kept producing flat-out into the bigger queue, and concurrent NVENC sessions then ran without any rhythm-mediating pauses. Combined with v0.3.41's revert of fire-and-forget, this restores both back-pressure paths to ffmpeg's defaults. The Breathless-style "many subtitle streams" case the queue bump was originally meant to address is already covered by the v0.3.39 pre-strip pass.
+
 ## [0.3.41] — 2026-04-25
 
 ### Fixed
@@ -443,6 +448,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.42]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.42
 [0.3.41]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.41
 [0.3.40]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.40
 [0.3.39]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.39

@@ -356,23 +356,24 @@ def _build_ffmpeg_cmd_impl(
     # Map attachments (fonts etc.)
     cmd += ["-map", "0:t?"]
 
-    # Muxer settings.
+    # Muxer settings — ffmpeg defaults restored in v0.3.42.
     #
-    # `-max_muxing_queue_size 9999` (v0.3.37+) — defaults to 2048 packets
-    # per output stream. Files with many input streams (some WEBDL releases
-    # ship 30+ subtitle tracks) can fill the queue while the muxer waits
-    # for interleave alignment across all streams. Bumping to 9999 is
-    # plenty of slack without measurable memory cost — each buffered
-    # packet is small. Defensive only; doesn't change behaviour on files
-    # within the default ceiling.
+    # `-max_muxing_queue_size 9999` (added v0.3.37, removed v0.3.42) bumped
+    # the muxer's per-stream queue from the default 2048 packets to 9999.
+    # In retrospect that *also* weakened the natural back-pressure that
+    # keeps concurrent ffmpeg sessions politely sharing the GPU encoder —
+    # similar issue to the awaited DB write that v0.3.40 broke. With more
+    # room in the muxer queue, the encoder kept producing flat-out, the
+    # muxer accumulated packets, and concurrent sessions exposed GPU
+    # scheduling unfairness when Plex Transcoder was also active. The
+    # pre-strip pass added in v0.3.39 already handles the original
+    # motivating case (Breathless-style files with 30+ subtitle streams)
+    # by removing them in a separate `-c copy` pass before the encode, so
+    # the queue bump isn't needed even for that scenario.
     #
-    # `-fflags +flush_packets` was added in v0.3.37 alongside the queue
-    # bump, intended to make `time=` in ffmpeg stats advance steadily.
-    # Reverted in v0.3.38: forcing the matroska muxer to end every cluster
-    # early creates per-packet overhead and was empirically costing ~20%
-    # throughput in single-process tests, which compounded badly under
-    # concurrent NVENC sessions to look like a stalled progress bar.
-    cmd += ["-max_muxing_queue_size", "9999"]
+    # `-fflags +flush_packets` was reverted in v0.3.38 for similar reasons
+    # (forcing per-packet flushes cost ~20% throughput).
+    pass  # placeholder so the diff is small; nothing appended to cmd
 
     cmd += [output_path]
     return cmd
