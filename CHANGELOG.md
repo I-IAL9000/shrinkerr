@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.38] — 2026-04-25
+
+### Fixed
+- **Reverted `-fflags +flush_packets` from v0.3.37.** It was added to make ffmpeg's `time=` field advance steadily on files with many subtitle streams, but it forces the matroska muxer to end every cluster early — creating per-packet overhead that empirically cost ~20% throughput in single-process tests (4.02× vs 5.15×) and compounded badly under concurrent NVENC sessions. Symptom: progress bar stalled for minutes on Breathless-style files even though ffmpeg was running. Kept the `-max_muxing_queue_size 9999` half of the v0.3.37 fix — that's defensive and has no observable cost.
+
 ## [0.3.37] — 2026-04-25
 
 ### Fixed
@@ -423,6 +428,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.38]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.38
 [0.3.37]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.37
 [0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36
 [0.3.35]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.35

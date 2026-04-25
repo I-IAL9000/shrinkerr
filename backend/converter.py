@@ -356,23 +356,23 @@ def _build_ffmpeg_cmd_impl(
     # Map attachments (fonts etc.)
     cmd += ["-map", "0:t?"]
 
-    # Muxer settings (v0.3.37+).
+    # Muxer settings.
     #
-    # `-max_muxing_queue_size 9999` — defaults to 2048 packets per output
-    # stream. Files with many input streams (some WEBDL releases ship 30+
-    # subtitle tracks) make the muxer pile up packets while it waits for
-    # interleave alignment across all streams. When the queue overflows,
-    # ffmpeg either errors out or stalls — symptom on Shrinkerr was a
-    # progress bar pinned for minutes while the encoder ran fine.
-    # Bumping to 9999 packets is plenty of slack without measurable
-    # memory cost (each buffered packet is small).
+    # `-max_muxing_queue_size 9999` (v0.3.37+) — defaults to 2048 packets
+    # per output stream. Files with many input streams (some WEBDL releases
+    # ship 30+ subtitle tracks) can fill the queue while the muxer waits
+    # for interleave alignment across all streams. Bumping to 9999 is
+    # plenty of slack without measurable memory cost — each buffered
+    # packet is small. Defensive only; doesn't change behaviour on files
+    # within the default ceiling.
     #
-    # `-fflags +flush_packets` — tells the matroska muxer to write each
-    # packet to disk as soon as it's ready instead of buffering until a
-    # cluster boundary. This makes ffmpeg's `time=` field in stats output
-    # advance steadily (which Shrinkerr parses for the progress bar)
-    # rather than stepping in big chunks.
-    cmd += ["-max_muxing_queue_size", "9999", "-fflags", "+flush_packets"]
+    # `-fflags +flush_packets` was added in v0.3.37 alongside the queue
+    # bump, intended to make `time=` in ffmpeg stats advance steadily.
+    # Reverted in v0.3.38: forcing the matroska muxer to end every cluster
+    # early creates per-packet overhead and was empirically costing ~20%
+    # throughput in single-process tests, which compounded badly under
+    # concurrent NVENC sessions to look like a stalled progress bar.
+    cmd += ["-max_muxing_queue_size", "9999"]
 
     cmd += [output_path]
     return cmd
