@@ -848,6 +848,21 @@ async def update_encoding_settings(update: SettingsUpdate):
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, value),
             )
+        # Settings → Encoding → Parallel jobs and the local node's `max_jobs`
+        # mean the same thing — capacity for the in-process worker queue.
+        # Before v0.3.45 they were stored separately and the per-node value
+        # took precedence, so changing the global slider didn't propagate to
+        # the local node. Sync them on every save: the new global value
+        # becomes the local node's max_jobs too. Remote nodes are still
+        # configured per-node (their max_jobs reflects their own hardware).
+        if "parallel_jobs" in updates:
+            try:
+                await db.execute(
+                    "UPDATE worker_nodes SET max_jobs = ? WHERE id = 'local'",
+                    (int(updates["parallel_jobs"]),),
+                )
+            except Exception as exc:
+                print(f"[SETTINGS] Could not sync parallel_jobs to local node max_jobs: {exc}", flush=True)
         await db.commit()
     finally:
         await db.close()

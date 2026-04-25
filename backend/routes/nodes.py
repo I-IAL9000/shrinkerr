@@ -800,6 +800,17 @@ async def update_node_settings(node_id: str, body: NodeSettingsBody, request: Re
     db = await connect_db()
     try:
         await db.execute(f"UPDATE worker_nodes SET {', '.join(updates)} WHERE id = ?", params)
+        # Sync local-node max_jobs back to the global `parallel_jobs` setting
+        # (v0.3.45+). They represent the same thing — capacity for the
+        # in-process worker queue — and pre-v0.3.45 they could drift, with
+        # the per-node value silently winning. Remote nodes don't sync
+        # back because their max_jobs reflects per-host hardware.
+        if node_id == "local" and body.max_jobs is not None:
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES ('parallel_jobs', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(max(1, min(16, body.max_jobs))),),
+            )
         await db.commit()
     finally:
         await db.close()

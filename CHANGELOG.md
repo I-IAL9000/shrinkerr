@@ -5,45 +5,32 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.44] — 2026-04-25
+## [0.3.45] — 2026-04-25
 
 ### Fixed
-- **Progress bar pinned even when ffmpeg's `time=` field is *valid but stuck behind the encoder*** (single-job, no GPU contention). v0.3.43 fixed the case where `time=N/A`, but on some files the muxer's clock advances at first then parks at e.g. `time=00:03:13` for the rest of the encode while frames keep being produced — confirmed in the field with `progress=6.43%, fps=386→397, ETA increasing` on a single-job-at-a-time run. Fix: parse *both* `time=` and `frame=` every progress line and use whichever yields *higher* progress. `frame=` is always honest (it's just the encoder's output counter), `time=` reflects the muxer's commit position which can lag arbitrarily on files with timing quirks. Taking the max of the two means we never under-report when the muxer's clock is stuck behind the encoder.
+- **Settings → Encoding → Parallel jobs now syncs to the local node's `max_jobs`.** Pre-v0.3.45 the two settings represented the same thing (capacity for the in-process worker queue) but lived in separate DB rows, with the per-node value silently winning. Changing the global slider from the Settings page didn't propagate, so users editing parallel jobs there saw their change ignored at runtime. Both sides now stay in sync: changing the global slider on Settings → Encoding updates the local node's `max_jobs`, and changing the local node's max from Nodes → Settings updates the global setting. Remote nodes are still configured per-node — they reflect per-host hardware.
 
-## [0.3.43] — 2026-04-25
+## [0.3.37–0.3.44] — 2026-04-25
 
-### Fixed
-- **Progress bar pinned for files where ffmpeg reports `time=N/A`** in its progress output. ffmpeg emits `time=N/A` when its muxer can't commit valid output timestamps yet — most commonly with `-c:a copy` on WEBDL files whose source has non-monotonic audio PTS. The encoder is producing frames fine and the `.converting.mkv` keeps growing on disk, but `parse_ffmpeg_progress` was looking for `time=HH:MM:SS` and returning None on `N/A`, so progress was stuck at the last value the parser saw before timestamps became unparseable. User confirmed by running ffmpeg manually with `-progress pipe:2`: `frame=` advanced normally (34 → 117 → 198 → 282 → 366) while `out_time=N/A` for every progress block, *and* the converting file's size kept growing during what we thought were "stalls". Fix: when `time=` is unparseable, fall back to `frame=N` divided by total expected frames (computed from probe `duration × video_fps`). Added `video_fps` to `scanner.probe_file`'s return shape so the converter can supply the divisor; if probe doesn't yield a usable fps, parser returns None as before (no progress update rather than bogus values).
+### Progress-reporting overhaul (eight iterations, several reverts)
 
-## [0.3.42] — 2026-04-25
+Long debugging chain to fix progress bars stalling on certain WEBDLs (Brotherhood, Borgen, Breathless). Recorded as a single entry rather than eight because most of the intermediate releases were misdiagnoses that got rolled back when they didn't help.
 
-### Fixed
-- **Reverted `-max_muxing_queue_size 9999`** that was added in v0.3.37 (and kept when v0.3.38 reverted only the `+flush_packets` half). The bumped queue, like v0.3.40's fire-and-forget DB writes, weakened ffmpeg's natural back-pressure between encoder and muxer — encoder kept producing flat-out into the bigger queue, and concurrent NVENC sessions then ran without any rhythm-mediating pauses. Combined with v0.3.41's revert of fire-and-forget, this restores both back-pressure paths to ffmpeg's defaults. The Breathless-style "many subtitle streams" case the queue bump was originally meant to address is already covered by the v0.3.39 pre-strip pass.
+**Net effect vs v0.3.36 — what shipped and stayed:**
 
-## [0.3.41] — 2026-04-25
+- **Frame-counter fallback in `parse_ffmpeg_progress`** (added v0.3.43, finalized v0.3.44). The actual root cause: ffmpeg's `time=` field reflects the muxer's *committed-output* position, which on some files stalls behind the encoder for the entire encode (most commonly when `-c:a copy` passes through audio with non-monotonic PTS that the muxer can't commit). The parser was time-only and ignored `frame=`, so when the muxer's clock was stuck or `N/A`, progress was stuck even though the encoder was happily producing frames. Now parses both fields every progress line and uses whichever yields *higher* progress — `frame=` is always honest, `time=` can lag arbitrarily. Confirmed in the field: same Borgen file went from "stuck at 6.43% with fps climbing to 397" to smooth advancement.
 
-### Fixed
-- **Reverted v0.3.40's fire-and-forget DB writes.** The fire-and-forget pattern was meant to prevent ffmpeg's stderr-read loop from blocking on contended WAL writes, but it had a worse side effect: removing the natural back-pressure between Shrinkerr and ffmpeg. With the await in place, the stderr loop briefly pauses on each DB write (every 3s per job), which keeps ffmpeg from running flat-out continuously. Without it, two concurrent NVENC ffmpeg processes both push the GPU encoder at full speed, and any external NVENC user (Plex Transcoder is the common one) exposes the GPU's scheduling unfairness — one Shrinkerr session stalls while the other runs fine, while fps and progress freeze for ~50 seconds at a time. Restored to v0.3.36's throttled-but-awaited write pattern. The actual fix for slow WAL writes is finding what holds the lock, not bypassing the await.
+- **Pre-strip pass for files with ≥6 subtitle removals** (v0.3.39). Two-pass workflow: a fast `-c copy` remux drops unwanted subs first, then the main encode runs on a clean 5-7 stream file. Originally diagnosed as the cause of the stall (it wasn't — the parser was) but kept because it's independently useful for the genuine "32+ subtitle streams in a WEBDL" case where the muxer's per-stream interleave queue does fill up.
 
-## [0.3.40] — 2026-04-25
+- **`backend.scanner.probe_file`** now exposes `video_fps` so the converter can compute total expected frames as the divisor for the parser's frame-count fallback.
 
-### Fixed
-- **The actual cause of stalled progress bars under DB lock contention.** v0.3.36 throttled progress DB writes to once per 3 seconds per job (good — fewer writes). But each *individual* write was still awaited inside the converter's stderr-read loop, so when SQLite's WAL write lock was contended (`busy_timeout=30000` lets a write wait up to 30s), the loop blocked on the slow write while ffmpeg's progress lines piled up unread in the pipe. When the DB finally returned, the queued progress lines flushed in a burst and the bar jumped 20%+. Live diagnostic data: encoder making smooth 200 fps progress while DB-recorded `progress` field stayed at 19.59% for 50 seconds, then jumped to 41.03%. Fix: fire-and-forget the DB write with `asyncio.create_task` so the stderr loop never blocks on persistence. Terminal flush (≥99.99%) is still awaited so the final value is durable. Same change applied to the audio-remux `audio_progress_cb`.
+**Reverted along the way** — kept here for archaeology since several were active in published images:
 
-## [0.3.39] — 2026-04-25
+- `-fflags +flush_packets` (added v0.3.37, removed v0.3.38) — forced per-packet flushes, ~20% throughput cost.
+- `-max_muxing_queue_size 9999` (added v0.3.37, removed v0.3.42) — bigger muxer queue weakened ffmpeg's natural back-pressure between encoder and muxer.
+- Fire-and-forget DB writes via `asyncio.create_task` in `progress_cb` (added v0.3.40, removed v0.3.41) — same back-pressure problem; removed the await that mediated concurrent NVENC sessions politely sharing the GPU.
 
-### Fixed
-- **Encoding stalls on files with many unwanted subtitle streams** (Breathless 2024, Brotherhood, etc — releases that ship 30+ subrip tracks). Previous attempts (v0.3.37 muxer flags, reverted in v0.3.38) didn't address the actual cause. Live diagnostics on a stuck job showed ffmpeg's `frame=` and `fps=` advancing while `time=` froze, which means the encoder was producing output but the output-side commit position was lagging — interleave drift across the 35 input streams was wedging the muxer's per-stream queues. Single-process ffmpeg test on the same file confirmed: 5.15× speed with `-an -sn` (no streams), but the production cmd with 4 mapped + 30 dropped subs only made it through 2 minutes before drift made it diverge from steady throughput. Fix: when a job needs to drop ≥6 subtitle streams, do a fast `-c copy` remux pass *first* that strips them, then run the main encode on the cleaned 5–7 stream file. The main pass then has nothing to demux that it isn't using, no interleave drift, and runs at the same speed as the streamless test. Pre-strip is I/O-bound (~30s for a 2 GB file), runs once per qualifying job, and is automatically skipped for files with fewer drops. Falls back gracefully to single-pass on errors / timeouts.
-
-## [0.3.38] — 2026-04-25
-
-### Fixed
-- **Reverted `-fflags +flush_packets` from v0.3.37.** It was added to make ffmpeg's `time=` field advance steadily on files with many subtitle streams, but it forces the matroska muxer to end every cluster early — creating per-packet overhead that empirically cost ~20% throughput in single-process tests (4.02× vs 5.15×) and compounded badly under concurrent NVENC sessions. Symptom: progress bar stalled for minutes on Breathless-style files even though ffmpeg was running. Kept the `-max_muxing_queue_size 9999` half of the v0.3.37 fix — that's defensive and has no observable cost.
-
-## [0.3.37] — 2026-04-25
-
-### Fixed
-- **Encoding stalls on files with many subtitle streams.** Some WEBDL releases ship 30+ subtitle tracks (e.g., Breathless 2024 carries 33 subrip streams). ffmpeg's default `max_muxing_queue_size` of 2048 packets fills up while the muxer waits for interleave alignment across all streams; the encoder runs fine but `time=` advances in chunks (or not at all), pinning the progress bar even though NVENC is encoding at full speed. User-verified isolation: same Breathless file with `-an -sn` (no audio, no subs) encodes at 5.15× real-time; with full streams it crawls at ~1×. Fix: every conversion now passes `-max_muxing_queue_size 9999` and `-fflags +flush_packets` to give the muxer plenty of slack and force it to commit packets as they're ready instead of buffering until a cluster boundary. Defensive both ways — no measurable cost on the typical 5-stream WEBDL.
+**Lessons noted for next time:** when only *some* files stall, the cause is usually in parsing/reporting, not the encoder. A single-job-at-a-time test is the cleanest way to rule out concurrency before chasing GPU contention or I/O hypotheses. Files where `frame=` advances but `time=` parks behind it are surprisingly common in WEBDL → `-c:a copy` flows.
 
 ## [0.3.36] — 2026-04-25
 
@@ -458,14 +445,8 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
-[0.3.44]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.44
-[0.3.43]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.43
-[0.3.42]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.42
-[0.3.41]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.41
-[0.3.40]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.40
-[0.3.39]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.39
-[0.3.38]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.38
-[0.3.37]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.37
+[0.3.45]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.45
+[0.3.37–0.3.44]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.44
 [0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36
 [0.3.35]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.35
 [0.3.34]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.34
