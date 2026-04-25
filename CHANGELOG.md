@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.37] — 2026-04-25
+
+### Fixed
+- **Encoding stalls on files with many subtitle streams.** Some WEBDL releases ship 30+ subtitle tracks (e.g., Breathless 2024 carries 33 subrip streams). ffmpeg's default `max_muxing_queue_size` of 2048 packets fills up while the muxer waits for interleave alignment across all streams; the encoder runs fine but `time=` advances in chunks (or not at all), pinning the progress bar even though NVENC is encoding at full speed. User-verified isolation: same Breathless file with `-an -sn` (no audio, no subs) encodes at 5.15× real-time; with full streams it crawls at ~1×. Fix: every conversion now passes `-max_muxing_queue_size 9999` and `-fflags +flush_packets` to give the muxer plenty of slack and force it to commit packets as they're ready instead of buffering until a cluster boundary. Defensive both ways — no measurable cost on the typical 5-stream WEBDL.
+
 ## [0.3.36] — 2026-04-25
 
 ### Fixed
@@ -418,6 +423,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.37]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.37
 [0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36
 [0.3.35]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.35
 [0.3.34]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.34
