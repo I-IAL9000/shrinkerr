@@ -250,12 +250,12 @@ async def run_test_encode(
 
             if vmaf_score is not None:
                 vmaf_score = round(vmaf_score, 1)
+                # Canonical 3-tier table (v0.3.32+). See backend/queue.py and
+                # frontend/src/utils/vmaf.ts.
                 if vmaf_score >= 93:
                     vmaf_label = "Excellent"
                 elif vmaf_score >= 87:
                     vmaf_label = "Good"
-                elif vmaf_score >= 80:
-                    vmaf_label = "Fair"
                 else:
                     vmaf_label = "Poor"
 

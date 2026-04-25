@@ -651,6 +651,289 @@ def _vmaf_probe_summary(label: str, info: dict) -> str:
     return " ".join(parts)
 
 
+def _is_bimodal_vmaf(result: dict) -> bool:
+    """Heuristic for "VMAF measurement got desynced mid-window" vs "real bad encode".
+
+    The fingerprint: a chunk of frames scored ~0 (frames compared after
+    desync) while another chunk scored ~100 (frames compared before
+    desync). The arithmetic mean lands somewhere in between, but min and
+    max sit at the extremes. A genuinely bad encode has min ≈ mean ≈ max.
+
+    Cuts: min < 20 AND max ≥ 90. Tight enough that "noticeable but real"
+    quality drops (e.g., posterised animation that genuinely scores 70-85)
+    don't get retried, loose enough to catch the 0/100 split this is built
+    for.
+    """
+    mn = result.get("min")
+    mx = result.get("max")
+    return mn is not None and mx is not None and mn < 20 and mx >= 90
+
+
+async def _run_libvmaf_pass(
+    *,
+    input_path: str,
+    temp_path: str,
+    seek: float,
+    duration: float,
+    ref_pipeline: str,
+    dist_pipeline: str,
+    json_path,
+    fps_for_progress: float,
+    progress_callback,
+    step_label: str,
+) -> dict:
+    """Run libvmaf for a single seek window and return a result dict.
+
+    Returns:
+        {
+            "score": float | None,             # pooled mean, rounded to 1dp
+            "min": float | None,
+            "max": float | None,
+            "harmonic_mean": float | None,
+            "error": str | None,               # populated on ffmpeg / parse failure
+            "stderr_tail": list[str],          # last few stderr lines for diag logging
+            "seek": float,                     # echoed back so caller can match
+        }
+
+    The filter chain (range fix → fps fix → format → scale2ref → libvmaf)
+    is built from the supplied ref_pipeline/dist_pipeline so that probe-
+    derived bits (target_fps, range, etc.) only get computed once per job
+    and reused across retries.
+    """
+    import re as _re
+    import json as _vjson
+
+    vmaf_filter = (
+        f"[0:v]{ref_pipeline}[ref_norm];"
+        f"[1:v]{dist_pipeline}[dist_norm];"
+        f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
+        f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
+        f"log_fmt=json:log_path={json_path}:shortest=1"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
+        "-ss", f"{seek:.3f}", "-i", input_path,
+        "-ss", f"{seek:.3f}", "-i", temp_path,
+        "-t", f"{duration:.3f}",
+        "-filter_complex", vmaf_filter,
+        "-f", "null", "-",
+    ]
+
+    total_frames = max(1, int(duration * fps_for_progress))
+    if progress_callback:
+        await progress_callback(progress=0, fps=0, eta_seconds=None, step=step_label)
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    err_lines: list[str] = []
+    buf = ""
+    start = time.monotonic()
+    while True:
+        chunk = await proc.stderr.read(4096)
+        if not chunk:
+            break
+        buf += chunk.decode(errors="replace")
+        while "\r" in buf or "\n" in buf:
+            r_pos = buf.find("\r")
+            n_pos = buf.find("\n")
+            if r_pos == -1: pos = n_pos
+            elif n_pos == -1: pos = r_pos
+            else: pos = min(r_pos, n_pos)
+            line = buf[:pos].strip()
+            buf = buf[pos + 1:]
+            if not line:
+                continue
+            err_lines.append(line)
+            fm = _re.search(r'frame=\s*(\d+)', line)
+            if not fm or not progress_callback:
+                continue
+            frame = int(fm.group(1))
+            pct = min(99.0, frame / total_frames * 100)
+            fps_match = _re.search(r'fps=\s*([\d.]+)', line)
+            analyse_fps = float(fps_match.group(1)) if fps_match else 0.0
+            eta = None
+            elapsed = time.monotonic() - start
+            if pct > 1.0:
+                eta = int(elapsed / (pct / 100) * (1 - pct / 100))
+            await progress_callback(
+                progress=pct, fps=analyse_fps, eta_seconds=eta, step=step_label,
+            )
+
+    timeout = max(300.0, duration * 3.0)
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return {
+            "score": None, "min": None, "max": None, "harmonic_mean": None,
+            "error": f"VMAF run exceeded {timeout:.0f}s timeout",
+            "stderr_tail": err_lines[-5:], "seek": seek,
+        }
+
+    if proc.returncode != 0:
+        tail = " | ".join(err_lines[-5:])[:500]
+        return {
+            "score": None, "min": None, "max": None, "harmonic_mean": None,
+            "error": (f"ffmpeg rc={proc.returncode}: {tail}" if tail else f"ffmpeg rc={proc.returncode}"),
+            "stderr_tail": err_lines[-5:], "seek": seek,
+        }
+
+    if not Path(json_path).exists():
+        return {
+            "score": None, "min": None, "max": None, "harmonic_mean": None,
+            "error": "VMAF JSON not produced",
+            "stderr_tail": err_lines[-5:], "seek": seek,
+        }
+
+    try:
+        vdata = _vjson.loads(Path(json_path).read_text())
+        pooled = vdata.get("pooled_metrics", {}).get("vmaf", {})
+        mean = pooled.get("mean")
+        return {
+            "score": round(mean, 1) if mean is not None else None,
+            "min": pooled.get("min"),
+            "max": pooled.get("max"),
+            "harmonic_mean": pooled.get("harmonic_mean"),
+            "error": None,
+            "stderr_tail": err_lines[-5:],
+            "seek": seek,
+        }
+    except Exception as exc:
+        return {
+            "score": None, "min": None, "max": None, "harmonic_mean": None,
+            "error": f"VMAF JSON parse failed: {exc}",
+            "stderr_tail": err_lines[-5:], "seek": seek,
+        }
+
+
+async def remeasure_vmaf(
+    source_path: str,
+    encoded_path: str,
+    *,
+    duration_hint: float | None = None,
+    progress_callback=None,
+) -> dict:
+    """Re-run VMAF analysis against an existing source/encoded pair.
+
+    Used by the "Re-measure suspect VMAF scores" workflow (v0.3.32+) to
+    refresh scores on completed jobs without re-encoding. Goes through the
+    same bimodal-retry path as `convert_file` so a previously-bogus score
+    can land on a clean second-seek result.
+
+    Returns:
+        {
+            "score": float | None,
+            "uncertain": bool,        # True iff every pass came back bimodal
+            "error": str | None,
+            "min": float | None,
+            "max": float | None,
+        }
+
+    Both files must exist on disk; if either is missing returns
+    `{"score": None, "uncertain": False, "error": "...source/encoded missing..."}`.
+    """
+    if not Path(source_path).exists():
+        return {"score": None, "uncertain": False, "error": f"source missing: {source_path}", "min": None, "max": None}
+    if not Path(encoded_path).exists():
+        return {"score": None, "uncertain": False, "error": f"encoded missing: {encoded_path}", "min": None, "max": None}
+
+    # Probe duration from the source if not provided.
+    duration = duration_hint or 0.0
+    src_info = await _probe_vmaf_stream(source_path)
+    dst_info = await _probe_vmaf_stream(encoded_path)
+    if duration <= 0:
+        try:
+            duration = float(src_info.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+
+    # Pick sampling window — 30s at 33% of file (matches convert_file's
+    # heuristic), or whole file when very short.
+    if duration > 30:
+        primary_seek = max(0.0, duration * 0.33)
+        window_dur = 30.0
+    elif duration > 0:
+        primary_seek = 0.0
+        window_dur = duration
+    else:
+        primary_seek = 0.0
+        window_dur = 30.0
+
+    # Build the same normalisation pipeline convert_file uses.
+    target_fps = src_info.get("fps") or dst_info.get("fps")
+    fps_clause = f"fps=fps={target_fps:.6f}" if target_fps and target_fps > 0 else ""
+    range_clause = "scale=in_range=auto:out_range=tv:flags=bicubic"
+    ref_chain = [range_clause]
+    dist_chain = [range_clause]
+    if fps_clause:
+        ref_chain.append(fps_clause)
+        dist_chain.append(fps_clause)
+    ref_chain.append("format=yuv420p")
+    dist_chain.append("format=yuv420p")
+    ref_pipeline = ",".join(ref_chain)
+    dist_pipeline = ",".join(dist_chain)
+
+    fps_for_progress = target_fps or 24.0
+    vmaf_dir = Path("/tmp/shrinkerr_vmaf")
+    vmaf_dir.mkdir(parents=True, exist_ok=True)
+    import re as _re_rm
+    import uuid as _uuid_rm
+    safe_stem = _re_rm.sub(r"[^A-Za-z0-9._-]", "_", Path(source_path).stem)[:20]
+    json_paths_to_cleanup: list[Path] = []
+
+    async def _one_pass(seek: float, label: str) -> dict:
+        jp = vmaf_dir / f"{safe_stem}_{_uuid_rm.uuid4().hex[:8]}_vmaf.json"
+        json_paths_to_cleanup.append(jp)
+        return await _run_libvmaf_pass(
+            input_path=source_path,
+            temp_path=encoded_path,
+            seek=seek,
+            duration=window_dur,
+            ref_pipeline=ref_pipeline,
+            dist_pipeline=dist_pipeline,
+            json_path=jp,
+            fps_for_progress=fps_for_progress,
+            progress_callback=progress_callback,
+            step_label=label,
+        )
+
+    primary = await _one_pass(primary_seek, "VMAF remeasure")
+    runs = [primary]
+    if _is_bimodal_vmaf(primary) and duration > 90 and window_dur > 0:
+        alt_pct = 0.66 if primary_seek < duration * 0.5 else 0.33
+        alt_seek = max(0.0, min(duration - window_dur, duration * alt_pct))
+        if abs(alt_seek - primary_seek) >= 60:
+            runs.append(await _one_pass(alt_seek, "VMAF remeasure (retry)"))
+
+    # Cleanup JSON tempfiles unconditionally — score is already parsed.
+    for jp in json_paths_to_cleanup:
+        try:
+            Path(jp).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    scored = [r for r in runs if r.get("score") is not None]
+    if not scored:
+        first_error = next((r.get("error") for r in runs if r.get("error")), "VMAF returned no score")
+        return {"score": None, "uncertain": False, "error": first_error, "min": None, "max": None}
+
+    best = max(scored, key=lambda r: r["score"])
+    return {
+        "score": best["score"],
+        "uncertain": _is_bimodal_vmaf(best),
+        "error": None,
+        "min": best.get("min"),
+        "max": best.get("max"),
+    }
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -1136,6 +1419,12 @@ async def convert_file(
     # inside ffmpeg. Without this, a failure would leave no trace in the UI.
     vmaf_score = None
     vmaf_error: str | None = None
+    # Set to True only when EVERY VMAF pass came back bimodal (min~0/max~100
+    # split → libvmaf desynced mid-window on every seek we tried). The
+    # recorded score is still the user's best estimate but the UI surfaces a
+    # "measurement-suspect" glyph so a user staring at a "Poor" tier on a
+    # visually-fine encode knows they shouldn't trust it. v0.3.32+.
+    vmaf_uncertain = False
     # Always log the decision — previously a false `vmaf_enabled` silently skipped
     # the whole block, making "why didn't VMAF run?" impossible to answer without
     # re-reading settings and re-running.
@@ -1227,28 +1516,6 @@ async def convert_file(
                 ref_pipeline = ",".join(ref_chain)
                 dist_pipeline = ",".join(dist_chain)
 
-                vmaf_filter = (
-                    f"[0:v]{ref_pipeline}[ref_norm];"
-                    f"[1:v]{dist_pipeline}[dist_norm];"
-                    f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
-                    f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
-                    f"log_fmt=json:log_path={vmaf_json_path}:shortest=1"
-                )
-                # Command: input-level `-ss` seeks both streams identically
-                # BEFORE decoding (modern ffmpeg does accurate seek by default),
-                # `-t` caps the output duration. `-stats` forces per-second
-                # progress output even at `-loglevel error`, otherwise stats
-                # would be suppressed and the UI progress bar would freeze for
-                # the entire libvmaf run (the original "hangs at 100%" bug).
-                vmaf_cmd = [
-                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
-                    "-ss", f"{vmaf_seek:.3f}", "-i", input_path,
-                    "-ss", f"{vmaf_seek:.3f}", "-i", temp_path,
-                    "-t", f"{vmaf_duration:.3f}",
-                    "-filter_complex", vmaf_filter,
-                    "-f", "null", "-",
-                ]
-                print(f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at {vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...", flush=True)
                 # Total frame count for the sampled window — used to map the
                 # frame=NN progress lines to 0–100%. Prefer the real source
                 # fps from the probe, fall back to 24 only if the probe
@@ -1256,251 +1523,265 @@ async def convert_file(
                 # total frames on 29.97/30fps content and made the progress
                 # bar peg at 99% long before the run actually finished.
                 vmaf_fps_for_progress = (src_info.get("fps") or dst_info.get("fps") or 24.0)
-                vmaf_total_frames = max(1, int(vmaf_duration * vmaf_fps_for_progress))
-                # Seed the UI step now so users see "VMAF analysis" label
-                # while ffmpeg is still warming up (decoders, filter graph
-                # initialisation), not a stale "converting" label from the
-                # previous phase. Progress starts at 0 — we were previously
-                # setting 100 here, which is where "stuck at 100%" came from.
-                if progress_callback:
-                    await progress_callback(progress=0, fps=0, eta_seconds=None, step="VMAF analysis")
+                # Track every JSON path we generate so the cleanup pass at the
+                # end of the block can remove all of them, not just the primary.
+                vmaf_json_paths_to_cleanup: list[Path] = [vmaf_json_path]
 
-                vmaf_proc = await asyncio.create_subprocess_exec(
-                    *vmaf_cmd,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.PIPE,
+                # Primary VMAF pass — runs at the configured seek point. The
+                # entire run (ffmpeg subprocess, progress streaming, JSON
+                # parse) is delegated to the module-level helper; we get back
+                # a result dict with score / min / max / harmonic_mean / error.
+                print(
+                    f"[CONVERT] Running VMAF analysis ({vmaf_duration:.0f}s sample at "
+                    f"{vmaf_seek:.0f}s, target_fps={target_fps or 'n/a'})...",
+                    flush=True,
                 )
+                result_primary = await _run_libvmaf_pass(
+                    input_path=input_path,
+                    temp_path=temp_path,
+                    seek=vmaf_seek,
+                    duration=vmaf_duration,
+                    ref_pipeline=ref_pipeline,
+                    dist_pipeline=dist_pipeline,
+                    json_path=vmaf_json_path,
+                    fps_for_progress=vmaf_fps_for_progress,
+                    progress_callback=progress_callback,
+                    step_label="VMAF analysis",
+                )
+                vmaf_results = [result_primary]
 
-                # Parse stderr for frame progress. The `-stats` flag makes
-                # ffmpeg emit a `frame=N fps=X q=-0.0 size=... time=... speed=Y`
-                # one-liner roughly every second even at `-loglevel error`. We
-                # extract frame count (for progress %), fps (for UI
-                # readout), and speed (to estimate ETA). Previously this
-                # loop existed but never fired because `-stats` wasn't set.
-                import re as _re
-                vmaf_buf = ""
-                vmaf_err_lines = []
-                _vmaf_start = time.monotonic()
-                while True:
-                    chunk = await vmaf_proc.stderr.read(4096)
-                    if not chunk:
-                        break
-                    vmaf_buf += chunk.decode(errors="replace")
-                    while "\r" in vmaf_buf or "\n" in vmaf_buf:
-                        r_pos = vmaf_buf.find("\r")
-                        n_pos = vmaf_buf.find("\n")
-                        if r_pos == -1: pos = n_pos
-                        elif n_pos == -1: pos = r_pos
-                        else: pos = min(r_pos, n_pos)
-                        line = vmaf_buf[:pos].strip()
-                        vmaf_buf = vmaf_buf[pos + 1:]
-                        if not line:
-                            continue
-                        vmaf_err_lines.append(line)
-                        # Frame count line → progress + ETA. Skip lines
-                        # that don't contain `frame=` (error messages,
-                        # banner, etc.).
-                        fm = _re.search(r'frame=\s*(\d+)', line)
-                        if not fm or not progress_callback:
-                            continue
-                        frame = int(fm.group(1))
-                        pct = min(99.0, frame / vmaf_total_frames * 100)
-                        # fps field from ffmpeg's progress line (the rate
-                        # at which libvmaf is analysing, not the file's
-                        # native fps).
-                        fps_match = _re.search(r'fps=\s*([\d.]+)', line)
-                        analyse_fps = float(fps_match.group(1)) if fps_match else 0.0
-                        # ETA: use wall-clock rate rather than ffmpeg's
-                        # `speed=` field because speed is relative to
-                        # playback, which is meaningless for a non-realtime
-                        # analysis pass. elapsed/progress * (1 - progress)
-                        # gives a smooth remaining estimate that converges
-                        # as the run proceeds.
-                        eta = None
-                        elapsed = time.monotonic() - _vmaf_start
-                        if pct > 1.0:
-                            eta = int(elapsed / (pct / 100) * (1 - pct / 100))
-                        await progress_callback(
-                            progress=pct,
-                            fps=analyse_fps,
-                            eta_seconds=eta,
-                            step="VMAF analysis",
+                # Bimodal-retry: if libvmaf desynced mid-window (the 0/100
+                # split we kept seeing on otherwise-fine encodes), the
+                # primary's score is bogus. Retry at a different seek so a
+                # different region of the file is analysed; if that one comes
+                # back clean we trust it. The retry only fires when
+                # _is_bimodal_vmaf returns true, so well-behaved encodes never
+                # pay the extra ~30s. Skipped on very short files where there
+                # isn't enough headroom to seek somewhere meaningfully
+                # different (60s minimum gap between the two windows).
+                if _is_bimodal_vmaf(result_primary) and duration > 90 and vmaf_duration > 0:
+                    # Pick an alternate seek that's at least 60s away from the
+                    # primary. Prefer 66% of duration; if primary already sat
+                    # past mid-file, go back to 33% instead. Clamp so
+                    # `seek + duration` stays within the file.
+                    alt_pct = 0.66 if vmaf_seek < duration * 0.5 else 0.33
+                    alt_seek = max(0.0, min(duration - vmaf_duration, duration * alt_pct))
+                    if abs(alt_seek - vmaf_seek) >= 60:
+                        _vmaf_id_alt = f"{_safe_stem}_{_uuid.uuid4().hex[:8]}"
+                        vmaf_json_path_alt = vmaf_dir / f"{_vmaf_id_alt}_vmaf.json"
+                        vmaf_json_paths_to_cleanup.append(vmaf_json_path_alt)
+                        print(
+                            f"[CONVERT] Primary VMAF run looked bimodal "
+                            f"(min={result_primary.get('min'):.1f}, max={result_primary.get('max'):.1f}) — "
+                            f"retrying at {alt_seek:.0f}s to rule out a measurement desync.",
+                            flush=True,
                         )
+                        result_alt = await _run_libvmaf_pass(
+                            input_path=input_path,
+                            temp_path=temp_path,
+                            seek=alt_seek,
+                            duration=vmaf_duration,
+                            ref_pipeline=ref_pipeline,
+                            dist_pipeline=dist_pipeline,
+                            json_path=vmaf_json_path_alt,
+                            fps_for_progress=vmaf_fps_for_progress,
+                            progress_callback=progress_callback,
+                            step_label="VMAF retry",
+                        )
+                        vmaf_results.append(result_alt)
 
-                # Timeout scales with analysed window. libvmaf on a modern
-                # CPU at n_threads=4 does ~80-120 fps on 1080p, so even a
-                # 45-minute episode (~65k frames) completes in 10-15
-                # minutes. Budget 3× analysed duration + 5-minute floor.
-                vmaf_timeout = max(300.0, vmaf_duration * 3.0)
-                await asyncio.wait_for(vmaf_proc.wait(), timeout=vmaf_timeout)
-                if vmaf_proc.returncode != 0:
-                    tail = " | ".join(vmaf_err_lines[-5:])[:500]
-                    vmaf_error = f"ffmpeg rc={vmaf_proc.returncode}: {tail}" if tail else f"ffmpeg rc={vmaf_proc.returncode}"
+                # Pick the run with the highest score. If the encode is
+                # genuinely fine, both runs converge on a near-perfect mean;
+                # if one desynced and the other didn't, the clean one wins.
+                # Errored runs (no score) are filtered out so a transient
+                # ffmpeg crash on the retry doesn't drag the primary down.
+                scored_runs = [r for r in vmaf_results if r.get("score") is not None]
+                if scored_runs:
+                    best = max(scored_runs, key=lambda r: r["score"])
+                    vmaf_score = best["score"]
+                    _min = best.get("min")
+                    _max = best.get("max")
+                    _hm = best.get("harmonic_mean")
+                    extra = []
+                    if _min is not None: extra.append(f"min={_min:.1f}")
+                    if _max is not None: extra.append(f"max={_max:.1f}")
+                    if _hm is not None: extra.append(f"harmonic_mean={_hm:.1f}")
+                    suffix = (" [" + " ".join(extra) + "]") if extra else ""
+                    seek_suffix = f" (seek={best.get('seek', vmaf_seek):.0f}s)" if len(vmaf_results) > 1 else ""
+                    print(f"[CONVERT] VMAF score: {vmaf_score}{suffix}{seek_suffix}", flush=True)
+
+                    # If even the BEST run was bimodal, every window we tried
+                    # had a desync. Persist the score (it's the user's best
+                    # estimate of perceptual quality) but flag it so the UI
+                    # can show "measurement-suspect" rather than a misleading
+                    # "Poor" tier. The cross-check below will run regardless.
+                    if _is_bimodal_vmaf(best):
+                        vmaf_uncertain = True
+                        print(
+                            "[CONVERT] All VMAF passes returned bimodal distributions — "
+                            "flagging score as measurement-uncertain. The encode is "
+                            "almost certainly visually fine; consider re-measuring "
+                            "from Settings or trusting the SSIM/PSNR cross-check below.",
+                            flush=True,
+                        )
+                    elif _min is not None and _max is not None and vmaf_score < 80 and _max >= 90:
+                        # Soft bimodal warning (didn't trip the retry threshold
+                        # but still a wide spread) — keep the existing log so
+                        # users see "manual spot-check recommended" guidance.
+                        print(
+                            "[CONVERT] VMAF distribution looks bimodal "
+                            f"(mean {vmaf_score}, max {_max:.1f}). "
+                            "This often indicates temporal/resolution "
+                            "misalignment rather than a real quality "
+                            "problem — manual spot-check recommended.",
+                            flush=True,
+                        )
+                else:
+                    # No run produced a score. Surface the first error for
+                    # the user (and the rest in the log).
+                    error_tails = [r.get("error") for r in vmaf_results if r.get("error")]
+                    vmaf_error = error_tails[0] if error_tails else "VMAF returned no score"
                     print(f"[CONVERT] VMAF failed ({vmaf_error})", flush=True)
-                elif vmaf_json_path.exists():
-                    import json as _vjson
-                    vdata = _vjson.loads(vmaf_json_path.read_text())
-                    pooled = vdata.get("pooled_metrics", {}).get("vmaf", {})
-                    vs = pooled.get("mean")
-                    if vs is not None:
-                        vmaf_score = round(vs, 1)
-                        # Log min / max / harmonic_mean alongside the mean
-                        # so misalignment is diagnosable from the logs. If
-                        # the encode is genuinely bad the distribution is
-                        # tight (min ≈ mean ≈ max); if it's a temporal or
-                        # resolution mismatch, min crashes into single
-                        # digits while max stays near-perfect — obvious
-                        # bimodal signature in a single log line.
-                        _min = pooled.get("min")
-                        _max = pooled.get("max")
-                        _hm = pooled.get("harmonic_mean")
-                        extra = []
-                        if _min is not None: extra.append(f"min={_min:.1f}")
-                        if _max is not None: extra.append(f"max={_max:.1f}")
-                        if _hm is not None: extra.append(f"harmonic_mean={_hm:.1f}")
-                        suffix = (" [" + " ".join(extra) + "]") if extra else ""
-                        print(f"[CONVERT] VMAF score: {vmaf_score}{suffix}", flush=True)
-                        # Flag a suspicious spread — mean below good
-                        # territory but max near-perfect is almost always
-                        # a measurement artefact, not a real quality drop.
-                        if _min is not None and _max is not None and vmaf_score < 80 and _max >= 90:
+
+                # Diagnostic cross-check: when VMAF reports a low score (or
+                # when we flagged the result as uncertain), re-measure the
+                # same window with SSIM and PSNR. All three metrics work from
+                # the same pixel data but with very different algorithms —
+                # if VMAF says "poor" but SSIM is >0.98 and PSNR is >40 dB,
+                # the encode is actually fine and VMAF is the measurement
+                # artefact (common on animation / flat-coloured content,
+                # which is outside VMAF's training distribution). Only runs
+                # on suspicious scores so it doesn't slow down the 99% case.
+                if vmaf_score is not None and (vmaf_score < 80 or vmaf_uncertain):
+                    try:
+                        import re as _re
+                        # Cross-check sample: use the same window the BEST
+                        # VMAF run analysed — that way SSIM/PSNR are
+                        # measuring exactly what VMAF was scoring, so we
+                        # can compare apples-to-apples when deciding
+                        # whether VMAF was wrong.
+                        xcheck_seek = (
+                            scored_runs and max(scored_runs, key=lambda r: r["score"]).get("seek", vmaf_seek)
+                            or vmaf_seek
+                        )
+                        xcheck_dur = min(30.0, vmaf_duration) if vmaf_duration > 0 else 30.0
+                        xcheck_filter = (
+                            f"[0:v]{ref_pipeline}[ref_x];"
+                            f"[1:v]{dist_pipeline}[dist_x];"
+                            f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
+                            f"[dx][rx]ssim;[dx][rx]psnr"
+                        )
+                        # Dedicated progress phase for the cross-check
+                        # — different step label so the UI shows this
+                        # is a separate stage, and progress resets
+                        # from 0 rather than jumping back from 99%.
+                        if progress_callback:
+                            await progress_callback(
+                                progress=0, fps=0, eta_seconds=None,
+                                step="Quality cross-check",
+                            )
+                        xc_total_frames = max(1, int(xcheck_dur * vmaf_fps_for_progress))
+                        # ffmpeg's `ssim` and `psnr` filters print
+                        # results to stderr on exit. `-stats` gives
+                        # us frame progress lines alongside.
+                        xcheck_cmd = [
+                            "ffmpeg", "-y", "-hide_banner", "-loglevel", "info", "-stats",
+                            "-ss", f"{xcheck_seek:.3f}", "-i", input_path,
+                            "-ss", f"{xcheck_seek:.3f}", "-i", temp_path,
+                            "-t", f"{xcheck_dur:.3f}",
+                            "-filter_complex", xcheck_filter,
+                            "-f", "null", "-",
+                        ]
+                        xc_proc = await asyncio.create_subprocess_exec(
+                            *xcheck_cmd,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        # Stream stderr so we can emit progress as
+                        # the cross-check runs, rather than blocking
+                        # in `communicate()` for up to 2 minutes with
+                        # a dead progress bar.
+                        xc_buf = ""
+                        xc_stderr_chunks: list[str] = []
+                        _xc_start = time.monotonic()
+                        while True:
+                            xc_chunk = await xc_proc.stderr.read(4096)
+                            if not xc_chunk:
+                                break
+                            xc_dec = xc_chunk.decode(errors="replace")
+                            xc_stderr_chunks.append(xc_dec)
+                            xc_buf += xc_dec
+                            while "\r" in xc_buf or "\n" in xc_buf:
+                                r_pos = xc_buf.find("\r")
+                                n_pos = xc_buf.find("\n")
+                                if r_pos == -1: pos = n_pos
+                                elif n_pos == -1: pos = r_pos
+                                else: pos = min(r_pos, n_pos)
+                                xc_line = xc_buf[:pos].strip()
+                                xc_buf = xc_buf[pos + 1:]
+                                if not xc_line or not progress_callback:
+                                    continue
+                                fm2 = _re.search(r'frame=\s*(\d+)', xc_line)
+                                if not fm2:
+                                    continue
+                                xc_frame = int(fm2.group(1))
+                                xc_pct = min(99.0, xc_frame / xc_total_frames * 100)
+                                fps_m2 = _re.search(r'fps=\s*([\d.]+)', xc_line)
+                                xc_analyse_fps = float(fps_m2.group(1)) if fps_m2 else 0.0
+                                xc_elapsed = time.monotonic() - _xc_start
+                                xc_eta = None
+                                if xc_pct > 1.0:
+                                    xc_eta = int(xc_elapsed / (xc_pct / 100) * (1 - xc_pct / 100))
+                                await progress_callback(
+                                    progress=xc_pct,
+                                    fps=xc_analyse_fps,
+                                    eta_seconds=xc_eta,
+                                    step="Quality cross-check",
+                                )
+                        await asyncio.wait_for(xc_proc.wait(), timeout=120)
+                        xc_text = "".join(xc_stderr_chunks)
+                        ssim_m = _re.search(r"SSIM[^A]*All:\s*([\d.]+)", xc_text)
+                        psnr_m = _re.search(r"PSNR[^a]*average:\s*([\d.]+)", xc_text)
+                        ssim_v = float(ssim_m.group(1)) if ssim_m else None
+                        psnr_v = float(psnr_m.group(1)) if psnr_m else None
+                        parts = []
+                        if ssim_v is not None: parts.append(f"SSIM={ssim_v:.4f}")
+                        if psnr_v is not None: parts.append(f"PSNR={psnr_v:.2f}dB")
+                        if parts:
+                            verdict = ""
+                            # SSIM > 0.98 or PSNR > 40 dB = transparent/
+                            # near-transparent quality. If VMAF disagrees
+                            # with both, it's almost certainly wrong.
+                            if ((ssim_v is not None and ssim_v >= 0.98) or
+                                (psnr_v is not None and psnr_v >= 40.0)):
+                                verdict = (
+                                    " → SSIM/PSNR say the encode is "
+                                    "actually fine; VMAF score is a "
+                                    "measurement artefact (common on "
+                                    "animation / flat-coloured content)."
+                                )
                             print(
-                                "[CONVERT] VMAF distribution looks bimodal "
-                                f"(mean {vmaf_score}, max {_max:.1f}). "
-                                "This often indicates temporal/resolution "
-                                "misalignment rather than a real quality "
-                                "problem — manual spot-check recommended.",
+                                f"[CONVERT] Quality cross-check ({xcheck_dur:.0f}s sample): "
+                                + ", ".join(parts) + verdict,
                                 flush=True,
                             )
-
-                        # Diagnostic cross-check: when VMAF reports a low
-                        # score, re-measure the same window with SSIM and
-                        # PSNR. All three are computed from the same pixel
-                        # data but with very different algorithms — if VMAF
-                        # says "poor" but SSIM is >0.98 and PSNR is >40 dB,
-                        # the encode is actually fine and VMAF is producing
-                        # a measurement artefact (common on animation / flat-
-                        # coloured content, which is outside VMAF's training
-                        # distribution). Only runs on suspicious scores so it
-                        # doesn't slow down the 99% case.
-                        if vmaf_score < 80:
-                            try:
-                                # Cross-check sample: reuse the same window
-                                # libvmaf just analysed, or fall back to a
-                                # 30s slice at 33% when vmaf_duration was
-                                # something unusual.
-                                xcheck_seek = vmaf_seek
-                                xcheck_dur = min(30.0, vmaf_duration) if vmaf_duration > 0 else 30.0
-                                xcheck_filter = (
-                                    f"[0:v]{ref_pipeline}[ref_x];"
-                                    f"[1:v]{dist_pipeline}[dist_x];"
-                                    f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
-                                    f"[dx][rx]ssim;[dx][rx]psnr"
-                                )
-                                # Dedicated progress phase for the cross-check
-                                # — different step label so the UI shows this
-                                # is a separate stage, and progress resets
-                                # from 0 rather than jumping back from 99%.
-                                if progress_callback:
-                                    await progress_callback(
-                                        progress=0, fps=0, eta_seconds=None,
-                                        step="Quality cross-check",
-                                    )
-                                xc_total_frames = max(1, int(xcheck_dur * vmaf_fps_for_progress))
-                                # ffmpeg's `ssim` and `psnr` filters print
-                                # results to stderr on exit. `-stats` gives
-                                # us frame progress lines alongside.
-                                xcheck_cmd = [
-                                    "ffmpeg", "-y", "-hide_banner", "-loglevel", "info", "-stats",
-                                    "-ss", f"{xcheck_seek:.3f}", "-i", input_path,
-                                    "-ss", f"{xcheck_seek:.3f}", "-i", temp_path,
-                                    "-t", f"{xcheck_dur:.3f}",
-                                    "-filter_complex", xcheck_filter,
-                                    "-f", "null", "-",
-                                ]
-                                xc_proc = await asyncio.create_subprocess_exec(
-                                    *xcheck_cmd,
-                                    stdout=asyncio.subprocess.DEVNULL,
-                                    stderr=asyncio.subprocess.PIPE,
-                                )
-                                # Stream stderr so we can emit progress as
-                                # the cross-check runs, rather than blocking
-                                # in `communicate()` for up to 2 minutes with
-                                # a dead progress bar.
-                                xc_buf = ""
-                                xc_stderr_chunks: list[str] = []
-                                _xc_start = time.monotonic()
-                                while True:
-                                    xc_chunk = await xc_proc.stderr.read(4096)
-                                    if not xc_chunk:
-                                        break
-                                    xc_dec = xc_chunk.decode(errors="replace")
-                                    xc_stderr_chunks.append(xc_dec)
-                                    xc_buf += xc_dec
-                                    while "\r" in xc_buf or "\n" in xc_buf:
-                                        r_pos = xc_buf.find("\r")
-                                        n_pos = xc_buf.find("\n")
-                                        if r_pos == -1: pos = n_pos
-                                        elif n_pos == -1: pos = r_pos
-                                        else: pos = min(r_pos, n_pos)
-                                        xc_line = xc_buf[:pos].strip()
-                                        xc_buf = xc_buf[pos + 1:]
-                                        if not xc_line or not progress_callback:
-                                            continue
-                                        fm2 = _re.search(r'frame=\s*(\d+)', xc_line)
-                                        if not fm2:
-                                            continue
-                                        xc_frame = int(fm2.group(1))
-                                        xc_pct = min(99.0, xc_frame / xc_total_frames * 100)
-                                        fps_m2 = _re.search(r'fps=\s*([\d.]+)', xc_line)
-                                        xc_analyse_fps = float(fps_m2.group(1)) if fps_m2 else 0.0
-                                        xc_elapsed = time.monotonic() - _xc_start
-                                        xc_eta = None
-                                        if xc_pct > 1.0:
-                                            xc_eta = int(xc_elapsed / (xc_pct / 100) * (1 - xc_pct / 100))
-                                        await progress_callback(
-                                            progress=xc_pct,
-                                            fps=xc_analyse_fps,
-                                            eta_seconds=xc_eta,
-                                            step="Quality cross-check",
-                                        )
-                                await asyncio.wait_for(xc_proc.wait(), timeout=120)
-                                xc_text = "".join(xc_stderr_chunks)
-                                import re as _xre
-                                ssim_m = _xre.search(r"SSIM[^A]*All:\s*([\d.]+)", xc_text)
-                                psnr_m = _xre.search(r"PSNR[^a]*average:\s*([\d.]+)", xc_text)
-                                ssim_v = float(ssim_m.group(1)) if ssim_m else None
-                                psnr_v = float(psnr_m.group(1)) if psnr_m else None
-                                parts = []
-                                if ssim_v is not None: parts.append(f"SSIM={ssim_v:.4f}")
-                                if psnr_v is not None: parts.append(f"PSNR={psnr_v:.2f}dB")
-                                if parts:
-                                    verdict = ""
-                                    # SSIM > 0.98 or PSNR > 40 dB = transparent/
-                                    # near-transparent quality. If VMAF disagrees
-                                    # with both, it's almost certainly wrong.
-                                    if ((ssim_v is not None and ssim_v >= 0.98) or
-                                        (psnr_v is not None and psnr_v >= 40.0)):
-                                        verdict = (
-                                            " → SSIM/PSNR say the encode is "
-                                            "actually fine; VMAF score is a "
-                                            "measurement artefact (common on "
-                                            "animation / flat-coloured content)."
-                                        )
-                                    print(
-                                        f"[CONVERT] Quality cross-check ({xcheck_dur:.0f}s sample): "
-                                        + ", ".join(parts) + verdict,
-                                        flush=True,
-                                    )
-                                else:
-                                    print(
-                                        "[CONVERT] Quality cross-check produced no "
-                                        "SSIM/PSNR output — skipping.",
-                                        flush=True,
-                                    )
-                            except Exception as xc_exc:
-                                print(f"[CONVERT] Quality cross-check failed: {xc_exc}", flush=True)
-                    vmaf_json_path.unlink(missing_ok=True)
+                        else:
+                            print(
+                                "[CONVERT] Quality cross-check produced no "
+                                "SSIM/PSNR output — skipping.",
+                                flush=True,
+                            )
+                    except Exception as xc_exc:
+                        print(f"[CONVERT] Quality cross-check failed: {xc_exc}", flush=True)
+                # Clean up every JSON file the helper produced (primary +
+                # any retry). Old code only removed the primary, leaving
+                # /tmp full of stale `*_vmaf.json` files after a few months
+                # of bimodal retries.
+                for _jp in vmaf_json_paths_to_cleanup:
+                    try:
+                        Path(_jp).unlink(missing_ok=True)
+                    except OSError:
+                        pass
             else:
                 vmaf_error = "libvmaf not available"
                 print(f"[CONVERT] VMAF skipped — {vmaf_error}", flush=True)
@@ -1554,6 +1835,7 @@ async def convert_file(
             "space_saved": 0,
             "error": None,
             "vmaf_score": vmaf_score,
+            "vmaf_uncertain": vmaf_uncertain,
             "vmaf_rejected": True,
             "vmaf_reject_reason": vmaf_reject_reason,
             "vmaf_min_score": vmaf_min_score,
@@ -1665,6 +1947,7 @@ async def convert_file(
         "backup_path": result_backup_path,
         "vmaf_score": vmaf_score,
         "vmaf_error": vmaf_error,
+        "vmaf_uncertain": vmaf_uncertain,
         "ffmpeg_command": full_command,
         "ffmpeg_log": "\n".join(all_lines[-500:]),  # Cap at 500 lines
         "encoding_stats": {

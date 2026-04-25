@@ -86,6 +86,12 @@ export interface Job {
   health_errors_json?: string | null;
   health_check_type?: "quick" | "thorough" | null;
   health_check_seconds?: number | null;
+  // True when libvmaf desynced on every analysis window we tried, so the
+  // recorded score is the user's best estimate but isn't a trustworthy
+  // verdict. UI shows a ⚠ glyph alongside the score. v0.3.32+.
+  vmaf_uncertain?: boolean;
+  // VMAF score on completed jobs (mirrored from scan_results).
+  vmaf_score?: number | null;
 }
 
 export interface WorkerNode {

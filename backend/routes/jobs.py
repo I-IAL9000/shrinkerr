@@ -994,6 +994,162 @@ async def vmaf_status():
     return {"vmaf_available": available}
 
 
+# Module-level state for the remeasure background task. We keep a single
+# in-flight task at a time — re-running while one's already going is almost
+# always an accident, and the second run wouldn't have anything new to look
+# at anyway.
+_remeasure_task: dict = {"running": False, "started_at": None}
+
+
+@router.get("/vmaf-remeasure/status")
+async def vmaf_remeasure_status():
+    """Report whether a remeasure pass is currently running, plus a count
+    of jobs that would be candidates for remeasure right now."""
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        # Candidates: completed jobs with a score that's either flagged
+        # uncertain OR landed below "Excellent" tier (≤92). Also need a
+        # post-rename file (file_path) and a separate pre-rename source
+        # (original_file_path) — without both, we have nothing to compare.
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM jobs "
+            "WHERE status='completed' AND vmaf_score IS NOT NULL "
+            "  AND (vmaf_uncertain = 1 OR vmaf_score < 93) "
+            "  AND original_file_path IS NOT NULL "
+            "  AND original_file_path <> file_path"
+        ) as cur:
+            row = await cur.fetchone()
+        candidates = (row["n"] if row else 0)
+    finally:
+        await db.close()
+    return {
+        "running": _remeasure_task["running"],
+        "started_at": _remeasure_task["started_at"],
+        "candidates": candidates,
+    }
+
+
+@router.post("/vmaf-remeasure")
+async def start_vmaf_remeasure():
+    """Re-run VMAF on completed jobs whose recorded score is suspect.
+
+    Iterates jobs flagged `vmaf_uncertain=1` or scored below 93 (the
+    "Excellent" tier cut), provided both the original (pre-rename) file
+    and the encoded (post-rename) file still exist on disk. If the user
+    deletes originals after conversion (the common default), this skips
+    those jobs — there's nothing to compare against without re-encoding.
+
+    Returns immediately with the candidate count; progress events stream
+    over the websocket as `{type: "vmaf_remeasure_progress", ...}`.
+    """
+    if _remeasure_task["running"]:
+        raise HTTPException(409, "A VMAF re-measure pass is already running.")
+
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT id, file_path, original_file_path, vmaf_score, vmaf_uncertain "
+            "FROM jobs "
+            "WHERE status='completed' AND vmaf_score IS NOT NULL "
+            "  AND (vmaf_uncertain = 1 OR vmaf_score < 93) "
+            "  AND original_file_path IS NOT NULL "
+            "  AND original_file_path <> file_path "
+            "ORDER BY id DESC"
+        ) as cur:
+            candidate_rows = [dict(r) for r in await cur.fetchall()]
+    finally:
+        await db.close()
+
+    if not candidate_rows:
+        return {"started": False, "total": 0, "message": "No remeasure candidates."}
+
+    import asyncio as _asyncio
+    from backend.websocket import ws_manager
+    from datetime import datetime, timezone
+
+    async def _run_remeasure_pass(rows: list[dict]) -> None:
+        from backend.converter import remeasure_vmaf
+        _remeasure_task["running"] = True
+        _remeasure_task["started_at"] = datetime.now(timezone.utc).isoformat()
+        total = len(rows)
+        rescued = 0
+        skipped = 0
+        unchanged = 0
+        try:
+            for idx, row in enumerate(rows, start=1):
+                job_id = row["id"]
+                src = row["original_file_path"]
+                dst = row["file_path"]
+                file_name = (dst or src or "").rsplit("/", 1)[-1]
+                old_score = row["vmaf_score"]
+                await ws_manager.broadcast({
+                    "type": "vmaf_remeasure_progress",
+                    "done": idx - 1, "total": total,
+                    "current_file": file_name,
+                    "stage": "starting",
+                })
+                try:
+                    res = await remeasure_vmaf(src, dst)
+                except Exception as exc:
+                    print(f"[REMEASURE] job {job_id} crashed: {exc}", flush=True)
+                    skipped += 1
+                    continue
+
+                if res.get("error"):
+                    print(f"[REMEASURE] job {job_id} skipped — {res['error']}", flush=True)
+                    skipped += 1
+                else:
+                    new_score = res["score"]
+                    new_uncertain = res["uncertain"]
+                    db2 = await connect_db()
+                    try:
+                        await db2.execute(
+                            "UPDATE jobs SET vmaf_score = ?, vmaf_uncertain = ? WHERE id = ?",
+                            (new_score, 1 if new_uncertain else 0, job_id),
+                        )
+                        await db2.execute(
+                            "UPDATE scan_results SET vmaf_score = ?, vmaf_uncertain = ? WHERE file_path = ?",
+                            (new_score, 1 if new_uncertain else 0, dst),
+                        )
+                        await db2.commit()
+                    finally:
+                        await db2.close()
+                    if new_score is not None and old_score is not None and abs(new_score - old_score) >= 5:
+                        rescued += 1
+                        print(f"[REMEASURE] job {job_id}: {old_score} → {new_score} (rescued)", flush=True)
+                    else:
+                        unchanged += 1
+                        print(f"[REMEASURE] job {job_id}: {old_score} → {new_score}", flush=True)
+
+                await ws_manager.broadcast({
+                    "type": "vmaf_remeasure_progress",
+                    "done": idx, "total": total,
+                    "current_file": file_name,
+                    "stage": "done",
+                    "rescued": rescued, "skipped": skipped, "unchanged": unchanged,
+                })
+        finally:
+            _remeasure_task["running"] = False
+            _remeasure_task["started_at"] = None
+            await ws_manager.broadcast({
+                "type": "vmaf_remeasure_complete",
+                "total": total,
+                "rescued": rescued,
+                "skipped": skipped,
+                "unchanged": unchanged,
+            })
+            print(
+                f"[REMEASURE] Pass complete: {total} candidates, "
+                f"{rescued} rescued, {unchanged} unchanged, {skipped} skipped.",
+                flush=True,
+            )
+
+    _asyncio.create_task(_run_remeasure_pass(candidate_rows))
+    return {"started": True, "total": len(candidate_rows)}
+
+
 # --- Per-job operations (dynamic {job_id} routes must come AFTER static routes) ---
 
 @router.delete("/{job_id}")

@@ -240,8 +240,11 @@ async def get_stats_summary():
 
     already_converted = sum(1 for j in completed if j["job_type"] in ("convert", "combined"))
 
-    # VMAF quality scores
-    vmaf_stats = {"avg": 0, "count": 0, "excellent": 0, "good": 0, "fair": 0, "poor": 0}
+    # VMAF quality scores. Canonical 3-tier table (v0.3.32+) — see
+    # frontend/src/utils/vmaf.ts. The previous "fair" bucket (80–87) was
+    # folded into "poor"; old API consumers will see fair=0 if they
+    # still ask for it.
+    vmaf_stats = {"avg": 0, "count": 0, "excellent": 0, "good": 0, "poor": 0}
     try:
         async with db.execute(
             "SELECT vmaf_score FROM jobs WHERE status='completed' AND vmaf_score IS NOT NULL AND vmaf_score > 0"
@@ -253,8 +256,7 @@ async def get_stats_summary():
             vmaf_stats["avg"] = round(sum(scores) / len(scores), 1)
             vmaf_stats["excellent"] = sum(1 for s in scores if s >= 93)
             vmaf_stats["good"] = sum(1 for s in scores if 87 <= s < 93)
-            vmaf_stats["fair"] = sum(1 for s in scores if 80 <= s < 87)
-            vmaf_stats["poor"] = sum(1 for s in scores if s < 80)
+            vmaf_stats["poor"] = sum(1 for s in scores if s < 87)
     except Exception:
         pass
 

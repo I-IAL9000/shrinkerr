@@ -292,6 +292,21 @@ async def init_db():
             await db.execute("ALTER TABLE jobs ADD COLUMN vmaf_score REAL DEFAULT NULL")
         except Exception:
             pass
+        # Migration: vmaf_uncertain (v0.3.32+) — flag set when libvmaf
+        # desynced on every analysis window we tried, so the recorded
+        # `vmaf_score` is the user's best estimate but isn't a
+        # trustworthy quality verdict. UI shows a ⚠ glyph alongside
+        # the score so a "Poor" tier on a visually-fine encode is
+        # immediately recognisable as a measurement artefact.
+        try:
+            await db.execute("ALTER TABLE jobs ADD COLUMN vmaf_uncertain INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        # Mirror to scan_results so the file-list view can highlight it too.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN vmaf_uncertain INTEGER DEFAULT 0")
+        except Exception:
+            pass
         # Migration: add avg_vmaf to daily_stats
         try:
             await db.execute("ALTER TABLE daily_stats ADD COLUMN avg_vmaf REAL DEFAULT 0")

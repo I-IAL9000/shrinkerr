@@ -72,6 +72,12 @@ BENIGN_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for
     r"unknown cuvid format",
     # Bitstream filter parsing — ffmpeg does NOT fail here.
     r"svc_extension_flag not implemented",
+    # eac3 (Dolby Digital Plus) decoder is strict about exponent encoding;
+    # many streaming-service rips trip these warnings but play perfectly in
+    # Plex / MPV / VLC / hardware decoders. Codec-scoped to avoid shadowing
+    # real decode errors from other streams.
+    r"\[eac3 @ [^\]]+\]\s*expacc \d+ is out-of-range",
+    r"\[eac3 @ [^\]]+\]\s*error decoding the audio block",
 ))
 
 

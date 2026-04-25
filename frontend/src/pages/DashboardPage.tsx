@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
 import { fmtNum } from "../fmt";
+import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
 import {
   LineChart, Line, AreaChart, Area, BarChart as RBarChart, Bar,
@@ -667,25 +668,31 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           </div>
         </div>
 
-        {/* ===== QUALITY (VMAF) ===== */}
+        {/* ===== QUALITY (VMAF) =====
+            Tiers come from utils/vmaf — single source of truth across the
+            app. Backend's vmaf_stats sends `excellent` / `good` / `poor`
+            counts (Fair was folded into Poor in v0.3.32). */}
         {s.vmaf_stats?.count > 0 && (() => {
           const vm = s.vmaf_stats;
           const excellent = vm.excellent || 0;
           const good = vm.good || 0;
-          const fair = vm.fair || 0;
           const poor = vm.poor || 0;
+          const tierRows = [
+            { tier: "excellent" as const, count: excellent },
+            { tier: "good"      as const, count: good      },
+            { tier: "poor"      as const, count: poor      },
+          ];
           return (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
               <div style={cardStyle}>
                 <h3 style={headingStyle}>VMAF Scores</h3>
                 <Donut
                   size={130}
-                  segments={[
-                    { value: excellent, color: "#10B981", label: "Excellent (93+)" },
-                    { value: good, color: "var(--accent)", label: "Good (87-93)" },
-                    { value: fair, color: "#ffa94d", label: "Fair (80-87)" },
-                    { value: poor, color: "#e94560", label: "Poor (<80)" },
-                  ]}
+                  segments={tierRows.map(r => ({
+                    value: r.count,
+                    color: tierColor(r.tier),
+                    label: vmafLabelWithRange(r.tier),
+                  }))}
                   centerText={vm.avg?.toFixed(1) ?? ""}
                 />
               </div>
@@ -701,15 +708,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                     <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {([
-                      ["Excellent (93+)", excellent, "#10B981"],
-                      ["Good (87-93)", good, "var(--accent)"],
-                      ["Fair (80-87)", fair, "#ffa94d"],
-                      ["Poor (<80)", poor, "#e94560"],
-                    ] as const).map(([label, val, color]) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{label}</span>
-                        <span style={{ color, fontWeight: "bold", fontSize: 12 }}>{val}</span>
+                    {tierRows.map(r => (
+                      <div key={r.tier} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{vmafLabelWithRange(r.tier)}</span>
+                        <span style={{ color: tierColor(r.tier), fontWeight: "bold", fontSize: 12 }}>{r.count}</span>
                       </div>
                     ))}
                   </div>

@@ -3,6 +3,7 @@ import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getTracksByPath, getFileHistory, researchFile, arrAction, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import EventTimeline from "./EventTimeline";
+import { vmafLabel } from "../utils/vmaf";
 import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
 
@@ -314,17 +315,16 @@ function mergeVmafIntoEvents(events: FileEvent[], file: ScannedFile): FileEvent[
   const hasRealVmafEvent = events.some(e => e.event_type === "vmaf");
   if (hasRealVmafEvent) return events;
 
-  const tier = score >= 93 ? "Excellent"
-    : score >= 87 ? "Good"
-    : score >= 80 ? "Fair"
-    : "Poor";
+  const tier = vmafLabel(score);
   const synthetic: FileEvent = {
     id: -1,
     file_path: file.file_path,
     event_type: "vmaf",
     summary: `VMAF: ${score} (${tier})`,
     occurred_at: file.health_checked_at || "",
-    details: null,
+    // Synthetic event carries the score so EventTimeline can colour it
+    // correctly even though there's no real DB row.
+    details: { vmaf_score: score },
   };
   // Prepend so the synthesized score sits at the top of a short history —
   // mirrors the normal reverse-chronological ordering (VMAF runs after

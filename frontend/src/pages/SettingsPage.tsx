@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
+import { vmafColor } from "../utils/vmaf";
 import {
   getMediaDirs, addMediaDir, removeMediaDir,
   getEncodingSettings, updateEncodingSettings, testApiKey, getApiKey,
@@ -12,6 +13,7 @@ import {
   plexAuthStart, plexAuthCheck, plexAuthResources, plexAuthSave,
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
+  getVmafRemeasureStatus, startVmafRemeasure,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
@@ -126,6 +128,135 @@ const inputStyle: React.CSSProperties = {
 const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
 const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 0 };
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
+
+
+/**
+ * Re-measure suspect VMAF scores. Sub-component used inside the VMAF
+ * settings panel. Polls the status endpoint to know whether a remeasure
+ * pass is in flight + how many candidates are queued, exposes a button
+ * that POSTs the start endpoint, and listens to websocket events for
+ * live progress.
+ */
+function VmafRemeasureRow() {
+  const toast = useToast();
+  const [status, setStatus] = useState<{ running: boolean; candidates: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
+  const [outcome, setOutcome] = useState<{ rescued: number; unchanged: number; skipped: number } | null>(null);
+
+  // Initial status fetch — poll every 5s while a pass is running so the
+  // candidate count refreshes without needing a manual reload.
+  useEffect(() => {
+    let mounted = true;
+    let pollHandle: ReturnType<typeof setInterval> | null = null;
+    const tick = async () => {
+      try {
+        const s = await getVmafRemeasureStatus();
+        if (!mounted) return;
+        setStatus({ running: s.running, candidates: s.candidates });
+      } catch {
+        // ignore — endpoint may be unavailable transiently
+      }
+    };
+    tick();
+    pollHandle = setInterval(tick, 5000);
+    return () => { mounted = false; if (pollHandle) clearInterval(pollHandle); };
+  }, []);
+
+  // Listen to websocket progress events from the running task. The
+  // SettingsPage doesn't currently subscribe to its own WS connection,
+  // so we hook the global one via a small bus.
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      try {
+        const data = JSON.parse(ev.data);
+        if (data.type === "vmaf_remeasure_progress") {
+          setProgress({ done: data.done, total: data.total, current: data.current_file || "" });
+        } else if (data.type === "vmaf_remeasure_complete") {
+          setProgress(null);
+          setOutcome({
+            rescued: data.rescued || 0,
+            unchanged: data.unchanged || 0,
+            skipped: data.skipped || 0,
+          });
+          // Refresh the running flag + candidate count
+          getVmafRemeasureStatus().then(s => setStatus({ running: s.running, candidates: s.candidates })).catch(() => {});
+        }
+      } catch {
+        /* not JSON or not ours */
+      }
+    };
+    // Subscribe to all WebSocket connections opened by the app — useWebSocket
+    // multiplexes onto a single one, but we don't have direct access here.
+    // Instead we install a window-level message listener and the existing
+    // ws hook re-broadcasts via window.dispatchEvent.
+    window.addEventListener("ws-message", handler as EventListener);
+    return () => window.removeEventListener("ws-message", handler as EventListener);
+  }, []);
+
+  const start = async () => {
+    try {
+      const r = await startVmafRemeasure();
+      if (r.started) {
+        toast(`Re-measuring ${r.total} VMAF score${r.total === 1 ? "" : "s"}...`, "success");
+        setStatus(s => s ? { ...s, running: true } : { running: true, candidates: r.total });
+        setOutcome(null);
+      } else {
+        toast(r.message || "No remeasure candidates.", "info");
+      }
+    } catch (e: any) {
+      toast(`VMAF re-measure failed to start: ${e?.message || "unknown error"}`, "error");
+    }
+  };
+
+  if (!status) return null;
+  const showCandidates = status.candidates > 0;
+  return (
+    <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
+      <div style={{ ...labelStyle, marginBottom: 4 }}>Re-measure suspect VMAF scores</div>
+      <div style={{ ...helpStyle, marginBottom: 10, marginTop: 0 }}>
+        Re-runs VMAF on completed jobs whose recorded score landed below "Excellent" or got flagged measurement-suspect (libvmaf can de-sync mid-window and return artificially low scores on visually-fine encodes). Skips jobs where the original pre-rename file no longer exists. Uses the same bimodal-aware retry path as fresh encodes.
+      </div>
+      {progress && progress.total > 0 ? (
+        <div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
+            Re-measuring: {progress.done} / {progress.total} {progress.current ? `— ${progress.current}` : ""}
+          </div>
+          <div style={{ height: 6, background: "var(--bg-card)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{
+              width: `${(progress.done / progress.total) * 100}%`,
+              height: "100%", background: "var(--accent)",
+              transition: "width 0.4s ease",
+            }} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            className="btn btn-secondary"
+            disabled={status.running || !showCandidates}
+            onClick={start}
+            style={{ fontSize: 12 }}
+          >
+            {status.running ? "Re-measuring..." : `Re-measure ${status.candidates} score${status.candidates === 1 ? "" : "s"}`}
+          </button>
+          {!showCandidates && (
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              No candidates — every completed job is at "Excellent" or has no comparable source.
+            </span>
+          )}
+          {outcome && (
+            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+              Last pass: <strong style={{ color: "var(--success)" }}>{outcome.rescued} rescued</strong>
+              {outcome.unchanged > 0 && <>, {outcome.unchanged} unchanged</>}
+              {outcome.skipped > 0 && <>, {outcome.skipped} skipped (source missing)</>}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
   const toast = useToast();
@@ -866,13 +997,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   const minScore = typeof rawMin === "number" ? rawMin
                     : (typeof rawMin === "string" && rawMin !== "" ? parseFloat(rawMin) : 0) || 0;
                   const enabled = minScore > 0;
-                  // Tier colour mirrors the table above — gives quick visual
-                  // feedback about how strict the user's threshold is.
-                  const tierColor =
-                    minScore >= 93 ? "#18ffa5"
-                      : minScore >= 87 ? "var(--accent)"
-                        : minScore >= 80 ? "#ffa94d"
-                          : "#e94560";
+                  // Tier colour from the canonical helper (utils/vmaf) — same
+                  // 3-tier mapping as the dashboard, activity log, and inline
+                  // job VMAF chips. Gives quick visual feedback on how strict
+                  // the threshold is as the slider moves.
+                  const tierBgColor = vmafColor(minScore);
                   return (
                     <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
@@ -906,7 +1035,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                             minWidth: 64, textAlign: "center",
                             padding: "4px 10px", borderRadius: 4,
                             background: "var(--bg-card)",
-                            color: tierColor, fontWeight: 700, fontSize: 14,
+                            color: tierBgColor, fontWeight: 700, fontSize: 14,
                           }}>
                             {minScore.toFixed(0)}
                           </div>
@@ -915,6 +1044,15 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     </div>
                   );
                 })()}
+
+                {/* Re-measure suspect VMAF scores (v0.3.32+).
+                    Iterates completed jobs whose recorded score is either
+                    flagged uncertain or dropped below the Excellent tier,
+                    and re-runs VMAF — using the same bimodal-aware retry
+                    path as fresh encodes. Skips jobs whose original
+                    pre-rename source no longer exists on disk (typical when
+                    "delete original after conversion" is on). */}
+                <VmafRemeasureRow />
 
                 {/* Resolution-Aware CQ Toggle + Table */}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 8, cursor: "pointer" }}>

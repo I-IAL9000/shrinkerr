@@ -1441,19 +1441,27 @@ class QueueWorker:
             # land on a row/path that doesn't exist anymore, the vmaf_score
             # gets silently dropped, and the History tab shows no VMAF entry.
             vmaf_score = result.get("vmaf_score")
+            vmaf_uncertain = bool(result.get("vmaf_uncertain"))
             if vmaf_score is not None:
                 vmaf_path = current_file_path  # post-rename path is authoritative
                 try:
                     db = await self._db()
                     try:
-                        await db.execute("UPDATE jobs SET vmaf_score = ? WHERE id = ?", (vmaf_score, job_id))
-                        cur = await db.execute("UPDATE scan_results SET vmaf_score = ? WHERE file_path = ?", (vmaf_score, vmaf_path))
+                        await db.execute(
+                            "UPDATE jobs SET vmaf_score = ?, vmaf_uncertain = ? WHERE id = ?",
+                            (vmaf_score, 1 if vmaf_uncertain else 0, job_id),
+                        )
+                        cur = await db.execute(
+                            "UPDATE scan_results SET vmaf_score = ?, vmaf_uncertain = ? WHERE file_path = ?",
+                            (vmaf_score, 1 if vmaf_uncertain else 0, vmaf_path),
+                        )
                         rows_updated = cur.rowcount
                         await db.commit()
+                        suspect = " (measurement-suspect)" if vmaf_uncertain else ""
                         if rows_updated == 0:
-                            print(f"[WORKER] VMAF score {vmaf_score} NOT saved to scan_results — path not found: {vmaf_path}", flush=True)
+                            print(f"[WORKER] VMAF score {vmaf_score}{suspect} NOT saved to scan_results — path not found: {vmaf_path}", flush=True)
                         else:
-                            print(f"[WORKER] VMAF score {vmaf_score} saved to scan_results for {file_name}", flush=True)
+                            print(f"[WORKER] VMAF score {vmaf_score}{suspect} saved to scan_results for {file_name}", flush=True)
                     finally:
                         await db.close()
                 except Exception as exc:
@@ -1461,16 +1469,26 @@ class QueueWorker:
                 # File-events log — use the same post-rename path so the
                 # History tab query (by current file_path) finds this event.
                 try:
+                    # Canonical 3-tier table (v0.3.32+) — mirrored in
+                    # backend/test_encode.py, backend/routes/stats.py, and
+                    # frontend/src/utils/vmaf.ts. Edit all four together.
                     if vmaf_score >= 93: tier = "Excellent"
                     elif vmaf_score >= 87: tier = "Good"
-                    elif vmaf_score >= 80: tier = "Fair"
                     else: tier = "Poor"
                     from backend.file_events import log_event, EVENT_VMAF
+                    summary = f"VMAF: {vmaf_score} ({tier})"
+                    if vmaf_uncertain:
+                        summary += " ⚠ measurement-suspect"
                     await log_event(
                         vmaf_path,
                         EVENT_VMAF,
-                        f"VMAF: {vmaf_score} ({tier})",
-                        {"vmaf_score": vmaf_score, "tier": tier, "job_id": job_id},
+                        summary,
+                        {
+                            "vmaf_score": vmaf_score,
+                            "tier": tier,
+                            "job_id": job_id,
+                            "vmaf_uncertain": vmaf_uncertain,
+                        },
                     )
                 except Exception:
                     pass

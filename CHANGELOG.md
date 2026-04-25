@@ -5,6 +5,25 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.32] — 2026-04-25
+
+VMAF measurement reliability + activity log readability.
+
+### Fixed
+- **VMAF "bimodal desync" measurement bug.** libvmaf occasionally desynced its frame-pair iteration partway through the 30-second analysis window — half the frames scored ~100, half scored ~0, the recorded mean landed somewhere in between (e.g. 39.5 or 61.6) and a visually-fine encode was reported as "Poor". Diagnosis: see `min=0.0 max=100.0` in the converter log. Fix: detect the bimodal signature (min < 20 ∧ max ≥ 90) and re-run VMAF at an alternate seek (66% / 33% of duration, ≥60s away from the primary). Take the higher of the two scores. If every pass came back bimodal, persist the score but flag the new `jobs.vmaf_uncertain` column so the UI can surface a ⚠ glyph next to the score and a tooltip explaining "measurement-suspect — encode is almost certainly visually fine."
+- **eac3 (Dolby Digital Plus) decoder warnings** (`expacc N is out-of-range`, `error decoding the audio block`) added to the health-check benign allow-list. These trip on streaming-service rips (HBO Max / Apple TV+ / etc.) but the audio plays fine in any real player. Files that previously got flagged "Corrupt (quick)" purely on these messages are now classified "warnings" and stay healthy for queue/auto-ignore.
+
+### Added
+- **Re-measure suspect VMAF scores** button in Settings → Encoding → VMAF. Iterates completed jobs whose recorded score landed below the "Excellent" tier or got flagged uncertain, and re-runs VMAF (with the same bimodal-aware retry path used for fresh encodes). Skips jobs whose original pre-rename source no longer exists on disk (typical when "delete original after conversion" is on). Live progress streams over the WebSocket; existing 30+ bad scores can be cleaned up without re-encoding anything.
+- **Activity log + History tab now colour-code outcomes** rather than always-green:
+    - `Health check: corrupt` → red, `warnings` → amber, `healthy` → green.
+    - `VMAF: <score>` → green / amber / red based on the canonical 3-tier table; uncertain measurements get amber regardless of the underlying score.
+- **Canonical 3-tier VMAF table everywhere** (FilterBar, JobListItem, EstimateModal, FileDetail, DashboardPage donut, EventTimeline, SettingsPage threshold). Excellent (93+) → green, Good (87–93) → amber, Poor (<87) → red. Backend mirrors the same cuts in `backend/queue.py`, `backend/test_encode.py`, `backend/routes/stats.py`. The previous "Fair" tier (80–87) was inconsistent across components — folded into Poor. `frontend/src/utils/vmaf.ts` is the new single source of truth.
+
+### Changed
+- `convert_file`'s VMAF block extracted into `_run_libvmaf_pass()` and `remeasure_vmaf()` helpers in `backend/converter.py`. Cuts ~150 lines of inline ffmpeg-spawning duplication and lets the remeasure endpoint share the exact same filter pipeline + bimodal-detection logic as fresh encodes.
+- Cross-check (SSIM/PSNR) now runs against the same window that produced the chosen VMAF score, not always the primary seek — so a rescued retry-window score is sanity-checked at *its* window, not the bimodal one.
+
 ## [0.3.31] — 2026-04-24
 
 Follow-up release cleaning up rough edges from the v0.3.30 migration.
@@ -377,6 +396,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.32]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.32
 [0.3.31]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.31
 [0.3.30]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.30
 [0.3.29]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.29

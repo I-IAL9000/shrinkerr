@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
+import { vmafColor, vmafTintBg } from "../utils/vmaf";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
@@ -499,10 +500,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           {testResult.vmaf_score != null && (
                             <span style={{
                               padding: "1px 6px", borderRadius: 3, fontSize: 10, fontWeight: 600,
-                              background: testResult.vmaf_score >= 90 ? "rgba(64,192,87,0.2)" :
-                                         testResult.vmaf_score >= 80 ? "rgba(255,169,77,0.2)" : "rgba(233,69,96,0.2)",
-                              color: testResult.vmaf_score >= 90 ? "#40c057" :
-                                     testResult.vmaf_score >= 80 ? "#ffa94d" : "#e94560",
+                              background: vmafTintBg(testResult.vmaf_score),
+                              color: vmafColor(testResult.vmaf_score),
                             }}>
                               VMAF {testResult.vmaf_score} ({testResult.vmaf_label})
                             </span>

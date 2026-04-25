@@ -1,4 +1,5 @@
 import type { FileEvent } from "../api";
+import { vmafColor } from "../utils/vmaf";
 
 interface EventMeta { color: string; label: string; }
 
@@ -17,6 +18,47 @@ const EVENT_META: Record<string, EventMeta> = {
   reverted:     { color: "var(--warning)",    label: "Reverted" },
   arr_action:   { color: "#e5a00d",           label: "*arr action" },
 };
+
+// For event types whose colour depends on the outcome stored in `details`.
+// Without this, every health_check or VMAF entry in the activity log uses
+// the same default colour regardless of result, so a corrupt file or a
+// "Poor" VMAF score is indistinguishable at a glance from the dozens of
+// healthy / excellent rows surrounding it. VMAF tiers come from the
+// canonical helper (utils/vmaf.ts).
+function metaFor(ev: FileEvent): EventMeta {
+  const base = EVENT_META[ev.event_type] || { color: "var(--text-muted)", label: ev.event_type };
+  const details = (ev.details && typeof ev.details === "object") ? ev.details : null;
+
+  if (ev.event_type === "health_check") {
+    const status = details?.status as "healthy" | "warnings" | "corrupt" | null | undefined;
+    if (status === "corrupt") return { color: "var(--danger)",  label: "Health check" };
+    if (status === "warnings") return { color: "var(--warning)", label: "Health check" };
+    // healthy / unknown → green default
+    return base;
+  }
+
+  if (ev.event_type === "vmaf" && details) {
+    // Failure / rejection paths — score may be missing, but the event is
+    // unambiguously bad. Red.
+    if (details.vmaf_error || details.rejected) {
+      return { color: "var(--danger)", label: "VMAF" };
+    }
+    const score = typeof details.vmaf_score === "number" ? details.vmaf_score : null;
+    if (score != null) {
+      // When libvmaf desynced on every analysis window (vmaf_uncertain),
+      // the score isn't trustworthy. Show as amber rather than the
+      // score's actual tier colour so a 39.5 ⚠ doesn't look like a real
+      // quality crisis.
+      if (details.vmaf_uncertain) {
+        return { color: "var(--warning)", label: "VMAF" };
+      }
+      return { color: vmafColor(score), label: "VMAF" };
+    }
+    // No score, no failure — fall through to default accent colour.
+  }
+
+  return base;
+}
 
 function EventIcon({ type, color, size = 14 }: { type: string; color: string; size?: number }) {
   const common = {
@@ -127,7 +169,7 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? 4 : 6 }}>
       {events.map(ev => {
-        const meta = EVENT_META[ev.event_type] || { color: "var(--text-muted)", label: ev.event_type };
+        const meta = metaFor(ev);
         return (
           <div
             key={ev.id}
