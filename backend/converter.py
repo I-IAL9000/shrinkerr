@@ -659,26 +659,38 @@ def parse_ffmpeg_progress(
     fps_match = re.search(r'fps=\s*(\d+(?:\.\d+)?)', line)
     fps_val = float(fps_match.group(1)) if fps_match else None
 
-    progress_ratio: Optional[float] = None
+    # Compute progress from BOTH sources when available, then take the
+    # higher number. Rationale (v0.3.44+): time= reflects the muxer's
+    # committed-output position, which can lag the encoder by tens of
+    # seconds when audio packets with non-monotonic PTS or other timing
+    # quirks delay timestamp commits. Meanwhile frame= reflects what the
+    # encoder has actually produced. Both can be present on the same line;
+    # using whichever is higher means we never under-report when the
+    # muxer's clock is stuck behind the encoder. Falls all the way back to
+    # None only when neither source is parseable on this line.
+    time_ratio: Optional[float] = None
+    frame_ratio: Optional[float] = None
+
     time_match = re.search(r'time=(\d+):(\d+):(\d+(?:\.\d+)?)', line)
-    if time_match:
+    if time_match and duration and duration > 0:
         hours = int(time_match.group(1))
         minutes = int(time_match.group(2))
         seconds = float(time_match.group(3))
         elapsed = hours * 3600 + minutes * 60 + seconds
-        if duration and duration > 0:
-            progress_ratio = elapsed / duration
-    else:
-        # Fallback: frame counter divided by total expected frames. Only
-        # useful when the caller can supply `total_frames`; without it,
-        # we have no way to convert frame N into a 0-100 ratio.
-        frame_match = re.search(r'frame=\s*(\d+)', line)
-        if frame_match and total_frames and total_frames > 0:
-            cur_frame = int(frame_match.group(1))
-            progress_ratio = cur_frame / total_frames
+        time_ratio = elapsed / duration
 
-    if progress_ratio is None:
+    frame_match = re.search(r'frame=\s*(\d+)', line)
+    if frame_match and total_frames and total_frames > 0:
+        cur_frame = int(frame_match.group(1))
+        frame_ratio = cur_frame / total_frames
+
+    if time_ratio is None and frame_ratio is None:
         return None
+
+    progress_ratio = max(
+        time_ratio if time_ratio is not None else 0.0,
+        frame_ratio if frame_ratio is not None else 0.0,
+    )
 
     progress = min(100.0, progress_ratio * 100)
     eta_seconds = None

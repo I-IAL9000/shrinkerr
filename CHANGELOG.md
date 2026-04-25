@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.44] — 2026-04-25
+
+### Fixed
+- **Progress bar pinned even when ffmpeg's `time=` field is *valid but stuck behind the encoder*** (single-job, no GPU contention). v0.3.43 fixed the case where `time=N/A`, but on some files the muxer's clock advances at first then parks at e.g. `time=00:03:13` for the rest of the encode while frames keep being produced — confirmed in the field with `progress=6.43%, fps=386→397, ETA increasing` on a single-job-at-a-time run. Fix: parse *both* `time=` and `frame=` every progress line and use whichever yields *higher* progress. `frame=` is always honest (it's just the encoder's output counter), `time=` reflects the muxer's commit position which can lag arbitrarily on files with timing quirks. Taking the max of the two means we never under-report when the muxer's clock is stuck behind the encoder.
+
 ## [0.3.43] — 2026-04-25
 
 ### Fixed
@@ -453,6 +458,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.44]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.44
 [0.3.43]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.43
 [0.3.42]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.42
 [0.3.41]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.41
