@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.40] — 2026-04-25
+
+### Fixed
+- **The actual cause of stalled progress bars under DB lock contention.** v0.3.36 throttled progress DB writes to once per 3 seconds per job (good — fewer writes). But each *individual* write was still awaited inside the converter's stderr-read loop, so when SQLite's WAL write lock was contended (`busy_timeout=30000` lets a write wait up to 30s), the loop blocked on the slow write while ffmpeg's progress lines piled up unread in the pipe. When the DB finally returned, the queued progress lines flushed in a burst and the bar jumped 20%+. Live diagnostic data: encoder making smooth 200 fps progress while DB-recorded `progress` field stayed at 19.59% for 50 seconds, then jumped to 41.03%. Fix: fire-and-forget the DB write with `asyncio.create_task` so the stderr loop never blocks on persistence. Terminal flush (≥99.99%) is still awaited so the final value is durable. Same change applied to the audio-remux `audio_progress_cb`.
+
 ## [0.3.39] — 2026-04-25
 
 ### Fixed
@@ -433,6 +438,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.40]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.40
 [0.3.39]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.39
 [0.3.38]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.38
 [0.3.37]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.37

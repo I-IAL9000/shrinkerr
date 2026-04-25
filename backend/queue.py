@@ -1251,12 +1251,34 @@ class QueueWorker:
             #     seconds per job, plus a guaranteed write when progress
             #     reaches terminal (>= 99.99) so the persisted final value
             #     isn't off by a hair when the job lands in history.
-            _last_db_write = [0.0]  # cell, since closures can't rebind a number
+            # The DB write was previously awaited, so the stderr-read loop
+            # (where progress_cb is invoked synchronously) blocked whenever
+            # the WAL write lock was contended — `busy_timeout=30000` means
+            # one slow write can hold up the whole pipeline for up to 30
+            # seconds. ffmpeg's progress lines pile up unread, then burst
+            # when the DB finally returns. Fix (v0.3.39+): fire-and-forget
+            # the DB write with `asyncio.create_task` so the stderr loop
+            # never blocks on persistence. Terminal flush (>= 99.99) is
+            # still awaited so the final value is durable before we move on.
+            _last_db_write = [0.0]
             async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
-                if is_terminal or (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                if is_terminal:
+                    # Final value — block to ensure it's persisted before the
+                    # job's completion handlers run.
                     await self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
+                    _last_db_write[0] = now
+                elif (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                    # Periodic snapshot — fire-and-forget so we don't block
+                    # ffmpeg's stderr loop. If WAL is contended the task
+                    # waits in the background; the next stderr line is read
+                    # immediately. Worst case under heavy contention: a few
+                    # extra in-flight tasks, none of which affect the live
+                    # WS-driven UI.
+                    asyncio.create_task(
+                        self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
+                    )
                     _last_db_write[0] = now
                 await ws_manager.send_job_progress(
                     job_id=job_id,
@@ -1648,14 +1670,19 @@ class QueueWorker:
             keep_sub_indices = [i for i in all_sub_indices if i not in subtitle_tracks_to_remove] if subtitle_tracks_to_remove else None
 
             if keep_indices != all_indices or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices):
-                # Same DB-write throttle as the convert path — see comment
-                # on the convert progress_cb above.
+                # Same DB-write throttle + fire-and-forget pattern as the
+                # convert path — see comment on the convert progress_cb above.
                 _audio_last_db = [0.0]
                 async def audio_progress_cb(progress: float, eta_seconds=None, speed=None):
                     now = time.monotonic()
                     is_terminal = progress >= 99.99
-                    if is_terminal or (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                    if is_terminal:
                         await self.queue.update_progress(job_id, progress, eta=eta_seconds)
+                        _audio_last_db[0] = now
+                    elif (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                        asyncio.create_task(
+                            self.queue.update_progress(job_id, progress, eta=eta_seconds)
+                        )
                         _audio_last_db[0] = now
                     await ws_manager.send_job_progress(
                         job_id=job_id,
