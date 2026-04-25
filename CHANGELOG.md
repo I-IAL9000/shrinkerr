@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.34] — 2026-04-25
+
+### Fixed
+- **Watcher log spam from AppleDouble companion files.** On Mac-formatted volumes (HFS+/APFS shared via SMB/AFP), every `.mkv` has a sibling `._<name>.mkv` resource fork that carries the same extension but contains HFS metadata, not video. The watcher walk used to include them, ffprobe rightly failed on them, and `[WATCHER] Skipped: 0 ignored, 200 probe failed, 0 AV1` would fire every cycle. Watcher's directory walk now skips dotfiles (`name.startswith(".")`), matching `scanner.py`'s pre-existing filter. Files already cached in the in-memory `_probe_failures` set fall out naturally on the next cycle since they're no longer in `disk_files`.
+- **`[WATCHER] Pre-filtered: …` log deduplicated.** A stable backlog (e.g., 600 always-failing files plus zero new content) used to repeat the exact same numbers in the log every 5 minutes — non-actionable noise. Now only emits when the `(ignored, probe_failures, to_process)` tuple changes since last cycle.
+
 ## [0.3.33] — 2026-04-25
 
 ### Fixed
@@ -402,6 +408,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.34]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.34
 [0.3.33]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.33
 [0.3.32]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.32
 [0.3.31]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.31

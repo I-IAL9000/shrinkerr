@@ -20,6 +20,10 @@ class FileWatcher:
         self.new_files_count = 0  # Tracks unseen new files since last scanner page visit
         self._probe_failures: set[str] = set()  # Files that failed ffprobe — skip on future cycles
         self._last_disk_alert: float = 0  # Cooldown for disk space alerts
+        # Last (ignored, probe_failures, to_process) tuple we logged for the
+        # "Pre-filtered" line. Used to deduplicate identical states cycle to
+        # cycle so a stable backlog doesn't spam the log every 5 minutes.
+        self._last_pre_filtered_log: Optional[tuple[int, int, int]] = None
 
     def start(self) -> None:
         if self._running and self._task and not self._task.done():
@@ -455,6 +459,16 @@ class FileWatcher:
                         # Skip temp files from active conversions/remuxing
                         if ".converting." in name or ".remuxing." in name:
                             continue
+                        # Skip hidden / dot files. The big offender on
+                        # Mac-formatted volumes is AppleDouble companions
+                        # (`._<name>.mkv`) — same extension as the video
+                        # they shadow but contain HFS+ resource-fork data,
+                        # not video. ffprobe rightly fails on them and the
+                        # watcher used to log 200+ "probe failed" per cycle
+                        # for these. Matches scanner.py's filter so the
+                        # watcher and the initial scan agree on visibility.
+                        if name.startswith("."):
+                            continue
                         if Path(name).suffix.lower() in extensions:
                             result.add(str(Path(root) / name))
             return result
@@ -487,8 +501,15 @@ class FileWatcher:
         new_files = [f for f in new_files_all if f not in exclude]
         skipped_ignored_total = len([f for f in new_files_all if f in ignored_paths])
         skipped_probe_total = len([f for f in new_files_all if f in self._probe_failures])
-        if skipped_ignored_total > 0 or skipped_probe_total > 0:
+        # Deduplicate the log line: only emit when at least one of the three
+        # numbers changed since last cycle. A stable backlog (e.g. 600
+        # always-failing companion files plus zero new content) used to spam
+        # this every 5 minutes with the exact same numbers — non-actionable
+        # noise. v0.3.34+.
+        current_state = (skipped_ignored_total, skipped_probe_total, len(new_files))
+        if (skipped_ignored_total > 0 or skipped_probe_total > 0) and current_state != self._last_pre_filtered_log:
             print(f"[WATCHER] Pre-filtered: {skipped_ignored_total} ignored, {skipped_probe_total} previous probe failures, {len(new_files)} to process", flush=True)
+            self._last_pre_filtered_log = current_state
 
         # Collect folder-level ignores (paths ending with /) for auto-tagging new files
         ignored_folders = [p for p in ignored_paths if p.endswith("/")]
