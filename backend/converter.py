@@ -631,38 +631,60 @@ def rename_external_subtitles(original_path: str, new_stem: str) -> None:
                 print(f"[CONVERT] Failed to rename subtitle {f.name}: {exc}", flush=True)
 
 
-def parse_ffmpeg_progress(line: str, duration: float, start_time: float = 0) -> Optional[dict]:
+def parse_ffmpeg_progress(
+    line: str,
+    duration: float,
+    start_time: float = 0,
+    total_frames: Optional[int] = None,
+) -> Optional[dict]:
     """
     Parse an ffmpeg stderr line for progress information.
 
     Returns a dict with keys: progress (0-100 float), fps (float or None),
-    eta_seconds (int or None). Returns None if the line lacks time info.
+    eta_seconds (int or None). Returns None if the line lacks any usable
+    progress info.
+
+    Sources, in priority order:
+      1. `time=HH:MM:SS` field — the muxer-side committed-output position.
+         Reliable on most files. Used for progress = elapsed / duration.
+      2. `frame=N` field plus `total_frames` argument — fallback used when
+         time= is `N/A`. ffmpeg emits `time=N/A` when the muxer can't
+         commit valid output timestamps yet (`-c:a copy` on sources with
+         non-monotonic audio timestamps is the common cause — encoder is
+         producing frames fine, but the muxer's clock is parked at N/A
+         throughout the encode). The frame counter still advances honestly
+         in that case, so we use `current_frame / total_frames` as a
+         drop-in replacement for the time-based ratio. v0.3.43+.
     """
-    time_match = re.search(r'time=(\d+):(\d+):(\d+(?:\.\d+)?)', line)
-    if not time_match:
-        return None
-
-    hours = int(time_match.group(1))
-    minutes = int(time_match.group(2))
-    seconds = float(time_match.group(3))
-    elapsed = hours * 3600 + minutes * 60 + seconds
-
-    progress = 0.0
-    eta_seconds = None
-    if duration and duration > 0:
-        progress_ratio = elapsed / duration
-        progress = min(100.0, progress_ratio * 100)
-
-        if start_time > 0 and progress_ratio > 0.01:
-            wall_elapsed = time.monotonic() - start_time
-            eta_seconds = int(wall_elapsed / progress_ratio * (1 - progress_ratio))
-        else:
-            eta_seconds = None
-    else:
-        pass
-
     fps_match = re.search(r'fps=\s*(\d+(?:\.\d+)?)', line)
     fps_val = float(fps_match.group(1)) if fps_match else None
+
+    progress_ratio: Optional[float] = None
+    time_match = re.search(r'time=(\d+):(\d+):(\d+(?:\.\d+)?)', line)
+    if time_match:
+        hours = int(time_match.group(1))
+        minutes = int(time_match.group(2))
+        seconds = float(time_match.group(3))
+        elapsed = hours * 3600 + minutes * 60 + seconds
+        if duration and duration > 0:
+            progress_ratio = elapsed / duration
+    else:
+        # Fallback: frame counter divided by total expected frames. Only
+        # useful when the caller can supply `total_frames`; without it,
+        # we have no way to convert frame N into a 0-100 ratio.
+        frame_match = re.search(r'frame=\s*(\d+)', line)
+        if frame_match and total_frames and total_frames > 0:
+            cur_frame = int(frame_match.group(1))
+            progress_ratio = cur_frame / total_frames
+
+    if progress_ratio is None:
+        return None
+
+    progress = min(100.0, progress_ratio * 100)
+    eta_seconds = None
+    if start_time > 0 and progress_ratio > 0.01:
+        wall_elapsed = time.monotonic() - start_time
+        eta_seconds = int(wall_elapsed / progress_ratio * (1 - progress_ratio))
 
     return {
         "progress": round(progress, 2),
@@ -1126,6 +1148,14 @@ async def convert_file(
     subtitle_streams = None
     audio_streams_to_keep: Optional[list] = None  # inline keep-list (if tracks_to_remove given)
     probe_audio_tracks: list = []
+    # Source video fps captured at probe time. Used to compute total
+    # expected frames for the progress callback's frame-count fallback —
+    # ffmpeg sometimes reports `time=N/A` instead of HH:MM:SS when the
+    # muxer can't commit valid output timestamps (e.g. -c:a copy on a
+    # WEBDL with non-monotonic audio PTS), in which case we fall back to
+    # frame-counter-based progress = current_frame / total_expected.
+    # v0.3.43+.
+    source_video_fps: float = 0.0
     try:
         from backend.scanner import probe_file
         probe_data = await probe_file(input_path)
@@ -1136,6 +1166,7 @@ async def convert_file(
             subtitle_streams = [{"codec_name": s.get("codec", ""), "index": s.get("stream_index")} for s in raw_subs]
 
             probe_audio_tracks = probe_data.get("audio_tracks") or []
+            source_video_fps = float(probe_data.get("video_fps") or 0.0)
 
             # Lossless audio auto-conversion
             if live_settings.get("auto_convert_lossless", False) and probe_audio_tracks:
@@ -1391,6 +1422,14 @@ async def convert_file(
         buffer = ""
         all_lines: list[str] = []  # Full log for conversion history
         last_lines: list[str] = []  # Last N for error reporting
+        # Total expected frames for the progress callback's frame-count
+        # fallback when ffmpeg reports `time=N/A`. Computed from probe
+        # duration × source fps; set to None when we don't know the source
+        # fps (parser then falls back to "no progress update" rather than
+        # emitting bogus values from a nonsense divisor).
+        progress_total_frames: Optional[int] = None
+        if duration > 0 and source_video_fps > 0:
+            progress_total_frames = max(1, int(duration * source_video_fps))
         while True:
             chunk = await proc.stderr.read(4096)
             if not chunk:
@@ -1417,7 +1456,11 @@ async def convert_file(
                     if len(last_lines) > 20:
                         last_lines.pop(0)
                 if progress_callback and line:
-                    parsed = parse_ffmpeg_progress(line, duration, start_time=encode_start_time)
+                    parsed = parse_ffmpeg_progress(
+                        line, duration,
+                        start_time=encode_start_time,
+                        total_frames=progress_total_frames,
+                    )
                     if parsed:
                         await progress_callback(**parsed)
 

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.43] — 2026-04-25
+
+### Fixed
+- **Progress bar pinned for files where ffmpeg reports `time=N/A`** in its progress output. ffmpeg emits `time=N/A` when its muxer can't commit valid output timestamps yet — most commonly with `-c:a copy` on WEBDL files whose source has non-monotonic audio PTS. The encoder is producing frames fine and the `.converting.mkv` keeps growing on disk, but `parse_ffmpeg_progress` was looking for `time=HH:MM:SS` and returning None on `N/A`, so progress was stuck at the last value the parser saw before timestamps became unparseable. User confirmed by running ffmpeg manually with `-progress pipe:2`: `frame=` advanced normally (34 → 117 → 198 → 282 → 366) while `out_time=N/A` for every progress block, *and* the converting file's size kept growing during what we thought were "stalls". Fix: when `time=` is unparseable, fall back to `frame=N` divided by total expected frames (computed from probe `duration × video_fps`). Added `video_fps` to `scanner.probe_file`'s return shape so the converter can supply the divisor; if probe doesn't yield a usable fps, parser returns None as before (no progress update rather than bogus values).
+
 ## [0.3.42] — 2026-04-25
 
 ### Fixed
@@ -448,6 +453,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.43]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.43
 [0.3.42]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.42
 [0.3.41]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.41
 [0.3.40]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.40

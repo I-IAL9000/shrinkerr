@@ -55,6 +55,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
     video_codec = ""
     video_width = 0
     video_height = 0
+    video_fps: float = 0.0
     audio_tracks = []
     subtitle_tracks = []
 
@@ -64,6 +65,19 @@ async def probe_file(file_path: str) -> Optional[dict]:
             video_codec = stream.get("codec_name", "")
             video_width = stream.get("width", 0) or 0
             video_height = stream.get("height", 0) or 0
+            # Frame rate: prefer r_frame_rate ("24000/1001" → 23.976),
+            # fall back to avg_frame_rate. Used by progress estimation
+            # downstream when ffmpeg's `time=` field is N/A (v0.3.43+).
+            fr = stream.get("r_frame_rate") or stream.get("avg_frame_rate") or ""
+            try:
+                if "/" in fr:
+                    num, den = fr.split("/")
+                    den_v = float(den)
+                    video_fps = float(num) / den_v if den_v else 0.0
+                elif fr:
+                    video_fps = float(fr)
+            except (ValueError, ZeroDivisionError):
+                video_fps = 0.0
         elif codec_type == "audio":
             tags = stream.get("tags", {}) or {}
             disposition = stream.get("disposition", {}) or {}
@@ -129,6 +143,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
         "video_codec": video_codec,
         "video_width": video_width,
         "video_height": video_height,
+        "video_fps": video_fps,
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
         "duration": duration,
