@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.36] — 2026-04-25
+
+### Fixed
+- **Per-job progress bars stuck for ~60s at a time, then jumping in big increments — even after the v0.3.35 WebSocket fix.** Inverting the ETA formula on stuck jobs showed both jobs' last DB-persisted progress was always ~57 seconds old simultaneously, while ffmpeg was happily burning ~380% CPU on each. Diagnosis: every ffmpeg progress line triggered an `aiosqlite.connect → UPDATE → commit → close` cycle for that job's row in `jobs`. Under contention from any other transaction holding the WAL write lock (some 60-second periodic loop in the codebase), all four progress writers (2 jobs × 2 lines/sec) queued behind it, blocked the converter's progress callback, and back-pressured ffmpeg's stderr buffer until the lock released and the queued events flushed in a burst. Fix: decouple DB persistence from live-UI updates. WebSocket broadcast keeps firing on every progress line (already throttled to 500ms per job server-side); the DB write is now throttled to once every 3 seconds per job, with a guaranteed flush on terminal progress (≥99.99) so the persisted final value is never off. Same throttle applied to the remote-worker `report_progress` HTTP path (2-second interval) so busy nodes don't flood the server. Smoke-tested: 25 WS broadcasts vs 5 DB writes over 12 seconds, terminal flush guaranteed.
+
 ## [0.3.35] — 2026-04-25
 
 ### Fixed
@@ -413,6 +418,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36
 [0.3.35]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.35
 [0.3.34]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.34
 [0.3.33]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.33

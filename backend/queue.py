@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -8,6 +9,19 @@ from typing import Optional
 import aiosqlite
 
 logger = logging.getLogger("shrinkerr.queue")
+
+# Minimum wall-clock interval between persisted progress writes for a
+# single job. ffmpeg emits ~2 progress lines/sec/job, but the queue page
+# only consults `jobs.progress` on a manual reload — live UI gets values
+# via the WebSocket. With this throttle the DB sees one UPDATE every
+# 3 seconds per job instead of every progress line, which kills a class of
+# stalls where the WAL write lock was held by some other transaction and
+# every progress callback queued behind it. Terminal updates
+# (progress >= 99.99) always flush so the persisted final value lands.
+# Tied to the WS throttle (500ms in websocket.py) by an order of magnitude
+# — DB persistence is best-effort, the WebSocket is authoritative for live
+# rendering. v0.3.36+.
+_PROGRESS_DB_WRITE_INTERVAL = 3.0
 
 
 async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
@@ -1221,8 +1235,29 @@ class QueueWorker:
         current_file_path = file_path
 
         if job_type in ("convert", "combined"):
+            # Decouple WS-broadcast frequency from DB-write frequency. ffmpeg
+            # emits ~2 progress lines/sec/job and we want the live UI to feel
+            # smooth, but every DB write needs the WAL write lock — under
+            # contention from a long-running periodic transaction those
+            # writes can stall ~60s at a time, blocking the entire progress
+            # callback (and by extension ffmpeg's stderr buffer). Symptom:
+            # progress bar pinned at one number for a minute, then jumping
+            # to a much higher value. v0.3.36+.
+            #
+            # New cadence:
+            #   - WS broadcast: every progress line (server-side ws_manager
+            #     already throttles to 500ms per job).
+            #   - DB write: at most once every _PROGRESS_DB_WRITE_INTERVAL
+            #     seconds per job, plus a guaranteed write when progress
+            #     reaches terminal (>= 99.99) so the persisted final value
+            #     isn't off by a hair when the job lands in history.
+            _last_db_write = [0.0]  # cell, since closures can't rebind a number
             async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None):
-                await self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
+                now = time.monotonic()
+                is_terminal = progress >= 99.99
+                if is_terminal or (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                    await self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
+                    _last_db_write[0] = now
                 await ws_manager.send_job_progress(
                     job_id=job_id,
                     file_name=file_name,
@@ -1613,8 +1648,15 @@ class QueueWorker:
             keep_sub_indices = [i for i in all_sub_indices if i not in subtitle_tracks_to_remove] if subtitle_tracks_to_remove else None
 
             if keep_indices != all_indices or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices):
+                # Same DB-write throttle as the convert path — see comment
+                # on the convert progress_cb above.
+                _audio_last_db = [0.0]
                 async def audio_progress_cb(progress: float, eta_seconds=None, speed=None):
-                    await self.queue.update_progress(job_id, progress, eta=eta_seconds)
+                    now = time.monotonic()
+                    is_terminal = progress >= 99.99
+                    if is_terminal or (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
+                        await self.queue.update_progress(job_id, progress, eta=eta_seconds)
+                        _audio_last_db[0] = now
                     await ws_manager.send_job_progress(
                         job_id=job_id,
                         file_name=file_name,

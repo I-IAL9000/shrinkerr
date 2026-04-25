@@ -349,8 +349,24 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         nonlocal active_proc
         active_proc = proc
 
+    # Throttle outbound report-progress HTTP requests to ~once per 2 seconds
+    # per job. The server-side WebSocket already throttles broadcasts to
+    # 500ms per job, and persisting via the HTTP round-trip on every ffmpeg
+    # progress line floods the network on busy nodes (and is what triggered
+    # the same WAL-lock contention the local worker hit in v0.3.36). A
+    # terminal update (progress >= 99.99) always flushes so the server sees
+    # the final value before report_complete lands. v0.3.36+.
+    import time as _time_pcb
+    _PROGRESS_REPORT_INTERVAL = 2.0
+    _last_report_at = 0.0
+
     async def progress_cb(progress: float = 0, fps=None, eta_seconds=None, step=None):
-        nonlocal cancel_flag
+        nonlocal cancel_flag, _last_report_at
+        now = _time_pcb.monotonic()
+        is_terminal = progress >= 99.99
+        if not is_terminal and (now - _last_report_at) < _PROGRESS_REPORT_INTERVAL:
+            return
+        _last_report_at = now
         try:
             cancelled = await client.report_progress(
                 node_id, job_id, progress, fps, eta_seconds, step or "converting",
