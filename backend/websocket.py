@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Optional
 
@@ -9,6 +10,15 @@ from fastapi import WebSocket
 # per second per job, each of which causes a full React re-render in the UI.
 # Throttling to 2 Hz gives a smooth progress bar without making Chrome cry.
 _JOB_PROGRESS_MIN_INTERVAL = 0.5
+
+# Per-connection send timeout. Slow / half-dead clients (background browser
+# tabs, mobile on weak signal, Tailscale tunnels with packet loss, stale
+# connections that didn't close cleanly) used to wedge every broadcast
+# because we awaited send_json serially. With a 2-second cap any sluggish
+# client gets dropped and the rest of the connections continue uninterrupted.
+# Symptom of the old behaviour: progress bars stuck for minutes then jumping
+# in big increments as the queued broadcasts flushed all at once. v0.3.35+.
+_BROADCAST_PER_CONNECTION_TIMEOUT = 2.0
 
 
 class ConnectionManager:
@@ -26,14 +36,29 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict) -> None:
-        dead = []
-        for connection in self.active_connections:
+        # Fire all sends in parallel with a per-connection timeout so one
+        # slow client can't hold up the others. Any connection that times
+        # out or raises is dropped from `active_connections`. Exceptions are
+        # contained — gather() wouldn't bubble them up here, but we filter
+        # the results to identify the dead ones.
+        connections = list(self.active_connections)
+        if not connections:
+            return
+
+        async def _send_one(conn: WebSocket) -> Optional[WebSocket]:
             try:
-                await connection.send_json(message)
+                await asyncio.wait_for(
+                    conn.send_json(message),
+                    timeout=_BROADCAST_PER_CONNECTION_TIMEOUT,
+                )
+                return None
             except Exception:
-                dead.append(connection)
-        for connection in dead:
-            self.disconnect(connection)
+                return conn
+
+        dead = await asyncio.gather(*[_send_one(c) for c in connections])
+        for c in dead:
+            if c is not None:
+                self.disconnect(c)
 
     async def send_scan_progress(
         self,

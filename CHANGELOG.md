@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.35] — 2026-04-25
+
+### Fixed
+- **Progress bars stuck for minutes, then jumping in big increments.** WebSocket `broadcast()` was awaiting `send_json` *serially* for each connected client. Any slow / half-dead client (background browser tab, mobile on weak signal, Tailscale tunnel with packet loss, stale connection from a tab that didn't close cleanly) blocked every other client for as long as that one connection took to time out at the TCP layer. While blocked, every job's progress callback queued behind it; when the slow connection finally drained, the queued events flushed at once, manifesting as a progress bar jumping from e.g. 2% to 26% after several minutes of standstill. Fix: send to all connections in parallel via `asyncio.gather`, with a 2-second per-connection timeout. A sluggish client gets dropped after 2 seconds and the rest of the broadcasts complete uninterrupted. Smoke-tested with one 10-second-stalled connection alongside two healthy ones — the broadcast now returns in 2.0s (was 10s) and the healthy clients receive every message.
+
 ## [0.3.34] — 2026-04-25
 
 ### Fixed
@@ -408,6 +413,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.35]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.35
 [0.3.34]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.34
 [0.3.33]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.33
 [0.3.32]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.32
