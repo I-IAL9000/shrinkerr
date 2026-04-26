@@ -609,11 +609,16 @@ export const getConditionOptions = () =>
 
 // Settings
 export const getMediaDirs = () => apiFetch<{ dirs: any[] }>("/settings/dirs");
-export const addMediaDir = (path: string, label: string) =>
+export const addMediaDir = (path: string, label: string, opts?: { auto_scan?: boolean }) =>
   apiFetch("/settings/dirs", {
     method: "POST",
-    body: JSON.stringify({ path, label }),
+    body: JSON.stringify({ path, label, ...(opts ?? {}) }),
   });
+export const updateMediaDir = (
+  id: number,
+  patch: { label?: string; enabled?: boolean; auto_scan?: boolean },
+) =>
+  apiFetch(`/settings/dirs/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const removeMediaDir = (id: number) =>
   apiFetch(`/settings/dirs/${id}`, { method: "DELETE" });
 export const browseDirectory = (path: string = "/") =>

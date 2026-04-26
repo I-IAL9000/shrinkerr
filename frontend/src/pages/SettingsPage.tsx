@@ -4,7 +4,7 @@ import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import { vmafColor } from "../utils/vmaf";
 import {
-  getMediaDirs, addMediaDir, removeMediaDir,
+  getMediaDirs, addMediaDir, updateMediaDir, removeMediaDir,
   getEncodingSettings, updateEncodingSettings, testApiKey, getApiKey,
   createEncodingRule, updateEncodingRule, deleteEncodingRule,
   reorderEncodingRules, syncPlexRuleMetadata, getPlexOptions,
@@ -613,16 +613,44 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           background: "var(--bg-primary)", borderRadius: 4, padding: 8,
           fontSize: 13, marginBottom: 8,
         }}>
-          {dirs.map((d: any) => (
-            <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
-              <span>
-                {d.path}
-                {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--border)" }}>{d.label}</span>}
-              </span>
-              <button onClick={() => handleRemoveDir(d.id)}
-                style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
-            </div>
-          ))}
+          {dirs.map((d: any) => {
+            // auto_scan defaults to true server-side; treat undefined as true
+            // for legacy rows / older API responses.
+            const autoScan = d.auto_scan !== false && d.auto_scan !== 0;
+            return (
+              <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+                <span>
+                  {d.path}
+                  {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--border)" }}>{d.label}</span>}
+                  {!autoScan && (
+                    <span
+                      title="Webhook-eligible only — scanner and watcher skip this directory. Useful for an NZBGet/SABnzbd downloads landing zone."
+                      style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--bg-card)", cursor: "help" }}
+                    >no scan</span>
+                  )}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={autoScan}
+                      onChange={async (e) => {
+                        try {
+                          await updateMediaDir(d.id, { auto_scan: e.target.checked });
+                          loadDirs();
+                        } catch (err: any) {
+                          toast(err?.message || "Failed to update", "error");
+                        }
+                      }}
+                    />
+                    Scan
+                  </label>
+                  <button onClick={() => handleRemoveDir(d.id)}
+                    style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
+                </span>
+              </div>
+            );
+          })}
           {dirs.length === 0 && <div style={{ opacity: 0.5 }}>No directories configured</div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

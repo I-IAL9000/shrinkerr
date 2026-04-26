@@ -157,6 +157,11 @@ export interface MediaDir {
   path: string;
   label: string;
   enabled: boolean;
+  // True (default) means scanner + watcher crawl this dir. False means
+  // the dir is webhook-eligible only — useful for an NZBGet/SABnzbd
+  // landing zone that needs to accept queued files but shouldn't be
+  // surfaced in the file tree. v0.3.49+.
+  auto_scan?: boolean;
 }
 
 export interface ScanProgress {

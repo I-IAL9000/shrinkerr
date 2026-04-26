@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.49] — 2026-04-26
+
+### Added
+- **Per-media-dir "Scan" toggle.** Decouples "this path is webhook-eligible" (must be in `media_dirs` for the post-processing webhook to accept queue requests against it) from "the scanner crawls it". A new `auto_scan` flag on each media directory — defaulting to **on** for backward compatibility — controls only the scanner / watcher behaviour. The webhook validation continues to consult the full media-dirs list. Use case (and the motivation): NZBGet/SABnzbd downloads land at `/downloads/tv/...`. The post-processing scripts need that path to be webhook-eligible so files can be queued for conversion the moment they finish downloading, but the user doesn't want temp release-name folders showing up in the file tree. Solution: add `/downloads` (or `/downloads/tv` and `/downloads/movies` separately) as a media dir with **Scan = OFF**, mark "Other" if you want TMDB lookups skipped too. The post-processing script then queues normally; the scanner pretends the directory doesn't exist. UI: toggle next to each entry in Settings → Media directories; backend: new `auto_scan` column on `media_dirs` (default 1), filtered into the watcher's query and the "scan all" frontend batch. Existing rows keep their current behaviour (auto_scan=1 by default).
+
 ## [0.3.48] — 2026-04-26
 
 ### Fixed
@@ -460,6 +465,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.49]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.49
 [0.3.48]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.48
 [0.3.47]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.47
 [0.3.46]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.46

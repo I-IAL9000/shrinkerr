@@ -423,7 +423,13 @@ class FileWatcher:
         db = await aiosqlite.connect(self.db_path)
         try:
             media_dirs = []
-            async with db.execute("SELECT path FROM media_dirs WHERE enabled = 1") as cur:
+            # Watch only dirs the user has marked auto_scan=1 (default).
+            # auto_scan=0 dirs (e.g. an NZBGet downloads folder added so
+            # the post-processing webhook can queue from it) stay
+            # webhook-eligible but invisible to the watcher. v0.3.49+.
+            async with db.execute(
+                "SELECT path FROM media_dirs WHERE enabled = 1 AND auto_scan = 1"
+            ) as cur:
                 rows = await cur.fetchall()
                 media_dirs = [row[0] for row in rows]
 

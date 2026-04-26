@@ -493,6 +493,20 @@ async def init_db():
                 await db.execute(f"ALTER TABLE worker_nodes ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # Migration: per-media-dir scanner opt-out (v0.3.49+). Decouples
+        # "this path is webhook-eligible" (must be in media_dirs) from
+        # "the scanner crawls it". Use case: NZBGet/SABnzbd downloads
+        # to a temp folder that the user wants the post-processing
+        # webhook to be allowed to queue from, but they don't want the
+        # scanner showing in-progress / temp release-name folders in
+        # the file tree. Set auto_scan=0 on such dirs — the webhook
+        # accepts paths under them, but scanner.py and watcher.py skip
+        # them. Defaults to 1 so existing dirs keep their current
+        # behaviour unchanged.
+        try:
+            await db.execute("ALTER TABLE media_dirs ADD COLUMN auto_scan INTEGER DEFAULT 1")
+        except Exception:
+            pass
 
         # Per-file event log (history tab + global Activity feed)
         await db.executescript("""

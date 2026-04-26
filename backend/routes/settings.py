@@ -230,8 +230,13 @@ async def add_media_dir(media_dir: MediaDir):
     try:
         try:
             async with db.execute(
-                "INSERT INTO media_dirs (path, label, enabled) VALUES (?, ?, ?)",
-                (resolved_path, media_dir.label, 1 if media_dir.enabled else 0),
+                "INSERT INTO media_dirs (path, label, enabled, auto_scan) VALUES (?, ?, ?, ?)",
+                (
+                    resolved_path,
+                    media_dir.label,
+                    1 if media_dir.enabled else 0,
+                    1 if media_dir.auto_scan else 0,
+                ),
             ) as cur:
                 new_id = cur.lastrowid
             await db.commit()
@@ -239,7 +244,51 @@ async def add_media_dir(media_dir: MediaDir):
             raise HTTPException(status_code=409, detail="Directory already exists")
     finally:
         await db.close()
-    return {"id": new_id, "path": resolved_path, "label": media_dir.label, "enabled": media_dir.enabled}
+    return {
+        "id": new_id, "path": resolved_path, "label": media_dir.label,
+        "enabled": media_dir.enabled, "auto_scan": media_dir.auto_scan,
+    }
+
+
+class MediaDirPatchBody(BaseModel):
+    label: str | None = None
+    enabled: bool | None = None
+    auto_scan: bool | None = None
+
+
+@router.patch("/dirs/{dir_id}")
+async def patch_media_dir(dir_id: int, body: MediaDirPatchBody):
+    """Update label / enabled / auto_scan on an existing media directory.
+
+    `auto_scan=False` lets a user keep a directory in the webhook
+    allowlist (so NZBGet/SABnzbd post-processing scripts can queue
+    files inside it) without having the scanner / watcher crawl it.
+    Useful for transient /downloads-style landing zones.
+    """
+    updates: list[str] = []
+    params: list = []
+    if body.label is not None:
+        updates.append("label = ?")
+        params.append(body.label)
+    if body.enabled is not None:
+        updates.append("enabled = ?")
+        params.append(1 if body.enabled else 0)
+    if body.auto_scan is not None:
+        updates.append("auto_scan = ?")
+        params.append(1 if body.auto_scan else 0)
+    if not updates:
+        return {"status": "noop"}
+    params.append(dir_id)
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute(
+            f"UPDATE media_dirs SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return {"status": "updated"}
 
 
 @router.delete("/dirs/{dir_id}")

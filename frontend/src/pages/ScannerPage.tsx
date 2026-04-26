@@ -274,8 +274,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleScan = async () => {
     setScanStarted(true);
+    // Skip dirs marked auto_scan=false (e.g. NZBGet/SABnzbd landing zones
+    // the user wants webhook-eligible but not crawled). v0.3.49+.
     const paths = selectedDir === "all"
-      ? dirs.map((d: any) => d.path)
+      ? dirs.filter((d: any) => d.auto_scan !== false && d.auto_scan !== 0).map((d: any) => d.path)
       : [selectedDir];
     await startScan(paths);
   };

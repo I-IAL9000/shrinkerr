@@ -111,6 +111,12 @@ class MediaDir(BaseModel):
     path: str
     label: str = ""
     enabled: bool = True
+    # Whether the scanner / watcher should crawl this directory. Default True
+    # for backward compatibility. Set False for paths that the user wants
+    # webhook-eligible (so the NZBGet/SABnzbd post-processing scripts can
+    # queue files from them) but not surfaced in the file tree (e.g. a
+    # transient /downloads landing zone). v0.3.49+.
+    auto_scan: bool = True
 
 class SettingsUpdate(BaseModel):
     model_config = {"extra": "ignore"}  # Allow extra fields from GET response passthrough
