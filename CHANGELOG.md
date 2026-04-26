@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.48] — 2026-04-26
+
+### Fixed
+- **Renaming section's "Save" button moved to the left** to match every other section in Settings. Encoding, audio, lossless, etc. all use `alignSelf: "flex-start"` for their save buttons; only `RenamingSettings.tsx` had `justifyContent: "flex-end"`. Now consistent.
+
 ## [0.3.47] — 2026-04-26
 
 ### Fixed
@@ -455,6 +460,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.48]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.48
 [0.3.47]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.47
 [0.3.46]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.46
 [0.3.45]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.45

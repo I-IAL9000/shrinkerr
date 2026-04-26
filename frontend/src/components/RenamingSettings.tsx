@@ -258,7 +258,10 @@ export default function RenamingSettings() {
         {settings.rename_folders && field("Season folder", "season_folder_pattern")}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+      {/* Left-align the Save button to match every other section in
+          Settings (encoding, audio, lossless, etc. all use
+          `alignSelf: "flex-start"`). v0.3.48+. */}
+      <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 20 }}>
         <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? "Saving..." : "Save Renaming Settings"}
         </button>
