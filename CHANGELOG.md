@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.51] — 2026-04-26
+
+### Fixed
+- **API error toasts now show the backend's actual reason** instead of `API error: 400`. The shared `apiFetch` helper threw `new Error("API error: <status>")` on non-2xx responses, discarding the `{"detail": "..."}` body that FastAPI populates with the real cause (e.g. `Media directory does not exist: /downloads/TV`, `Path is not under any configured media directory`, `Job is not in error state`, etc.). Now reads the response body, extracts `detail` (or assembles one from Pydantic validation errors), and surfaces it through the thrown Error — so the v0.3.50 toast on the "+ Add" form (and every other toast that shows `e?.message`) finally tells the user what went wrong.
+
 ## [0.3.50] — 2026-04-26
 
 ### Fixed
@@ -470,6 +475,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.51]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.51
 [0.3.50]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.50
 [0.3.49]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.49
 [0.3.48]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.48

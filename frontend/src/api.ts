@@ -28,7 +28,30 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers: { ...headers, ...(options?.headers || {}) },
   });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  if (!res.ok) {
+    // Pull the FastAPI-style `{"detail": "..."}` body so callers can
+    // surface the actual server-side reason via toast. Pre-v0.3.51 the
+    // thrown Error's message was just "API error: 400", losing every
+    // useful diagnostic the backend already prepared. Falls back to the
+    // status-only message when the body isn't JSON or has no `detail`.
+    let detail: string | null = null;
+    try {
+      const body = await res.json();
+      if (body && typeof body === "object") {
+        if (typeof body.detail === "string") detail = body.detail;
+        else if (Array.isArray(body.detail)) {
+          // Pydantic validation errors come as a list of {loc, msg, type}
+          detail = body.detail
+            .map((e: any) => (typeof e?.msg === "string" ? e.msg : ""))
+            .filter(Boolean)
+            .join("; ");
+        }
+      }
+    } catch {
+      /* body wasn't JSON — fall through to status-only message */
+    }
+    throw new Error(detail || `API error: ${res.status}`);
+  }
   return res.json();
 }
 
