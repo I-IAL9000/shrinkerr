@@ -349,6 +349,35 @@ def detect_external_subtitles(video_path: str) -> list[dict]:
     if not sub_files:
         return results
 
+    # VobSub is a paired format: `.idx` (index/metadata) + `.sub` (bitmap
+    # data) must both exist or ffmpeg's vobsub demuxer fails. ffmpeg
+    # auto-resolves the `.sub` partner from disk when given the `.idx`
+    # path, so we represent each VobSub pair via its `.idx` file alone.
+    # Drop any `.sub` whose `.idx` partner is missing (orphan or
+    # subviewer-format text — both unsafe to feed in blindly), and drop
+    # any `.sub` whose `.idx` partner exists (the `.idx` will represent
+    # the pair). Same for `.idx` without `.sub`. v0.3.46+.
+    available_stems_lower = {f.stem.lower(): f for f in siblings}
+    filtered: list[Path] = []
+    for f in sub_files:
+        ext = f.suffix.lower()
+        if ext == ".sub":
+            # Skip — the `.idx` partner (if it exists) will represent the pair.
+            # If no `.idx` partner exists, this is an orphan we can't safely use.
+            partner = f.parent / (f.stem + ".idx")
+            if not partner.exists():
+                print(f"[EXT-SUBS]   Skip '{f.name}' — VobSub `.sub` without paired `.idx`", flush=True)
+            continue
+        if ext == ".idx":
+            partner = f.parent / (f.stem + ".sub")
+            if not partner.exists():
+                print(f"[EXT-SUBS]   Skip '{f.name}' — VobSub `.idx` without paired `.sub`", flush=True)
+                continue
+        filtered.append(f)
+    sub_files = filtered
+    if not sub_files:
+        return results
+
     video_files = [f for f in siblings if f.suffix.lower() in {".mkv", ".mp4", ".avi", ".mov", ".ts", ".m4v", ".webm"}]
     only_one_video = len(video_files) == 1
 

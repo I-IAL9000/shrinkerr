@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.46] — 2026-04-26
+
+### Fixed
+- **Conversion failure on files with orphan VobSub `.sub` external subtitles** (`ffmpeg exited with code 254`, `[vobsub @ ...] Unable to open <name>.sub as MPEG subtitles` followed by `Error opening input file <name>.idx: No such file or directory`). VobSub external subs are a paired format — `.idx` (index/metadata) + `.sub` (bitmap data) — and ffmpeg's vobsub demuxer auto-resolves the partner from disk. If only one half of the pair exists, the demuxer fails and the whole encode aborts. `detect_external_subtitles` was including every `.sub` and `.idx` it found, so an orphan crashed the job. Now: `.sub` files are represented via their `.idx` partner (ffmpeg picks up the `.sub` from the same stem), and an orphan `.sub` *or* orphan `.idx` is skipped with a clear log line. Plain text-format `.sub` files (subviewer) are also skipped — rare in the wild compared to vobsub, and skipping one text track is much less harmful than failing the entire encode.
+
 ## [0.3.45] — 2026-04-25
 
 ### Fixed
@@ -445,6 +450,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.46]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.46
 [0.3.45]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.45
 [0.3.37–0.3.44]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.44
 [0.3.36]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.36
