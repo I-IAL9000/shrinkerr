@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.47] — 2026-04-26
+
+### Fixed
+- **Completed-job report showed `x265 (NVENC)` instead of `h265 (NVENC)`.** The codec label in the expanded job details was hardcoded as `x265` regardless of the encoder, even though v0.3.30's rename rule already distinguished between them: libx265 → `x265` (the specific encoder), NVENC → `h265` (the codec spec, encoder-agnostic). The same rule now applies to the report so the on-screen label matches the renamed output filename.
+
 ## [0.3.46] — 2026-04-26
 
 ### Fixed
@@ -450,6 +455,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.47]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.47
 [0.3.46]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.46
 [0.3.45]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.45
 [0.3.37–0.3.44]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.44
