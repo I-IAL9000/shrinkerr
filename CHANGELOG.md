@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.50] — 2026-04-26
+
+### Fixed
+- **"+ Add" on Settings → Media directories silently did nothing on failure.** When the backend rejected the path (common cases: path doesn't exist inside the container, isn't a directory, lands under a system prefix, or duplicates an existing entry), the awaited Promise rejection was un-caught and the user got no visual feedback. Now wraps the call in a try/catch and surfaces the backend's validation message via toast.
+
 ## [0.3.49] — 2026-04-26
 
 ### Added
@@ -465,6 +470,7 @@ threshold feature, and serious UI performance wins during encoding.
 
 ---
 
+[0.3.50]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.50
 [0.3.49]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.49
 [0.3.48]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.48
 [0.3.47]: https://github.com/I-IAL9000/shrinkerr/releases/tag/v0.3.47

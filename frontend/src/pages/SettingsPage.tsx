@@ -516,10 +516,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
   const handleAddDir = async () => {
     if (!newPath) return;
-    await addMediaDir(newPath, newLabel);
-    setNewPath("");
-    setNewLabel("");
-    loadDirs();
+    try {
+      await addMediaDir(newPath, newLabel);
+      setNewPath("");
+      setNewLabel("");
+      loadDirs();
+    } catch (e: any) {
+      // Pre-v0.3.50 the awaited rejection was un-caught and the user
+      // saw "nothing happens" on click. Surface backend validation
+      // errors (path doesn't exist, isn't a directory, system path,
+      // already-configured) explicitly via a toast.
+      toast(e?.message || "Could not add directory", "error");
+    }
   };
 
   const handleRemoveDir = async (id: number) => {
