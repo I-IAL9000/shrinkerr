@@ -74,17 +74,119 @@ Directories — no separate path list.
 
 ## NZBGet / SABnzbd
 
-**NZBGet:** install the post-processing script from Shrinkerr (Settings →
-Integrations → NZBGet → Download script) into NZBGet's scripts folder.
-Enable it on the categories you want auto-queued (TV, Movies,
-etc.). On job completion NZBGet calls the script, which registers the
-file with Shrinkerr via `/api/webhooks/post-process`.
+The post-processing scripts let NZBGet/SABnzbd notify Shrinkerr the
+moment a download finishes, so a file can start encoding before
+Sonarr/Radarr have finished importing it. The script POSTs to
+`/api/webhooks/post-process` with the file path and metadata; Shrinkerr
+matches it against your encoding rules and queues the job.
 
-**SABnzbd:** similar — Settings → Integrations → SABnzbd → Download
-script. Drop it in SABnzbd's post-processing script folder, enable for
-the relevant categories.
+### Prerequisites (read these first)
 
-Settings on the Shrinkerr side (Settings → Integrations → NZBGet):
+Most NZBGet/SABnzbd integration problems are not script bugs — they're
+path-visibility problems between two containers. Get these three things
+right and the rest is paperwork.
+
+**1. Both containers must mount the same host directory at the same
+internal path.**
+
+The script tells Shrinkerr "I just finished downloading
+`/Downloads/completed/TV/Foo.S01E01/foo.mkv`". Shrinkerr then has to
+open that file. If the NZBGet container sees `/Downloads/...` but the
+Shrinkerr container has nothing mounted at `/Downloads`, every job fails
+with `Outside media dirs` or `Failed to probe file`.
+
+The simplest fix is to mount the same host path at the same internal
+path in both compose files:
+
+```yaml
+# nzbget docker-compose.yml
+services:
+  nzbget:
+    volumes:
+      - /home/me/Downloads:/Downloads:rw
+
+# shrinkerr docker-compose.yml
+services:
+  shrinkerr:
+    volumes:
+      - /home/me/Downloads:/Downloads:rw   # ← same line, same case
+```
+
+Case matters on Linux. `/Downloads` and `/downloads` are different
+directories.
+
+After editing volumes, run `docker compose down && docker compose up -d`
+on the affected service. Plain `docker compose up -d` does not pick up
+new volume bindings.
+
+**2. Add NZBGet's category folders as media directories in Shrinkerr.**
+
+Settings → Directories → "+ Add". For each NZBGet category you want to
+auto-queue, add the folder NZBGet writes finished downloads to —
+typically `${MainDir}/completed/<category>` (e.g.
+`/Downloads/completed/TV`, `/Downloads/completed/Movies`).
+
+For each download directory:
+
+| Setting | Value | Why |
+|---|---|---|
+| Type | **Other** | Stops Shrinkerr from asking TMDB to identify each release-name folder. |
+| Scan | **off** (uncheck) | The webhook is still allowed to register files inside this directory, but the periodic file-tree scanner skips it — so your Scanner page isn't littered with `Foo.S01E01.1080p.WEB-DL.x264-GRP/` temp folders that exist for thirty seconds at a time. |
+
+The `Scan: off` flag (added in v0.3.49) is what makes "register the file
+when NZBGet calls us" work without "also crawl this directory looking
+for stuff to convert." Use it for any directory that is a download
+landing zone, not a finished library.
+
+**3. Path mappings: only when paths actually differ.**
+
+Settings → Integrations → NZBGet → Path Mappings translates the path
+the script reports into the path Shrinkerr should open. You only need
+mappings if the two containers see the same file at different paths.
+
+If both containers mount `/home/me/Downloads:/Downloads:rw` (the
+recommended setup), leave path mappings empty.
+
+You need a mapping when:
+
+- NZBGet runs on the host (no container) and writes to
+  `/home/me/Downloads/...`, but Shrinkerr is in a container that mounts
+  it at `/Downloads`. Map `/home/me/Downloads → /Downloads`.
+- Historic case-mismatch: NZBGet writes to `/Downloads` but an old
+  Shrinkerr config mounted `/downloads`. Better fix is to align the
+  volumes and clear the mapping.
+- Your NZBGet category folder lives on a different volume from your
+  finished media library and you want Shrinkerr to see it under a
+  unified path.
+
+### NZBGet script installation
+
+1. Complete the prerequisites above (volume mounts + media dirs).
+2. Settings → Integrations → NZBGet — set Tags / Categories / Priority,
+   click **Save**, then **Download NZBGet Script**.
+3. Place `Shrinkerr.py` in NZBGet's `ScriptDir` (Settings → Paths →
+   ScriptDir; defaults to `/scripts` inside the official container).
+4. NZBGet → Settings → Extension Scripts, enable `Shrinkerr` and Save.
+5. Reload scripts (Settings page footer) or restart NZBGet.
+6. The script's URL and API key are baked in at download time — no
+   extra config inside NZBGet.
+7. In Sonarr/Radarr, tag any series/movies you want auto-queued with
+   the tag you configured in step 2.
+
+### SABnzbd script installation
+
+1. Complete the prerequisites above (volume mounts + media dirs).
+2. Settings → Integrations → SABnzbd, click **Download SABnzbd Script**.
+3. Place `shrinkerr.py` in SABnzbd's `scripts` folder.
+4. SABnzbd → Config → Categories, set **shrinkerr.py** as the
+   post-processing script for the categories you want auto-queued.
+5. URL and API key are baked into the downloaded file — nothing else to
+   configure on the SABnzbd side.
+
+### Shrinkerr-side options
+
+Settings → Integrations → NZBGet (same options exist for SABnzbd):
+
 - **Tags** — only process downloads matching these NZBGet tags (empty =
   all)
 - **Categories** — same for categories
@@ -97,6 +199,48 @@ Settings on the Shrinkerr side (Settings → Integrations → NZBGet):
 - **Check Sonarr/Radarr tags** — if on, the script asks Sonarr / Radarr
   whether this file's series/movie has a `no-convert` tag and skips if
   so. Lets you opt individual shows out via the *arr tag system.
+
+### Troubleshooting
+
+**`Shrinkerr: Outside media dirs: /path/to/file.mkv`** in NZBGet/SABnzbd
+logs.
+
+The script reported a path that is not under any media directory you've
+registered in Shrinkerr.
+
+1. Read the exact path the script reported — it's in the log line.
+2. Check whether the Shrinkerr container can see it:
+   `docker exec shrinkerr ls "/Downloads/completed/TV"` (substitute the
+   actual path).
+3. If the file is **not** there, your two containers disagree about
+   where that path points. Either align the volumes (preferred) or add
+   a path mapping that translates NZBGet's view into Shrinkerr's view.
+4. If the file **is** there, just add the parent folder as a media
+   directory (Type=Other, Scan=off) and re-run the job.
+
+**`Failed to probe file: ...`** in Shrinkerr logs.
+
+Shrinkerr accepted the path but ffprobe couldn't open it. Usually one
+of:
+
+- The file moved between when NZBGet finished and when Shrinkerr
+  processed the webhook (Sonarr/Radarr imported it). Set "Wait for
+  completion = on" or accept that *arr will move it before encoding —
+  Shrinkerr's queue handles the move-during-queue case for files that
+  are already in your media library, but not for files in the download
+  landing zone.
+- Stale path from a restored database: an old `convert_jobs` row points
+  to a file path that no longer exists. Clear failed jobs and rescan.
+- Permissions: the Shrinkerr container's user can't read the file.
+  Fix the volume mount mode or chown the file.
+
+**Script logs show `SHRINKERR: NONE` and no API call was made.**
+
+The script's category/tag filter rejected the job before calling
+Shrinkerr. Check the script's stdout in NZBGet history — it lists what
+it saw and why it stopped. Usual cause: the NZBGet category doesn't
+match what you typed in Shrinkerr's Categories field, or the Tags
+filter is set but the Sonarr tag isn't propagated.
 
 ## Sonarr / Radarr
 

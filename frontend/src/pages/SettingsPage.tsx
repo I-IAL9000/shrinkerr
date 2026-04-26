@@ -2576,26 +2576,73 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </div>
 
             {/* Installation instructions */}
-            <details style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>NZBGet Installation</summary>
+            <details style={{ fontSize: 12, color: "var(--text-muted)" }} open>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Setup prerequisites (read first)</summary>
+              <div style={{ paddingLeft: 8, lineHeight: 1.7 }}>
+                <p style={{ margin: "4px 0" }}>
+                  Before the script can hand files to Shrinkerr, the Shrinkerr container has to be able to <em>see</em> what NZBGet/SABnzbd downloaded. That means two things must line up:
+                </p>
+                <ol style={{ margin: "4px 0 8px", paddingLeft: 20 }}>
+                  <li>
+                    <b>Both containers mount the same host directory at the same internal path.</b> Easiest: match exactly.
+                    <pre style={{ margin: "4px 0", padding: 8, background: "var(--bg-primary)", borderRadius: 4, fontSize: 11, overflow: "auto" }}>{`# nzbget docker-compose.yml
+volumes:
+  - /home/me/Downloads:/Downloads:rw
+
+# shrinkerr docker-compose.yml
+volumes:
+  - /home/me/Downloads:/Downloads:rw   # ← same line, same case`}</pre>
+                    After changing volumes, run <code>docker compose down &amp;&amp; up -d</code> to recreate the container; <code>up -d</code> alone won't pick up new volumes.
+                  </li>
+                  <li>
+                    <b>Add NZBGet's category folders as media directories.</b> Settings → Media directories → add e.g. <code>/Downloads/completed/TV</code> and <code>/Downloads/completed/Movies</code>. For each:
+                    <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                      <li>Type = <b>Other</b> — keeps TMDB from matching release-name folders</li>
+                      <li>Uncheck <b>Scan</b> — webhook accepts paths under it but the file tree won't show release-name temp folders</li>
+                    </ul>
+                  </li>
+                  <li>
+                    <b>Path mappings (above) only when paths differ between containers.</b> If both mount the same host folder at the same internal path (recommended), leave path mappings empty. Only add mappings when the script's view of the file path differs from Shrinkerr's view.
+                  </li>
+                </ol>
+              </div>
+            </details>
+            <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>NZBGet installation</summary>
               <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
+                <li>Complete the prerequisites above (volume mounts + media dirs)</li>
                 <li>Save settings above and click <b>Download NZBGet Script</b></li>
                 <li>Place <code>Shrinkerr.py</code> in your NZBGet <b>ScriptDir</b> folder</li>
                 <li>In NZBGet → Settings → Extension Scripts, enable <b>Shrinkerr</b></li>
                 <li>Restart NZBGet or click <b>Reload</b> in the scripts section</li>
-                <li>The script auto-configures from Shrinkerr — no NZBGet settings needed</li>
+                <li>The script auto-configures from Shrinkerr — no extra NZBGet settings needed</li>
                 <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
               </ol>
             </details>
             <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>SABnzbd Installation</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>SABnzbd installation</summary>
               <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
+                <li>Complete the prerequisites above (volume mounts + media dirs)</li>
                 <li>Save settings above and click <b>Download SABnzbd Script</b></li>
                 <li>Place <code>shrinkerr.py</code> in your SABnzbd <b>scripts</b> folder</li>
                 <li>In SABnzbd → Config → Categories, set <b>shrinkerr.py</b> as the post-processing script for your TV/Movie categories</li>
                 <li>The script auto-configures from Shrinkerr — your URL and API key are baked in</li>
                 <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
               </ol>
+            </details>
+            <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Troubleshooting: "Outside media dirs"</summary>
+              <div style={{ paddingLeft: 8, lineHeight: 1.7 }}>
+                <p style={{ margin: "4px 0" }}>
+                  If NZBGet/SABnzbd logs show <code>Shrinkerr: Outside media dirs: /path/to/file.mkv</code>, the path the script reports is not under any directory you've registered in Shrinkerr.
+                </p>
+                <ol style={{ margin: "4px 0", paddingLeft: 20 }}>
+                  <li>Check exactly what path the script reported (it's in the same log line)</li>
+                  <li>Verify the Shrinkerr container can see that path: <code>docker exec shrinkerr ls &lt;path&gt;</code></li>
+                  <li>If the file isn't there, your two containers don't agree on where <code>/Downloads</code> points. Align the volume mounts (above), or add a path mapping that translates the script's view into Shrinkerr's view</li>
+                  <li>If the file IS there, just add it as a media directory (Type=Other, Scan=off)</li>
+                </ol>
+              </div>
             </details>
             <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(104,96,254,0.1)", borderRadius: 4, fontSize: 12 }}>
               <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Shrinkerr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.

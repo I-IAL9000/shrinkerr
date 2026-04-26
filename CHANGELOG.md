@@ -5,6 +5,16 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.52] — 2026-04-25
+
+### Documentation
+- **Documented the NZBGet/SABnzbd setup pitfalls that bit us in v0.3.49–v0.3.51 troubleshooting.** Both the in-app Settings → Integrations → NZBGet section and `docs/rules-and-automation.md` now lead with a "Setup prerequisites (read first)" walkthrough covering the three things that have to line up before the post-processing script can work, in the order they tend to break:
+  1. **Volume-mount alignment between containers** — paired `docker-compose.yml` snippet showing `/home/me/Downloads:/Downloads:rw` on the same line in both NZBGet and Shrinkerr's compose, plus the reminder that case matters on Linux and that `docker compose up -d` alone won't pick up volume changes (you need `down && up -d`).
+  2. **Registering NZBGet's category landing folders as media directories** with `Type=Other` (so TMDB doesn't try to identify release-name temp folders) and `Scan=off` (the v0.3.49 flag — webhook-eligible without the scanner crawling it). Includes a small table explaining what each setting does and why.
+  3. **When path mappings are actually needed** — empty by default if both containers mount the same host path at the same internal path; only required when the script's view of the file path genuinely differs from Shrinkerr's view (host-NZBGet + container-Shrinkerr, historic case-mismatch, multi-volume layouts).
+- **New troubleshooting section** for the three failure modes we hit during the v0.3.49 → v0.3.51 chase: `Outside media dirs: /path/to/file.mkv` (with the `docker exec shrinkerr ls "<path>"` diagnostic), `Failed to probe file` (file moved post-webhook, stale DB rows, permissions), and `SHRINKERR: NONE` in NZBGet history (script's category/tag filter rejected the job before calling the API).
+- The Settings UI's prerequisites block defaults to **open** so first-time setup users can't miss it; the install steps and existing troubleshooting tips collapse below it.
+
 ## [0.3.51] — 2026-04-26
 
 ### Fixed
