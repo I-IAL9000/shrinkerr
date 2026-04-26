@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.53] — 2026-04-26
+
+### Fixed
+- **Scanner dropdown listed Scan=off media directories** (e.g. NZBGet/SABnzbd landing zones added with `Scan=off` per v0.3.49), implying they would be scanned if picked. The "All configured paths" branch already filtered them out before calling `startScan`, but selecting one of them by name from the dropdown would still scan it — and the dropdown's mere presence of the entry contradicted v0.3.49's stated UX of "the scanner pretends the directory doesn't exist." Dropdown options now filter on `auto_scan !== false && auto_scan !== 0`, matching the same predicate used by handleScan. The file-tree/poster-grid `mediaDirs` prop is still populated from the full list — Scan=off dirs can still receive webhook-registered files that legitimately need to render in the tree.
+
 ## [0.3.52] — 2026-04-25
 
 ### Documentation

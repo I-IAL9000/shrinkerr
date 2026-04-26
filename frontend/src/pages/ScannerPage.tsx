@@ -1061,9 +1061,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           }}
         >
           <option value="all">All configured paths</option>
-          {dirs.map((d: any) => (
-            <option key={d.id} value={d.path}>{d.path}</option>
-          ))}
+          {dirs
+            .filter((d: any) => d.auto_scan !== false && d.auto_scan !== 0)
+            .map((d: any) => (
+              <option key={d.id} value={d.path}>{d.path}</option>
+            ))}
         </select>
         <button className="btn btn-primary" onClick={handleScan} disabled={scanning} style={{ height: 36 }}>
           {scanning ? "Scanning..." : "Scan"}
