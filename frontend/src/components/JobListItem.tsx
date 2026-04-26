@@ -293,8 +293,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                         analysis window, the score is logged but flagged so
                         a "Poor" tier on a visually-fine encode is
                         recognisable as a measurement artefact, not a real
-                        quality issue. v0.3.32+. */}
-                    {job.vmaf_uncertain && (
+                        quality issue. v0.3.32+.
+
+                        Coerce to boolean: vmaf_uncertain comes from a
+                        SQLite INTEGER column, so the wire value is 0 or 1
+                        (despite the TS type saying boolean). `0 && (...)`
+                        evaluates to `0`, and React renders numeric zero
+                        as the literal text "0" — which produced
+                        "96.9 (Excellent)0" trailing the score. v0.3.54. */}
+                    {!!job.vmaf_uncertain && (
                       <span
                         title="VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Encoding → VMAF."
                         style={{ marginLeft: 4, color: "var(--warning)", cursor: "help" }}

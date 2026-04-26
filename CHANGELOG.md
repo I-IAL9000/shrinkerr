@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.54] — 2026-04-26
+
+### Fixed
+- **Completed-job VMAF score showed a trailing `0`** (e.g. `96.9 (Excellent)0`). The expanded job report renders `{job.vmaf_uncertain && (<warning>)}` to show the measurement-suspect ⚠ marker on flagged scores. `vmaf_uncertain` comes from a SQLite INTEGER column (0 or 1) — the TypeScript type declares it as `boolean` but the wire value is numeric. `0 && (...)` evaluates to `0`, and React renders numeric zero as literal text (it only suppresses `false`/`null`/`undefined`, not `0`). Coerced with `!!` so the falsy branch returns `false` and renders nothing. Other VMAF render sites (EstimateModal, EventTimeline, FileDetail, DashboardPage) already guarded correctly via `!= null` checks or `if` statements; only the one expanded-report path was bare-truthy.
+
 ## [0.3.53] — 2026-04-26
 
 ### Fixed
