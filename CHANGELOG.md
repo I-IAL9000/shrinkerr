@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.58] — 2026-04-27
+
+### Documentation
+- **Updated the VMAF analysis settings copy to match reality.** The help text said "this adds a few minutes per job" — written when the analysis ran over the entire encode. Since the v0.3.32-era switch to a 30-second sample window centred at ~33% into the file (with the fps + colour-range normalisation that made sampling reliable), the actual cost on a modern GPU is well under a minute, often around 20 seconds. New copy says so explicitly and notes the sample-window scope so users understand why it's that fast.
+
 ## [0.3.57] — 2026-04-27
 
 ### Added

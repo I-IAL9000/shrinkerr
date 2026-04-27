@@ -1000,7 +1000,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <strong>VMAF</strong> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix.
                   It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality.
                   When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion.
-                  This adds a few minutes per job but gives you confidence that your CQ settings produce acceptable quality.
+                  Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.
                 </div>
                 <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
                   <thead>
