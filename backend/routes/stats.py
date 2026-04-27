@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from backend.database import connect_db
 
@@ -813,7 +813,7 @@ async def refresh_update_check() -> dict:
 
 
 @router.get("/version")
-async def get_version(force: bool = False):
+async def get_version(response: Response, force: bool = False):
     """Return current version and check for updates.
 
     Cache semantics:
@@ -824,7 +824,18 @@ async def get_version(force: bool = False):
         without requiring any user interaction — matching the UX of
         Sonarr/Radarr/Plex where update notifications appear on the
         running version, no image pull required.
+
+    Cache-Control note (v0.3.62): explicitly tell the browser not to
+    cache this response. Without it, the browser's heuristic freshness
+    rules can serve stale "update_available: false" responses for
+    minutes-to-hours, and crucially the cache is keyed per origin —
+    accessing Shrinkerr at `http://192.168.x:8088` and
+    `https://shrinkerr.example.com` keeps two independent caches, so
+    the local-network origin can stay stuck on a stale "no update"
+    response while the remote origin (visited less often) re-fetches
+    fresh and shows the button. `no-store` keeps both honest.
     """
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     import time
     if force:
         return await refresh_update_check()

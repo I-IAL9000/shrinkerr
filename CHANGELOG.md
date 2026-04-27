@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.62] — 2026-04-27
+
+### Fixed
+- "Update available" button no longer disappears on the local-network URL when it shows on the remote URL — `/stats/version` is now `Cache-Control: no-store` on both server and client.
+
 ## [0.3.61] — 2026-04-27
 
 ### Fixed

@@ -542,8 +542,15 @@ export const estimateJobsWithPriority = (filePaths: string[], priority: number) 
  *              even when the cache says "we checked recently".
  */
 export const getVersion = (force = false) =>
+  // `cache: "no-store"` to bypass the browser's HTTP cache. Without it,
+  // the response is cacheable per-origin: one cached "no update" entry
+  // for the local-network URL would keep showing "no update" on that
+  // origin while the remote origin fetches fresh and shows the button.
+  // The backend also sets Cache-Control: no-store; both honest is best.
+  // v0.3.62.
   apiFetch<{ current: string; latest: string | null; update_available: boolean }>(
     `/stats/version${force ? "?force=1" : ""}`,
+    { cache: "no-store" },
   );
 
 export interface ChangelogEntry {
