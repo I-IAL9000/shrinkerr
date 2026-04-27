@@ -44,6 +44,44 @@ EVENT_TYPES = (
 )
 
 
+async def log_events_bulk(
+    events: list[tuple[str, str, str, Optional[dict[str, Any]]]],
+) -> None:
+    """Append many events in a single connection + transaction.
+
+    Each tuple is (file_path, event_type, summary, details_or_None). Used
+    by callers that fan out hundreds/thousands of events at once (bulk
+    queue add, bulk health check). Without this, the per-call log_event
+    pattern opens a fresh DB connection + transaction for every event —
+    fine for one-offs, ruinous for thousands. v0.3.57+.
+    """
+    if not events:
+        return
+    try:
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA busy_timeout=10000")
+            now = datetime.now(timezone.utc).isoformat()
+            params = [
+                (fp, et, now, summary, json.dumps(details) if details else None)
+                for fp, et, summary, details in events
+            ]
+            await db.executemany(
+                "INSERT INTO file_events (file_path, event_type, occurred_at, summary, details_json) "
+                "VALUES (?, ?, ?, ?, ?)",
+                params,
+            )
+            await db.commit()
+        finally:
+            await db.close()
+    except Exception as exc:
+        try:
+            print(f"[file_events] log_events_bulk failed ({len(events)} events): {exc}", flush=True)
+        except Exception:
+            pass
+
+
 async def log_event(
     file_path: str,
     event_type: str,

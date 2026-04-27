@@ -183,7 +183,19 @@ class JobQueue:
 
         Each job dict supports the same fields as add_job() kwargs plus an optional
         "insert_next" boolean. Returns the list of inserted job IDs (0 for skipped
-        duplicates). Files already having a pending/running job are skipped.
+        duplicates), in the same order as the input list. Files already having a
+        pending/running job are skipped.
+
+        Implementation note (v0.3.57+): the inner per-row INSERT loop used to do
+        N async db.execute() calls — each one a thread-pool round-trip through
+        aiosqlite. For thousands of jobs that's thousands of round-trips, even
+        though the underlying SQLite engine can do >100K inserts/sec. Replaced
+        with a single executemany() over a pre-computed param list, which keeps
+        all the work inside one thread-pool call. Job IDs are reconstructed
+        from cursor.lastrowid + cursor.rowcount, which is reliable here because
+        jobs.id is INTEGER PRIMARY KEY AUTOINCREMENT (sqlite_sequence guarantees
+        contiguous IDs within a single transaction with no concurrent writers,
+        which our WAL+single-writer setup enforces).
         """
         if not jobs:
             return []
@@ -217,9 +229,48 @@ class JobQueue:
             insert_next_counter = min_pending - 1
             append_counter = max_order
 
-            # 3. Insert every new job in one transaction
+            # 3. Pre-compute params for every job that should actually be inserted.
+            # `inserted_mask` parallels the input list: True for "this job will be
+            # inserted (consume one ID from the executemany result)", False for
+            # "duplicate, append 0". `seen_in_batch` dedupes within the same call
+            # so two queue-adds of the same file don't insert twice.
             now = _utcnow()
-            job_ids: list[int] = []
+            params_list: list[tuple] = []
+            inserted_mask: list[bool] = []
+            seen_in_batch: set[str] = set()
+            for j in jobs:
+                fp = j["file_path"]
+                if fp in existing or fp in seen_in_batch:
+                    inserted_mask.append(False)
+                    continue
+                seen_in_batch.add(fp)
+                if j.get("insert_next"):
+                    order = insert_next_counter
+                    insert_next_counter -= 1
+                else:
+                    append_counter += 1
+                    order = append_counter
+                params_list.append((
+                    fp,
+                    j["job_type"],
+                    j.get("encoder"),
+                    json.dumps(j.get("audio_tracks_to_remove") or []),
+                    json.dumps(j.get("subtitle_tracks_to_remove") or []),
+                    now,
+                    order,
+                    j.get("original_size") or 0,
+                    j.get("nvenc_preset"),
+                    j.get("nvenc_cq"),
+                    j.get("audio_codec"),
+                    j.get("audio_bitrate"),
+                    j.get("libx265_crf"),
+                    j.get("libx265_preset"),
+                    j.get("target_resolution"),
+                    j.get("priority") or 0,
+                ))
+                inserted_mask.append(True)
+
+            # 4. Single executemany — one thread-pool round-trip instead of N.
             sql = (
                 "INSERT INTO jobs (file_path, job_type, status, encoder, "
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
@@ -227,50 +278,43 @@ class JobQueue:
                 "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority) "
                 "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            for j in jobs:
-                fp = j["file_path"]
-                if fp in existing:
-                    job_ids.append(0)
-                    continue
-                if j.get("insert_next"):
-                    order = insert_next_counter
-                    insert_next_counter -= 1
+            assigned_ids: list[int] = []
+            if params_list:
+                cur = await db.executemany(sql, params_list)
+                last_id = cur.lastrowid or 0
+                count = cur.rowcount
+                if last_id and count == len(params_list):
+                    # IDs are contiguous within this transaction (AUTOINCREMENT +
+                    # single-writer WAL). Reconstruct the per-row IDs from the
+                    # last_id/count so callers that match jobs to IDs still work.
+                    assigned_ids = list(range(last_id - count + 1, last_id + 1))
                 else:
-                    append_counter += 1
-                    order = append_counter
+                    # Defensive fallback: if rowcount or lastrowid is unexpected,
+                    # we'd rather report 0s than guess wrong IDs. Caller treats
+                    # 0 as "skipped"; "added" count via len(filter(0)) drops them.
+                    # In practice this branch should never fire.
+                    assigned_ids = [0] * len(params_list)
 
-                async with db.execute(
-                    sql,
-                    (
-                        fp,
-                        j["job_type"],
-                        j.get("encoder"),
-                        json.dumps(j.get("audio_tracks_to_remove") or []),
-                        json.dumps(j.get("subtitle_tracks_to_remove") or []),
-                        now,
-                        order,
-                        j.get("original_size") or 0,
-                        j.get("nvenc_preset"),
-                        j.get("nvenc_cq"),
-                        j.get("audio_codec"),
-                        j.get("audio_bitrate"),
-                        j.get("libx265_crf"),
-                        j.get("libx265_preset"),
-                        j.get("target_resolution"),
-                        j.get("priority") or 0,
-                    ),
-                ) as cur:
-                    job_ids.append(cur.lastrowid or 0)
-                    # Mark this file as existing so duplicates within the same batch are skipped
-                    existing.add(fp)
+            # 5. Splice IDs back into a list with the same length/order as `jobs`.
+            job_ids: list[int] = []
+            next_idx = 0
+            for inserted in inserted_mask:
+                if inserted and next_idx < len(assigned_ids):
+                    job_ids.append(assigned_ids[next_idx])
+                    next_idx += 1
+                else:
+                    job_ids.append(0)
 
             await db.commit()
         finally:
             await db.close()
 
-        # Log "queued" events for new jobs (skipped duplicates have id == 0)
+        # Log "queued" events for new jobs (skipped duplicates have id == 0).
+        # Use the bulk helper so adding 1000 jobs is one transaction, not 1000.
+        # v0.3.57+.
         try:
-            from backend.file_events import log_event, EVENT_QUEUED
+            from backend.file_events import log_events_bulk, EVENT_QUEUED
+            events: list[tuple[str, str, str, dict | None]] = []
             for j, jid in zip(jobs, job_ids):
                 if not jid:
                     continue
@@ -279,7 +323,9 @@ class JobQueue:
                     summary = f"Queued for {j.get('encoder', 'quick')} health check"
                 else:
                     summary = f"Queued for {jt}"
-                await log_event(j["file_path"], EVENT_QUEUED, summary, {"job_id": jid, "job_type": jt})
+                events.append((j["file_path"], EVENT_QUEUED, summary, {"job_id": jid, "job_type": jt}))
+            if events:
+                await log_events_bulk(events)
         except Exception:
             pass
         return job_ids

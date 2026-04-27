@@ -5,6 +5,17 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.57] — 2026-04-27
+
+### Added
+- **"Adding N items to queue…" in-flight overlay on the Scanner.** Clicking *Add to queue* on the estimate modal closed the modal immediately and then went silent for the duration of the API call — for hundreds or thousands of files that's a multi-second blank stare with no indication anything is happening. New full-screen overlay with a spinner and "Adding 1,234 items to queue… Resolving rules, deduping, inserting jobs." text appears for the duration of the request. Auto-dismisses on success or error; the existing toast still confirms the final count.
+
+### Fixed
+- **Bulk queue insert was N round-trips through aiosqlite when it should have been 1.** `Queue.add_jobs_bulk` looped per-row calling `await db.execute(INSERT, ...)` — each await is a thread-pool round-trip. With AUTOINCREMENT in WAL mode under a single writer SQLite gives contiguous IDs within a transaction, so the per-row execute was buying nothing the bulk path needed. Replaced with a pre-computed param list and a single `executemany`, with IDs reconstructed from `cursor.lastrowid` and `cursor.rowcount`. Same dedup/insert_next/queue_order semantics, same return shape (one ID-or-zero per input job).
+- **`log_event` was re-opening a fresh DB connection per call.** The post-insert "queued" event log in `add_jobs_bulk` fired one `log_event` per inserted job, and each one opened a connection, set pragmas, inserted, committed, closed. For a 1000-job add, that's 1000 connection cycles and 1000 commits — the dominant cost after the first fix landed. Added `log_events_bulk` that takes the whole list and inserts via one `executemany` in one connection; queue.py uses it. Single-event `log_event` is unchanged for one-off callers.
+
+Net: a 1000-item add that previously felt like a freeze now finishes in well under a second on the server side, and the time it does take is filled with a clear progress affordance instead of a frozen UI.
+
 ## [0.3.56] — 2026-04-27
 
 ### Fixed

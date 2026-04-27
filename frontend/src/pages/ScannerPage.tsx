@@ -80,6 +80,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [estimatePaths, setEstimatePaths] = useState<string[] | null>(null);
   const [estimateHasIgnored, setEstimateHasIgnored] = useState(false);
   const [renamePaths, setRenamePaths] = useState<string[] | null>(null);
+  // While the add-to-queue API call is in flight. Holds the count being
+  // added so the overlay can render a meaningful message; null when idle.
+  // Adding hundreds/thousands of items is a multi-second operation server-
+  // side, and the prior behavior closed the estimate modal immediately and
+  // then went silent until the toast fired — looked frozen. v0.3.57+.
+  const [addingToQueueCount, setAddingToQueueCount] = useState<number | null>(null);
 
   // Debounce the search input 250ms so rapid typing doesn't trigger
   // a poster re-resolution per keystroke
@@ -803,7 +809,15 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any) => {
     if (!estimatePaths) return;
+    // Snapshot the count before clearing estimatePaths — drives the
+    // in-flight overlay's "Adding N items to queue…" copy. We can't
+    // distinguish folder placeholders from individual files here without
+    // hitting the tree, so the count reported is "selections submitted",
+    // which is close enough as a progress affordance for the user. The
+    // final toast still uses the server's authoritative result.added.
+    const submittedCount = estimatePaths.length;
     setEstimatePaths(null);
+    setAddingToQueueCount(submittedCount);
     try {
       const extra: Record<string, any> = {};
       if (encodingOverrides) {
@@ -830,6 +844,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       refreshStats();
     } catch (err: any) {
       toast(`Failed to add to queue: ${err.message || "unknown error"}`);
+    } finally {
+      setAddingToQueueCount(null);
     }
   };
 
@@ -1606,6 +1622,39 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           onConfirm={handleConfirmAdd}
           onCancel={() => setEstimatePaths(null)}
         />
+      )}
+
+      {/* "Adding to queue…" in-flight overlay. Renders while the
+          /jobs/add-from-scan call is awaited so the user has feedback
+          during the multi-second server-side fanout (folder→file
+          resolution + rule matching + bulk insert). v0.3.57+. */}
+      {addingToQueueCount !== null && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 1100,
+            background: "rgba(0,0,0,0.55)", backdropFilter: "blur(3px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              background: "var(--bg-card)", border: "1px solid var(--border)",
+              borderRadius: 8, padding: "20px 28px", minWidth: 280,
+              display: "flex", alignItems: "center", gap: 14,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div className="spinner" style={{ width: 22, height: 22, flexShrink: 0 }} />
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: 14 }}>
+                Adding {addingToQueueCount.toLocaleString()} {addingToQueueCount === 1 ? "item" : "items"} to queue…
+              </span>
+              <span style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
+                Resolving rules, deduping, inserting jobs.
+              </span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Rename modal */}
