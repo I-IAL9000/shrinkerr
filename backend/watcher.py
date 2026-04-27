@@ -533,6 +533,14 @@ class FileWatcher:
             print(f"[WATCHER] Removed {removed} stale, added {added} new"
                   + (f" ({remaining_new} more pending)" if remaining_new > 0 else ""),
                   flush=True)
+            # Tell connected clients (the Scanner page) that the file
+            # tree changed, so they can re-fetch live instead of
+            # requiring the user to navigate away and back. v0.3.64+.
+            try:
+                from backend.websocket import ws_manager
+                await ws_manager.send_scan_results_changed(added=added, removed=removed)
+            except Exception as exc:
+                print(f"[WATCHER] WS broadcast failed (non-fatal): {exc}", flush=True)
 
         # Lazy metadata lookup for newly added files
         if added > 0:

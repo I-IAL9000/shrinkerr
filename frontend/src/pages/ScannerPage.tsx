@@ -188,6 +188,34 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   }, [scanProgress]);
 
+  // Live-update the tree when the watcher discovers new files (or
+  // removes stale ones) in the background. The backend broadcasts
+  // `scan_results_changed` after each watcher tick that touched the
+  // table, and useWebSocket re-dispatches all WS messages as window
+  // events so we can subscribe here without prop drilling. Debounced
+  // 500 ms so a burst of file additions coalesces into one re-fetch.
+  // v0.3.64+.
+  useEffect(() => {
+    let timer: number | null = null;
+    const onWsMessage = (event: Event) => {
+      const me = event as MessageEvent;
+      try {
+        const msg = JSON.parse(me.data);
+        if (msg?.type !== "scan_results_changed") return;
+      } catch { return; }
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        loadTree();
+        refreshStats();
+      }, 500);
+    };
+    window.addEventListener("ws-message", onWsMessage);
+    return () => {
+      window.removeEventListener("ws-message", onWsMessage);
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [loadTree, refreshStats]);
+
   // While scanning, reload tree every 5s
   useEffect(() => {
     if (!scanning) return;

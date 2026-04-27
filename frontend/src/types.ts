@@ -195,4 +195,14 @@ export interface JobComplete {
   error: string | null;
 }
 
-export type WSMessage = ScanProgress | JobProgress | JobComplete;
+// Lightweight ping fired when the watcher's tick added or removed rows
+// in scan_results. The Scanner page reacts by re-fetching the tree so
+// the NEW filter (and the all-files view) updates live without the user
+// having to navigate away and back. v0.3.64+.
+export interface ScanResultsChanged {
+  type: "scan_results_changed";
+  added: number;
+  removed: number;
+}
+
+export type WSMessage = ScanProgress | JobProgress | JobComplete | ScanResultsChanged;

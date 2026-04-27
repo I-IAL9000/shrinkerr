@@ -75,6 +75,20 @@ class ConnectionManager:
             "probed": probed,
         })
 
+    async def send_scan_results_changed(self, added: int = 0, removed: int = 0) -> None:
+        """Lightweight ping that the scan_results table just changed.
+
+        Fired by the background watcher after each cycle that added or
+        removed rows. Lets the Scanner page refresh its file tree live
+        instead of waiting for the user to navigate away and back.
+        v0.3.64+.
+        """
+        await self.broadcast({
+            "type": "scan_results_changed",
+            "added": added,
+            "removed": removed,
+        })
+
     async def send_job_progress(
         self,
         job_id: int,
