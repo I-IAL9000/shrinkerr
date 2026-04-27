@@ -158,6 +158,9 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
 
     # Server-side select-all: resolve file paths matching the filter
+    # NOTE: select-all also lacks an ORDER BY guarantee on the rule path
+    # below, so the post-resolution sort at the end of this block covers
+    # both folder expansion and select-all together. v0.3.61.
     if payload.select_all and not file_paths:
         import aiosqlite
         from backend.database import DB_PATH
@@ -182,6 +185,15 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 
     if not file_paths:
         return {"job_ids": [], "added": 0}
+
+    # Sort the resolved paths so queue_order follows show/season/episode
+    # grouping (e.g. all "Thunder in My Heart S01E01..S02E08" land
+    # contiguously, then "Tiffany Haddish Presents..."). Folder-resolution
+    # queries above don't ORDER BY, and the select-all path uses
+    # scan_results.id which is insertion order — neither is meaningful in
+    # the queue. Alphabetical by full path is what users expect when they
+    # bulk-add a chunk of TV shows. v0.3.61.
+    file_paths.sort()
 
     from backend.rule_resolver import resolve_rules_for_batch
 
