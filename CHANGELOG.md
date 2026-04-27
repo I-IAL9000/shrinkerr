@@ -5,6 +5,19 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.56] — 2026-04-27
+
+### Fixed
+- **TMDB matching threw away exact ID matches that lacked a poster image**, falling through to a fuzzy title-search that on common titles ("Vanity Fair", "Titanic", "The Watch", "The Village") cheerfully returned the wrong year or wrong medium. Two cooperating bugs:
+  - **Resolver bug.** `_resolve_tmdb` and `_resolve_tmdb_tvdb` (and the three passes in `_resolve_tmdb_search`) all conditioned the match on `if poster_path:` — meaning if TMDB had the show registered with no poster (very common for brand-new shows like *The Cage (2026)* and obscure regional series), the function returned `(None, "placeholder", {})` and the caller treated it as "no match". Now: the match is returned with `source="tmdb"` and full meta (title, year, genres, rating, media_type) regardless of whether a poster image exists; only the poster URL is conditional.
+  - **Caller bug.** The fallback chain gated on `if not poster_url`. So even after fixing the resolvers, an authoritative ID match without a poster would still fall through to the title-search fuzzy fallback. Gate now reads `if source == "placeholder"` — once any resolver returns a TMDB-grade match, the chain stops.
+- **Title-search fallback no longer runs when an explicit `[tvdb-N]` or `[tt…]` ID is present in the folder name and TMDB has no record for it.** If you've gone to the trouble of telling Shrinkerr exactly which show this is, and TMDB legitimately doesn't have it, falling back to a multi-search fuzzy guess can only hurt — best case it's a no-op, worst case it matches a same-titled different show. The folder name's parsed title/year/media-type are kept for display; manual override via Settings still works for any case where you want to point it at a specific TMDB entry.
+- **`media_type` backfill** for TVDB-ID folders now defaults to `"tv"` when TMDB-find returns nothing. TVDB IDs are TV-show specific in the wild, and leaving `media_type` unset disabled all the TV-specific UI affordances.
+
+This addresses cases like *Wild Life (2020) [tvdb-387220]*, *XIII (2011) [tvdb-193501]*, *Wasted (2016) [tvdb-314650]*, *Vanity Fair (2018) [tvdb-349513]*, *Too Close (2021) [tvdb-377263]*, *To The Ends Of The Earth (2005) [tvdb-251014]*, *Titanic (2012) [tvdb-254112]*, *The Woman in White (2018) [tvdb-336199]*, *The Watch (2021) [tvdb-369568]*, *The Village (2013) [tvdb-267149]* / *(2019) [tvdb-354024]*, *The Unusual Suspects (2021) [tvdb-394822]*, and *The Cage (2026) [tvdb-461846]*.
+
+Existing wrongly-cached matches won't auto-correct (the resolver only runs for uncached paths). Use the manual-override flow or trigger a poster prefetch after evicting the suspect rows if you want to refresh in bulk.
+
 ## [0.3.55] — 2026-04-27
 
 ### Removed

@@ -232,14 +232,25 @@ async def resolve_posters(req: ResolveRequest):
                                 return path, meta["media_type"]
                         except Exception:
                             pass
-                    # TMDB title search
-                    if tmdb_key:
+                    # TMDB title search — only when no explicit ID was parsed.
+                    # If [tvdb-N]/[ttN] is in the folder name and TMDB-find
+                    # returned nothing, a title fallback could cross-contaminate
+                    # media_type with a wrong-show match. v0.3.56+.
+                    has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
+                    if tmdb_key and not has_explicit_id:
                         try:
                             _, _, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
                             if tmdb_meta.get("media_type"):
                                 return path, tmdb_meta["media_type"]
                         except Exception:
                             pass
+                    # Explicit-ID, no TMDB record → fall back to TVDB-implies-TV.
+                    # TVDB IDs are TV-show-specific in the wild (TheTVDB
+                    # historically; even after movies were added, [tvdb-N] in
+                    # the folder name almost always means TV). Better than
+                    # leaving media_type unset. v0.3.56+.
+                    if has_explicit_id and parsed.get("tvdb_id"):
+                        return path, "tv"
                     # Fall back to Plex (knows the type from the library)
                     if plex_url_bf and plex_token_bf:
                         try:
@@ -277,21 +288,34 @@ async def resolve_posters(req: ResolveRequest):
                     print(f"[POSTER] Plex failed for '{parsed['title']}': {exc}", flush=True)
 
             # 2. Try TMDB by IMDb ID (exact match)
-            if not poster_url and tmdb_key and parsed.get("imdb_id"):
+            # Gate on `source == "placeholder"` rather than `not poster_url`:
+            # a TMDB ID hit without a poster is still an authoritative match
+            # (correct title/year/genres/media_type) and should preempt the
+            # fuzzy title-search fallback that on common titles
+            # ("Titanic", "Vanity Fair", "The Watch") will happily resolve
+            # to the wrong year or wrong medium. v0.3.56+.
+            if source == "placeholder" and tmdb_key and parsed.get("imdb_id"):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
                 except Exception:
                     pass
 
             # 3. Try TMDB by TVDB ID (exact match for TV shows)
-            if not poster_url and tmdb_key and parsed.get("tvdb_id"):
+            if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
                 except Exception:
                     pass
 
-            # 4. Try TMDB search by title+year (fallback)
-            if not poster_url and tmdb_key and parsed.get("title"):
+            # 4. Try TMDB search by title+year (fallback) — but ONLY when no
+            # explicit ID was present. If the user's folder name embedded a
+            # tvdb-/tt- ID and TMDB simply doesn't have the title yet
+            # (brand-new shows, obscure regional series), guessing via title
+            # is worse than honestly showing a placeholder with the parsed
+            # title, since the guess can mismatch a same-titled different
+            # show. v0.3.56+.
+            has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
+            if source == "placeholder" and not has_explicit_id and tmdb_key and parsed.get("title"):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
                 except Exception:
@@ -432,17 +456,23 @@ async def _run_prefetch():
                 tmdb_meta = {}
                 image_data = None
 
+                # Gate on `source == "placeholder"` not `not poster_url` so an
+                # ID match without a poster image still counts as definitive
+                # and skips the title-search fuzzy fallback. Title search only
+                # runs when no explicit ID was parsed — see the resolve_posters
+                # caller for the full rationale. v0.3.56+.
                 if tmdb_key and parsed.get("imdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
                     except Exception as e:
                         if "429" in str(e):
                             await asyncio.sleep(5)
-                if not poster_url and tmdb_key and parsed.get("tvdb_id"):
+                if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
                     except Exception as e:
                         if "429" in str(e):
                             await asyncio.sleep(5)
-                if not poster_url and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
+                _has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
+                if source == "placeholder" and not _has_explicit_id and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
                     except Exception as e:
                         if "429" in str(e):
@@ -599,7 +629,15 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
 
 
 async def _resolve_tmdb(imdb_id, api_key):
-    """Resolve by IMDb ID — exact match, most reliable."""
+    """Resolve by IMDb ID — exact match, most reliable.
+
+    Returns (poster_url_or_None, source, meta). When TMDB has the title
+    registered but no poster image, source is still "tmdb" and meta is
+    populated — the caller treats this as an authoritative match and
+    skips the fuzzy title-search fallback (which on an obscure or
+    brand-new title would happily return the wrong year's "Vanity Fair"
+    or similar). v0.3.56+.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(
@@ -608,16 +646,27 @@ async def _resolve_tmdb(imdb_id, api_key):
         )
         if resp.status_code == 200:
             for key in ["movie_results", "tv_results"]:
-                for item in resp.json().get(key, []):
-                    poster = item.get("poster_path")
-                    if poster:
-                        meta = _extract_tmdb_meta(item, "movie" if key == "movie_results" else "tv", api_key)
-                        return f"https://image.tmdb.org/t/p/w300{poster}", "tmdb", meta
+                items = resp.json().get(key, [])
+                if not items:
+                    continue
+                item = items[0]  # /find returns at most one for a given external ID
+                media_type = "movie" if key == "movie_results" else "tv"
+                meta = _extract_tmdb_meta(item, media_type, api_key)
+                poster = item.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+                return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
 async def _resolve_tmdb_tvdb(tvdb_id, api_key):
-    """Resolve by TVDB ID — exact match for TV shows."""
+    """Resolve by TVDB ID — exact match for TV shows.
+
+    See _resolve_tmdb for the no-poster handling rationale. TVDB IDs
+    are TV-show specific in the wild, so a match here pins media_type
+    to "tv" reliably and the caller will not run the multi-search
+    fallback that could otherwise return a same-titled movie.
+    v0.3.56+.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(
@@ -626,11 +675,15 @@ async def _resolve_tmdb_tvdb(tvdb_id, api_key):
         )
         if resp.status_code == 200:
             for key in ["tv_results", "movie_results"]:
-                for item in resp.json().get(key, []):
-                    poster = item.get("poster_path")
-                    if poster:
-                        meta = _extract_tmdb_meta(item, "tv" if key == "tv_results" else "movie", api_key)
-                        return f"https://image.tmdb.org/t/p/w300{poster}", "tmdb", meta
+                items = resp.json().get(key, [])
+                if not items:
+                    continue
+                item = items[0]
+                media_type = "tv" if key == "tv_results" else "movie"
+                meta = _extract_tmdb_meta(item, media_type, api_key)
+                poster = item.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+                return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
@@ -692,12 +745,16 @@ async def _resolve_tmdb_search(title, year, api_key):
             def _match_return(item):
                 mt = item.get("media_type", "movie")
                 meta = _extract_tmdb_meta(item, mt, api_key)
-                return f"https://image.tmdb.org/t/p/w300{item['poster_path']}", "tmdb", meta
+                # Poster is optional — a title with no TMDB poster is still a
+                # better match than falling through to a wrong-year/wrong-show
+                # fuzzy guess. Render placeholder, keep the meta. v0.3.56+.
+                poster = item.get("poster_path")
+                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+                return poster_url, "tmdb", meta
 
             # Pass 1: exact title + year match
             if year:
                 for item in results:
-                    if not item.get("poster_path"): continue
                     item_title = (item.get("title") or item.get("name") or "").lower().strip()
                     item_year = str(item.get("release_date", item.get("first_air_date", ""))[:4])
                     if item_title == title_lower and item_year == year:
@@ -705,14 +762,12 @@ async def _resolve_tmdb_search(title, year, api_key):
 
             # Pass 2: exact title match (any year)
             for item in results:
-                if not item.get("poster_path"): continue
                 item_title = (item.get("title") or item.get("name") or "").lower().strip()
                 if item_title == title_lower:
                     return _match_return(item)
 
             # Pass 3: partial title + year validation
             for item in results:
-                if not item.get("poster_path"): continue
                 item_title = (item.get("title") or item.get("name") or "").lower().strip()
                 if title_lower in item_title or item_title in title_lower:
                     if year:
