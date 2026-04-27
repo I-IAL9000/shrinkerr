@@ -5,77 +5,67 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.59] — 2026-04-27
+
+### Documentation
+- Trimmed recent changelog entries to one-liners and adopted that style going forward.
+
 ## [0.3.58] — 2026-04-27
 
 ### Documentation
-- **Updated the VMAF analysis settings copy to match reality.** The help text said "this adds a few minutes per job" — written when the analysis ran over the entire encode. Since the v0.3.32-era switch to a 30-second sample window centred at ~33% into the file (with the fps + colour-range normalisation that made sampling reliable), the actual cost on a modern GPU is well under a minute, often around 20 seconds. New copy says so explicitly and notes the sample-window scope so users understand why it's that fast.
+- Updated the VMAF analysis settings copy to match reality.
 
 ## [0.3.57] — 2026-04-27
 
 ### Added
-- **"Adding N items to queue…" in-flight overlay on the Scanner.** Clicking *Add to queue* on the estimate modal closed the modal immediately and then went silent for the duration of the API call — for hundreds or thousands of files that's a multi-second blank stare with no indication anything is happening. New full-screen overlay with a spinner and "Adding 1,234 items to queue… Resolving rules, deduping, inserting jobs." text appears for the duration of the request. Auto-dismisses on success or error; the existing toast still confirms the final count.
+- Loading overlay while adding many items to the queue.
 
 ### Fixed
-- **Bulk queue insert was N round-trips through aiosqlite when it should have been 1.** `Queue.add_jobs_bulk` looped per-row calling `await db.execute(INSERT, ...)` — each await is a thread-pool round-trip. With AUTOINCREMENT in WAL mode under a single writer SQLite gives contiguous IDs within a transaction, so the per-row execute was buying nothing the bulk path needed. Replaced with a pre-computed param list and a single `executemany`, with IDs reconstructed from `cursor.lastrowid` and `cursor.rowcount`. Same dedup/insert_next/queue_order semantics, same return shape (one ID-or-zero per input job).
-- **`log_event` was re-opening a fresh DB connection per call.** The post-insert "queued" event log in `add_jobs_bulk` fired one `log_event` per inserted job, and each one opened a connection, set pragmas, inserted, committed, closed. For a 1000-job add, that's 1000 connection cycles and 1000 commits — the dominant cost after the first fix landed. Added `log_events_bulk` that takes the whole list and inserts via one `executemany` in one connection; queue.py uses it. Single-event `log_event` is unchanged for one-off callers.
-
-Net: a 1000-item add that previously felt like a freeze now finishes in well under a second on the server side, and the time it does take is filled with a clear progress affordance instead of a frozen UI.
+- Bulk queue add is now much faster.
 
 ## [0.3.56] — 2026-04-27
 
 ### Fixed
-- **TMDB matching threw away exact ID matches that lacked a poster image**, falling through to a fuzzy title-search that on common titles ("Vanity Fair", "Titanic", "The Watch", "The Village") cheerfully returned the wrong year or wrong medium. Two cooperating bugs:
-  - **Resolver bug.** `_resolve_tmdb` and `_resolve_tmdb_tvdb` (and the three passes in `_resolve_tmdb_search`) all conditioned the match on `if poster_path:` — meaning if TMDB had the show registered with no poster (very common for brand-new shows like *The Cage (2026)* and obscure regional series), the function returned `(None, "placeholder", {})` and the caller treated it as "no match". Now: the match is returned with `source="tmdb"` and full meta (title, year, genres, rating, media_type) regardless of whether a poster image exists; only the poster URL is conditional.
-  - **Caller bug.** The fallback chain gated on `if not poster_url`. So even after fixing the resolvers, an authoritative ID match without a poster would still fall through to the title-search fuzzy fallback. Gate now reads `if source == "placeholder"` — once any resolver returns a TMDB-grade match, the chain stops.
-- **Title-search fallback no longer runs when an explicit `[tvdb-N]` or `[tt…]` ID is present in the folder name and TMDB has no record for it.** If you've gone to the trouble of telling Shrinkerr exactly which show this is, and TMDB legitimately doesn't have it, falling back to a multi-search fuzzy guess can only hurt — best case it's a no-op, worst case it matches a same-titled different show. The folder name's parsed title/year/media-type are kept for display; manual override via Settings still works for any case where you want to point it at a specific TMDB entry.
-- **`media_type` backfill** for TVDB-ID folders now defaults to `"tv"` when TMDB-find returns nothing. TVDB IDs are TV-show specific in the wild, and leaving `media_type` unset disabled all the TV-specific UI affordances.
-
-This addresses cases like *Wild Life (2020) [tvdb-387220]*, *XIII (2011) [tvdb-193501]*, *Wasted (2016) [tvdb-314650]*, *Vanity Fair (2018) [tvdb-349513]*, *Too Close (2021) [tvdb-377263]*, *To The Ends Of The Earth (2005) [tvdb-251014]*, *Titanic (2012) [tvdb-254112]*, *The Woman in White (2018) [tvdb-336199]*, *The Watch (2021) [tvdb-369568]*, *The Village (2013) [tvdb-267149]* / *(2019) [tvdb-354024]*, *The Unusual Suspects (2021) [tvdb-394822]*, and *The Cage (2026) [tvdb-461846]*.
-
-Existing wrongly-cached matches won't auto-correct (the resolver only runs for uncached paths). Use the manual-override flow or trigger a poster prefetch after evicting the suspect rows if you want to refresh in bulk.
+- TMDB matching now honors `[tvdb-N]`/`[tt…]` IDs even when the show has no poster on TMDB.
+- Title-search fallback no longer runs when an explicit ID is present, preventing wrong-show guesses.
 
 ## [0.3.55] — 2026-04-27
 
 ### Removed
-- **Disabled the subtitle-prestrip pre-pass** (the I/O-bound `-c copy` remux that ran before encoding files with 6+ subs to drop). Users were noticing ~30 s–1 min of dead air before the encode actually started on multi-sub WEB-DLs; question was whether it still earned its keep. Re-tracing the history: the prestrip was added in v0.3.43–v0.3.44 because files with many unmapped sub streams looked like they encoded at ~1× instead of ~5×, with the progress bar pinned. The actual fix landed in those same versions on the *parser* side — `parse_ffmpeg_progress` now falls back to `frame=N / total_frames` when ffmpeg's `time=` field stalls or reads `N/A`. Since ffmpeg's `speed=` is computed as `time / wall_clock`, the "1×" measurement that justified the prestrip was itself reading the stale `time=` value the parser fix was about to address — i.e. measurement artefact, not a real encoder slowdown. With the parser bug gone, the prestrip is paying ~30 s–1 min of I/O + a full input-size temp write to fix a problem that was never on ffmpeg's side. Threshold raised from 6 to 9999 (effectively off); `_prestrip_subtitles` and the call block stay so a single-line revert can re-enable it if a real encoder slowdown does materialise.
+- Disabled the subtitle-prestrip pre-pass that caused a long wait before encoding multi-sub files.
 
 ### Added
-- **Completed-job report now populates for `skipped_larger` outcomes** (encode finished but was larger than source, original was kept). Previously the early-return at `space_saved < 0 && !had_track_removal` returned only `{success, output_path, space_saved, error, skipped_larger}` — no `encoding_stats`, no `ffmpeg_command`, no `ffmpeg_log` — so when the user expanded one of those rows the comparison table was empty. Now mirrors the success-path payload so the same Original-vs-Encoded grid renders, with the encoded-size cell showing `(N% larger — discarded)` in amber instead of `(N% saved)` in green when the ratio is negative. Lets the user see which CQ/preset/bitrate produced an unsaving result and tune their threshold rules accordingly, which is the exact use case they asked for.
+- Completed-job report now shows the original-vs-encoded comparison for "ignored — encode was larger" outcomes.
 
 ## [0.3.54] — 2026-04-26
 
 ### Fixed
-- **Completed-job VMAF score showed a trailing `0`** (e.g. `96.9 (Excellent)0`). The expanded job report renders `{job.vmaf_uncertain && (<warning>)}` to show the measurement-suspect ⚠ marker on flagged scores. `vmaf_uncertain` comes from a SQLite INTEGER column (0 or 1) — the TypeScript type declares it as `boolean` but the wire value is numeric. `0 && (...)` evaluates to `0`, and React renders numeric zero as literal text (it only suppresses `false`/`null`/`undefined`, not `0`). Coerced with `!!` so the falsy branch returns `false` and renders nothing. Other VMAF render sites (EstimateModal, EventTimeline, FileDetail, DashboardPage) already guarded correctly via `!= null` checks or `if` statements; only the one expanded-report path was bare-truthy.
+- Removed trailing `0` after the VMAF tier label in the completed-job report.
 
 ## [0.3.53] — 2026-04-26
 
 ### Fixed
-- **Scanner dropdown listed Scan=off media directories** (e.g. NZBGet/SABnzbd landing zones added with `Scan=off` per v0.3.49), implying they would be scanned if picked. The "All configured paths" branch already filtered them out before calling `startScan`, but selecting one of them by name from the dropdown would still scan it — and the dropdown's mere presence of the entry contradicted v0.3.49's stated UX of "the scanner pretends the directory doesn't exist." Dropdown options now filter on `auto_scan !== false && auto_scan !== 0`, matching the same predicate used by handleScan. The file-tree/poster-grid `mediaDirs` prop is still populated from the full list — Scan=off dirs can still receive webhook-registered files that legitimately need to render in the tree.
+- Hidden `Scan=off` media directories from the Scanner dropdown.
 
 ## [0.3.52] — 2026-04-25
 
 ### Documentation
-- **Documented the NZBGet/SABnzbd setup pitfalls that bit us in v0.3.49–v0.3.51 troubleshooting.** Both the in-app Settings → Integrations → NZBGet section and `docs/rules-and-automation.md` now lead with a "Setup prerequisites (read first)" walkthrough covering the three things that have to line up before the post-processing script can work, in the order they tend to break:
-  1. **Volume-mount alignment between containers** — paired `docker-compose.yml` snippet showing `/home/me/Downloads:/Downloads:rw` on the same line in both NZBGet and Shrinkerr's compose, plus the reminder that case matters on Linux and that `docker compose up -d` alone won't pick up volume changes (you need `down && up -d`).
-  2. **Registering NZBGet's category landing folders as media directories** with `Type=Other` (so TMDB doesn't try to identify release-name temp folders) and `Scan=off` (the v0.3.49 flag — webhook-eligible without the scanner crawling it). Includes a small table explaining what each setting does and why.
-  3. **When path mappings are actually needed** — empty by default if both containers mount the same host path at the same internal path; only required when the script's view of the file path genuinely differs from Shrinkerr's view (host-NZBGet + container-Shrinkerr, historic case-mismatch, multi-volume layouts).
-- **New troubleshooting section** for the three failure modes we hit during the v0.3.49 → v0.3.51 chase: `Outside media dirs: /path/to/file.mkv` (with the `docker exec shrinkerr ls "<path>"` diagnostic), `Failed to probe file` (file moved post-webhook, stale DB rows, permissions), and `SHRINKERR: NONE` in NZBGet history (script's category/tag filter rejected the job before calling the API).
-- The Settings UI's prerequisites block defaults to **open** so first-time setup users can't miss it; the install steps and existing troubleshooting tips collapse below it.
+- Documented the NZBGet/SABnzbd setup prerequisites in the Settings UI and `docs/rules-and-automation.md`.
 
 ## [0.3.51] — 2026-04-26
 
 ### Fixed
-- **API error toasts now show the backend's actual reason** instead of `API error: 400`. The shared `apiFetch` helper threw `new Error("API error: <status>")` on non-2xx responses, discarding the `{"detail": "..."}` body that FastAPI populates with the real cause (e.g. `Media directory does not exist: /downloads/TV`, `Path is not under any configured media directory`, `Job is not in error state`, etc.). Now reads the response body, extracts `detail` (or assembles one from Pydantic validation errors), and surfaces it through the thrown Error — so the v0.3.50 toast on the "+ Add" form (and every other toast that shows `e?.message`) finally tells the user what went wrong.
+- API error toasts now show the backend's actual reason instead of `API error: 400`.
 
 ## [0.3.50] — 2026-04-26
 
 ### Fixed
-- **"+ Add" on Settings → Media directories silently did nothing on failure.** When the backend rejected the path (common cases: path doesn't exist inside the container, isn't a directory, lands under a system prefix, or duplicates an existing entry), the awaited Promise rejection was un-caught and the user got no visual feedback. Now wraps the call in a try/catch and surfaces the backend's validation message via toast.
+- "+ Add" on Settings → Media directories now shows an error toast on failure instead of doing nothing.
 
 ## [0.3.49] — 2026-04-26
 
 ### Added
-- **Per-media-dir "Scan" toggle.** Decouples "this path is webhook-eligible" (must be in `media_dirs` for the post-processing webhook to accept queue requests against it) from "the scanner crawls it". A new `auto_scan` flag on each media directory — defaulting to **on** for backward compatibility — controls only the scanner / watcher behaviour. The webhook validation continues to consult the full media-dirs list. Use case (and the motivation): NZBGet/SABnzbd downloads land at `/downloads/tv/...`. The post-processing scripts need that path to be webhook-eligible so files can be queued for conversion the moment they finish downloading, but the user doesn't want temp release-name folders showing up in the file tree. Solution: add `/downloads` (or `/downloads/tv` and `/downloads/movies` separately) as a media dir with **Scan = OFF**, mark "Other" if you want TMDB lookups skipped too. The post-processing script then queues normally; the scanner pretends the directory doesn't exist. UI: toggle next to each entry in Settings → Media directories; backend: new `auto_scan` column on `media_dirs` (default 1), filtered into the watcher's query and the "scan all" frontend batch. Existing rows keep their current behaviour (auto_scan=1 by default).
+- Per-media-dir "Scan" toggle — webhook-eligible without the scanner crawling it (for NZBGet/SABnzbd landing zones).
 
 ## [0.3.48] — 2026-04-26
 
