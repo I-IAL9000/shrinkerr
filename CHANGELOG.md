@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.55] — 2026-04-27
+
+### Removed
+- **Disabled the subtitle-prestrip pre-pass** (the I/O-bound `-c copy` remux that ran before encoding files with 6+ subs to drop). Users were noticing ~30 s–1 min of dead air before the encode actually started on multi-sub WEB-DLs; question was whether it still earned its keep. Re-tracing the history: the prestrip was added in v0.3.43–v0.3.44 because files with many unmapped sub streams looked like they encoded at ~1× instead of ~5×, with the progress bar pinned. The actual fix landed in those same versions on the *parser* side — `parse_ffmpeg_progress` now falls back to `frame=N / total_frames` when ffmpeg's `time=` field stalls or reads `N/A`. Since ffmpeg's `speed=` is computed as `time / wall_clock`, the "1×" measurement that justified the prestrip was itself reading the stale `time=` value the parser fix was about to address — i.e. measurement artefact, not a real encoder slowdown. With the parser bug gone, the prestrip is paying ~30 s–1 min of I/O + a full input-size temp write to fix a problem that was never on ffmpeg's side. Threshold raised from 6 to 9999 (effectively off); `_prestrip_subtitles` and the call block stay so a single-line revert can re-enable it if a real encoder slowdown does materialise.
+
+### Added
+- **Completed-job report now populates for `skipped_larger` outcomes** (encode finished but was larger than source, original was kept). Previously the early-return at `space_saved < 0 && !had_track_removal` returned only `{success, output_path, space_saved, error, skipped_larger}` — no `encoding_stats`, no `ffmpeg_command`, no `ffmpeg_log` — so when the user expanded one of those rows the comparison table was empty. Now mirrors the success-path payload so the same Original-vs-Encoded grid renders, with the encoded-size cell showing `(N% larger — discarded)` in amber instead of `(N% saved)` in green when the ratio is negative. Lets the user see which CQ/preset/bitrate produced an unsaving result and tune their threshold rules accordingly, which is the exact use case they asked for.
+
 ## [0.3.54] — 2026-04-26
 
 ### Fixed

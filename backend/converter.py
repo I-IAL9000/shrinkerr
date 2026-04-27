@@ -1267,23 +1267,28 @@ async def convert_file(
 
     # Two-pass workflow for files with many unwanted subtitle streams (v0.3.39+).
     #
-    # Background: WEBDL releases of some shows ship 30+ subrip streams. Mapping
-    # most of them out in a single ffmpeg pass leaves the muxer interleaving
-    # video + audio + N kept subs, but the *demuxer* still has to read packets
-    # from every unmapped sub stream and route them to /dev/null. With ~35
-    # streams the mux/demux interleave drift accumulates over a long encode —
-    # ffmpeg's frame= keeps advancing but the time= field freezes (output-
-    # commit position lags), the progress bar pins, and ETA inflates. Test
-    # data: same Breathless episode encodes at 5.15× with `-an -sn` (drop all
-    # streams) but stalls at ~1× when 4 subs are mapped + 30 dropped.
+    # Background: this two-pass workflow was added in v0.3.43–v0.3.44 to
+    # work around what looked like an ffmpeg stall — frame= kept advancing
+    # but time= froze and the progress bar pinned, with `speed=` reading
+    # ~1× instead of the expected ~5× on files with many unmapped sub
+    # streams. The "fix" was a fast `-c copy` remux pass to strip the
+    # unwanted subs before the main encode.
     #
-    # Fix: when there are >= _PRESTRIP_SUB_THRESHOLD streams to remove, do
-    # a fast `-c copy` remux pass first that strips the unwanted subs. The
-    # main encode then runs on a clean 5–6 stream file and hits the same
-    # ~5× speed as the no-streams test. The pre-strip is I/O-bound (~30s
-    # for a 2 GB file) and runs once per job. Threshold is conservative —
-    # files with a handful of subs to drop don't need this and aren't slowed.
-    _PRESTRIP_SUB_THRESHOLD = 6
+    # Hindsight (v0.3.55): the actual bug was on our side — the progress
+    # parser only read `time=` and went stale when ffmpeg paused emitting
+    # it. v0.3.43–v0.3.44 added the frame= fallback that actually fixed
+    # the visible stall. Since `speed=` is computed as `time/wall_clock`,
+    # the "1× vs 5×" measurements that motivated the prestrip were
+    # themselves reading the stale time= value — i.e. measurement
+    # artefact, not real encoder slowdown.
+    #
+    # The prestrip's cost is concrete: an extra ~30s–1min I/O-bound pass
+    # plus a full input-size temp write, every time a file has 6+ subs to
+    # drop. The benefit is no longer believed to exist. Disabled by
+    # raising the threshold past anything realistic. The function and
+    # call block stay so a single-line revert can re-enable it if real
+    # encoder slowdown does turn up. v0.3.55+.
+    _PRESTRIP_SUB_THRESHOLD = 9999
     prestrip_path: str | None = None
     encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
     if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
@@ -1635,12 +1640,40 @@ async def convert_file(
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
+        # Capture the same encoding_stats payload a successful encode would
+        # write, so the completed-jobs report shows the original-vs-discarded
+        # comparison (size, bitrate, settings used). Without this the row
+        # rendered with no body at all — users couldn't see WHY the encode
+        # was rejected or what threshold to tune. v0.3.55+.
+        encode_time_skipped = time.monotonic() - encode_start_time
         return {
             "success": True,  # Not an error, just no savings
             "output_path": input_path,  # Keep original path
             "space_saved": 0,
             "error": None,
             "skipped_larger": True,
+            "ffmpeg_command": full_command,
+            "ffmpeg_log": "\n".join(all_lines[-500:]),
+            "encoding_stats": {
+                "encoder": encoder,
+                "preset": nvenc_preset,
+                "cq": cq,
+                "crf": crf,
+                "audio_codec": audio_codec,
+                "audio_bitrate": audio_bitrate,
+                "target_resolution": target_resolution,
+                "input_size": original_size,
+                "output_size": output_size,
+                # ratio will be negative here (the whole point — encode grew the
+                # file). Frontend renders negative ratios in a warning colour
+                # so it doesn't look like a successful saving.
+                "ratio": round((1 - output_size / original_size) * 100, 1) if original_size > 0 else 0,
+                "encode_seconds": round(encode_time_skipped, 1),
+                "duration": duration,
+                "input_bitrate": round(original_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
+                "output_bitrate": round(output_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
+                "skipped_larger": True,
+            },
         }
     if space_saved < 0 and had_track_removal:
         print(f"[CONVERT] Output is larger but keeping it — tracks were removed inline ({abs(space_saved)} bytes growth, but unwanted tracks are gone)", flush=True)

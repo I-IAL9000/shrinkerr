@@ -262,7 +262,23 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 {logData.encoding_stats.input_size > 0 && <>
                   <span style={{ color: "var(--text-muted)" }}>Size</span>
                   <span style={{ color: "var(--text-secondary)" }}>{formatBytes(logData.encoding_stats.input_size)}</span>
-                  <span style={{ color: "var(--success)" }}>{formatBytes(logData.encoding_stats.output_size)} <span style={{ opacity: 0.6 }}>({logData.encoding_stats.ratio}% saved)</span></span>
+                  {/* Negative ratio = skipped_larger (encode grew the file
+                      and the original was kept). Render in a warning
+                      colour with an explicit "discarded" hint so the row
+                      doesn't read like a successful saving. v0.3.55+. */}
+                  {logData.encoding_stats.ratio < 0 ? (
+                    <span style={{ color: "#ffa94d" }}>
+                      {formatBytes(logData.encoding_stats.output_size)}{" "}
+                      <span style={{ opacity: 0.7 }}>
+                        ({Math.abs(logData.encoding_stats.ratio)}% larger — discarded)
+                      </span>
+                    </span>
+                  ) : (
+                    <span style={{ color: "var(--success)" }}>
+                      {formatBytes(logData.encoding_stats.output_size)}{" "}
+                      <span style={{ opacity: 0.6 }}>({logData.encoding_stats.ratio}% saved)</span>
+                    </span>
+                  )}
                 </>}
 
                 {logData.encoding_stats.input_bitrate != null && <>
