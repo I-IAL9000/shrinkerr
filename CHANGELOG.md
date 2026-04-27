@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.63] — 2026-04-27
+
+### Fixed
+- Add-to-queue toast no longer says "all already queued" when new items were actually added (`cursor.lastrowid` is `None` after `executemany` per Python sqlite3 — read `MAX(id)` after the insert instead).
+
+### Performance
+- First-time poster resolution for a batch of new items now runs 8 paths in parallel instead of one-at-a-time, cutting initial render of ~30 new items from 30+ s to a few seconds.
+
 ## [0.3.62] — 2026-04-27
 
 ### Fixed

@@ -270,30 +270,34 @@ async def resolve_posters(req: ResolveRequest):
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")
         tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
+        plex_path_mapping = settings.get("plex_path_mapping", "")
 
-        for path in uncached:
+        # Resolve all uncached paths concurrently. Pre-v0.3.63 this was a
+        # plain `for path in uncached:` loop, which meant N sequential
+        # round-trips to Plex/TMDB/the image CDN — for 30 new items that's
+        # ~30s before the user sees anything. With a bounded semaphore
+        # we run several resolutions in parallel; once the cache fills,
+        # subsequent loads are instant. Concurrency=8 keeps us comfortably
+        # below TMDB's 50 req/sec rate limit even if every path takes the
+        # full chain (Plex → IMDb find → TVDB find → title search +
+        # image download). v0.3.63.
+        async def _resolve_one(path: str):
             parsed = parse_folder_name(path)
             poster_url = None
             source = "placeholder"
             image_data = None
-            tmdb_meta = {}
+            tmdb_meta: dict = {}
 
             # 1. Try Plex
             if plex_url and plex_token:
                 try:
                     poster_url, source, tmdb_meta = await _resolve_plex(
-                        path, parsed, plex_url, plex_token, settings.get("plex_path_mapping", "")
+                        path, parsed, plex_url, plex_token, plex_path_mapping
                     )
                 except Exception as exc:
                     print(f"[POSTER] Plex failed for '{parsed['title']}': {exc}", flush=True)
 
             # 2. Try TMDB by IMDb ID (exact match)
-            # Gate on `source == "placeholder"` rather than `not poster_url`:
-            # a TMDB ID hit without a poster is still an authoritative match
-            # (correct title/year/genres/media_type) and should preempt the
-            # fuzzy title-search fallback that on common titles
-            # ("Titanic", "Vanity Fair", "The Watch") will happily resolve
-            # to the wrong year or wrong medium. v0.3.56+.
             if source == "placeholder" and tmdb_key and parsed.get("imdb_id"):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
@@ -307,24 +311,34 @@ async def resolve_posters(req: ResolveRequest):
                 except Exception:
                     pass
 
-            # 4. Try TMDB search by title+year (fallback) — but ONLY when no
-            # explicit ID was present. If the user's folder name embedded a
-            # tvdb-/tt- ID and TMDB simply doesn't have the title yet
-            # (brand-new shows, obscure regional series), guessing via title
-            # is worse than honestly showing a placeholder with the parsed
-            # title, since the guess can mismatch a same-titled different
-            # show. v0.3.56+.
+            # 4. TMDB title search — only when no explicit ID was parsed.
+            # See v0.3.56 changelog for the wrong-show-mismatch rationale.
             has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
             if source == "placeholder" and not has_explicit_id and tmdb_key and parsed.get("title"):
                 try:
-                    poster_url, source, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
+                    poster_url, source, tmdb_meta = await _resolve_tmdb_search(
+                        parsed["title"], parsed.get("year"), tmdb_key
+                    )
                 except Exception:
                     pass
 
-            # Download and cache the image
             if poster_url:
                 image_data = await _download_image(poster_url, plex_url, plex_token)
 
+            return path, parsed, poster_url, source, image_data, tmdb_meta
+
+        sem = asyncio.Semaphore(8)
+        async def _bounded(path: str):
+            async with sem:
+                return await _resolve_one(path)
+
+        resolved = await asyncio.gather(*[_bounded(p) for p in uncached])
+
+        # All network work done — now write all results to cache + result
+        # in a single transaction so the per-row INSERT chain isn't N more
+        # commits. v0.3.63.
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for path, parsed, poster_url, source, image_data, tmdb_meta in resolved:
             entry = {
                 "title": parsed["title"],
                 "year": parsed.get("year"),
@@ -339,14 +353,13 @@ async def resolve_posters(req: ResolveRequest):
             }
             result[path] = entry
 
-            # Cache
             await db.execute(
                 """INSERT OR REPLACE INTO poster_cache
                    (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (path, parsed["title"], parsed.get("year"), poster_url, source, image_data,
                  tmdb_meta.get("rating"), tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
-                 datetime.now(timezone.utc).isoformat()),
+                 now_iso),
             )
 
         await db.commit()

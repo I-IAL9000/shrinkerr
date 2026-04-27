@@ -280,25 +280,29 @@ class JobQueue:
             )
             assigned_ids: list[int] = []
             if params_list:
-                cur = await db.executemany(sql, params_list)
-                last_id = cur.lastrowid or 0
-                # IDs are contiguous within this transaction (AUTOINCREMENT +
-                # single-writer WAL), so we know last_id is the id of the
-                # final inserted row and len(params_list) is how many we
-                # asked for. Don't gate on cursor.rowcount — aiosqlite's
-                # rowcount after executemany is unreliable on some Python
-                # builds (sometimes -1, sometimes only the last batch's
-                # count). Falling through to all-zero IDs there made the
-                # route return added=0 even when rows landed correctly,
-                # and the toast then claimed "no items added". Fixed in
-                # v0.3.60.
+                await db.executemany(sql, params_list)
+                # Python's sqlite3 documents that `cursor.lastrowid` is
+                # left unchanged (None) after `executemany`. Both v0.3.57
+                # and v0.3.60 read `cur.lastrowid or 0` here, fell
+                # through to all-zero IDs every time, and made `added`
+                # return 0 even when rows had landed — which is why the
+                # toast claimed "all already queued" on mixed batches.
+                #
+                # Right answer: read MAX(id) after the executemany. The
+                # connection's transaction view includes our just-
+                # inserted (uncommitted) rows; AUTOINCREMENT + single-
+                # writer WAL means the IDs we just assigned are
+                # contiguous and the highest ones present, regardless of
+                # what other connections did before our transaction
+                # started. v0.3.63.
+                async with db.execute("SELECT MAX(id) FROM jobs") as cur2:
+                    row = await cur2.fetchone()
+                    last_id = row[0] if row and row[0] is not None else 0
                 if last_id:
                     assigned_ids = list(range(last_id - len(params_list) + 1, last_id + 1))
                 else:
-                    # Truly defensive fallback: lastrowid==0 after a
-                    # successful executemany of INSERTs would be a SQLite
-                    # bug, not just a reporting quirk. Report zeros so we
-                    # don't fabricate IDs.
+                    # Should never fire: an executemany that completed
+                    # without raising must have inserted ≥1 row.
                     assigned_ids = [0] * len(params_list)
 
             # 5. Splice IDs back into a list with the same length/order as `jobs`.
