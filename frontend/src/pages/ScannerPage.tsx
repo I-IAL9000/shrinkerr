@@ -835,8 +835,20 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;
       setSelectAllActive(false);
       setSelectedPaths(new Set());
+      const skippedExisting = result.skipped_existing ?? 0;
       if (result.added > 0) {
-        toast(`Added ${result.added} item${result.added !== 1 ? "s" : ""} to queue${priority > 0 ? ` (${["", "high", "highest"][priority]} priority)` : ""}`, "success");
+        const priorityLabel = priority > 0 ? ` (${["", "high", "highest"][priority]} priority)` : "";
+        const dupsNote = skippedExisting > 0 ? ` (${skippedExisting} already queued)` : "";
+        toast(
+          `Added ${result.added} item${result.added !== 1 ? "s" : ""} to queue${priorityLabel}${dupsNote}`,
+          "success",
+        );
+      } else if (skippedExisting > 0) {
+        // Distinguish "all dups" from "no actionable work" — the prior
+        // toast claimed "files may already be optimized" in both cases,
+        // which was wrong when the user re-submitted items that were
+        // simply already queued. v0.3.60.
+        toast(`All ${skippedExisting} item${skippedExisting !== 1 ? "s were" : " was"} already in the queue`);
       } else {
         toast(`No actionable items — files may already be optimized`);
       }

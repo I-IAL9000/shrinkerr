@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.60] — 2026-04-27
+
+### Fixed
+- "No items added" toast appearing after the bulk add even when items were successfully queued (regression from v0.3.57's executemany refactor).
+- Toast now says "All N items were already in the queue" when every selection was a dup, and "Added N (M already queued)" when some were and some weren't.
+
 ## [0.3.59] — 2026-04-27
 
 ### Documentation

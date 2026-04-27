@@ -282,17 +282,23 @@ class JobQueue:
             if params_list:
                 cur = await db.executemany(sql, params_list)
                 last_id = cur.lastrowid or 0
-                count = cur.rowcount
-                if last_id and count == len(params_list):
-                    # IDs are contiguous within this transaction (AUTOINCREMENT +
-                    # single-writer WAL). Reconstruct the per-row IDs from the
-                    # last_id/count so callers that match jobs to IDs still work.
-                    assigned_ids = list(range(last_id - count + 1, last_id + 1))
+                # IDs are contiguous within this transaction (AUTOINCREMENT +
+                # single-writer WAL), so we know last_id is the id of the
+                # final inserted row and len(params_list) is how many we
+                # asked for. Don't gate on cursor.rowcount — aiosqlite's
+                # rowcount after executemany is unreliable on some Python
+                # builds (sometimes -1, sometimes only the last batch's
+                # count). Falling through to all-zero IDs there made the
+                # route return added=0 even when rows landed correctly,
+                # and the toast then claimed "no items added". Fixed in
+                # v0.3.60.
+                if last_id:
+                    assigned_ids = list(range(last_id - len(params_list) + 1, last_id + 1))
                 else:
-                    # Defensive fallback: if rowcount or lastrowid is unexpected,
-                    # we'd rather report 0s than guess wrong IDs. Caller treats
-                    # 0 as "skipped"; "added" count via len(filter(0)) drops them.
-                    # In practice this branch should never fire.
+                    # Truly defensive fallback: lastrowid==0 after a
+                    # successful executemany of INSERTs would be a SQLite
+                    # bug, not just a reporting quirk. Report zeros so we
+                    # don't fabricate IDs.
                     assigned_ids = [0] * len(params_list)
 
             # 5. Splice IDs back into a list with the same length/order as `jobs`.

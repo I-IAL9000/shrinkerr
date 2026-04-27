@@ -392,10 +392,21 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     finally:
         await db.close()
 
-    # Bulk-insert all queued jobs in a single transaction (huge perf win)
+    # Bulk-insert all queued jobs in a single transaction (huge perf win).
+    # `all_ids` parallels `jobs_to_insert` — entries are 0 for files that
+    # were skipped because they already had a pending/running job. The
+    # frontend uses `skipped_existing` to phrase the toast correctly when
+    # everything submitted was already queued (vs. "no actionable items").
+    # v0.3.60.
     all_ids = await _queue.add_jobs_bulk(jobs_to_insert)
     job_ids = [jid for jid in all_ids if jid]
-    return {"job_ids": job_ids, "added": len(job_ids), "ignored_by_rule": ignored_by_rule}
+    skipped_existing = sum(1 for jid in all_ids if jid == 0)
+    return {
+        "job_ids": job_ids,
+        "added": len(job_ids),
+        "ignored_by_rule": ignored_by_rule,
+        "skipped_existing": skipped_existing,
+    }
 
 
 @router.get("/")
