@@ -563,6 +563,17 @@ export const getChangelog = (limit = 0) =>
   apiFetch<{ current: string; entries: ChangelogEntry[] }>(
     `/stats/changelog${limit > 0 ? `?limit=${limit}` : ""}`,
   );
+
+// Fetches GitHub release entries newer than the running version, used by
+// the "Update available" modal so we show what's actually new rather
+// than re-rendering the user's installed (and necessarily older)
+// CHANGELOG.md. `source: "github"` on success, `"local"` on fallback
+// when GitHub couldn't be reached. v0.3.66+.
+export const getUpstreamChangelog = (force = false) =>
+  apiFetch<{ current: string; entries: ChangelogEntry[]; source: "github" | "local" }>(
+    `/stats/upstream-changelog${force ? "?force=1" : ""}`,
+    { cache: "no-store" },
+  );
 export const startQueue = () => apiFetch("/jobs/start", { method: "POST" });
 export const pauseQueue = () => apiFetch("/jobs/pause", { method: "POST" });
 export const resumeQueue = () => apiFetch("/jobs/resume", { method: "POST" });

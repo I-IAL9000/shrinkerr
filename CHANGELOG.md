@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.66] — 2026-04-28
+
+### Fixed
+- "Update available" modal now shows the actual new release notes from GitHub instead of re-rendering your installed CHANGELOG.md (which only goes up to your installed version).
+- Modal force-refreshes the version check on open so the "latest is vX.Y.Z" header reflects the freshest GitHub data, not a 30-min-stale cache value.
+- "LATEST" badge now lights up on the entry whose version actually matches the upstream latest, instead of always tagging the topmost local entry.
+
 ## [0.3.65] — 2026-04-28
 
 ### Fixed

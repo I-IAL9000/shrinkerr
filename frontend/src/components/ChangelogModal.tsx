@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getChangelog, type ChangelogEntry } from "../api";
+import { getChangelog, getUpstreamChangelog, getVersion, type ChangelogEntry } from "../api";
 import ChangelogEntryView from "./ChangelogEntry";
 
 /**
@@ -21,19 +21,57 @@ export default function ChangelogModal({
   onClose: () => void;
   /** The version string we think is newer than what's currently running. */
   latestVersion?: string | null;
-  /** When true, show only the first (latest) entry. When false, show the whole file. */
+  /** When true, show upstream entries newer than current. When false, show the whole local file. */
   showLatestOnly?: boolean;
 }) {
   const [entries, setEntries] = useState<ChangelogEntry[] | null>(null);
   const [current, setCurrent] = useState<string>("");
+  // Latest version reported by the backend at the time the modal opened.
+  // Pre-v0.3.66 we used the prop value, which could be stale (cached for
+  // up to 30 min by the background version-check). Now we force-refresh
+  // when the modal opens so a hard refresh shows the truly-latest tag.
+  const [resolvedLatest, setResolvedLatest] = useState<string | null>(latestVersion ?? null);
+  // "github" when we got upstream release entries; "local" when GitHub
+  // was unreachable and we fell back to the installed CHANGELOG.md.
+  const [source, setSource] = useState<"github" | "local" | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    getChangelog(showLatestOnly ? 1 : 0)
-      .then((r) => { if (!cancelled) { setEntries(r.entries || []); setCurrent(r.current || ""); } })
-      .catch(() => { if (!cancelled) setError(true); });
+
+    if (showLatestOnly) {
+      // "Update available" path: fetch GitHub release entries newer than
+      // current, AND force-refresh the version check so the header shows
+      // the freshest "latest is vX.Y.Z" value (not the cached one that
+      // made the user see v0.3.64 when v0.3.65 was already out). Both
+      // are server-side cached separately so the GitHub round-trip is
+      // amortised across users hitting refresh in close succession.
+      Promise.all([
+        getUpstreamChangelog(true),
+        getVersion(true).catch(() => null),
+      ])
+        .then(([r, v]) => {
+          if (cancelled) return;
+          setEntries(r.entries || []);
+          setCurrent(r.current || "");
+          setSource(r.source);
+          if (v?.latest) setResolvedLatest(v.latest);
+        })
+        .catch(() => { if (!cancelled) setError(true); });
+    } else {
+      // "Release notes" path (Settings → Updates → View full history):
+      // local file is correct here — the user wants to see what's in
+      // the version they're running.
+      getChangelog(0)
+        .then((r) => {
+          if (cancelled) return;
+          setEntries(r.entries || []);
+          setCurrent(r.current || "");
+          setSource("local");
+        })
+        .catch(() => { if (!cancelled) setError(true); });
+    }
     return () => { cancelled = true; };
   }, [open, showLatestOnly]);
 
@@ -49,8 +87,9 @@ export default function ChangelogModal({
 
   const repoUrl = "https://github.com/I-IAL9000/shrinkerr";
   const releasesUrl = `${repoUrl}/releases`;
-  const latestReleaseUrl = latestVersion
-    ? `${repoUrl}/releases/tag/v${latestVersion}`
+  const headerLatest = resolvedLatest ?? latestVersion ?? null;
+  const latestReleaseUrl = headerLatest
+    ? `${repoUrl}/releases/tag/v${headerLatest}`
     : releasesUrl;
 
   return (
@@ -79,11 +118,11 @@ export default function ChangelogModal({
         }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>
-              {showLatestOnly && latestVersion ? "Update available" : "Release notes"}
+              {showLatestOnly && headerLatest ? "Update available" : "Release notes"}
             </div>
-            {showLatestOnly && latestVersion && current && (
+            {showLatestOnly && headerLatest && current && (
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                You're on <strong>v{current}</strong> · latest is <strong style={{ color: "var(--accent)" }}>v{latestVersion}</strong>
+                You're on <strong>v{current}</strong> · latest is <strong style={{ color: "var(--accent)" }}>v{headerLatest}</strong>
               </div>
             )}
           </div>
@@ -115,8 +154,33 @@ export default function ChangelogModal({
               No changelog entries found. Check the <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>GitHub releases page</a>.
             </div>
           )}
-          {!error && entries && entries.length > 0 && entries.map((e, i) => (
-            <ChangelogEntryView key={e.version} entry={e} highlight={i === 0 && showLatestOnly} />
+          {/* Visible notice when we couldn't reach GitHub and fell back to
+              the locally-bundled CHANGELOG.md. Pre-v0.3.66 the modal
+              silently rendered local entries with the topmost one
+              labelled "LATEST", which lied to users on stale containers
+              (current=0.3.63, top entry=0.3.63 — but a real newer release
+              existed upstream). */}
+          {!error && showLatestOnly && source === "local" && (
+            <div style={{
+              fontSize: 12, color: "var(--text-muted)",
+              padding: "8px 10px", marginBottom: 12, borderRadius: 4,
+              background: "rgba(255,169,77,0.06)",
+              border: "1px solid rgba(255,169,77,0.25)",
+            }}>
+              Couldn't reach GitHub to fetch the new release notes — showing your installed
+              CHANGELOG.md instead. The <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>releases page</a> has the latest entries.
+            </div>
+          )}
+          {/* The LATEST badge lights up on the entry whose version equals
+              the resolved upstream latest. Pre-v0.3.66 it was hardcoded to
+              `i === 0`, which on a stale container marked the user's
+              own installed version as LATEST — confusing. */}
+          {!error && entries && entries.length > 0 && entries.map((e) => (
+            <ChangelogEntryView
+              key={e.version}
+              entry={e}
+              highlight={showLatestOnly && headerLatest != null && e.version === headerLatest}
+            />
           ))}
         </div>
 
