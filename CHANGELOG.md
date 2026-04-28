@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.65] — 2026-04-28
+
+### Fixed
+- Fresh-install Docker containers now land on the setup wizard instead of a login screen with no obvious key (auth starts disabled; loud `[SECURITY]` banner prompts you to enable it in Settings before exposing the port).
+
 ## [0.3.64] — 2026-04-27
 
 ### Added

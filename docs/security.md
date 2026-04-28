@@ -39,11 +39,17 @@ the user; there's no multi-tenant model.
 
 ### Authentication
 
-- **Fresh installs auto-generate a strong API key** on first startup and
-  enable password auth. The generated key is printed once to the
-  container logs; the operator reads it from there to configure
-  workers / NZBGet / SABnzbd.
-- **Existing installs with no auth configured** see a loud
+- **Fresh installs start with auth disabled** so the user lands on the
+  setup wizard rather than a login screen they have no key for. A loud
+  `[SECURITY]` warning banner prints on every startup until auth is
+  enabled, telling the operator to set a password before exposing the
+  port. This matches the *arr ecosystem convention (Sonarr / Radarr /
+  Prowlarr / Bazarr all ship auth-off and prompt during setup).
+  *Pre-v0.3.65 fresh installs auto-generated an api_key and enabled
+  auth, but most users never read container logs and got stuck on the
+  LoginScreen with no way to retrieve the key short of editing the
+  database.*
+- **Existing installs with no auth configured** see the same loud
   `[SECURITY]` warning banner on every startup and continue to work
   unauthenticated — the existing deployment isn't broken mid-upgrade,
   but the operator is told to fix it.

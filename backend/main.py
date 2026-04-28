@@ -101,13 +101,20 @@ async def backfill_ignored_files() -> None:
 
 
 async def _bootstrap_auth_defaults() -> None:
-    """Generate an api_key on a true fresh install, warn on insecure upgrades.
+    """Initialise auth state on a true fresh install, warn on insecure upgrades.
 
     Two scenarios:
 
-    * Fresh install (settings table completely empty): mint a strong random
-      api_key + a session_secret, enable password-auth by default, and print
-      the generated key prominently so the user can configure their client.
+    * Fresh install (settings table completely empty): generate the
+      session_secret (always needed for the HMAC signing path) and leave
+      auth disabled so the user lands on the setup wizard instead of a
+      login screen they can't get past — matches the *arr ecosystem
+      convention and what `docs/installation.md` already documents
+      ("the setup wizard greets you"). A loud `[SECURITY]` warning
+      banner is printed so the operator is told to enable auth before
+      exposing the port. v0.3.65+ — pre-v0.3.65 generated an api_key
+      and printed it once to logs, but most users never read container
+      logs and got stuck at a LoginScreen with no obvious next step.
     * Existing install with api_key='' and auth_enabled=false: leave state
       alone (don't lock out an existing deployment mid-upgrade) but print a
       loud warning so the admin knows they're running unauthenticated.
@@ -126,24 +133,33 @@ async def _bootstrap_auth_defaults() -> None:
                 ).fetchall()
             }
             if row_count == 0:
-                # True fresh install — secure-by-default.
-                generated_key = secrets.token_hex(24)
+                # True fresh install — start auth-off so the SPA can reach
+                # the setup wizard. The session_secret still needs to be
+                # generated up front: the HMAC sign path fails closed when
+                # it's empty (pre-v0.3.39 it fell back to the literal
+                # string "default-secret" — every install shared a
+                # forgeable key), and the user might enable auth from
+                # Settings later in the same session without us getting
+                # another bootstrap pass.
                 generated_secret = secrets.token_hex(32)
                 db.executemany(
                     "INSERT INTO settings (key, value) VALUES (?, ?)",
                     [
-                        ("api_key", generated_key),
-                        ("auth_enabled", "true"),
+                        ("api_key", ""),
+                        ("auth_enabled", "false"),
                         ("session_secret", generated_secret),
                     ],
                 )
                 db.commit()
                 banner = "!" * 78
                 print(banner, flush=True)
-                print("[SECURITY] Fresh install detected — generated an API key.", flush=True)
-                print(f"[SECURITY] API KEY: {generated_key}", flush=True)
-                print("[SECURITY] Use it as the X-Api-Key header, or set a password in", flush=True)
-                print("[SECURITY] Settings → System → Authentication.", flush=True)
+                print("[SECURITY] Fresh install detected — auth is OFF so you land on the", flush=True)
+                print("[SECURITY] setup wizard. Anyone with network access to this port can", flush=True)
+                print("[SECURITY] currently read your library, queue transcodes against any", flush=True)
+                print("[SECURITY] container-readable path, and change dangerous settings", flush=True)
+                print("[SECURITY] (post_conversion_script is an RCE vector).", flush=True)
+                print("[SECURITY] BEFORE you expose this to the internet:", flush=True)
+                print("[SECURITY]   Settings → System → Authentication → set a password.", flush=True)
                 print(banner, flush=True)
                 return
 
