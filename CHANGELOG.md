@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.85] — 2026-04-28
+
+### Added
+- Media-ID detection (TMDB / TVDB / IMDb) now recognises file-level tagging in addition to folder-level. When a folder name carries no ID, `parse_folder_name` walks the files inside and uses the first ID it finds. The Scanner type-filter classifier searches the full file path the same way.
+- Bracket-less and curly-brace ID forms now also recognised: `tt1234567` (bare, ≥7 digits), `tvdb-12345` / `tmdb-12345` (bare with separator), `{tmdb-12345}` (Plex), `[tvdbid-12345]` / `[tmdbid-12345]` (Jellyfin) — alongside the existing `[ttN]` / `[tvdb-N]` / `[tmdb-N]`.
+
 ## [0.3.84] — 2026-04-28
 
 ### Fixed

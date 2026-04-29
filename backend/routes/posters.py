@@ -18,37 +18,112 @@ router = APIRouter(prefix="/api/posters")
 CACHE_TTL_HOURS = 168  # 7 days
 
 
-def parse_folder_name(folder_path: str) -> dict:
-    """Extract title, year, IMDb ID, TVDB ID from a media folder path.
+# Pre-compiled regexes for media-ID extraction. We accept three families
+# of formatting users have in the wild, with brackets-or-braces + bare.
+# v0.3.85+ broadened from the bracket-only patterns we used to ship
+# (e.g. `[tt1234567]`) to also catch:
+#   * Curly-brace style — Plex's `{tmdb-12345}` convention
+#   * "id" suffix — Jellyfin's `[tmdbid-12345]` / `[tvdbid-12345]`
+#   * Bare style — `tt1234567` / `tmdb-12345` / `tvdb-12345` without
+#     enclosing brackets, common when users mark individual filenames
+#     rather than folders.
+#
+# Bracketed/braced patterns are tried first because they're the most
+# specific (false-positive proof). Bare patterns fall through with
+# additional guards to avoid matching inside other tokens — IMDb bare
+# requires 7+ digits (the canonical IMDb ID width), TVDB/TMDB bare
+# require an explicit `-` or `=` separator after the prefix.
+_RE_IMDB_BRACKETED = re.compile(r'[\[\{(](tt\d+)[\]\})]', re.IGNORECASE)
+_RE_TVDB_BRACKETED = re.compile(r'[\[\{(]tvdb(?:id)?[-=:]?(\d+)[\]\})]', re.IGNORECASE)
+_RE_TMDB_BRACKETED = re.compile(r'[\[\{(]tmdb(?:id)?[-=:]?(\d+)[\]\})]', re.IGNORECASE)
+_RE_IMDB_BARE = re.compile(r'(?<![A-Za-z0-9])(tt\d{7,})(?![A-Za-z0-9])')
+_RE_TVDB_BARE = re.compile(r'(?<![A-Za-z0-9])tvdb(?:id)?[-=](\d+)(?![A-Za-z0-9])', re.IGNORECASE)
+_RE_TMDB_BARE = re.compile(r'(?<![A-Za-z0-9])tmdb(?:id)?[-=](\d+)(?![A-Za-z0-9])', re.IGNORECASE)
 
-    Primary: looks for bracketed IDs like [tt1234567] and [tvdb-123456].
-    Fallback: uses scene-style parser to extract title/year from folder names
-    like 'Movie.Name.2024.1080p.BluRay' or plain 'Movie Name (2024)'.
+
+def _extract_ids(text: str) -> tuple[str | None, str | None, str | None]:
+    """Find the first IMDb/TVDB/TMDB ID in `text`. Returns (imdb, tvdb, tmdb).
+
+    Bracketed/braced forms are tried before bare forms because they're
+    less false-positive prone. Each ID is independent: a string with
+    both `[tt1234567]` and `tmdb-99999` returns both.
+    """
+    imdb = tvdb = tmdb = None
+    for rx in (_RE_IMDB_BRACKETED, _RE_IMDB_BARE):
+        m = rx.search(text)
+        if m:
+            imdb = m.group(1)
+            break
+    for rx in (_RE_TVDB_BRACKETED, _RE_TVDB_BARE):
+        m = rx.search(text)
+        if m:
+            tvdb = m.group(1)
+            break
+    for rx in (_RE_TMDB_BRACKETED, _RE_TMDB_BARE):
+        m = rx.search(text)
+        if m:
+            tmdb = m.group(1)
+            break
+    return imdb, tvdb, tmdb
+
+
+def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
+    """Extract title, year, IMDb ID, TVDB ID, TMDB ID from a media folder path.
+
+    Resolution priority:
+      1. Bracketed/braced IDs in the FOLDER NAME (`[tt1234567]`,
+         `{tmdb-12345}`, `[tvdbid-99999]`, …) — most specific.
+      2. Same patterns in any FILENAME inside the folder (when
+         `walk_files=True` — the default). Lets users who tag
+         individual files rather than the parent folder still get
+         exact-ID resolution. v0.3.85+.
+      3. Bare ID forms (`tt1234567`, `tmdb-12345`) in folder name or
+         filenames, with conservative regex guards.
+      4. Scene-style title/year parser as a final fallback.
+
+    `walk_files=False` skips disk access — used by callers that
+    already iterate filenames or where the folder isn't expected to
+    exist on this host's filesystem.
     """
     parts = folder_path.rstrip("/").split("/")
     folder_name = parts[-1] if parts else ""
     if re.match(r"^(Season|Series|Specials)\b", folder_name, re.IGNORECASE):
         folder_name = parts[-2] if len(parts) > 1 else folder_name
 
-    imdb_match = re.search(r"\[(tt\d+)\]", folder_name)
-    tvdb_match = re.search(r"\[tvdb-(\d+)\]", folder_name)
-    # Radarr 5+ default token. Recognised as a movie ID — the manual
-    # search modal uses it to fetch the exact TMDB record. v0.3.81+.
-    tmdb_match = re.search(r"\[tmdb-(\d+)\]", folder_name)
+    imdb_id, tvdb_id, tmdb_id = _extract_ids(folder_name)
     year_match = re.search(r"\((\d{4})\)", folder_name)
+
+    # Strip ID brackets/braces and `(YYYY)` from the title text.
     title = folder_name
-    title = re.sub(r"\s*\[(?:tt\d+|tvdb-\d+|tmdb-\d+|imdb-\w+)\]", "", title)
+    title = re.sub(r"\s*[\[\{(](?:tt\d+|tvdb(?:id)?[-=:]?\d+|tmdb(?:id)?[-=:]?\d+|imdb-\w+)[\]\})]", "", title)
+    title = re.sub(r"\s*\b(?:tt\d{7,}|tvdb(?:id)?[-=]\d+|tmdb(?:id)?[-=]\d+)\b", "", title)
     title = re.sub(r"\s*\(\d{4}\)", "", title)
     title = title.strip().rstrip(" -")
 
-    # Fallback: if no media IDs found, use scene parser for cleaner title/year
-    if not imdb_match and not tvdb_match and not tmdb_match:
+    # Fallback path 1: walk individual filenames for IDs the folder name
+    # doesn't carry. Common for users whose Sonarr/Radarr config writes
+    # the ID into the file name only. Best-effort — listdir silently
+    # skipped on permission / not-found errors. v0.3.85+.
+    if walk_files and not (imdb_id or tvdb_id or tmdb_id):
+        try:
+            import os as _os
+            for name in _os.listdir(folder_path):
+                f_imdb, f_tvdb, f_tmdb = _extract_ids(name)
+                if f_imdb or f_tvdb or f_tmdb:
+                    imdb_id = imdb_id or f_imdb
+                    tvdb_id = tvdb_id or f_tvdb
+                    tmdb_id = tmdb_id or f_tmdb
+                    break  # First file with any ID wins
+        except OSError:
+            pass
+
+    # Fallback path 2: scene-style parser for title/year.
+    if not (imdb_id or tvdb_id or tmdb_id):
         from backend.media_parser import parse_media_name
         parsed = parse_media_name(folder_name)
         if parsed.title:
             title = parsed.title
         if parsed.year and not year_match:
-            year_match = None  # clear the match object
             return {
                 "title": title or folder_name,
                 "year": parsed.year,
@@ -60,9 +135,9 @@ def parse_folder_name(folder_path: str) -> dict:
     return {
         "title": title or folder_name,
         "year": year_match.group(1) if year_match else None,
-        "imdb_id": imdb_match.group(1) if imdb_match else None,
-        "tvdb_id": tvdb_match.group(1) if tvdb_match else None,
-        "tmdb_id": tmdb_match.group(1) if tmdb_match else None,
+        "imdb_id": imdb_id,
+        "tvdb_id": tvdb_id,
+        "tmdb_id": tmdb_id,
     }
 
 

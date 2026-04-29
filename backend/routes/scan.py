@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
@@ -936,28 +937,49 @@ def _build_dir_label_index(rows: list[tuple[str, str]]) -> list[tuple[str, str]]
     return out
 
 
+# Pre-compiled in-path ID detectors. v0.3.85 broadened past the
+# original `[tvdb-` / `[tt` / `[tmdb-` substring checks to also match
+# curly-brace forms (Plex), `id` suffix forms (Jellyfin), and bare
+# forms (file-level tagging without surrounding brackets). Mirrors
+# `_extract_ids` in backend/routes/posters.py — both serve the same
+# purpose of recognising user-tagged folders/files. Kept independent
+# (rather than importing) so the hot-path classifier stays in this
+# module.
+_RE_TVDB_IN_PATH = re.compile(
+    r'(?:[\[\{(]tvdb(?:id)?[-=:]?\d+[\]\})]'         # bracketed/braced
+    r'|(?<![a-z0-9])tvdb(?:id)?[-=]\d+(?![a-z0-9]))'  # bare with separator
+)
+_RE_TMDB_IN_PATH = re.compile(
+    r'(?:[\[\{(]tmdb(?:id)?[-=:]?\d+[\]\})]'
+    r'|(?<![a-z0-9])tmdb(?:id)?[-=]\d+(?![a-z0-9]))'
+)
+_RE_IMDB_IN_PATH = re.compile(
+    r'(?:[\[\{(]tt\d+[\]\})]'                          # bracketed/braced
+    r'|(?<![a-z0-9])tt\d{7,}(?![a-z0-9]))'             # bare, ≥7 digits
+)
+
+
 def _classify_type_for_path(fp: str, dir_label_index: list[tuple[str, str]] | None) -> str:
     """Classify a file as 'movie', 'tv', or 'other'.
 
-    Resolution priority (v0.3.76+):
-      1. Filename brackets — `[tvdb-N]` → tv; `[tmdb-N]` or `[ttN]` → movie.
-         Sonarr emits `[tvdb-N]`; Radarr emits both `[tmdb-N]` (its default
-         since 5.x) and `[ttN]` (legacy IMDb). All three are the most-
-         specific signal when present. v0.3.77 added `[tmdb-N]`.
+    Resolution priority:
+      1. Bracket / brace / bare ID anywhere in the path:
+           `tvdb…` → tv;  `tmdb…` or `tt…` → movie.
+         Recognised forms (Sonarr/Radarr/Plex/Jellyfin/manual tagging):
+           [tvdb-N], [tvdbid-N], {tvdb-N}, tvdb-N, tvdbid-N
+           [tmdb-N], [tmdbid-N], {tmdb-N}, tmdb-N, tmdbid-N
+           [ttN], {ttN}, ttNNNNNNN (≥7 digits, surrounded by separators)
+         The full path is searched, so file-level tagging works
+         (`/media/Movies/Foo.tt1234567.mkv`) just as well as folder-
+         level. v0.3.85+.
       2. Containing media directory's user-set label — "Movies" → movie,
-         "TV Shows" → tv, "Other" / unset → other. Lets users with simple
-         folder layouts (no bracket-tagging) still get useful type filters.
+         "TV Shows" → tv, "Other" / unset → other.
       3. Default to 'other'.
-
-    Pre-v0.3.76 only step 1 ran (and even that without `[tmdb-N]`), so
-    users without Sonarr/Radarr-style bracketed folder names saw every
-    file classified as 'other' regardless of the dir labels they
-    configured in Settings.
     """
     fp_lower = fp.lower()
-    if "[tvdb-" in fp_lower:
+    if _RE_TVDB_IN_PATH.search(fp_lower):
         return "tv"
-    if "[tmdb-" in fp_lower or "[tt" in fp_lower:
+    if _RE_TMDB_IN_PATH.search(fp_lower) or _RE_IMDB_IN_PATH.search(fp_lower):
         return "movie"
     if dir_label_index:
         for prefix, label in dir_label_index:
