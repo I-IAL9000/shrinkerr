@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.86] — 2026-04-28
+
+### Added
+- Settings → Connections → TMDB section gets two new buttons for retroactively re-running poster auto-resolution: **Re-resolve placeholders** (cheap retry on entries that previously failed) and **Re-resolve all auto-matched** (with confirm dialog — wipes every TMDB/Plex auto-resolved entry and re-fetches from scratch). Manual fixes are always preserved. Useful after the resolver-logic improvements in v0.3.81–v0.3.85 — apply the new logic to entries cached by older code without manually clicking through each one.
+
 ## [0.3.85] — 2026-04-28
 
 ### Added

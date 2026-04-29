@@ -378,6 +378,16 @@ export const startPosterPrefetch = () =>
   apiFetch<{ status: string }>("/posters/prefetch", { method: "POST" });
 export const getPosterPrefetchStatus = () =>
   apiFetch<{ status: string; total: number; resolved: number; cached: number }>("/posters/prefetch-status");
+// Evict cached poster rows matching `mode` and re-trigger the prefetch.
+//   "placeholder" — only retry entries that previously failed to resolve.
+//   "auto"        — wipe every auto-resolved entry and resolve fresh
+//                   (preserves manual fixes / `tmdb-manual`).
+// v0.3.86+.
+export const reResolvePosters = (mode: "placeholder" | "auto") =>
+  apiFetch<{ targeted: number; started: boolean }>("/posters/re-resolve", {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
 export const getRecentConversions = (limit: number = 20) =>
   apiFetch<any[]>(`/jobs/recent-conversions?limit=${limit}`);
 export const undoConversion = (jobId: number) =>

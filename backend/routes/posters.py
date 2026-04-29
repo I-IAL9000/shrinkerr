@@ -506,6 +506,61 @@ async def start_prefetch():
     return {"status": "started"}
 
 
+class ReResolveRequest(BaseModel):
+    # "placeholder" — only entries that previously failed to resolve
+    #                 (source = 'placeholder'). Cheap retry.
+    # "auto"        — every auto-resolved entry. Destructive — wipes
+    #                 working cached posters too. User-confirmed
+    #                 from the UI. Always preserves manual fixes
+    #                 (source = 'tmdb-manual') and Type=Other-skipped
+    #                 entries (source = 'other-skipped').
+    mode: str  # "placeholder" | "auto"
+
+
+@router.post("/re-resolve")
+async def re_resolve_posters(req: ReResolveRequest):
+    """Evict matching poster_cache rows and re-trigger the prefetch.
+
+    The bulk prefetch task (`_run_prefetch`) already iterates folders
+    that don't have cached posters. By DELETE-ing the targeted rows
+    first, we make them look uncached, and the existing pipeline
+    handles re-resolution end-to-end (including the bracket-ID,
+    dir-label, file-walking, and pass-ordering logic from
+    v0.3.81–v0.3.85).
+
+    Returns `{targeted, started}` so the UI can toast a count + show
+    progress via the existing /posters/prefetch-status polling.
+    """
+    if req.mode == "placeholder":
+        where = "source = 'placeholder'"
+    elif req.mode == "auto":
+        # 'tmdb' = auto via TMDB; 'plex' = auto via Plex.
+        # Excludes:
+        #   'tmdb-manual'   (user explicitly fixed → preserve)
+        #   'other-skipped' (Type=Other dirs — intentional skip)
+        where = "source IN ('tmdb', 'plex')"
+    else:
+        raise HTTPException(400, "mode must be 'placeholder' or 'auto'")
+
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        async with db.execute(f"SELECT COUNT(*) FROM poster_cache WHERE {where}") as cur:
+            row = await cur.fetchone()
+            count = row[0] if row else 0
+        if count > 0:
+            await db.execute(f"DELETE FROM poster_cache WHERE {where}")
+            await db.commit()
+    finally:
+        await db.close()
+
+    global _prefetch_task
+    started = False
+    if count > 0 and (_prefetch_task is None or _prefetch_task.done()):
+        _prefetch_task = asyncio.create_task(_run_prefetch())
+        started = True
+    return {"targeted": count, "started": started}
+
+
 @router.get("/prefetch-status")
 async def prefetch_status():
     """Get prefetch progress."""

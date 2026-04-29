@@ -14,10 +14,11 @@ import {
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
-  getEncoderCaps, regenerateApiKey,
+  getEncoderCaps, regenerateApiKey, reResolvePosters,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps,
 } from "../api";
+import { useConfirm } from "../components/ConfirmModal";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
 import { useToast } from "../useToast";
@@ -262,6 +263,15 @@ function VmafRemeasureRow() {
 
 export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
   const toast = useToast();
+  // Named `confirmDialog` rather than `confirm` because there's a
+  // pre-existing `confirm(…)` call at the bottom of this file that
+  // hits `window.confirm` (browser-native) — shadowing it would
+  // break that call site without intending to. v0.3.86+.
+  const confirmDialog = useConfirm();
+  // Tracks which re-resolve mode is in-flight (button-spinner state).
+  // null when idle; the in-progress mode while the request is awaiting.
+  // v0.3.86+.
+  const [reResolveBusy, setReResolveBusy] = useState<null | "placeholder" | "auto">(null);
   const pageRef = useRef<HTMLDivElement>(null);
   // Paint slider fills inside this page only. See useRangeFill.ts for why
   // this replaced the old document-body MutationObserver.
@@ -2080,6 +2090,72 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             >
               Save API Key
             </button>
+
+            {/* Re-resolve actions. Two buttons covering the two
+                meaningfully-different cleanup scenarios. The endpoint
+                evicts the matching poster_cache rows and re-triggers
+                the existing /prefetch task, so progress shows up in the
+                Scanner's existing prefetch progress bar. v0.3.86+. */}
+            <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 12 }}>
+              <div style={{ ...labelStyle, marginBottom: 4 }}>Re-resolve cached posters</div>
+              <div style={{ ...helpStyle, marginTop: 0, marginBottom: 10 }}>
+                Re-runs the auto-resolution chain (TMDB / Plex) for cached folders. Useful after a logic improvement (bracket-ID parsing, year-aware ranking, dir-label hints) lands and you want to retroactively fix matches that were resolved with older code. Manual fixes (★ in the manual modal) are always preserved.
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-secondary"
+                  disabled={reResolveBusy !== null}
+                  onClick={async () => {
+                    setReResolveBusy("placeholder");
+                    try {
+                      const r = await reResolvePosters("placeholder");
+                      if (r.targeted === 0) {
+                        toast("No placeholder entries to re-resolve");
+                      } else {
+                        toast(`Re-resolving ${r.targeted} placeholder entr${r.targeted === 1 ? "y" : "ies"}…${r.started ? " (progress on Scanner)" : ""}`, "success");
+                      }
+                    } catch (e: any) {
+                      toast(`Re-resolve failed: ${e?.message || "unknown error"}`);
+                    } finally {
+                      setReResolveBusy(null);
+                    }
+                  }}
+                >
+                  {reResolveBusy === "placeholder" ? "Working…" : "Re-resolve placeholders"}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  disabled={reResolveBusy !== null}
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      message:
+                        "Re-resolve EVERY auto-matched poster? " +
+                        "All existing TMDB / Plex auto-resolved entries get evicted and re-fetched from scratch. " +
+                        "Manual fixes are preserved. " +
+                        "This burns TMDB API quota and can take a while on a large library — only worth it after a resolver fix you want to retroactively apply.",
+                      confirmLabel: "Re-resolve all",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    setReResolveBusy("auto");
+                    try {
+                      const r = await reResolvePosters("auto");
+                      if (r.targeted === 0) {
+                        toast("No auto-matched entries to re-resolve");
+                      } else {
+                        toast(`Re-resolving ${r.targeted.toLocaleString()} entr${r.targeted === 1 ? "y" : "ies"}…${r.started ? " (progress on Scanner)" : ""}`, "success");
+                      }
+                    } catch (e: any) {
+                      toast(`Re-resolve failed: ${e?.message || "unknown error"}`);
+                    } finally {
+                      setReResolveBusy(null);
+                    }
+                  }}
+                >
+                  {reResolveBusy === "auto" ? "Working…" : "Re-resolve all auto-matched"}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Plex */}
