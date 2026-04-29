@@ -38,7 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     i965-va-driver \
     mesa-va-drivers \
     vainfo \
+    libvpl2 libmfx1 \
     && rm -rf /var/lib/apt/lists/*
+# libvpl2 + libmfx1: Intel oneVPL dispatcher + legacy MediaSDK runtime.
+# Required by hevc_qsv at session-create time — without them the encoder
+# fails with `Error creating a MFX session: -9` even when the iHD
+# VA-API driver is fully functional. v0.3.84+.
 
 # Install ffmpeg with NVENC + libvmaf.
 # BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs.

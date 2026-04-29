@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.84] — 2026-04-28
+
+### Fixed
+- `hevc_qsv` failing with `Error creating a MFX session: -9` on hosts that have a working iHD VA-API driver. The QSV encoder requires Intel's oneVPL / MediaSDK runtime in addition to iHD; v0.3.67 only baked iHD. Both Docker images now also install `libvpl2` (oneVPL dispatcher) and `libmfx1` (legacy MediaSDK runtime, ships the HEVC encoder hardware module). VAAPI was always a working fallback for users on the affected versions — added a docs note pointing at it.
+
 ## [0.3.83] — 2026-04-28
 
 ### Fixed

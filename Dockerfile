@@ -85,7 +85,16 @@ RUN set -eux; \
             mesa-va-drivers \
             vainfo \
             intel-media-va-driver-non-free \
-            i965-va-driver; \
+            i965-va-driver \
+            libvpl2 libmfx1; \
+            # Intel oneVPL / MediaSDK runtime for hevc_qsv. The iHD VA-API
+            # driver alone (intel-media-va-driver-non-free) is enough for
+            # hevc_vaapi, but hevc_qsv goes through the MFX session layer
+            # — without these libs the QSV encoder fails at session-create
+            # with "Error creating a MFX session: -9" (MFX_ERR_UNSUPPORTED).
+            # libvpl2 is the oneVPL dispatcher; libmfx1 is the legacy
+            # MediaSDK runtime that ships the HEVC encoder hardware module
+            # (libmfx_hevce_hw64.so). v0.3.84+.
     else \
         echo "Skipping VA-API runtime on ${TARGETARCH} (amd64-only in this image)"; \
     fi; \

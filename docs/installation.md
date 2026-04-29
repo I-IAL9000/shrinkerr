@@ -239,6 +239,15 @@ render node is correct but the kernel driver is too old to support
 HEVC encoding. `vainfo` will show no `VAProfileHEVCMain*` rows. Update
 the host kernel + driver, or fall back to libx265 / NVENC.
 
+**`Error creating a MFX session: -9`** at job-run time with QSV — the
+iHD VA-API driver is fine but the oneVPL / MediaSDK runtime that
+`hevc_qsv` uses is missing or mismatched. Pre-v0.3.84 our images
+shipped only the iHD driver; pull `:latest` / `:nvenc` v0.3.84+ which
+also bake `libvpl2` and `libmfx1`. Quick workaround for users on
+older images: switch the encoder to **VAAPI** in Settings →
+Encoding. `hevc_vaapi` talks to iHD directly without going through
+the MFX session layer, and your hardware (per `vainfo`) supports it.
+
 ## Reverse proxy setups
 
 Shrinkerr speaks plain HTTP on `:6680` and does not terminate TLS. Front it
