@@ -940,21 +940,24 @@ def _classify_type_for_path(fp: str, dir_label_index: list[tuple[str, str]] | No
     """Classify a file as 'movie', 'tv', or 'other'.
 
     Resolution priority (v0.3.76+):
-      1. Filename brackets — `[tvdb-...]` → tv, `[tt...]` → movie. Sonarr/
-         Radarr-style folders carry these and they're the most specific signal.
+      1. Filename brackets — `[tvdb-N]` → tv; `[tmdb-N]` or `[ttN]` → movie.
+         Sonarr emits `[tvdb-N]`; Radarr emits both `[tmdb-N]` (its default
+         since 5.x) and `[ttN]` (legacy IMDb). All three are the most-
+         specific signal when present. v0.3.77 added `[tmdb-N]`.
       2. Containing media directory's user-set label — "Movies" → movie,
          "TV Shows" → tv, "Other" / unset → other. Lets users with simple
          folder layouts (no bracket-tagging) still get useful type filters.
       3. Default to 'other'.
 
-    Pre-v0.3.76 only step 1 ran, so users without bracketed folder names
-    saw every file classified as 'other' regardless of the dir labels they
+    Pre-v0.3.76 only step 1 ran (and even that without `[tmdb-N]`), so
+    users without Sonarr/Radarr-style bracketed folder names saw every
+    file classified as 'other' regardless of the dir labels they
     configured in Settings.
     """
     fp_lower = fp.lower()
     if "[tvdb-" in fp_lower:
         return "tv"
-    if "[tt" in fp_lower:
+    if "[tmdb-" in fp_lower or "[tt" in fp_lower:
         return "movie"
     if dir_label_index:
         for prefix, label in dir_label_index:

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.77] — 2026-04-28
+
+### Fixed
+- Movies type filter now also matches `[tmdb-N]` bracket tokens (Radarr 5+ default), in addition to the legacy `[tt…]` (IMDb) form. No rescan needed — classification runs at read time.
+
 ## [0.3.76] — 2026-04-28
 
 ### Fixed
