@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.73] — 2026-04-28
+
+### Fixed
+- Frontend `tsc -b` build failed with TS1005 / TS1381 because a JSX comment in `SettingsPage.tsx` contained `qsv_*/` — `*/` inside a JSX comment terminates the block early. Reworded.
+- arm64 leg of the multi-arch CPU image still failing on apt-get exit 100. Reverted the arm64 build's apt step to its pre-v0.3.67 minimal install (curl + xz-utils only) — VA-API packages now ship only on amd64. arm64 hosts rarely have AMD/Intel GPUs reachable anyway; users on those edge cases still get libx265 + (theoretically) NVENC if they pull the `:nvenc` image (which is amd64-only).
+
 ## [0.3.72] — 2026-04-28
 
 ### Fixed

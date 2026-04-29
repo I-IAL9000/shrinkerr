@@ -59,25 +59,29 @@ ARG TARGETARCH
 # "non-free" naming is historical from when it shipped as a binary blob.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends \
-        curl xz-utils \
-        libva2 libva-drm2 \
-        mesa-va-drivers \
-        vainfo; \
+    apt-get install -y --no-install-recommends curl xz-utils; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
-        # non-free is needed only for the Intel iHD package — enable it
-        # AFTER the multi-arch packages are in, so an arm64 build never
-        # touches the non-free metadata at all (defensive: v0.3.71's
-        # blanket non-free enablement was suspected as a cause of the
-        # arm64 leg's apt-get failure even after the package gating).
+        # All VA-API packages — runtime libs + Intel iHD driver + AMD radeonsi
+        # + diagnostic — only on amd64. arm64 builds keep the minimal
+        # pre-v0.3.67 install (curl + xz-utils) since:
+        #   1. Intel iGPUs don't exist on ARM hardware (iHD driver is
+        #      AMD64-only in Debian regardless).
+        #   2. AMD GPUs reachable from arm64 hosts are exceptionally rare.
+        #   3. v0.3.67's blanket VA-API install broke the arm64 build
+        #      pipeline for unclear reasons (apt exit 100 with no further
+        #      detail); reverting to pre-v0.3.67 minimal package list on
+        #      arm64 returns it to known-good. v0.3.73.
         echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
             > /etc/apt/sources.list.d/non-free.list; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
+            libva2 libva-drm2 \
+            mesa-va-drivers \
+            vainfo \
             intel-media-va-driver-non-free \
             i965-va-driver; \
     else \
-        echo "Skipping Intel VA-API drivers on ${TARGETARCH} (AMD64-only packages)"; \
+        echo "Skipping VA-API runtime on ${TARGETARCH} (amd64-only in this image)"; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 

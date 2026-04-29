@@ -3219,8 +3219,8 @@ volumes:
                         )}
                       </div>
                       {/* Preset / quality controls don't apply to QSV / VAAPI in
-                          v0.3.69 — those encoders inherit the global qsv_*/
-                          vaapi_* settings. NVENC and libx265 preset/CQ/CRF
+                          v0.3.69 — those encoders inherit their global QSV /
+                          VAAPI settings. NVENC and libx265 preset/CQ/CRF
                           fields shown only when one of those is selected
                           (or when no override is set, in which case the rule
                           inherits whichever encoder Settings → Encoding picks). */}
