@@ -39,26 +39,41 @@ ARG TARGETARCH
 # when the host passes /dev/dri through. Harmless on hosts without an
 # Intel/AMD GPU — ffmpeg simply doesn't surface those encoders. v0.3.67+.
 #
-#   libva2 + libva-drm2  → core VA-API runtime
-#   intel-media-va-driver-non-free → Intel iHD driver (Gen9+: Skylake / Arc / etc.)
-#   i965-va-driver       → Intel legacy driver (Gen8 and older)
-#   mesa-va-drivers      → AMD radeonsi VA-API driver (Polaris+ via RadeonHD)
-#   vainfo               → diagnostic, lets the operator confirm
-#                          `docker exec shrinkerr vainfo` lists profiles
+# Cross-arch note (v0.3.71): the Intel iHD + i965 drivers are AMD64-only
+# in Debian (Intel iGPUs don't exist on ARM, and there's no upstream arm64
+# build of `intel-media-va-driver-non-free`). Without this gate the v0.3.67
+# build broke the multi-arch publish for several releases — the arm64 leg
+# failed with `Unable to locate package intel-media-va-driver-non-free`.
+# The arm64 leg keeps the arch-agnostic packages (libva, mesa-va-drivers,
+# vainfo) which are still useful for AMD GPUs reachable on arm64 hosts
+# (rare but not impossible — Ampere + Radeon, Pi + USB-C eGPU, etc.).
+#
+#   libva2 + libva-drm2            → core VA-API runtime (multi-arch)
+#   mesa-va-drivers                → AMD radeonsi (multi-arch)
+#   vainfo                         → diagnostic (multi-arch)
+#   intel-media-va-driver-non-free → Intel iHD (Gen9+: Skylake / Arc) — AMD64 ONLY
+#   i965-va-driver                 → Intel legacy (Gen8 and older) — AMD64 ONLY
 #
 # `intel-media-va-driver-non-free` lives in Debian's `non-free` component;
-# enable it before apt-get install. Source-open driver, "non-free" naming
-# is historical from when it shipped as a binary blob.
-RUN echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
-        > /etc/apt/sources.list.d/non-free.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+# enabled below before the conditional install. Source-open driver,
+# "non-free" naming is historical from when it shipped as a binary blob.
+RUN set -e; \
+    echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
+        > /etc/apt/sources.list.d/non-free.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         curl xz-utils \
         libva2 libva-drm2 \
-        intel-media-va-driver-non-free \
-        i965-va-driver \
         mesa-va-drivers \
-        vainfo \
-    && rm -rf /var/lib/apt/lists/*
+        vainfo; \
+    if [ "${TARGETARCH}" = "amd64" ]; then \
+        apt-get install -y --no-install-recommends \
+            intel-media-va-driver-non-free \
+            i965-va-driver; \
+    else \
+        echo "Skipping Intel VA-API drivers on ${TARGETARCH} (AMD64-only packages)"; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 
 # Install ffmpeg static build from BtbN (includes libx265, libvmaf, x264).
 # BtbN publishes per-architecture assets under the rolling `latest` release;
