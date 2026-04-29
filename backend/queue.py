@@ -369,6 +369,7 @@ class JobQueue:
         self,
         exclude_ids: list[int] | None = None,
         affinity: str = "any",
+        capabilities: list[str] | None = None,
     ) -> Optional[dict]:
         db = await self._connect()
         try:
@@ -380,6 +381,17 @@ class JobQueue:
                 affinity_sql = " AND (encoder IS NULL OR encoder = '' OR LOWER(encoder) IN ('libx265','x265','cpu'))"
             elif affinity == "nvenc_only":
                 affinity_sql = " AND LOWER(encoder) IN ('nvenc','hevc_nvenc')"
+
+            # QSV / VAAPI jobs are vendor-specific hardware encoders that
+            # can't be translated to NVENC or libx265 — they must run on a
+            # node with the matching capability. NVENC ↔ libx265 translation
+            # is unaffected (the per-node `translate_encoder` flag still
+            # controls that). v0.3.70+.
+            caps = capabilities or []
+            if "qsv" not in caps:
+                affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'qsv')"
+            if "vaapi" not in caps:
+                affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'vaapi')"
 
             if exclude_ids:
                 placeholders = ",".join("?" * len(exclude_ids))
@@ -889,7 +901,8 @@ class QueueWorker:
             try:
                 async with db.execute(
                     "SELECT paused, max_jobs, job_affinity, translate_encoder, "
-                    "schedule_enabled, schedule_hours FROM worker_nodes WHERE id = 'local'"
+                    "schedule_enabled, schedule_hours, capabilities "
+                    "FROM worker_nodes WHERE id = 'local'"
                 ) as cur:
                     row = await cur.fetchone()
                 if not row:
@@ -898,6 +911,14 @@ class QueueWorker:
                     schedule_hours = json.loads(row["schedule_hours"] or "[]")
                 except Exception:
                     schedule_hours = []
+                # capabilities are stored as a JSON array string at registration
+                # time (see backend/nodes.py::register_local_node). Parsed here
+                # so get_next_job can gate qsv/vaapi jobs on this node having
+                # the matching hardware. v0.3.70+.
+                try:
+                    capabilities = json.loads(row["capabilities"] or "[]")
+                except Exception:
+                    capabilities = []
                 return {
                     "paused": bool(row["paused"]),
                     "max_jobs": row["max_jobs"] or 1,
@@ -905,6 +926,7 @@ class QueueWorker:
                     "translate_encoder": bool(row["translate_encoder"]),
                     "schedule_enabled": bool(row["schedule_enabled"]),
                     "schedule_hours": schedule_hours,
+                    "capabilities": capabilities,
                 }
             finally:
                 await db.close()
@@ -1009,6 +1031,7 @@ class QueueWorker:
                 job = await self.queue.get_next_job(
                     exclude_ids=running_ids,
                     affinity=local_settings.get("job_affinity", "any"),
+                    capabilities=local_settings.get("capabilities", []),
                 )
             except Exception as exc:
                 print(f"[WORKER] Failed to get next job (DB may be busy): {exc}", flush=True)

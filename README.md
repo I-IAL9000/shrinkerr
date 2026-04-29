@@ -31,6 +31,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 
 **Encoding**
 - x264 (or any other source codec) → x265 (HEVC) conversion, NVENC hardware or libx265 CPU
+- **Intel QSV and Intel/AMD VAAPI** — *experimental* hardware encoders for non-NVIDIA GPUs (see [Intel/AMD GPU support](#intelamd-gpu-support-experimental))
 - Per-resolution CQ/CRF overrides (4K, 1080p, 720p, SD)
 - Encoding rules — by directory / source / resolution / file size / codec, by Plex label / collection / genre / library, or by Sonarr / Radarr tag
 - Optional [VMAF](https://github.com/Netflix/vmaf) quality check with a configurable minimum score — encodes that score below the threshold are discarded and the original is kept
@@ -193,6 +194,49 @@ After `docker compose up -d` the setup wizard walks you through four steps:
 4. **Start converting** — Queue → Start. Watches run 1 job at a time by default; the Nodes page lets you bump this to match your hardware.
 
 You can skip 1 and 3 and go straight to manual encoding via Scanner → Add selected to queue.
+
+## Intel/AMD GPU support (experimental)
+
+> ⚠️ **Experimental as of v0.3.70** — the QSV and VAAPI encoders are
+> tested at the unit / argv-shape level but haven't been verified
+> end-to-end on the maintainer's hardware. **If you try them, please
+> [open an issue](https://github.com/I-IAL9000/shrinkerr/issues) with
+> a quick "works on Intel UHD 630, Debian 12, 50 GB → 22 GB" or "fails
+> with X" — that's how we get them out of experimental.**
+
+Both Docker images (`:latest` CPU and `:nvenc`) ship with the VA-API
+runtime as of v0.3.67. To activate the encoders, the host needs to
+pass through `/dev/dri` and add the container user to the render
+group:
+
+```yaml
+services:
+  shrinkerr:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      # numeric GID of the host group that owns /dev/dri/renderD128.
+      # Find with: stat -c '%g' /dev/dri/renderD128
+      - "110"
+```
+
+After `docker compose down && up -d`, Settings → Encoding → Default
+Encoder will surface QSV / VAAPI options if the host hardware supports
+them. Click *Re-detect* if your existing tab opened before passthrough
+was active.
+
+| Encoder | Hardware | When to use |
+|---|---|---|
+| **QSV** (`hevc_qsv`) | Intel iGPUs (Gen8+ / 2014+), Intel Arc / Battlemage | Best on Intel — better quality controls than VAAPI on the same hardware |
+| **VAAPI** (`hevc_vaapi`) | Intel iGPUs (any) AND AMD GPUs (Polaris / Vega / RDNA) | The only hardware path for AMD; works on Intel too |
+| **NVENC** | NVIDIA GPUs (Maxwell+) | Use the `:nvenc` image variant; doesn't go through `/dev/dri` |
+
+Verify with `docker exec shrinkerr vainfo` — should list HEVC encode
+profiles (e.g. `VAProfileHEVCMain`). If it errors with `vaInitialize
+failed`, the render node likely belongs to a different vendor's
+driver (e.g. nvidia-drm); see the troubleshooting section in
+`docs/installation.md`.
 
 ---
 

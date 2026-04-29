@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.70] — 2026-04-28
+
+### Added
+- Dispatcher capability gating: QSV and VAAPI jobs only schedule on nodes that advertise the matching encoder capability (no NVENC↔QSV translation — those are vendor-specific hardware paths).
+- README and `docs/installation.md` now have an "Intel/AMD GPU support (experimental)" section with the compose passthrough snippet, verification steps, and troubleshooting for the most common `vainfo` failures. Help wanted from anyone who can run it end-to-end.
+
 ## [0.3.69] — 2026-04-28
 
 ### Added

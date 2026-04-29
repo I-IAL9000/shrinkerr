@@ -161,6 +161,84 @@ the detection ran and rejected NVENC. Common reasons:
 - **ffmpeg exited …** — the detection test encode failed. Usually a driver
   version mismatch; see Troubleshooting.
 
+## Intel/AMD GPU setup (experimental)
+
+> ⚠️ **Experimental as of v0.3.70.** The QSV and VAAPI encoders ship in
+> both Docker images and are wired through the queue, settings, rule
+> engine, and worker capability advertisement — but the maintainer
+> doesn't currently have functional Intel iGPU hardware to verify them
+> end-to-end. **Please [open an issue](https://github.com/I-IAL9000/shrinkerr/issues)
+> with results (working or failing) so we can promote them out of
+> experimental.**
+
+### Activate
+
+Both images (`:latest` and `:nvenc`) carry the VA-API runtime libraries.
+The host needs to pass through `/dev/dri` and let the container's user
+into the render group:
+
+```yaml
+services:
+  shrinkerr:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      # numeric GID of the host group that owns /dev/dri/renderD128.
+      # Find with: stat -c '%g' /dev/dri/renderD128
+      - "110"
+```
+
+`group_add` accepts the group **name** (`render` on most distros) but
+many distros leave the group nameless inside the container, in which
+case you'll see `unable to find group render` and have to use the
+numeric GID instead.
+
+Then `docker compose down && docker compose up -d`, open Settings →
+Encoding, and click **Re-detect** next to the encoder dropdown. QSV
+and VAAPI options appear if `/dev/dri/renderD*` is exposed and the
+ffmpeg build has the encoders (BtbN GPL builds always do).
+
+### Verify
+
+```bash
+docker exec shrinkerr vainfo
+```
+
+Expected output is a header reporting `VA-API version 1.x`, then a
+list of profiles. For HEVC encoding you want at least one of
+`VAProfileHEVCMain` (8-bit) or `VAProfileHEVCMain10` (10-bit) in the
+**VAEntrypointEncSlice** column.
+
+### Troubleshooting
+
+**`vaInitialize failed with error code 18 (invalid parameter)`** with
+`DRM_IOCTL_I915_GEM_APERTURE failed: Invalid argument` — the render
+node libva is targeting isn't an Intel i915 device (typical on hosts
+with both NVIDIA and Intel hardware where the iGPU is disabled in
+BIOS, leaving only the NVIDIA card's render node visible). Verify on
+the host:
+
+```bash
+ls -la /dev/dri/by-path/
+cat /sys/class/drm/renderD128/device/uevent | grep DRIVER
+```
+
+If `DRIVER=nvidia` appears for `renderD128`, enable the iGPU in BIOS
+(Advanced → System Agent → Internal Graphics → Enabled, or similar)
+and reboot. After that a second `renderD129` node appears bound to
+`i915` and VAAPI/QSV will work.
+
+**`Failed to initialize` / no profiles listed** — driver mismatch.
+Try setting `LIBVA_DRIVER_NAME=iHD` (Intel Gen9+) or `i965` (Intel
+Gen8 and older) as an env var on the service. Older AMD GPUs with
+the radeon (not amdgpu) driver use `radeonsi`.
+
+**`encoding failed: ... vaapi: ...`** at job-run time — usually the
+render node is correct but the kernel driver is too old to support
+HEVC encoding. `vainfo` will show no `VAProfileHEVCMain*` rows. Update
+the host kernel + driver, or fall back to libx265 / NVENC.
+
 ## Reverse proxy setups
 
 Shrinkerr speaks plain HTTP on `:6680` and does not terminate TLS. Front it

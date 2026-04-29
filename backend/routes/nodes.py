@@ -288,6 +288,15 @@ async def request_job(req: RequestJobBody, request: Request):
     elif affinity == "nvenc_only":
         affinity_filter = "AND LOWER(encoder) IN ('nvenc','hevc_nvenc')"
 
+    # QSV / VAAPI jobs only go to nodes with the matching capability —
+    # those encoders are vendor-specific hardware, not translatable to
+    # NVENC or libx265. Always-on regardless of `translate_encoder`.
+    # v0.3.70+.
+    if "qsv" not in capabilities:
+        affinity_filter += " AND (encoder IS NULL OR LOWER(encoder) != 'qsv')"
+    if "vaapi" not in capabilities:
+        affinity_filter += " AND (encoder IS NULL OR LOWER(encoder) != 'vaapi')"
+
     # If encoder translation is disabled, only assign jobs this node can run natively
     # (affinity still applies on top of this). A libx265-only node with translation
     # disabled will never get nvenc-tagged jobs.
@@ -300,6 +309,13 @@ async def request_job(req: RequestJobBody, request: Request):
             native_encoders.extend(["nvenc", "hevc_nvenc"])
         if "libx265" in capabilities:
             native_encoders.extend(["libx265", "x265", "cpu"])
+        # QSV/VAAPI are already gated to capable nodes above; here we just
+        # include them in the native list so a translate=False node still
+        # accepts its own qsv/vaapi jobs. v0.3.70+.
+        if "qsv" in capabilities:
+            native_encoders.append("qsv")
+        if "vaapi" in capabilities:
+            native_encoders.append("vaapi")
         if native_encoders:
             placeholders = ",".join("?" * len(native_encoders))
             affinity_filter += f" AND (encoder IS NULL OR encoder = '' OR LOWER(encoder) IN ({placeholders}))"
