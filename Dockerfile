@@ -57,9 +57,7 @@ ARG TARGETARCH
 # `intel-media-va-driver-non-free` lives in Debian's `non-free` component;
 # enabled below before the conditional install. Source-open driver,
 # "non-free" naming is historical from when it shipped as a binary blob.
-RUN set -e; \
-    echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
-        > /etc/apt/sources.list.d/non-free.list; \
+RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         curl xz-utils \
@@ -67,6 +65,14 @@ RUN set -e; \
         mesa-va-drivers \
         vainfo; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
+        # non-free is needed only for the Intel iHD package — enable it
+        # AFTER the multi-arch packages are in, so an arm64 build never
+        # touches the non-free metadata at all (defensive: v0.3.71's
+        # blanket non-free enablement was suspected as a cause of the
+        # arm64 leg's apt-get failure even after the package gating).
+        echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
+            > /etc/apt/sources.list.d/non-free.list; \
+        apt-get update; \
         apt-get install -y --no-install-recommends \
             intel-media-va-driver-non-free \
             i965-va-driver; \

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.72] — 2026-04-28
+
+### Fixed
+- arm64 leg of the multi-arch CPU image build still failing on the apt-get step (v0.3.71 gated the Intel-only packages but kept the non-free repo enabled for both arches). Moved the non-free repo enablement inside the amd64 conditional so the arm64 build never touches non-free metadata. Added `set -x` to surface which command fails in future build logs.
+
 ## [0.3.71] — 2026-04-28
 
 ### Fixed
