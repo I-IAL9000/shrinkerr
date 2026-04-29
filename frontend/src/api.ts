@@ -687,6 +687,13 @@ export const getEncodingSettings = () => apiFetch<any>("/settings/encoding");
 // surfaces that need the real key (copy-to-clipboard, worker snippet)
 // pull it from here on demand.
 export const getApiKey = () => apiFetch<{ api_key: string }>("/settings/api-key");
+// Regenerate runs server-side with secrets.token_hex so it works in any
+// browser context (the prior client-side crypto.randomUUID() approach
+// silently failed on plain-HTTP LAN access where window.crypto.randomUUID
+// is undefined). Returns the new key, which the caller surfaces in the
+// input field. v0.3.75+.
+export const regenerateApiKey = () =>
+  apiFetch<{ api_key: string }>("/settings/api-key/regenerate", { method: "POST" });
 export const updateEncodingSettings = (settings: any) =>
   apiFetch("/settings/encoding", {
     method: "PUT",

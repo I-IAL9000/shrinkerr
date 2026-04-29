@@ -348,6 +348,33 @@ async def get_api_key():
         await db.close()
 
 
+@router.post("/api-key/regenerate")
+async def regenerate_api_key():
+    """Generate a fresh API key, persist it, and return it.
+
+    Pre-v0.3.75 the regenerate button on Settings → System → Authentication
+    called `crypto.randomUUID()` in the browser, which is undefined outside
+    a secure context (HTTPS or localhost). Users accessing Shrinkerr over
+    plain HTTP on a LAN saw the button do nothing — the call threw a
+    silent TypeError. Generating server-side with `secrets.token_hex` is
+    portable, more secure, and atomic with the persist step (no chance
+    of the user clicking regenerate and forgetting to click Save).
+    """
+    import secrets
+    new_key = secrets.token_hex(24)
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('api_key', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (new_key,),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return {"api_key": new_key}
+
+
 @router.get("/encoding")
 async def get_encoding_settings():
     db = await aiosqlite.connect(DB_PATH)

@@ -14,7 +14,7 @@ import {
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
-  getEncoderCaps,
+  getEncoderCaps, regenerateApiKey,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps,
 } from "../api";
@@ -3847,10 +3847,26 @@ volumes:
                   </svg>
                 </button>
                 <button
-                  title="Regenerate API key"
-                  onClick={() => {
-                    const key = crypto.randomUUID().replace(/-/g, "");
-                    setEncoding({ ...encoding, api_key: key });
+                  title="Regenerate API key (server-side; takes effect immediately)"
+                  onClick={async () => {
+                    // Server-side generation: portable across browser
+                    // contexts (no `crypto.randomUUID` requirement) and
+                    // atomically persists. Pre-v0.3.75 this called
+                    // `crypto.randomUUID()` and only updated React state
+                    // — silently failed on plain-HTTP LAN access where
+                    // randomUUID is undefined, AND lost on page refresh
+                    // even when it did work. v0.3.75+.
+                    try {
+                      const r = await regenerateApiKey();
+                      if (r?.api_key) {
+                        setEncoding({ ...encoding, api_key: r.api_key });
+                        toast("API key regenerated — copy and update your worker / NZBGet / SABnzbd configs", "success");
+                      } else {
+                        toast("Regenerate returned an empty key", "error");
+                      }
+                    } catch (e: any) {
+                      toast(`Regenerate failed: ${e?.message || e}`, "error");
+                    }
                   }}
                   style={{
                     height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",

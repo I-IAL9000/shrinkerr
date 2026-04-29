@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.75] — 2026-04-28
+
+### Fixed
+- "Regenerate API key" button on Settings → System → Authentication did nothing on plain-HTTP LAN access (the client-side `crypto.randomUUID()` it relied on is undefined outside a secure context). Now generates server-side via `secrets.token_hex` and persists atomically — works in any browser context and takes effect immediately.
+
 ## [0.3.74] — 2026-04-28
 
 ### Fixed
