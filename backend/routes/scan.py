@@ -1685,6 +1685,22 @@ async def get_scan_tree(filter: str = "all"):
                         status = _get_watch_status(fp, ctx) if ctx else None
                         if status != want:
                             skip = True; break
+                    elif pf in ("type_movie", "type_tv", "type_other"):
+                        # The tree endpoint maintains its own hand-rolled
+                        # per-filter switch for performance — bypassing
+                        # _matches_filter. v0.3.76 added type_* to
+                        # _matches_filter and removed them from the SQL
+                        # push-down, but forgot to wire them into THIS
+                        # loop. Result: type_tv applied to a tree fetch
+                        # silently passed every row through (no elif
+                        # matched, skip=False stayed). The count and the
+                        # /scan/results-driven badges were correct, but
+                        # the tree (poster grid + file tree) ignored the
+                        # filter entirely. v0.3.79 wires them in.
+                        dt = _classify_type_for_path(fp, ctx["dir_label_index"]) if ctx else "other"
+                        want = pf.split("_", 1)[1]  # 'movie', 'tv', 'other'
+                        if dt != want:
+                            skip = True; break
                 if skip:
                     continue
 

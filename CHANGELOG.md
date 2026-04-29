@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.79] — 2026-04-28
+
+### Fixed
+- TV Shows / Movies / Other filters in the Scanner grid did nothing — applying or removing them returned the same set (regression from v0.3.76 when the type filter was moved out of SQL push-down). The tree endpoint's hand-rolled per-filter loop didn't have a case for the type filters, so they passed through silently. Now wired in.
+
 ## [0.3.78] — 2026-04-28
 
 ### Added
