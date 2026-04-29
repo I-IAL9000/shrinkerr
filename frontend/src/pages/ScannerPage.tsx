@@ -43,7 +43,28 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
   const [selectedDir, setSelectedDir] = useState<string>("all");
-  const [filters, setFilters] = useState<string[]>(["all"]);
+  // Filter pills persist across navigations (and browser restarts) via
+  // localStorage, since users typically come back to the same view they
+  // were curating. The Clear pill (`filter !== "all"` branch below) is
+  // the one-click reset; anything more invasive would surprise users.
+  // v0.3.78+.
+  const [filters, setFilters] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("shrinkerr_scanner_filters");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.every((f: unknown) => typeof f === "string")) {
+          return parsed.length > 0 ? (parsed as string[]) : ["all"];
+        }
+      }
+    } catch { /* localStorage may throw (Safari private mode) — fall through */ }
+    return ["all"];
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("shrinkerr_scanner_filters", JSON.stringify(filters));
+    } catch { /* same reason as above */ }
+  }, [filters]);
   // Compute filter string for backend (comma-separated for multi-filter)
   const filter = filters.length === 0 || (filters.length === 1 && filters[0] === "all") ? "all" : filters.filter(f => f !== "all").join(",");
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
