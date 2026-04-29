@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.87] — 2026-04-29
+
+### Fixed
+- QSV encode failing with `device failed (-17)` (`MFX_ERR_INCOMPATIBLE_VIDEO_PARAM`) on Linux + iHD systems where ffmpeg's auto-init couldn't get a hardware device handle. ffmpeg command builder now does the two-step Linux QSV init: create a VAAPI device pinned to `/dev/dri/renderD128`, then create a QSV context that adopts it (`qsv=qsv@va`). Standard Intel-on-Linux pattern.
+- Documented the VAAPI `libva.so.2: undefined symbol vaMapBuffer2` failure for users on Debian 12 / Ubuntu 22.04 (system libva 2.14–2.17 vs the BtbN ffmpeg's libva 2.20+ ABI expectation). Workaround in `docs/installation.md`: use QSV instead, or build with `--build-arg FFMPEG_BUILD=n6.1`. Bundling a newer libva in the image is on the roadmap.
+
 ## [0.3.86] — 2026-04-28
 
 ### Added

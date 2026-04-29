@@ -229,16 +229,28 @@ def _build_ffmpeg_cmd_impl(
     external_subtitle_files: list[dict] | None = None,
     subtitle_streams_to_remove: set | None = None,
 ) -> list[str]:
-    # VAAPI needs the device pinned BEFORE -i so the hwupload filter can
-    # find a render node to upload frames to. QSV / NVENC / libx265 don't
-    # need pre-input args — QSV initialises its own session implicitly,
-    # NVENC reads the GPU through the CUDA driver, libx265 is software.
+    # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     # /dev/dri/renderD128 is the conventional first render node; if a
     # host has more than one (multi-GPU), the user has to pick via the
-    # `custom_ffmpeg_flags` setting for now. v0.3.67+.
+    # `custom_ffmpeg_flags` setting for now.
+    #
+    # QSV note (v0.3.87+): on Linux, QSV sits on top of VAAPI. The
+    # two-step pattern below initialises a VAAPI device bound to the
+    # render node, then creates a QSV context that *adopts* it
+    # (the `@va` syntax). v0.3.67–v0.3.86 passed no QSV device init,
+    # relying on ffmpeg's auto-detect — which fails on most Linux+iHD
+    # systems with `device failed (-17)` (MFX_ERR_INCOMPATIBLE_VIDEO_PARAM)
+    # because no default QSV device is available. NVENC and libx265 still
+    # need no pre-input args (NVENC reads the GPU via the CUDA driver;
+    # libx265 is software).
     cmd = ["ffmpeg", "-y"]
     if encoder == "vaapi":
         cmd += ["-vaapi_device", "/dev/dri/renderD128"]
+    elif encoder == "qsv":
+        cmd += [
+            "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+            "-init_hw_device", "qsv=qsv@va",
+        ]
     cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)

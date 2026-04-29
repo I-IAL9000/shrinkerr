@@ -243,10 +243,30 @@ the host kernel + driver, or fall back to libx265 / NVENC.
 iHD VA-API driver is fine but the oneVPL / MediaSDK runtime that
 `hevc_qsv` uses is missing or mismatched. Pre-v0.3.84 our images
 shipped only the iHD driver; pull `:latest` / `:nvenc` v0.3.84+ which
-also bake `libvpl2` and `libmfx1`. Quick workaround for users on
-older images: switch the encoder to **VAAPI** in Settings →
-Encoding. `hevc_vaapi` talks to iHD directly without going through
-the MFX session layer, and your hardware (per `vainfo`) supports it.
+also bake `libvpl2` and `libmfx1`.
+
+**`device failed (-17)` / `Error while opening encoder` with QSV** —
+the MFX session creates fine but the QSV encoder couldn't get a
+hardware device handle. v0.3.67–v0.3.86 relied on ffmpeg's auto-init
+which fails on most Linux + iHD systems. v0.3.87+ explicitly
+initialises the hardware device via the two-step `vaapi=va:…` →
+`qsv=qsv@va` pattern. Pull v0.3.87+ to fix.
+
+**`libva.so.2: undefined symbol vaMapBuffer2`** with VAAPI — version
+mismatch between the BtbN ffmpeg static build (compiled against
+libva ≥ 2.20) and the system libva on Debian 12 / Ubuntu 22.04
+(2.14–2.17). The image ships ffmpeg expecting modern libva, but
+the apt-installable libva on those distros is older. Workarounds in
+order of preference:
+
+1. **Use QSV instead** if you have an Intel iGPU — QSV doesn't need
+   `vaMapBuffer2`. Settings → Encoding → Default Encoder → Intel QSV.
+2. **Build the image with an older ffmpeg variant**:
+   `docker build --build-arg FFMPEG_BUILD=n6.1 -t shrinkerr:vaapi-compat .`
+   from the source. n6.x predates the `vaMapBuffer2` ABI bump.
+3. **Wait for an upstream fix**: a future release will ship a newer
+   libva either via Debian backports (when bookworm-backports gets
+   one) or a built-from-source step in the image.
 
 ## Reverse proxy setups
 
