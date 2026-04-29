@@ -866,30 +866,68 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
                 poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
                 return poster_url, "tmdb", meta
 
-            # Pass 1: exact title + year match
+            def _item_year(item: dict) -> str:
+                return str(item.get("release_date", item.get("first_air_date", ""))[:4])
+
+            # Pass ordering (v0.3.83+):
+            #
+            # When the user provided a year, run year-AWARE passes only.
+            # Pre-v0.3.83 the order was:
+            #   1) exact title + year  →  2) exact title any year  →
+            #   3) partial title + year
+            # which silently mis-resolved e.g. "See no evil (2014)" to the
+            # 2006 movie of that title (the 2014 sequel is titled "See No
+            # Evil 2", so step 1 missed; step 2's any-year exact match
+            # picked the 2006 entry). Year-aware partial matching now
+            # runs BEFORE year-blind exact matching, and we no longer fall
+            # back to year-blind passes at all when a year was given —
+            # better to return no match than the wrong year.
+            #
+            # When no year was given, pure title-based passes apply
+            # (preserves the long-standing behaviour for users without
+            # year-tagged folders).
             if year:
+                # 1. Exact title + exact year
                 for item in results:
-                    item_title = (item.get("title") or item.get("name") or "").lower().strip()
-                    item_year = str(item.get("release_date", item.get("first_air_date", ""))[:4])
-                    if item_title == title_lower and item_year == year:
+                    it = (item.get("title") or item.get("name") or "").lower().strip()
+                    if it == title_lower and _item_year(item) == year:
                         return _match_return(item)
-
-            # Pass 2: exact title match (any year)
-            for item in results:
-                item_title = (item.get("title") or item.get("name") or "").lower().strip()
-                if item_title == title_lower:
-                    return _match_return(item)
-
-            # Pass 3: partial title + year validation
-            for item in results:
-                item_title = (item.get("title") or item.get("name") or "").lower().strip()
-                if title_lower in item_title or item_title in title_lower:
-                    if year:
-                        item_year = str(item.get("release_date", item.get("first_air_date", ""))[:4])
-                        if item_year == year:
+                # 2. Partial title + exact year — catches "See no evil" → "See No
+                #    Evil 2" (2014) and "Odyssey" → "The Odyssey" (2025).
+                for item in results:
+                    it = (item.get("title") or item.get("name") or "").lower().strip()
+                    if (title_lower in it or it in title_lower) and _item_year(item) == year:
+                        return _match_return(item)
+                # 3. Exact title + ±1 year — covers the "TMDB has 2014, folder
+                #    has 2013" metadata-drift case without admitting the
+                #    "off by 8 years" wrong-movie cases that pre-v0.3.83
+                #    Pass 2 was admitting.
+                try:
+                    target = int(year)
+                    for item in results:
+                        it = (item.get("title") or item.get("name") or "").lower().strip()
+                        iy = _item_year(item)
+                        if it != title_lower or not iy.isdigit():
+                            continue
+                        if abs(int(iy) - target) <= 1:
                             return _match_return(item)
-                    else:
-                        return _match_return(item)
+                except ValueError:
+                    pass
+                # No year-aware match — return placeholder rather than
+                # silently picking a wrong-year title-match.
+                return None, "placeholder", {}
+
+            # No-year path: original behaviour kept.
+            # A. Exact title (any year)
+            for item in results:
+                it = (item.get("title") or item.get("name") or "").lower().strip()
+                if it == title_lower:
+                    return _match_return(item)
+            # B. Partial title (any year)
+            for item in results:
+                it = (item.get("title") or item.get("name") or "").lower().strip()
+                if title_lower in it or it in title_lower:
+                    return _match_return(item)
     return None, "placeholder", {}
 
 
@@ -1072,18 +1110,47 @@ async def search_tmdb(req: TMDBSearchRequest):
             continue
         title_results.append(entry)
 
-    # Re-rank title-search results: exact title + exact year first, then
-    # exact title (any year), then everything else. TMDB's /search/multi
-    # ranks by popularity which can bury a perfect-but-obscure match.
+    # Re-rank title-search results so the auto-resolver's pick (first
+    # year-aware match) lines up with the modal's first card. Tiers:
+    #   0 — exact title  + exact year   (best, "See No Evil 2" 2014)
+    #   1 — partial title + exact year   ("Odyssey" → "The Odyssey" 2025,
+    #                                     "See no evil" → "See No Evil 2" 2014)
+    #   2 — exact title  + ±1 year       (metadata drift)
+    #   3 — exact title  + any year      (year-blind fallback when none given)
+    #   4 — partial title + any year
+    #   5 — everything else (TMDB popularity order preserved)
+    # v0.3.83+.
     query_lower = req.query.strip().lower()
+    target_year_int: int | None = None
+    if req.year:
+        try:
+            target_year_int = int(req.year)
+        except ValueError:
+            target_year_int = None
+
     def _rank(entry: dict) -> tuple[int, int]:
-        same_title = (entry.get("title") or "").strip().lower() == query_lower
-        same_year = bool(req.year) and entry.get("year") == req.year
+        et = (entry.get("title") or "").strip().lower()
+        ey = entry.get("year")
+        same_title = et == query_lower
+        partial_title = bool(et and (query_lower in et or et in query_lower))
+        same_year = bool(req.year) and ey == req.year
+        near_year = False
+        if target_year_int is not None and ey and ey.isdigit():
+            try:
+                near_year = abs(int(ey) - target_year_int) <= 1 and not same_year
+            except ValueError:
+                pass
         if same_title and same_year:
             return (0, 0)
-        if same_title:
+        if partial_title and same_year:
             return (1, 0)
-        return (2, 0)
+        if same_title and near_year:
+            return (2, 0)
+        if same_title:
+            return (3, 0)
+        if partial_title:
+            return (4, 0)
+        return (5, 0)
     title_results.sort(key=_rank)
 
     # Cap total at 12 to leave room for pinned entries on top of the

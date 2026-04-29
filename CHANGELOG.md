@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.83] — 2026-04-28
+
+### Fixed
+- TMDB title-search resolver no longer silently picks a wrong-year match when the user's folder has a year. Old order ran "exact title + exact year" → "exact title (any year)" → "partial title + exact year"; the middle pass would happily admit the 2006 *See No Evil* when the user asked for 2014, even though the 2014 sequel ("See No Evil 2") would have matched the year-aware partial pass that ran *next*. Reordered to year-aware partial-match before any year-blind pass; if no year-aware pass matches, the resolver returns a placeholder rather than fabricating a wrong-year result. Added a ±1-year fuzzy pass for metadata drift.
+- Cases this fixes: *See No Evil (2014)* now resolves to "See No Evil 2" (2014) instead of "See No Evil" (2006); *Odyssey (2025)* now resolves to "The Odyssey" (2025) via partial-title + exact-year matching.
+- Manual "Fix poster match" search re-ranker mirrors the same priority order so the modal's first card matches what auto would pick.
+
 ## [0.3.82] — 2026-04-28
 
 ### Fixed
