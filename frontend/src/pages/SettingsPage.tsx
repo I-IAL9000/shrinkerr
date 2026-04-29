@@ -14,7 +14,9 @@ import {
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
+  getEncoderCaps,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
+  type EncoderCaps,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
@@ -280,6 +282,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [encoding, setEncoding] = useState<any>(null);
+  // Encoder caps from /api/stats/encoder-caps. Drives which options the
+  // default-encoder dropdown surfaces. Null while loading; once loaded,
+  // missing encoders won't appear. v0.3.68+.
+  const [encoderCaps, setEncoderCaps] = useState<EncoderCaps | null>(null);
+  const [encoderCapsRefreshing, setEncoderCapsRefreshing] = useState(false);
   const [saved, setSaved] = useState(false);
   const [langSearch, setLangSearch] = useState("");
   const [subLangSearch, setSubLangSearch] = useState("");
@@ -402,6 +409,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
       if (enc?.plex_url) setPlexUrl(enc.plex_url);
       if (enc?.plex_token) setPlexToken(enc.plex_token);
       if (enc?.plex_path_mapping) setPlexPathMapping(enc.plex_path_mapping);
+    });
+    // Hardware encoder availability — filters the dropdown so we don't
+    // show qsv/vaapi options the host can't run. v0.3.68+.
+    getEncoderCaps().then(setEncoderCaps).catch(() => {
+      // On failure, leave encoderCaps=null and the dropdown falls back
+      // to showing all options — better than hiding existing NVENC for
+      // users whose backend transiently 500'd.
     });
     // Load Plex connection status for the Connect UI.
     plexAuthStatus().then(setPlexConn).catch(() => {});
@@ -701,18 +715,83 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {/* Default Encoder */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Default Encoder</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={labelStyle}>Default Encoder</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setEncoderCapsRefreshing(true);
+                      try { setEncoderCaps(await getEncoderCaps(true)); }
+                      catch { /* keep prior caps */ }
+                      finally { setEncoderCapsRefreshing(false); }
+                    }}
+                    title="Re-detect hardware encoders. Use this after enabling /dev/dri passthrough or changing the BIOS iGPU setting."
+                    style={{
+                      background: "none", border: "1px solid var(--border)",
+                      color: "var(--text-muted)", cursor: "pointer",
+                      borderRadius: 4, padding: "2px 8px", fontSize: 11,
+                    }}
+                  >
+                    {encoderCapsRefreshing ? "Detecting…" : "Re-detect"}
+                  </button>
+                </div>
                 <select value={encoding.default_encoder}
                   onChange={(e) => setEncoding({ ...encoding, default_encoder: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
-                  <option value="nvenc">NVENC (GPU — Hardware)</option>
+                  {/* Always include nvenc + libx265 as options regardless of
+                      caps (libx265 always works; nvenc may have been chosen
+                      already on a host whose detection transiently failed,
+                      and we don't want to silently drop the saved value).
+                      QSV / VAAPI only appear when detection confirms them.
+                      v0.3.68+. */}
+                  {(encoderCaps?.nvenc ?? true) && (
+                    <option value="nvenc">NVENC (NVIDIA GPU)</option>
+                  )}
+                  {encoderCaps?.qsv && (
+                    <option value="qsv">Intel QSV (Intel GPU / iGPU)</option>
+                  )}
+                  {encoderCaps?.vaapi && (
+                    <option value="vaapi">VAAPI (Intel / AMD GPU)</option>
+                  )}
                   <option value="libx265">libx265 (CPU — Software)</option>
                 </select>
                 <div style={helpStyle}>
-                  {encoding.default_encoder === "nvenc"
-                    ? "Hardware encoding using your NVIDIA GPU. Fast, lower power usage. Slightly larger files than CPU."
-                    : "Software encoding using CPU. Slower but achieves better compression per bitrate."}
+                  {(() => {
+                    switch (encoding.default_encoder) {
+                      case "nvenc":
+                        return "Hardware encoding using your NVIDIA GPU. Fast, lower power usage. Slightly larger files than CPU at the same quality.";
+                      case "qsv":
+                        return "Hardware encoding using Intel Quick Sync (Gen8+ iGPUs through Arc / Battlemage). Fast and very power-efficient. Requires /dev/dri passthrough — see the help block below.";
+                      case "vaapi":
+                        return "Hardware encoding via VA-API. Works on Intel iGPUs and AMD GPUs (Polaris / Vega / RDNA). Driver-quality varies; use QSV instead on Intel where available. Requires /dev/dri passthrough.";
+                      case "libx265":
+                      default:
+                        return "Software encoding using CPU. Slower but achieves better compression per bitrate.";
+                    }
+                  })()}
                 </div>
+                {/* /dev/dri passthrough hint — only relevant when a hardware
+                    VA-API path is selected or available. */}
+                {(encoderCaps?.qsv || encoderCaps?.vaapi || ["qsv", "vaapi"].includes(encoding.default_encoder)) && (
+                  <details style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
+                    <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
+                      Compose passthrough for QSV / VAAPI
+                    </summary>
+                    <div style={{ paddingLeft: 8, lineHeight: 1.7, marginTop: 6 }}>
+                      Add to your <code>docker-compose.yml</code>:
+                      <pre style={{ margin: "6px 0", padding: 8, background: "var(--bg-primary)", borderRadius: 4, fontSize: 11, overflow: "auto" }}>{`services:
+  shrinkerr:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - "<GID>"   # numeric group that owns /dev/dri/renderD128 on host`}</pre>
+                      Find the GID with <code>stat -c '%g' /dev/dri/renderD128</code> on the host.
+                      Then <code>docker compose down &amp;&amp; up -d</code> and click <em>Re-detect</em> above.
+                      Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes.
+                    </div>
+                  </details>
+                )}
               </div>
 
               {/* Target Codec */}
@@ -791,7 +870,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={helpStyle}>Select which source codecs should be converted to the target codec.</div>
               </div>
 
-              {encoding.default_encoder !== "libx265" ? (
+              {encoding.default_encoder === "nvenc" && (
                 <>
                   {/* NVENC Preset */}
                   <div>
@@ -877,7 +956,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     </div>
                   </div>
                 </>
-              ) : (
+              )}
+              {encoding.default_encoder === "libx265" && (
                 <>
                   {/* libx265 Preset */}
                   <div>
@@ -965,6 +1045,86 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           style={{ ...inputStyle, width: "100%" }}
                         />
                       </div>
+                    </div>
+                  </div>
+                </>
+              )}
+              {/* Intel Quick Sync — preset matches NVENC's veryslow…veryfast
+                  ladder; quality is a 1-51 ICQ target where 22 is a sane
+                  default (closest analog to NVENC's CQ). v0.3.68+. */}
+              {encoding.default_encoder === "qsv" && (
+                <>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>QSV Preset</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_preset || "medium"}</span>
+                    </div>
+                    <select value={encoding.qsv_preset || "medium"}
+                      onChange={(e) => setEncoding({ ...encoding, qsv_preset: e.target.value })}
+                      style={{ ...inputStyle, width: "100%" }}>
+                      <option value="veryfast">Very Fast</option>
+                      <option value="faster">Faster</option>
+                      <option value="fast">Fast</option>
+                      <option value="medium">Medium (recommended)</option>
+                      <option value="slow">Slow</option>
+                      <option value="slower">Slower</option>
+                      <option value="veryslow">Very Slow (Best quality)</option>
+                    </select>
+                    <div style={helpStyle}>
+                      Encoder analysis depth. Slower presets produce smaller files at the same quality but encode more slowly. <strong>medium</strong> is balanced and recommended for most hardware.
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>QSV Quality (global_quality)</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_cq ?? 22}</span>
+                    </div>
+                    <input type="range" min={15} max={32} value={encoding.qsv_cq ?? 22}
+                      onChange={(e) => setEncoding({ ...encoding, qsv_cq: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>15 (Highest quality)</span><span>22</span><span>26</span><span>32 (Smallest file)</span>
+                    </div>
+                    <div style={helpStyle}>
+                      QSV's ICQ-mode quality target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> is good quality with noticeable savings.
+                    </div>
+                  </div>
+                </>
+              )}
+              {/* Intel/AMD VA-API — CQP rate control via -qp; compression_level
+                  is a 0-7 driver-side knob (lower = more analysis). v0.3.68+. */}
+              {encoding.default_encoder === "vaapi" && (
+                <>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>VAAPI Compression Level</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_compression_level ?? 4}</span>
+                    </div>
+                    <input type="range" min={0} max={7} value={encoding.vaapi_compression_level ?? 4}
+                      onChange={(e) => setEncoding({ ...encoding, vaapi_compression_level: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>0 (Best quality, slowest)</span><span>4</span><span>7 (Fastest)</span>
+                    </div>
+                    <div style={helpStyle}>
+                      Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <strong>4</strong> is a sane median.
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>VAAPI Quantizer (QP)</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_qp ?? 22}</span>
+                    </div>
+                    <input type="range" min={15} max={32} value={encoding.vaapi_qp ?? 22}
+                      onChange={(e) => setEncoding({ ...encoding, vaapi_qp: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>15 (Highest quality)</span><span>22</span><span>26</span><span>32 (Smallest file)</span>
+                    </div>
+                    <div style={helpStyle}>
+                      Constant quantizer (CQP) target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> trades quality for size sensibly.
                     </div>
                   </div>
                 </>

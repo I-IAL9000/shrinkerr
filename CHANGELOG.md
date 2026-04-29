@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.68] — 2026-04-28
+
+### Added
+- Settings → Encoding now exposes Intel QSV and Intel/AMD VAAPI as encoder options (auto-detected; only shown when the host can run them). Per-encoder preset and quality controls follow the NVENC / libx265 pattern. Compose-passthrough hint and a "Re-detect" button included.
+
 ## [0.3.67] — 2026-04-28
 
 ### Added

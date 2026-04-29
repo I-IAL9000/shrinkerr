@@ -25,6 +25,15 @@ _ENCODING_DEFAULTS = {
     "libx265_crf": "20",
     "nvenc_preset": "p6",
     "libx265_preset": "medium",
+    # Intel QSV defaults (hevc_qsv): ICQ-style global_quality + preset.
+    # See backend/converter.py::_ENCODING_SETTINGS for the rationale.
+    # v0.3.68+.
+    "qsv_cq": "22",
+    "qsv_preset": "medium",
+    # Intel/AMD VAAPI defaults (hevc_vaapi): CQP via -qp + driver-side
+    # compression_level (0–7, lower = more analysis). v0.3.68+.
+    "vaapi_qp": "22",
+    "vaapi_compression_level": "4",
     # libx265 fallback used by CPU workers when they have to take an NVENC
     # job. Empty = fall back to the NVENC→libx265 translation table.
     "nvenc_cpu_fallback_preset": "",
@@ -360,6 +369,13 @@ async def get_encoding_settings():
         "libx265_crf": int(merged.get("libx265_crf", 20)),
         "nvenc_preset": merged.get("nvenc_preset", "p6"),
         "libx265_preset": merged.get("libx265_preset", "medium"),
+        # QSV / VAAPI (v0.3.68+). Surfaced unconditionally; the SPA hides
+        # them when /api/stats/encoder-caps reports the encoder isn't
+        # available on this host.
+        "qsv_cq": int(merged.get("qsv_cq", 22)),
+        "qsv_preset": merged.get("qsv_preset", "medium"),
+        "vaapi_qp": int(merged.get("vaapi_qp", 22)),
+        "vaapi_compression_level": int(merged.get("vaapi_compression_level", 4)),
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
         "nvenc_cpu_fallback_crf": merged.get("nvenc_cpu_fallback_crf", ""),
         "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
@@ -649,6 +665,16 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["nvenc_preset"] = update.nvenc_preset
         if update.libx265_preset is not None:
             updates["libx265_preset"] = update.libx265_preset
+        # QSV / VAAPI (v0.3.68+). Same pattern as their NVENC/libx265
+        # counterparts above.
+        if update.qsv_cq is not None:
+            updates["qsv_cq"] = str(update.qsv_cq)
+        if update.qsv_preset is not None:
+            updates["qsv_preset"] = update.qsv_preset
+        if update.vaapi_qp is not None:
+            updates["vaapi_qp"] = str(update.vaapi_qp)
+        if update.vaapi_compression_level is not None:
+            updates["vaapi_compression_level"] = str(update.vaapi_compression_level)
         if update.nvenc_cpu_fallback_preset is not None:
             # Empty string = "unset", worker falls back to NVENC→libx265 translation
             updates["nvenc_cpu_fallback_preset"] = update.nvenc_cpu_fallback_preset.strip()

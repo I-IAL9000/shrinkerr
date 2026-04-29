@@ -130,6 +130,11 @@ class SettingsUpdate(BaseModel):
     nvenc_cpu_fallback_crf: Optional[int | str] = None
     libx265_gpu_fallback_preset: Optional[str] = None
     libx265_gpu_fallback_cq: Optional[int | str] = None
+    # Intel QSV / Intel-AMD VAAPI knobs. v0.3.68+.
+    qsv_cq: Optional[int] = None
+    qsv_preset: Optional[str] = None
+    vaapi_qp: Optional[int] = None
+    vaapi_compression_level: Optional[int] = None
     parallel_jobs: Optional[int] = None
     ffmpeg_timeout: Optional[int] = None
     ffprobe_timeout: Optional[int] = None

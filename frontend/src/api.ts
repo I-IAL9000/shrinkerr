@@ -574,6 +574,20 @@ export const getUpstreamChangelog = (force = false) =>
     `/stats/upstream-changelog${force ? "?force=1" : ""}`,
     { cache: "no-store" },
   );
+
+// Hardware HEVC encoder availability. Settings → Encoding uses this to
+// filter the dropdown to only options the host can actually run, so a
+// user without /dev/dri passthrough doesn't see qsv/vaapi as pickable
+// values that would fail at encode time. v0.3.68+.
+export interface EncoderCaps {
+  nvenc: boolean;
+  qsv: boolean;
+  vaapi: boolean;
+  libx265: boolean;
+  available: string[];
+}
+export const getEncoderCaps = (force = false) =>
+  apiFetch<EncoderCaps>(`/stats/encoder-caps${force ? "?force=1" : ""}`);
 export const startQueue = () => apiFetch("/jobs/start", { method: "POST" });
 export const pauseQueue = () => apiFetch("/jobs/pause", { method: "POST" });
 export const resumeQueue = () => apiFetch("/jobs/resume", { method: "POST" });

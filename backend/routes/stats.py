@@ -610,6 +610,32 @@ async def test_notifications_endpoint():
     return {"results": results}
 
 
+# --- Encoder capabilities ---
+
+@router.get("/encoder-caps")
+async def get_encoder_caps(force: bool = False):
+    """Return which HEVC encoders this host can drive.
+
+    Used by Settings → Encoding to filter the encoder dropdown to only
+    options that will actually run, and by the Estimate / Rule editor
+    encoder pickers in v0.3.69+. Detection is cached for the process
+    lifetime; `?force=1` re-probes (the Settings page exposes a
+    "redetect" button for users who plug in / enable hardware after
+    container start). v0.3.68+.
+    """
+    from backend.encoder_caps import detect_encoders
+    caps = detect_encoders(force=force)
+    return {
+        "nvenc": caps.nvenc,
+        "qsv": caps.qsv,
+        "vaapi": caps.vaapi,
+        # Always-present software fallback. Lets the SPA render a single
+        # `available` list without special-casing libx265.
+        "libx265": True,
+        "available": caps.available,
+    }
+
+
 # --- Version / Changelog ---
 
 _VERSION_FILE = Path(__file__).parent.parent.parent / "VERSION"
