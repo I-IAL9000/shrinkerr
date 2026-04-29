@@ -1709,14 +1709,27 @@ async def convert_file(
             "error": f"Output file suspiciously small ({output_size} bytes vs {original_size} bytes original) — likely corrupt. Original file preserved.",
         }
 
-    # If the converted file is LARGER than the original, discard it and keep original.
-    # EXCEPTION: if we did inline track removal (audio/subtitle), keep the output even
-    # if the video codec conversion alone was a loss — the user explicitly asked for
-    # those tracks to be removed, and they're already gone from the output file.
-    # Discarding would lose the track removal work and leave unwanted tracks in place.
+    # If the converted file is LARGER than the original, discard it.
+    #
+    # v0.3.69 change: this used to KEEP the encoded file when track removal
+    # had happened inline ("the user wanted those tracks gone, the encoded
+    # file has them gone, discarding would lose that work"). The trade-off
+    # was that the user ended up with a *larger* file just so they didn't
+    # lose the cleanup. The queue.py finalisation now requeues an audio-
+    # only follow-up job when this happens, which applies the cleanup to
+    # the original (smaller) file without the failed video re-encode. Net:
+    # cleanup still gets done AND the file shrinks.
+    #
+    # `had_track_removal` is still computed for the encoding_stats payload
+    # so the completed-jobs report can show users exactly what cleanup
+    # was lined up and will be retried as audio-only.
     had_track_removal = bool(audio_tracks_to_remove) or bool(subtitle_tracks_to_remove) or bool(external_sub_files)
-    if space_saved < 0 and not had_track_removal:
-        print(f"[CONVERT] Output ({output_size}) is LARGER than original ({original_size}), keeping original", flush=True)
+    if space_saved < 0:
+        print(
+            f"[CONVERT] Output ({output_size}) is LARGER than original ({original_size}), discarding"
+            + (" (audio/sub cleanup will be retried as audio-only follow-up)" if had_track_removal else ""),
+            flush=True,
+        )
         try:
             temp.unlink()
         except OSError:
@@ -1736,6 +1749,12 @@ async def convert_file(
             "space_saved": 0,
             "error": None,
             "skipped_larger": True,
+            # Signal to queue.py finalisation: a follow-up audio-only job
+            # should be queued so the cleanup work that the discarded
+            # encode would have included still happens on the original
+            # file. Empty when there was no cleanup work to begin with.
+            # v0.3.69+.
+            "had_track_removal": had_track_removal,
             "ffmpeg_command": full_command,
             "ffmpeg_log": "\n".join(all_lines[-500:]),
             "encoding_stats": {
@@ -1757,11 +1776,9 @@ async def convert_file(
                 "input_bitrate": round(original_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
                 "output_bitrate": round(output_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
                 "skipped_larger": True,
+                "had_track_removal": had_track_removal,
             },
         }
-    if space_saved < 0 and had_track_removal:
-        print(f"[CONVERT] Output is larger but keeping it — tracks were removed inline ({abs(space_saved)} bytes growth, but unwanted tracks are gone)", flush=True)
-        space_saved = 0  # Don't report negative savings
 
     # VMAF analysis — compare original vs encoded BEFORE the original is moved/deleted.
     # `vmaf_error` carries the reason to the caller (queue.py / worker_mode.py) so a

@@ -1631,6 +1631,68 @@ class QueueWorker:
                 except Exception as exc:
                     print(f"[WORKER] Failed to mark ignored: {exc}", flush=True)
 
+                # Audio-only follow-up: when the original job had cleanup
+                # intent (track removal, native-language reorder, codec
+                # transcode, or external subs to merge) and the video
+                # re-encode was discarded for being larger, requeue an
+                # audio-only job so the cleanup still happens on the
+                # original file. Without this, the cleanup work the user
+                # asked for is silently lost — and pre-v0.3.69 the workaround
+                # was to keep the *larger* encoded file just to preserve
+                # cleanup, which is worse on disk. v0.3.69+.
+                #
+                # Trigger conditions:
+                #   - job_type was "combined" (the dispatcher only chooses
+                #     "combined" when it's already determined cleanup work
+                #     is needed: track removal, reorder, or transcode); OR
+                #   - converter explicitly flagged had_track_removal=True
+                #     (covers the case where settings changed between
+                #     queue time and run time).
+                # An "audio" follow-up never re-triggers itself because its
+                # job_type is "audio", not "combined", and it can't produce
+                # skipped_larger=True (no video re-encode to grow the file).
+                should_followup = (
+                    job_type == "combined"
+                    or bool(result.get("had_track_removal"))
+                ) and (
+                    bool(audio_tracks_to_remove)
+                    or bool(subtitle_tracks_to_remove)
+                    or job_type == "combined"  # native-reorder / codec transcode case
+                )
+                if should_followup:
+                    try:
+                        followup_id = await self.queue.add_job(
+                            file_path=file_path,
+                            job_type="audio",
+                            encoder=encoder,
+                            audio_tracks_to_remove=audio_tracks_to_remove,
+                            subtitle_tracks_to_remove=subtitle_tracks_to_remove,
+                            original_size=file_size,
+                            # Run immediately rather than at the back of the
+                            # queue — the user expects the cleanup to land
+                            # promptly, not after every other pending encode.
+                            insert_next=True,
+                            priority=job.get("priority") or 0,
+                        )
+                        if followup_id:
+                            print(
+                                f"[WORKER] Queued audio-only follow-up job {followup_id} for "
+                                f"{file_path} (encode was larger, cleanup work pending)",
+                                flush=True,
+                            )
+                            try:
+                                from backend.file_events import log_event, EVENT_QUEUED
+                                await log_event(
+                                    file_path,
+                                    EVENT_QUEUED,
+                                    "Queued audio/sub cleanup as follow-up (encode was larger)",
+                                    {"job_id": followup_id, "job_type": "audio", "follow_up_for": job_id},
+                                )
+                            except Exception:
+                                pass
+                    except Exception as exc:
+                        print(f"[WORKER] Audio-only follow-up queue failed: {exc}", flush=True)
+
             if result.get("vmaf_rejected"):
                 # Encode completed cleanly but didn't meet the VMAF threshold.
                 # Store the rejection reason on the job so the UI can surface

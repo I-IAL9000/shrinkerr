@@ -5,6 +5,16 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.69] — 2026-04-28
+
+### Added
+- Estimate modal and rule editor encoder pickers now include Intel QSV and VAAPI options when the host supports them.
+- When a combined (convert + cleanup) encode is discarded for being larger than the source, the audio/sub cleanup is now retried as a follow-up audio-only job — the cleanup the user wanted gets applied to the original instead of being silently lost.
+- Worker nodes now advertise QSV and VAAPI alongside NVENC / libx265 in the capabilities list.
+
+### Changed
+- Encoded-but-larger files are no longer kept "for the cleanup's sake" — they're discarded and the cleanup is requeued separately. Net result: same cleanup, smaller file.
+
 ## [0.3.68] — 2026-04-28
 
 ### Added

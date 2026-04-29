@@ -3207,10 +3207,24 @@ volumes:
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
                           onChange={e => setRuleForm({ ...ruleForm, encoder: e.target.value })}>
                           <option value="">Use default</option>
-                          <option value="nvenc">NVENC (GPU)</option>
+                          {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
+                          {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
+                          {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
                           <option value="libx265">libx265 (CPU)</option>
                         </select>
+                        {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi") && (
+                          <div style={{ ...helpStyle, marginTop: 4 }}>
+                            QSV/VAAPI rules use the global preset and quality from Settings → Encoding.
+                          </div>
+                        )}
                       </div>
+                      {/* Preset / quality controls don't apply to QSV / VAAPI in
+                          v0.3.69 — those encoders inherit the global qsv_*/
+                          vaapi_* settings. NVENC and libx265 preset/CQ/CRF
+                          fields shown only when one of those is selected
+                          (or when no override is set, in which case the rule
+                          inherits whichever encoder Settings → Encoding picks). */}
+                      {(ruleForm.encoder === "" || ruleForm.encoder === "nvenc" || ruleForm.encoder === "libx265") && <>
                       <div>
                         <label style={labelStyle}>Preset</label>
                         {ruleForm.encoder === "libx265" ? (
@@ -3241,6 +3255,7 @@ volumes:
                           }}
                         />
                       </div>
+                      </>}
                       <div>
                         <label style={labelStyle}>Resolution</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings } from "../api";
+import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings, getEncoderCaps, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
 import { vmafColor, vmafTintBg } from "../utils/vmaf";
@@ -64,11 +64,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // default encoder, fetched below)
   const [encoder, setEncoder] = useState<string | null>(null);
   const [defaultEncoder, setDefaultEncoder] = useState<string>("nvenc");
+  // Caps drive which options the encoder dropdown shows. Without this we'd
+  // either always show all 4 (and have qsv/vaapi fail at encode time on
+  // hosts without /dev/dri) or always hide them. v0.3.69+.
+  const [encoderCaps, setEncoderCaps] = useState<EncoderCaps | null>(null);
 
   useEffect(() => {
     getEncodingSettings().then(s => {
       if (s?.default_encoder) setDefaultEncoder(s.default_encoder);
     }).catch(() => {});
+    getEncoderCaps().then(setEncoderCaps).catch(() => {});
   }, []);
   const [preset, setPreset] = useState<string | null>(null);
   const [cq, setCq] = useState<number | null>(null);
@@ -116,6 +121,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // even on CPU-only installs.
   const effectiveEncoder = encoder ?? defaultEncoder;
   const isCpu = effectiveEncoder === "libx265";
+  // QSV / VAAPI don't share the NVENC CQ/preset slider or the libx265
+  // CRF/preset dropdown — they have their own quality/preset settings
+  // managed centrally in Settings → Encoding. For per-batch overrides
+  // we'd need new sliders; for v0.3.69 we just hide the legacy controls
+  // and let the global QSV/VAAPI settings apply. v0.3.69+.
+  const isHwHevc = effectiveEncoder === "qsv" || effectiveEncoder === "vaapi";
 
   // Debounced estimate refresh
   useEffect(() => {
@@ -342,12 +353,18 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <select value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">Auto</option>
-                      <option value="nvenc">NVENC (GPU)</option>
+                      {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
+                      {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
+                      {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
                       <option value="libx265">libx265 (CPU)</option>
                     </select>
                   </div>
 
-                  {/* Quality CQ/CRF */}
+                  {/* Quality CQ/CRF — hidden for QSV/VAAPI which use their own
+                      global settings (Settings → Encoding). Per-batch QSV/VAAPI
+                      overrides aren't surfaced in v0.3.69; could add later if
+                      requested. */}
+                  {!isHwHevc && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality ({isCpu ? "CRF" : "CQ"})</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
@@ -367,8 +384,11 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       )}
                     </div>
                   </div>
+                  )}
 
-                  {/* Preset */}
+                  {/* Preset — hidden for QSV/VAAPI for the same reason as
+                      Quality above. */}
+                  {!isHwHevc && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Preset</label>
                     <select value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
@@ -389,6 +409,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       )}
                     </select>
                   </div>
+                  )}
+                  {isHwHevc && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0 0 90px" }}>
+                      QSV/VAAPI use their global preset and quality from Settings → Encoding.
+                    </div>
+                  )}
 
                   {/* Audio Codec */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

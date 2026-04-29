@@ -660,6 +660,23 @@ class NodeManager:
             if "libx265" in out:
                 caps.append("libx265")
 
+            # Intel QSV / VAAPI (v0.3.69+). Both require ffmpeg to know the
+            # encoder AND the host to expose a render node. We don't run a
+            # test encode here because /dev/dri/renderD128 may be a wrong-
+            # vendor device (e.g. NVIDIA-bound on a host without an iGPU)
+            # in which case the encode would fail at runtime — that's the
+            # right place for that error to surface, not at startup.
+            import os as _os
+            has_render = False
+            try:
+                has_render = any(e.startswith("renderD") for e in _os.listdir("/dev/dri"))
+            except (FileNotFoundError, PermissionError):
+                pass
+            if "hevc_qsv" in out and has_render:
+                caps.append("qsv")
+            if "hevc_vaapi" in out and has_render:
+                caps.append("vaapi")
+
             if "hevc_nvenc" not in out:
                 nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
                 print(f"[NODES] {nvenc_reason}", flush=True)
