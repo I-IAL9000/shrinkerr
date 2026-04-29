@@ -41,6 +41,17 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("libx265_crf",                      20,        int),
     ("nvenc_preset",                     "p6",      str),
     ("libx265_preset",                   "medium",  str),
+    # Intel QSV (hevc_qsv) — uses ICQ-style global_quality (lower = better,
+    # ~similar range to NVENC's CQ). Preset names match NVENC's veryslow…
+    # veryfast ladder. v0.3.67+.
+    ("qsv_cq",                           22,        int),
+    ("qsv_preset",                       "medium",  str),
+    # Intel/AMD VAAPI (hevc_vaapi) — uses CQP rate-control with a fixed QP.
+    # `compression_level` is 0–7 where lower means more analysis / better
+    # quality at the same bitrate (driver-specific, but 4 is a sane median).
+    # v0.3.67+.
+    ("vaapi_qp",                         22,        int),
+    ("vaapi_compression_level",          4,         int),
     # Process limits
     ("ffmpeg_timeout",                   21600,     int),
     ("ffprobe_timeout",                  30,        int),
@@ -157,6 +168,10 @@ def build_ffmpeg_cmd(
     crf: int = 20,
     nvenc_preset: str = "p6",
     libx265_preset: str = "medium",
+    qsv_cq: int = 22,
+    qsv_preset: str = "medium",
+    vaapi_qp: int = 22,
+    vaapi_compression_level: int = 4,
     audio_codec: str = "copy",
     audio_bitrate: int = 128,
     lossless_conversion: dict | None = None,
@@ -178,6 +193,8 @@ def build_ffmpeg_cmd(
     return _build_ffmpeg_cmd_impl(
         input_path, output_path, encoder=encoder, cq=cq, crf=crf,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
+        qsv_cq=qsv_cq, qsv_preset=qsv_preset,
+        vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
         audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,
         audio_stream_codecs=audio_stream_codecs,
@@ -196,6 +213,10 @@ def _build_ffmpeg_cmd_impl(
     crf: int = 20,
     nvenc_preset: str = "p6",
     libx265_preset: str = "medium",
+    qsv_cq: int = 22,
+    qsv_preset: str = "medium",
+    vaapi_qp: int = 22,
+    vaapi_compression_level: int = 4,
     audio_codec: str = "copy",
     audio_bitrate: int = 128,
     lossless_conversion: dict | None = None,
@@ -208,7 +229,17 @@ def _build_ffmpeg_cmd_impl(
     external_subtitle_files: list[dict] | None = None,
     subtitle_streams_to_remove: set | None = None,
 ) -> list[str]:
-    cmd = ["ffmpeg", "-y", "-i", input_path]
+    # VAAPI needs the device pinned BEFORE -i so the hwupload filter can
+    # find a render node to upload frames to. QSV / NVENC / libx265 don't
+    # need pre-input args — QSV initialises its own session implicitly,
+    # NVENC reads the GPU through the CUDA driver, libx265 is software.
+    # /dev/dri/renderD128 is the conventional first render node; if a
+    # host has more than one (multi-GPU), the user has to pick via the
+    # `custom_ffmpeg_flags` setting for now. v0.3.67+.
+    cmd = ["ffmpeg", "-y"]
+    if encoder == "vaapi":
+        cmd += ["-vaapi_device", "/dev/dri/renderD128"]
+    cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
     ext_subs = external_subtitle_files or []
@@ -217,12 +248,26 @@ def _build_ffmpeg_cmd_impl(
 
     # Resolution scaling (applied before video encoder)
     scale = RESOLUTION_MAP.get(target_resolution)
-    if scale:
-        if encoder == "nvenc":
-            # Use CUDA-accelerated scaling for NVENC
-            cmd += ["-vf", f"scale={scale}"]
+    if encoder == "vaapi":
+        # VAAPI needs frames on the GPU before they hit hevc_vaapi. The
+        # hwupload filter does the CPU→GPU copy; format=nv12 forces the
+        # 8-bit 4:2:0 layout the hardware encoder expects. Combined with
+        # an optional scale stage so we stay on a single -vf chain.
+        if scale:
+            cmd += ["-vf", f"scale={scale},format=nv12,hwupload"]
         else:
+            cmd += ["-vf", "format=nv12,hwupload"]
+    elif encoder == "qsv":
+        # hevc_qsv accepts software-decoded frames directly — ffmpeg
+        # uploads to the iGPU internally. So scaling stays on the CPU
+        # side here (sw scale → encoder), which is fine for typical
+        # workloads. Hardware-decode + scale_qsv would be faster but is
+        # an optimisation for a later release.
+        if scale:
             cmd += ["-vf", f"scale={scale}"]
+    elif scale:
+        # NVENC / libx265 — software scale (matches pre-v0.3.67 behaviour).
+        cmd += ["-vf", f"scale={scale}"]
 
     if encoder == "nvenc":
         cmd += [
@@ -234,6 +279,30 @@ def _build_ffmpeg_cmd_impl(
             "-b:v", "0",
             "-profile:v", "main10",
             "-pix_fmt", "p010le",
+        ]
+    elif encoder == "qsv":
+        # Intel Quick Sync HEVC. `global_quality` is QSV's ICQ-mode
+        # quality target — closest analogue to NVENC's CQ. 8-bit `main`
+        # profile for compatibility with Gen9 / older Quick Sync; 10-bit
+        # `main10` is supported on Gen11+ / Arc but we keep the safe
+        # default and let users opt in via custom_ffmpeg_flags. v0.3.67+.
+        cmd += [
+            "-c:v", "hevc_qsv",
+            "-preset", qsv_preset,
+            "-global_quality", str(qsv_cq),
+            "-profile:v", "main",
+        ]
+    elif encoder == "vaapi":
+        # Intel/AMD VAAPI HEVC. CQP rate control via -qp. Output frames
+        # are already on the GPU (hwupload filter above), so no -pix_fmt
+        # is needed — the encoder consumes vaapi surfaces directly.
+        # `compression_level` (0–7, lower = more analysis) is the VAAPI
+        # equivalent of preset speed, driver-dependent. v0.3.67+.
+        cmd += [
+            "-c:v", "hevc_vaapi",
+            "-qp", str(vaapi_qp),
+            "-compression_level", str(vaapi_compression_level),
+            "-profile:v", "main",
         ]
     else:
         # libx265
@@ -1151,6 +1220,13 @@ async def convert_file(
     libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
     cq = override_cq if override_cq is not None else live_settings.get("nvenc_cq", 20)
     crf = override_crf if override_crf is not None else live_settings.get("libx265_crf", 20)
+    # Intel QSV / VAAPI knobs. No per-job overrides yet — the rule engine
+    # and the estimate modal will gain them in a later phase. For now they
+    # come from the DB only. v0.3.67+.
+    qsv_cq = live_settings.get("qsv_cq", 22)
+    qsv_preset = live_settings.get("qsv_preset", "medium")
+    vaapi_qp = live_settings.get("vaapi_qp", 22)
+    vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
     audio_bitrate = override_audio_bitrate if override_audio_bitrate is not None else live_settings.get("audio_bitrate", 128)
 
@@ -1254,8 +1330,14 @@ async def convert_file(
 
     target_resolution = override_target_resolution if override_target_resolution is not None else live_settings.get("target_resolution", "copy")
 
-    active_preset = libx265_preset if encoder == "libx265" else nvenc_preset
-    active_quality = f"crf={crf}" if encoder == "libx265" else f"cq={cq}"
+    if encoder == "libx265":
+        active_preset, active_quality = libx265_preset, f"crf={crf}"
+    elif encoder == "qsv":
+        active_preset, active_quality = qsv_preset, f"global_quality={qsv_cq}"
+    elif encoder == "vaapi":
+        active_preset, active_quality = f"compression_level={vaapi_compression_level}", f"qp={vaapi_qp}"
+    else:
+        active_preset, active_quality = nvenc_preset, f"cq={cq}"
     print(f"[CONVERT] Settings: encoder={encoder}, preset={active_preset}, {active_quality}, audio={audio_codec}, resolution={target_resolution}", flush=True)
     if audio_streams_to_keep is not None:
         removed_count = len(probe_audio_tracks) - len(audio_streams_to_keep)
@@ -1368,6 +1450,8 @@ async def convert_file(
     cmd = _build_ffmpeg_cmd_impl(
         encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
+        qsv_cq=qsv_cq, qsv_preset=qsv_preset,
+        vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
         cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,
         audio_stream_codecs=audio_stream_codecs,

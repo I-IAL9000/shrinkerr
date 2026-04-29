@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.67] — 2026-04-28
+
+### Added
+- Foundation for Intel QSV and Intel/AMD VAAPI hardware encoding — VA-API runtime baked into both Docker images, encoder detection, ffmpeg command builder, settings defaults, completed-job report labels. Settings UI / rule overrides / multi-node advertisement land in v0.3.68 and v0.3.69.
+
 ## [0.3.66] — 2026-04-28
 
 ### Fixed

@@ -290,11 +290,19 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 <span style={{ color: "var(--text-muted)" }}>Codec</span>
                 <span style={{ color: "var(--text-secondary)" }}>x264</span>
                 {/* Match the v0.3.30 rename rule: libx265 → "x265" (the
-                    specific encoder), NVENC → "h265" (the codec spec,
-                    encoder-agnostic). Keeps the post-job report consistent
-                    with the renamed output filename. */}
+                    specific encoder), hardware encoders → "h265" (the
+                    codec spec, encoder-agnostic) tagged with which one
+                    actually produced the file. Keeps the post-job report
+                    consistent with the renamed output filename. v0.3.67
+                    extended this to qsv / vaapi. */}
                 <span style={{ color: "var(--text-secondary)" }}>
-                  {logData.encoding_stats.encoder === "libx265" ? "x265 (CPU)" : "h265 (NVENC)"}
+                  {(() => {
+                    const enc = (logData.encoding_stats.encoder || "").toLowerCase();
+                    if (enc === "libx265") return "x265 (CPU)";
+                    if (enc === "qsv") return "h265 (QSV)";
+                    if (enc === "vaapi") return "h265 (VAAPI)";
+                    return "h265 (NVENC)";
+                  })()}
                 </span>
 
                 {logData.vmaf_score != null && <>

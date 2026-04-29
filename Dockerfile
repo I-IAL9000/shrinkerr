@@ -33,8 +33,31 @@ ARG TARGETARCH
 
 # curl + xz-utils only needed for the ffmpeg download step below; purged at
 # the end of that step so they don't bloat the final image layer.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# VA-API runtime libraries (~30 MB total) let ffmpeg's hevc_qsv (Intel
+# Quick Sync) and hevc_vaapi (Intel + AMD generic VA-API) actually run
+# when the host passes /dev/dri through. Harmless on hosts without an
+# Intel/AMD GPU — ffmpeg simply doesn't surface those encoders. v0.3.67+.
+#
+#   libva2 + libva-drm2  → core VA-API runtime
+#   intel-media-va-driver-non-free → Intel iHD driver (Gen9+: Skylake / Arc / etc.)
+#   i965-va-driver       → Intel legacy driver (Gen8 and older)
+#   mesa-va-drivers      → AMD radeonsi VA-API driver (Polaris+ via RadeonHD)
+#   vainfo               → diagnostic, lets the operator confirm
+#                          `docker exec shrinkerr vainfo` lists profiles
+#
+# `intel-media-va-driver-non-free` lives in Debian's `non-free` component;
+# enable it before apt-get install. Source-open driver, "non-free" naming
+# is historical from when it shipped as a binary blob.
+RUN echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
+        > /etc/apt/sources.list.d/non-free.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
         curl xz-utils \
+        libva2 libva-drm2 \
+        intel-media-va-driver-non-free \
+        i965-va-driver \
+        mesa-va-drivers \
+        vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ffmpeg static build from BtbN (includes libx265, libvmaf, x264).

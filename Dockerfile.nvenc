@@ -23,10 +23,21 @@ RUN npm run build
 # Stage 2: Runtime — CUDA base image, x86_64 only.
 FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
 
-# Install Python, curl, and GPG for repo signing
+# Install Python, curl, and GPG for repo signing.
+#
+# VA-API runtime is also baked in here so users with a mixed Intel iGPU
+# + NVIDIA dGPU host (e.g. NUC9 + Quadro) can pick `qsv` / `vaapi` /
+# `nvenc` as needed in Settings → Encoding. Harmless on hosts without
+# Intel/AMD graphics — ffmpeg simply doesn't surface those encoders.
+# v0.3.67+. See the base Dockerfile for the rationale.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 python3.11-venv python3-pip \
     curl xz-utils \
+    libva2 libva-drm2 \
+    intel-media-va-driver-non-free \
+    i965-va-driver \
+    mesa-va-drivers \
+    vainfo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ffmpeg with NVENC + libvmaf.
