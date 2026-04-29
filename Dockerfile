@@ -61,18 +61,24 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends curl xz-utils; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
-        # All VA-API packages — runtime libs + Intel iHD driver + AMD radeonsi
-        # + diagnostic — only on amd64. arm64 builds keep the minimal
-        # pre-v0.3.67 install (curl + xz-utils) since:
-        #   1. Intel iGPUs don't exist on ARM hardware (iHD driver is
-        #      AMD64-only in Debian regardless).
-        #   2. AMD GPUs reachable from arm64 hosts are exceptionally rare.
-        #   3. v0.3.67's blanket VA-API install broke the arm64 build
-        #      pipeline for unclear reasons (apt exit 100 with no further
-        #      detail); reverting to pre-v0.3.67 minimal package list on
-        #      arm64 returns it to known-good. v0.3.73.
-        echo "deb http://deb.debian.org/debian/ bookworm main contrib non-free non-free-firmware" \
-            > /etc/apt/sources.list.d/non-free.list; \
+        # All VA-API packages (runtime libs + Intel iHD + AMD radeonsi +
+        # diagnostic) only on amd64. arm64 builds keep the minimal
+        # pre-v0.3.67 install since Intel iGPUs are x86-only and AMD
+        # GPUs on arm64 hosts are exceptionally rare.
+        #
+        # Enable non-free + non-free-firmware components by EDITING the
+        # existing DEB822 sources file (python:3.11-slim-bookworm uses
+        # `/etc/apt/sources.list.d/debian.sources`) rather than dropping
+        # a second `.list`. Adding a parallel `bookworm` repo without a
+        # `Signed-By:` directive makes apt fail with
+        #   E: Conflicting values set for option Signed-By regarding
+        #      source http://deb.debian.org/debian/ bookworm:
+        #      /usr/share/keyrings/debian-archive-keyring.gpg !=
+        # which is what bit v0.3.67 → v0.3.73. The sed targets both the
+        # `bookworm` and `bookworm-security` stanzas in the same file
+        # (one substitution per Components line). v0.3.74+.
+        sed -i 's|^Components: main$|Components: main contrib non-free non-free-firmware|' \
+            /etc/apt/sources.list.d/debian.sources; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
             libva2 libva-drm2 \

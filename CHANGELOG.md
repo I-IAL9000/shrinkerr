@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.74] — 2026-04-28
+
+### Fixed
+- Multi-arch CPU image build (the v0.3.67 → v0.3.73 saga) finally diagnosed and fixed: `python:3.11-slim-bookworm` uses the DEB822 sources format with `Signed-By:` set, so dropping a second `.list` for the same `bookworm` repo without a Signed-By directive made apt fail with `Conflicting values set for option Signed-By`. Now edits the existing `debian.sources` to add `non-free` and `non-free-firmware` to the existing `Components:` line instead of adding a parallel sources file. Verified the install end-to-end locally before pushing.
+
 ## [0.3.73] — 2026-04-28
 
 ### Fixed
