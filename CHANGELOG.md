@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.82] — 2026-04-28
+
+### Fixed
+- TMDB resolution and the manual "Fix poster match" search now also use the containing media-dir's label as a media-type hint when the folder name has no bracket ID. A "Movies"-labelled directory's folders no longer accidentally match same-titled TV shows during auto-resolution, and vice versa. Bracket IDs (`[ttN]`/`[tvdb-N]`/`[tmdb-N]`) still take precedence when present; "Other" / unset labels stay unconstrained.
+- Auto-resolution's `media_type` backfill now uses the dir-label as a final fallback when TMDB title-search returns nothing — so a movie in a `Movies`-labelled dir gets `media_type=movie` even with zero TMDB metadata.
+
 ## [0.3.81] — 2026-04-28
 
 ### Fixed

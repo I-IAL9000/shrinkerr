@@ -217,6 +217,32 @@ async def resolve_posters(req: ResolveRequest):
         plex_url_bf = settings.get("plex_url", "").rstrip("/")
         plex_token_bf = settings.get("plex_token", "")
         path_mapping_bf = settings.get("plex_path_mapping", "")
+
+        # Media-dir label index for type inference when a folder lacks a
+        # bracket ID. Loaded once for the whole batch and prefix-matched
+        # in-memory per-folder. Same data structure as scan.py's
+        # _build_dir_label_index. Defined here (above the backfill block)
+        # so both _backfill_one and the main resolve loop below can use
+        # the same hint via the closure. v0.3.82+.
+        dir_label_pairs: list[tuple[str, str]] = []
+        try:
+            async with db.execute("SELECT path, label FROM media_dirs WHERE enabled = 1") as cur:
+                for r in await cur.fetchall():
+                    p = (r["path"] or "").rstrip("/") + "/"
+                    lbl = (r["label"] or "").strip().lower()
+                    if p and lbl:
+                        dir_label_pairs.append((p, lbl))
+            dir_label_pairs.sort(key=lambda t: len(t[0]), reverse=True)
+        except Exception:
+            pass
+
+        def _media_type_hint_for(path: str) -> str | None:
+            """Return movie/tv/None based on which media-dir contains `path`."""
+            for prefix, label in dir_label_pairs:
+                if path.startswith(prefix):
+                    return _label_to_media_type(label)
+            return None
+
         if needs_media_type:
             sem = asyncio.Semaphore(3)
             async def _backfill_one(path: str):
@@ -244,11 +270,21 @@ async def resolve_posters(req: ResolveRequest):
                     has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
                     if tmdb_key and not has_explicit_id:
                         try:
-                            _, _, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
+                            _, _, tmdb_meta = await _resolve_tmdb_search(
+                                parsed["title"], parsed.get("year"), tmdb_key,
+                                media_type_hint=_media_type_hint_for(path),
+                            )
                             if tmdb_meta.get("media_type"):
                                 return path, tmdb_meta["media_type"]
                         except Exception:
                             pass
+                    # If the title search returned nothing but the dir-label
+                    # tells us the type, propagate that as a final fallback
+                    # so movies / TV shows in user-labelled dirs get the
+                    # right `media_type` even with no TMDB hit. v0.3.82+.
+                    label_hint = _media_type_hint_for(path)
+                    if not has_explicit_id and label_hint:
+                        return path, label_hint
                     # Explicit-ID, no TMDB record → fall back to TVDB-implies-TV.
                     # TVDB IDs are TV-show-specific in the wild (TheTVDB
                     # historically; even after movies were added, [tvdb-N] in
@@ -276,6 +312,8 @@ async def resolve_posters(req: ResolveRequest):
         plex_token = settings.get("plex_token", "")
         tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
         plex_path_mapping = settings.get("plex_path_mapping", "")
+        # `dir_label_pairs` and `_media_type_hint_for` are defined above
+        # (before `_backfill_one`) so both helpers can share the closure.
 
         # Resolve all uncached paths concurrently. Pre-v0.3.63 this was a
         # plain `for path in uncached:` loop, which meant N sequential
@@ -318,11 +356,16 @@ async def resolve_posters(req: ResolveRequest):
 
             # 4. TMDB title search — only when no explicit ID was parsed.
             # See v0.3.56 changelog for the wrong-show-mismatch rationale.
+            # v0.3.82 adds a media-type hint derived from the containing
+            # media-dir's label, so a "Movies"-labelled dir's folder
+            # doesn't accidentally match a same-titled TV show (and vice
+            # versa).
             has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
             if source == "placeholder" and not has_explicit_id and tmdb_key and parsed.get("title"):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb_search(
-                        parsed["title"], parsed.get("year"), tmdb_key
+                        parsed["title"], parsed.get("year"), tmdb_key,
+                        media_type_hint=_media_type_hint_for(path),
                     )
                 except Exception:
                     pass
@@ -428,8 +471,31 @@ async def _run_prefetch():
                 "SELECT folder_path FROM poster_cache WHERE image_data IS NOT NULL"
             ) as cur:
                 already_cached = {r["folder_path"] for r in await cur.fetchall()}
+
+            # Media-dir label index for type inference when a folder lacks
+            # a bracket ID. Same shape as the resolve_posters one above.
+            # v0.3.82+.
+            dir_label_pairs: list[tuple[str, str]] = []
+            try:
+                async with db.execute(
+                    "SELECT path, label FROM media_dirs WHERE enabled = 1"
+                ) as cur:
+                    for row in await cur.fetchall():
+                        p = (row["path"] or "").rstrip("/") + "/"
+                        lbl = (row["label"] or "").strip().lower()
+                        if p and lbl:
+                            dir_label_pairs.append((p, lbl))
+                dir_label_pairs.sort(key=lambda t: len(t[0]), reverse=True)
+            except Exception:
+                pass
         finally:
             await db.close()
+
+        def _media_type_hint_for(path: str) -> str | None:
+            for prefix, label in dir_label_pairs:
+                if path.startswith(prefix):
+                    return _label_to_media_type(label)
+            return None
 
         # Step 2: Extract unique title folders
         title_folders = set()
@@ -491,7 +557,10 @@ async def _run_prefetch():
                             await asyncio.sleep(5)
                 _has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
                 if source == "placeholder" and not _has_explicit_id and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
-                    try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(parsed["title"], parsed.get("year"), tmdb_key)
+                    try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(
+                        parsed["title"], parsed.get("year"), tmdb_key,
+                        media_type_hint=_media_type_hint_for(path),
+                    )
                     except Exception as e:
                         if "429" in str(e):
                             await asyncio.sleep(5)
@@ -745,8 +814,33 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
     }
 
 
-async def _resolve_tmdb_search(title, year, api_key):
-    """Search by title+year — requires strict matching to avoid mismatches."""
+def _label_to_media_type(label: str | None) -> str | None:
+    """Map a media-dir label to a TMDB media_type, or None if undetermined.
+
+    "Movies" / "Movie" → "movie"; "TV Shows" / "TV Show" / "TV" → "tv";
+    "Other" / "" / unknown → None (no constraint). Mirrors the same
+    label vocabulary used by the Scanner's type filter (v0.3.76+).
+    """
+    if not label:
+        return None
+    norm = label.strip().lower()
+    if norm in ("movies", "movie"):
+        return "movie"
+    if norm in ("tv shows", "tv show", "tv"):
+        return "tv"
+    return None
+
+
+async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None):
+    """Search by title+year — requires strict matching to avoid mismatches.
+
+    `media_type_hint` (v0.3.82+): when set to "movie" or "tv", filters
+    /search/multi results to that type before the three matching passes.
+    Lets users without bracket-ID folder naming still get type-correct
+    matches by labelling their dirs in Settings → Directories: a movie
+    titled the same as a popular TV show no longer mis-resolves to the
+    show, and vice versa.
+    """
     import httpx
     if len(title) < 3:
         return None, "placeholder", {}
@@ -759,6 +853,8 @@ async def _resolve_tmdb_search(title, year, api_key):
         if resp.status_code == 200:
             title_lower = title.lower().strip()
             results = resp.json().get("results", [])
+            if media_type_hint in ("movie", "tv"):
+                results = [r for r in results if r.get("media_type") == media_type_hint]
 
             def _match_return(item):
                 mt = item.get("media_type", "movie")
@@ -882,6 +978,18 @@ async def search_tmdb(req: TMDBSearchRequest):
         inferred_type = "tv"
     elif imdb_id or tmdb_id:
         inferred_type = "movie"
+
+    # Fallback: when the folder has no bracket ID at all, derive the type
+    # from the containing media-dir's label. Lets users without bracket-
+    # ID folder naming still get type-correct manual search filtering.
+    # v0.3.82+.
+    if not inferred_type and req.folder_path:
+        try:
+            from backend.media_paths import media_dir_label_for
+            label = await media_dir_label_for(req.folder_path)
+            inferred_type = _label_to_media_type(label)
+        except Exception:
+            pass
 
     import httpx
     pinned: list[dict] = []  # results from bracket-ID lookup, prepended
