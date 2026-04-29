@@ -32,14 +32,17 @@ def parse_folder_name(folder_path: str) -> dict:
 
     imdb_match = re.search(r"\[(tt\d+)\]", folder_name)
     tvdb_match = re.search(r"\[tvdb-(\d+)\]", folder_name)
+    # Radarr 5+ default token. Recognised as a movie ID — the manual
+    # search modal uses it to fetch the exact TMDB record. v0.3.81+.
+    tmdb_match = re.search(r"\[tmdb-(\d+)\]", folder_name)
     year_match = re.search(r"\((\d{4})\)", folder_name)
     title = folder_name
-    title = re.sub(r"\s*\[(?:tt\d+|tvdb-\d+|imdb-\w+)\]", "", title)
+    title = re.sub(r"\s*\[(?:tt\d+|tvdb-\d+|tmdb-\d+|imdb-\w+)\]", "", title)
     title = re.sub(r"\s*\(\d{4}\)", "", title)
     title = title.strip().rstrip(" -")
 
     # Fallback: if no media IDs found, use scene parser for cleaner title/year
-    if not imdb_match and not tvdb_match:
+    if not imdb_match and not tvdb_match and not tmdb_match:
         from backend.media_parser import parse_media_name
         parsed = parse_media_name(folder_name)
         if parsed.title:
@@ -51,6 +54,7 @@ def parse_folder_name(folder_path: str) -> dict:
                 "year": parsed.year,
                 "imdb_id": None,
                 "tvdb_id": None,
+                "tmdb_id": None,
             }
 
     return {
@@ -58,6 +62,7 @@ def parse_folder_name(folder_path: str) -> dict:
         "year": year_match.group(1) if year_match else None,
         "imdb_id": imdb_match.group(1) if imdb_match else None,
         "tvdb_id": tvdb_match.group(1) if tvdb_match else None,
+        "tmdb_id": tmdb_match.group(1) if tmdb_match else None,
     }
 
 
@@ -799,15 +804,51 @@ async def _resolve_tmdb_search(title, year, api_key):
 class TMDBSearchRequest(BaseModel):
     query: str
     year: str | None = None
+    # Optional folder path the search is for. When set, the backend parses
+    # bracket IDs from it and uses them to (1) prepend the exact TMDB
+    # record as the first result and (2) filter title-search candidates
+    # to the matching media_type. Pre-v0.3.81 the modal only did a title
+    # search, so a movie folder tagged `[tt4426738]` (Animals 2019) would
+    # show 10 unrelated TV/movie results and the right answer was unreachable.
+    folder_path: str | None = None
+
+
+def _normalise_tmdb_item(item: dict, force_media_type: str | None = None) -> dict:
+    """Convert a TMDB API item (search or find result) into our wire format."""
+    mt = force_media_type or item.get("media_type") or "movie"
+    title = item.get("title") or item.get("name") or "Unknown"
+    release_date = item.get("release_date") or item.get("first_air_date") or ""
+    year = release_date[:4] if release_date else None
+    poster_path = item.get("poster_path")
+    poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else None
+    return {
+        "tmdb_id": item.get("id"),
+        "media_type": mt,
+        "title": title,
+        "year": year,
+        "poster_url": poster_url,
+        "overview": (item.get("overview") or "")[:200],
+        "rating": round(item.get("vote_average", 0), 1) if item.get("vote_average") else None,
+    }
 
 
 @router.post("/search")
 async def search_tmdb(req: TMDBSearchRequest):
-    """Search TMDB for possible matches. Returns up to 10 candidates for user selection."""
+    """Search TMDB for possible matches. Returns candidates for user selection.
+
+    v0.3.81 changes:
+      * `folder_path` (optional) — when set, parsed for bracket IDs:
+        - `[ttN]` (IMDb) → /find with external_source=imdb_id, prepended
+          as a movie match, AND title-search filtered to movies only.
+        - `[tvdb-N]` → /find with external_source=tvdb_id, prepended as a
+          TV match, title-search filtered to TV only.
+        - `[tmdb-N]` → /movie/{id} (fall back to /tv/{id}) directly,
+          prepended.
+      * Title-search results re-ranked: exact title + year matches first.
+    """
     if not req.query or len(req.query.strip()) < 2:
         return {"results": []}
 
-    from backend.config import settings as app_settings
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
@@ -822,7 +863,80 @@ async def search_tmdb(req: TMDBSearchRequest):
     if not tmdb_key:
         raise HTTPException(400, "TMDB API key not configured")
 
+    # Bracket-ID-driven exact lookup. If the folder name carries a Sonarr/
+    # Radarr ID, the user has already told us exactly which title this is
+    # — surface that as the first option regardless of what /search/multi
+    # thinks is most popular for the title text.
+    parsed = parse_folder_name(req.folder_path) if req.folder_path else {}
+    imdb_id = parsed.get("imdb_id") if parsed else None
+    tvdb_id = parsed.get("tvdb_id") if parsed else None
+    tmdb_id = parsed.get("tmdb_id") if parsed else None
+    # Inferred type from the bracket family.
+    #   [tt..]     → IMDb. Almost always movie when paired with [tt] alone
+    #                (Sonarr writes [tvdb-] for TV; if only [tt] is present
+    #                in a Radarr-managed folder it's a movie).
+    #   [tvdb-..]  → TV.
+    #   [tmdb-..]  → No type info (could be either); we'll try /movie first.
+    inferred_type: str | None = None
+    if tvdb_id:
+        inferred_type = "tv"
+    elif imdb_id or tmdb_id:
+        inferred_type = "movie"
+
     import httpx
+    pinned: list[dict] = []  # results from bracket-ID lookup, prepended
+    pinned_ids: set[tuple[str, int]] = set()  # (media_type, tmdb_id)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            if imdb_id:
+                resp = await client.get(
+                    f"https://api.themoviedb.org/3/find/{imdb_id}",
+                    params={"api_key": tmdb_key, "external_source": "imdb_id"},
+                )
+                if resp.status_code == 200:
+                    body = resp.json()
+                    # Prefer movie_results since [ttN] alone is a Radarr signal.
+                    for key, mt in (("movie_results", "movie"), ("tv_results", "tv")):
+                        for item in (body.get(key) or [])[:1]:
+                            entry = _normalise_tmdb_item(item, force_media_type=mt)
+                            pinned.append(entry)
+                            pinned_ids.add((mt, entry["tmdb_id"]))
+            if tvdb_id:
+                resp = await client.get(
+                    f"https://api.themoviedb.org/3/find/{tvdb_id}",
+                    params={"api_key": tmdb_key, "external_source": "tvdb_id"},
+                )
+                if resp.status_code == 200:
+                    body = resp.json()
+                    for key, mt in (("tv_results", "tv"), ("movie_results", "movie")):
+                        for item in (body.get(key) or [])[:1]:
+                            entry = _normalise_tmdb_item(item, force_media_type=mt)
+                            if (mt, entry["tmdb_id"]) not in pinned_ids:
+                                pinned.append(entry)
+                                pinned_ids.add((mt, entry["tmdb_id"]))
+            if tmdb_id:
+                # No external-source mapping for tmdb_id; fetch the entity
+                # directly. Try movie first (most common for [tmdb-]), fall
+                # back to tv if that 404s.
+                for mt in ("movie", "tv"):
+                    try:
+                        resp = await client.get(
+                            f"https://api.themoviedb.org/3/{mt}/{tmdb_id}",
+                            params={"api_key": tmdb_key},
+                        )
+                        if resp.status_code == 200:
+                            entry = _normalise_tmdb_item(resp.json(), force_media_type=mt)
+                            if (mt, entry["tmdb_id"]) not in pinned_ids:
+                                pinned.append(entry)
+                                pinned_ids.add((mt, entry["tmdb_id"]))
+                            break
+                    except httpx.RequestError:
+                        continue
+    except httpx.RequestError as exc:
+        # Bracket-ID lookup is best-effort; fall through to title search.
+        print(f"[POSTER] Bracket-ID lookup failed: {exc}", flush=True)
+
+    # Title search for additional candidates.
     params = {"api_key": tmdb_key, "query": req.query.strip()}
     if req.year:
         params["year"] = req.year
@@ -832,34 +946,42 @@ async def search_tmdb(req: TMDBSearchRequest):
             resp = await client.get("https://api.themoviedb.org/3/search/multi", params=params)
         if resp.status_code != 200:
             raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
-        results = resp.json().get("results", [])
+        raw_results = resp.json().get("results", [])
     except httpx.RequestError as exc:
         raise HTTPException(502, f"TMDB request failed: {exc}")
 
-    # Filter to movie/tv only and normalize
-    out = []
-    for item in results:
+    # Normalise + filter by inferred type (when bracket told us). Skip the
+    # ones we already pinned above so the user doesn't see duplicates.
+    title_results: list[dict] = []
+    for item in raw_results:
         mt = item.get("media_type")
         if mt not in ("movie", "tv"):
             continue
-        title = item.get("title") or item.get("name") or "Unknown"
-        release_date = item.get("release_date") or item.get("first_air_date") or ""
-        year = release_date[:4] if release_date else None
-        poster_path = item.get("poster_path")
-        poster_url = f"https://image.tmdb.org/t/p/w200{poster_path}" if poster_path else None
-        out.append({
-            "tmdb_id": item.get("id"),
-            "media_type": mt,
-            "title": title,
-            "year": year,
-            "poster_url": poster_url,
-            "overview": (item.get("overview") or "")[:200],
-            "rating": round(item.get("vote_average", 0), 1) if item.get("vote_average") else None,
-        })
-        if len(out) >= 10:
-            break
+        if inferred_type and mt != inferred_type:
+            continue
+        entry = _normalise_tmdb_item(item)
+        if (mt, entry["tmdb_id"]) in pinned_ids:
+            continue
+        title_results.append(entry)
 
-    return {"results": out}
+    # Re-rank title-search results: exact title + exact year first, then
+    # exact title (any year), then everything else. TMDB's /search/multi
+    # ranks by popularity which can bury a perfect-but-obscure match.
+    query_lower = req.query.strip().lower()
+    def _rank(entry: dict) -> tuple[int, int]:
+        same_title = (entry.get("title") or "").strip().lower() == query_lower
+        same_year = bool(req.year) and entry.get("year") == req.year
+        if same_title and same_year:
+            return (0, 0)
+        if same_title:
+            return (1, 0)
+        return (2, 0)
+    title_results.sort(key=_rank)
+
+    # Cap total at 12 to leave room for pinned entries on top of the
+    # original 10-result budget.
+    out = pinned + title_results
+    return {"results": out[:12]}
 
 
 class OverrideRequest(BaseModel):
@@ -915,7 +1037,16 @@ async def override_poster(req: OverrideRequest):
     if poster_url:
         image_data = await _download_image(poster_url, "", "")
 
-    # Upsert into poster_cache
+    # Pull the authoritative original language while we have the TMDB
+    # detail in hand. Pre-v0.3.81 a manual poster fix only updated
+    # `poster_cache` — the `scan_results.native_language` column for
+    # files in this folder kept whatever the auto-resolution had
+    # written earlier, so audio-cleanup rules (which key off
+    # native_language) kept treating the wrongly-matched film's
+    # language as canonical. Now writing both at the same time.
+    original_lang = (data.get("original_language") or "").strip().lower() or None
+
+    # Upsert into poster_cache + propagate native_language to scan_results.
     db = await aiosqlite.connect(DB_PATH)
     try:
         await db.execute(
@@ -926,6 +1057,17 @@ async def override_poster(req: OverrideRequest):
              rating, genre_names or None, country_names or None, req.media_type,
              datetime.now(timezone.utc).isoformat()),
         )
+        if original_lang:
+            # Match every file under this folder. The folder_path stored
+            # in poster_cache is the parent dir without trailing slash;
+            # scan_results.file_path includes the full file path. Use
+            # LIKE with a `<folder>/%` pattern to catch them all.
+            folder_prefix = req.folder_path.rstrip("/") + "/"
+            await db.execute(
+                "UPDATE scan_results SET native_language = ?, language_source = 'tmdb-manual' "
+                "WHERE file_path LIKE ?",
+                (original_lang, folder_prefix + "%"),
+            )
         await db.commit()
     finally:
         await db.close()
@@ -939,4 +1081,7 @@ async def override_poster(req: OverrideRequest):
         "genres": genre_names or None,
         "country": country_names or None,
         "source": "tmdb-manual",
+        # Surface the language update so the UI can refresh the file
+        # tree's native-language display without a hard reload. v0.3.81+.
+        "native_language": original_lang,
     }

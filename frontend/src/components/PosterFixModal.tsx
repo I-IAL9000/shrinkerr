@@ -22,7 +22,11 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
     setLoading(true);
     setError(null);
     try {
-      const res = await searchTMDB(query, year || undefined);
+      // Pass folderPath so the backend can pin a bracket-ID match (the
+      // `[tt4426738]` in the folder name resolves to the exact movie via
+      // TMDB /find, prepended to the result list). Pre-v0.3.81 the search
+      // was title-only and an obscure exact match could fail to surface.
+      const res = await searchTMDB(query, year || undefined, folderPath);
       setResults(res.results);
       if (res.results.length === 0) setError("No matches found on TMDB");
     } catch (e: any) {

@@ -5,6 +5,17 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.81] — 2026-04-28
+
+### Fixed
+- "Fix poster match" modal now uses bracket IDs from the folder name (`[ttN]`/`[tvdb-N]`/`[tmdb-N]`) to fetch the exact TMDB record and pin it as the first result. Pre-v0.3.81 the modal was title-search only, so an obscure-but-correct match could fail to surface even when the IMDb ID was sitting right there in the folder name.
+- Manual search now also filters candidates to the right media_type when the bracket tells us (movies for `[ttN]`/`[tmdb-N]`, TV for `[tvdb-N]`) — no more TV shows mixed in when fixing a movie.
+- Title-search candidates re-ranked: exact title + exact year matches sort first regardless of TMDB's popularity ranking.
+- Manual poster override now also writes the TMDB-authoritative `original_language` to `scan_results.native_language` for every file in the folder, so audio-cleanup rules that key off native language pick up the corrected value automatically.
+
+### Added
+- Folder-name parser now recognises Radarr 5+ default `[tmdb-N]` token alongside the existing `[ttN]` and `[tvdb-N]`.
+
 ## [0.3.80] — 2026-04-28
 
 ### Added

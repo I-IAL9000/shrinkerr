@@ -298,10 +298,13 @@ export interface TMDBSearchResult {
   overview: string;
   rating: number | null;
 }
-export const searchTMDB = (query: string, year?: string) =>
+// `folderPath` lets the backend parse bracket IDs ([ttN]/[tvdb-N]/[tmdb-N])
+// and pin the exact TMDB record at the top of the results, plus filter
+// the title-search candidates to the right media_type. v0.3.81+.
+export const searchTMDB = (query: string, year?: string, folderPath?: string) =>
   apiFetch<{ results: TMDBSearchResult[] }>("/posters/search", {
     method: "POST",
-    body: JSON.stringify({ query, year }),
+    body: JSON.stringify({ query, year, folder_path: folderPath }),
   });
 export const overridePoster = (folderPath: string, tmdbId: number, mediaType: "movie" | "tv") =>
   apiFetch<{ title: string; year: string | null; poster_url: string | null; media_type: string; rating: number | null; genres: string | null; country: string | null; source: string }>(
