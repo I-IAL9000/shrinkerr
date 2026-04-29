@@ -879,6 +879,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (encodingOverrides.audio_bitrate != null) extra.audio_bitrate_override = encodingOverrides.audio_bitrate;
         if (encodingOverrides.target_resolution) extra.target_resolution_override = encodingOverrides.target_resolution;
         if (encodingOverrides.force_reencode) extra.force_reencode = true;
+        if (encodingOverrides.cleanup_only) extra.cleanup_only = true;
       }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;

@@ -31,6 +31,9 @@ export interface EncodingOverrides {
   audio_bitrate?: number;
   target_resolution?: string;
   force_reencode?: boolean;
+  // "No video conversion" — only run the audio/sub cleanup pass (track
+  // removal + native-language reorder + audio codec transcode). v0.3.80+.
+  cleanup_only?: boolean;
 }
 
 const CPU_PRESETS = [
@@ -114,6 +117,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   const [audioBr, setAudioBr] = useState<number | null>(null);
   const [resolution, setResolution] = useState<string | null>(null);
   const [forceReencode, setForceReencode] = useState(false);
+  // "No video conversion" — runs only the audio/sub cleanup pass.
+  // Mutually exclusive with forceReencode: the two are direct opposites
+  // so checking one auto-clears the other. v0.3.80+.
+  const [cleanupOnly, setCleanupOnly] = useState(false);
 
   // Effective encoder for UI branching — explicit override wins, otherwise
   // follow the user's configured default. Previously we compared against
@@ -162,6 +169,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     if (audioBr !== null) o.audio_bitrate = audioBr;
     if (resolution !== null) o.target_resolution = resolution;
     if (forceReencode) o.force_reencode = true;
+    if (cleanupOnly) o.cleanup_only = true;
     return Object.keys(o).length > 0 ? o : undefined;
   };
 
@@ -454,14 +462,36 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     </select>
                   </div>
 
-                  {/* Force re-encode */}
+                  {/* Force re-encode — mutually exclusive with cleanupOnly
+                      below. Checking force_reencode auto-clears cleanup_only
+                      and vice versa. v0.3.80+. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Re-encode</label>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                      <input type="checkbox" checked={forceReencode} onChange={(e) => setForceReencode(e.target.checked)}
+                      <input type="checkbox" checked={forceReencode} onChange={(e) => {
+                        setForceReencode(e.target.checked);
+                        if (e.target.checked) setCleanupOnly(false);
+                      }}
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={{ fontSize: 11, color: forceReencode ? "var(--text-secondary)" : "var(--text-muted)" }}>
                         Force re-encode all files (including x265)
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Cleanup-only toggle — runs the audio/sub cleanup pass
+                      but skips video re-encode entirely. Same effect as a
+                      rule with action="ignore", expressed per-batch. v0.3.80+. */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Audio/sub</label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                      <input type="checkbox" checked={cleanupOnly} onChange={(e) => {
+                        setCleanupOnly(e.target.checked);
+                        if (e.target.checked) setForceReencode(false);
+                      }}
+                        style={{ accentColor: "var(--accent)" }} />
+                      <span style={{ fontSize: 11, color: cleanupOnly ? "var(--text-secondary)" : "var(--text-muted)" }}>
+                        Cleanup only — no video conversion
                       </span>
                     </label>
                   </div>

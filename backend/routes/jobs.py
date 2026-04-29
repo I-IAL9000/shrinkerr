@@ -104,6 +104,11 @@ class BulkQueueFromScanRequest(BaseModel):
     audio_bitrate_override: int | None = None
     target_resolution_override: str | None = None
     force_reencode: bool = False
+    # User-chosen "no video conversion" — runs only the audio/sub cleanup
+    # pass on the original file. Same effect as a rule with action="ignore",
+    # but expressed per-batch from the estimate modal. Wins over
+    # force_reencode if both are somehow set. v0.3.80+.
+    cleanup_only: bool = False
 
 
 @router.post("/add-from-scan")
@@ -330,9 +335,14 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 except Exception:
                     pass
 
-            # force_reencode overrides both needs_conversion AND skip rules
+            # force_reencode overrides both needs_conversion AND skip rules.
+            # cleanup_only (per-batch user choice) wins over both — the user
+            # explicitly asked for "no video conversion", so honour that
+            # regardless of any rule or force flag. v0.3.80+.
             needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
             if skip_conversion and not payload.force_reencode:
+                needs_conv = False
+            if payload.cleanup_only:
                 needs_conv = False
 
             if needs_conv and has_audio_work:
@@ -342,8 +352,12 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             elif has_audio_work:
                 job_type = "audio"
             else:
+                # Nothing to do — neither video nor audio/sub work.
                 if skip_conversion:
                     print(f"[QUEUE] Skipped {fp} (ignore rule: {rule['rule_name']}), no audio/sub work", flush=True)
+                    continue
+                if payload.cleanup_only:
+                    print(f"[QUEUE] Skipped {fp} (cleanup_only: no audio/sub work to do)", flush=True)
                     continue
                 job_type = "audio"
 

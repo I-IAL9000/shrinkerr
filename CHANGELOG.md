@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.80] — 2026-04-28
+
+### Added
+- "Cleanup only — no video conversion" checkbox in the Add-to-queue modal. Runs only the audio/sub cleanup pass (track removal, native-language reorder, codec transcode) on the original file. Mutually exclusive with **Force re-encode**.
+
 ## [0.3.79] — 2026-04-28
 
 ### Fixed
