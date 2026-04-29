@@ -680,6 +680,16 @@ async def get_scan_stats():
         type_tv_count = 0
         type_other_count = 0
 
+        # Media-dir label index for type classification — loaded once and
+        # reused per-row in the loop below. v0.3.76+.
+        dir_label_index: list[tuple[str, str]] = []
+        try:
+            async with db.execute("SELECT path, label FROM media_dirs WHERE enabled = 1") as cur:
+                _dir_rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
+            dir_label_index = _build_dir_label_index(_dir_rows)
+        except Exception:
+            pass
+
         # Load prefix data for ignore/watch checks
         import bisect
         ignored_paths: set[str] = set()
@@ -837,10 +847,16 @@ async def get_scan_stats():
                 elif "hdtv" in fn: src_hdtv_count += 1
                 elif "dvd" in fn: src_dvd_count += 1
 
-                # Type detection
-                if "[tvdb-" in fn:
+                # Type detection — uses both filename brackets AND the
+                # containing media-dir's label. Pre-v0.3.76 only the
+                # bracket check ran, so users without `[tvdb-N]` /
+                # `[ttN]` folder naming saw all files classified as
+                # "other" even when they'd labelled their dirs in
+                # Settings → Directories. v0.3.76+.
+                dt = _classify_type_for_path(fp, dir_label_index)
+                if dt == "tv":
                     type_tv_count += 1
-                elif "[tt" in fn:
+                elif dt == "movie":
                     type_movie_count += 1
                 else:
                     type_other_count += 1
@@ -899,6 +915,56 @@ async def get_scan_stats():
         }
     finally:
         await db.close()
+
+
+def _build_dir_label_index(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Sort (path, label) pairs into a prefix-match-friendly index.
+
+    Each entry's path gets a trailing slash so prefix matches don't false-
+    positive on `/media/MovieDocs` when only `/media/Movie` is configured.
+    Labels are lowercased for case-insensitive comparison. Sorted by path
+    length descending so a nested dir wins over its parent (mirrors
+    `media_dir_label_for` in backend/media_paths.py). v0.3.76+.
+    """
+    out: list[tuple[str, str]] = []
+    for path, label in rows:
+        if not path:
+            continue
+        norm = path.rstrip("/") + "/"
+        out.append((norm, (label or "").strip().lower()))
+    out.sort(key=lambda t: len(t[0]), reverse=True)
+    return out
+
+
+def _classify_type_for_path(fp: str, dir_label_index: list[tuple[str, str]] | None) -> str:
+    """Classify a file as 'movie', 'tv', or 'other'.
+
+    Resolution priority (v0.3.76+):
+      1. Filename brackets — `[tvdb-...]` → tv, `[tt...]` → movie. Sonarr/
+         Radarr-style folders carry these and they're the most specific signal.
+      2. Containing media directory's user-set label — "Movies" → movie,
+         "TV Shows" → tv, "Other" / unset → other. Lets users with simple
+         folder layouts (no bracket-tagging) still get useful type filters.
+      3. Default to 'other'.
+
+    Pre-v0.3.76 only step 1 ran, so users without bracketed folder names
+    saw every file classified as 'other' regardless of the dir labels they
+    configured in Settings.
+    """
+    fp_lower = fp.lower()
+    if "[tvdb-" in fp_lower:
+        return "tv"
+    if "[tt" in fp_lower:
+        return "movie"
+    if dir_label_index:
+        for prefix, label in dir_label_index:
+            if fp.startswith(prefix):
+                if label in ("movies", "movie"):
+                    return "movie"
+                if label in ("tv shows", "tv show", "tv"):
+                    return "tv"
+                return "other"
+    return "other"
 
 
 async def _build_enrichment_context(db) -> dict:
@@ -978,6 +1044,17 @@ async def _build_enrichment_context(db) -> dict:
 
     cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 
+    # Media-dir label index for type-filter classification. Loaded once
+    # per request and reused by every row's enrichment so we don't run a
+    # DB query per file. v0.3.76+.
+    dir_label_index: list[tuple[str, str]] = []
+    try:
+        async with db.execute("SELECT path, label FROM media_dirs WHERE enabled = 1") as cur:
+            dir_rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
+        dir_label_index = _build_dir_label_index(dir_rows)
+    except Exception:
+        pass
+
     return {
         "ignored_paths": ignored_paths,
         "ignored_folders_sorted": ignored_folders_sorted,
@@ -990,6 +1067,7 @@ async def _build_enrichment_context(db) -> dict:
         "unwatched_sorted": unwatched_sorted,
         "watchlist_sorted": watchlist_sorted,
         "cutoff_24h": cutoff_24h,
+        "dir_label_index": dir_label_index,
         "LOW_BITRATE_THRESHOLD": LOW_BITRATE_THRESHOLD,
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
     }
@@ -1092,6 +1170,9 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "health_status": row.get("health_status"),
         "health_check_type": row.get("health_check_type"),
         "health_checked_at": row.get("health_checked_at"),
+        # Type filter (movie/tv/other) — combines filename-bracket detection
+        # with the containing media-dir's user-set label. v0.3.76+.
+        "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
     }
 
 
@@ -1145,6 +1226,9 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "health_status": row.get("health_status"),
         "health_check_type": row.get("health_check_type"),
         "health_checked_at": row.get("health_checked_at"),
+        # Type filter (movie/tv/other) — combines filename-bracket detection
+        # with the containing media-dir's user-set label. v0.3.76+.
+        "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
     }
 
 
@@ -1289,13 +1373,17 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return "hdtv" in fp_lower
     if filter_name == "src_dvd":
         return "dvd" in fp_lower
-    # Type filters — detect from folder structure
+    # Type filters — combine filename-bracket detection (Sonarr/Radarr-
+    # style) with the containing media-dir's user-set label. The combined
+    # classification is precomputed in _enrich_row as `dir_type` so we
+    # don't repeat the prefix match per filter check. v0.3.76+.
+    dt = (f.get("dir_type") or "other").lower()
     if filter_name == "type_movie":
-        return "[tt" in fp_lower and "[tvdb-" not in fp_lower
+        return dt == "movie"
     if filter_name == "type_tv":
-        return "[tvdb-" in fp_lower
+        return dt == "tv"
     if filter_name == "type_other":
-        return "[tt" not in fp_lower and "[tvdb-" not in fp_lower
+        return dt == "other"
     return True
 
 
@@ -1429,16 +1517,18 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
     elif f == "src_dvd":
         sql = "AND LOWER(file_path) LIKE '%dvd%'"
 
-    # Type filters (detect via bracketed ID conventions in path)
-    elif f == "type_movie":
-        sql = "AND LOWER(file_path) LIKE '%[tt%' AND LOWER(file_path) NOT LIKE '%[tvdb-%'"
-    elif f == "type_tv":
-        sql = "AND LOWER(file_path) LIKE '%[tvdb-%'"
-    elif f == "type_other":
-        sql = "AND LOWER(file_path) NOT LIKE '%[tt%' AND LOWER(file_path) NOT LIKE '%[tvdb-%'"
+    # Type filters now fall through to Python because the classification
+    # combines filename brackets AND the containing media-dir's label
+    # (loaded into ctx.dir_label_index). Pre-v0.3.76 these were SQL LIKE
+    # patterns — `LIKE '%[tt%'` etc. — but that ignored the user's dir
+    # labels, so users without bracketed folder names saw every file
+    # classified as `other`. The Python path uses the precomputed
+    # `dir_type` field on each enriched row, so this is per-row constant
+    # time. v0.3.76+.
 
     else:
-        # Filters that need Python enrichment (is_new, ignored, queued, plex_*)
+        # Filters that need Python enrichment (is_new, ignored, queued, plex_*,
+        # type_movie/tv/other since v0.3.76)
         needs_python = {f}
 
     return sql, params, needs_python
@@ -1448,6 +1538,9 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
 _ENRICHMENT_FILTERS = {
     "new", "ignored", "queued", "plex_watched", "plex_unwatched", "plex_watchlist",
     "needs_conversion", "audio_cleanup", "sub_cleanup", "low_bitrate", "high_bitrate",
+    # Type filters need the dir_label_index from ctx to classify files by
+    # their containing media-dir's label (Movies/TV Shows/Other). v0.3.76+.
+    "type_movie", "type_tv", "type_other",
 }
 
 
