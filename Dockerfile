@@ -87,28 +87,26 @@ RUN set -eux; \
             intel-media-va-driver-non-free \
             i965-va-driver \
             libvpl2 libmfx1 \
-            build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
-            # Intel oneVPL / MediaSDK runtime for hevc_qsv. The iHD VA-API
-            # driver alone (intel-media-va-driver-non-free) is enough for
-            # hevc_vaapi, but hevc_qsv goes through the MFX session layer
-            # — without these libs the QSV encoder fails at session-create
-            # with "Error creating a MFX session: -9" (MFX_ERR_UNSUPPORTED).
-            # libvpl2 is the oneVPL dispatcher; libmfx1 is the legacy
-            # MediaSDK runtime that ships the HEVC encoder hardware module
-            # (libmfx_hevce_hw64.so). v0.3.84+.
-            #
-            # build-essential + meson + ninja + libdrm-dev: temporarily
-            # installed for the libva-from-source build below. Purged at
-            # the end of the layer.
-        # Build libva from source. The BtbN n7.x ffmpeg static builds are
-        # compiled against libva ≥ 2.20 (which introduced `vaMapBuffer2`).
-        # Debian bookworm ships libva 2.17 even via backports — every
-        # apt-installable libva on bookworm is too old, and the runtime
-        # symbol lookup for `vaMapBuffer2` fails the first time hevc_vaapi
-        # tries to encode. v0.3.88+ replaces the system libva with an
-        # upstream 2.22.x build. libva 2.x is ABI-stable, so the iHD /
-        # i965 / mesa drivers (compiled against 2.17) continue to work
-        # against 2.22 without rebuilding. Build takes ~30s on x86_64.
+            build-essential cmake meson ninja-build pkg-config \
+            libdrm-dev libigdgmm-dev libpciaccess-dev bzip2; \
+            # libvpl2: Intel oneVPL dispatcher. libmfx1: legacy MediaSDK
+            # runtime — kept as a fallback for older HW; the modern
+            # libmfx-gen runtime built below takes precedence on Gen9+.
+            # build-essential + cmake + meson + ninja + dev headers:
+            # temporarily installed for the libva and vpl-gpu-rt builds
+            # below. Purged at the end of the layer.
+        #
+        # === libva 2.22 from source (v0.3.88+) ============================
+        #
+        # The BtbN n7.x ffmpeg static builds are compiled against
+        # libva ≥ 2.20 (which introduced `vaMapBuffer2`). Debian
+        # bookworm ships libva 2.17 even via backports — every apt-
+        # installable libva on bookworm is too old, and the runtime
+        # symbol lookup for `vaMapBuffer2` fails the first time
+        # hevc_vaapi tries to encode. We replace the system libva with
+        # an upstream 2.22.x build. libva 2.x is ABI-stable, so the
+        # iHD / i965 / mesa drivers (compiled against 2.17) continue
+        # to work against 2.22 without rebuilding. ~30s build.
         LIBVA_VER=2.22.0; \
         curl -fsSL "https://github.com/intel/libva/releases/download/${LIBVA_VER}/libva-${LIBVA_VER}.tar.bz2" -o /tmp/libva.tar.bz2; \
         mkdir -p /tmp/libva-src; \
@@ -116,13 +114,36 @@ RUN set -eux; \
         cd /tmp/libva-src; \
         meson setup build --prefix=/usr -Dlibdir=lib/x86_64-linux-gnu --buildtype=release; \
         ninja -C build install; \
-        cd /; \
-        rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
+        cd /; rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
         ldconfig; \
+        #
+        # === vpl-gpu-rt (libmfx-gen) from source (v0.3.89+) ===============
+        #
+        # Intel's modern oneVPL GPU runtime — what Sonarr/Radarr-tier
+        # users on current Ubuntu/Arch get from `libmfx-gen1` package.
+        # Not packaged for Debian 12 or Ubuntu 22.04. Without this,
+        # libvpl2 (dispatcher) falls back to legacy libmfx1, which
+        # rejects libva-2.22 VADisplays with `MFX_ERR_INCOMPATIBLE_-
+        # VIDEO_PARAM (-17)` — that's what bit users testing v0.3.84
+        # → v0.3.88. With libmfx-gen.so.1.2 installed, the dispatcher
+        # finds the modern runtime first and QSV works against modern
+        # libva + iHD drivers. ~3 min build on x86_64.
+        VPL_VER=24.4.4; \
+        curl -fsSL "https://github.com/intel/vpl-gpu-rt/archive/refs/tags/intel-onevpl-${VPL_VER}.tar.gz" -o /tmp/vpl.tar.gz; \
+        mkdir -p /tmp/vpl-src; \
+        tar xzf /tmp/vpl.tar.gz -C /tmp/vpl-src --strip-components=1; \
+        cd /tmp/vpl-src; \
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu; \
+        cmake --build build --parallel; \
+        cmake --install build; \
+        cd /; rm -rf /tmp/vpl-src /tmp/vpl.tar.gz; \
+        ldconfig; \
+        #
         # Purge build toolchain — keep the image lean. The runtime libs
-        # (libva-drm2, mesa-va-drivers, etc.) stay because they were
-        # explicitly listed above; apt sees them as user-installed.
-        apt-get purge -y build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
+        # (libva-drm2, mesa-va-drivers, libvpl2, libmfx1, …) stay
+        # because they were explicitly installed above; apt sees them as
+        # user-installed and won't auto-remove them.
+        apt-get purge -y build-essential cmake meson ninja-build pkg-config libdrm-dev libigdgmm-dev libpciaccess-dev bzip2; \
         apt-get autoremove -y; \
     else \
         echo "Skipping VA-API runtime on ${TARGETARCH} (amd64-only in this image)"; \

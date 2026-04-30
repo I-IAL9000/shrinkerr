@@ -41,17 +41,16 @@ RUN set -eux; \
         mesa-va-drivers \
         vainfo \
         libvpl2 libmfx1 \
-        build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
-    # libvpl2 + libmfx1: Intel oneVPL dispatcher + legacy MediaSDK runtime
-    # for hevc_qsv (v0.3.84+). build-essential + meson + ninja + libdrm-dev:
-    # temporary, purged after the libva-from-source build.
+        build-essential cmake meson ninja-build pkg-config \
+        libdrm-dev libigdgmm-dev libpciaccess-dev bzip2; \
+    # libvpl2 + libmfx1: oneVPL dispatcher + legacy MediaSDK fallback.
+    # Build deps (build-essential, cmake, meson, ninja, dev headers)
+    # are temporary — purged after the libva and vpl-gpu-rt builds.
     #
-    # Build libva from source for the same reason as the CPU image
-    # Dockerfile (v0.3.88+): BtbN n7.x ffmpeg expects vaMapBuffer2
-    # (libva ≥ 2.20). Ubuntu 22.04 stock libva is 2.14, too old —
-    # hevc_vaapi crashes at runtime with `undefined symbol vaMapBuffer2`.
-    # libva 2.x is ABI-stable so iHD / mesa drivers keep working against
-    # the new build. Same recipe as the CPU image.
+    # === libva 2.22 from source (v0.3.88+) ===
+    # BtbN n7.x ffmpeg expects libva ≥ 2.20 (vaMapBuffer2). Ubuntu 22.04
+    # stock libva is 2.14, too old. libva 2.x is ABI-stable so iHD and
+    # mesa drivers (compiled against 2.14) keep working against 2.22.
     LIBVA_VER=2.22.0; \
     curl -fsSL "https://github.com/intel/libva/releases/download/${LIBVA_VER}/libva-${LIBVA_VER}.tar.bz2" -o /tmp/libva.tar.bz2; \
     mkdir -p /tmp/libva-src; \
@@ -59,10 +58,24 @@ RUN set -eux; \
     cd /tmp/libva-src; \
     meson setup build --prefix=/usr -Dlibdir=lib/x86_64-linux-gnu --buildtype=release; \
     ninja -C build install; \
-    cd /; \
-    rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
+    cd /; rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
     ldconfig; \
-    apt-get purge -y build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
+    # === vpl-gpu-rt (libmfx-gen) from source (v0.3.89+) ===
+    # Intel's modern oneVPL GPU runtime; not packaged for Ubuntu 22.04.
+    # Without it, libvpl2 dispatcher falls back to legacy libmfx1 which
+    # rejects libva-2.22 displays with MFX_ERR_INCOMPATIBLE_VIDEO_PARAM.
+    # ~3 min build on x86_64.
+    VPL_VER=24.4.4; \
+    curl -fsSL "https://github.com/intel/vpl-gpu-rt/archive/refs/tags/intel-onevpl-${VPL_VER}.tar.gz" -o /tmp/vpl.tar.gz; \
+    mkdir -p /tmp/vpl-src; \
+    tar xzf /tmp/vpl.tar.gz -C /tmp/vpl-src --strip-components=1; \
+    cd /tmp/vpl-src; \
+    cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu; \
+    cmake --build build --parallel; \
+    cmake --install build; \
+    cd /; rm -rf /tmp/vpl-src /tmp/vpl.tar.gz; \
+    ldconfig; \
+    apt-get purge -y build-essential cmake meson ninja-build pkg-config libdrm-dev libigdgmm-dev libpciaccess-dev bzip2; \
     apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*
 

@@ -239,18 +239,20 @@ render node is correct but the kernel driver is too old to support
 HEVC encoding. `vainfo` will show no `VAProfileHEVCMain*` rows. Update
 the host kernel + driver, or fall back to libx265 / NVENC.
 
-**`Error creating a MFX session: -9`** at job-run time with QSV — the
-iHD VA-API driver is fine but the oneVPL / MediaSDK runtime that
-`hevc_qsv` uses is missing or mismatched. Pre-v0.3.84 our images
-shipped only the iHD driver; pull `:latest` / `:nvenc` v0.3.84+ which
-also bake `libvpl2` and `libmfx1`.
+**`Error creating a MFX session: -9` / `device failed (-17)` /
+`Error setting child device handle: -17` with QSV** — all variants
+of the same root cause: the bundled MediaSDK runtime didn't match
+the modern ffmpeg / libva combination shipped in the image. Track:
 
-**`device failed (-17)` / `Error while opening encoder` with QSV** —
-the MFX session creates fine but the QSV encoder couldn't get a
-hardware device handle. v0.3.67–v0.3.86 relied on ffmpeg's auto-init
-which fails on most Linux + iHD systems. v0.3.87+ explicitly
-initialises the hardware device via the two-step `vaapi=va:…` →
-`qsv=qsv@va` pattern. Pull v0.3.87+ to fix.
+  - v0.3.84 added `libvpl2` + `libmfx1` (legacy MediaSDK runtime).
+  - v0.3.87 added explicit `-init_hw_device qsv=qsv@va` device init.
+  - v0.3.89 builds **`vpl-gpu-rt`** (libmfx-gen) from source — Intel's
+    modern oneVPL GPU runtime, not in stock Debian 12 / Ubuntu 22.04
+    repos. The `libvpl2` dispatcher prefers it over the legacy
+    `libmfx1`, so QSV operations actually go through a runtime
+    capable of accepting libva-2.22 VADisplays.
+
+Pull v0.3.89+ for QSV to work on stock images.
 
 **`libva.so.2: undefined symbol vaMapBuffer2`** with VAAPI — fixed in
 v0.3.88. The BtbN n7.x ffmpeg static build expects libva ≥ 2.20

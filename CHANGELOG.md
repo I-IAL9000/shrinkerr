@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.89] — 2026-04-30
+
+### Fixed
+- Final fix for the QSV "MFX_ERR_INCOMPATIBLE_VIDEO_PARAM (-17)" saga: both Docker images now build **vpl-gpu-rt** (Intel's modern oneVPL GPU runtime, also called `libmfx-gen1`) from source. Stock Debian 12 / Ubuntu 22.04 only ship the legacy `libmfx1` MediaSDK runtime, which rejects libva-2.22 VADisplays with -17. With `libmfx-gen.so.1.2` installed, the `libvpl2` dispatcher routes through the modern runtime and `hevc_qsv` works against current libva + iHD drivers. Adds ~3 min to image build; ~12 MB final-image impact. Build toolchain (`cmake`, `meson`, `ninja`, dev headers) purged after compile.
+
 ## [0.3.88] — 2026-04-30
 
 ### Fixed
