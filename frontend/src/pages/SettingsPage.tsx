@@ -1083,7 +1083,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <option value="veryslow">Very Slow (Best quality)</option>
                     </select>
                     <div style={helpStyle}>
-                      Encoder analysis depth. Slower presets produce smaller files at the same quality but encode more slowly. <strong>medium</strong> is balanced and recommended for most hardware.
+                      Encoder analysis depth. <strong>Note:</strong> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <strong>medium</strong> is fine for most hardware.
                     </div>
                   </div>
 
@@ -1099,7 +1099,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <span>15 (Highest quality)</span><span>22</span><span>26</span><span>32 (Smallest file)</span>
                     </div>
                     <div style={helpStyle}>
-                      QSV's ICQ-mode quality target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> is good quality with noticeable savings.
+                      QSV's ICQ-mode quality target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> is good quality with noticeable savings. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.
                     </div>
                   </div>
 
@@ -1140,7 +1140,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <span>0 (Best quality, slowest)</span><span>4</span><span>7 (Fastest)</span>
                     </div>
                     <div style={helpStyle}>
-                      Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <strong>4</strong> is a sane median.
+                      Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <strong>4</strong> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).
                     </div>
                   </div>
 

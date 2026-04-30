@@ -197,12 +197,14 @@ You can skip 1 and 3 and go straight to manual encoding via Scanner → Add sele
 
 ## Intel/AMD GPU support (experimental)
 
-> ⚠️ **Experimental as of v0.3.70** — the QSV and VAAPI encoders are
-> tested at the unit / argv-shape level but haven't been verified
-> end-to-end on the maintainer's hardware. **If you try them, please
+> ⚠️ **Experimental** — confirmed end-to-end on one tester's modern
+> Intel iGPU (Ubuntu 24.04, ~145 fps QSV / ~190 fps VAAPI on 1080p
+> HEVC) as of v0.3.92, but we don't have data from a wide enough
+> hardware spread (older Coffee Lake iGPUs, AMD GPUs, Arc /
+> Battlemage) to call them stable. **If you try them, please
 > [open an issue](https://github.com/I-IAL9000/shrinkerr/issues) with
 > a quick "works on Intel UHD 630, Debian 12, 50 GB → 22 GB" or "fails
-> with X" — that's how we get them out of experimental.**
+> with X" — that's how we expand the supported matrix.**
 
 Both Docker images (`:latest` CPU and `:nvenc`) ship with the VA-API
 runtime as of v0.3.67. To activate the encoders, the host needs to

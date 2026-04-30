@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.95] — 2026-04-30
+
+### Documentation
+- Settings → Encoding help text on the Intel encoders now flags the gotchas users hit when copying libx265 / NVENC tuning intuition over: (1) QSV's preset cost curve is nearly flat (`slower` is ~10-20% slower than `medium`, not 5×), so look-ahead is the meaningful quality knob for QSV, not preset; (2) rough cross-encoder CQ↔CRF conversion to make CQ values comparable across NVENC / QSV / libx265; (3) VAAPI is most useful on AMD — on Intel hardware where both QSV and VAAPI work, QSV produces better quality per bit at similar throughput.
+- README "Intel/AMD GPU support" section now reflects that one external tester has confirmed both encoders end-to-end on a modern Intel iGPU (Ubuntu 24.04, ~145 fps QSV / ~190 fps VAAPI on 1080p HEVC) as of v0.3.92. Still flagged experimental until we have data from a broader hardware spread (older Coffee Lake, AMD, Arc / Battlemage).
+
 ## [0.3.94] — 2026-04-30
 
 ### Fixed
