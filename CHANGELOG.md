@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.94] — 2026-04-30
+
+### Fixed
+- Settings → Default Encoder dropdown was hiding the NVENC option when `encoder_caps` reported `nvenc: false` (CPU-only image, or a transient detection failure on a `:nvenc` image). Because the saved `default_encoder` value was still `"nvenc"`, the `<select>` fell back to displaying the first present option (libx265) while internal state stayed `"nvenc"` — so the dropdown showed `libx265 (CPU — Software)` but the help text underneath still described NVENC. The inline comment had always claimed nvenc was unconditional ("we don't want to silently drop the saved value"); the conditional that contradicted it has been removed. Same desync-prevention guard now also applies to QSV / VAAPI: if either is the currently saved value, the option is rendered regardless of caps detection.
+
 ## [0.3.93] — 2026-04-30
 
 ### Added

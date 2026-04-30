@@ -751,16 +751,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   {/* Always include nvenc + libx265 as options regardless of
                       caps (libx265 always works; nvenc may have been chosen
                       already on a host whose detection transiently failed,
-                      and we don't want to silently drop the saved value).
-                      QSV / VAAPI only appear when detection confirms them.
-                      v0.3.68+. */}
-                  {(encoderCaps?.nvenc ?? true) && (
-                    <option value="nvenc">NVENC (NVIDIA GPU)</option>
-                  )}
-                  {encoderCaps?.qsv && (
+                      and we don't want to silently drop the saved value —
+                      otherwise the <select> falls back to displaying the
+                      first present option while state still holds "nvenc",
+                      desyncing the dropdown from the help text below).
+                      QSV / VAAPI only appear when detection confirms them,
+                      OR when they're the currently saved value (same
+                      desync-prevention reasoning). v0.3.68+ / v0.3.94+. */}
+                  <option value="nvenc">NVENC (NVIDIA GPU)</option>
+                  {(encoderCaps?.qsv || encoding.default_encoder === "qsv") && (
                     <option value="qsv">Intel QSV (Intel GPU / iGPU)</option>
                   )}
-                  {encoderCaps?.vaapi && (
+                  {(encoderCaps?.vaapi || encoding.default_encoder === "vaapi") && (
                     <option value="vaapi">VAAPI (Intel / AMD GPU)</option>
                   )}
                   <option value="libx265">libx265 (CPU — Software)</option>
