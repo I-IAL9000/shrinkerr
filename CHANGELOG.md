@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.91] — 2026-04-30
+
+### Fixed
+- TMDB resolver now falls through to title-search even when an explicit bracket ID was parsed but TMDB couldn't resolve it. Pre-v0.3.91 a folder like `Man on Fire (2026) [tvdb-433027]` would be left unmatched (or, if the cache row pre-dated v0.3.83, mismatched to the 2004 movie) when TMDB's TVDB cross-reference index didn't yet have that ID mapped. The bracket family still drives the title-search media_type hint (`[tvdb-N]` → TV-only filter; `[ttN]` / `[tmdb-N]` → movie-only), and v0.3.83's strict year matching still applies — so falling through is much safer now than when v0.3.56 originally added the gate.
+
+### Performance
+- GHA build cache scope consolidated from per-variant (4 scopes) to per-Dockerfile (2 scopes). The heavy apt + libva + vpl-gpu-rt build layer is byte-identical across `:latest` / `:edge` and `:nvenc` / `:edge-nvenc` pairs; sharing scope lets the second variant cache-hit the heavy work the first did. Saves ~10 minutes of CI per release pair on cache hits.
+
 ## [0.3.90] — 2026-04-30
 
 ### Fixed

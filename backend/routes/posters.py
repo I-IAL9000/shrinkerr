@@ -342,12 +342,16 @@ async def resolve_posters(req: ResolveRequest):
                     # If [tvdb-N]/[ttN] is in the folder name and TMDB-find
                     # returned nothing, a title fallback could cross-contaminate
                     # media_type with a wrong-show match. v0.3.56+.
-                    has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
-                    if tmdb_key and not has_explicit_id:
+                    # Title-search fallback runs whether or not an ID was
+                    # parsed (v0.3.91+ — see resolve_posters above for
+                    # rationale). Type hint priority: bracket family,
+                    # then dir label.
+                    if tmdb_key:
+                        hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
                         try:
                             _, _, tmdb_meta = await _resolve_tmdb_search(
                                 parsed["title"], parsed.get("year"), tmdb_key,
-                                media_type_hint=_media_type_hint_for(path),
+                                media_type_hint=hint,
                             )
                             if tmdb_meta.get("media_type"):
                                 return path, tmdb_meta["media_type"]
@@ -429,18 +433,27 @@ async def resolve_posters(req: ResolveRequest):
                 except Exception:
                     pass
 
-            # 4. TMDB title search — only when no explicit ID was parsed.
-            # See v0.3.56 changelog for the wrong-show-mismatch rationale.
-            # v0.3.82 adds a media-type hint derived from the containing
-            # media-dir's label, so a "Movies"-labelled dir's folder
-            # doesn't accidentally match a same-titled TV show (and vice
-            # versa).
-            has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
-            if source == "placeholder" and not has_explicit_id and tmdb_key and parsed.get("title"):
+            # 4. TMDB title search — runs as a last-resort fallback when
+            # the upstream ID lookups failed AND we still have a title.
+            # v0.3.91 dropped the v0.3.56 "skip title-search when an ID
+            # is present" gate: the original concern was that title-
+            # search would fuzzy-guess and pick a same-titled wrong-
+            # medium / wrong-year entry, but since v0.3.82's media_type
+            # hint and v0.3.83's year-strict pass ordering, title-
+            # search is constrained enough that falling through is
+            # safer than returning placeholder. Specifically: a
+            # `[tvdb-N]` folder where TMDB doesn't have that TVDB ID
+            # cross-referenced (common for brand-new shows) will now
+            # match by title+year+TV-type instead of going unmatched.
+            #
+            # Hint priority: bracket family (most specific) →
+            # containing media-dir's label → no constraint.
+            if source == "placeholder" and tmdb_key and parsed.get("title"):
+                hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb_search(
                         parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=_media_type_hint_for(path),
+                        media_type_hint=hint,
                     )
                 except Exception:
                     pass
@@ -685,11 +698,13 @@ async def _run_prefetch():
                     except Exception as e:
                         if "429" in str(e):
                             await asyncio.sleep(5)
-                _has_explicit_id = bool(parsed.get("imdb_id") or parsed.get("tvdb_id"))
-                if source == "placeholder" and not _has_explicit_id and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
+                # Title-search fallback runs whether or not an ID was
+                # parsed (v0.3.91+ — see resolve_posters above).
+                if source == "placeholder" and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
+                    _hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(
                         parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=_media_type_hint_for(path),
+                        media_type_hint=_hint,
                     )
                     except Exception as e:
                         if "429" in str(e):
@@ -942,6 +957,21 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
         "country": ", ".join(_COUNTRY_NAMES.get(c, c) for c in item.get("origin_country", [])[:2]) if item.get("origin_country") else None,
         "media_type": media_type,
     }
+
+
+def _media_type_hint_from_parsed(parsed: dict | None) -> str | None:
+    """Infer the media_type from the bracket family in a parse_folder_name
+    result. `[tvdb-N]` → tv; `[ttN]` or `[tmdb-N]` → movie; otherwise None.
+    Used to narrow the title-search fallback when an explicit bracket ID
+    was given but TMDB couldn't resolve it. v0.3.91+.
+    """
+    if not parsed:
+        return None
+    if parsed.get("tvdb_id"):
+        return "tv"
+    if parsed.get("imdb_id") or parsed.get("tmdb_id"):
+        return "movie"
+    return None
 
 
 def _label_to_media_type(label: str | None) -> str | None:

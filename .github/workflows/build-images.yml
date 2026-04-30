@@ -51,10 +51,14 @@ jobs:
 
     strategy:
       fail-fast: false
-      # Each matrix entry produces one image tag. Variants don't share cache
-      # scopes (different Dockerfiles + different ffmpeg builds → different
-      # final layers), but the `frontend-build` stage is identical across
-      # all four and the CPU-only pair can share some lower layers.
+      # Each matrix entry produces one image tag. `cache_scope` is set per
+      # Dockerfile (not per variant) — the apt + libva + vpl-gpu-rt heavy
+      # build layer is byte-identical across the two ffmpeg variants of
+      # the same Dockerfile, so collapsing scopes lets `:edge` cache-hit
+      # the heavy work `:latest` already did (and same for `:edge-nvenc`
+      # ↔ `:nvenc`). Pre-v0.3.91 each variant had its own scope, which
+      # forced the ~5-min vpl-gpu-rt build to repeat for every variant
+      # of every release. Saves ~10 min of CI per release pair.
       matrix:
         variant:
           # ── Portable lineage (multi-arch, CPU-only) ──────────────────────
@@ -62,19 +66,23 @@ jobs:
             dockerfile: Dockerfile
             ffmpeg_build: n7.1
             platforms: linux/amd64,linux/arm64
+            cache_scope: shrinkerr-cpu
           - suffix: edge
             dockerfile: Dockerfile
             ffmpeg_build: master
             platforms: linux/amd64,linux/arm64
+            cache_scope: shrinkerr-cpu
           # ── NVENC lineage (amd64 only, CUDA base) ────────────────────────
           - suffix: nvenc
             dockerfile: Dockerfile.nvenc
             ffmpeg_build: n7.1
             platforms: linux/amd64
+            cache_scope: shrinkerr-nvenc
           - suffix: edge-nvenc
             dockerfile: Dockerfile.nvenc
             ffmpeg_build: master
             platforms: linux/amd64
+            cache_scope: shrinkerr-nvenc
 
     steps:
       - name: Checkout
@@ -144,8 +152,12 @@ jobs:
           build-args: |
             FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
             TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}
-          # Per-variant cache scope — the final layers differ between variants
-          # (different Dockerfiles, different ffmpeg builds, different
-          # platforms), so collapsing them into one scope would thrash.
-          cache-from: type=gha,scope=shrinkerr-${{ matrix.variant.suffix }}
-          cache-to: type=gha,mode=max,scope=shrinkerr-${{ matrix.variant.suffix }}
+          # Per-Dockerfile cache scope (v0.3.91+). Variants of the same
+          # Dockerfile share scope so the heavy hwaccel-build layer
+          # cache-hits across them. Buildx cache keys layers by content
+          # hash anyway, so the FFMPEG_BUILD-divergent layers naturally
+          # bifurcate even within a shared scope. mode=max saves all
+          # intermediate layers (not just final) so a later variant gets
+          # full benefit.
+          cache-from: type=gha,scope=${{ matrix.variant.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant.cache_scope }}
