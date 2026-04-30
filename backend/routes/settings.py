@@ -30,6 +30,10 @@ _ENCODING_DEFAULTS = {
     # v0.3.68+.
     "qsv_cq": "22",
     "qsv_preset": "medium",
+    # `qsv_lookahead` (v0.3.93+) — opt-in look-ahead RC for QSV.
+    # Off by default: ICQ without lookahead is the standard recipe;
+    # enabling it adds a quality bump but ~10-20% throughput cost.
+    "qsv_lookahead": "false",
     # Intel/AMD VAAPI defaults (hevc_vaapi): CQP via -qp + driver-side
     # compression_level (0–7, lower = more analysis). v0.3.68+.
     "vaapi_qp": "22",
@@ -401,6 +405,7 @@ async def get_encoding_settings():
         # available on this host.
         "qsv_cq": int(merged.get("qsv_cq", 22)),
         "qsv_preset": merged.get("qsv_preset", "medium"),
+        "qsv_lookahead": merged.get("qsv_lookahead", "false").lower() == "true",
         "vaapi_qp": int(merged.get("vaapi_qp", 22)),
         "vaapi_compression_level": int(merged.get("vaapi_compression_level", 4)),
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
@@ -698,6 +703,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["qsv_cq"] = str(update.qsv_cq)
         if update.qsv_preset is not None:
             updates["qsv_preset"] = update.qsv_preset
+        if update.qsv_lookahead is not None:
+            updates["qsv_lookahead"] = "true" if update.qsv_lookahead else "false"
         if update.vaapi_qp is not None:
             updates["vaapi_qp"] = str(update.vaapi_qp)
         if update.vaapi_compression_level is not None:

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.93] — 2026-04-30
+
+### Added
+- Optional QSV look-ahead rate control toggle in Settings → Encoding (only shown when QSV is the selected encoder). Off by default; enabling appends `-look_ahead 1` to the `hevc_qsv` ffmpeg command, trading roughly 10–20% encode throughput for a small visual quality bump on rapid-motion scenes. Worth flipping on for Arc / 11th-gen+ Intel hardware that has spare throughput; older Intel iGPUs see diminishing returns. Tester baseline on a Modern Intel iGPU (Ubuntu 24.04) was ~145 fps QSV / ~190 fps VAAPI — expect QSV to drop modestly with this on.
+
 ## [0.3.92] — 2026-04-30
 
 ### Fixed

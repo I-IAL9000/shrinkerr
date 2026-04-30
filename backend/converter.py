@@ -46,6 +46,11 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     # veryfast ladder. v0.3.67+.
     ("qsv_cq",                           22,        int),
     ("qsv_preset",                       "medium",  str),
+    # `look_ahead` enables QSV's frame-lookahead rate control. Slight
+    # quality bump at the cost of throughput (often 10-20% slower).
+    # Off by default — opt-in for users who want quality > speed.
+    # v0.3.93+.
+    ("qsv_lookahead",                    False,     _str_to_bool),
     # Intel/AMD VAAPI (hevc_vaapi) — uses CQP rate-control with a fixed QP.
     # `compression_level` is 0–7 where lower means more analysis / better
     # quality at the same bitrate (driver-specific, but 4 is a sane median).
@@ -170,6 +175,7 @@ def build_ffmpeg_cmd(
     libx265_preset: str = "medium",
     qsv_cq: int = 22,
     qsv_preset: str = "medium",
+    qsv_lookahead: bool = False,
     vaapi_qp: int = 22,
     vaapi_compression_level: int = 4,
     audio_codec: str = "copy",
@@ -193,7 +199,7 @@ def build_ffmpeg_cmd(
     return _build_ffmpeg_cmd_impl(
         input_path, output_path, encoder=encoder, cq=cq, crf=crf,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
-        qsv_cq=qsv_cq, qsv_preset=qsv_preset,
+        qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
         vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
         audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,
@@ -215,6 +221,7 @@ def _build_ffmpeg_cmd_impl(
     libx265_preset: str = "medium",
     qsv_cq: int = 22,
     qsv_preset: str = "medium",
+    qsv_lookahead: bool = False,
     vaapi_qp: int = 22,
     vaapi_compression_level: int = 4,
     audio_codec: str = "copy",
@@ -313,6 +320,10 @@ def _build_ffmpeg_cmd_impl(
             "-global_quality", str(qsv_cq),
             "-profile:v", "main",
         ]
+        # Optional look-ahead rate control (v0.3.93+). Slight quality
+        # bump at typical 10-20% throughput cost. Off by default.
+        if qsv_lookahead:
+            cmd += ["-look_ahead", "1"]
     elif encoder == "vaapi":
         # Intel/AMD VAAPI HEVC. CQP rate control via -qp. Output frames
         # are already on the GPU (hwupload filter above), so no -pix_fmt
@@ -1246,6 +1257,7 @@ async def convert_file(
     # come from the DB only. v0.3.67+.
     qsv_cq = live_settings.get("qsv_cq", 22)
     qsv_preset = live_settings.get("qsv_preset", "medium")
+    qsv_lookahead = bool(live_settings.get("qsv_lookahead", False))
     vaapi_qp = live_settings.get("vaapi_qp", 22)
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
@@ -1471,7 +1483,7 @@ async def convert_file(
     cmd = _build_ffmpeg_cmd_impl(
         encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
-        qsv_cq=qsv_cq, qsv_preset=qsv_preset,
+        qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
         vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
         cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,

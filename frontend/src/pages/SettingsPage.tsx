@@ -1100,6 +1100,26 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       QSV's ICQ-mode quality target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> is good quality with noticeable savings.
                     </div>
                   </div>
+
+                  {/* QSV look-ahead — opt-in lookahead rate control. Slight
+                      quality bump at the cost of throughput (~10-20% slower).
+                      Off by default; on a tester's iGPU, QSV ran ~145 fps
+                      without lookahead — enabling it would drop to ~120 fps
+                      for a small visual quality bump on rapid scenes. v0.3.93+. */}
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!encoding.qsv_lookahead}
+                        onChange={(e) => setEncoding({ ...encoding, qsv_lookahead: e.target.checked })}
+                        style={{ accentColor: "var(--accent)" }}
+                      />
+                      <span style={labelStyle}>Look-ahead rate control</span>
+                    </label>
+                    <div style={helpStyle}>
+                      Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs.
+                    </div>
+                  </div>
                 </>
               )}
               {/* Intel/AMD VA-API — CQP rate control via -qp; compression_level

@@ -133,6 +133,8 @@ class SettingsUpdate(BaseModel):
     # Intel QSV / Intel-AMD VAAPI knobs. v0.3.68+.
     qsv_cq: Optional[int] = None
     qsv_preset: Optional[str] = None
+    # `qsv_lookahead` (v0.3.93+) — opt-in lookahead rate control.
+    qsv_lookahead: Optional[bool] = None
     vaapi_qp: Optional[int] = None
     vaapi_compression_level: Optional[int] = None
     parallel_jobs: Optional[int] = None
