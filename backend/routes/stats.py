@@ -633,6 +633,12 @@ async def get_encoder_caps(force: bool = False):
         # `available` list without special-casing libx265.
         "libx265": True,
         "available": caps.available,
+        # Render-node paths picked by the auto-detection (v0.3.90+).
+        # Useful for debugging multi-GPU setups: a Settings UI tooltip
+        # or a `docker exec` user can confirm which `/dev/dri/renderD*`
+        # the QSV / VAAPI commands will pin to.
+        "qsv_render_node": caps.qsv_render_node,
+        "vaapi_render_node": caps.vaapi_render_node,
     }
 
 

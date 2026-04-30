@@ -592,12 +592,20 @@ export const getUpstreamChangelog = (force = false) =>
 // filter the dropdown to only options the host can actually run, so a
 // user without /dev/dri passthrough doesn't see qsv/vaapi as pickable
 // values that would fail at encode time. v0.3.68+.
+//
+// `qsv_render_node` / `vaapi_render_node` (v0.3.90+) — the
+// `/dev/dri/renderD*` path the cmd builder will pin the encoder to.
+// Surfaced for debugging multi-GPU hosts where the picked node may
+// not be what the user expected. null when no suitable node was
+// detected (and the matching cap is also false).
 export interface EncoderCaps {
   nvenc: boolean;
   qsv: boolean;
   vaapi: boolean;
   libx265: boolean;
   available: string[];
+  qsv_render_node?: string | null;
+  vaapi_render_node?: string | null;
 }
 export const getEncoderCaps = (force = false) =>
   apiFetch<EncoderCaps>(`/stats/encoder-caps${force ? "?force=1" : ""}`);

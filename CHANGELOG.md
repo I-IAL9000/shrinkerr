@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.90] — 2026-04-30
+
+### Fixed
+- Render-node auto-detection on multi-GPU hosts. Pre-v0.3.90 the QSV / VAAPI ffmpeg commands hardcoded `/dev/dri/renderD128`; on a host with both an Intel iGPU and a discrete NVIDIA card (NUC9, etc.) the iGPU is often `renderD129` and the hardcoded `D128` would have libva try to load the iHD driver against the NVIDIA render node — guaranteed failure. `encoder_caps` now reads `/sys/class/drm/<node>/device/uevent` to identify each render node's kernel driver and picks the right one per encoder (i915 for QSV, i915 / amdgpu / radeon for VAAPI; never NVIDIA). Falls back to `/dev/dri/renderD128` only if detection fails entirely (preserves single-GPU-host behaviour).
+- `/api/stats/encoder-caps` response now includes `qsv_render_node` and `vaapi_render_node` fields so the UI / debugging can show which `/dev/dri/renderD*` will be used for each encoder.
+
 ## [0.3.89] — 2026-04-30
 
 ### Fixed

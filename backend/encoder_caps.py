@@ -31,10 +31,21 @@ class EncoderCaps:
     `available` is the user-facing list — what to surface in the encoder
     dropdown. `libx265` is always present because it's pure CPU and
     needs no hardware.
+
+    `qsv_render_node` and `vaapi_render_node` (v0.3.90+) are the
+    `/dev/dri/renderD*` paths the cmd builder should pin the encoder
+    to. On a single-GPU host these match `/dev/dri/renderD128`; on a
+    multi-GPU host (e.g. NUC9 with both Intel iGPU and an NVIDIA
+    Quadro), Intel is often `renderD129` and the hardcoded `D128`
+    would point at the NVIDIA card → libva fails to init iHD on the
+    wrong driver. None when no suitable node is found, in which case
+    the corresponding `qsv` / `vaapi` flag is also False.
     """
     nvenc: bool
     qsv: bool
     vaapi: bool
+    qsv_render_node: str | None = None
+    vaapi_render_node: str | None = None
 
     @property
     def available(self) -> list[str]:
@@ -90,6 +101,64 @@ def _has_render_node() -> bool:
     return False
 
 
+def _classify_render_node(name: str) -> str | None:
+    """Return the kernel DRM driver bound to /dev/dri/<name> ('i915',
+    'nvidia-drm', 'amdgpu', 'radeon', etc.) by reading sysfs. None if
+    the sysfs entry isn't readable. v0.3.90+."""
+    path = f"/sys/class/drm/{name}/device/uevent"
+    try:
+        with open(path) as f:
+            for line in f:
+                if line.startswith("DRIVER="):
+                    return line.strip().split("=", 1)[1] or None
+    except OSError:
+        return None
+    return None
+
+
+def _list_render_nodes() -> list[tuple[str, str | None]]:
+    """List (path, driver) pairs for every /dev/dri/renderD* on the host.
+    Sorted by node name so the lowest-numbered node appears first when
+    drivers tie. v0.3.90+."""
+    out: list[tuple[str, str | None]] = []
+    try:
+        for entry in sorted(os.listdir("/dev/dri")):
+            if entry.startswith("renderD"):
+                out.append((f"/dev/dri/{entry}", _classify_render_node(entry)))
+    except (FileNotFoundError, PermissionError):
+        pass
+    return out
+
+
+def _intel_render_node() -> str | None:
+    """First i915-bound render node, or None. QSV requires Intel
+    specifically — neither AMD nor NVIDIA hardware can run it."""
+    for path, drv in _list_render_nodes():
+        if drv == "i915":
+            return path
+    return None
+
+
+def _vaapi_render_node() -> str | None:
+    """First render node that supports VA-API. Preference order:
+    Intel (i915) → AMD (amdgpu / radeon) → any non-NVIDIA fallback.
+    NVIDIA explicitly excluded (nvidia-drm doesn't speak VA-API).
+    """
+    nodes = _list_render_nodes()
+    for path, drv in nodes:
+        if drv == "i915":
+            return path
+    for path, drv in nodes:
+        if drv in ("amdgpu", "radeon"):
+            return path
+    # Catch-all for unusual drivers (mock, virt, etc.) that may still
+    # work — only excludes nvidia-drm explicitly.
+    for path, drv in nodes:
+        if drv and drv not in ("nvidia", "nvidia-drm"):
+            return path
+    return None
+
+
 def _nvidia_present() -> bool:
     """True iff `nvidia-smi` works. This is the same heuristic
     `backend/nodes.py` uses for NVENC; kept here so this module can
@@ -115,12 +184,20 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
         return _cached
 
     encoders = _ffmpeg_encoders()
-    has_dri = _has_render_node()
     has_nvidia = _nvidia_present()
+    intel_node = _intel_render_node()
+    va_node = _vaapi_render_node()
 
     _cached = EncoderCaps(
         nvenc=("hevc_nvenc" in encoders) and has_nvidia,
-        qsv=("hevc_qsv" in encoders) and has_dri,
-        vaapi=("hevc_vaapi" in encoders) and has_dri,
+        # QSV requires Intel hardware specifically — having ANY render
+        # node isn't enough. On a NUC9-style multi-GPU host, the only
+        # render node may be the NVIDIA card; QSV would fail at runtime.
+        # Per-driver detection avoids surfacing the option in that case.
+        qsv=("hevc_qsv" in encoders) and intel_node is not None,
+        # VAAPI works on Intel + AMD. Excluded from NVIDIA-only hosts.
+        vaapi=("hevc_vaapi" in encoders) and va_node is not None,
+        qsv_render_node=intel_node,
+        vaapi_render_node=va_node,
     )
     return _cached

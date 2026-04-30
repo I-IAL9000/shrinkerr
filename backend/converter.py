@@ -230,27 +230,36 @@ def _build_ffmpeg_cmd_impl(
     subtitle_streams_to_remove: set | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
-    # /dev/dri/renderD128 is the conventional first render node; if a
-    # host has more than one (multi-GPU), the user has to pick via the
-    # `custom_ffmpeg_flags` setting for now.
     #
-    # QSV note (v0.3.87+): on Linux, QSV sits on top of VAAPI. The
-    # two-step pattern below initialises a VAAPI device bound to the
-    # render node, then creates a QSV context that *adopts* it
-    # (the `@va` syntax). v0.3.67–v0.3.86 passed no QSV device init,
-    # relying on ffmpeg's auto-detect — which fails on most Linux+iHD
-    # systems with `device failed (-17)` (MFX_ERR_INCOMPATIBLE_VIDEO_PARAM)
-    # because no default QSV device is available. NVENC and libx265 still
-    # need no pre-input args (NVENC reads the GPU via the CUDA driver;
-    # libx265 is software).
+    # Render-node selection (v0.3.90+): pre-v0.3.90 we hardcoded
+    # `/dev/dri/renderD128`. On a multi-GPU host (e.g. NUC9 with both
+    # an Intel iGPU and an NVIDIA Quadro), PCI enumeration often puts
+    # the discrete card at renderD128 and the Intel iGPU at renderD129
+    # — meaning our libva init would land on the NVIDIA driver and
+    # fail to load iHD. encoder_caps now reads
+    # `/sys/class/drm/<node>/device/uevent` for each render node and
+    # picks the right one per encoder (i915-only for QSV, i915 or
+    # amdgpu/radeon for VAAPI). Falls back to renderD128 only if
+    # detection failed entirely.
+    #
+    # QSV note: on Linux, QSV sits on top of VAAPI. The two-step
+    # pattern below initialises a VAAPI device bound to the render
+    # node, then creates a QSV context that *adopts* it (the `@va`
+    # syntax). NVENC and libx265 still need no pre-input args (NVENC
+    # reads the GPU via the CUDA driver; libx265 is software).
     cmd = ["ffmpeg", "-y"]
-    if encoder == "vaapi":
-        cmd += ["-vaapi_device", "/dev/dri/renderD128"]
-    elif encoder == "qsv":
-        cmd += [
-            "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
-            "-init_hw_device", "qsv=qsv@va",
-        ]
+    if encoder in ("vaapi", "qsv"):
+        from backend.encoder_caps import detect_encoders
+        caps = detect_encoders()
+        if encoder == "vaapi":
+            node = caps.vaapi_render_node or "/dev/dri/renderD128"
+            cmd += ["-vaapi_device", node]
+        else:  # qsv
+            node = caps.qsv_render_node or "/dev/dri/renderD128"
+            cmd += [
+                "-init_hw_device", f"vaapi=va:{node}",
+                "-init_hw_device", "qsv=qsv@va",
+            ]
     cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
