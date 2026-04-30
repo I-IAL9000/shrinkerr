@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.88] — 2026-04-30
+
+### Fixed
+- VAAPI failing with `libva.so.2: undefined symbol vaMapBuffer2` (libva ABI mismatch — BtbN n7.x ffmpeg expects libva ≥ 2.20, Debian 12 / Ubuntu 22.04 stock provides 2.14–2.17). Both Docker images now build libva 2.22.0 from source as part of the image layer and replace the system `libva.so.2` with it. libva 2.x is ABI-stable, so the existing iHD / mesa-va / i965 drivers (compiled against 2.17) continue to work against 2.22 without rebuilding. Build adds ~30 s to image creation; build toolchain (build-essential, meson, ninja, libdrm-dev) is purged after compile so final image size impact is negligible.
+
 ## [0.3.87] — 2026-04-29
 
 ### Fixed

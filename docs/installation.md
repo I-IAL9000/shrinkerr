@@ -252,21 +252,13 @@ which fails on most Linux + iHD systems. v0.3.87+ explicitly
 initialises the hardware device via the two-step `vaapi=va:…` →
 `qsv=qsv@va` pattern. Pull v0.3.87+ to fix.
 
-**`libva.so.2: undefined symbol vaMapBuffer2`** with VAAPI — version
-mismatch between the BtbN ffmpeg static build (compiled against
-libva ≥ 2.20) and the system libva on Debian 12 / Ubuntu 22.04
-(2.14–2.17). The image ships ffmpeg expecting modern libva, but
-the apt-installable libva on those distros is older. Workarounds in
-order of preference:
-
-1. **Use QSV instead** if you have an Intel iGPU — QSV doesn't need
-   `vaMapBuffer2`. Settings → Encoding → Default Encoder → Intel QSV.
-2. **Build the image with an older ffmpeg variant**:
-   `docker build --build-arg FFMPEG_BUILD=n6.1 -t shrinkerr:vaapi-compat .`
-   from the source. n6.x predates the `vaMapBuffer2` ABI bump.
-3. **Wait for an upstream fix**: a future release will ship a newer
-   libva either via Debian backports (when bookworm-backports gets
-   one) or a built-from-source step in the image.
+**`libva.so.2: undefined symbol vaMapBuffer2`** with VAAPI — fixed in
+v0.3.88. The BtbN n7.x ffmpeg static build expects libva ≥ 2.20
+(`vaMapBuffer2` was added there); Debian 12 / Ubuntu 22.04 stock libva
+is 2.14–2.17. v0.3.88+ images build libva 2.22.0 from source during
+image creation and replace the system `libva.so.2` with it. The
+existing iHD / mesa-va drivers (compiled against the older libva)
+continue working since libva 2.x is ABI-stable. Pull v0.3.88+ to fix.
 
 ## Reverse proxy setups
 

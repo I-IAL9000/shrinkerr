@@ -81,12 +81,13 @@ RUN set -eux; \
             /etc/apt/sources.list.d/debian.sources; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
-            libva2 libva-drm2 \
+            libva-drm2 \
             mesa-va-drivers \
             vainfo \
             intel-media-va-driver-non-free \
             i965-va-driver \
-            libvpl2 libmfx1; \
+            libvpl2 libmfx1 \
+            build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
             # Intel oneVPL / MediaSDK runtime for hevc_qsv. The iHD VA-API
             # driver alone (intel-media-va-driver-non-free) is enough for
             # hevc_vaapi, but hevc_qsv goes through the MFX session layer
@@ -95,6 +96,34 @@ RUN set -eux; \
             # libvpl2 is the oneVPL dispatcher; libmfx1 is the legacy
             # MediaSDK runtime that ships the HEVC encoder hardware module
             # (libmfx_hevce_hw64.so). v0.3.84+.
+            #
+            # build-essential + meson + ninja + libdrm-dev: temporarily
+            # installed for the libva-from-source build below. Purged at
+            # the end of the layer.
+        # Build libva from source. The BtbN n7.x ffmpeg static builds are
+        # compiled against libva ≥ 2.20 (which introduced `vaMapBuffer2`).
+        # Debian bookworm ships libva 2.17 even via backports — every
+        # apt-installable libva on bookworm is too old, and the runtime
+        # symbol lookup for `vaMapBuffer2` fails the first time hevc_vaapi
+        # tries to encode. v0.3.88+ replaces the system libva with an
+        # upstream 2.22.x build. libva 2.x is ABI-stable, so the iHD /
+        # i965 / mesa drivers (compiled against 2.17) continue to work
+        # against 2.22 without rebuilding. Build takes ~30s on x86_64.
+        LIBVA_VER=2.22.0; \
+        curl -fsSL "https://github.com/intel/libva/releases/download/${LIBVA_VER}/libva-${LIBVA_VER}.tar.bz2" -o /tmp/libva.tar.bz2; \
+        mkdir -p /tmp/libva-src; \
+        tar xjf /tmp/libva.tar.bz2 -C /tmp/libva-src --strip-components=1; \
+        cd /tmp/libva-src; \
+        meson setup build --prefix=/usr -Dlibdir=lib/x86_64-linux-gnu --buildtype=release; \
+        ninja -C build install; \
+        cd /; \
+        rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
+        ldconfig; \
+        # Purge build toolchain — keep the image lean. The runtime libs
+        # (libva-drm2, mesa-va-drivers, etc.) stay because they were
+        # explicitly listed above; apt sees them as user-installed.
+        apt-get purge -y build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
+        apt-get autoremove -y; \
     else \
         echo "Skipping VA-API runtime on ${TARGETARCH} (amd64-only in this image)"; \
     fi; \

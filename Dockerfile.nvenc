@@ -30,20 +30,41 @@ FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
 # `nvenc` as needed in Settings → Encoding. Harmless on hosts without
 # Intel/AMD graphics — ffmpeg simply doesn't surface those encoders.
 # v0.3.67+. See the base Dockerfile for the rationale.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3-pip \
-    curl xz-utils \
-    libva2 libva-drm2 \
-    intel-media-va-driver-non-free \
-    i965-va-driver \
-    mesa-va-drivers \
-    vainfo \
-    libvpl2 libmfx1 \
-    && rm -rf /var/lib/apt/lists/*
-# libvpl2 + libmfx1: Intel oneVPL dispatcher + legacy MediaSDK runtime.
-# Required by hevc_qsv at session-create time — without them the encoder
-# fails with `Error creating a MFX session: -9` even when the iHD
-# VA-API driver is fully functional. v0.3.84+.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3-pip \
+        curl xz-utils \
+        libva-drm2 \
+        intel-media-va-driver-non-free \
+        i965-va-driver \
+        mesa-va-drivers \
+        vainfo \
+        libvpl2 libmfx1 \
+        build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
+    # libvpl2 + libmfx1: Intel oneVPL dispatcher + legacy MediaSDK runtime
+    # for hevc_qsv (v0.3.84+). build-essential + meson + ninja + libdrm-dev:
+    # temporary, purged after the libva-from-source build.
+    #
+    # Build libva from source for the same reason as the CPU image
+    # Dockerfile (v0.3.88+): BtbN n7.x ffmpeg expects vaMapBuffer2
+    # (libva ≥ 2.20). Ubuntu 22.04 stock libva is 2.14, too old —
+    # hevc_vaapi crashes at runtime with `undefined symbol vaMapBuffer2`.
+    # libva 2.x is ABI-stable so iHD / mesa drivers keep working against
+    # the new build. Same recipe as the CPU image.
+    LIBVA_VER=2.22.0; \
+    curl -fsSL "https://github.com/intel/libva/releases/download/${LIBVA_VER}/libva-${LIBVA_VER}.tar.bz2" -o /tmp/libva.tar.bz2; \
+    mkdir -p /tmp/libva-src; \
+    tar xjf /tmp/libva.tar.bz2 -C /tmp/libva-src --strip-components=1; \
+    cd /tmp/libva-src; \
+    meson setup build --prefix=/usr -Dlibdir=lib/x86_64-linux-gnu --buildtype=release; \
+    ninja -C build install; \
+    cd /; \
+    rm -rf /tmp/libva-src /tmp/libva.tar.bz2; \
+    ldconfig; \
+    apt-get purge -y build-essential meson ninja-build pkg-config libdrm-dev bzip2; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*
 
 # Install ffmpeg with NVENC + libvmaf.
 # BtbN GPL static builds include: NVENC, libvmaf, x265, and all common codecs.
