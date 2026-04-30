@@ -133,8 +133,26 @@ RUN set -eux; \
         mkdir -p /tmp/vpl-src; \
         tar xzf /tmp/vpl.tar.gz -C /tmp/vpl-src --strip-components=1; \
         cd /tmp/vpl-src; \
-        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu; \
-        cmake --build build --parallel; \
+        # Memory-conservative configure (v0.3.92+). The default
+        # `cmake --build --parallel` uses every core, and a
+        # multi-arch buildx build runs both leg's compile/link
+        # steps concurrently — easy way to exceed 7 GB on GHA
+        # free runners and OOM-kill the runner mid-link
+        # (lost-communication errors at the mfx_common_hw stage).
+        # Mitigations:
+        #   MinSizeRel + IPO=OFF  → smaller object files, less
+        #                           template-instantiation RAM
+        #   BUILD_TESTS=OFF       → skip test-suite compilation
+        #   --parallel 1          → serialize compile + link;
+        #                           slower (~10 min vs ~5 min)
+        #                           but stays under the budget
+        cmake -B build \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DBUILD_TESTS=OFF; \
+        cmake --build build --parallel 1; \
         cmake --install build; \
         cd /; rm -rf /tmp/vpl-src /tmp/vpl.tar.gz; \
         ldconfig; \

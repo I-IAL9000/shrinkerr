@@ -70,8 +70,17 @@ RUN set -eux; \
     mkdir -p /tmp/vpl-src; \
     tar xzf /tmp/vpl.tar.gz -C /tmp/vpl-src --strip-components=1; \
     cd /tmp/vpl-src; \
-    cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu; \
-    cmake --build build --parallel; \
+    # Memory-conservative configure (v0.3.92+) — see Dockerfile for the
+    # full rationale. Short version: default `--parallel` OOM-kills
+    # the GHA free runner during mfx_common_hw linking. Build serially
+    # and skip optional optimisation passes that need extra RAM.
+    cmake -B build \
+        -DCMAKE_BUILD_TYPE=MinSizeRel \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+        -DBUILD_TESTS=OFF; \
+    cmake --build build --parallel 1; \
     cmake --install build; \
     cd /; rm -rf /tmp/vpl-src /tmp/vpl.tar.gz; \
     ldconfig; \

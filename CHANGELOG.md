@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.92] — 2026-04-30
+
+### Fixed
+- vpl-gpu-rt build (v0.3.89's addition) was OOM-killing the GHA free runner mid-link of `mfx_common_hw`. Switched to memory-conservative cmake config (`MinSizeRel` + `IPO=OFF` + `BUILD_TESTS=OFF`) and serial build (`--parallel 1`). Build takes ~10 min instead of ~5 min on the free runners but stays under the 7 GB budget. Cache hits make subsequent releases fast.
+
 ## [0.3.91] — 2026-04-30
 
 ### Fixed
