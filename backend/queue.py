@@ -2103,7 +2103,23 @@ class QueueWorker:
                     finally:
                         await db.close()
                     if should_empty:
-                        await empty_plex_trash(section_id)
+                        # Fire-and-forget — Plex's scanner is async and
+                        # needs ~10-15 s to flag the just-removed file
+                        # as trashed before emptyTrash will actually
+                        # purge it (movie sections especially). We don't
+                        # want to block the worker on that wait when
+                        # batch-converting (15 s × N jobs adds up), so
+                        # spawn the cleanup as a detached task. Errors
+                        # are still logged via the [PLEX] prints inside
+                        # empty_plex_trash itself. v0.3.100+.
+                        import asyncio as _asyncio
+                        _task = _asyncio.create_task(
+                            empty_plex_trash(section_id, delay_seconds=15)
+                        )
+                        # Attach a no-op done callback to swallow
+                        # task-was-not-awaited warnings without
+                        # masking real errors (those still print).
+                        _task.add_done_callback(lambda t: t.exception())
                 except Exception:
                     pass
         except Exception as exc:

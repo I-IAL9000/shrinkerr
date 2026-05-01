@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.100] — 2026-05-01
+
+### Fixed
+- "Empty Plex trash after scan" worked for TV sections but silently failed for movie sections — log line said `[PLEX] Emptied trash for section N` but the deleted movie's metadata stayed in Plex. Root cause was timing, not logic: Plex's library scanner is asynchronous, even after `/library/sections/{id}/refresh` returns 200 the actual scan runs in the background, and movie sections in particular take ~10-15 s to flag a just-removed file as trashed. We were calling `emptyTrash` ~4 s after triggering the scan — Plex hadn't yet processed the deletion, trash was empty, the API returned 200 (it always does, regardless of whether anything was purged), and we logged success. TV episode removal happened to register fast enough to land inside the same window, hence the asymmetric symptom. Fix: `empty_plex_trash` now waits 15 s before issuing the request (default — call site can override). The wait runs as a detached background task so batch-converting 100 files doesn't accumulate 25 minutes of cumulative blocking on the worker — the conversion job completes immediately and the trash cleanup happens async. Errors are still logged via the existing `[PLEX]` print stream.
+
 ## [0.3.99] — 2026-05-01
 
 ### Fixed

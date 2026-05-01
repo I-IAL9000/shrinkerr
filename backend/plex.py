@@ -1,5 +1,6 @@
 """Plex integration — trigger partial library scans after conversion."""
 
+import asyncio
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
@@ -137,11 +138,25 @@ async def trigger_plex_scan(file_path: str) -> str | None:
         return None
 
 
-async def empty_plex_trash(section_id: str) -> bool:
+async def empty_plex_trash(section_id: str, *, delay_seconds: int = 0) -> bool:
     """Send 'Empty Trash' to a specific Plex library section.
+
+    `delay_seconds` waits before issuing the request. Plex's scanner
+    is asynchronous — even after `/library/sections/{id}/refresh`
+    returns 200 the actual scan runs in the background, and on movie
+    sections in particular it commonly takes 10-15 seconds for a just-
+    removed file to be flagged as trashed. Calling emptyTrash before
+    that flag is set is a no-op (Plex returns 200 either way), which
+    is exactly the failure mode that produced "log says emptied but
+    Plex still shows the entry" reports for movies pre-v0.3.100. TV
+    sections happen to register the deletion faster, hence the
+    asymmetric symptom. v0.3.100+.
 
     Returns True if trash was emptied, False if Plex isn't configured or request failed.
     """
+    if delay_seconds > 0:
+        await asyncio.sleep(delay_seconds)
+
     url, token, _ = await _get_plex_settings()
     if not url or not token:
         return False
