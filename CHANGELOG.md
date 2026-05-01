@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.98] — 2026-05-01
+
+### Fixed
+- Add-to-Queue modal estimate looked broken when content-aware CQ was active. Reproduction: open the modal on a single file, slider shows e.g. CQ 27 with savings 6.3 GB → drag to CQ 25, savings *increases* to 9.1 GB → drag back to CQ 27, savings is now 10.5 GB instead of the original 6.3 GB. Root cause: the no-override estimate path uses content-aware per-file CQ (the smart-encoding heuristic might pick CQ 20 for this file), but the response field that the slider initialized from was `payload.nvenc_cq_override or global_cq` — i.e. the user's *global* default, NOT the CQ actually used in the savings calculation. So slider showed 27 while savings reflected CQ 20. Once the user touched the slider, the override path produced numbers matching the slider, making the readings look inconsistent. Fix: the response now returns the median of per-file CQs that actually drove the savings number, so the slider initializes to a value that matches the displayed savings.
+- Estimate's CQ override path now also accepts `libx265_crf_override` (the modal sends this when the user is on the CPU encoder). Pre-v0.3.98 only `nvenc_cq_override` was honored in the savings curve, so a libx265 user moving the CRF slider had no effect on the estimate at all — same root cause, quieter symptom.
+
 ## [0.3.97] — 2026-05-01
 
 ### Fixed

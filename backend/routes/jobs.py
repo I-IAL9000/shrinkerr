@@ -1675,6 +1675,16 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         resolution_breakdown = {"4k": 0, "1080p": 0, "720p": 0, "sd": 0}
         skipped = 0
         ignored_count = 0
+        # Per-file CQ values actually used in the savings calculation. The
+        # response returns the median of these as the "representative" CQ,
+        # which the modal's slider initializes to. Pre-v0.3.98 the response
+        # returned `payload.nvenc_cq_override or global_cq` instead — for
+        # the no-override case this was the user's global default, NOT the
+        # smart/content-aware CQ that drove the savings number, so the
+        # slider showed e.g. 27 while the savings reflected CQ 20. Once the
+        # user touched the slider, the override path produced a number
+        # matching the slider — making the initial reading look broken.
+        file_cqs: list[int] = []
 
         # Check which files are in the ignored_files table — batched
         ignored_set = set()
@@ -1795,8 +1805,18 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 tier = get_resolution_tier(vh)
                 resolution_breakdown[tier] = resolution_breakdown.get(tier, 0) + 1
 
-                # Determine effective CQ for this file
-                file_cq = payload.nvenc_cq_override  # Modal override highest
+                # Determine effective CQ for this file. Modal override wins
+                # over everything. Accept both nvenc_cq_override and
+                # libx265_crf_override symmetrically — the savings curve is
+                # encoder-agnostic so whichever the modal sent works the
+                # same. (Pre-v0.3.98 only nvenc_cq_override was checked, so
+                # libx265 users moving the CRF slider had no effect on the
+                # estimate.)
+                file_cq = (
+                    payload.nvenc_cq_override
+                    if payload.nvenc_cq_override is not None
+                    else payload.libx265_crf_override
+                )
                 if file_cq is None:
                     rule_cq = rule.get("nvenc_cq") if rule else None
                     if rule_cq is not None:
@@ -1815,6 +1835,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
                 pct = _cq_to_savings_pct(file_cq)
                 estimated_savings += int(row["file_size"] * pct)
+                file_cqs.append(file_cq)
 
             # Source type
             name = fp.rsplit("/", 1)[-1].lower()
@@ -1835,6 +1856,20 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # Per-file estimates summed above; divide by parallel for wall-clock estimate
         est_time_seconds = total_est_time / max(1, parallel)
 
+        # Representative CQ: median of the per-file CQs that actually drove
+        # the savings calculation (so the modal's slider initializes to a
+        # number that matches the savings figure rather than the user's
+        # global default). For an explicit override every entry is the
+        # same value, so median == override. For batches with mixed
+        # content-aware CQs the median is the honest summary. Falls back
+        # to global_cq when no qualifying file was processed (all-skip /
+        # all-already-x265 batch). v0.3.98+.
+        if file_cqs:
+            _sorted_cqs = sorted(file_cqs)
+            representative_cq = _sorted_cqs[len(_sorted_cqs) // 2]
+        else:
+            representative_cq = global_cq
+
         return {
             "total_selected": len(file_paths),
             "total_files": total_files,
@@ -1845,7 +1880,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "by_source": by_source,
             "skipped_by_rules": skipped,
             "ignored_files": ignored_count,
-            "cq": payload.nvenc_cq_override or global_cq,
+            "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "content_profiles": content_profiles,
             "resolution_breakdown": resolution_breakdown,
