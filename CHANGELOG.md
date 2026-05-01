@@ -8,46 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.100] — 2026-05-01
 
 ### Fixed
-- "Empty Plex trash after scan" worked for TV sections but silently failed for movie sections — log line said `[PLEX] Emptied trash for section N` but the deleted movie's metadata stayed in Plex. Root cause was timing, not logic: Plex's library scanner is asynchronous, even after `/library/sections/{id}/refresh` returns 200 the actual scan runs in the background, and movie sections in particular take ~10-15 s to flag a just-removed file as trashed. We were calling `emptyTrash` ~4 s after triggering the scan — Plex hadn't yet processed the deletion, trash was empty, the API returned 200 (it always does, regardless of whether anything was purged), and we logged success. TV episode removal happened to register fast enough to land inside the same window, hence the asymmetric symptom. Fix: `empty_plex_trash` now waits 15 s before issuing the request (default — call site can override). The wait runs as a detached background task so batch-converting 100 files doesn't accumulate 25 minutes of cumulative blocking on the worker — the conversion job completes immediately and the trash cleanup happens async. Errors are still logged via the existing `[PLEX]` print stream.
+- Empty Plex trash after scan was failing for movies. Fix: `empty_plex_trash` now waits 15 s before issuing the request, scheduled as a detached background task so batch jobs don't block.
 
 ## [0.3.99] — 2026-05-01
 
 ### Fixed
-- `[NODES] 401 for node …` advisory was emitted on every failing worker request, which at typical heartbeat cadence (5–15 s) flooded server logs with thousands of identical multi-line entries per hour and buried everything else. The advisory itself is useful (tells the operator exactly how to fix), but it has zero new information after the first time. Now throttled to once per 5 minutes per `(node_id, failure_kind)` — the line includes "(Suppressing repeats for 5 min.)" so it's clear the absence of follow-ups isn't a fix. When the underlying issue is resolved (worker upgraded, token rotated, etc.) the next request succeeds, no further log lines are emitted, and the throttle entry just goes stale. The "no token sent" and "token mismatch" failure modes are tracked separately because they have different remedies.
+- `[NODES] 401` advisory was flooding logs on every failing worker request. Fix: throttled to once per 5 min per (node_id, failure_kind).
 
 ## [0.3.98] — 2026-05-01
 
 ### Fixed
-- Add-to-Queue modal estimate looked broken when content-aware CQ was active. Reproduction: open the modal on a single file, slider shows e.g. CQ 27 with savings 6.3 GB → drag to CQ 25, savings *increases* to 9.1 GB → drag back to CQ 27, savings is now 10.5 GB instead of the original 6.3 GB. Root cause: the no-override estimate path uses content-aware per-file CQ (the smart-encoding heuristic might pick CQ 20 for this file), but the response field that the slider initialized from was `payload.nvenc_cq_override or global_cq` — i.e. the user's *global* default, NOT the CQ actually used in the savings calculation. So slider showed 27 while savings reflected CQ 20. Once the user touched the slider, the override path produced numbers matching the slider, making the readings look inconsistent. Fix: the response now returns the median of per-file CQs that actually drove the savings number, so the slider initializes to a value that matches the displayed savings.
-- Estimate's CQ override path now also accepts `libx265_crf_override` (the modal sends this when the user is on the CPU encoder). Pre-v0.3.98 only `nvenc_cq_override` was honored in the savings curve, so a libx265 user moving the CRF slider had no effect on the estimate at all — same root cause, quieter symptom.
+- Add-to-Queue modal showed inconsistent savings as the CQ slider moved. Fix: response now returns the median per-file CQ that actually drove the savings, so the slider initializes to a matching value.
+- Estimate now also honors `libx265_crf_override` — pre-v0.3.98 only `nvenc_cq_override` was checked, so libx265 users got no estimate update from the CRF slider.
 
 ## [0.3.97] — 2026-05-01
 
 ### Fixed
-- Per-folder rescan ("Rescan" button on a title folder, e.g. to pick up a newly added sidecar subtitle) could leave the folder permanently empty in the listing if the underlying scan walk failed silently (uncaught ffprobe exception, permission hiccup, etc.). The pre-v0.3.97 sequence was *delete-then-rewrite* — the upfront `DELETE FROM scan_results WHERE file_path LIKE 'path/%'` committed first, and exceptions inside `scan_directory` were caught and logged but not propagated. Net result: rows wiped, none rewritten, "done" event fires, frontend re-fetches and finds zero rows under that path → folder vanishes from the listing. Maps exactly to user-reported "no files after rescan, then folder disappeared a few seconds later".
-- Fix flips the ordering to *upsert-then-orphan-cleanup*: rows are written via the existing `ON CONFLICT(file_path) DO UPDATE` upsert as the walk progresses, and stale rows (files no longer present on disk under that path) are removed at the end — but **only for paths whose walk completed without raising**. If the walk errors mid-way, that path is excluded from orphan cleanup and existing rows survive intact. Failure mode is now graceful: the worst case after a broken rescan is a stale row, not a vanished folder.
-- Same logic applies to full-library scans, which had the same theoretical vulnerability — a partial scan failure used to leave the DB partially wiped; now it leaves it untouched.
+- Per-folder rescan could leave the folder permanently empty if the walk silently failed. Fix: switched from delete-then-rewrite to upsert-then-orphan-cleanup; orphan delete only runs for paths that walked without raising.
 
 ## [0.3.96] — 2026-05-01
 
 ### Fixed
-- Scanner page in poster view showed "No files scanned yet. Run a scan to get started." when the search box filtered the folder list down to zero, even though the database was full and the issue was just that nothing matched the query. The empty-state condition only inspected the codec / resolution `filter` prop and ignored `search` / `allowedPaths`. PosterGrid now mirrors FileTree's logic and shows "No files match the current filter." in that case. Tree view already handled this correctly.
+- Scanner poster view showed "No files scanned yet" when search filtered down to zero matches. Fix: PosterGrid empty-state now also checks `search` and `allowedPaths` (mirrors FileTree).
 
 ## [0.3.95] — 2026-04-30
 
 ### Documentation
-- Settings → Encoding help text on the Intel encoders now flags the gotchas users hit when copying libx265 / NVENC tuning intuition over: (1) QSV's preset cost curve is nearly flat (`slower` is ~10-20% slower than `medium`, not 5×), so look-ahead is the meaningful quality knob for QSV, not preset; (2) rough cross-encoder CQ↔CRF conversion to make CQ values comparable across NVENC / QSV / libx265; (3) VAAPI is most useful on AMD — on Intel hardware where both QSV and VAAPI work, QSV produces better quality per bit at similar throughput.
-- README "Intel/AMD GPU support" section now reflects that one external tester has confirmed both encoders end-to-end on a modern Intel iGPU (Ubuntu 24.04, ~145 fps QSV / ~190 fps VAAPI on 1080p HEVC) as of v0.3.92. Still flagged experimental until we have data from a broader hardware spread (older Coffee Lake, AMD, Arc / Battlemage).
+- Settings → Encoding help text on Intel encoders now flags three gotchas: flat QSV preset cost curve, CQ↔CRF rough cross-encoder mapping, prefer QSV over VAAPI on Intel.
+- README "Intel/AMD GPU support" reflects one external tester confirming end-to-end on Ubuntu 24.04 + modern Intel iGPU.
 
 ## [0.3.94] — 2026-04-30
 
 ### Fixed
-- Settings → Default Encoder dropdown was hiding the NVENC option when `encoder_caps` reported `nvenc: false` (CPU-only image, or a transient detection failure on a `:nvenc` image). Because the saved `default_encoder` value was still `"nvenc"`, the `<select>` fell back to displaying the first present option (libx265) while internal state stayed `"nvenc"` — so the dropdown showed `libx265 (CPU — Software)` but the help text underneath still described NVENC. The inline comment had always claimed nvenc was unconditional ("we don't want to silently drop the saved value"); the conditional that contradicted it has been removed. Same desync-prevention guard now also applies to QSV / VAAPI: if either is the currently saved value, the option is rendered regardless of caps detection.
+- Settings → Default Encoder dropdown was hiding NVENC when caps reported `nvenc: false`, leaving the select desynced from saved state. Fix: NVENC and libx265 always render; QSV/VAAPI also render whenever they're the saved value.
 
 ## [0.3.93] — 2026-04-30
 
 ### Added
-- Optional QSV look-ahead rate control toggle in Settings → Encoding (only shown when QSV is the selected encoder). Off by default; enabling appends `-look_ahead 1` to the `hevc_qsv` ffmpeg command, trading roughly 10–20% encode throughput for a small visual quality bump on rapid-motion scenes. Worth flipping on for Arc / 11th-gen+ Intel hardware that has spare throughput; older Intel iGPUs see diminishing returns. Tester baseline on a Modern Intel iGPU (Ubuntu 24.04) was ~145 fps QSV / ~190 fps VAAPI — expect QSV to drop modestly with this on.
+- Optional QSV look-ahead rate control toggle in Settings → Encoding (off by default; trades ~10-20% throughput for a small quality bump).
 
 ## [0.3.92] — 2026-04-30
 
