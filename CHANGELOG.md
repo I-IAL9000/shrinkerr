@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.101] — 2026-05-01
+
+### Fixed
+- Dashboard disk-space breakdown ignored the user-set label and derived volume names from the path's 2nd segment, e.g. `/downloads/completed` showed as "completed" instead of the UI label "Downloads". Fix: prefer `media_dirs.label` when set, fall back to path-derived name.
+
 ## [0.3.100] — 2026-05-01
 
 ### Fixed

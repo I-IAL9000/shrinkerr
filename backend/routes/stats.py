@@ -420,9 +420,14 @@ async def get_dashboard():
                 if dev in seen_devices:
                     continue  # Same mount point, skip
                 usage = shutil.disk_usage(d["path"])
-                # Get the volume name from the path (2nd level: /media/M2T2 -> M2T2)
+                # Prefer the user-set label from Settings → Library; fall
+                # back to the path's 2nd-level segment for legacy rows
+                # without one. Pre-v0.3.101 the label was always derived
+                # from the path, so a media dir at `/downloads/completed`
+                # with UI label "Downloads" was shown as "completed".
                 parts = d["path"].rstrip("/").split("/")
-                volume_name = parts[2] if len(parts) > 2 else parts[-1]
+                path_derived = parts[2] if len(parts) > 2 else parts[-1]
+                volume_name = (d["label"] or "").strip() or path_derived
                 seen_devices[dev] = {
                     "path": d["path"],
                     "label": volume_name,
