@@ -1657,6 +1657,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <PosterGrid
               folders={displayFolders}
               filter={filter}
+              search={search}
+              allowedPaths={advSearchResults || undefined}
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
               onToggleTrack={handleToggleTrack}

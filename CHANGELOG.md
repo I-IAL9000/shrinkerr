@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.96] — 2026-05-01
+
+### Fixed
+- Scanner page in poster view showed "No files scanned yet. Run a scan to get started." when the search box filtered the folder list down to zero, even though the database was full and the issue was just that nothing matched the query. The empty-state condition only inspected the codec / resolution `filter` prop and ignored `search` / `allowedPaths`. PosterGrid now mirrors FileTree's logic and shows "No files match the current filter." in that case. Tree view already handled this correctly.
+
 ## [0.3.95] — 2026-04-30
 
 ### Documentation
