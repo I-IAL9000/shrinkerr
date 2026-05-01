@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.97] — 2026-05-01
+
+### Fixed
+- Per-folder rescan ("Rescan" button on a title folder, e.g. to pick up a newly added sidecar subtitle) could leave the folder permanently empty in the listing if the underlying scan walk failed silently (uncaught ffprobe exception, permission hiccup, etc.). The pre-v0.3.97 sequence was *delete-then-rewrite* — the upfront `DELETE FROM scan_results WHERE file_path LIKE 'path/%'` committed first, and exceptions inside `scan_directory` were caught and logged but not propagated. Net result: rows wiped, none rewritten, "done" event fires, frontend re-fetches and finds zero rows under that path → folder vanishes from the listing. Maps exactly to user-reported "no files after rescan, then folder disappeared a few seconds later".
+- Fix flips the ordering to *upsert-then-orphan-cleanup*: rows are written via the existing `ON CONFLICT(file_path) DO UPDATE` upsert as the walk progresses, and stale rows (files no longer present on disk under that path) are removed at the end — but **only for paths whose walk completed without raising**. If the walk errors mid-way, that path is excluded from orphan cleanup and existing rows survive intact. Failure mode is now graceful: the worst case after a broken rescan is a stale row, not a vanished folder.
+- Same logic applies to full-library scans, which had the same theoretical vulnerability — a partial scan failure used to leave the DB partially wiped; now it leaves it untouched.
+
 ## [0.3.96] — 2026-05-01
 
 ### Fixed

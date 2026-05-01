@@ -162,26 +162,21 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
     def is_cancelled():
         return os.path.exists(cancel_file)
 
-    # Delete old scan results
-    try:
-        db = sqlite3.connect(db_path)
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA busy_timeout=60000")
-        try:
-            for path in paths:
-                db.execute(
-                    """DELETE FROM scan_results
-                       WHERE file_path LIKE ?
-                         AND file_path NOT IN (
-                             SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
-                         )""",
-                    (path.rstrip("/") + "/%",),
-                )
-            db.commit()
-        finally:
-            db.close()
-    except Exception as exc:
-        print(f"[SCANNER] Failed to clear old results: {exc}", flush=True)
+    # NOTE: pre-v0.3.97 we did a wholesale `DELETE FROM scan_results
+    # WHERE file_path LIKE 'path/%'` here, then re-walked. That left the
+    # DB partially-wiped any time the subsequent walk silently failed
+    # (uncaught ffprobe exception, permission hiccup, etc.) — visible to
+    # the user as "click rescan → folder shows zero files → folder
+    # disappears entirely a few seconds later when the empty-folder is
+    # garbage-collected from the listing".
+    #
+    # New flow: don't pre-delete. The per-row INSERT uses
+    # `ON CONFLICT(file_path) DO UPDATE` so re-scanning is idempotent.
+    # After the scan completes, we delete rows for any file_path under
+    # a *successfully-walked* path that the scan didn't emit (orphan
+    # cleanup — handles renamed / deleted files). If the walk errors
+    # mid-way, that path is excluded from cleanup and existing rows
+    # survive. v0.3.97+.
 
     # Run the scan synchronously using asyncio.run in this process
     import asyncio as _asyncio
@@ -190,12 +185,15 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
         from backend.scanner import scan_directory
         batch = []
         total_written = 0
+        seen_paths: set[str] = set()
+        completed_paths: list[str] = []
 
         async def progress_cb(status, current_file="", files_found=0, files_probed=0, total_files=0):
             write_progress(status, current_file, total_files, files_probed)
 
         async def result_cb(scanned):
             nonlocal batch, total_written
+            seen_paths.add(scanned.file_path)
             batch.append(scanned)
             if len(batch) >= SCAN_BATCH_SIZE:
                 _write_batch_sync(db_path, list(batch), now)
@@ -214,6 +212,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     result_callback=result_cb,
                     cancel_check=is_cancelled,
                 )
+                completed_paths.append(path)
             except Exception as exc:
                 print(f"[SCANNER] Error scanning {path}: {exc}", flush=True)
                 import traceback; traceback.print_exc()
@@ -223,6 +222,49 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             _write_batch_sync(db_path, list(batch), now)
             total_written += len(batch)
             print(f"[SCANNER] Written {total_written} results to DB (final batch)", flush=True)
+
+        # Orphan cleanup — delete rows for files no longer present under
+        # paths whose walk completed successfully. Skipped if cancelled
+        # or if no paths walked clean (defensive: don't drop rows on a
+        # fully-failed scan). v0.3.97+.
+        if not is_cancelled() and completed_paths:
+            try:
+                db = sqlite3.connect(db_path)
+                db.execute("PRAGMA journal_mode=WAL")
+                db.execute("PRAGMA busy_timeout=60000")
+                try:
+                    db.execute("DROP TABLE IF EXISTS _seen_paths")
+                    db.execute("CREATE TEMP TABLE _seen_paths (file_path TEXT PRIMARY KEY)")
+                    if seen_paths:
+                        db.executemany(
+                            "INSERT OR IGNORE INTO _seen_paths (file_path) VALUES (?)",
+                            [(p,) for p in seen_paths],
+                        )
+                    deleted_total = 0
+                    for path in completed_paths:
+                        cur = db.execute(
+                            """DELETE FROM scan_results
+                               WHERE file_path LIKE ?
+                                 AND file_path NOT IN (SELECT file_path FROM _seen_paths)
+                                 AND file_path NOT IN (
+                                     SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
+                                 )""",
+                            (path.rstrip("/") + "/%",),
+                        )
+                        deleted_total += cur.rowcount
+                    db.commit()
+                    if deleted_total:
+                        print(
+                            f"[SCANNER] Orphan cleanup: dropped {deleted_total} stale row(s) "
+                            f"under {len(completed_paths)} walked path(s); "
+                            f"{len(seen_paths)} files seen this scan",
+                            flush=True,
+                        )
+                finally:
+                    db.close()
+            except Exception as exc:
+                print(f"[SCANNER] Orphan cleanup failed: {exc}", flush=True)
+                import traceback; traceback.print_exc()
 
         # Restore converted flags
         if not is_cancelled():
