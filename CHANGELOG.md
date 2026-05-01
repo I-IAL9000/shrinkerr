@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.99] — 2026-05-01
+
+### Fixed
+- `[NODES] 401 for node …` advisory was emitted on every failing worker request, which at typical heartbeat cadence (5–15 s) flooded server logs with thousands of identical multi-line entries per hour and buried everything else. The advisory itself is useful (tells the operator exactly how to fix), but it has zero new information after the first time. Now throttled to once per 5 minutes per `(node_id, failure_kind)` — the line includes "(Suppressing repeats for 5 min.)" so it's clear the absence of follow-ups isn't a fix. When the underlying issue is resolved (worker upgraded, token rotated, etc.) the next request succeeds, no further log lines are emitted, and the throttle entry just goes stale. The "no token sent" and "token mismatch" failure modes are tracked separately because they have different remedies.
+
 ## [0.3.98] — 2026-05-01
 
 ### Fixed

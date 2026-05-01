@@ -41,6 +41,28 @@ def _get_nm(request: Request):
     return nm
 
 
+# Per-node throttle for the verbose 401-advisory log lines. The advisory
+# has zero new information after the first time, and a misconfigured
+# worker that retries every few seconds can produce thousands of
+# identical lines per hour, burying everything else. Throttle to once
+# every 5 minutes per (node_id, kind). Bounded by node count, so no
+# leak. Resolved cases stop logging entirely (next request succeeds and
+# the throttle entry just goes stale). v0.3.99+.
+_NODE_AUTH_LOG_LAST: dict[tuple[str, str], float] = {}
+_NODE_AUTH_LOG_WINDOW_S = 300.0
+
+
+def _should_log_node_auth_failure(node_id: str, kind: str) -> bool:
+    import time
+    now = time.monotonic()
+    key = (node_id, kind)
+    last = _NODE_AUTH_LOG_LAST.get(key, 0.0)
+    if now - last < _NODE_AUTH_LOG_WINDOW_S:
+        return False
+    _NODE_AUTH_LOG_LAST[key] = now
+    return True
+
+
 async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap: bool = False) -> None:
     """Enforce the per-node auth token.
 
@@ -92,22 +114,25 @@ async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap
         # have very different remedies. Log a clear hint in server logs so
         # an admin doesn't have to chase this through worker logs.
         if not supplied:
-            print(
-                f"[NODES] 401 for node '{node_id}': server has a stored token but the "
-                f"request sent no X-Node-Token. Either the worker is running a "
-                f"pre-v0.3.30 image (upgrade it), or its /app/data/worker_token "
-                f"was cleared while the server's copy wasn't. Fix: rotate the "
-                f"token from Nodes → Settings, or run "
-                f"`UPDATE worker_nodes SET token=NULL WHERE id='{node_id}'` to "
-                f"let the worker re-bootstrap.",
-                flush=True,
-            )
+            if _should_log_node_auth_failure(node_id, "no-token"):
+                print(
+                    f"[NODES] 401 for node '{node_id}': server has a stored token but the "
+                    f"request sent no X-Node-Token. Either the worker is running a "
+                    f"pre-v0.3.30 image (upgrade it), or its /app/data/worker_token "
+                    f"was cleared while the server's copy wasn't. Fix: rotate the "
+                    f"token from Nodes → Settings, or run "
+                    f"`UPDATE worker_nodes SET token=NULL WHERE id='{node_id}'` to "
+                    f"let the worker re-bootstrap. (Suppressing repeats for 5 min.)",
+                    flush=True,
+                )
         else:
-            print(
-                f"[NODES] 401 for node '{node_id}': X-Node-Token mismatch. Worker "
-                f"has a stale token — rotate from Nodes → Settings to re-sync.",
-                flush=True,
-            )
+            if _should_log_node_auth_failure(node_id, "mismatch"):
+                print(
+                    f"[NODES] 401 for node '{node_id}': X-Node-Token mismatch. Worker "
+                    f"has a stale token — rotate from Nodes → Settings to re-sync. "
+                    f"(Suppressing repeats for 5 min.)",
+                    flush=True,
+                )
         raise HTTPException(
             status_code=401,
             detail=(
