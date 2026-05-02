@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.102] — 2026-05-02
+
+### Fixed
+- Codec-tag rename in output filenames missed scene variants with a literal separator (`H.264`, `h-264`, `h_264`) — files came out HEVC but kept the misleading H.264 in their name. Fix: regex now allows an optional `.`/`-`/`_` between the letter and the digits. Existing files keep their stale names; future conversions rename correctly.
+
 ## [0.3.101] — 2026-05-01
 
 ### Fixed

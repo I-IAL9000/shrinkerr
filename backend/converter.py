@@ -504,8 +504,13 @@ def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> 
     back-compat with callers that haven't been updated yet.
     """
     target = _hevc_tag_for_encoder(encoder) if encoder is not None else "x265"
-    result = re.sub(r'\bx264\b', target, filename, flags=re.IGNORECASE)
-    result = re.sub(r'\bh264\b', target, result, flags=re.IGNORECASE)
+    # `[._-]?` allows scene-tag variants with a literal separator between
+    # the letter and the digits — `H.264` (Amazon Prime convention),
+    # `h-264`, `h_264`. Pre-v0.3.102 the patterns required adjacency
+    # (`\bh264\b`), so a file like `…H.264-NTb.mkv` got converted to HEVC
+    # but kept the misleading H.264 in its filename.
+    result = re.sub(r'\bx[._-]?264\b', target, filename, flags=re.IGNORECASE)
+    result = re.sub(r'\bh[._-]?264\b', target, result, flags=re.IGNORECASE)
     result = re.sub(r'\bAVC\b', target, result)
     # Remove "Remux" since re-encoded files are no longer remuxes
     result = re.sub(r'\s*\bRemux\b\s*', ' ', result, flags=re.IGNORECASE).strip()
