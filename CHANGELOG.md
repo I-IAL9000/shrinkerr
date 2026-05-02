@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.103] — 2026-05-02
+
+### Fixed
+- NVENC capability detection skipped the test encode when `nvidia-smi` failed, so hosts where NVENC works but nvidia-smi isn't exposed (e.g. NVIDIA container runtime without the `utility` capability) showed "no NVIDIA GPU detected" on Monitor while actively converting via NVENC. Fix: always run the 1-frame test encode and trust rc==0; the test correctly fails on hosts without a real GPU.
+
 ## [0.3.102] — 2026-05-02
 
 ### Fixed

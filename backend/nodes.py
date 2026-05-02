@@ -638,11 +638,16 @@ class NodeManager:
     async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], str | None]:
         """Return (capabilities, nvenc_unavailable_reason).
 
-        Fixes the Mac false-positive: we only try the NVENC test if an NVIDIA
-        GPU is actually present (nvidia-smi succeeded upstream). The ffmpeg
-        binary reports `hevc_nvenc` in `-encoders` whether or not CUDA is
-        wired up — that's a compile-time feature, not a runtime one — so the
-        presence check is where we were getting burned.
+        The single source of truth is the actual NVENC test encode: a 1-frame
+        256×256 black-frame run with `-c:v hevc_nvenc`. rc==0 means the
+        encoder works on this host — that's enough; we don't second-guess it.
+        Pre-v0.3.103 we gated this test on `gpu_name` (i.e. on `nvidia-smi`
+        having succeeded), which was over-cautious — it broke detection on
+        hosts where NVENC is wired up but `nvidia-smi` isn't (e.g. the NVIDIA
+        container runtime running with `NVIDIA_DRIVER_CAPABILITIES=video,
+        compute` but no `utility` capability). The Mac false-positive that
+        gate was meant to fix is handled correctly by the test itself —
+        without a real GPU the encoder init fails and rc != 0.
 
         Returns a human-readable failure reason for the UI whenever NVENC
         isn't claimed. Callers may pass the reason through to the Monitor
@@ -680,11 +685,6 @@ class NodeManager:
             if "hevc_nvenc" not in out:
                 nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
                 print(f"[NODES] {nvenc_reason}", flush=True)
-            elif not gpu_name:
-                # No NVIDIA GPU visible to this container/host. Don't even
-                # try the test encode — claiming nvenc here is the Mac bug.
-                nvenc_reason = "no NVIDIA GPU detected (nvidia-smi unavailable)"
-                print(f"[NODES] NVENC not advertised: {nvenc_reason}", flush=True)
             else:
                 try:
                     test = await asyncio.create_subprocess_exec(

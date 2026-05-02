@@ -44,11 +44,9 @@ def _load_or_create_id() -> str:
 async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], str | None]:
     """Return (capabilities, nvenc_unavailable_reason).
 
-    Mirror of backend.nodes.NodeManager._detect_capabilities — gate NVENC on
-    an actual NVIDIA device being present (nvidia-smi succeeded) so the
-    worker doesn't falsely advertise nvenc on CPU-only boxes. The reason
-    string is surfaced through the heartbeat payload so the server-side UI
-    can explain *why* NVENC isn't available on this worker.
+    Mirror of backend.nodes.NodeManager._detect_capabilities — see that
+    docstring for the rationale. Trust the test encode (rc==0); don't gate
+    it on nvidia-smi.
     """
     caps: list[str] = []
     nvenc_reason: str | None = None
@@ -65,9 +63,6 @@ async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], 
         if "hevc_nvenc" not in out:
             nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
             print(f"[WORKER] {nvenc_reason}", flush=True)
-        elif not gpu_name:
-            nvenc_reason = "no NVIDIA GPU detected (nvidia-smi unavailable)"
-            print(f"[WORKER] NVENC not advertised: {nvenc_reason}", flush=True)
         else:
             try:
                 test = await asyncio.create_subprocess_exec(
