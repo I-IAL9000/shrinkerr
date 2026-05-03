@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.104] — 2026-05-03
+
+### Fixed
+- VMAF re-measure button stuck at 0 candidates when backups were disabled. `original_file_path` was only being recorded when a backup file was created, so users with `trash_original_after_conversion=true` or `backup_original_days=0` had no way to re-measure suspect scores. Fix: record the pre-rename source path on every completed job. Going-forward fix only — legacy jobs with NULL `original_file_path` need a manual SQL update.
+
 ## [0.3.103] — 2026-05-02
 
 ### Fixed

@@ -535,6 +535,26 @@ class JobQueue:
         finally:
             await db.close()
 
+    async def record_original_file_path(self, job_id: int, original_file_path: str) -> None:
+        """Persist the pre-rename source path on the job row.
+
+        Always called once a conversion completes — pre-v0.3.104 this was
+        bundled into update_backup_path and only fired when backups were
+        enabled, so users with `trash_original_after_conversion=true` or
+        `backup_original_days=0` had no way to re-measure suspect VMAF
+        scores even after manually restoring the source file (the
+        candidate query gates on `original_file_path IS NOT NULL`).
+        """
+        db = await self._connect()
+        try:
+            await db.execute(
+                "UPDATE jobs SET original_file_path = ? WHERE id = ?",
+                (original_file_path, job_id),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
     async def update_conversion_log(self, job_id: int, command: str | None, log: str | None, stats: str | None) -> None:
         db = await self._connect()
         try:
@@ -1547,6 +1567,15 @@ class QueueWorker:
                         await db_path.close()
                 except Exception as exc:
                     print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
+
+            # Always record the pre-rename source path so the VMAF
+            # re-measure pass can find this job as a candidate even when
+            # backups are disabled (trash-original or backup_days=0).
+            # v0.3.104+.
+            try:
+                await self.queue.record_original_file_path(job_id, file_path)
+            except Exception as exc:
+                print(f"[WORKER] Failed to record original path: {exc}", flush=True)
 
             # Store backup path + conversion log for undo/history
             if result.get("backup_path"):
