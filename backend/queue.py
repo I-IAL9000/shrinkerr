@@ -24,6 +24,34 @@ logger = logging.getLogger("shrinkerr.queue")
 _PROGRESS_DB_WRITE_INTERVAL = 3.0
 
 
+# Per-job detail columns that the list endpoints don't need. Excluded
+# from /jobs/?status=… SELECTs because they can each be tens of KB —
+# `ffmpeg_log` is the full ffmpeg stderr capture (often 50-200 KB on
+# failed jobs), `ffmpeg_command` is the full argv string, and
+# `encoding_stats` is the JSON metrics blob. With 18K completed jobs,
+# pre-v0.3.108 SELECT * was returning ~50 MB and taking 10-15 s to
+# load. The Queue page fetches these on demand via /jobs/{id}/log
+# when a completed row is expanded. v0.3.108+.
+_LIST_FAT_COLS = ("ffmpeg_log", "ffmpeg_command", "encoding_stats")
+_LIST_COLS_CACHE: Optional[str] = None
+
+
+async def _list_select_cols(db: aiosqlite.Connection) -> str:
+    """Cached SELECT column list for list endpoints. Computed once by
+    inspecting `PRAGMA table_info(jobs)` and dropping the fat columns
+    listed above; auto-includes any future column added by migrations.
+    """
+    global _LIST_COLS_CACHE
+    if _LIST_COLS_CACHE is not None:
+        return _LIST_COLS_CACHE
+    excluded = set(_LIST_FAT_COLS)
+    async with db.execute("PRAGMA table_info(jobs)") as cur:
+        rows = await cur.fetchall()
+    cols = [r[1] for r in rows if r[1] not in excluded]
+    _LIST_COLS_CACHE = ", ".join(cols)
+    return _LIST_COLS_CACHE
+
+
 async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
     """Run user-configured post-conversion script with job details as env vars."""
     try:
@@ -417,8 +445,9 @@ class JobQueue:
     async def get_jobs_by_status(self, status: str, limit: int = 0, offset: int = 0) -> list[dict]:
         db = await self._connect()
         try:
+            cols = await _list_select_cols(db)
             order = "completed_at DESC" if status == "completed" else "priority DESC, queue_order ASC"
-            sql = f"SELECT * FROM jobs WHERE status = ? ORDER BY {order}"
+            sql = f"SELECT {cols} FROM jobs WHERE status = ? ORDER BY {order}"
             params: list = [status]
             if limit > 0:
                 sql += " LIMIT ? OFFSET ?"
@@ -432,7 +461,8 @@ class JobQueue:
     async def get_all_jobs(self, limit: int = 0, offset: int = 0) -> list[dict]:
         db = await self._connect()
         try:
-            sql = "SELECT * FROM jobs ORDER BY queue_order ASC"
+            cols = await _list_select_cols(db)
+            sql = f"SELECT {cols} FROM jobs ORDER BY queue_order ASC"
             params: list = []
             if limit > 0:
                 sql += " LIMIT ? OFFSET ?"

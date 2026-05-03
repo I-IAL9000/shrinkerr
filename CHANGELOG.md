@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.108] — 2026-05-03
+
+### Performance
+- Queue Completed/Failed tabs were slow to load (~10-15 s on 18K completed jobs) because the list-fetch was doing `SELECT *` and pulling `ffmpeg_log`, `ffmpeg_command`, and `encoding_stats` — per-job detail columns that can each be tens of KB. Fix: list endpoints now SELECT a slim column set excluding those three; the per-job log endpoint still serves them on row expansion. Same payload for Failed (where 200KB of ffmpeg stderr per job adds up fast). Computed dynamically from `PRAGMA table_info` so future schema additions auto-include.
+
 ## [0.3.107] — 2026-05-03
 
 ### Changed
