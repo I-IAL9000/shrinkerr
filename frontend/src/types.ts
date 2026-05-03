@@ -205,4 +205,29 @@ export interface ScanResultsChanged {
   removed: number;
 }
 
-export type WSMessage = ScanProgress | JobProgress | JobComplete | ScanResultsChanged;
+// VMAF re-measure background pass. Fires once per file (`progress`)
+// while running, plus a single `complete` at the end. App-level
+// banner consumes these so progress survives page navigation.
+// v0.3.105+.
+export interface VmafRemeasureProgress {
+  type: "vmaf_remeasure_progress";
+  done: number;
+  total: number;
+  current_file?: string;
+  stage?: string;
+}
+export interface VmafRemeasureComplete {
+  type: "vmaf_remeasure_complete";
+  total: number;
+  rescued: number;
+  unchanged: number;
+  skipped: number;
+}
+
+export type WSMessage =
+  | ScanProgress
+  | JobProgress
+  | JobComplete
+  | ScanResultsChanged
+  | VmafRemeasureProgress
+  | VmafRemeasureComplete;
