@@ -420,14 +420,25 @@ async def get_dashboard():
                 if dev in seen_devices:
                     continue  # Same mount point, skip
                 usage = shutil.disk_usage(d["path"])
-                # Prefer the user-set label from Settings → Library; fall
-                # back to the path's 2nd-level segment for legacy rows
-                # without one. Pre-v0.3.101 the label was always derived
-                # from the path, so a media dir at `/downloads/completed`
-                # with UI label "Downloads" was shown as "completed".
-                parts = d["path"].rstrip("/").split("/")
-                path_derived = parts[2] if len(parts) > 2 else parts[-1]
-                volume_name = (d["label"] or "").strip() or path_derived
+                # Volume name picks the physical mount/disk segment so the
+                # breakdown tells the user *which disk is low on space*.
+                # Rules (v0.3.109+):
+                #   /media/<X>/...  → <X>     (most users mount per-disk
+                #                              under /media, so the 2nd
+                #                              segment is the disk name)
+                #   anything else  → first non-empty segment of the path
+                #
+                # User-set labels are intentionally NOT used here —
+                # multiple disks often share a label like "Movies" (one
+                # per drive), which masks which physical mount the row
+                # represents. Labels still appear elsewhere in the UI.
+                parts = [p for p in d["path"].rstrip("/").split("/") if p]
+                if len(parts) >= 2 and parts[0].lower() == "media":
+                    volume_name = parts[1]
+                elif parts:
+                    volume_name = parts[0]
+                else:
+                    volume_name = d["path"] or "?"
                 seen_devices[dev] = {
                     "path": d["path"],
                     "label": volume_name,

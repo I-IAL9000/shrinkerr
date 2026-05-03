@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.109] — 2026-05-03
+
+### Changed
+- Dashboard disk-space breakdown now names rows by physical mount instead of user-set label. `/media/<X>/...` paths show `<X>` (the per-disk segment); other paths show their first segment. Reverts the v0.3.101 label-preference for this card — multiple disks sharing a label (e.g., several drives all labelled "Movies") was masking which physical mount was low on space.
+
 ## [0.3.108] — 2026-05-03
 
 ### Performance
