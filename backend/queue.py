@@ -516,12 +516,30 @@ class JobQueue:
         fps: Optional[float] = None,
         eta: Optional[int] = None,
     ) -> None:
+        """Update live progress on a job row.
+
+        Passing `fps=None` PRESERVES the existing fps column (does not
+        overwrite to NULL). This matters because the same callback is
+        invoked from non-encoding phases (audio cleanup, VMAF analysis,
+        health check) that have a meaningful "phase fps" but shouldn't
+        clobber the headline encoding fps. Pre-v0.3.110 the audio /
+        VMAF callbacks would NULL out the column, and the VMAF callback
+        was actively overwriting fps=200 (encoding) with fps=30 (libvmaf
+        analyser rate) — daily avg-fps stats then averaged 30 instead of
+        the real encode throughput.
+        """
         db = await self._connect()
         try:
-            await db.execute(
-                "UPDATE jobs SET progress = ?, fps = ?, eta_seconds = ? WHERE id = ?",
-                (progress, fps, eta, job_id),
-            )
+            if fps is None:
+                await db.execute(
+                    "UPDATE jobs SET progress = ?, eta_seconds = ? WHERE id = ?",
+                    (progress, eta, job_id),
+                )
+            else:
+                await db.execute(
+                    "UPDATE jobs SET progress = ?, fps = ?, eta_seconds = ? WHERE id = ?",
+                    (progress, fps, eta, job_id),
+                )
             await db.commit()
         finally:
             await db.close()
@@ -1399,8 +1417,18 @@ class QueueWorker:
             async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
+                # Only persist fps during the encoding phase. The same
+                # callback is reused for VMAF analysis ("VMAF analysis" /
+                # "VMAF retry"), Quality cross-check, etc. — those run at
+                # ~30 fps (libvmaf analyser) and would overwrite the real
+                # encoding fps (~200 fps NVENC) on the job row, dragging
+                # the daily avg-fps chart down to ~30 even when encodes
+                # are fast. encoding-phase calls come through with
+                # step=None (parse_ffmpeg_progress doesn't emit one).
+                # v0.3.110+.
+                persist_fps = fps if step in (None, "converting") else None
                 if is_terminal or (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
-                    await self.queue.update_progress(job_id, progress, fps=fps, eta=eta_seconds)
+                    await self.queue.update_progress(job_id, progress, fps=persist_fps, eta=eta_seconds)
                     _last_db_write[0] = now
                 await ws_manager.send_job_progress(
                     job_id=job_id,

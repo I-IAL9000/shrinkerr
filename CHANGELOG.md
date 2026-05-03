@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.110] — 2026-05-03
+
+### Fixed
+- Avg FPS chart and daily fps stats showed ~30 fps after a job completed even when the actual encoder was running at ~200. The same `progress_cb` was reused for VMAF analysis, which writes the libvmaf analyser's fps (~30) over the encoding fps just before the job finalises. Fix: `progress_cb` now only persists fps during the encoding phase (`step=None` / `"converting"`), and `update_progress(fps=None)` preserves the existing column instead of NULLing it. Daily stats heal as new jobs complete; existing rows keep the wrong number until [reseed via `backfill_daily_stats` would help, or just wait for the chart to roll forward].
+
 ## [0.3.109] — 2026-05-03
 
 ### Changed
