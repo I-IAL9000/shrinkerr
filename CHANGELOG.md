@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.107] — 2026-05-03
+
+### Changed
+- VMAF re-measure global banner now shows progress only and clears on completion. The outcome summary (rescued / unchanged / skipped) renders inline next to the Re-measure button in Settings → VMAF where the click happened, instead of as a top-of-page banner the user might miss.
+
 ## [0.3.106] — 2026-05-03
 
 ### Fixed

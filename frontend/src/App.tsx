@@ -366,15 +366,12 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-// VMAF re-measure progress / outcome shape. The pass runs as a
-// detached async task in the FastAPI process (not via the queue
-// worker), and broadcasts {type: "vmaf_remeasure_progress"} per file
-// + a final {type: "vmaf_remeasure_complete"}. v0.3.105 lifts these
-// from SettingsPage to App-level so the progress banner survives
-// navigating away from Settings.
-type VmafRemeasureState =
-  | { phase: "running"; done: number; total: number; current: string }
-  | { phase: "complete"; total: number; rescued: number; unchanged: number; skipped: number };
+// VMAF re-measure progress shape. The pass runs as a detached async
+// task in the FastAPI process and broadcasts per-file progress +
+// a final complete event. App-level banner shows progress only;
+// completion summary is rendered inline next to the Settings →
+// VMAF button (see VmafRemeasureRow in SettingsPage). v0.3.107+.
+type VmafRemeasureState = { phase: "running"; done: number; total: number; current: string };
 
 export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
@@ -453,24 +450,13 @@ export default function App() {
       });
     }
     if (msg.type === "vmaf_remeasure_complete") {
-      const m = msg as any;
-      setVmafRemeasure({
-        phase: "complete",
-        total: m.total ?? 0,
-        rescued: m.rescued ?? 0,
-        unchanged: m.unchanged ?? 0,
-        skipped: m.skipped ?? 0,
-      });
+      // Banner is progress-only. The inline outcome on Settings →
+      // VMAF (VmafRemeasureRow) shows the rescued/unchanged/skipped
+      // breakdown next to the button where the user clicked, which
+      // is where they're looking. v0.3.107+.
+      setVmafRemeasure(null);
     }
   }, []);
-
-  // Auto-clear the completion summary banner after 12 seconds. Running
-  // state stays until a complete event arrives.
-  useEffect(() => {
-    if (vmafRemeasure?.phase !== "complete") return;
-    const t = setTimeout(() => setVmafRemeasure(null), 12000);
-    return () => clearTimeout(t);
-  }, [vmafRemeasure]);
 
   useWebSocket(handleWS);
 
@@ -532,7 +518,9 @@ export default function App() {
         <main className="main-content">
           {/* Global VMAF re-measure progress banner. Visible from any
               page so users know a remeasure pass started from Settings
-              is still running. Auto-hides 12 s after completion. */}
+              is still running. Disappears once the pass completes —
+              the outcome summary lives inline next to the button on
+              Settings → VMAF instead of duplicating up here. */}
           {vmafRemeasure && (
             <div style={{
               background: "var(--bg-card)",
@@ -545,66 +533,35 @@ export default function App() {
               gap: 12,
               fontSize: 12,
             }}>
-              {vmafRemeasure.phase === "running" ? (
-                <>
-                  <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ color: "var(--text-secondary)", fontWeight: 600, marginBottom: 2 }}>
-                      Re-measuring VMAF — {vmafRemeasure.done} of {vmafRemeasure.total}
-                    </div>
-                    <div style={{
-                      color: "var(--text-muted)",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }} title={vmafRemeasure.current}>
-                      {vmafRemeasure.current || "starting…"}
-                    </div>
-                  </div>
-                  <div style={{
-                    width: 120,
-                    height: 4,
-                    background: "var(--bg-primary)",
-                    borderRadius: 2,
-                    overflow: "hidden",
-                    flexShrink: 0,
-                  }}>
-                    <div style={{
-                      width: `${vmafRemeasure.total > 0 ? (vmafRemeasure.done / vmafRemeasure.total) * 100 : 0}%`,
-                      height: "100%",
-                      background: "var(--accent)",
-                      transition: "width 0.3s",
-                    }} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <div style={{ flex: 1, color: "var(--text-secondary)" }}>
-                    VMAF re-measure complete — {vmafRemeasure.total} job{vmafRemeasure.total === 1 ? "" : "s"}:{" "}
-                    <span style={{ color: "var(--success)" }}>{vmafRemeasure.rescued} rescued</span>,{" "}
-                    {vmafRemeasure.unchanged} unchanged
-                    {vmafRemeasure.skipped > 0 && <>, <span style={{ color: "var(--text-muted)" }}>{vmafRemeasure.skipped} skipped</span></>}
-                  </div>
-                  <button
-                    onClick={() => setVmafRemeasure(null)}
-                    style={{
-                      background: "none",
-                      border: "1px solid var(--border)",
-                      color: "var(--text-muted)",
-                      cursor: "pointer",
-                      borderRadius: 3,
-                      padding: "2px 8px",
-                      fontSize: 11,
-                      flexShrink: 0,
-                    }}
-                  >
-                    Dismiss
-                  </button>
-                </>
-              )}
+              <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: "var(--text-secondary)", fontWeight: 600, marginBottom: 2 }}>
+                  Re-measuring VMAF — {vmafRemeasure.done} of {vmafRemeasure.total}
+                </div>
+                <div style={{
+                  color: "var(--text-muted)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }} title={vmafRemeasure.current}>
+                  {vmafRemeasure.current || "starting…"}
+                </div>
+              </div>
+              <div style={{
+                width: 120,
+                height: 4,
+                background: "var(--bg-primary)",
+                borderRadius: 2,
+                overflow: "hidden",
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  width: `${vmafRemeasure.total > 0 ? (vmafRemeasure.done / vmafRemeasure.total) * 100 : 0}%`,
+                  height: "100%",
+                  background: "var(--accent)",
+                  transition: "width 0.3s",
+                }} />
+              </div>
             </div>
           )}
           <Routes>
