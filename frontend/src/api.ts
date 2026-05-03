@@ -105,7 +105,7 @@ export const updateAudioTracks = (id: number, audioTracksJson: string) =>
 export const updateSubtitleTracks = (id: number, subtitleTracksJson: string) =>
   apiFetch(`/scan/results/${id}/subtitle-tracks`, { method: "PUT", body: JSON.stringify({ subtitle_tracks_json: subtitleTracksJson }) });
 export const getTracksByPath = (filePath: string) =>
-  apiFetch<{ audio_tracks: any[]; subtitle_tracks: any[] }>(`/scan/tracks-by-path?file_path=${encodeURIComponent(filePath)}`);
+  apiFetch<{ audio_tracks: any[]; subtitle_tracks: any[]; has_lossless_audio?: boolean }>(`/scan/tracks-by-path?file_path=${encodeURIComponent(filePath)}`);
 export const rescanFolder = (paths: string[]) =>
   apiFetch("/scan/rescan-folder", { method: "POST", body: JSON.stringify({ paths }) });
 export const deleteFileFromDisk = (filePath: string) =>

@@ -2134,7 +2134,7 @@ async def get_tracks_by_path(file_path: str):
         ) as cur:
             row = await cur.fetchone()
             if not row:
-                return {"audio_tracks": [], "subtitle_tracks": []}
+                return {"audio_tracks": [], "subtitle_tracks": [], "has_lossless_audio": False}
             audio = []
             subs = []
             try:
@@ -2145,7 +2145,35 @@ async def get_tracks_by_path(file_path: str):
                 subs = json.loads(row["subtitle_tracks_json"] or "[]")
             except (json.JSONDecodeError, ValueError):
                 pass
-            return {"audio_tracks": audio, "subtitle_tracks": subs}
+
+            # Compute lossless flag here so the queue page doesn't have
+            # to duplicate the detection logic and drift over time. Uses
+            # prefix matching on the DTS profile to catch variants beyond
+            # the literal "DTS-HD MA" / "DTS-HD HRA" — e.g. ffprobe
+            # sometimes reports "DTS-HD Master Audio" or
+            # "DTS-HD MA + DTS:X". v0.3.106+.
+            _LOSSLESS_CODECS = {
+                "truehd", "pcm_s16le", "pcm_s24le", "pcm_s32le",
+                "pcm_bluray", "flac", "mlp", "pcm_dvd",
+            }
+            has_lossless = False
+            for t in audio:
+                codec = (t.get("codec") or "").lower()
+                if codec in _LOSSLESS_CODECS:
+                    has_lossless = True
+                    break
+                if codec == "dts":
+                    profile = (t.get("profile") or "").lower()
+                    # DTS-HD MA, DTS-HD MA+, DTS-HD Master Audio, DTS-HD HRA, etc.
+                    if profile.startswith("dts-hd m") or profile.startswith("dts-hd h"):
+                        has_lossless = True
+                        break
+
+            return {
+                "audio_tracks": audio,
+                "subtitle_tracks": subs,
+                "has_lossless_audio": has_lossless,
+            }
     finally:
         await db.close()
 

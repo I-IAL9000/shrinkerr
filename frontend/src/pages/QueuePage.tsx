@@ -232,6 +232,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
   // Track cache for running jobs (keyed by file_path)
   const [trackCache, setTrackCache] = useState<Map<string, any[]>>(new Map());
+  // Lossless flag cache, also keyed by file_path. Sourced from the
+  // backend's pre-computed has_lossless_audio (handles DTS-HD profile
+  // variants that the old client-side detection was missing).
+  // v0.3.106+.
+  const [losslessCache, setLosslessCache] = useState<Map<string, boolean>>(new Map());
 
   // Fetch track data for all running jobs
   useEffect(() => {
@@ -241,6 +246,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           setTrackCache(prev => {
             const next = new Map(prev);
             next.set(job.file_path, data.audio_tracks || []);
+            return next;
+          });
+          setLosslessCache(prev => {
+            const next = new Map(prev);
+            next.set(job.file_path, !!data.has_lossless_audio);
             return next;
           });
         }).catch(() => {});
@@ -287,14 +297,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           .filter((t: any) => removeIndices.has(t.stream_index))
           .map((t: any) => (t.language || "und").toLowerCase())
           .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
-        const LOSSLESS_CODECS = new Set(["truehd", "pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_bluray", "flac", "mlp", "pcm_dvd"]);
-        const DTS_LOSSLESS_PROFILES = new Set(["dts-hd ma", "dts-hd hra"]);
-        const hasLossless = tracks.some((t: any) => {
-          const codec = (t.codec || "").toLowerCase();
-          if (LOSSLESS_CODECS.has(codec)) return true;
-          if (codec === "dts" && t.profile && DTS_LOSSLESS_PROFILES.has(t.profile.toLowerCase())) return true;
-          return false;
-        });
+        // Source-of-truth is the backend's has_lossless_audio (computed
+        // in /tracks-by-path with permissive DTS-HD profile matching).
+        // Previously this was a client-side codec/profile check that
+        // missed variants like "DTS-HD Master Audio" or "DTS-HD MA + DTS:X".
+        const hasLossless = !!losslessCache.get(job.file_path);
         return (
           <JobCard key={job.id} progress={progress}
             jobIndex={runIndex}
