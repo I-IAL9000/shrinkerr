@@ -461,13 +461,28 @@ async def report_progress(req: ProgressReport, request: Request):
     await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
 
-    # Update job progress in DB
+    # Update job progress in DB. Only persist fps during the encoding
+    # phase — workers also call /report-progress during VMAF analysis
+    # and audio cleanup, where the per-pass fps (~30 fps libvmaf
+    # analyser, copy-rate for audio remux) would clobber the encoding
+    # fps that already landed on the row. Mirrors the local
+    # progress_cb gate added in v0.3.110; without this fix the daily
+    # avg-fps stats kept showing ~30 fps even after v0.3.110 because
+    # remote workers were still overwriting via the raw SQL here.
+    # v0.3.114+.
+    encoding_phase = (req.step or "").lower() in ("", "converting")
     db = await connect_db()
     try:
-        await db.execute(
-            "UPDATE jobs SET progress = ?, fps = ?, eta_seconds = ? WHERE id = ?",
-            (req.progress, req.fps, req.eta_seconds, req.job_id),
-        )
+        if encoding_phase:
+            await db.execute(
+                "UPDATE jobs SET progress = ?, fps = ?, eta_seconds = ? WHERE id = ?",
+                (req.progress, req.fps, req.eta_seconds, req.job_id),
+            )
+        else:
+            await db.execute(
+                "UPDATE jobs SET progress = ?, eta_seconds = ? WHERE id = ?",
+                (req.progress, req.eta_seconds, req.job_id),
+            )
         await db.commit()
     finally:
         await db.close()

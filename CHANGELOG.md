@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.114] — 2026-05-04
+
+### Fixed
+- v0.3.110's avg-fps fix only applied to the local `progress_cb` — the remote-worker `/api/nodes/report-progress` endpoint wrote `fps` directly via raw SQL with no phase gating, so multi-node deployments still had VMAF / audio-cleanup fps overwriting the encoding fps on each job row. Daily avg-fps charts kept showing ~30 fps. Same gate added there: persist fps only when `step in ("", "converting")`.
+
 ## [0.3.113] — 2026-05-04
 
 ### Fixed
