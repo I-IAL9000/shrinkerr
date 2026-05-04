@@ -213,21 +213,44 @@ async def resolve_posters(req: ResolveRequest):
         ) as cur:
             cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
 
+        # Pre-fetch dir labels for every requested path once — used by
+        # the type-impossible cache invalidation below. Cheap (single
+        # DB query per call) and avoids N async lookups inside the
+        # tight read loop. v0.3.112+.
+        from backend.media_paths import media_dir_label_for as _label_for_path
+        path_label_type: dict[str, str | None] = {}
+        for path in req.paths:
+            try:
+                lbl = await _label_for_path(path)
+                path_label_type[path] = _label_to_media_type(lbl)
+            except Exception:
+                path_label_type[path] = None
+
         needs_media_type = []  # cached but missing media_type
         for path in req.paths:
             row = cached_rows.get(path)
             if row:
-                # Type-impossible combination check (v0.3.111+): a folder
-                # with a [tvdb-N] bracket cannot legitimately match a
-                # movie. Such cache rows are always stale wrong-type
-                # matches written by the pre-v0.3.111 resolver, which
-                # would accept any cross-reference TMDB returned for a
-                # TVDB ID — including occasional movie mappings. Force
-                # re-resolution: drop the cache row and let the regular
-                # uncached path re-write it (now type-strict).
-                if row["media_type"] == "movie":
+                # Type-impossible combination check (v0.3.111+, expanded
+                # v0.3.112+). Cache rows are invalidated when the cached
+                # media_type contradicts what the folder/label structure
+                # promises:
+                #   * `[tvdb-N]` bracket → MUST be tv
+                #   * dir labelled "TV Shows" → MUST be tv
+                #   * dir labelled "Movies"  → MUST be movie
+                # Always-stale rows like "[tvdb-N] folder cached as
+                # movie" or "TV-labelled folder cached as movie" get
+                # deleted and re-resolved fresh through the now type-
+                # strict resolver.
+                cached_mt = row["media_type"]
+                if cached_mt in ("movie", "tv"):
                     parsed_check = parse_folder_name(path, walk_files=False)
-                    if parsed_check.get("tvdb_id"):
+                    label_mt = path_label_type.get(path)
+                    type_impossible = False
+                    if parsed_check.get("tvdb_id") and cached_mt != "tv":
+                        type_impossible = True
+                    elif label_mt and cached_mt != label_mt:
+                        type_impossible = True
+                    if type_impossible:
                         await db.execute(
                             "DELETE FROM poster_cache WHERE folder_path = ?",
                             (path,),
@@ -1015,27 +1038,50 @@ def _label_to_media_type(label: str | None) -> str | None:
 async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None):
     """Search by title+year — requires strict matching to avoid mismatches.
 
-    `media_type_hint` (v0.3.82+): when set to "movie" or "tv", filters
-    /search/multi results to that type before the three matching passes.
-    Lets users without bracket-ID folder naming still get type-correct
-    matches by labelling their dirs in Settings → Directories: a movie
-    titled the same as a popular TV show no longer mis-resolves to the
-    show, and vice versa.
+    `media_type_hint` (v0.3.82+): when set to "movie" or "tv", uses the
+    type-specific TMDB endpoint (/search/tv or /search/movie) instead
+    of /search/multi. v0.3.112+ change: /search/multi's `year` param
+    only filters movies — it leaves TV shows year-blind, which broke
+    "Nashville (2012) [tvdb-259055]" and similar cases where TMDB had
+    the right TV show but our post-filter never received a year-
+    constrained TV result. The typed endpoints honour
+    `first_air_date_year` (TV) and `year` (movie) respectively, so
+    the year filter actually applies to the type we care about.
     """
     import httpx
     if len(title) < 3:
         return None, "placeholder", {}
 
     async with httpx.AsyncClient(timeout=10) as client:
-        params = {"api_key": api_key, "query": title}
-        if year:
-            params["year"] = year
-        resp = await client.get("https://api.themoviedb.org/3/search/multi", params=params)
+        if media_type_hint == "tv":
+            endpoint = "https://api.themoviedb.org/3/search/tv"
+            params = {"api_key": api_key, "query": title}
+            if year:
+                params["first_air_date_year"] = year
+        elif media_type_hint == "movie":
+            endpoint = "https://api.themoviedb.org/3/search/movie"
+            params = {"api_key": api_key, "query": title}
+            if year:
+                params["year"] = year
+        else:
+            endpoint = "https://api.themoviedb.org/3/search/multi"
+            params = {"api_key": api_key, "query": title}
+            if year:
+                params["year"] = year
+        resp = await client.get(endpoint, params=params)
         if resp.status_code == 200:
             title_lower = title.lower().strip()
             results = resp.json().get("results", [])
+            # Typed endpoints don't include media_type on each item;
+            # stamp it so the downstream _match_return / _extract_tmdb_meta
+            # sees the right value.
             if media_type_hint in ("movie", "tv"):
-                results = [r for r in results if r.get("media_type") == media_type_hint]
+                for r in results:
+                    r["media_type"] = media_type_hint
+            else:
+                # /search/multi returns mixed types — no post-filter
+                # here since hint is None. Caller wanted "anything".
+                pass
 
             def _match_return(item):
                 mt = item.get("media_type", "movie")
@@ -1263,30 +1309,51 @@ async def search_tmdb(req: TMDBSearchRequest):
         # Bracket-ID lookup is best-effort; fall through to title search.
         print(f"[POSTER] Bracket-ID lookup failed: {exc}", flush=True)
 
-    # Title search for additional candidates.
-    params = {"api_key": tmdb_key, "query": req.query.strip()}
-    if req.year:
-        params["year"] = req.year
+    # Title search for additional candidates. Use the typed TMDB
+    # endpoint when we have an inferred type, since /search/multi's
+    # `year` parameter only filters MOVIES — TV results come back
+    # year-blind, which then drop out when we post-filter to TV. The
+    # typed /search/tv endpoint accepts `first_air_date_year` and
+    # actually applies it. Same root-cause fix as v0.3.112's resolver
+    # change. Without an inferred type, fall back to /search/multi.
+    if inferred_type == "tv":
+        endpoint = "https://api.themoviedb.org/3/search/tv"
+        params = {"api_key": tmdb_key, "query": req.query.strip()}
+        if req.year:
+            params["first_air_date_year"] = req.year
+    elif inferred_type == "movie":
+        endpoint = "https://api.themoviedb.org/3/search/movie"
+        params = {"api_key": tmdb_key, "query": req.query.strip()}
+        if req.year:
+            params["year"] = req.year
+    else:
+        endpoint = "https://api.themoviedb.org/3/search/multi"
+        params = {"api_key": tmdb_key, "query": req.query.strip()}
+        if req.year:
+            params["year"] = req.year
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get("https://api.themoviedb.org/3/search/multi", params=params)
+            resp = await client.get(endpoint, params=params)
         if resp.status_code != 200:
             raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
         raw_results = resp.json().get("results", [])
     except httpx.RequestError as exc:
         raise HTTPException(502, f"TMDB request failed: {exc}")
 
-    # Normalise + filter by inferred type (when bracket told us). Skip the
-    # ones we already pinned above so the user doesn't see duplicates.
+    # Normalise + filter by inferred type (when bracket told us). Skip
+    # the ones we already pinned above so the user doesn't see
+    # duplicates. Typed-endpoint items don't carry media_type, so we
+    # stamp it from `inferred_type`; /search/multi items already have
+    # it.
     title_results: list[dict] = []
     for item in raw_results:
-        mt = item.get("media_type")
+        mt = item.get("media_type") or inferred_type
         if mt not in ("movie", "tv"):
             continue
         if inferred_type and mt != inferred_type:
             continue
-        entry = _normalise_tmdb_item(item)
+        entry = _normalise_tmdb_item(item, force_media_type=mt)
         if (mt, entry["tmdb_id"]) in pinned_ids:
             continue
         title_results.append(entry)

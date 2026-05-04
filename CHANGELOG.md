@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.112] — 2026-05-04
+
+### Fixed
+- Title-search fallback was using TMDB's `/search/multi` whose `year` parameter only filters movies — TV shows came back year-blind and then got dropped by our type filter, leaving newly-added TV folders like `Nashville (2012)`, `Lost Girl (2010)`, `One Day at a Time (2017)` as "no match" even though TMDB had the show. Fix: typed endpoints (`/search/tv` with `first_air_date_year`, `/search/movie` with `year`) when a type hint is set; `/search/multi` only when no hint. Same fix in the manual-search modal so its candidates match the auto-resolver's.
+- Cache invalidation for type-impossible rows now also honours dir labels: a folder under a "TV Shows"-labelled dir cached as `media_type="movie"` (or vice versa) is dropped and re-resolved. Pairs with the v0.3.111 `[tvdb-N]+movie` invalidation; together they cover both bracket-driven and label-driven type strictness.
+
 ## [0.3.111] — 2026-05-04
 
 ### Fixed
