@@ -217,6 +217,23 @@ async def resolve_posters(req: ResolveRequest):
         for path in req.paths:
             row = cached_rows.get(path)
             if row:
+                # Type-impossible combination check (v0.3.111+): a folder
+                # with a [tvdb-N] bracket cannot legitimately match a
+                # movie. Such cache rows are always stale wrong-type
+                # matches written by the pre-v0.3.111 resolver, which
+                # would accept any cross-reference TMDB returned for a
+                # TVDB ID — including occasional movie mappings. Force
+                # re-resolution: drop the cache row and let the regular
+                # uncached path re-write it (now type-strict).
+                if row["media_type"] == "movie":
+                    parsed_check = parse_folder_name(path, walk_files=False)
+                    if parsed_check.get("tvdb_id"):
+                        await db.execute(
+                            "DELETE FROM poster_cache WHERE folder_path = ?",
+                            (path,),
+                        )
+                        uncached.append(path)
+                        continue
                 poster = None
                 if row["image_data"]:
                     poster = f"data:image/jpeg;base64,{row['image_data']}"
@@ -237,6 +254,10 @@ async def resolve_posters(req: ResolveRequest):
                     needs_media_type.append(path)
             else:
                 uncached.append(path)
+        # Commit any cache invalidations from the type-mismatch sweep
+        # before we proceed to re-resolution.
+        if uncached:
+            await db.commit()
 
         if not uncached and not needs_media_type:
             return result
@@ -891,13 +912,16 @@ async def _resolve_tmdb(imdb_id, api_key):
 
 
 async def _resolve_tmdb_tvdb(tvdb_id, api_key):
-    """Resolve by TVDB ID — exact match for TV shows.
+    """Resolve by TVDB ID — TV ONLY.
 
-    See _resolve_tmdb for the no-poster handling rationale. TVDB IDs
-    are TV-show specific in the wild, so a match here pins media_type
-    to "tv" reliably and the caller will not run the multi-search
-    fallback that could otherwise return a same-titled movie.
-    v0.3.56+.
+    TVDB IDs identify TV shows. TMDB's /find can occasionally return a
+    movie cross-reference for a TVDB ID (metadata-side mapping
+    artifact); pre-v0.3.111 we accepted that and produced
+    "TV folder → movie poster" mismatches like
+    `Matador (2014) [tvdb-281467] → Matador (1986) movie`. Now we
+    reject any non-TV result and let the caller fall through to the
+    type-constrained title search (which uses the same bracket hint
+    to filter to TV).
     """
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
@@ -906,13 +930,10 @@ async def _resolve_tmdb_tvdb(tvdb_id, api_key):
             params={"api_key": api_key, "external_source": "tvdb_id"},
         )
         if resp.status_code == 200:
-            for key in ["tv_results", "movie_results"]:
-                items = resp.json().get(key, [])
-                if not items:
-                    continue
+            items = resp.json().get("tv_results", [])
+            if items:
                 item = items[0]
-                media_type = "tv" if key == "tv_results" else "movie"
-                meta = _extract_tmdb_meta(item, media_type, api_key)
+                meta = _extract_tmdb_meta(item, "tv", api_key)
                 poster = item.get("poster_path")
                 poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
                 return poster_url, "tmdb", meta

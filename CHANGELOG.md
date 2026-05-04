@@ -5,6 +5,15 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.111] — 2026-05-04
+
+### Fixed
+- TV folders with `[tvdb-N]` brackets could match to movies (e.g., `Matador (2014) [tvdb-281467] → Matador (1986)`). Fix: TVDB-ID lookup now returns ONLY tv_results, never falling back to movie cross-references; mismatches fall through to the type-constrained title search instead.
+- Stale wrong-type cache rows are now invalidated on read: a `[tvdb-N]` folder cached with `media_type="movie"` is forced to re-resolve once. One-shot self-healing for entries written by the pre-fix resolver.
+
+### Changed
+- "Fix poster match" modal title is now "Fix match".
+
 ## [0.3.110] — 2026-05-03
 
 ### Fixed

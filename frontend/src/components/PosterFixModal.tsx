@@ -73,7 +73,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Fix poster match</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Fix match</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, maxWidth: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {folderPath}
             </div>
