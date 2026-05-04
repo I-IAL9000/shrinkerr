@@ -504,7 +504,7 @@ def classify_audio_tracks(
             ) for t in tracks
         ]
 
-    always_keep = {lang.lower() for lang in settings.always_keep_languages}
+    always_keep = _load_audio_keep_languages()
     native = native_language.lower() if native_language else "und"
     auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
 
@@ -602,11 +602,57 @@ def _load_sub_settings() -> tuple[set[str], bool]:
     return sub_keep_langs, sub_keep_unknown
 
 
+_audio_settings_cache: set[str] | None = None
+_audio_settings_loaded = False
+
+
+def _load_audio_keep_languages() -> set[str]:
+    """Load the `always_keep_languages` list from the DB once and cache.
+
+    Pre-v0.3.113 `classify_audio_tracks` read `settings.always_keep_languages`
+    directly — but `settings` is the in-memory pydantic-settings object
+    populated only from env vars at startup, NOT from the DB. So the user's
+    UI-set list (e.g. "eng" added via Settings → Audio cleanup) was
+    silently ignored for audio classification, and English audio tracks
+    on a Japanese-native film would get marked for removal even though
+    English was supposed to be always-kept. Subtitle classification was
+    immune because it had a parallel `_load_sub_settings()` helper that
+    DID read the DB; this brings audio onto the same pattern.
+    """
+    global _audio_settings_cache, _audio_settings_loaded
+    if _audio_settings_loaded and _audio_settings_cache is not None:
+        return _audio_settings_cache
+
+    langs = {lang.lower() for lang in settings.always_keep_languages}  # env fallback
+
+    try:
+        import sqlite3
+        db = sqlite3.connect(settings.db_path)
+        try:
+            cur = db.execute(
+                "SELECT value FROM settings WHERE key = 'always_keep_languages'"
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                langs = {l.lower() for l in json.loads(row[0])}
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+    _audio_settings_cache = langs
+    _audio_settings_loaded = True
+    return langs
+
+
 def invalidate_sub_settings_cache():
     """Call when subtitle/audio cleanup settings are updated to force a reload."""
     global _sub_settings_cache, _sub_settings_loaded, _cleanup_enabled_cache
+    global _audio_settings_cache, _audio_settings_loaded
     _sub_settings_cache = None
     _sub_settings_loaded = False
+    _audio_settings_cache = None
+    _audio_settings_loaded = False
     _cleanup_enabled_cache.clear()
 
 

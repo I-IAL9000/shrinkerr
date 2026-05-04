@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.113] — 2026-05-04
+
+### Fixed
+- Audio classifier was reading `always_keep_languages` from the in-memory env-only config object, not the DB-backed user setting. So adding "eng" to Always-keep via the UI had no effect on audio cleanup — English audio on a non-English-native film got marked for removal. Subtitle cleanup was unaffected (it had a parallel DB-loader). Fix: audio classifier now uses the same DB-loader pattern; existing scan rows need a re-scan to re-classify with the correct list.
+
 ## [0.3.112] — 2026-05-04
 
 ### Fixed
