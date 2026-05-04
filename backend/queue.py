@@ -153,15 +153,31 @@ class JobQueue:
         target_resolution: Optional[str] = None,
         priority: int = 0,
         insert_next: bool = False,
+        exclude_job_id: Optional[int] = None,
     ) -> int:
         db = await self._connect()
         try:
-            # Skip if file already has a pending or running job
-            async with db.execute(
-                "SELECT id FROM jobs WHERE file_path = ? AND status IN ('pending', 'running') LIMIT 1",
-                (file_path,),
-            ) as cur:
-                existing = await cur.fetchone()
+            # Skip if file already has a pending or running job. The
+            # `exclude_job_id` escape hatch is for follow-up enqueues
+            # spawned from inside the worker's finalisation of the
+            # current job — at that point the current job's status is
+            # still 'running', so without the exclusion the de-dup
+            # below silently returns the current job's id and the new
+            # follow-up never lands. v0.3.115+.
+            if exclude_job_id is not None:
+                async with db.execute(
+                    "SELECT id FROM jobs WHERE file_path = ? "
+                    "AND status IN ('pending', 'running') AND id != ? LIMIT 1",
+                    (file_path, exclude_job_id),
+                ) as cur:
+                    existing = await cur.fetchone()
+            else:
+                async with db.execute(
+                    "SELECT id FROM jobs WHERE file_path = ? "
+                    "AND status IN ('pending', 'running') LIMIT 1",
+                    (file_path,),
+                ) as cur:
+                    existing = await cur.fetchone()
             if existing:
                 return existing[0]
 
@@ -1783,6 +1799,15 @@ class QueueWorker:
                             # promptly, not after every other pending encode.
                             insert_next=True,
                             priority=job.get("priority") or 0,
+                            # CRITICAL: the current job is still status='running'
+                            # at this point (the finaliser hasn't run yet).
+                            # Without the exclusion, add_job's de-dup check
+                            # would silently return the current job's id and
+                            # the follow-up would never be created. This was
+                            # the root cause of "combined jobs that get
+                            # discarded for negative savings lose their audio/
+                            # sub cleanup work entirely". v0.3.115+.
+                            exclude_job_id=job_id,
                         )
                         if followup_id:
                             print(
