@@ -367,6 +367,52 @@ async def resolve_posters(req: ResolveRequest):
         if uncached:
             await db.commit()
 
+        # Lazy backfill: cache rows that were resolved during v0.3.121-
+        # v0.3.127 stored only the TMDB CDN URL (image_data was
+        # skipped). Now that v0.3.128 reverted that, every cache read
+        # of such a row triggers a one-time backend download so the
+        # next read returns base64 instantly. Bounded concurrency
+        # keeps the user-visible latency reasonable on filtered views
+        # with many URL-only rows. Source check excludes Plex (already
+        # uses its own auth-proxy URL form) and placeholder/other-
+        # skipped (no image to fetch). v0.3.128+.
+        backfill_paths = [
+            p for p, entry in result.items()
+            if (entry.get("source") or "") in ("tmdb", "tmdb-manual")
+            and entry.get("poster_url")
+            and not str(entry["poster_url"]).startswith("data:")
+        ]
+        if backfill_paths:
+            settings_for_bf = {}
+            async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN ('plex_url', 'plex_token')"
+            ) as cur:
+                for srow in await cur.fetchall():
+                    settings_for_bf[srow["key"]] = srow["value"]
+            plex_url_bf = settings_for_bf.get("plex_url", "").rstrip("/")
+            plex_token_bf = settings_for_bf.get("plex_token", "")
+            sem_bf = asyncio.Semaphore(8)
+
+            async def _bf_one(p: str):
+                async with sem_bf:
+                    url = result[p]["poster_url"]
+                    try:
+                        img = await _download_image(url, plex_url_bf, plex_token_bf)
+                    except Exception:
+                        img = None
+                    if img:
+                        try:
+                            await db.execute(
+                                "UPDATE poster_cache SET image_data = ? WHERE folder_path = ?",
+                                (img, p),
+                            )
+                            result[p]["poster_url"] = f"data:image/jpeg;base64,{img}"
+                        except Exception:
+                            pass
+
+            await asyncio.gather(*[_bf_one(p) for p in backfill_paths])
+            await db.commit()
+
         if not uncached and not needs_media_type:
             return result
 
@@ -588,22 +634,24 @@ async def resolve_posters(req: ResolveRequest):
                     pass
 
             if poster_url:
-                # Skip the backend image fetch for TMDB CDN URLs — the
-                # browser can fetch them directly in parallel from the
-                # public CDN, no auth needed. Pre-v0.3.121 we always
-                # downloaded + base64-encoded server-side, which serialised
-                # poster loading behind a slow HTTP-fetch + encode step
-                # for every uncached folder. Plex posters still backend-
-                # proxy because they need the Plex token attached.
-                if not poster_url.startswith("https://image.tmdb.org/"):
-                    image_data = await _download_image(poster_url, plex_url, plex_token)
+                # Reverted from v0.3.121. The "skip image fetch for TMDB
+                # CDN URLs and let the browser do it" optimisation traded
+                # backend response time for browser-side load latency on
+                # EVERY page visit — cache rows used to render instantly
+                # from base64 stored in poster_cache, but URL-only rows
+                # require the browser to fetch from TMDB CDN every time.
+                # On filtered Scanner views with hundreds of cards, the
+                # browser's per-host connection limit + TMDB CDN
+                # variability made posters trickle in or never load. Now
+                # always backend-download + base64-cache so cached reads
+                # are instant for the user. v0.3.128+.
+                image_data = await _download_image(poster_url, plex_url, plex_token)
 
             return path, parsed, poster_url, source, image_data, tmdb_meta
 
-        # Concurrency 16 (was 8 pre-v0.3.121). TMDB allows ~40 req/10s;
-        # with the image-fetch removed for TMDB URLs, each resolution
-        # makes at most 2-3 lightweight metadata calls, so the higher
-        # ceiling stays well under the rate limit.
+        # Concurrency 16 — kept from v0.3.121 so the slower (now
+        # download-included) per-resolve cost is mitigated by more
+        # parallel work. Stays under TMDB's 40 req/10s ceiling.
         sem = asyncio.Semaphore(16)
         async def _bounded(path: str):
             async with sem:
@@ -853,11 +901,10 @@ async def _run_prefetch():
                 # Skip Plex in bulk prefetch (too slow, causes DB lock contention with queue)
 
                 if poster_url:
-                    # Skip backend fetch for TMDB CDN URLs — see
-                    # _resolve_one in resolve_posters for rationale.
-                    # v0.3.121+.
-                    if not poster_url.startswith("https://image.tmdb.org/"):
-                        image_data = await _download_image(poster_url, plex_url, plex_token)
+                    # Reverted v0.3.121 — see _resolve_one for the
+                    # rationale (browser-side fetches were worse than
+                    # backend caching). v0.3.128+.
+                    image_data = await _download_image(poster_url, plex_url, plex_token)
 
                 # Prefer IMDb rating over TMDB
                 rating = _get_imdb_rating(parsed) or tmdb_meta.get("rating")
@@ -1595,10 +1642,12 @@ async def override_poster(req: OverrideRequest):
     country_names = ", ".join(_COUNTRY_NAMES.get(c, c) for c in countries[:2])
     rating = round(data.get("vote_average", 0), 1) if data.get("vote_average") else None
 
-    # Skip backend image fetch for TMDB CDN URLs — let the browser
-    # fetch directly. v0.3.121+.
+    # Backend-download + base64-cache so subsequent reads of this
+    # folder render instantly from poster_cache without a browser
+    # round-trip. (v0.3.121's "skip TMDB CDN fetch" was reverted in
+    # v0.3.128 — see _resolve_one.)
     image_data = None
-    if poster_url and not poster_url.startswith("https://image.tmdb.org/"):
+    if poster_url:
         image_data = await _download_image(poster_url, "", "")
 
     # Pull the authoritative original language while we have the TMDB

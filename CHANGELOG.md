@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.128] — 2026-05-05
+
+### Fixed
+- Reverted v0.3.121's "skip backend image fetch for TMDB CDN URLs" optimisation. It traded a one-time download cost on resolve for a per-page-load browser fetch — cache reads stopped being instant because the browser had to fetch from `image.tmdb.org` every time. On filtered Scanner views with hundreds of cards, the browser's per-host connection limit + TMDB CDN variability made posters trickle in or never load. Backend now downloads + base64-caches every poster on resolve so cache reads render instantly, the way they did pre-v0.3.121.
+- Lazy backfill for URL-only cache rows written during v0.3.121-127: on cache read, any row with `source` of `tmdb`/`tmdb-manual` whose `poster_url` is still a CDN URL (not a `data:` URI) gets its image downloaded inline (bounded concurrency 8) and the cache row updated. One-time-per-row hit; subsequent reads are instant.
+
 ## [0.3.127] — 2026-05-05
 
 ### Fixed
