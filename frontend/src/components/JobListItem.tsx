@@ -252,12 +252,18 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           </div>
         ) : logData ? (
           <>
-            {/* Comparison table: original vs encoded */}
+            {/* Comparison table: original vs encoded.
+                Audio-only jobs (job_type="audio") get a cleanup-flavoured
+                variant that drops the codec/bitrate rows (no video
+                re-encode) and adds track-removal counts + languages.
+                v0.3.117+. */}
             {logData.encoding_stats && (
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "4px 16px", marginBottom: 12, fontSize: 11 }}>
                 <span style={{ color: "var(--text-muted)", fontWeight: 600 }}></span>
                 <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Original</span>
-                <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Encoded</span>
+                <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>
+                  {job.job_type === "audio" ? "Cleaned" : "Encoded"}
+                </span>
 
                 {logData.encoding_stats.input_size > 0 && <>
                   <span style={{ color: "var(--text-muted)" }}>Size</span>
@@ -287,23 +293,50 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   <span style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.output_bitrate} Mbps</span>
                 </>}
 
-                <span style={{ color: "var(--text-muted)" }}>Codec</span>
-                <span style={{ color: "var(--text-secondary)" }}>x264</span>
-                {/* Match the v0.3.30 rename rule: libx265 → "x265" (the
-                    specific encoder), hardware encoders → "h265" (the
-                    codec spec, encoder-agnostic) tagged with which one
-                    actually produced the file. Keeps the post-job report
-                    consistent with the renamed output filename. v0.3.67
-                    extended this to qsv / vaapi. */}
-                <span style={{ color: "var(--text-secondary)" }}>
-                  {(() => {
-                    const enc = (logData.encoding_stats.encoder || "").toLowerCase();
-                    if (enc === "libx265") return "x265 (CPU)";
-                    if (enc === "qsv") return "h265 (QSV)";
-                    if (enc === "vaapi") return "h265 (VAAPI)";
-                    return "h265 (NVENC)";
-                  })()}
-                </span>
+                {/* Codec row — video conversion path only. Audio-only
+                    jobs don't change the video codec. */}
+                {job.job_type !== "audio" && <>
+                  <span style={{ color: "var(--text-muted)" }}>Codec</span>
+                  <span style={{ color: "var(--text-secondary)" }}>x264</span>
+                  {/* Match the v0.3.30 rename rule: libx265 → "x265" (the
+                      specific encoder), hardware encoders → "h265" (the
+                      codec spec, encoder-agnostic) tagged with which one
+                      actually produced the file. Keeps the post-job report
+                      consistent with the renamed output filename. v0.3.67
+                      extended this to qsv / vaapi. */}
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {(() => {
+                      const enc = (logData.encoding_stats.encoder || "").toLowerCase();
+                      if (enc === "libx265") return "x265 (CPU)";
+                      if (enc === "qsv") return "h265 (QSV)";
+                      if (enc === "vaapi") return "h265 (VAAPI)";
+                      return "h265 (NVENC)";
+                    })()}
+                  </span>
+                </>}
+
+                {/* Track-removal rows — audio-only jobs (or any job where
+                    the worker recorded removal counts on the stats
+                    payload). Languages render comma-joined when present;
+                    fall back to the bare count otherwise. v0.3.117+. */}
+                {job.job_type === "audio" && (logData.encoding_stats.audio_tracks_removed > 0) && <>
+                  <span style={{ color: "var(--text-muted)" }}>Audio removed</span>
+                  <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
+                    {logData.encoding_stats.audio_tracks_removed} track{logData.encoding_stats.audio_tracks_removed !== 1 ? "s" : ""}
+                    {Array.isArray(logData.encoding_stats.removed_audio_languages) && logData.encoding_stats.removed_audio_languages.length > 0 && (
+                      <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_audio_languages.join(", ")})</span>
+                    )}
+                  </span>
+                </>}
+                {job.job_type === "audio" && (logData.encoding_stats.subtitle_tracks_removed > 0) && <>
+                  <span style={{ color: "var(--text-muted)" }}>Subs removed</span>
+                  <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
+                    {logData.encoding_stats.subtitle_tracks_removed} track{logData.encoding_stats.subtitle_tracks_removed !== 1 ? "s" : ""}
+                    {Array.isArray(logData.encoding_stats.removed_subtitle_languages) && logData.encoding_stats.removed_subtitle_languages.length > 0 && (
+                      <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_subtitle_languages.join(", ")})</span>
+                    )}
+                  </span>
+                </>}
 
                 {logData.vmaf_score != null && <>
                   <span style={{ color: "var(--text-muted)" }}>VMAF</span>

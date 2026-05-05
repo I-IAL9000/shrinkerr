@@ -1950,6 +1950,54 @@ class QueueWorker:
                     return
                 space_saved += result.get("space_saved", 0)
 
+                # Persist the remux command/log/stats so the Completed
+                # tab's expanded view has content for audio-only jobs.
+                # Pre-v0.3.117 this only fired on the video-encode path
+                # (combined / convert), which left audio cleanup jobs —
+                # including the follow-ups spawned when a combined
+                # encode was discarded — with empty conversion logs and
+                # no visible report. Augments encoding_stats with the
+                # actual track-removal counts the remux performed.
+                if result.get("ffmpeg_command"):
+                    try:
+                        import json as _json
+                        stats = dict(result.get("encoding_stats") or {})
+                        # Per-track removal context the remux itself
+                        # doesn't track — pulled from the job's intent.
+                        # `removed_audio_languages` / `_subtitle_languages`
+                        # are computed from the probed track list so the
+                        # report can show "removed: jpn, kor" rather
+                        # than just "removed: 2 streams".
+                        rt = raw_tracks if 'raw_tracks' in dir() else []
+                        removed_audio_lang = sorted({
+                            (t.get("language") or "und").lower()
+                            for t in (rt or [])
+                            if t.get("stream_index") in set(audio_tracks_to_remove or [])
+                        })
+                        removed_sub_lang: list[str] = []
+                        if subtitle_tracks_to_remove:
+                            try:
+                                rs = probe.get("subtitle_tracks", [])
+                                removed_sub_lang = sorted({
+                                    (t.get("language") or "und").lower()
+                                    for t in rs
+                                    if t.get("stream_index") in set(subtitle_tracks_to_remove or [])
+                                })
+                            except Exception:
+                                pass
+                        stats["audio_tracks_removed"] = len(audio_tracks_to_remove or [])
+                        stats["subtitle_tracks_removed"] = len(subtitle_tracks_to_remove or [])
+                        stats["removed_audio_languages"] = removed_audio_lang
+                        stats["removed_subtitle_languages"] = removed_sub_lang
+                        await self.queue.update_conversion_log(
+                            job_id,
+                            result.get("ffmpeg_command"),
+                            result.get("ffmpeg_log"),
+                            _json.dumps(stats),
+                        )
+                    except Exception as exc:
+                        print(f"[WORKER] Audio-job conversion log write failed (non-fatal): {exc}", flush=True)
+
         # Rename audio codec in filename if it changed
         try:
             from backend.converter import get_audio_display_name, rename_audio_codec_in_filename

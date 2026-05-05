@@ -147,6 +147,11 @@ async def remux_audio(
     final_path = str(p.parent / (p.stem + ".mkv"))
 
     cmd = build_remux_cmd(input_path, temp_path, keep_audio_indices, keep_subtitle_indices)
+    # Used by the worker to populate update_conversion_log so the
+    # Completed tab's expanded view has something to show on
+    # audio-only jobs (track-removal cleanup pass that follows a
+    # discarded encode, or a manually-queued audio cleanup). v0.3.117+.
+    full_command = " ".join(cmd)
     print(f"[REMUX] Starting: {input_path}", flush=True)
 
     try:
@@ -158,6 +163,9 @@ async def remux_audio(
 
         # Read stderr in chunks and parse progress (ffmpeg uses \r for progress)
         remux_start = time.monotonic()
+        # Full ffmpeg log (capped) so the report shows context on success
+        # paths too — pre-v0.3.117 we only kept stderr on failure.
+        all_lines: list[str] = []
         buffer = ""
         last_lines: list[str] = []
         while True:
@@ -180,6 +188,10 @@ async def remux_audio(
                     last_lines.append(line)
                     if len(last_lines) > 20:
                         last_lines.pop(0)
+                    # Skip per-frame progress chatter from the persisted
+                    # log — same filter convert_file uses (line 1592).
+                    if not line.startswith("frame=") and not line.startswith("size="):
+                        all_lines.append(line)
                 if progress_callback and line and duration > 0:
                     parsed = parse_remux_progress(line, duration, start_time=remux_start)
                     if parsed:
@@ -323,10 +335,28 @@ async def remux_audio(
         except OSError as exc2:
             return {"success": False, "output_path": None, "space_saved": 0, "error": f"{exc} (retry: {exc2})"}
 
+    elapsed = time.monotonic() - remux_start
     print(f"[REMUX] Done: saved {space_saved} bytes", flush=True)
     return {
         "success": True,
         "output_path": final_path,
         "space_saved": space_saved,
         "error": None,
+        # Conversion-log payload (v0.3.117+): lets the worker store the
+        # remux command + log + size deltas so the Completed tab's
+        # expanded view of an audio-only job has actual content. Worker
+        # augments encoding_stats with the per-track removal info it has
+        # in scope (audio_tracks_to_remove, subtitle_tracks_to_remove,
+        # languages) before persisting.
+        "ffmpeg_command": full_command,
+        "ffmpeg_log": "\n".join(all_lines[-500:]),
+        "encoding_stats": {
+            "input_size": original_size,
+            "output_size": output_size,
+            "ratio": round((1 - output_size / original_size) * 100, 1) if original_size > 0 else 0,
+            "encode_seconds": round(elapsed, 1),
+            "duration": duration,
+            "input_bitrate": round(original_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
+            "output_bitrate": round(output_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
+        },
     }

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.117] — 2026-05-05
+
+### Added
+- Audio-only cleanup jobs now produce a populated job report. `remux_audio` returns the ffmpeg command, log tail, and size/bitrate stats; the worker augments `encoding_stats` with the per-track removal info (counts + languages); the Completed-tab expanded view renders an audio-cleanup-flavoured stats block (drops codec/bitrate rows, adds "Audio removed" / "Subs removed" with language breakdown). Pre-v0.3.117 these jobs landed in the DB with empty conversion logs, so the v0.3.115 follow-up audio job spawned after a discarded combined encode showed up in the queue but had no visible report.
+
 ## [0.3.116] — 2026-05-05
 
 ### Fixed
