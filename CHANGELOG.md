@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.126] — 2026-05-05
+
+### Fixed
+- Posters silently failing to load on filtered Scanner views: TMDB resolver helpers (`_resolve_tmdb`, `_resolve_tmdb_tvdb`, `_resolve_tmdb_search`) treated any non-200 response as "no match" and returned a placeholder, including for 429 rate-limit responses. The frontend then re-queued the same paths on every render, hammering TMDB and getting 429'd again — visible posters stuck on placeholder forever. New `_tmdb_get` wrapper honours the `Retry-After` header (capped at 5 s) and retries up to 2 times on 429. Most likely to bite users on the bundled `SHRINKERR_TMDB_API_KEY` (shared across deployments → trips per-key rate limits more easily); setting your own TMDB key in Settings → Connections still recommended for heavy use.
+
 ## [0.3.125] — 2026-05-05
 
 ### Fixed

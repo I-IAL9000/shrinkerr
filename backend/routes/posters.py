@@ -931,6 +931,43 @@ async def proxy_plex_image(path: str):
 
 # --- Resolution helpers ---
 
+
+async def _tmdb_get(client, url: str, params: dict, *, retries: int = 2):
+    """GET wrapper that backs off on TMDB rate-limits (429).
+
+    Pre-v0.3.126 the resolver helpers treated `status_code != 200` as
+    "no match" and returned a placeholder, including for 429s. The
+    frontend then re-queued the same paths on the next render and
+    hammered TMDB again — so a transient rate-limit (often hit when
+    the bundled `SHRINKERR_TMDB_API_KEY` is shared across many
+    deployments) turned into permanent placeholder posters until the
+    user manually rotated their TMDB key.
+
+    Now: if we see 429 we honour the `Retry-After` header (capped at
+    5 s) or fall back to a 2 s sleep, and retry up to `retries` times.
+    Other non-2xx codes still propagate as "no match" — only 429 is
+    transient. Returns the final response (which may still be a 429
+    after retries exhaust; caller handles).
+    """
+    import httpx as _httpx
+    for attempt in range(retries + 1):
+        try:
+            resp = await client.get(url, params=params)
+        except _httpx.RequestError:
+            raise
+        if resp.status_code != 429 or attempt == retries:
+            return resp
+        retry_after = 2.0
+        try:
+            ra = resp.headers.get("retry-after")
+            if ra:
+                retry_after = max(0.5, min(5.0, float(ra)))
+        except (TypeError, ValueError):
+            pass
+        await asyncio.sleep(retry_after)
+    return resp
+
+
 async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping):
     import httpx
     from backend.plex import _translate_path, get_plex_libraries
@@ -1002,9 +1039,10 @@ async def _resolve_tmdb(imdb_id, api_key):
     """
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(
+        resp = await _tmdb_get(
+            client,
             f"https://api.themoviedb.org/3/find/{imdb_id}",
-            params={"api_key": api_key, "external_source": "imdb_id"},
+            {"api_key": api_key, "external_source": "imdb_id"},
         )
         if resp.status_code == 200:
             for key in ["movie_results", "tv_results"]:
@@ -1034,9 +1072,10 @@ async def _resolve_tmdb_tvdb(tvdb_id, api_key):
     """
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(
+        resp = await _tmdb_get(
+            client,
             f"https://api.themoviedb.org/3/find/{tvdb_id}",
-            params={"api_key": api_key, "external_source": "tvdb_id"},
+            {"api_key": api_key, "external_source": "tvdb_id"},
         )
         if resp.status_code == 200:
             items = resp.json().get("tv_results", [])
@@ -1154,7 +1193,7 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
             params = {"api_key": api_key, "query": title}
             if year:
                 params["year"] = year
-        resp = await client.get(endpoint, params=params)
+        resp = await _tmdb_get(client, endpoint, params)
         if resp.status_code == 200:
             title_lower = title.lower().strip()
             results = resp.json().get("results", [])
