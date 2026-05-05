@@ -139,7 +139,10 @@ services:
     #       devices:
     #         - driver: nvidia
     #           count: all
-    #           capabilities: [gpu, video]
+    #           capabilities: [gpu, compute, video, utility]
+    #           # `utility` is what enables nvidia-smi / NVML, which
+    #           # drives the GPU panels in the Monitor page. Leaving
+    #           # it off makes encodes work but hides GPU stats.
 
   # ==========================================================================
   # Optional: remote worker node

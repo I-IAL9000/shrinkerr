@@ -175,7 +175,16 @@ services:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, video]
+              capabilities: [gpu, compute, video, utility]
+              # gpu      — claim a GPU device (meta capability)
+              # compute  — CUDA libs (some downstream libs need it)
+              # video    — NVENC + NVDEC hardware encode/decode
+              # utility  — nvidia-smi + NVML (drives the GPU
+              #            utilization / temp / VRAM panels in
+              #            the Monitor page)
+              # Drop `utility` and the encode still works but the
+              # Monitor page can't show GPU stats — see the
+              # troubleshooting entry below.
 ```
 
 **Windows (Docker Desktop WSL2)**: same file, but **remove** the `runtime: nvidia` line. Docker Desktop doesn't register a `nvidia` runtime by name; the `deploy:` block is the cross-platform way.
@@ -405,6 +414,47 @@ sudo systemctl restart docker
 If everything on the host looks good but Shrinkerr still doesn't see it, your compose is missing either `runtime: nvidia` (Linux) or the `deploy.resources.reservations.devices` block (both platforms). See the [Quick start — Option B](#option-b--with-nvenc-linux--nvidia-gpu) above for the full working config.
 
 Note: `runtime: nvidia` works on Linux but is rejected by Docker Desktop on Windows. Use only the `deploy:` block on Windows.
+
+</details>
+
+<details>
+<summary><b>NVENC works but Monitor shows no GPU stats (utilization / temp / VRAM)</b></summary>
+
+The Encoding Capability card says NVENC is available, but the GPU panel above it doesn't render. NVENC and `nvidia-smi` are gated by *different* capabilities in the NVIDIA Container Toolkit:
+
+- `video` → enables NVENC / NVDEC (encodes work)
+- `utility` → enables `nvidia-smi` and NVML (the panels)
+
+Two YAML keys can carry capabilities and they take *different* values:
+
+**1. `device_requests.capabilities`** (under `deploy.resources.reservations.devices`):
+
+```yaml
+capabilities: [gpu, compute, video, utility]
+```
+
+`gpu` is valid here (meta-capability for "claim a GPU"). Add `utility` if you want the Monitor panels.
+
+**2. `NVIDIA_DRIVER_CAPABILITIES` env var** (under `environment:`):
+
+```yaml
+environment:
+  - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+```
+
+`gpu` is **NOT** valid here — the toolkit silently ignores unrecognized values. Valid: `compute`, `video`, `utility`, `graphics`, `display`, `compat32`, `all`.
+
+A compose with `NVIDIA_DRIVER_CAPABILITIES=gpu,video,utility` (the env var, mistaken for the device_requests vocabulary) ends up with effectively just `video,utility` parsed — and on some toolkit versions an invalid entry rejects the whole list, leaving the toolkit's defaults. Easiest fix: replace the env var value with `all`, or use the device_requests block instead.
+
+To diagnose:
+
+```bash
+docker exec shrinkerr env | grep NVIDIA   # see the env var
+docker exec shrinkerr which nvidia-smi    # is the binary even mounted?
+docker exec shrinkerr nvidia-smi          # does it run?
+```
+
+If `nvidia-smi` is missing → the toolkit didn't inject it (capabilities or runtime issue). If it exists but errors → host driver upgrade since container start; `docker compose down && up -d` re-injects against the new driver.
 
 </details>
 
