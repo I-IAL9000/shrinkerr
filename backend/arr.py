@@ -81,7 +81,14 @@ async def trigger_sonarr_rescan(file_path: str) -> bool:
     arr_path = _translate_path(file_path, path_mapping)
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        # Generous read timeout for the GET /api/v3/series listing —
+        # Sonarr instances with thousands of series can take 20-40s
+        # to serialise and return the full list, especially under load
+        # or on modest hardware. Pre-v0.3.129 the flat 15s ceiling was
+        # tripping ReadTimeout intermittently. Connect stays short so
+        # we don't wait 60s on an unreachable host. v0.3.129+.
+        _arr_timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0)
+        async with httpx.AsyncClient(timeout=_arr_timeout) as client:
             headers = {"X-Api-Key": api_key}
 
             # Use cached series list (refreshes every 5 min)
@@ -152,7 +159,10 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
     print(f"[RADARR] Translated path: {file_path} -> {arr_path}", flush=True)
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        # Same generous read timeout as Sonarr — the GET /api/v3/movie
+        # listing can be slow on large libraries. v0.3.129+.
+        _arr_timeout = httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=10.0)
+        async with httpx.AsyncClient(timeout=_arr_timeout) as client:
             headers = {"X-Api-Key": api_key}
 
             # Use cached movie list (refreshes every 5 min)

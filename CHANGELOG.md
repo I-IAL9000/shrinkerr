@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.129] — 2026-05-05
+
+### Fixed
+- Sonarr/Radarr rescans intermittently failing with `ReadTimeout`. The flat 15 s timeout covered both connect and read, but the slow operation is the initial `GET /api/v3/movie` (or `/api/v3/series`) listing — large libraries on modest hardware easily take 20-40 s to serialise. Switched to a structured `httpx.Timeout(connect=5, read=60, ...)` so connect stays short (don't wait on an unreachable host) but the listing has room to complete. The list is cached for 5 minutes anyway, so the slow path only fires once per cache window.
+
 ## [0.3.128] — 2026-05-05
 
 ### Fixed
