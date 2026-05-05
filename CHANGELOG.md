@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.116] — 2026-05-05
+
+### Fixed
+- One-shot mass invalidation of every cached `[tvdb-N]` poster row on first read after upgrade. v0.3.111 made the resolver type-strict and v0.3.112 switched TV title-search to `/search/tv` with year filtering, but stale rows written before those fixes (placeholder rows that pre-fix search couldn't resolve, TV→TV year mismatches, etc.) stayed cached and the narrower per-read invalidation didn't catch them. Forces fresh re-resolution through the now-correct paths. Single tracked-via-settings flag so it runs exactly once.
+
 ## [0.3.115] — 2026-05-04
 
 ### Fixed

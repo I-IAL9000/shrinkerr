@@ -192,6 +192,64 @@ class ResolveRequest(BaseModel):
     paths: list[str]
 
 
+_TVDB_CACHE_PATTERN = re.compile(r"\[tvdb-\d+\]")
+_V116_PURGE_FLAG = "_v0_3_116_tvdb_cache_purged"
+
+
+async def _maybe_purge_tvdb_cache_v116(db) -> None:
+    """One-shot purge of every `[tvdb-N]` cache row, run on first
+    resolve_posters call after the v0.3.116 upgrade. Tracked via a
+    settings flag so the purge runs exactly once. v0.3.116+.
+
+    Background: v0.3.111 + v0.3.112 made the resolver type-strict and
+    fixed the year-blind TV title search, but rows already in
+    poster_cache from prior versions stayed wrong. The narrower
+    invalidation in resolve_posters caught some cases (`[tvdb-N]`
+    cached as `media_type='movie'`) but missed:
+      * placeholder rows that pre-v0.3.112 title-search couldn't resolve
+      * TV→TV year mismatches (cached year ≠ folder year)
+    Easier to nuke every TVDB row once and let the now-correct resolver
+    repopulate from scratch.
+    """
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = ?", (_V116_PURGE_FLAG,)
+        ) as cur:
+            if await cur.fetchone():
+                return  # already purged on a previous call
+        async with db.execute("SELECT folder_path FROM poster_cache") as cur:
+            rows = await cur.fetchall()
+        # Filter for `[tvdb-N]` paths in Python — SQLite LIKE doesn't
+        # treat `[`/`]` as special but mixing percent wildcards with
+        # bracket text is fragile; a regex pass over folder_paths is
+        # both clearer and bounded by row count (single-digit MB
+        # even for 20K rows).
+        targets = [r[0] for r in rows if _TVDB_CACHE_PATTERN.search(r[0])]
+        if targets:
+            CHUNK = 500
+            for i in range(0, len(targets), CHUNK):
+                batch = targets[i:i + CHUNK]
+                ph = ",".join("?" * len(batch))
+                await db.execute(
+                    f"DELETE FROM poster_cache WHERE folder_path IN ({ph})",
+                    batch,
+                )
+            print(
+                f"[POSTER] v0.3.116 migration: purged {len(targets)} "
+                f"`[tvdb-N]` cache row(s) for fresh re-resolution",
+                flush=True,
+            )
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+            (_V116_PURGE_FLAG,),
+        )
+        await db.commit()
+    except Exception as exc:
+        # Failed migrations shouldn't block the API. Worst case is the
+        # user sees stale data and can manually click re-resolve.
+        print(f"[POSTER] v0.3.116 migration skipped: {exc}", flush=True)
+
+
 @router.post("/resolve")
 async def resolve_posters(req: ResolveRequest):
     """Batch-resolve poster metadata. Returns cached image data as base64 data URIs."""
@@ -202,6 +260,18 @@ async def resolve_posters(req: ResolveRequest):
     await db.execute("PRAGMA busy_timeout=5000")
     db.row_factory = aiosqlite.Row
     try:
+        # One-shot migration: invalidate every cached `[tvdb-N]` row so
+        # the now-correct resolver (v0.3.111 type-strict + v0.3.112 typed
+        # endpoints) re-populates them. Pre-fix rows ranged across:
+        #   * TV folders cached as movies (v0.3.111 catches some of these)
+        #   * Placeholders that title-search couldn't resolve (v0.3.112's
+        #     /search/tv with first_air_date_year now finds them)
+        #   * TV→TV year mismatches no other invalidation catches
+        # Easier to nuke and re-resolve once than to chase every stale-row
+        # pattern. Tracked via a settings flag so it runs exactly once
+        # per upgrade. v0.3.116+.
+        await _maybe_purge_tvdb_cache_v116(db)
+
         result = {}
         uncached = []
 
