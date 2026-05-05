@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.120] — 2026-05-05
+
+### Fixed
+- Worker-capability detection (Nodes page pills, job routing) was advertising QSV and VAAPI on NVIDIA-only hosts because it just checked for any `/dev/dri/renderD*` entry — NVIDIA's `renderD128` exists but Intel/AMD encoders can't use it. Settings' encoder-caps endpoint already vendor-matched render nodes via sysfs (v0.3.90+), so the two paths disagreed. Worker detection now reuses the same `_intel_render_node()` / `_vaapi_render_node()` helpers from `encoder_caps.py`.
+
 ## [0.3.119] — 2026-05-05
 
 ### Fixed

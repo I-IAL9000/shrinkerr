@@ -666,20 +666,20 @@ class NodeManager:
                 caps.append("libx265")
 
             # Intel QSV / VAAPI (v0.3.69+). Both require ffmpeg to know the
-            # encoder AND the host to expose a render node. We don't run a
-            # test encode here because /dev/dri/renderD128 may be a wrong-
-            # vendor device (e.g. NVIDIA-bound on a host without an iGPU)
-            # in which case the encode would fail at runtime — that's the
-            # right place for that error to surface, not at startup.
-            import os as _os
-            has_render = False
-            try:
-                has_render = any(e.startswith("renderD") for e in _os.listdir("/dev/dri"))
-            except (FileNotFoundError, PermissionError):
-                pass
-            if "hevc_qsv" in out and has_render:
+            # encoder AND the host to expose a *vendor-matched* render
+            # node. Pre-v0.3.120 this just checked for any `renderD*`
+            # entry under /dev/dri, which falsely flagged QSV+VAAPI on
+            # NVIDIA-only hosts (NVIDIA's renderD128 is a render node
+            # but not one Intel/AMD can drive). Settings' encoder-caps
+            # detection got vendor-matching in v0.3.90 via sysfs, but
+            # this worker-capability path stayed naive — so the same
+            # NVIDIA-only host showed QSV+VAAPI in the Nodes pills
+            # while Settings' Default Encoder correctly hid them.
+            # Now both paths share the same render-node helpers.
+            from backend.encoder_caps import _intel_render_node, _vaapi_render_node
+            if "hevc_qsv" in out and _intel_render_node():
                 caps.append("qsv")
-            if "hevc_vaapi" in out and has_render:
+            if "hevc_vaapi" in out and _vaapi_render_node():
                 caps.append("vaapi")
 
             if "hevc_nvenc" not in out:
