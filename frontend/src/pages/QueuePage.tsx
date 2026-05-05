@@ -297,11 +297,19 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           .filter((t: any) => removeIndices.has(t.stream_index))
           .map((t: any) => (t.language || "und").toLowerCase())
           .filter((v: string, i: number, a: string[]) => a.indexOf(v) === i);
-        // Source-of-truth is the backend's has_lossless_audio (computed
-        // in /tracks-by-path with permissive DTS-HD profile matching).
-        // Previously this was a client-side codec/profile check that
-        // missed variants like "DTS-HD Master Audio" or "DTS-HD MA + DTS:X".
-        const hasLossless = !!losslessCache.get(job.file_path);
+        // "Lossless → EAC3" badge: only show when a track that's
+        // ACTUALLY GOING TO BE KEPT is lossless. Pre-v0.3.124 the
+        // backend's has_lossless_audio was a file-level flag, so a
+        // file with a TrueHD/DTS-HD MA secondary that was being
+        // removed still triggered the badge — implying a transcode
+        // that would never happen. The per-track `is_lossless` flag
+        // (also v0.3.124) lets the UI intersect against the job's
+        // removal list. Falls back to the file-level flag when the
+        // per-track field isn't present (older /tracks-by-path
+        // responses that haven't been re-fetched yet).
+        const hasLossless = tracks.length > 0
+          ? tracks.some((t: any) => t.is_lossless && !removeIndices.has(t.stream_index))
+          : !!losslessCache.get(job.file_path);
         return (
           <JobCard key={job.id} progress={progress}
             jobIndex={runIndex}

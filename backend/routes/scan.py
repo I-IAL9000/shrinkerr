@@ -2156,18 +2156,27 @@ async def get_tracks_by_path(file_path: str):
                 "truehd", "pcm_s16le", "pcm_s24le", "pcm_s32le",
                 "pcm_bluray", "flac", "mlp", "pcm_dvd",
             }
-            has_lossless = False
-            for t in audio:
+
+            def _track_is_lossless(t: dict) -> bool:
                 codec = (t.get("codec") or "").lower()
                 if codec in _LOSSLESS_CODECS:
-                    has_lossless = True
-                    break
+                    return True
                 if codec == "dts":
                     profile = (t.get("profile") or "").lower()
                     # DTS-HD MA, DTS-HD MA+, DTS-HD Master Audio, DTS-HD HRA, etc.
                     if profile.startswith("dts-hd m") or profile.startswith("dts-hd h"):
-                        has_lossless = True
-                        break
+                        return True
+                return False
+
+            # Stamp each track with `is_lossless` so the queue UI can
+            # check whether the *kept* tracks (after the job's removal
+            # list is applied) actually need the lossless→EAC3
+            # transcode. Without this, a file with a lossless secondary
+            # that's being removed still got the "Lossless → EAC3"
+            # badge in the Now-Converting card. v0.3.124+.
+            for t in audio:
+                t["is_lossless"] = _track_is_lossless(t)
+            has_lossless = any(t.get("is_lossless") for t in audio)
 
             return {
                 "audio_tracks": audio,

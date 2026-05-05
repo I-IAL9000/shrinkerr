@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.124] — 2026-05-05
+
+### Fixed
+- "Lossless → EAC3" badge fired on files where the lossless track was being *removed* — the file-level `has_lossless_audio` flag didn't know about the job's removal list, so a Bluray rip with AC3 + TrueHD where the TrueHD was the one being dropped still showed the transcode badge even though no transcode would happen. `/scan/tracks-by-path` now stamps `is_lossless` on each individual track; the queue page checks whether any *kept* track is lossless before showing the badge.
+
 ## [0.3.123] — 2026-05-05
 
 ### Added
