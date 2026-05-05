@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.125] — 2026-05-05
+
+### Fixed
+- "Audio removed" row in job reports showed only the track count, not languages — while "Subs removed" showed both. v0.3.123's combined-job code referenced `raw_tracks` which is only defined inside the audio-only branch; for combined jobs the variable wasn't yet in scope and the audio language list came back empty. Both paths now pull from `probe.get("audio_tracks", [])` for parity.
+
 ## [0.3.124] — 2026-05-05
 
 ### Fixed

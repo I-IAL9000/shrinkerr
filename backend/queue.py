@@ -1673,12 +1673,24 @@ class QueueWorker:
                     raw_stats = result.get("encoding_stats") or {}
                     if raw_stats and (audio_tracks_to_remove or subtitle_tracks_to_remove):
                         raw_stats = dict(raw_stats)
-                        rt = raw_tracks if 'raw_tracks' in dir() else []
-                        removed_audio_lang = sorted({
-                            (t.get("language") or "und").lower()
-                            for t in (rt or [])
-                            if t.get("stream_index") in set(audio_tracks_to_remove or [])
-                        })
+                        # Combined-job site (v0.3.123) tried to read
+                        # `raw_tracks` for audio language lookup, but
+                        # that variable is only defined inside the
+                        # later `if job_type == "audio":` branch — for
+                        # combined jobs it doesn't exist yet here, so
+                        # the audio lang list came back empty. Pull
+                        # straight from `probe` (already in scope at
+                        # this point, used for sub lookup right below)
+                        # so audio gets language info too. v0.3.125+.
+                        try:
+                            ra = probe.get("audio_tracks", [])
+                            removed_audio_lang = sorted({
+                                (t.get("language") or "und").lower()
+                                for t in ra
+                                if t.get("stream_index") in set(audio_tracks_to_remove or [])
+                            })
+                        except Exception:
+                            removed_audio_lang = []
                         removed_sub_lang: list[str] = []
                         if subtitle_tracks_to_remove:
                             try:
@@ -2002,12 +2014,20 @@ class QueueWorker:
                         # are computed from the probed track list so the
                         # report can show "removed: jpn, kor" rather
                         # than just "removed: 2 streams".
-                        rt = raw_tracks if 'raw_tracks' in dir() else []
-                        removed_audio_lang = sorted({
-                            (t.get("language") or "und").lower()
-                            for t in (rt or [])
-                            if t.get("stream_index") in set(audio_tracks_to_remove or [])
-                        })
+                        # Pull from probe (always in scope) for parity
+                        # with the combined-job site. Pre-v0.3.125 this
+                        # used a dir()-check trick on `raw_tracks` —
+                        # worked here (raw_tracks IS in scope inside
+                        # this branch) but was fragile.
+                        try:
+                            ra = probe.get("audio_tracks", [])
+                            removed_audio_lang = sorted({
+                                (t.get("language") or "und").lower()
+                                for t in ra
+                                if t.get("stream_index") in set(audio_tracks_to_remove or [])
+                            })
+                        except Exception:
+                            removed_audio_lang = []
                         removed_sub_lang: list[str] = []
                         if subtitle_tracks_to_remove:
                             try:
