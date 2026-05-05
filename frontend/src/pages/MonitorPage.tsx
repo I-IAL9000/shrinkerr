@@ -171,13 +171,34 @@ export default function MonitorPage() {
         )}
 
         {/* No-GPU host — still show encoding capability so the user knows
-            libx265 (CPU) is what they're using and why. Avoids the old
-            "is it broken or is it just CPU-only?" ambiguity. */}
+            what they're using. Two possible flavours of "no GPU stats":
+            (1) NVENC actually works on this host but nvidia-smi can't
+                read stats (NVIDIA Container Toolkit running without the
+                `utility` capability is the common cause). Conversions
+                go through the GPU; we just can't render utilization /
+                temp / VRAM gauges. v0.3.103+ detects NVENC via a test
+                encode, so capabilities can include "nvenc" even when
+                the GPU stats endpoint comes back empty.
+            (2) Genuinely CPU-only host (no NVIDIA hardware, or driver
+                too old / unavailable).
+            v0.3.118+. */}
         {!gpu && localNode && (
           <MetricCard title="Encoding Capability">
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
-              No NVIDIA GPU detected on this host — Shrinkerr will use CPU encoding (libx265).
-            </div>
+            {localNode.capabilities.includes("nvenc") ? (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                NVENC is available — conversions use the GPU. Live GPU stats
+                (utilization / temp / VRAM) aren't reachable on this host
+                because <code>nvidia-smi</code> can't read the device. Most
+                common cause: the NVIDIA Container Toolkit is missing the{" "}
+                <code>utility</code> capability — set{" "}
+                <code>NVIDIA_DRIVER_CAPABILITIES=compute,video,utility</code>{" "}
+                on the container and restart.
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+                No NVIDIA GPU detected on this host — Shrinkerr will use CPU encoding (libx265).
+              </div>
+            )}
             <NodeEncodingStatus entry={localNode} />
           </MetricCard>
         )}

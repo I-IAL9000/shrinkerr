@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.118] — 2026-05-05
+
+### Fixed
+- Monitor page contradicted itself when NVENC was detected via test-encode but `nvidia-smi` was unavailable (e.g., NVIDIA Container Toolkit running without the `utility` capability): the prose said "No NVIDIA GPU detected on this host — Shrinkerr will use CPU encoding (libx265)" while the chip below showed ✓ NVENC. The Encoding Capability card now branches on the local node's capabilities and explains the asymmetric state — NVENC available, GPU stats unavailable, with the toolkit-capability fix as the likely cause.
+
 ## [0.3.117] — 2026-05-05
 
 ### Added
