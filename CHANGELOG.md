@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.119] — 2026-05-05
+
+### Fixed
+- Worker Nodes capability pills used a binary `cap === "nvenc"` check, so a host with libx265 + QSV + VAAPI + NVENC showed four pills with three identical "CPU (x265)" labels. Now each encoder gets its own pill: `libx265 (CPU)`, `QSV (Intel)`, `VAAPI (GPU)`, `NVENC (GPU)`.
+
 ## [0.3.118] — 2026-05-05
 
 ### Fixed

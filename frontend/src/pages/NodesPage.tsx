@@ -197,17 +197,29 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
         </div>
       </div>
 
-      {/* Capabilities + affinity badge */}
+      {/* Capabilities + affinity badge. Per-encoder labels so a host
+          with libx265 + qsv + vaapi + nvenc shows four distinct pills,
+          not four pills all reading "CPU (x265)" (the pre-v0.3.119
+          binary check treated everything-but-nvenc as CPU). */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {node.capabilities.map(cap => (
-          <span key={cap} style={{
-            fontSize: 10, padding: "2px 8px", borderRadius: 12, fontWeight: 600,
-            background: cap === "nvenc" ? "rgba(16,185,129,0.15)" : "rgba(104,96,254,0.15)",
-            color: cap === "nvenc" ? "var(--success)" : "var(--accent)",
-          }}>
-            {cap === "nvenc" ? "NVENC (GPU)" : "CPU (x265)"}
-          </span>
-        ))}
+        {node.capabilities.map(cap => {
+          const label =
+            cap === "nvenc" ? "NVENC (GPU)" :
+            cap === "qsv"   ? "QSV (Intel)" :
+            cap === "vaapi" ? "VAAPI (GPU)" :
+            cap === "libx265" ? "libx265 (CPU)" :
+            cap;
+          const isHardware = cap === "nvenc" || cap === "qsv" || cap === "vaapi";
+          return (
+            <span key={cap} style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 12, fontWeight: 600,
+              background: isHardware ? "rgba(16,185,129,0.15)" : "rgba(104,96,254,0.15)",
+              color: isHardware ? "var(--success)" : "var(--accent)",
+            }}>
+              {label}
+            </span>
+          );
+        })}
         {node.job_affinity && node.job_affinity !== "any" && (
           <span style={{
             fontSize: 10, padding: "2px 8px", borderRadius: 12, fontWeight: 600,
