@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.121] — 2026-05-05
+
+### Performance
+- Posters trickling in over ~1 minute after a filter change: each uncached folder triggered a backend `_download_image` that fetched the TMDB CDN poster server-side and base64-encoded it into the response. For a few hundred uncached folders (common after v0.3.116's mass cache invalidation) this serialised everything behind a slow fetch+encode step. Fix: skip the backend fetch for TMDB CDN URLs (they're publicly accessible — the browser fetches them directly in parallel) and bump resolve concurrency 8→16. Plex posters still backend-proxy because they need the auth token attached.
+
 ## [0.3.120] — 2026-05-05
 
 ### Fixed

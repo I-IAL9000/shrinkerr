@@ -573,11 +573,23 @@ async def resolve_posters(req: ResolveRequest):
                     pass
 
             if poster_url:
-                image_data = await _download_image(poster_url, plex_url, plex_token)
+                # Skip the backend image fetch for TMDB CDN URLs — the
+                # browser can fetch them directly in parallel from the
+                # public CDN, no auth needed. Pre-v0.3.121 we always
+                # downloaded + base64-encoded server-side, which serialised
+                # poster loading behind a slow HTTP-fetch + encode step
+                # for every uncached folder. Plex posters still backend-
+                # proxy because they need the Plex token attached.
+                if not poster_url.startswith("https://image.tmdb.org/"):
+                    image_data = await _download_image(poster_url, plex_url, plex_token)
 
             return path, parsed, poster_url, source, image_data, tmdb_meta
 
-        sem = asyncio.Semaphore(8)
+        # Concurrency 16 (was 8 pre-v0.3.121). TMDB allows ~40 req/10s;
+        # with the image-fetch removed for TMDB URLs, each resolution
+        # makes at most 2-3 lightweight metadata calls, so the higher
+        # ceiling stays well under the rate limit.
+        sem = asyncio.Semaphore(16)
         async def _bounded(path: str):
             async with sem:
                 return await _resolve_one(path)
@@ -826,7 +838,11 @@ async def _run_prefetch():
                 # Skip Plex in bulk prefetch (too slow, causes DB lock contention with queue)
 
                 if poster_url:
-                    image_data = await _download_image(poster_url, plex_url, plex_token)
+                    # Skip backend fetch for TMDB CDN URLs — see
+                    # _resolve_one in resolve_posters for rationale.
+                    # v0.3.121+.
+                    if not poster_url.startswith("https://image.tmdb.org/"):
+                        image_data = await _download_image(poster_url, plex_url, plex_token)
 
                 # Prefer IMDb rating over TMDB
                 rating = _get_imdb_rating(parsed) or tmdb_meta.get("rating")
@@ -1525,9 +1541,10 @@ async def override_poster(req: OverrideRequest):
     country_names = ", ".join(_COUNTRY_NAMES.get(c, c) for c in countries[:2])
     rating = round(data.get("vote_average", 0), 1) if data.get("vote_average") else None
 
-    # Download poster image
+    # Skip backend image fetch for TMDB CDN URLs — let the browser
+    # fetch directly. v0.3.121+.
     image_data = None
-    if poster_url:
+    if poster_url and not poster_url.startswith("https://image.tmdb.org/"):
         image_data = await _download_image(poster_url, "", "")
 
     # Pull the authoritative original language while we have the TMDB
