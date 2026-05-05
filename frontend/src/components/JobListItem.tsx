@@ -315,11 +315,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   </span>
                 </>}
 
-                {/* Track-removal rows — audio-only jobs (or any job where
-                    the worker recorded removal counts on the stats
-                    payload). Languages render comma-joined when present;
-                    fall back to the bare count otherwise. v0.3.117+. */}
-                {job.job_type === "audio" && (logData.encoding_stats.audio_tracks_removed > 0) && <>
+                {/* Track-removal rows — shown whenever the worker
+                    recorded removal counts on the stats payload, which
+                    happens for both audio-only cleanup jobs (v0.3.117+)
+                    and combined video+cleanup jobs (v0.3.123+). The
+                    presence-of-field check makes this future-proof: any
+                    job that did track removal can surface it here. */}
+                {(logData.encoding_stats.audio_tracks_removed > 0) && <>
                   <span style={{ color: "var(--text-muted)" }}>Audio removed</span>
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
                     {logData.encoding_stats.audio_tracks_removed} track{logData.encoding_stats.audio_tracks_removed !== 1 ? "s" : ""}
@@ -328,7 +330,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                     )}
                   </span>
                 </>}
-                {job.job_type === "audio" && (logData.encoding_stats.subtitle_tracks_removed > 0) && <>
+                {(logData.encoding_stats.subtitle_tracks_removed > 0) && <>
                   <span style={{ color: "var(--text-muted)" }}>Subs removed</span>
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
                     {logData.encoding_stats.subtitle_tracks_removed} track{logData.encoding_stats.subtitle_tracks_removed !== 1 ? "s" : ""}

@@ -1660,7 +1660,41 @@ class QueueWorker:
             if result.get("ffmpeg_command"):
                 try:
                     import json as _json
-                    stats_json = _json.dumps(result["encoding_stats"]) if result.get("encoding_stats") else None
+                    # Augment encoding_stats with track-removal info for
+                    # combined jobs (video re-encode + inline cleanup).
+                    # The converter does the cleanup as part of the encode
+                    # via -map exclusions but doesn't write the count of
+                    # what was dropped into encoding_stats. Pre-v0.3.123
+                    # the Completed-tab expanded view showed a combined
+                    # job's encode stats but no record of the cleanup it
+                    # performed, only the resulting filename change.
+                    # v0.3.117 added these fields for audio-only jobs;
+                    # this brings parity for combined.
+                    raw_stats = result.get("encoding_stats") or {}
+                    if raw_stats and (audio_tracks_to_remove or subtitle_tracks_to_remove):
+                        raw_stats = dict(raw_stats)
+                        rt = raw_tracks if 'raw_tracks' in dir() else []
+                        removed_audio_lang = sorted({
+                            (t.get("language") or "und").lower()
+                            for t in (rt or [])
+                            if t.get("stream_index") in set(audio_tracks_to_remove or [])
+                        })
+                        removed_sub_lang: list[str] = []
+                        if subtitle_tracks_to_remove:
+                            try:
+                                rs = probe.get("subtitle_tracks", [])
+                                removed_sub_lang = sorted({
+                                    (t.get("language") or "und").lower()
+                                    for t in rs
+                                    if t.get("stream_index") in set(subtitle_tracks_to_remove or [])
+                                })
+                            except Exception:
+                                pass
+                        raw_stats["audio_tracks_removed"] = len(audio_tracks_to_remove or [])
+                        raw_stats["subtitle_tracks_removed"] = len(subtitle_tracks_to_remove or [])
+                        raw_stats["removed_audio_languages"] = removed_audio_lang
+                        raw_stats["removed_subtitle_languages"] = removed_sub_lang
+                    stats_json = _json.dumps(raw_stats) if raw_stats else None
                     await self.queue.update_conversion_log(job_id, result["ffmpeg_command"], result.get("ffmpeg_log"), stats_json)
                 except Exception as exc:
                     print(f"[WORKER] Failed to store conversion log: {exc}", flush=True)

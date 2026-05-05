@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.123] — 2026-05-05
+
+### Added
+- Combined jobs (video re-encode + inline audio/sub cleanup) now record track-removal info on `encoding_stats` and surface it in the Completed-tab expanded view: "Audio removed: N (langs)" / "Subs removed: N (langs)". v0.3.117 added these for audio-only jobs; this brings parity for combined. Frontend gate widened from `job_type === "audio"` to "presence of removal fields", so any job that performed cleanup surfaces it.
+
 ## [0.3.122] — 2026-05-05
 
 ### Fixed
