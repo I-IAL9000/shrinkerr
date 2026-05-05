@@ -1823,11 +1823,27 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                         file_cq = rule_cq
                     elif content_detect_on:
                         ctype = detect_content_type_from_path(fp)
-                        file_cq = get_recommended_cq(ctype, tier)
-                        # Track content profiles
-                        if ctype not in content_profiles:
-                            content_profiles[ctype] = {"count": 0, "cq": file_cq}
-                        content_profiles[ctype]["count"] += 1
+                        # "default" classification = no specific content
+                        # signal (live-action / unrecognised release).
+                        # Fall through to the user's global CQ instead of
+                        # content-detect's hardcoded table — pre-v0.3.122
+                        # this silently overrode `nvenc_cq=27` with the
+                        # table's CQ 20 for any 1080p file that wasn't
+                        # explicitly tagged as anime/grain/animation/remux,
+                        # making the user's "default encoder CQ" setting
+                        # not actually the default. Specific
+                        # classifications still use their tuned CQ values.
+                        if ctype == "default":
+                            file_cq = (
+                                res_cq_map.get(tier, global_cq) if res_aware
+                                else global_cq
+                            )
+                        else:
+                            file_cq = get_recommended_cq(ctype, tier)
+                            # Track content profiles
+                            if ctype not in content_profiles:
+                                content_profiles[ctype] = {"count": 0, "cq": file_cq}
+                            content_profiles[ctype]["count"] += 1
                     elif res_aware:
                         file_cq = res_cq_map.get(tier, global_cq)
                     else:

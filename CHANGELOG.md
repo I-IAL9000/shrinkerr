@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.122] — 2026-05-05
+
+### Fixed
+- Add-to-Queue modal showed CQ 20 instead of the user's configured `nvenc_cq` (e.g., 27) on most files. Content-type detection (default-on) was classifying any non-anime/grain/animation/remux release as `"default"` and overriding the user's global with content-detect's hardcoded `default` profile (CQ 20 at 1080p). Fix: when content-detect classifies as `"default"` (no specific signal), fall through to the user's global CQ — specific classifications still use their tuned values, which is what content-detect is meant for.
+
 ## [0.3.121] — 2026-05-05
 
 ### Performance
