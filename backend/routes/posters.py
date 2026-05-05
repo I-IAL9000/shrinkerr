@@ -217,14 +217,20 @@ async def _maybe_purge_tvdb_cache_v116(db) -> None:
         ) as cur:
             if await cur.fetchone():
                 return  # already purged on a previous call
-        async with db.execute("SELECT folder_path FROM poster_cache") as cur:
+        # Pull `source` alongside `folder_path` so we can spare manual
+        # overrides (source='tmdb-manual'). Pre-v0.3.127 the migration
+        # deleted those too — destroying users' explicit Fix-match
+        # picks alongside the broken auto-resolved rows it was meant
+        # to clean up.
+        async with db.execute("SELECT folder_path, source FROM poster_cache") as cur:
             rows = await cur.fetchall()
-        # Filter for `[tvdb-N]` paths in Python — SQLite LIKE doesn't
-        # treat `[`/`]` as special but mixing percent wildcards with
-        # bracket text is fragile; a regex pass over folder_paths is
-        # both clearer and bounded by row count (single-digit MB
-        # even for 20K rows).
-        targets = [r[0] for r in rows if _TVDB_CACHE_PATTERN.search(r[0])]
+        # Filter for `[tvdb-N]` paths in Python (SQLite LIKE bracket
+        # matching is fragile) AND skip user-set manual overrides.
+        targets = [
+            r[0] for r in rows
+            if _TVDB_CACHE_PATTERN.search(r[0])
+            and (r[1] or "") != "tmdb-manual"
+        ]
         if targets:
             CHUNK = 500
             for i in range(0, len(targets), CHUNK):
@@ -312,7 +318,16 @@ async def resolve_posters(req: ResolveRequest):
                 # deleted and re-resolved fresh through the now type-
                 # strict resolver.
                 cached_mt = row["media_type"]
-                if cached_mt in ("movie", "tv"):
+                # User-set manual overrides (source='tmdb-manual') are
+                # NEVER auto-invalidated. The user explicitly picked
+                # this match — even if it disagrees with the bracket
+                # family or dir label, we trust them. Pre-v0.3.127 the
+                # type-impossible check wiped manual rows too,
+                # producing the "I fixed Rush Hour and it un-fixed
+                # itself" symptom.
+                cached_source = (row["source"] or "")
+                is_manual = cached_source == "tmdb-manual"
+                if cached_mt in ("movie", "tv") and not is_manual:
                     parsed_check = parse_folder_name(path, walk_files=False)
                     label_mt = path_label_type.get(path)
                     type_impossible = False

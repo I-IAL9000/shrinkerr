@@ -130,7 +130,11 @@ async def trigger_sonarr_rescan(file_path: str) -> bool:
             print(f"[SONARR] Triggered rescan for series {series_id}", flush=True)
             return True
     except Exception as exc:
-        print(f"[SONARR] Rescan failed: {exc}", flush=True)
+        # `str(exc)` can be empty for some exception subclasses; fall
+        # back to the type name so the log line is never just
+        # "Rescan failed:" with nothing after the colon. v0.3.127+.
+        _err = str(exc) or type(exc).__name__
+        print(f"[SONARR] Rescan failed: {_err}", flush=True)
         return False
 
 
@@ -196,7 +200,8 @@ async def trigger_radarr_rescan(file_path: str) -> bool:
             print(f"[RADARR] Triggered rescan for movie {movie_id}", flush=True)
             return True
     except Exception as exc:
-        print(f"[RADARR] Rescan failed: {exc}", flush=True)
+        _err = str(exc) or type(exc).__name__
+        print(f"[RADARR] Rescan failed: {_err}", flush=True)
         return False
 
 

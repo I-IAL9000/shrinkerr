@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.127] — 2026-05-05
+
+### Fixed
+- Manual Fix-match overrides are now NEVER auto-invalidated. Pre-v0.3.127, both the v0.3.116 mass `[tvdb-N]` purge migration AND the type-impossible cache invalidation in `resolve_posters` deleted rows regardless of source — so user-set `tmdb-manual` rows got nuked alongside broken auto-resolved ones, and the next resolve wrote a (potentially wrong) auto match back. Symptom: "I manually fixed Rush Hour and it un-fixed itself." Both code paths now skip rows with `source='tmdb-manual'`. (Already-deleted manual fixes from v0.3.116's run can't be recovered — those need to be redone once.)
+- `[RADARR] Rescan failed:` and `[SONARR] Rescan failed:` log lines could end with an empty error message when `str(exc)` was empty for the exception type. Now falls back to the exception class name so the line is always informative.
+
 ## [0.3.126] — 2026-05-05
 
 ### Fixed
