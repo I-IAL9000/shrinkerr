@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.130] — 2026-05-05
+
+### Fixed
+- `[WORKER] ... scan_results update failed (non-fatal): UNIQUE constraint failed: scan_results.file_path` after a conversion finishes. Race with the file-watcher: the watcher tick that runs in parallel with the worker can spot the post-rename file appear on disk and insert a fresh `scan_results` row at the new path before the worker finalises. The worker's UPDATE then trips the UNIQUE constraint and the `converted=1`/`needs_conversion=0` flags never land — the file shows up as still-needs-conversion in the Scanner. Both update sites now delete any conflicting row at the new path first; worker's just-probed post-conversion state is authoritative anyway.
+
 ## [0.3.129] — 2026-05-05
 
 ### Fixed

@@ -1608,6 +1608,23 @@ class QueueWorker:
                             "UPDATE jobs SET file_path = ? WHERE id = ?",
                             (current_file_path, job_id),
                         )
+                        # Watcher race: a separate file-watcher tick may
+                        # have already inserted a scan_results row at
+                        # current_file_path when it spotted the
+                        # post-rename file appear on disk. Without this
+                        # delete, the file_path UPDATE below trips the
+                        # UNIQUE(scan_results.file_path) constraint and
+                        # the worker's authoritative post-conversion
+                        # state never lands. Worker's data is fresher
+                        # (just-probed audio tracks, encoded size,
+                        # converted flag) than the watcher's bare
+                        # insert, so wipe the watcher row first.
+                        # v0.3.130+.
+                        if current_file_path != file_path:
+                            await db_path.execute(
+                                "DELETE FROM scan_results WHERE file_path = ?",
+                                (current_file_path,),
+                            )
                         # Build the scan_results update based on what we have
                         update_cols = [
                             "file_path = ?",
@@ -2242,6 +2259,16 @@ class QueueWorker:
             try:
                 db = await self._db()
                 try:
+                    # Same watcher-race guard as the early-update site
+                    # above. Wipe any pre-existing scan_results row at
+                    # current_file_path before renaming the original
+                    # row's file_path; without this the UNIQUE
+                    # constraint trips and the converted-flag never
+                    # lands. v0.3.130+.
+                    await db.execute(
+                        "DELETE FROM scan_results WHERE file_path = ?",
+                        (current_file_path,),
+                    )
                     # Update existing entry to new path
                     # Get new file size
                     try:
