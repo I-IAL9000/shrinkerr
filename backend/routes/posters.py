@@ -498,6 +498,19 @@ async def resolve_posters(req: ResolveRequest):
             async def _backfill_one(path: str):
                 async with sem:
                     parsed = parse_folder_name(path)
+                    # Whether the folder has any bracket ID — used by
+                    # the dir-label and TVDB-implies-TV fallbacks below.
+                    # Pre-v0.3.131 this name was referenced but never
+                    # defined, throwing NameError on every resolve_posters
+                    # call that needed media_type backfill (i.e. any
+                    # folder with media_type still NULL in cache). The
+                    # endpoint then returned 500 and the whole batch's
+                    # posters fell back to placeholders. v0.3.131+.
+                    has_explicit_id = bool(
+                        parsed.get("imdb_id")
+                        or parsed.get("tvdb_id")
+                        or parsed.get("tmdb_id")
+                    )
                     # Try IMDb/TVDB ID first (most reliable)
                     if tmdb_key and parsed.get("imdb_id"):
                         try:

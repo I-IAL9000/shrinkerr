@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.131] — 2026-05-06
+
+### Fixed
+- `/api/posters/resolve` returning 500 with `NameError: name 'has_explicit_id' is not defined`. Pre-existing reference inside `_backfill_one` to a variable that was never defined in that scope — the dir-label fallback and TVDB-implies-TV branch both used it. Threw on every resolve call that hit media_type backfill (i.e. any folder with `media_type` still NULL), which was a lot of TV1's filtered subset. This was the actual cause of "TV1 posters don't load" — not the cache state, not network, not rate limits. The endpoint just couldn't return.
+
 ## [0.3.130] — 2026-05-05
 
 ### Fixed
