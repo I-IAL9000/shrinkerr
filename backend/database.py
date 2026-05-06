@@ -564,38 +564,48 @@ async def init_db():
         # path. Match by jobs.file_path so we only touch rows the worker
         # produced via a real successful convert/combined job. Tracked via
         # a settings flag so the migration runs exactly once.
-        try:
-            async with db.execute(
-                "SELECT value FROM settings WHERE key = '_v0_3_132_post_convert_heal'"
-            ) as cur:
-                already_run = await cur.fetchone() is not None
-            if not already_run:
-                cur = await db.execute(
-                    """UPDATE scan_results
-                       SET converted = 1, is_new = 0
-                       WHERE (converted = 0 OR is_new = 1)
-                         AND file_path IN (
-                             SELECT file_path FROM jobs
-                             WHERE status = 'completed'
-                               AND job_type IN ('convert', 'combined')
-                               AND space_saved > 0
-                               AND original_file_path IS NOT NULL
-                               AND original_file_path != file_path
-                         )"""
-                )
-                healed = cur.rowcount
-                await db.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
-                    ("_v0_3_132_post_convert_heal",),
-                )
-                if healed:
-                    print(
-                        f"[DB] v0.3.132 heal: cleared is_new + set converted=1 "
-                        f"on {healed} post-conversion scan_results row(s)",
-                        flush=True,
+        #
+        # v0.3.135 re-run: between v0.3.132 deploy and v0.3.134 deploy, the
+        # watcher race was fixed but the worker's UPDATE still preserved
+        # `is_new=1` from the original row. Conversions in that window
+        # landed with `is_new=1, converted=1`. Re-run the same heal under a
+        # new flag so those rows get cleared once after the v0.3.135 upgrade.
+        for flag, label in [
+            ("_v0_3_132_post_convert_heal", "v0.3.132"),
+            ("_v0_3_135_post_convert_heal_rerun", "v0.3.135"),
+        ]:
+            try:
+                async with db.execute(
+                    "SELECT value FROM settings WHERE key = ?", (flag,)
+                ) as cur:
+                    already_run = await cur.fetchone() is not None
+                if not already_run:
+                    cur = await db.execute(
+                        """UPDATE scan_results
+                           SET converted = 1, is_new = 0
+                           WHERE (converted = 0 OR is_new = 1)
+                             AND file_path IN (
+                                 SELECT file_path FROM jobs
+                                 WHERE status = 'completed'
+                                   AND job_type IN ('convert', 'combined')
+                                   AND space_saved > 0
+                                   AND original_file_path IS NOT NULL
+                                   AND original_file_path != file_path
+                             )"""
                     )
-        except Exception as exc:
-            print(f"[DB] v0.3.132 heal skipped: {exc}", flush=True)
+                    healed = cur.rowcount
+                    await db.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                        (flag,),
+                    )
+                    if healed:
+                        print(
+                            f"[DB] {label} heal: cleared is_new + set converted=1 "
+                            f"on {healed} post-conversion scan_results row(s)",
+                            flush=True,
+                        )
+            except Exception as exc:
+                print(f"[DB] {label} heal skipped: {exc}", flush=True)
 
         await db.commit()
     finally:
