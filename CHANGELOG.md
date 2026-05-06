@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.132] — 2026-05-06
+
+### Fixed
+- Newly-converted files showing as "new" with `converted=0`. Watcher's stale-row cleanup deleted the original h264 scan_results row before the worker's post-rename UPDATE could land — UPDATE then matched 0 rows, watcher re-INSERTed at the h265 path with `is_new=1`. Fix: skip stale-deletion for paths with a pending/running job (mirrors scan.py's orphan-cleanup guard). Plus a one-shot startup heal that retroactively sets `converted=1, is_new=0` on existing rows whose file_path matches a successful convert/combined job.
+
 ## [0.3.131] — 2026-05-06
 
 ### Fixed

@@ -58,6 +58,17 @@ class FileWatcher:
 
         Deletes by file_path (not ID) so that rows whose file_path was updated
         by the queue worker (e.g. x264→x265 rename) are not accidentally removed.
+
+        Skips paths with a pending/running job: during conversion the original
+        h264 file disappears from disk (rename) BEFORE the worker's post-
+        conversion `UPDATE scan_results SET file_path=<h265>, converted=1`
+        commits. Pre-v0.3.132 we'd race the worker — the watcher saw the
+        h264 path missing from disk, DELETEd its scan_results row, and the
+        worker's UPDATE then matched 0 rows. Net effect: the new h265 path
+        ended up freshly INSERTed by the watcher with `is_new=1, converted=0`,
+        which surfaced as "newly converted files counting as new files" on
+        the Scanner page. Mirrors scan.py's full-rescan orphan cleanup,
+        which already filters out active jobs. v0.3.132+.
         """
         if not stale_paths:
             return 0
@@ -65,7 +76,12 @@ class FileWatcher:
         try:
             placeholders = ",".join("?" * len(stale_paths))
             result = await db.execute(
-                f"DELETE FROM scan_results WHERE file_path IN ({placeholders})",
+                f"""DELETE FROM scan_results
+                    WHERE file_path IN ({placeholders})
+                      AND file_path NOT IN (
+                          SELECT file_path FROM jobs
+                          WHERE status IN ('pending', 'running')
+                      )""",
                 stale_paths,
             )
             await db.commit()
