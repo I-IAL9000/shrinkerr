@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.133] — 2026-05-06
+
+### Fixed
+- TV folders with `[tvdb-N]` getting wrong-type matches from Plex (`Charlie's Angels (1976) [tvdb-77170]` → 2000 movie poster) or stuck at `media_type=None` (Chase, Chicago Hope). Plex was the FIRST resolver in the chain; once it returned anything, `source != "placeholder"` and the authoritative TVDB-find never ran. Plex's global title-only fallback was happily matching wrong-type/untyped entries for ambiguous show names. Fix: reject Plex's answer when it disagrees with the bracket family (TV folder + Plex says movie/None → fall through to TVDB-find). Plus extend the type-impossible cache invalidation to catch `media_type=None` on `[tvdb-N]` folders so existing stuck rows re-resolve.
+
 ## [0.3.132] — 2026-05-06
 
 ### Fixed

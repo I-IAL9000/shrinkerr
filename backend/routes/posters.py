@@ -327,13 +327,19 @@ async def resolve_posters(req: ResolveRequest):
                 # itself" symptom.
                 cached_source = (row["source"] or "")
                 is_manual = cached_source == "tmdb-manual"
-                if cached_mt in ("movie", "tv") and not is_manual:
+                if not is_manual:
                     parsed_check = parse_folder_name(path, walk_files=False)
                     label_mt = path_label_type.get(path)
                     type_impossible = False
+                    # `[tvdb-N]` folders MUST be tv. Pre-v0.3.133 we only
+                    # caught wrong-type cached values (`movie` for tvdb);
+                    # rows with `media_type=NULL` (Plex global fallback
+                    # returning a season/episode entry — see
+                    # `_resolve_plex`) escaped invalidation and stuck
+                    # forever. Now also invalidate the NULL case.
                     if parsed_check.get("tvdb_id") and cached_mt != "tv":
                         type_impossible = True
-                    elif label_mt and cached_mt != label_mt:
+                    elif cached_mt in ("movie", "tv") and label_mt and cached_mt != label_mt:
                         type_impossible = True
                     if type_impossible:
                         await db.execute(
@@ -606,6 +612,25 @@ async def resolve_posters(req: ResolveRequest):
                     )
                 except Exception as exc:
                     print(f"[POSTER] Plex failed for '{parsed['title']}': {exc}", flush=True)
+
+            # 1a. Validate Plex's match against the bracket family. Plex's
+            # global title-only search fallback can return wrong-type
+            # matches (`Charlie's Angels (1976) [tvdb-77170]` → the 2000
+            # movie) or untyped season/episode entries (`Chase (2010)
+            # [tvdb-163541]` → media_type=None). When the folder carries a
+            # bracket ID the bracket family is authoritative — Plex's
+            # answer must agree. Otherwise discard and fall through to the
+            # bracket-ID-driven TMDB lookup below. Pre-v0.3.133 Plex's
+            # answer locked in `source != "placeholder"` and the TVDB find
+            # never ran. v0.3.133+.
+            if source == "plex":
+                bracket_hint = _media_type_hint_from_parsed(parsed)
+                plex_mt = tmdb_meta.get("media_type")
+                if bracket_hint and (
+                    (plex_mt and plex_mt != bracket_hint)
+                    or (bracket_hint == "tv" and not plex_mt)
+                ):
+                    poster_url, source, tmdb_meta = None, "placeholder", {}
 
             # 2. Try TMDB by IMDb ID (exact match)
             if source == "placeholder" and tmdb_key and parsed.get("imdb_id"):
