@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.136] — 2026-05-06
+
+### Fixed
+- Newly-converted items still showing the NEW badge despite v0.3.132/.134/.135. Root cause: the Scanner UI computes `is_new` from the `new_detected_at` timestamp (`scan.py:1221`), not from the `is_new` column the prior heals were clearing — the `is_new` column turned out to be vestigial UI-side. For Sonarr→Shrinkerr pipelines completing within 24h of the original h264 drop, `new_detected_at` was preserved through the worker's rename UPDATE and the badge stayed lit. Fix: also set `new_detected_at = NULL` in all three worker post-conversion UPDATE sites, plus a one-shot startup heal that clears `new_detected_at` on every row already flagged `converted=1`.
+
 ## [0.3.135] — 2026-05-06
 
 ### Fixed

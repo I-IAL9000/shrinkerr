@@ -607,6 +607,38 @@ async def init_db():
             except Exception as exc:
                 print(f"[DB] {label} heal skipped: {exc}", flush=True)
 
+        # v0.3.136 heal: clear `new_detected_at` on already-converted rows.
+        # Prior heals (v0.3.132/v0.3.135) cleared the legacy `is_new`
+        # column, but the Scanner UI's NEW badge is derived from
+        # new_detected_at (`scan.py:1221` — `is_new = bool(detected_at and
+        # detected_at > cutoff_24h)`), not the column. So Sonarr→Shrinkerr
+        # pipelines that finished within 24h of the original drop kept
+        # showing as NEW even after the heal. Run once after upgrade.
+        try:
+            flag = "_v0_3_136_clear_new_detected_at_on_converted"
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag,)
+            ) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute(
+                    "UPDATE scan_results SET new_detected_at = NULL "
+                    "WHERE converted = 1 AND new_detected_at IS NOT NULL"
+                )
+                cleared = cur.rowcount
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                    (flag,),
+                )
+                if cleared:
+                    print(
+                        f"[DB] v0.3.136 heal: cleared new_detected_at on "
+                        f"{cleared} already-converted scan_results row(s)",
+                        flush=True,
+                    )
+        except Exception as exc:
+            print(f"[DB] v0.3.136 heal skipped: {exc}", flush=True)
+
         await db.commit()
     finally:
         await db.close()

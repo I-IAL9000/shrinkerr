@@ -1626,20 +1626,22 @@ class QueueWorker:
                                 (current_file_path,),
                             )
                         # Build the scan_results update based on what we have.
-                        # `is_new = 0` ensures freshly-downloaded files
-                        # (Sonarr-added → watcher-marked is_new=1) don't
-                        # remain flagged as new after conversion. Pre-
-                        # v0.3.134 the worker's UPDATE preserved the
-                        # original row's is_new value, so Sonarr-→-Shrinkerr
-                        # pipelines surfaced converted files in the new-
-                        # files list ("newly converted items showing as
-                        # new"). v0.3.134+.
+                        # `new_detected_at = NULL` is what actually clears
+                        # the user-visible NEW badge — scan.py:1221 derives
+                        # `is_new` from `new_detected_at > 24h cutoff`, not
+                        # from the `is_new` column. Pre-v0.3.136 we cleared
+                        # the wrong column; converted files added by Sonarr
+                        # within the last 24h kept showing as NEW because
+                        # their new_detected_at timestamp from the original
+                        # h264 row was preserved through the rename UPDATE.
+                        # v0.3.136+.
                         update_cols = [
                             "file_path = ?",
                             "video_codec = 'hevc'",
                             "needs_conversion = 0",
                             "converted = 1",
                             "is_new = 0",
+                            "new_detected_at = NULL",
                         ]
                         update_params: list = [current_file_path]
                         if new_size is not None:
@@ -2286,13 +2288,13 @@ class QueueWorker:
                         new_size = None
                     if new_size:
                         await db.execute(
-                            "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0 "
+                            "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
                             "WHERE file_path = ?",
                             (current_file_path, new_size, file_path),
                         )
                     else:
                         await db.execute(
-                            "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0 "
+                            "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
                             "WHERE file_path = ?",
                             (current_file_path, file_path),
                         )
@@ -2310,12 +2312,12 @@ class QueueWorker:
                     try:
                         new_size = Path(file_path).stat().st_size
                         await db.execute(
-                            "UPDATE scan_results SET file_size = ?, needs_conversion = 0, converted = 1, is_new = 0 WHERE file_path = ?",
+                            "UPDATE scan_results SET file_size = ?, needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (new_size, file_path),
                         )
                     except OSError:
                         await db.execute(
-                            "UPDATE scan_results SET needs_conversion = 0, converted = 1, is_new = 0 WHERE file_path = ?",
+                            "UPDATE scan_results SET needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (file_path,),
                         )
                     await db.commit()
