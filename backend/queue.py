@@ -1625,12 +1625,21 @@ class QueueWorker:
                                 "DELETE FROM scan_results WHERE file_path = ?",
                                 (current_file_path,),
                             )
-                        # Build the scan_results update based on what we have
+                        # Build the scan_results update based on what we have.
+                        # `is_new = 0` ensures freshly-downloaded files
+                        # (Sonarr-added → watcher-marked is_new=1) don't
+                        # remain flagged as new after conversion. Pre-
+                        # v0.3.134 the worker's UPDATE preserved the
+                        # original row's is_new value, so Sonarr-→-Shrinkerr
+                        # pipelines surfaced converted files in the new-
+                        # files list ("newly converted items showing as
+                        # new"). v0.3.134+.
                         update_cols = [
                             "file_path = ?",
                             "video_codec = 'hevc'",
                             "needs_conversion = 0",
                             "converted = 1",
+                            "is_new = 0",
                         ]
                         update_params: list = [current_file_path]
                         if new_size is not None:
@@ -2277,13 +2286,13 @@ class QueueWorker:
                         new_size = None
                     if new_size:
                         await db.execute(
-                            "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                            "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0 "
                             "WHERE file_path = ?",
                             (current_file_path, new_size, file_path),
                         )
                     else:
                         await db.execute(
-                            "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                            "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0 "
                             "WHERE file_path = ?",
                             (current_file_path, file_path),
                         )
@@ -2301,12 +2310,12 @@ class QueueWorker:
                     try:
                         new_size = Path(file_path).stat().st_size
                         await db.execute(
-                            "UPDATE scan_results SET file_size = ?, needs_conversion = 0, converted = 1 WHERE file_path = ?",
+                            "UPDATE scan_results SET file_size = ?, needs_conversion = 0, converted = 1, is_new = 0 WHERE file_path = ?",
                             (new_size, file_path),
                         )
                     except OSError:
                         await db.execute(
-                            "UPDATE scan_results SET needs_conversion = 0, converted = 1 WHERE file_path = ?",
+                            "UPDATE scan_results SET needs_conversion = 0, converted = 1, is_new = 0 WHERE file_path = ?",
                             (file_path,),
                         )
                     await db.commit()

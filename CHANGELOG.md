@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.134] — 2026-05-06
+
+### Fixed
+- Newly-converted items still showing in the new-files list (Conviction, Carmen Curlers, Conversations with Friends). v0.3.132 fixed the watcher race that was causing `converted=0` on the post-conversion row, but the worker's UPDATE preserved the original row's `is_new=1` (set by the watcher when Sonarr first dropped the h264 file). Sonarr→Shrinkerr pipelines therefore landed at `is_new=1, converted=1` instead of `is_new=0, converted=1`. Fix: add `is_new = 0` to all three worker scan_results UPDATE sites (early post-rename UPDATE, late post-rename UPDATE, in-place UPDATE for jobs without a rename). The v0.3.132 startup heal already cleared this on existing rows; v0.3.134 prevents the next conversion from re-creating the symptom.
+
 ## [0.3.133] — 2026-05-06
 
 ### Fixed
