@@ -2428,6 +2428,26 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Jellyfin library refresh failed (non-fatal): {exc}", flush=True)
 
+        # Trigger Emby library refresh (if enabled)
+        try:
+            emby_scan_enabled = True
+            try:
+                db = await self._db()
+                try:
+                    async with db.execute("SELECT value FROM settings WHERE key = 'emby_scan_after_conversion'") as cur:
+                        row = await cur.fetchone()
+                        if row and row[0].lower() == "false":
+                            emby_scan_enabled = False
+                finally:
+                    await db.close()
+            except Exception:
+                pass
+            if emby_scan_enabled:
+                from backend.emby import trigger_emby_scan
+                await trigger_emby_scan(current_file_path)
+        except Exception as exc:
+            print(f"[WORKER] Emby library refresh failed (non-fatal): {exc}", flush=True)
+
         # Auto-rename after conversion, if enabled
         try:
             import os as _os
