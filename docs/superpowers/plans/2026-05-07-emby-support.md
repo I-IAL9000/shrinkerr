@@ -97,23 +97,15 @@ grep -A3 "Library/Refresh" backend/emby.py
 
 Expected: a single `POST /Library/Refresh` call with no path param, mirroring `jellyfin.py:170-181`.
 
-- [ ] **Step 6: Add empty-trash sibling**
+- [ ] **Step 6: Verify no empty-trash function exists in `emby.py` (parallel to Jellyfin)**
 
-If `jellyfin.py` doesn't have an empty-trash function and `plex.py:141-178` does (`empty_plex_trash`), copy that pattern into `emby.py` as `empty_emby_trash(section_id)`. Hits Emby's `POST /Library/MediaFolders/{id}/Refresh` or equivalent. If unsure of the exact endpoint, leave a stub that no-ops with a warning log; the user will validate against real Emby and report.
+Confirmed: `jellyfin.py` has no `empty_jellyfin_trash` function — only Plex implements empty-trash (`plex.py:141-178`, called from `queue.py:2382`). Mirror Jellyfin's state: the `emby_empty_trash` *setting* exists for parallelism, but no `empty_emby_trash` function and no worker call. If Jellyfin's gets implemented in a future release, Emby's gets matching wiring at that time.
 
-```python
-async def empty_emby_trash() -> bool:
-    """Empty Emby's library trash. Best-effort — no-op if Emby's API for
-    this differs from Jellyfin. v0.4.0+."""
-    settings = await _get_emby_settings()
-    url = settings.get("emby_url", "").rstrip("/")
-    api_key = settings.get("emby_api_key", "")
-    if not url or not api_key:
-        return False
-    # Emby's empty-trash equivalent — verify against live Emby in v0.4.x
-    # follow-up if this no-ops. For now emit a log and return True.
-    print("[EMBY] empty_trash called (no-op pending live validation)", flush=True)
-    return True
+Verification:
+
+```bash
+grep -c "empty_jellyfin_trash\|empty_emby_trash" backend/jellyfin.py backend/emby.py
+# Expected: 0 in both files
 ```
 
 - [ ] **Step 7: Sanity-check import**
@@ -473,8 +465,10 @@ git commit -m "feat: dispatch testApiKey('emby') to test_emby_connection"
 - [ ] **Step 1: Find where Jellyfin scan is triggered post-conversion**
 
 ```bash
-grep -n "trigger_jellyfin_scan\|jellyfin_scan_after_conversion" backend/queue.py
+grep -n "trigger_jellyfin_scan\|jellyfin_scan_after_conversion\|current_file_path" backend/queue.py
 ```
+
+The grep also confirms what variable name holds the post-rename path at the trigger site (`current_file_path`, `file_path`, etc.) — use whatever the Jellyfin trigger uses.
 
 - [ ] **Step 2: Add `trigger_emby_scan` call alongside**
 
@@ -494,7 +488,8 @@ try:
         await db.close()
     if emby_scan_enabled:
         from backend.emby import trigger_emby_scan
-        await trigger_emby_scan(current_file_path)
+        await trigger_emby_scan(current_file_path)  # use whatever path-variable the Jellyfin call uses at this same site
+
 except Exception as exc:
     print(f"[WORKER] Emby scan trigger failed (non-fatal): {exc}", flush=True)
 ```
@@ -558,7 +553,13 @@ async def _should_pause_for_emby(self) -> tuple[bool, str]:
 
 - [ ] **Step 3: Wire the new helper into the pause-check chain**
 
-Find where `_should_pause_for_jellyfin()` is called (likely a place that ORs Plex+Jellyfin pause results) and add a third call to `_should_pause_for_emby()` that ORs into the same result.
+Find every call site of `_should_pause_for_jellyfin`:
+
+```bash
+grep -n "_should_pause_for_jellyfin" backend/queue.py
+```
+
+For each call site, add a parallel `_should_pause_for_emby` call that ORs into the same `should_pause` result variable. Match the exact pattern used for Jellyfin (same indentation, same error handling).
 
 - [ ] **Step 4: Commit**
 
@@ -581,37 +582,29 @@ git commit -m "feat: pause-on-stream gating for Emby"
 grep -n "jellyfin" backend/rule_resolver.py | head
 ```
 
-- [ ] **Step 2: For each Jellyfin resolver, add an Emby parallel**
+- [ ] **Step 2: Read the existing Jellyfin resolvers verbatim**
 
-Examples (adapt to actual code):
-
-```python
-async def _resolve_emby_genre(genre: str) -> set[str]:
-    from backend.emby import get_folders_by_genre
-    return set(await get_folders_by_genre(genre))
-
-
-async def _resolve_emby_tag(tag: str) -> set[str]:
-    from backend.emby import get_folders_by_tag
-    return set(await get_folders_by_tag(tag))
-
-
-async def _resolve_emby_library(library: str) -> set[str]:
-    from backend.emby import get_folders_by_library
-    return set(await get_folders_by_library(library))
-
-
-async def _resolve_emby_watched(watched: bool) -> set[str]:
-    from backend.emby import get_watch_status_folders
-    folders = await get_watch_status_folders()
-    return set(folders.get("watched" if watched else "unwatched", []))
+```bash
+grep -n "_resolve_jellyfin\|jellyfin" backend/rule_resolver.py
 ```
 
-- [ ] **Step 3: Wire the new resolvers into the rule-condition dispatcher**
+Capture the function names, signatures, and bodies of every `_resolve_jellyfin_*` (or however they're named — could be `_jellyfin_genre_folders`, etc.). Each Emby resolver mirrors the exact shape of its Jellyfin sibling — same signature, same error handling, same return type.
 
-Find the dispatcher that maps condition types (e.g., `"jellyfin_tag"` → `_resolve_jellyfin_tag`) and add the four new Emby condition types.
+- [ ] **Step 3: Add Emby resolvers as line-by-line copies of Jellyfin's**
 
-- [ ] **Step 4: Commit**
+For each Jellyfin resolver function, write an Emby twin. Replace `from backend.jellyfin import X` → `from backend.emby import X`, and replace function-name prefix `jellyfin` → `emby`. No structural changes.
+
+- [ ] **Step 4: Wire the new resolvers into the rule-condition dispatcher**
+
+Find the dispatcher (typically a dict or `if/elif` chain that maps condition type strings like `"jellyfin_tag"` to resolver functions):
+
+```bash
+grep -n '"jellyfin_' backend/rule_resolver.py
+```
+
+For each `"jellyfin_*"` mapping, add a parallel `"emby_*"` mapping right next to it.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/rule_resolver.py
@@ -640,19 +633,27 @@ async def sync_emby() -> dict:
     return result
 ```
 
-- [ ] **Step 2: Extend rule-options endpoint**
+- [ ] **Step 2: Inspect the rule-options endpoint**
 
-In the existing `routes/rules.py:424-445` function that returns available genres/tags/libraries for the rule-builder, add Emby options to the response payload alongside the Jellyfin ones:
+```bash
+sed -n '420,450p' backend/routes/rules.py
+```
+
+Note the actual response structure. The Jellyfin section likely sets one or more keys on the response dict (e.g. `result["jellyfin_tags"] = ...` or nested under `result["jellyfin"]`).
+
+- [ ] **Step 3: Mirror the Jellyfin block for Emby**
+
+Right after every `jellyfin_*` assignment in the rule-options response, add an `emby_*` parallel:
 
 ```python
 from backend.emby import get_available_emby_options
 emby_opts = await get_available_emby_options()
-result["emby"] = emby_opts
+# Match Jellyfin's exact assignment shape — could be result["emby"] = emby_opts
+# or result["emby_tags"] = emby_opts.get("tags", []) etc. depending on what
+# the inspect step revealed.
 ```
 
-(Adapt to the actual response structure.)
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add backend/routes/rules.py
@@ -738,21 +739,7 @@ Connect your Emby server to automatically refresh your library after each conver
 
 - [ ] **Step 4: Update the save handler payload**
 
-Ensure the new save handler sends all 9 Emby keys:
-
-```typescript
-await updateEncodingSettings({
-  emby_url: encoding?.emby_url,
-  emby_api_key: encoding?.emby_api_key,
-  emby_user_id: encoding?.emby_user_id,
-  emby_path_mapping: encoding?.emby_path_mapping,
-  emby_scan_after_conversion: encoding?.emby_scan_after_conversion,
-  emby_empty_trash: encoding?.emby_empty_trash,
-  emby_pause_on_stream: encoding?.emby_pause_on_stream,
-  emby_pause_stream_threshold: encoding?.emby_pause_stream_threshold,
-  emby_pause_transcode_only: encoding?.emby_pause_transcode_only,
-} as any);
-```
+Mirror exactly what the Jellyfin save handler sends (read it via `grep -A 12 "jellyfin_url:" frontend/src/pages/SettingsPage.tsx` first to see the actual shape it uses, then write the Emby version with the same keys swapped to `emby_*`). The "Empty trash after scan" checkbox should be present in the UI for parallelism with Jellyfin even though the setting isn't wired in queue.py yet — this matches Jellyfin's UI state.
 
 - [ ] **Step 5: Build**
 
@@ -787,15 +774,23 @@ grep -n "jellyfin_tag\|jellyfin_genre" frontend/src/pages/SettingsPage.tsx
 
 For each `jellyfin_tag` / `jellyfin_genre` / `jellyfin_library` / `jellyfin_watched` rule-condition type, add a parallel `emby_*` entry.
 
-- [ ] **Step 3: Extend `condOpts` to provide Emby dropdown options**
+- [ ] **Step 3: Inspect the existing `condOpts` shape and Jellyfin wiring**
 
-When the rule-builder fetches available options (calls the `/rules/options` endpoint), it should now also receive `result.emby.tags`, `.genres`, `.libraries`. Pipe these into the `condOpts` map keyed on the new `emby_*` condition types.
+```bash
+grep -n "condOpts\|jellyfin_tag\|jellyfin_genre" frontend/src/pages/SettingsPage.tsx | head -25
+```
 
-- [ ] **Step 4: Update the condition-type dropdown labels**
+Look at how Jellyfin's options get loaded into `condOpts` and how the dropdown reads them. The exact key shape (`condOpts["jellyfin_tag"]` vs `condOpts.jellyfin?.tags` etc.) determines the parallel Emby code.
+
+- [ ] **Step 4: Extend `condOpts` to provide Emby dropdown options**
+
+Mirror the Jellyfin wiring exactly — same code path, same data shape, just `jellyfin` → `emby` substituted. The rule-options endpoint (Task 9) should now return Emby's options in whatever shape Jellyfin's are returned in.
+
+- [ ] **Step 5: Update the condition-type dropdown labels**
 
 Add UI labels: `"Emby tag"`, `"Emby genre"`, `"Emby library"`, `"Emby watched"` parallel to the Jellyfin ones.
 
-- [ ] **Step 5: Build + smoke-test in browser**
+- [ ] **Step 6: Build + smoke-test in browser**
 
 ```bash
 cd /Users/hal9000/Documents/Claude/shrinkerr/frontend && npm run build 2>&1 | tail -10
@@ -803,7 +798,7 @@ cd /Users/hal9000/Documents/Claude/shrinkerr/frontend && npm run build 2>&1 | ta
 
 Manually: open Rules → New rule → confirm Emby condition types appear in the dropdown.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add frontend/src/pages/SettingsPage.tsx

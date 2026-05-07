@@ -41,7 +41,7 @@ Mirrors `backend/jellyfin.py` function-for-function (~530 lines). Same function 
 | `test_emby_connection()` | Hit `/System/Info`; return server name + library count |
 | `get_emby_libraries(url, api_key)` | List libraries via `/Library/MediaFolders` |
 | `_get_user_id(url, api_key, stored_user_id)` | Auto-detect admin user via `/Users` |
-| `trigger_emby_scan(file_path)` | POST `/Library/Media/Updated` with `{Updates: [{Path: ...}]}` |
+| `trigger_emby_scan(file_path)` | POST `/Library/Refresh` (blanket library refresh, mirroring jellyfin.py:170-181) |
 | `get_active_streams()` | Read `/Sessions`, filter to `NowPlayingItem present AND PlayState.IsPaused == false` |
 | `get_watch_status_folders()` | Watched/unwatched folder lists for queue prioritization |
 | `get_folders_by_genre/tag/library(name)` | Rule-engine inputs |
@@ -58,7 +58,7 @@ emby_api_key                   Emby API key
 emby_user_id                   optional; auto-detected if empty
 emby_path_mapping              e.g. /media=/mnt/media
 emby_scan_after_conversion     bool, default true — refresh library after each conversion
-emby_empty_trash               bool, default false — empty Emby trash after scan
+emby_empty_trash               bool, default false — settings key parallel to jellyfin_empty_trash; not wired in v0.4.0 (jellyfin's isn't either — only plex's empty-trash is implemented in queue.py:2382)
 emby_pause_on_stream           bool, default false — pause encoding when streams active
 emby_pause_stream_threshold    int, default 1 — minimum concurrent streams to trigger pause
 emby_pause_transcode_only      bool, default false — only pause for transcoding streams (not direct play)
@@ -75,7 +75,7 @@ Pause-on-stream is gated per-server: each of Plex/Jellyfin/Emby has its own thre
 Three changes:
 1. After each successful conversion, the worker calls `trigger_plex_scan()` and `trigger_jellyfin_scan()`. Add `trigger_emby_scan()`, gated on `emby_scan_after_conversion`.
 2. Pause-on-stream gating: add a `_should_pause_for_emby()` parallel to `_should_pause_for_jellyfin()` (`queue.py:936-954`), reading `emby_pause_on_stream`, `emby_pause_stream_threshold`, `emby_pause_transcode_only`. The worker's pause check ORs the three per-server gates.
-3. Optional `emby_empty_trash` post-scan call.
+3. (`emby_empty_trash` setting key parking-lot only — Jellyfin's equivalent isn't wired in `queue.py` either. If/when Jellyfin's empty-trash gets a real implementation, Emby's gets the same wiring at the same time.)
 
 ### `backend/rule_resolver.py`
 
@@ -105,19 +105,16 @@ The connection-test endpoint accepts a `service` parameter (`"plex"`, `"jellyfin
 
 Most endpoints are drop-in identical:
 - `/System/Info` — server identification
-- `/Library/MediaFolders` — list libraries
+- `/Library/VirtualFolders` — list libraries (matches jellyfin.py:117)
 - `/Sessions` — list active sessions/streams
 - `/Users` — list users (for admin auto-detect)
 - `/Users/{id}/Items` with `IsPlayed`, `Genres`, `Tags`, `ParentId` filters
 
 The two real divergences:
 
-### 1. Path-targeted library refresh
+### 1. Library refresh (no actual divergence)
 
-- Jellyfin: `POST /Library/Refresh` with `path` param scans only that folder
-- Emby: `POST /Library/Media/Updated` with body `{"Updates": [{"Path": "..."}]}` does the equivalent
-
-`emby.py` handles this divergence inside `trigger_emby_scan()`; callers see the same interface.
+`backend/jellyfin.py:170-181` does a blanket `POST /Library/Refresh` with no path parameter — refreshes the whole library. Emby supports the same endpoint with the same blanket-refresh behavior. No path-targeted variant needed; Emby mirrors Jellyfin exactly here. Originally noted as a divergence in early design; verifying against `jellyfin.py` showed both servers can use the same call.
 
 ### 2. Auth header
 
@@ -186,9 +183,9 @@ User will set up Emby after merge and verify:
 
 Known live-validation risk areas (what's most likely to break):
 
-1. **Path-targeted scan silently no-ops on misconfigured `emby_path_mapping`** — `/Library/Media/Updated` requires the Path field to match an Emby-known library root *after* path mapping. If the mapping is wrong, Emby silently ignores the call. The connection-test response should include the discovered library roots so users can verify their mapping translates correctly.
-2. **Auth header rejection** — Emby accepts the `Authorization: MediaBrowser Token=...` form Jellyfin uses, but if any endpoint rejects it on a particular Emby version, fall back to `X-Emby-Token: <key>` in the `_headers()` helper.
-3. **Admin user auto-detection** — `/Users` returns all users; we pick the first with `Policy.IsAdministrator==true`. Emby's user-policy field shape may differ subtly from Jellyfin's; the synthetic test should use a captured-from-real-Emby `/Users` response so we catch it pre-merge.
+1. **Auth header rejection** — Emby accepts the `Authorization: MediaBrowser Token=...` form Jellyfin uses, but if any endpoint rejects it on a particular Emby version, fall back to `X-Emby-Token: <key>` in the `_headers()` helper.
+2. **Admin user auto-detection** — `/Users` returns all users; we pick the first with `Policy.IsAdministrator==true`. Emby's user-policy field shape may differ subtly from Jellyfin's; the synthetic test should use a captured-from-real-Emby `/Users` response so we catch it pre-merge.
+3. **Library refresh visibility** — `/Library/Refresh` is a fire-and-forget call. The user won't see immediate feedback if it failed silently (e.g., insufficient API key permissions). Surface non-2xx responses in the worker log so post-merge validation can spot it.
 
 Issues found during live validation become follow-up fix releases.
 
@@ -213,7 +210,7 @@ None outstanding — design fully specified.
 - Tests for the synthetic API-shape coverage (location TBD by writing-plans)
 
 **Modified:**
-- `backend/queue.py` — `trigger_emby_scan()` call + `_should_pause_for_emby()` + optional `emby_empty_trash`
+- `backend/queue.py` — `trigger_emby_scan()` call + `_should_pause_for_emby()` (no `empty_trash` wiring — parallel to Jellyfin's currently-unwired state)
 - `backend/rule_resolver.py` — Emby genre/tag/library/watched filters
 - `backend/routes/rules.py` — `POST /api/rules/sync-emby` + extend rule-options endpoint
 - `backend/ssrf_guard.py` — allow Emby URL
