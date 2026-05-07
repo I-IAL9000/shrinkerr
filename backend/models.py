@@ -180,6 +180,15 @@ class SettingsUpdate(BaseModel):
     jellyfin_pause_on_stream: Optional[bool] = None
     jellyfin_pause_stream_threshold: Optional[Any] = None
     jellyfin_pause_transcode_only: Optional[bool] = None
+    emby_url: Optional[str] = None
+    emby_api_key: Optional[str] = None
+    emby_user_id: Optional[str] = None
+    emby_path_mapping: Optional[str] = None
+    emby_scan_after_conversion: Optional[bool] = None
+    emby_empty_trash: Optional[bool] = None
+    emby_pause_on_stream: Optional[bool] = None
+    emby_pause_stream_threshold: Optional[Any] = None
+    emby_pause_transcode_only: Optional[bool] = None
     trash_original_after_conversion: Optional[bool] = None
     backup_original_days: Optional[Any] = None
     backup_folder: Optional[str] = None

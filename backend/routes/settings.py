@@ -86,6 +86,15 @@ _ENCODING_DEFAULTS = {
     "jellyfin_pause_on_stream": "false",
     "jellyfin_pause_stream_threshold": "1",
     "jellyfin_pause_transcode_only": "true",
+    "emby_url": "",
+    "emby_api_key": "",
+    "emby_user_id": "",
+    "emby_path_mapping": "",
+    "emby_scan_after_conversion": "true",
+    "emby_empty_trash": "false",
+    "emby_pause_on_stream": "false",
+    "emby_pause_stream_threshold": "1",
+    "emby_pause_transcode_only": "true",
     # Conversion filters
     "min_bitrate_mbps": "0",  # 0 = disabled; skip files below this bitrate (Mbps)
     "max_bitrate_mbps": "0",  # 0 = disabled; only convert files above this bitrate (Mbps)
@@ -475,6 +484,14 @@ async def get_encoding_settings():
     result["jellyfin_user_id"] = merged.get("jellyfin_user_id", "")
     result["jellyfin_configured"] = bool(jellyfin_key and merged.get("jellyfin_url", ""))
     result["jellyfin_path_mapping"] = merged.get("jellyfin_path_mapping", "")
+
+    # Emby
+    emby_key = merged.get("emby_api_key", "")
+    result["emby_url"] = merged.get("emby_url", "")
+    result["emby_api_key"] = ("****" + emby_key[-4:]) if emby_key else ""
+    result["emby_user_id"] = merged.get("emby_user_id", "")
+    result["emby_configured"] = bool(emby_key and merged.get("emby_url", ""))
+    result["emby_path_mapping"] = merged.get("emby_path_mapping", "")
 
     # Conversion filters
     result["min_bitrate_mbps"] = int(merged.get("min_bitrate_mbps", "0"))
@@ -1049,6 +1066,7 @@ _SECRET_SETTINGS_KEYS = frozenset({
     "tmdb_api_key",
     "plex_token",
     "jellyfin_api_key",
+    "emby_api_key",
     "sonarr_api_key",
     "radarr_api_key",
     "smtp_pass",

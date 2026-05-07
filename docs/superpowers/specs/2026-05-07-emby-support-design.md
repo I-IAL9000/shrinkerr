@@ -61,7 +61,7 @@ emby_scan_after_conversion     bool, default true — refresh library after each
 emby_empty_trash               bool, default false — settings key parallel to jellyfin_empty_trash; not wired in v0.4.0 (jellyfin's isn't either — only plex's empty-trash is implemented in queue.py:2382)
 emby_pause_on_stream           bool, default false — pause encoding when streams active
 emby_pause_stream_threshold    int, default 1 — minimum concurrent streams to trigger pause
-emby_pause_transcode_only      bool, default false — only pause for transcoding streams (not direct play)
+emby_pause_transcode_only      bool, default true — only pause for transcoding streams (not direct play)
 ```
 
 Plus a derived `emby_configured` flag (set when URL + API key are both present), surfaced to the frontend for the "Connected" green dot.
