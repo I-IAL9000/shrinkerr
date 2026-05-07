@@ -712,7 +712,7 @@ export const updateEncodingSettings = (settings: any) =>
   });
 
 // API key testing
-export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "sonarr" | "radarr") =>
+export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "emby" | "sonarr" | "radarr") =>
   apiFetch<{ success: boolean; error: string | null; version?: string }>("/settings/test-api", {
     method: "POST", body: JSON.stringify({ service })
   });
@@ -720,6 +720,10 @@ export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "sonarr" | "r
 // Jellyfin sync
 export const syncJellyfinMetadata = () =>
   apiFetch<any>("/rules/sync-jellyfin", { method: "POST" });
+
+// Emby sync
+export const syncEmbyMetadata = () =>
+  apiFetch<any>("/rules/sync-emby", { method: "POST" });
 
 // WebSocket hook
 export function useWebSocket(onMessage: (msg: WSMessage) => void) {
