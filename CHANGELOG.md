@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-05-07
+
+### Fixed
+- `parse_ffmpeg_progress` returned `None` (instead of a progress dict with `fps` populated) when ffmpeg emitted a progress line but the source file's duration couldn't be determined. Effect: corrupt or in-progress mkv files showed no fps readout updates during conversion — the worker's progress callback went silent until the encode finished. Fix: when neither time-based nor frame-based progress ratio is computable but the line carries an `fps=` field, return `{"progress": 0.0, "fps": <parsed>, "eta_seconds": None}` so the UI keeps animating. Test in `backend/tests/test_converter.py` for this case (pre-existing, never green) now passes.
+
 ## [0.4.0] — 2026-05-07
 
 ### Added

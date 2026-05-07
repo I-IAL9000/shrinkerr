@@ -791,6 +791,15 @@ def parse_ffmpeg_progress(
         frame_ratio = cur_frame / total_frames
 
     if time_ratio is None and frame_ratio is None:
+        # Duration-unknown files (corrupt/in-progress mkv where ffprobe
+        # returned no duration, AND total_frames unavailable): we can't
+        # compute a meaningful progress ratio, but if the line has an
+        # `fps=` field we still want the UI's fps readout to update
+        # rather than stalling. Return progress=0 + the fps we parsed,
+        # which keeps the worker's progress callback firing instead of
+        # going silent for the rest of the encode. v0.4.1+.
+        if fps_val is not None:
+            return {"progress": 0.0, "fps": fps_val, "eta_seconds": None}
         return None
 
     progress_ratio = max(
