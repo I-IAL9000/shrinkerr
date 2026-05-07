@@ -2511,6 +2511,83 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               }}>Save Jellyfin Settings</button>
           </div>
 
+          {/* Emby */}
+          <div style={sectionStyle}>
+            <h3 style={{ color: "white", marginBottom: 4 }}>Emby</h3>
+            <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
+              Connect your Emby server to automatically refresh your library after each conversion, create encoding rules based on Emby tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={labelStyle}>Emby URL</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
+                  value={encoding?.emby_url || ""}
+                  onChange={(e) => setEncoding({ ...encoding, emby_url: e.target.value })} />
+              </div>
+              <div>
+                <div style={labelStyle}>API Key</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="Your Emby API key"
+                  type="password"
+                  value={encoding?.emby_api_key || ""}
+                  onChange={(e) => setEncoding({ ...encoding, emby_api_key: e.target.value })} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={labelStyle}>User ID (optional)</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="Auto-detected if empty"
+                  value={encoding?.emby_user_id || ""}
+                  onChange={(e) => setEncoding({ ...encoding, emby_user_id: e.target.value })} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  Used for watched status. Leave empty to auto-detect the admin user.
+                </div>
+              </div>
+              <div>
+                <div style={labelStyle}>Path mapping</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
+                  value={encoding?.emby_path_mapping || ""}
+                  onChange={(e) => setEncoding({ ...encoding, emby_path_mapping: e.target.value })} />
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                  Maps container paths to Emby paths. Format: /container=/emby
+                </div>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                onClick={async () => {
+                  try {
+                    const r = await testApiKey("emby");
+                    if (r.success) toast(`Connected to ${(r as any).server_name || "Emby"} (${(r as any).library_count || 0} libraries)`, "success");
+                    else toast(r.error || "Connection failed");
+                  } catch { toast("Connection failed"); }
+                }}>Test Connection</button>
+              {encoding?.emby_configured && (
+                <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
+                  Connected
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding?.emby_scan_after_conversion !== false && encoding?.emby_scan_after_conversion !== "false"}
+                  onChange={() => setEncoding({ ...encoding, emby_scan_after_conversion: encoding?.emby_scan_after_conversion === false || encoding?.emby_scan_after_conversion === "false" })} />
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Refresh library after conversion</span>
+              </label>
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 16 }}
+              onClick={async () => {
+                await updateEncodingSettings({
+                  emby_url: encoding?.emby_url,
+                  emby_api_key: encoding?.emby_api_key,
+                  emby_user_id: encoding?.emby_user_id,
+                  emby_path_mapping: encoding?.emby_path_mapping,
+                  emby_scan_after_conversion: encoding?.emby_scan_after_conversion,
+                } as any);
+                toast("Emby settings saved", "success");
+              }}>Save Emby Settings</button>
+          </div>
+
           {/* Sonarr / Radarr Integration */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 16 }}>Sonarr / Radarr</h3>
