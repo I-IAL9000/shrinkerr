@@ -963,6 +963,36 @@ class QueueWorker:
         except Exception:
             return False
 
+    async def _should_pause_for_emby(self) -> bool:
+        """Check if encoding should pause due to active Emby streams."""
+        try:
+            db = await self._db()
+            try:
+                settings = {}
+                async with db.execute(
+                    "SELECT key, value FROM settings WHERE key IN ('emby_pause_on_stream', 'emby_pause_stream_threshold', 'emby_pause_transcode_only')"
+                ) as cur:
+                    for row in await cur.fetchall():
+                        settings[row[0]] = row[1]
+            finally:
+                await db.close()
+
+            if settings.get("emby_pause_on_stream", "false").lower() != "true":
+                return False
+
+            threshold = int(settings.get("emby_pause_stream_threshold", "1"))
+            transcode_only = settings.get("emby_pause_transcode_only", "true").lower() == "true"
+
+            from backend.emby import get_active_streams
+            streams = await get_active_streams()
+
+            if transcode_only:
+                return streams["transcoding"] >= threshold
+            else:
+                return streams["total"] >= threshold
+        except Exception:
+            return False
+
     async def _should_use_nice(self) -> bool:
         """Check if quiet hours nice (low priority) is enabled and active."""
         if not await self._is_quiet_hours():
@@ -1077,6 +1107,12 @@ class QueueWorker:
                         if not getattr(self, '_jellyfin_pause_logged', False):
                             print("[WORKER] Pausing — active Jellyfin stream(s) detected", flush=True)
                             self._jellyfin_pause_logged = True
+                        await asyncio.sleep(15)
+                        continue
+                    if await self._should_pause_for_emby():
+                        if not getattr(self, '_emby_pause_logged', False):
+                            print("[WORKER] Pausing — active Emby stream(s) detected", flush=True)
+                            self._emby_pause_logged = True
                         await asyncio.sleep(15)
                         continue
                     elif getattr(self, '_plex_pause_logged', False):
