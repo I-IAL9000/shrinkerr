@@ -272,6 +272,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     );
   }
 
+  // Stream-aware pause banner. v0.4.6+. When a Plex/Jellyfin/Emby user
+  // is streaming and we've SIGSTOPped active ffmpeg jobs, surface that
+  // explicitly so the user understands why the progress bars are frozen.
+  const streamPause = stats?.stream_pause;
+  const streamPauseActive = !!streamPause?.active;
+  const streamPauseServers: string[] = streamPause?.servers || [];
+  const streamPauseFrozen: number = streamPause?.frozen_jobs || 0;
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -286,6 +294,37 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           </button>
         )}
       </div>
+
+      {streamPauseActive && (
+        <div style={{
+          background: "var(--accent-soft, rgba(99, 102, 241, 0.12))",
+          border: "1px solid var(--accent, #6366f1)",
+          borderRadius: 6,
+          padding: "10px 14px",
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          color: "var(--text-primary)",
+          fontSize: 13,
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+            <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+          </svg>
+          <div>
+            <strong>Encoding paused</strong>
+            {streamPauseServers.length > 0 && (
+              <> — active stream{streamPauseServers.length > 1 ? "s" : ""} on{" "}
+              {streamPauseServers.join(" + ")}</>
+            )}
+            {streamPauseFrozen > 0 && (
+              <span style={{ color: "var(--text-muted)" }}>
+                {" "}({streamPauseFrozen} job{streamPauseFrozen > 1 ? "s" : ""} frozen, will resume when stream ends)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Render a JobCard for each active job with progress */}
       {running.map((job, runIndex) => {

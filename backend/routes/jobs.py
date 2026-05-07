@@ -448,7 +448,28 @@ async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 
 async def get_stats():
     if _queue is None:
         raise HTTPException(status_code=503, detail="Queue not initialized")
-    return await _queue.get_stats()
+    stats = await _queue.get_stats()
+    # Surface the stream-aware pause state so the Queue page can render a
+    # "Paused — <Server> streaming" banner instead of leaving the user to
+    # wonder why the progress bars are frozen. v0.4.6+. Each per-server
+    # pause-logged flag on the worker is True iff that server's stream
+    # check returned True on the last pause-loop iteration; the
+    # `_stream_paused_jobs` set holds the SIGSTOPped job IDs.
+    if _worker is not None:
+        stream_paused_servers = []
+        if getattr(_worker, "_plex_pause_logged", False):
+            stream_paused_servers.append("Plex")
+        if getattr(_worker, "_jellyfin_pause_logged", False):
+            stream_paused_servers.append("Jellyfin")
+        if getattr(_worker, "_emby_pause_logged", False):
+            stream_paused_servers.append("Emby")
+        frozen_count = len(getattr(_worker, "_stream_paused_jobs", set()) or set())
+        stats["stream_pause"] = {
+            "active": bool(stream_paused_servers) or frozen_count > 0,
+            "servers": stream_paused_servers,
+            "frozen_jobs": frozen_count,
+        }
+    return stats
 
 
 @router.post("/start")

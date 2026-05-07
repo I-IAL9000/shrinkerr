@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] — 2026-05-07
+
+### Added
+- **Queue page now shows a banner when stream-pause is active.** Previously the only visible signal that v0.4.5's SIGSTOP had taken effect was the progress bars freezing — the manual Pause/Start button stayed unchanged because manual pause and stream-aware pause are independent states. The banner reads "Encoding paused — active stream(s) on \<Plex / Jellyfin / Emby\>" with a count of frozen jobs, and disappears the moment the stream ends and SIGCONT fires. Surfaced via a new `stream_pause` field on `GET /api/jobs/stats`.
+
 ## [0.4.5] — 2026-05-07
 
 ### Changed
