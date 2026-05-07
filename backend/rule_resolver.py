@@ -316,7 +316,23 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
     if ctype == "jellyfin_watched":
         return False
 
-    # 13. NZBGet category — passed via extra_context from add-by-path
+    # 15. Emby tag — matched via plex_metadata_cache (shared cache table)
+    if ctype == "emby_tag":
+        found = any(
+            mt == "emby_tag" and mv.lower() == value.lower()
+            for mt, mv in folder_metadata
+        )
+        if op in ("is", "contains"):
+            return found
+        elif op in ("is_not", "does_not_contain"):
+            return not found
+        return found
+
+    # 16. Emby watched status
+    if ctype == "emby_watched":
+        return False
+
+    # 17. NZBGet category — passed via extra_context from add-by-path
     if ctype == "nzbget_category":
         actual = (extra_context or {}).get("nzbget_category", "")
         return _match_op(actual, op, value)
