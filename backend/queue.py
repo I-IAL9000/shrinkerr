@@ -1115,9 +1115,21 @@ class QueueWorker:
                             self._emby_pause_logged = True
                         await asyncio.sleep(15)
                         continue
-                    elif getattr(self, '_plex_pause_logged', False):
-                        print("[WORKER] Resuming — Plex streams ended", flush=True)
-                        self._plex_pause_logged = False
+                    else:
+                        # Resume notifications when ANY of the three pause
+                        # flags was set. Pre-v0.4.3 this elif only cleared
+                        # `_plex_pause_logged`; the Jellyfin and Emby flags
+                        # got stuck on True and the "Resuming — streams
+                        # ended" log line never fired for those servers.
+                        if getattr(self, '_plex_pause_logged', False):
+                            print("[WORKER] Resuming — Plex streams ended", flush=True)
+                            self._plex_pause_logged = False
+                        if getattr(self, '_jellyfin_pause_logged', False):
+                            print("[WORKER] Resuming — Jellyfin streams ended", flush=True)
+                            self._jellyfin_pause_logged = False
+                        if getattr(self, '_emby_pause_logged', False):
+                            print("[WORKER] Resuming — Emby streams ended", flush=True)
+                            self._emby_pause_logged = False
                 except Exception:
                     pass
 

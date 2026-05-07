@@ -5,6 +5,15 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] — 2026-05-07
+
+### Added
+- **Pause-on-stream UI for Jellyfin and Emby.** The backend keys (`jellyfin_pause_on_stream`, `jellyfin_pause_stream_threshold`, `jellyfin_pause_transcode_only`, plus the Emby trio) have existed for a while but were unreachable from the Settings UI — only Plex had visible controls. The "Plex / Jellyfin / Emby Stream-Aware Scheduling" panel on the Schedule page now has three sub-sections, one per server, each with the same enable / threshold / transcode-only controls. One "Save Streaming Settings" button persists all nine keys.
+
+### Fixed
+- **`*_watched` rule conditions always returned False.** All three media-server `sync_*_metadata_cache()` functions write `watch_status` rows into the shared `plex_metadata_cache` table, but the `plex_watched`, `jellyfin_watched`, and `emby_watched` rule resolvers were stubs that ignored the cache and returned `False` unconditionally. Rules using "Watched" as a condition silently never matched. Fix: collapse all three resolvers into one shared implementation that reads the `watch_status` rows. Folders without a cached watch_status (sync hasn't run, or folder isn't in any watched library) still return False to avoid spurious matches.
+- **Resume notification only fired for Plex.** When a long-running stream ended, the worker logged `[WORKER] Resuming — Plex streams ended` if it was Plex's pause flag set, but the `_jellyfin_pause_logged` and `_emby_pause_logged` flags got stuck on `True` forever — the resume log never fired and re-pausing on a subsequent stream wouldn't print "Pausing" again because the flag was still set. Fix: extend the resume branch to clear all three flags and emit a per-server resume log line.
+
 ## [0.4.2] — 2026-05-07
 
 ### Fixed

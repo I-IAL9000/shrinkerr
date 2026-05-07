@@ -297,10 +297,32 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         return False
 
     # 12. Plex watched status
-    if ctype == "plex_watched":
-        return False
+    # plex_watched / jellyfin_watched / emby_watched — all three media-server
+    # syncs write into the SAME shared `watch_status` row in
+    # plex_metadata_cache (`metadata_value` = "watched" | "unwatched"), so
+    # the three resolver branches can share one implementation. Pre-v0.4.3
+    # all three returned False unconditionally (parking-lot stubs); now
+    # they read the cache. The rule-builder UI sends `value` as the string
+    # "true" or "false" — "true" means "is watched". v0.4.3+.
+    if ctype in ("plex_watched", "jellyfin_watched", "emby_watched"):
+        want_watched = (value or "").lower() in ("true", "1", "yes", "watched")
+        cache_says_watched = any(
+            mt == "watch_status" and mv == "watched"
+            for mt, mv in folder_metadata
+        )
+        cache_says_unwatched = any(
+            mt == "watch_status" and mv == "unwatched"
+            for mt, mv in folder_metadata
+        )
+        # If the cache has no watch_status row for this folder yet (sync
+        # hasn't run, or folder not in any watched library), fall back to
+        # False so rules don't fire spuriously on uncached folders.
+        if not cache_says_watched and not cache_says_unwatched:
+            return False
+        is_watched = cache_says_watched
+        return (is_watched == want_watched) if op == "is" else (is_watched != want_watched)
 
-    # 13. Jellyfin tag — matched via plex_metadata_cache (shared cache table)
+    # Jellyfin tag — matched via plex_metadata_cache (shared cache table)
     if ctype == "jellyfin_tag":
         found = any(
             mt == "jellyfin_tag" and mv.lower() == value.lower()
@@ -312,11 +334,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
             return not found
         return found
 
-    # 14. Jellyfin watched status
-    if ctype == "jellyfin_watched":
-        return False
-
-    # 15. Emby tag — matched via plex_metadata_cache (shared cache table)
+    # Emby tag — matched via plex_metadata_cache (shared cache table)
     if ctype == "emby_tag":
         found = any(
             mt == "emby_tag" and mv.lower() == value.lower()
@@ -327,10 +345,6 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         elif op in ("is_not", "does_not_contain"):
             return not found
         return found
-
-    # 16. Emby watched status
-    if ctype == "emby_watched":
-        return False
 
     # 17. NZBGet category — passed via extra_context from add-by-path
     if ctype == "nzbget_category":
