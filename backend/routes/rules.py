@@ -314,6 +314,17 @@ async def sync_jellyfin():
         raise HTTPException(500, f"Jellyfin sync failed: {exc}")
 
 
+@router.post("/sync-emby")
+async def sync_emby() -> dict:
+    """Sync Emby metadata (genres, tags, libraries) into the local cache."""
+    from backend.emby import sync_emby_metadata_cache
+    try:
+        result = await sync_emby_metadata_cache()
+        return {"status": "synced", **result}
+    except Exception as exc:
+        raise HTTPException(500, f"Emby sync failed: {exc}")
+
+
 @router.get("/plex-options")
 async def plex_options():
     from backend.plex import get_available_plex_options
@@ -432,6 +443,17 @@ async def get_condition_options():
         except Exception:
             pass
 
+        # Emby tags/genres
+        emby_tags = []
+        emby_genres = []
+        try:
+            from backend.emby import get_available_emby_options
+            emby_opts = await get_available_emby_options()
+            emby_tags = emby_opts.get("tags", [])
+            emby_genres = emby_opts.get("genres", [])
+        except Exception:
+            pass
+
         return {
             "sources": sorted(sources),
             "resolutions": ["4K", "1080p", "720p", "SD"],
@@ -443,6 +465,8 @@ async def get_condition_options():
             "nzbget_categories": nzbget_categories,
             "jellyfin_tags": jellyfin_tags,
             "jellyfin_genres": jellyfin_genres,
+            "emby_tags": emby_tags,
+            "emby_genres": emby_genres,
         }
     finally:
         await db.close()
