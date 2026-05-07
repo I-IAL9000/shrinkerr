@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -787,6 +788,11 @@ class QueueWorker:
         self._active_procs: dict[int, asyncio.subprocess.Process] = {}
         self._active_tasks: dict[int, asyncio.Task] = {}
         self._cancel_flags: set[int] = set()
+        # Stream-aware pause: which active ffmpeg PIDs are currently
+        # SIGSTOPped because a Plex/Jellyfin/Emby stream is in flight.
+        # Set is kept across loop iterations so we don't double-stop or
+        # double-cont. Cleared on resume. v0.4.5+.
+        self._stream_paused_jobs: set[int] = set()
 
     async def _db(self) -> aiosqlite.Connection:
         """Open a DB connection with WAL mode and busy timeout for parallel safety."""
@@ -832,6 +838,64 @@ class QueueWorker:
 
     def resume(self) -> None:
         self._paused = False
+
+    def _freeze_active_procs(self, server_label: str) -> int:
+        """Send SIGSTOP to every active ffmpeg subprocess, freezing them
+        in place without losing work. Returns the number of procs newly
+        stopped (zero if nothing was running, or if everything was
+        already paused). Used by the pause-on-stream loop. v0.4.5+.
+
+        SIGSTOP is handled by the kernel — the process is suspended
+        atomically across all its threads, no IO buffer corruption,
+        zero CPU. SIGCONT in `_resume_paused_procs` resumes it from
+        the exact instruction it was at.
+        """
+        newly_stopped = 0
+        for jid, proc in list(self._active_procs.items()):
+            if jid in self._stream_paused_jobs:
+                continue
+            if proc.returncode is not None:
+                continue  # already exited
+            try:
+                proc.send_signal(signal.SIGSTOP)
+                self._stream_paused_jobs.add(jid)
+                newly_stopped += 1
+            except (ProcessLookupError, OSError) as exc:
+                print(f"[WORKER] SIGSTOP failed for job {jid}: {exc}", flush=True)
+        if newly_stopped:
+            print(
+                f"[WORKER] Froze {newly_stopped} active ffmpeg job(s) "
+                f"({server_label} streaming)",
+                flush=True,
+            )
+        return newly_stopped
+
+    def _resume_paused_procs(self) -> int:
+        """Send SIGCONT to every previously-frozen ffmpeg subprocess.
+        Returns the number of procs newly resumed. v0.4.5+."""
+        if not self._stream_paused_jobs:
+            return 0
+        resumed = 0
+        for jid in list(self._stream_paused_jobs):
+            proc = self._active_procs.get(jid)
+            if not proc:
+                # Job completed or got cleaned up while paused — nothing
+                # to do, drop the stale entry.
+                self._stream_paused_jobs.discard(jid)
+                continue
+            if proc.returncode is not None:
+                self._stream_paused_jobs.discard(jid)
+                continue
+            try:
+                proc.send_signal(signal.SIGCONT)
+                self._stream_paused_jobs.discard(jid)
+                resumed += 1
+            except (ProcessLookupError, OSError) as exc:
+                print(f"[WORKER] SIGCONT failed for job {jid}: {exc}", flush=True)
+                self._stream_paused_jobs.discard(jid)
+        if resumed:
+            print(f"[WORKER] Resumed {resumed} ffmpeg job(s)", flush=True)
+        return resumed
 
     async def cancel_current(self, job_id: Optional[int] = None) -> Optional[int]:
         """Cancel a running job by ID. If no ID given, cancel the first active job."""
@@ -921,7 +985,7 @@ class QueueWorker:
                 return False
 
             threshold = int(settings.get("plex_pause_stream_threshold", "1"))
-            transcode_only = settings.get("plex_pause_transcode_only", "true").lower() == "true"
+            transcode_only = settings.get("plex_pause_transcode_only", "false").lower() == "true"
 
             from backend.plex import get_active_streams
             streams = await get_active_streams()
@@ -951,7 +1015,7 @@ class QueueWorker:
                 return False
 
             threshold = int(settings.get("jellyfin_pause_stream_threshold", "1"))
-            transcode_only = settings.get("jellyfin_pause_transcode_only", "true").lower() == "true"
+            transcode_only = settings.get("jellyfin_pause_transcode_only", "false").lower() == "true"
 
             from backend.jellyfin import get_active_streams
             streams = await get_active_streams()
@@ -981,7 +1045,7 @@ class QueueWorker:
                 return False
 
             threshold = int(settings.get("emby_pause_stream_threshold", "1"))
-            transcode_only = settings.get("emby_pause_transcode_only", "true").lower() == "true"
+            transcode_only = settings.get("emby_pause_transcode_only", "false").lower() == "true"
 
             from backend.emby import get_active_streams
             streams = await get_active_streams()
@@ -1094,44 +1158,56 @@ class QueueWorker:
             except Exception:
                 pass
 
-            # Check if Plex streams require pausing (only when no jobs are running to avoid interrupting)
-            if len(self._active_tasks) == 0:
-                try:
-                    if await self._should_pause_for_plex():
-                        if not getattr(self, '_plex_pause_logged', False):
-                            print("[WORKER] Pausing — active Plex stream(s) detected", flush=True)
-                            self._plex_pause_logged = True
-                        await asyncio.sleep(15)
-                        continue
-                    if await self._should_pause_for_jellyfin():
-                        if not getattr(self, '_jellyfin_pause_logged', False):
-                            print("[WORKER] Pausing — active Jellyfin stream(s) detected", flush=True)
-                            self._jellyfin_pause_logged = True
-                        await asyncio.sleep(15)
-                        continue
-                    if await self._should_pause_for_emby():
-                        if not getattr(self, '_emby_pause_logged', False):
-                            print("[WORKER] Pausing — active Emby stream(s) detected", flush=True)
-                            self._emby_pause_logged = True
-                        await asyncio.sleep(15)
-                        continue
-                    else:
-                        # Resume notifications when ANY of the three pause
-                        # flags was set. Pre-v0.4.3 this elif only cleared
-                        # `_plex_pause_logged`; the Jellyfin and Emby flags
-                        # got stuck on True and the "Resuming — streams
-                        # ended" log line never fired for those servers.
-                        if getattr(self, '_plex_pause_logged', False):
-                            print("[WORKER] Resuming — Plex streams ended", flush=True)
-                            self._plex_pause_logged = False
-                        if getattr(self, '_jellyfin_pause_logged', False):
-                            print("[WORKER] Resuming — Jellyfin streams ended", flush=True)
-                            self._jellyfin_pause_logged = False
-                        if getattr(self, '_emby_pause_logged', False):
-                            print("[WORKER] Resuming — Emby streams ended", flush=True)
-                            self._emby_pause_logged = False
-                except Exception:
-                    pass
+            # Stream-aware pause check. v0.4.5 lifted the previous
+            # `len(self._active_tasks) == 0` gate so the pause now
+            # actually freezes currently-running ffmpeg subprocesses
+            # (SIGSTOP) when a stream starts, not just delays new
+            # dispatches. Resume on stream end (SIGCONT). Each server
+            # tracks its own log-deduping flag so we only emit the
+            # "Pausing"/"Resuming" line once per stream-start /
+            # stream-end transition.
+            try:
+                pause_label: Optional[str] = None
+                if await self._should_pause_for_plex():
+                    pause_label = "Plex"
+                    if not getattr(self, '_plex_pause_logged', False):
+                        print("[WORKER] Pausing — active Plex stream(s) detected", flush=True)
+                        self._plex_pause_logged = True
+                elif await self._should_pause_for_jellyfin():
+                    pause_label = "Jellyfin"
+                    if not getattr(self, '_jellyfin_pause_logged', False):
+                        print("[WORKER] Pausing — active Jellyfin stream(s) detected", flush=True)
+                        self._jellyfin_pause_logged = True
+                elif await self._should_pause_for_emby():
+                    pause_label = "Emby"
+                    if not getattr(self, '_emby_pause_logged', False):
+                        print("[WORKER] Pausing — active Emby stream(s) detected", flush=True)
+                        self._emby_pause_logged = True
+
+                if pause_label is not None:
+                    # Stream is active. Freeze any running ffmpeg
+                    # subprocesses so they stop competing for I/O and
+                    # CPU during playback. Idempotent — already-frozen
+                    # procs are skipped.
+                    self._freeze_active_procs(pause_label)
+                    await asyncio.sleep(15)
+                    continue
+
+                # No stream active — resume any frozen procs and clear
+                # per-server log-dedup flags.
+                if self._stream_paused_jobs:
+                    self._resume_paused_procs()
+                if getattr(self, '_plex_pause_logged', False):
+                    print("[WORKER] Resuming — Plex streams ended", flush=True)
+                    self._plex_pause_logged = False
+                if getattr(self, '_jellyfin_pause_logged', False):
+                    print("[WORKER] Resuming — Jellyfin streams ended", flush=True)
+                    self._jellyfin_pause_logged = False
+                if getattr(self, '_emby_pause_logged', False):
+                    print("[WORKER] Resuming — Emby streams ended", flush=True)
+                    self._emby_pause_logged = False
+            except Exception as exc:
+                print(f"[WORKER] Stream-pause check failed (non-fatal): {exc}", flush=True)
 
             # Clean up completed tasks
             done_ids = [jid for jid, t in self._active_tasks.items() if t.done()]

@@ -76,7 +76,7 @@ _ENCODING_DEFAULTS = {
     "plex_prioritize_unwatched": "false",
     "plex_pause_on_stream": "false",
     "plex_pause_stream_threshold": "1",
-    "plex_pause_transcode_only": "true",
+    "plex_pause_transcode_only": "false",
     "jellyfin_url": "",
     "jellyfin_api_key": "",
     "jellyfin_user_id": "",
@@ -85,7 +85,7 @@ _ENCODING_DEFAULTS = {
     "jellyfin_empty_trash": "false",
     "jellyfin_pause_on_stream": "false",
     "jellyfin_pause_stream_threshold": "1",
-    "jellyfin_pause_transcode_only": "true",
+    "jellyfin_pause_transcode_only": "false",
     "emby_url": "",
     "emby_api_key": "",
     "emby_user_id": "",
@@ -94,7 +94,7 @@ _ENCODING_DEFAULTS = {
     "emby_empty_trash": "false",
     "emby_pause_on_stream": "false",
     "emby_pause_stream_threshold": "1",
-    "emby_pause_transcode_only": "true",
+    "emby_pause_transcode_only": "false",
     # Conversion filters
     "min_bitrate_mbps": "0",  # 0 = disabled; skip files below this bitrate (Mbps)
     "max_bitrate_mbps": "0",  # 0 = disabled; only convert files above this bitrate (Mbps)
@@ -491,7 +491,7 @@ async def get_encoding_settings():
     # right; this corrects the omission for both Jellyfin and Emby.
     result["jellyfin_pause_on_stream"] = merged.get("jellyfin_pause_on_stream", "false").lower() == "true"
     result["jellyfin_pause_stream_threshold"] = int(merged.get("jellyfin_pause_stream_threshold", "1") or 1)
-    result["jellyfin_pause_transcode_only"] = merged.get("jellyfin_pause_transcode_only", "true").lower() == "true"
+    result["jellyfin_pause_transcode_only"] = merged.get("jellyfin_pause_transcode_only", "false").lower() == "true"
 
     # Emby
     emby_key = merged.get("emby_api_key", "")
@@ -502,7 +502,7 @@ async def get_encoding_settings():
     result["emby_path_mapping"] = merged.get("emby_path_mapping", "")
     result["emby_pause_on_stream"] = merged.get("emby_pause_on_stream", "false").lower() == "true"
     result["emby_pause_stream_threshold"] = int(merged.get("emby_pause_stream_threshold", "1") or 1)
-    result["emby_pause_transcode_only"] = merged.get("emby_pause_transcode_only", "true").lower() == "true"
+    result["emby_pause_transcode_only"] = merged.get("emby_pause_transcode_only", "false").lower() == "true"
 
     # Conversion filters
     result["min_bitrate_mbps"] = int(merged.get("min_bitrate_mbps", "0"))
@@ -528,7 +528,7 @@ async def get_encoding_settings():
     result["plex_prioritize_unwatched"] = merged.get("plex_prioritize_unwatched", "false").lower() == "true"
     result["plex_pause_on_stream"] = merged.get("plex_pause_on_stream", "false").lower() == "true"
     result["plex_pause_stream_threshold"] = int(merged.get("plex_pause_stream_threshold", "1"))
-    result["plex_pause_transcode_only"] = merged.get("plex_pause_transcode_only", "true").lower() == "true"
+    result["plex_pause_transcode_only"] = merged.get("plex_pause_transcode_only", "false").lower() == "true"
 
     # Authentication — mask the api_key the same way we mask TMDB / Plex /
     # Sonarr / Radarr keys. Previously this endpoint returned the key in

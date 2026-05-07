@@ -353,7 +353,7 @@ export default function SchedulePage() {
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <h3 style={{ color: "var(--text-primary)", marginBottom: 8 }}>Plex / Jellyfin / Emby Stream-Aware Scheduling</h3>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          Pause encoding when media server users are actively streaming. Prevents competing for disk I/O and CPU, ensuring smooth playback. Encoding resumes automatically when streams end.
+          Pause encoding when media server users are actively streaming. Running ffmpeg processes are frozen (SIGSTOP) so they consume zero CPU/IO until the stream ends — no work is lost, the encode resumes (SIGCONT) from the exact frame it stopped at. New jobs also wait until streams end before starting. By default, both transcoding and direct-play streams trigger the pause; flip "Count only" to <em>Transcoding streams</em> if you want direct-play to allow encoding to continue.
         </div>
 
         {/* Plex */}

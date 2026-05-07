@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] — 2026-05-07
+
+### Changed
+- **Pause-on-stream now actually pauses running encodes** (Plex / Jellyfin / Emby). Previously the worker only delayed *new* jobs from starting while a stream was active; currently-running ffmpeg processes were left untouched. Now the worker sends SIGSTOP to every active ffmpeg subprocess when a stream starts, freezing them at zero CPU / zero disk-IO. SIGCONT on stream-end resumes from the exact frame they stopped at — no work lost. The pause-check loop runs every 15 seconds regardless of `len(_active_tasks)`, so the freeze takes effect within one cycle of a stream starting.
+- **Default for `*_pause_transcode_only` flipped from `true` to `false`** for all three media servers. Under the new SIGSTOP behavior, even direct-play streams mean "user is watching", so pausing is appropriate; the previous "transcoding only" default was a holdover from when pause-on-stream just delayed dispatch and direct-play didn't compete for transcode CPU. Existing users with this setting stored in DB are unaffected; the new default only applies to fresh installs and freshly-toggled fields.
+- Updated Schedule page UI copy to reflect the real-pause behavior (mentions SIGSTOP/SIGCONT explicitly so users know it's lossless).
+
 ## [0.4.4] — 2026-05-07
 
 ### Fixed
