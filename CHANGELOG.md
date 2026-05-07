@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-07
+
+### Added
+- **Emby integration** at full feature parity with Jellyfin: library refresh after each conversion, active-stream detection (pause encoding when someone's watching), watched-status sync for queue prioritization, rule-engine inputs (Emby tag + watched-status condition types; genre/library shared with the existing Plex pipeline), bulk metadata sync (`POST /api/rules/sync-emby`), path mapping, connection test. New Emby section in Settings → Integrations. Nine new settings keys (`emby_url`, `emby_api_key`, `emby_user_id`, `emby_path_mapping`, `emby_scan_after_conversion`, `emby_empty_trash`, `emby_pause_on_stream`, `emby_pause_stream_threshold`, `emby_pause_transcode_only`). New `backend/emby.py` mirrors `backend/jellyfin.py` 1:1; Emby's HTTP API is ~90% identical to Jellyfin's so the integration shares the `Authorization: MediaBrowser Token=...` header and the same `/Library/Refresh`, `/Sessions`, `/Library/VirtualFolders`, `/Users` endpoints. Emby URL is added to the SSRF allowlist and (drive-by fix) so is Jellyfin's, which was previously unprotected. Synthetic API-shape unit tests for `backend/emby.py` (`backend/tests/test_emby.py`).
+
 ## [0.3.138] — 2026-05-07
 
 ### Removed
