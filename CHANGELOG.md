@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.138] — 2026-05-07
+
+### Removed
+- "Re-resolve cached posters" Settings section (both buttons), the `POST /api/posters/re-resolve` endpoint, and the `reResolvePosters` API export. The "Re-resolve all auto-matched" path was redundant with the type-impossible cache invalidation (v0.3.111+) and the per-release one-shot purge migrations (v0.3.116+); the "Re-resolve placeholders" path is replaced by an automatic 7-day TTL on `source='placeholder'` rows in `resolve_posters` — stale placeholders re-resolve on next read.
+
 ## [0.3.137] — 2026-05-07
 
 ### Fixed

@@ -252,7 +252,8 @@ async def _maybe_purge_tvdb_cache_v116(db) -> None:
         await db.commit()
     except Exception as exc:
         # Failed migrations shouldn't block the API. Worst case is the
-        # user sees stale data and can manually click re-resolve.
+        # user sees stale data until the next type-impossible check
+        # (resolve_posters) or stale-placeholder TTL (v0.3.138) catches it.
         print(f"[POSTER] v0.3.116 migration skipped: {exc}", flush=True)
 
 
@@ -284,10 +285,23 @@ async def resolve_posters(req: ResolveRequest):
         # Batch query for all requested paths at once
         placeholders = ",".join("?" for _ in req.paths)
         async with db.execute(
-            f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type FROM poster_cache WHERE folder_path IN ({placeholders})",
+            f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at FROM poster_cache WHERE folder_path IN ({placeholders})",
             req.paths,
         ) as cur:
             cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
+
+        # Stale-placeholder TTL (v0.3.138+). A `source='placeholder'` row
+        # means the resolver couldn't find a TMDB/Plex match the last time
+        # it tried. Without re-trying, those rows stay placeholder forever
+        # — even after TMDB later adds the title or after a resolver
+        # improvement. Pre-v0.3.138 the user had to click a manual
+        # "Re-resolve placeholders" button in Settings; now any placeholder
+        # row older than 7 days re-resolves automatically on next read,
+        # which removes the need for the button entirely. Manual overrides
+        # and `other-skipped` rows are excluded from the TTL.
+        _PLACEHOLDER_TTL_DAYS = 7
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        _stale_cutoff = (_dt.now(_tz.utc) - _td(days=_PLACEHOLDER_TTL_DAYS)).isoformat()
 
         # Pre-fetch dir labels for every requested path once — used by
         # the type-impossible cache invalidation below. Cheap (single
@@ -327,6 +341,17 @@ async def resolve_posters(req: ResolveRequest):
                 # itself" symptom.
                 cached_source = (row["source"] or "")
                 is_manual = cached_source == "tmdb-manual"
+                # Stale-placeholder check (v0.3.138+): re-resolve any
+                # row that previously failed to match (source='placeholder')
+                # if it's older than the TTL. Replaces the old manual
+                # "Re-resolve placeholders" Settings button.
+                if cached_source == "placeholder" and (row["resolved_at"] or "") < _stale_cutoff:
+                    await db.execute(
+                        "DELETE FROM poster_cache WHERE folder_path = ?",
+                        (path,),
+                    )
+                    uncached.append(path)
+                    continue
                 if not is_manual:
                     parsed_check = parse_folder_name(path, walk_files=False)
                     label_mt = path_label_type.get(path)
@@ -746,59 +771,15 @@ async def start_prefetch():
     return {"status": "started"}
 
 
-class ReResolveRequest(BaseModel):
-    # "placeholder" — only entries that previously failed to resolve
-    #                 (source = 'placeholder'). Cheap retry.
-    # "auto"        — every auto-resolved entry. Destructive — wipes
-    #                 working cached posters too. User-confirmed
-    #                 from the UI. Always preserves manual fixes
-    #                 (source = 'tmdb-manual') and Type=Other-skipped
-    #                 entries (source = 'other-skipped').
-    mode: str  # "placeholder" | "auto"
-
-
-@router.post("/re-resolve")
-async def re_resolve_posters(req: ReResolveRequest):
-    """Evict matching poster_cache rows and re-trigger the prefetch.
-
-    The bulk prefetch task (`_run_prefetch`) already iterates folders
-    that don't have cached posters. By DELETE-ing the targeted rows
-    first, we make them look uncached, and the existing pipeline
-    handles re-resolution end-to-end (including the bracket-ID,
-    dir-label, file-walking, and pass-ordering logic from
-    v0.3.81–v0.3.85).
-
-    Returns `{targeted, started}` so the UI can toast a count + show
-    progress via the existing /posters/prefetch-status polling.
-    """
-    if req.mode == "placeholder":
-        where = "source = 'placeholder'"
-    elif req.mode == "auto":
-        # 'tmdb' = auto via TMDB; 'plex' = auto via Plex.
-        # Excludes:
-        #   'tmdb-manual'   (user explicitly fixed → preserve)
-        #   'other-skipped' (Type=Other dirs — intentional skip)
-        where = "source IN ('tmdb', 'plex')"
-    else:
-        raise HTTPException(400, "mode must be 'placeholder' or 'auto'")
-
-    db = await aiosqlite.connect(DB_PATH)
-    try:
-        async with db.execute(f"SELECT COUNT(*) FROM poster_cache WHERE {where}") as cur:
-            row = await cur.fetchone()
-            count = row[0] if row else 0
-        if count > 0:
-            await db.execute(f"DELETE FROM poster_cache WHERE {where}")
-            await db.commit()
-    finally:
-        await db.close()
-
-    global _prefetch_task
-    started = False
-    if count > 0 and (_prefetch_task is None or _prefetch_task.done()):
-        _prefetch_task = asyncio.create_task(_run_prefetch())
-        started = True
-    return {"targeted": count, "started": started}
+# `POST /re-resolve` (with two modes — "placeholder" and "auto") was
+# removed in v0.3.138. The two reasons users hit it have both gone
+# automatic:
+#   * stale placeholders → invalidated on read after 7d (see TTL block
+#     in resolve_posters)
+#   * resolver-fix retroactive cleanup → handled by the type-impossible
+#     check (v0.3.111+) and one-shot purge migrations (v0.3.116+) per
+#     release that needs them
+# Manual fixes via the Fix-match modal cover individual mismatches.
 
 
 @router.get("/prefetch-status")
