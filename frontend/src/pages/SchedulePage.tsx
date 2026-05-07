@@ -29,6 +29,12 @@ export default function SchedulePage() {
   const [plexPauseEnabled, setPlexPauseEnabled] = useState(false);
   const [plexPauseThreshold, setPlexPauseThreshold] = useState(1);
   const [plexPauseTranscodeOnly, setPlexPauseTranscodeOnly] = useState(true);
+  const [jellyfinPauseEnabled, setJellyfinPauseEnabled] = useState(false);
+  const [jellyfinPauseThreshold, setJellyfinPauseThreshold] = useState(1);
+  const [jellyfinPauseTranscodeOnly, setJellyfinPauseTranscodeOnly] = useState(true);
+  const [embyPauseEnabled, setEmbyPauseEnabled] = useState(false);
+  const [embyPauseThreshold, setEmbyPauseThreshold] = useState(1);
+  const [embyPauseTranscodeOnly, setEmbyPauseTranscodeOnly] = useState(true);
   const toast = useToast();
 
   useEffect(() => {
@@ -42,6 +48,12 @@ export default function SchedulePage() {
         setPlexPauseEnabled(enc.plex_pause_on_stream ?? false);
         setPlexPauseThreshold(enc.plex_pause_stream_threshold ?? 1);
         setPlexPauseTranscodeOnly(enc.plex_pause_transcode_only ?? true);
+        setJellyfinPauseEnabled(enc.jellyfin_pause_on_stream ?? false);
+        setJellyfinPauseThreshold(enc.jellyfin_pause_stream_threshold ?? 1);
+        setJellyfinPauseTranscodeOnly(enc.jellyfin_pause_transcode_only ?? true);
+        setEmbyPauseEnabled(enc.emby_pause_on_stream ?? false);
+        setEmbyPauseThreshold(enc.emby_pause_stream_threshold ?? 1);
+        setEmbyPauseTranscodeOnly(enc.emby_pause_transcode_only ?? true);
       }
     }).catch(() => {});
     getSchedule().then((r: any) => {
@@ -339,58 +351,145 @@ export default function SchedulePage() {
 
       {/* Stream-Aware Scheduling */}
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <h3 style={{ color: "var(--text-primary)" }}>Plex / Jellyfin / Emby Stream-Aware Scheduling</h3>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{plexPauseEnabled ? "Enabled" : "Disabled"}</span>
-            <input type="checkbox" checked={plexPauseEnabled}
-              onChange={(e) => setPlexPauseEnabled(e.target.checked)}
-              style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-          </label>
-        </div>
+        <h3 style={{ color: "var(--text-primary)", marginBottom: 8 }}>Plex / Jellyfin / Emby Stream-Aware Scheduling</h3>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          Pause encoding when Plex, Jellyfin, or Emby users are actively streaming. Prevents competing for disk I/O and CPU, ensuring smooth playback. Encoding resumes automatically when streams end.
+          Pause encoding when media server users are actively streaming. Prevents competing for disk I/O and CPU, ensuring smooth playback. Encoding resumes automatically when streams end.
         </div>
 
-        <div style={{ opacity: plexPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 16 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
-              <input type="number" min={1} max={20} style={inputStyle} disabled={!plexPauseEnabled}
-                value={plexPauseThreshold}
-                onChange={e => setPlexPauseThreshold(Number(e.target.value))} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
-              <select style={inputStyle} disabled={!plexPauseEnabled}
-                value={plexPauseTranscodeOnly ? "transcode" : "all"}
-                onChange={e => setPlexPauseTranscodeOnly(e.target.value === "transcode")}>
-                <option value="transcode">Transcoding streams</option>
-                <option value="all">All streams (including direct play)</option>
-              </select>
-            </div>
+        {/* Plex */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Plex</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{plexPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <input type="checkbox" checked={plexPauseEnabled}
+                onChange={(e) => setPlexPauseEnabled(e.target.checked)}
+                style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+            </label>
           </div>
-
-          {plexPauseEnabled && (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4, marginBottom: 12 }}>
-              Encoding will pause when {plexPauseThreshold} or more {plexPauseTranscodeOnly ? "transcoding" : ""} stream{plexPauseThreshold !== 1 ? "s" : ""} {plexPauseTranscodeOnly ? "are" : plexPauseThreshold === 1 ? "is" : "are"} active.
-              {plexPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
-              {" "}Checks every 15 seconds.
+          <div style={{ opacity: plexPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <input type="number" min={1} max={20} style={inputStyle} disabled={!plexPauseEnabled}
+                  value={plexPauseThreshold}
+                  onChange={e => setPlexPauseThreshold(Number(e.target.value))} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <select style={inputStyle} disabled={!plexPauseEnabled}
+                  value={plexPauseTranscodeOnly ? "transcode" : "all"}
+                  onChange={e => setPlexPauseTranscodeOnly(e.target.value === "transcode")}>
+                  <option value="transcode">Transcoding streams</option>
+                  <option value="all">All streams (including direct play)</option>
+                </select>
+              </div>
             </div>
-          )}
-
-          <button className="btn btn-primary"
-            onClick={async () => {
-              await updateEncodingSettings({
-                plex_pause_on_stream: plexPauseEnabled,
-                plex_pause_stream_threshold: String(plexPauseThreshold),
-                plex_pause_transcode_only: plexPauseTranscodeOnly,
-              });
-              toast("Streaming settings saved", "success");
-            }}>
-            Save Streaming Settings
-          </button>
+            {plexPauseEnabled && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
+                Encoding will pause when {plexPauseThreshold} or more {plexPauseTranscodeOnly ? "transcoding" : ""} stream{plexPauseThreshold !== 1 ? "s" : ""} {plexPauseTranscodeOnly ? "are" : plexPauseThreshold === 1 ? "is" : "are"} active.
+                {plexPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
+                {" "}Checks every 15 seconds.
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Jellyfin */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Jellyfin</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{jellyfinPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <input type="checkbox" checked={jellyfinPauseEnabled}
+                onChange={(e) => setJellyfinPauseEnabled(e.target.checked)}
+                style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+            </label>
+          </div>
+          <div style={{ opacity: jellyfinPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <input type="number" min={1} max={20} style={inputStyle} disabled={!jellyfinPauseEnabled}
+                  value={jellyfinPauseThreshold}
+                  onChange={e => setJellyfinPauseThreshold(Number(e.target.value))} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <select style={inputStyle} disabled={!jellyfinPauseEnabled}
+                  value={jellyfinPauseTranscodeOnly ? "transcode" : "all"}
+                  onChange={e => setJellyfinPauseTranscodeOnly(e.target.value === "transcode")}>
+                  <option value="transcode">Transcoding streams</option>
+                  <option value="all">All streams (including direct play)</option>
+                </select>
+              </div>
+            </div>
+            {jellyfinPauseEnabled && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
+                Encoding will pause when {jellyfinPauseThreshold} or more {jellyfinPauseTranscodeOnly ? "transcoding" : ""} stream{jellyfinPauseThreshold !== 1 ? "s" : ""} {jellyfinPauseTranscodeOnly ? "are" : jellyfinPauseThreshold === 1 ? "is" : "are"} active.
+                {jellyfinPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
+                {" "}Checks every 15 seconds.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Emby */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Emby</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{embyPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <input type="checkbox" checked={embyPauseEnabled}
+                onChange={(e) => setEmbyPauseEnabled(e.target.checked)}
+                style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+            </label>
+          </div>
+          <div style={{ opacity: embyPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <input type="number" min={1} max={20} style={inputStyle} disabled={!embyPauseEnabled}
+                  value={embyPauseThreshold}
+                  onChange={e => setEmbyPauseThreshold(Number(e.target.value))} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <select style={inputStyle} disabled={!embyPauseEnabled}
+                  value={embyPauseTranscodeOnly ? "transcode" : "all"}
+                  onChange={e => setEmbyPauseTranscodeOnly(e.target.value === "transcode")}>
+                  <option value="transcode">Transcoding streams</option>
+                  <option value="all">All streams (including direct play)</option>
+                </select>
+              </div>
+            </div>
+            {embyPauseEnabled && (
+              <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
+                Encoding will pause when {embyPauseThreshold} or more {embyPauseTranscodeOnly ? "transcoding" : ""} stream{embyPauseThreshold !== 1 ? "s" : ""} {embyPauseTranscodeOnly ? "are" : embyPauseThreshold === 1 ? "is" : "are"} active.
+                {embyPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
+                {" "}Checks every 15 seconds.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <button className="btn btn-primary"
+          onClick={async () => {
+            await updateEncodingSettings({
+              plex_pause_on_stream: plexPauseEnabled,
+              plex_pause_stream_threshold: String(plexPauseThreshold),
+              plex_pause_transcode_only: plexPauseTranscodeOnly,
+              jellyfin_pause_on_stream: jellyfinPauseEnabled,
+              jellyfin_pause_stream_threshold: String(jellyfinPauseThreshold),
+              jellyfin_pause_transcode_only: jellyfinPauseTranscodeOnly,
+              emby_pause_on_stream: embyPauseEnabled,
+              emby_pause_stream_threshold: String(embyPauseThreshold),
+              emby_pause_transcode_only: embyPauseTranscodeOnly,
+            });
+            toast("Streaming settings saved", "success");
+          }}>
+          Save Streaming Settings
+        </button>
       </div>
     </div>
   );
