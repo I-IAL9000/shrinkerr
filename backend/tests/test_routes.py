@@ -54,3 +54,13 @@ async def test_get_queue_stats(client):
     assert "failed" in data
     assert "total_space_saved" in data
     assert data["total_jobs"] == 0
+
+
+@pytest.mark.asyncio
+async def test_test_api_key_emby_unconfigured(client):
+    """When Emby isn't configured, the test endpoint returns success=False."""
+    response = await client.post("/api/settings/test-api",
+                                  json={"service": "emby"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is False

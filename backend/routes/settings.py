@@ -1210,6 +1210,10 @@ async def test_api_key(req: TestApiRequest):
             from backend.jellyfin import test_jellyfin_connection
             return await test_jellyfin_connection()
 
+        elif req.service == "emby":
+            from backend.emby import test_emby_connection
+            return await test_emby_connection()
+
         elif req.service == "sonarr":
             sonarr_url = settings.get("sonarr_url", "")
             sonarr_key = settings.get("sonarr_api_key", "")
