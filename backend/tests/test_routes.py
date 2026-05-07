@@ -95,6 +95,11 @@ async def test_jellyfin_settings_round_trip(client):
     assert data["jellyfin_user_id"] == "user-abc"
     assert data["jellyfin_path_mapping"] == "/media=/mnt/media"
     assert data["jellyfin_configured"] is True
+    # Pause-on-stream trio — v0.4.4 fixed the GET-response omission that
+    # made the toggle appear disabled after every reload.
+    assert data["jellyfin_pause_on_stream"] is True
+    assert data["jellyfin_pause_stream_threshold"] == 2
+    assert data["jellyfin_pause_transcode_only"] is False
 
 
 @pytest.mark.asyncio
@@ -122,3 +127,6 @@ async def test_emby_settings_round_trip(client):
     assert data["emby_user_id"] == "user-xyz"
     assert data["emby_path_mapping"] == "/media=/mnt/media"
     assert data["emby_configured"] is True
+    assert data["emby_pause_on_stream"] is True
+    assert data["emby_pause_stream_threshold"] == 3
+    assert data["emby_pause_transcode_only"] is True

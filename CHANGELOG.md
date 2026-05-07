@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] — 2026-05-07
+
+### Fixed
+- **Jellyfin/Emby Stream-Aware Scheduling toggles didn't persist visually.** Save toast appeared, DB write succeeded, but reloading the page showed the toggles disabled again. Root cause: the `GET /api/settings/encoding` response builder didn't include `*_pause_on_stream`, `*_pause_stream_threshold`, or `*_pause_transcode_only` for Jellyfin or Emby — only Plex's pause keys were assigned. The frontend had no value to read back, so React initialised the toggles from `undefined` and rendered them as off. v0.4.2 fixed the PUT side; v0.4.4 fixes the GET side. The `test_jellyfin_settings_round_trip` and `test_emby_settings_round_trip` tests in `test_routes.py` now assert all three pause keys round-trip correctly (would have caught this earlier).
+
 ## [0.4.3] — 2026-05-07
 
 ### Added

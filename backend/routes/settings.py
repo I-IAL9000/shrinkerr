@@ -484,6 +484,14 @@ async def get_encoding_settings():
     result["jellyfin_user_id"] = merged.get("jellyfin_user_id", "")
     result["jellyfin_configured"] = bool(jellyfin_key and merged.get("jellyfin_url", ""))
     result["jellyfin_path_mapping"] = merged.get("jellyfin_path_mapping", "")
+    # Pause-on-stream trio. Pre-v0.4.4 these weren't exposed in the GET
+    # response, so the frontend couldn't read back saved values — toggles
+    # always rendered off after a page reload even when the DB had them
+    # set. Plex's equivalent block at the bottom of this function got it
+    # right; this corrects the omission for both Jellyfin and Emby.
+    result["jellyfin_pause_on_stream"] = merged.get("jellyfin_pause_on_stream", "false").lower() == "true"
+    result["jellyfin_pause_stream_threshold"] = int(merged.get("jellyfin_pause_stream_threshold", "1") or 1)
+    result["jellyfin_pause_transcode_only"] = merged.get("jellyfin_pause_transcode_only", "true").lower() == "true"
 
     # Emby
     emby_key = merged.get("emby_api_key", "")
@@ -492,6 +500,9 @@ async def get_encoding_settings():
     result["emby_user_id"] = merged.get("emby_user_id", "")
     result["emby_configured"] = bool(emby_key and merged.get("emby_url", ""))
     result["emby_path_mapping"] = merged.get("emby_path_mapping", "")
+    result["emby_pause_on_stream"] = merged.get("emby_pause_on_stream", "false").lower() == "true"
+    result["emby_pause_stream_threshold"] = int(merged.get("emby_pause_stream_threshold", "1") or 1)
+    result["emby_pause_transcode_only"] = merged.get("emby_pause_transcode_only", "true").lower() == "true"
 
     # Conversion filters
     result["min_bitrate_mbps"] = int(merged.get("min_bitrate_mbps", "0"))
