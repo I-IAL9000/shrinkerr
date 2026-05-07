@@ -2270,36 +2270,67 @@ class QueueWorker:
             try:
                 db = await self._db()
                 try:
-                    # Same watcher-race guard as the early-update site
-                    # above. Wipe any pre-existing scan_results row at
-                    # current_file_path before renaming the original
-                    # row's file_path; without this the UNIQUE
-                    # constraint trips and the converted-flag never
-                    # lands. v0.3.130+.
-                    await db.execute(
-                        "DELETE FROM scan_results WHERE file_path = ?",
+                    # Skip-if-already-done check. v0.3.137+.
+                    #
+                    # The early scan_results update (line 1604+) already
+                    # ran the same DELETE+UPDATE pattern, status='running',
+                    # at the time of conversion completion. By the time
+                    # we get here, status is 'completed' (line 2217), and
+                    # if the early update succeeded, scan_results.file_path
+                    # has already been renamed h264→h265 with converted=1.
+                    #
+                    # Pre-v0.3.137 we ran the DELETE+UPDATE anyway, which
+                    # was actively destructive: the DELETE wiped the
+                    # correctly-renamed row at current_file_path that the
+                    # early update had just created, then the UPDATE
+                    # matched 0 rows (file_path no longer exists). Net
+                    # result: scan_results lost the row entirely, and the
+                    # next watcher poll re-INSERTed it with is_new=1,
+                    # converted=0, new_detected_at=now — exactly the
+                    # "newly converted files showing as new" symptom.
+                    #
+                    # v0.3.130 introduced this regression when it added
+                    # the DELETE for watcher-race protection at this site.
+                    # The DELETE is only needed when the early update
+                    # didn't run (or rolled back) — detect that and
+                    # skip the rest if the row at current_file_path is
+                    # already in the correct post-conversion state.
+                    async with db.execute(
+                        "SELECT converted FROM scan_results WHERE file_path = ?",
                         (current_file_path,),
-                    )
-                    # Update existing entry to new path
-                    # Get new file size
-                    try:
-                        new_size = Path(current_file_path).stat().st_size
-                    except OSError:
-                        new_size = None
-                    if new_size:
+                    ) as cur:
+                        existing = await cur.fetchone()
+                    already_correct = bool(existing and existing["converted"])
+                    if not already_correct:
+                        # Get new file size
+                        try:
+                            new_size = Path(current_file_path).stat().st_size
+                        except OSError:
+                            new_size = None
+                        # Same watcher-race guard as the early-update site
+                        # above. Wipe any pre-existing scan_results row at
+                        # current_file_path before renaming the original
+                        # row's file_path; without this the UNIQUE
+                        # constraint trips and the converted-flag never
+                        # lands. v0.3.130+.
                         await db.execute(
-                            "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
-                            "WHERE file_path = ?",
-                            (current_file_path, new_size, file_path),
+                            "DELETE FROM scan_results WHERE file_path = ?",
+                            (current_file_path,),
                         )
-                    else:
-                        await db.execute(
-                            "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
-                            "WHERE file_path = ?",
-                            (current_file_path, file_path),
-                        )
-                    await db.commit()
-                    print(f"[WORKER] Updated scan_results: {file_path} -> {current_file_path}", flush=True)
+                        if new_size:
+                            await db.execute(
+                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
+                                "WHERE file_path = ?",
+                                (current_file_path, new_size, file_path),
+                            )
+                        else:
+                            await db.execute(
+                                "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
+                                "WHERE file_path = ?",
+                                (current_file_path, file_path),
+                            )
+                        await db.commit()
+                        print(f"[WORKER] Updated scan_results: {file_path} -> {current_file_path}", flush=True)
                 finally:
                     await db.close()
             except Exception as exc:

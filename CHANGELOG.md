@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.137] — 2026-05-07
+
+### Fixed
+- Newly-converted Shrinkerr files (Coroner, Conviction, Conversations with Friends, Cook at all Costs, …) showing as NEW with `converted=0` despite successful conversion jobs. **Root cause: the worker's late post-conversion scan_results UPDATE was destroying the early site's correct work.** Both sites use a v0.3.130 DELETE+UPDATE pattern; the early site (status='running') correctly renames h264 row → h265 with converted=1. The late site (status='completed', after `update_status`) then DELETEs the just-renamed row at h265, then UPDATEs WHERE file_path=h264 (matches 0 rows because already renamed). Net: scan_results loses the row entirely, the next watcher poll re-INSERTs it with `is_new=1, converted=0, new_detected_at=now`. v0.3.130 introduced this regression when it added watcher-race protection to both sites; pre-v0.3.130 the late site was just a no-op rename. Fix: late site now checks if a row at `current_file_path` already has `converted=1` and skips the destructive DELETE+UPDATE if so. Plus a one-shot heal that retroactively fixes all rows wiped by this bug.
+
 ## [0.3.136] — 2026-05-06
 
 ### Fixed

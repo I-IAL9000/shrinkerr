@@ -607,6 +607,50 @@ async def init_db():
             except Exception as exc:
                 print(f"[DB] {label} heal skipped: {exc}", flush=True)
 
+        # v0.3.137 heal: rows wiped by the destructive late-update bug
+        # (queue.py post-conversion site #2 was DELETE+UPDATE'ing rows the
+        # early site had just correctly renamed). Symptom: scan_results row
+        # at the post-rename path shows `converted=0, is_new=1,
+        # new_detected_at=now`, despite a successful Shrinkerr conversion
+        # job pointing at that exact path. v0.3.132's flag-gated heal was
+        # one-shot and ran before these conversions completed; v0.3.135's
+        # re-run flag was also already set; v0.3.136's heal required
+        # converted=1 which these don't have. New flag, fresh pass.
+        try:
+            flag = "_v0_3_137_destructive_late_update_heal"
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag,)
+            ) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute(
+                    """UPDATE scan_results
+                       SET converted = 1, is_new = 0, new_detected_at = NULL
+                       WHERE file_path IN (
+                           SELECT file_path FROM jobs
+                           WHERE status = 'completed'
+                             AND job_type IN ('convert', 'combined')
+                             AND space_saved > 0
+                             AND original_file_path IS NOT NULL
+                             AND original_file_path != file_path
+                       )
+                       AND (converted = 0 OR is_new = 1 OR new_detected_at IS NOT NULL)"""
+                )
+                healed = cur.rowcount
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                    (flag,),
+                )
+                if healed:
+                    print(
+                        f"[DB] v0.3.137 heal: fixed converted/is_new/new_detected_at on "
+                        f"{healed} post-conversion scan_results row(s) wiped by the "
+                        f"destructive late-update bug",
+                        flush=True,
+                    )
+        except Exception as exc:
+            print(f"[DB] v0.3.137 heal skipped: {exc}", flush=True)
+
         # v0.3.136 heal: clear `new_detected_at` on already-converted rows.
         # Prior heals (v0.3.132/v0.3.135) cleared the legacy `is_new`
         # column, but the Scanner UI's NEW badge is derived from
