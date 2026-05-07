@@ -39,7 +39,7 @@ Mirrors `backend/jellyfin.py` function-for-function (~530 lines). Same function 
 | `_translate_path(file_path, mapping)` | Container → Emby path |
 | `_reverse_translate_path(emby_path, mapping)` | Emby → container path |
 | `test_emby_connection()` | Hit `/System/Info`; return server name + library count |
-| `get_emby_libraries(url, api_key)` | List libraries via `/Library/MediaFolders` |
+| `get_emby_libraries(url, api_key)` | List libraries via `/Library/VirtualFolders` |
 | `_get_user_id(url, api_key, stored_user_id)` | Auto-detect admin user via `/Users` |
 | `trigger_emby_scan(file_path)` | POST `/Library/Refresh` (blanket library refresh, mirroring jellyfin.py:170-181) |
 | `get_active_streams()` | Read `/Sessions`, filter to `NowPlayingItem present AND PlayState.IsPaused == false` |

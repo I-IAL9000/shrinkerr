@@ -26,7 +26,7 @@
 | `backend/routes/settings.py` | Read/write/validate the 9 new keys |
 | `backend/ssrf_guard.py` | Allow `emby_url` |
 | `backend/routes/scan.py` (or test-key route) | Accept `"emby"` for `testApiKey` |
-| `backend/queue.py` | `trigger_emby_scan` + `_should_pause_for_emby` + optional empty-trash |
+| `backend/queue.py` | `trigger_emby_scan` + `_should_pause_for_emby` |
 | `backend/rule_resolver.py` | Emby genre/tag/library/watched resolvers |
 | `backend/routes/rules.py` | `POST /api/rules/sync-emby` + extend rule-options endpoint |
 | `frontend/src/api.ts` | `testApiKey` union type + `syncEmbyMetadata` export |
