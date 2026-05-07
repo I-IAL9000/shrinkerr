@@ -794,6 +794,16 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["plex_url"] = validate_outbound_url(
                 update.plex_url.rstrip("/"), label="Plex URL",
             )
+        if update.jellyfin_url is not None:
+            from backend.ssrf_guard import validate_outbound_url
+            updates["jellyfin_url"] = validate_outbound_url(
+                update.jellyfin_url.rstrip("/"), label="Jellyfin URL",
+            )
+        if update.emby_url is not None:
+            from backend.ssrf_guard import validate_outbound_url
+            updates["emby_url"] = validate_outbound_url(
+                update.emby_url.rstrip("/"), label="Emby URL",
+            )
         if update.plex_token is not None and not update.plex_token.startswith("****"):
             updates["plex_token"] = update.plex_token
         if update.plex_path_mapping is not None:
