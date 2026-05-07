@@ -671,7 +671,7 @@ export const syncPlexRuleMetadata = () =>
 export const getPlexOptions = () =>
   apiFetch<{ labels: string[]; collections: string[]; genres: string[]; libraries: any[] }>("/rules/plex-options");
 export const getConditionOptions = () =>
-  apiFetch<{ sources: string[]; resolutions: string[]; video_codecs: string[]; audio_codecs: string[]; media_types: string[]; release_groups: string[]; arr_tags: { label: string; source: string }[] }>("/rules/condition-options");
+  apiFetch<{ sources: string[]; resolutions: string[]; video_codecs: string[]; audio_codecs: string[]; media_types: string[]; release_groups: string[]; arr_tags: { label: string; source: string }[]; jellyfin_tags: string[]; jellyfin_genres: string[]; emby_tags: string[]; emby_genres: string[] }>("/rules/condition-options");
 
 // Settings
 export const getMediaDirs = () => apiFetch<{ dirs: any[] }>("/settings/dirs");

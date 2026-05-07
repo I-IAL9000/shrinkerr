@@ -373,6 +373,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     library: { label: "Plex Library", group: "Plex", operators: [{ value: "is", label: "is" }], valueType: "select" },
     arr_tag: { label: "Sonarr/Radarr Tag", group: "Arr", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     jellyfin_tag: { label: "Jellyfin Tag", group: "Jellyfin", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    emby_tag: { label: "Emby Tag", group: "Emby", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    emby_watched: { label: "Emby Watched", group: "Emby", operators: [{ value: "is", label: "is" }], valueType: "select" },
     nzbget_category: { label: "Download Category", group: "Downloads", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
   };
 
@@ -3142,6 +3144,10 @@ volumes:
                           <optgroup label="Jellyfin">
                             <option value="jellyfin_tag">Jellyfin Tag</option>
                           </optgroup>
+                          <optgroup label="Emby">
+                            <option value="emby_tag">Emby Tag</option>
+                            <option value="emby_watched">Emby Watched</option>
+                          </optgroup>
                           <optgroup label="Downloads">
                             <option value="nzbget_category">Download Category</option>
                           </optgroup>
@@ -3258,6 +3264,21 @@ volumes:
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">Select tag...</option>
                               {(condOpts.jellyfin_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "emby_tag") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select tag...</option>
+                              {(condOpts.emby_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
+                            </select>;
+                          }
+
+                          if (cond.type === "emby_watched") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">Select...</option>
+                              <option value="true">Watched</option>
+                              <option value="false">Unwatched</option>
                             </select>;
                           }
 
