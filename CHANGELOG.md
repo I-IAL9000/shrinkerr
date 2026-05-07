@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] — 2026-05-07
+
+### Fixed
+- **Test Connection always failed with "URL and API key required"** for Jellyfin (and inherited by v0.4.0 Emby). Root cause: the `PUT /api/settings/encoding` save handler only persisted `jellyfin_url` / `emby_url` to the DB. The other 8 fields per server (`*_api_key`, `*_user_id`, `*_path_mapping`, `*_scan_after_conversion`, `*_empty_trash`, `*_pause_on_stream`, `*_pause_stream_threshold`, `*_pause_transcode_only`) were silently dropped by the handler — fields existed on the model and showed up in `_ENCODING_DEFAULTS` and the GET response, but `update_encoding_settings` never wrote them. Pre-existing for Jellyfin since it was added; Emby inherited the same gap. Effect: `_get_*_settings()` always returned an empty `*_api_key`, the connection test bailed early with "URL and API key required". Fix: 16 new persist branches in `update_encoding_settings` (8 jellyfin + 8 emby), with `****` masking-roundtrip guards on the api_key fields. Added `test_jellyfin_settings_round_trip` and `test_emby_settings_round_trip` to lock the behavior in.
+
 ## [0.4.1] — 2026-05-07
 
 ### Fixed

@@ -799,11 +799,49 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["jellyfin_url"] = validate_outbound_url(
                 update.jellyfin_url.rstrip("/"), label="Jellyfin URL",
             )
+        # Jellyfin secondary keys — pre-v0.4.2 this handler only persisted
+        # `jellyfin_url`, silently dropping every other field the frontend
+        # tried to save. That's why Test Connection always reported
+        # "URL and API key required" no matter what the user typed.
+        if update.jellyfin_api_key is not None and not update.jellyfin_api_key.startswith("****"):
+            updates["jellyfin_api_key"] = update.jellyfin_api_key
+        if update.jellyfin_user_id is not None:
+            updates["jellyfin_user_id"] = update.jellyfin_user_id
+        if update.jellyfin_path_mapping is not None:
+            updates["jellyfin_path_mapping"] = update.jellyfin_path_mapping
+        if update.jellyfin_scan_after_conversion is not None:
+            updates["jellyfin_scan_after_conversion"] = "true" if update.jellyfin_scan_after_conversion else "false"
+        if update.jellyfin_empty_trash is not None:
+            updates["jellyfin_empty_trash"] = "true" if update.jellyfin_empty_trash else "false"
+        if update.jellyfin_pause_on_stream is not None:
+            updates["jellyfin_pause_on_stream"] = "true" if update.jellyfin_pause_on_stream else "false"
+        if update.jellyfin_pause_stream_threshold is not None:
+            updates["jellyfin_pause_stream_threshold"] = str(update.jellyfin_pause_stream_threshold)
+        if update.jellyfin_pause_transcode_only is not None:
+            updates["jellyfin_pause_transcode_only"] = "true" if update.jellyfin_pause_transcode_only else "false"
         if update.emby_url is not None:
             from backend.ssrf_guard import validate_outbound_url
             updates["emby_url"] = validate_outbound_url(
                 update.emby_url.rstrip("/"), label="Emby URL",
             )
+        # Emby secondary keys — same gap as the Jellyfin block above; both
+        # were missing from the save handler entirely. v0.4.2+.
+        if update.emby_api_key is not None and not update.emby_api_key.startswith("****"):
+            updates["emby_api_key"] = update.emby_api_key
+        if update.emby_user_id is not None:
+            updates["emby_user_id"] = update.emby_user_id
+        if update.emby_path_mapping is not None:
+            updates["emby_path_mapping"] = update.emby_path_mapping
+        if update.emby_scan_after_conversion is not None:
+            updates["emby_scan_after_conversion"] = "true" if update.emby_scan_after_conversion else "false"
+        if update.emby_empty_trash is not None:
+            updates["emby_empty_trash"] = "true" if update.emby_empty_trash else "false"
+        if update.emby_pause_on_stream is not None:
+            updates["emby_pause_on_stream"] = "true" if update.emby_pause_on_stream else "false"
+        if update.emby_pause_stream_threshold is not None:
+            updates["emby_pause_stream_threshold"] = str(update.emby_pause_stream_threshold)
+        if update.emby_pause_transcode_only is not None:
+            updates["emby_pause_transcode_only"] = "true" if update.emby_pause_transcode_only else "false"
         if update.plex_token is not None and not update.plex_token.startswith("****"):
             updates["plex_token"] = update.plex_token
         if update.plex_path_mapping is not None:
