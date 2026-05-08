@@ -315,6 +315,35 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   </span>
                 </>}
 
+                {/* Audio-conversion row — shown when one or more source
+                    tracks were re-encoded to a new codec/bitrate
+                    (lossless→lossy auto-conversion or global audio_codec
+                    setting). v0.4.7+. Renders e.g.
+                    "Audio: DTS-HD MA → EAC3 640kb". */}
+                {Array.isArray(logData.encoding_stats.audio_converted_from)
+                  && logData.encoding_stats.audio_converted_from.length > 0
+                  && (() => {
+                    const sources = logData.encoding_stats.audio_converted_from as string[];
+                    // Target codec + bitrate: prefer the lossless-conversion-specific
+                    // fields (set when auto_convert_lossless triggered), fall back to
+                    // the global audio_codec/bitrate (set when audio_codec != "copy").
+                    const targetCodec = (logData.encoding_stats.lossless_target_codec
+                      || logData.encoding_stats.audio_codec || "").toUpperCase();
+                    const targetBitrate = logData.encoding_stats.lossless_target_bitrate
+                      ?? logData.encoding_stats.audio_bitrate;
+                    const targetLabel = targetBitrate
+                      ? `${targetCodec} ${targetBitrate}kb`
+                      : targetCodec;
+                    return (
+                      <>
+                        <span style={{ color: "var(--text-muted)" }}>Audio</span>
+                        <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
+                          {sources.join(" + ")} <span style={{ opacity: 0.6 }}>→</span> {targetLabel}
+                        </span>
+                      </>
+                    );
+                  })()}
+
                 {/* Track-removal rows — shown whenever the worker
                     recorded removal counts on the stats payload, which
                     happens for both audio-only cleanup jobs (v0.3.117+)

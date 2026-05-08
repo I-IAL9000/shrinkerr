@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7] — 2026-05-08
+
+### Added
+- **Audio conversion details in the Completed-tab job report.** The expanded view now shows e.g. `Audio: DTS-HD MA → EAC3 640kb` whenever Shrinkerr re-encoded one or more audio tracks during conversion. Triggered by either the lossless auto-conversion path (TrueHD / DTS-HD MA / FLAC / PCM tracks → user-selected lossy codec) or the global `audio_codec != "copy"` setting. Sources are deduped + sorted; multiple distinct source codecs render as `TrueHD + DTS-HD MA → EAC3 640kb`.
+
+### Fixed
+- **Seasons now sort numerically in the Scanner file tree and file list.** Previously "Season 11" sorted before "Season 2" because of lexicographic string compare. Switched all four `localeCompare` sites (FileTree node sort, FileTree file sort, PosterGrid title sort, PosterGrid section sort) to use `numeric: true`, which makes embedded digits compare as numbers. Affects any name with a numeric suffix (Season N, Disc N, Part N, etc.).
+
 ## [0.4.6] — 2026-05-07
 
 ### Added

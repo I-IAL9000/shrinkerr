@@ -100,7 +100,7 @@ function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string): Titl
     if (sortBy === "size") return a.totalSize - b.totalSize;
     if (sortBy === "files") return a.fileCount - b.fileCount;
     if (sortBy === "date") return Math.max(0, ...a.folders.map(f => f.newest_mtime)) - Math.max(0, ...b.folders.map(f => f.newest_mtime));
-    return a.title.localeCompare(b.title);
+    return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;
 }
@@ -504,7 +504,7 @@ export default function PosterGrid({
                     if (!byFolder.has(folderName)) byFolder.set(folderName, []);
                     byFolder.get(folderName)!.push(f);
                   }
-                  const sections = Array.from(byFolder.entries()).sort(([a], [b]) => a.localeCompare(b));
+                  const sections = Array.from(byFolder.entries()).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
                   const showHeaders = sections.length > 1;
                   return sections.map(([folderName, files], sectionIdx) => (
                     <div key={folderName}>

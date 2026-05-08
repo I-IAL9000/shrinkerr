@@ -203,12 +203,17 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
   return root;
 }
 
+// Natural-sort name comparator: digits compare numerically so
+// "Season 2" < "Season 11", not the lexicographic "Season 1" <
+// "Season 11" < "Season 2" the default localeCompare gives.
+const _nameCmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
 function sortNodes(nodes: TreeNode[], sortBy: SortBy, sortDir: SortDirection): TreeNode[] {
   const sorted = [...nodes].sort((a, b) => {
     if (sortBy === "size") return a.agg_total_size - b.agg_total_size;
     if (sortBy === "files") return a.agg_file_count - b.agg_file_count;
     if (sortBy === "date") return a.agg_newest_mtime - b.agg_newest_mtime;
-    return a.name.localeCompare(b.name);
+    return _nameCmp(a.name, b.name);
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;
 }
@@ -217,7 +222,7 @@ function sortFiles(files: ScannedFile[], sortBy: SortBy, sortDir: SortDirection)
   const sorted = [...files].sort((a, b) => {
     if (sortBy === "size") return a.file_size - b.file_size;
     if (sortBy === "date") return (a.file_mtime || 0) - (b.file_mtime || 0);
-    return a.file_name.localeCompare(b.file_name);
+    return _nameCmp(a.file_name, b.file_name);
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;
 }

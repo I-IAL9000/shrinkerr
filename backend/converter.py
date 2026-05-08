@@ -588,6 +588,48 @@ def get_audio_display_name(codec: str, profile: str = "") -> str:
     return AUDIO_CODEC_DISPLAY.get(c, codec.upper())
 
 
+def _build_audio_conversion_summary(
+    probe_audio_tracks: list,
+    global_audio_codec: str,
+    lossless_conversion: dict | None,
+) -> list[str]:
+    """Return display-name list of source audio codecs that were
+    re-encoded by this conversion. Empty when nothing was re-encoded.
+    Used by the Completed-tab job report to show e.g.
+    "DTS-HD MA → EAC3 640kb". v0.4.7+.
+
+    Two re-encode triggers:
+      * Global `audio_codec` is not "copy" — every kept audio track
+        gets re-encoded to that codec.
+      * `lossless_conversion` is set — only LOSSLESS tracks (TrueHD /
+        DTS-HD MA / FLAC / PCM / etc.) get re-encoded; lossy tracks
+        copy through unchanged.
+
+    Sources are deduped + sorted for stable display. Returns the source
+    side; the target codec/bitrate is reported separately in
+    encoding_stats so the frontend can render the arrow.
+    """
+    if not probe_audio_tracks:
+        return []
+    sources: set[str] = set()
+    if global_audio_codec and global_audio_codec.lower() != "copy":
+        # Every audio track will be re-encoded.
+        for t in probe_audio_tracks:
+            name = get_audio_display_name(t.get("codec", ""), t.get("profile", ""))
+            if name:
+                sources.add(name)
+    elif lossless_conversion:
+        # Only the lossless tracks get re-encoded; collect their pretty names.
+        for t in probe_audio_tracks:
+            codec = t.get("codec", "")
+            profile = t.get("profile", "")
+            if is_lossless_audio(codec, profile):
+                name = get_audio_display_name(codec, profile)
+                if name:
+                    sources.add(name)
+    return sorted(sources)
+
+
 def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
     """Replace audio codec tags in a filename with the actual primary audio codec."""
     # Build a combined pattern matching any known audio codec tag
@@ -2383,6 +2425,17 @@ async def convert_file(
             "crf": crf,
             "audio_codec": audio_codec,
             "audio_bitrate": audio_bitrate,
+            # Audio conversion details for the Completed-tab job report
+            # (v0.4.7+). Frontend renders e.g. "DTS-HD MA → EAC3 640kb"
+            # when these fields are present. Empty list when no audio was
+            # re-encoded (audio_codec="copy" and no lossless trigger).
+            "audio_converted_from": _build_audio_conversion_summary(
+                probe_audio_tracks=probe_audio_tracks,
+                global_audio_codec=audio_codec,
+                lossless_conversion=lossless_conversion,
+            ),
+            "lossless_target_codec": (lossless_conversion or {}).get("codec"),
+            "lossless_target_bitrate": (lossless_conversion or {}).get("bitrate"),
             "target_resolution": target_resolution,
             "input_size": original_size,
             "output_size": output_size,
