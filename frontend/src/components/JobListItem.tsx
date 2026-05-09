@@ -55,8 +55,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
     if (!canExpand) return;
     const next = !expanded;
     setExpanded(next);
-    // Load conversion log on first expand for completed jobs
-    if (next && job.status === "completed" && !logData) {
+    // Load conversion log on first expand for completed AND failed jobs.
+    // Failed jobs show error_log + ffmpeg_command + ffmpeg_log so the user
+    // can diagnose the failure without docker exec'ing into the container.
+    // v0.4.8+.
+    if (next && (job.status === "completed" || job.status === "failed") && !logData) {
       setLogLoading(true);
       try {
         const data = await getJobLog(job.id);
@@ -544,6 +547,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         padding: "8px 12px 8px 36px", fontSize: 12, lineHeight: 1.6,
         background: "rgba(233,69,96,0.05)", borderBottom: "1px solid var(--bg-card)",
       }}>
+        {/* Primary error message — sticky-captured by the converter so
+            the actual error survives even when an MKV's stream metadata
+            would otherwise push it out of the rolling buffer. v0.4.8+. */}
         {job.error_log ? (
           <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#e94560", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {job.error_log}
@@ -561,6 +567,41 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, opacity: 0.6, wordBreak: "break-all" }}>
           {job.file_path}
         </div>
+
+        {/* ffmpeg command + full stderr log, fetched lazily on expand.
+            v0.4.8+ — pre-fix the only failure detail surfaced was the
+            short error_log, with no way to see what command was run or
+            inspect the broader ffmpeg output. Required for diagnosing
+            anything more complex than "file not found". */}
+        {logLoading && (
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>Loading log…</div>
+        )}
+        {logData && (logData.ffmpeg_command || logData.ffmpeg_log) && (
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            {logData.ffmpeg_command && (
+              <details style={{ background: "var(--bg-card)", borderRadius: 4, padding: "6px 10px", fontSize: 11 }}>
+                <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>ffmpeg command</summary>
+                <pre style={{
+                  marginTop: 6, marginBottom: 0, fontSize: 10, lineHeight: 1.45,
+                  fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  color: "var(--text-secondary)",
+                }}>{logData.ffmpeg_command}</pre>
+              </details>
+            )}
+            {logData.ffmpeg_log && (
+              <details style={{ background: "var(--bg-card)", borderRadius: 4, padding: "6px 10px", fontSize: 11 }}>
+                <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>
+                  ffmpeg log <span style={{ opacity: 0.5 }}>(last {logData.ffmpeg_log.split("\n").length} line{logData.ffmpeg_log.split("\n").length === 1 ? "" : "s"})</span>
+                </summary>
+                <pre style={{
+                  marginTop: 6, marginBottom: 0, fontSize: 10, lineHeight: 1.45,
+                  fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  color: "var(--text-muted)", maxHeight: 400, overflowY: "auto",
+                }}>{logData.ffmpeg_log}</pre>
+              </details>
+            )}
+          </div>
+        )}
       </div>
     )}
     </div>

@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.8] — 2026-05-08
+
+### Added
+- **Failed-job expand now shows the ffmpeg command and full ffmpeg log.** Previously expanding a failed job in the Completed tab only revealed a short `error_log` snippet — useful for "file not found" but useless for diagnosing real ffmpeg failures (codec rejections, mux errors, etc.). The expanded view now lazy-loads the same `getJobLog` payload completed jobs use and renders both the ffmpeg command and the full stderr log behind collapsible `<details>` toggles.
+
+### Fixed
+- **Real ffmpeg error survives the rolling buffer.** The converter's failure path used to take the last 10 non-progress lines from a 20-line rolling buffer to populate `error_log`. For MKVs with heavy stream metadata (e.g. 5+ subtitle streams each carrying a block of `_STATISTICS_*` tags), those 20 lines could be entirely metadata, pushing the actual error message out before it was captured. Now the converter maintains a sticky `error_lines` list that retains any line matching ffmpeg error patterns (`[error]`, `Error `, `Failed`, `Could not`, `Invalid `, etc.) as it's emitted, capped at 50 lines. The failure path prefers these matched lines over the rolling buffer when populating `error_log` — the actual error is preserved no matter how much metadata precedes it.
+
 ## [0.4.7] — 2026-05-08
 
 ### Added

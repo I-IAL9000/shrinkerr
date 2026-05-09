@@ -1448,10 +1448,10 @@ async def get_job_log(job_id: int):
     db = await connect_db()
     try:
         async with db.execute(
-            """SELECT ffmpeg_command, ffmpeg_log, encoding_stats, vmaf_score,
+            """SELECT ffmpeg_command, ffmpeg_log, error_log, encoding_stats, vmaf_score,
                       space_saved, original_size, started_at, completed_at,
                       encoder, nvenc_preset, nvenc_cq, audio_codec, audio_bitrate,
-                      libx265_crf, target_resolution
+                      libx265_crf, target_resolution, status
                FROM jobs WHERE id = ?""",
             (job_id,),
         ) as cur:

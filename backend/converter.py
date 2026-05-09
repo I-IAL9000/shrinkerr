@@ -1612,6 +1612,23 @@ async def convert_file(
         buffer = ""
         all_lines: list[str] = []  # Full log for conversion history
         last_lines: list[str] = []  # Last N for error reporting
+        # Sticky error capture (v0.4.8+). Lines matching ffmpeg error
+        # patterns get retained here as they're emitted, so they survive
+        # the rolling 20-line `last_lines` buffer. Without this, files
+        # with large amounts of metadata in the stream listing (e.g. MKVs
+        # with many subtitle/audio streams each carrying _STATISTICS_*
+        # tags) push the actual error line off the end before we capture
+        # it for `error_log`. Cap at 50 lines to bound DB write size.
+        error_lines: list[str] = []
+        _ERROR_PATTERNS = (
+            "[error]", "Error ", "error:", "ERROR ", "ERROR:",
+            "failed", "Failed", "FAILED",
+            "Could not", "could not",
+            "Invalid ", "invalid ",
+            "No such ", "Cannot ", "Unable to ",
+            "Unknown encoder", "Unknown decoder", "Unknown format",
+            "Conversion failed",
+        )
         # Total expected frames for the progress callback's frame-count
         # fallback when ffmpeg reports `time=N/A`. Computed from probe
         # duration × source fps; set to None when we don't know the source
@@ -1645,6 +1662,11 @@ async def convert_file(
                     last_lines.append(line)
                     if len(last_lines) > 20:
                         last_lines.pop(0)
+                    # Sticky error capture — see _ERROR_PATTERNS above.
+                    if any(p in line for p in _ERROR_PATTERNS):
+                        error_lines.append(line)
+                        if len(error_lines) > 50:
+                            error_lines.pop(0)
                 if progress_callback and line:
                     parsed = parse_ffmpeg_progress(
                         line, duration,
@@ -1662,9 +1684,18 @@ async def convert_file(
                 Path(temp_path).unlink(missing_ok=True)
             except OSError:
                 pass
-            # Extract meaningful error from ffmpeg output
-            error_lines = [l for l in last_lines if not l.startswith("frame=") and not l.startswith("size=")]
-            error_detail = "\n".join(error_lines[-10:]) if error_lines else ""
+            # Extract meaningful error from ffmpeg output. v0.4.8+:
+            # prefer the sticky `error_lines` we accumulated during the
+            # encode (lines matching error patterns), since those survive
+            # MKVs with heavy stream metadata that would otherwise push
+            # the real error off the rolling 20-line `last_lines` buffer.
+            # Fall back to the last 10 non-progress lines from the rolling
+            # buffer if no pattern matches found.
+            if error_lines:
+                error_detail = "\n".join(error_lines[-15:])
+            else:
+                non_progress = [l for l in last_lines if not l.startswith("frame=") and not l.startswith("size=")]
+                error_detail = "\n".join(non_progress[-10:]) if non_progress else ""
             error_msg = f"ffmpeg exited with code {proc.returncode}"
             if error_detail:
                 error_msg += f"\n\n{error_detail}"
