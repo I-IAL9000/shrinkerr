@@ -436,12 +436,22 @@ def _build_ffmpeg_cmd_impl(
             input_idx = i + 1  # input 0 is the video, 1+ are external subs
             cmd += ["-map", f"{input_idx}:s"]
             codec = (es.get("codec") or "subrip").lower()
-            # For text subs going into mkv: copy if natively supported, else convert to srt
-            if codec in ("subrip", "srt"):
-                cmd += [f"-c:s:{out_sub_idx}", "srt"]
-            elif codec in ("ass", "ssa"):
+            # SRT and ASS/SSA are natively supported by MKV — byte-copy
+            # them. v0.4.9+: pre-fix this path used `-c:s srt` for SRT
+            # sources, which forced a decode→encode roundtrip through
+            # ffmpeg's strict UTF-8 SRT encoder. SRT files in the wild
+            # are frequently Windows-1252 / ISO-8859-1, especially for
+            # non-English releases — those failed with "Invalid UTF-8
+            # in decoded subtitles text". Copying the bytes through
+            # avoids the encoder entirely; most MKV players handle
+            # mixed-encoding SRT fine via charset auto-detection.
+            if codec in ("subrip", "srt", "ass", "ssa"):
                 cmd += [f"-c:s:{out_sub_idx}", "copy"]
             elif codec in ("webvtt",):
+                # WebVTT isn't a native MKV subtitle codec; keep the
+                # convert-to-srt path. Same UTF-8 strictness applies but
+                # WebVTT is already required to be UTF-8 by spec, so
+                # the validator should pass for any well-formed source.
                 cmd += [f"-c:s:{out_sub_idx}", "srt"]
             else:
                 cmd += [f"-c:s:{out_sub_idx}", "copy"]
@@ -1699,11 +1709,18 @@ async def convert_file(
             error_msg = f"ffmpeg exited with code {proc.returncode}"
             if error_detail:
                 error_msg += f"\n\n{error_detail}"
+            # v0.4.9+: also persist the full command and stderr log on
+            # failure so the Completed-tab failed-job expand can show
+            # the exact invocation. Pre-fix the failure path returned
+            # only `error`, leaving the new ffmpeg_command / ffmpeg_log
+            # collapsible sections empty for any failed job.
             return {
                 "success": False,
                 "output_path": None,
                 "space_saved": 0,
                 "error": error_msg,
+                "ffmpeg_command": full_command,
+                "ffmpeg_log": "\n".join(all_lines[-500:]),
             }
 
     except asyncio.TimeoutError:
@@ -1720,6 +1737,8 @@ async def convert_file(
             "output_path": None,
             "space_saved": 0,
             "error": "ffmpeg timed out",
+            "ffmpeg_command": full_command,
+            "ffmpeg_log": "\n".join(all_lines[-500:]),
         }
     except Exception as exc:
         try:

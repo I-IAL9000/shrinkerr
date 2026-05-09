@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9] — 2026-05-08
+
+### Fixed
+- **Conversion failing with `Invalid UTF-8 in decoded subtitles text`** on whole series with non-English / older releases. Root cause: when `merge_external_subs` was enabled and the folder had a sidecar `.srt` file, the converter mapped it as a separate ffmpeg input AND used `-c:s srt` to re-encode it — forcing a decode→encode roundtrip through ffmpeg's strict UTF-8 SRT encoder. SRT files in the wild are frequently Windows-1252 / ISO-8859-1, which fail the UTF-8 validator and abort the entire encode with exit code 69 (`Conversion failed!`). Fix: byte-copy SRT/ASS/SSA external subs (`-c:s copy`) instead of re-encoding. Both `backend/converter.py` and `backend/audio.py` had the same bug; both fixed. Most MKV players handle non-UTF-8 SRT via charset auto-detection, so the byte-copy result is more compatible than what the re-encode would have produced anyway.
+- **Failed jobs not showing the ffmpeg command + log in the new collapsible sections** that v0.4.8 added. Backend bug: the converter's failure return paths only included `error` (the short message) — `ffmpeg_command` and `ffmpeg_log` weren't included on failure, so the worker never wrote them to the DB. Frontend dutifully looked for fields that were always null. Fix: failure returns now include both fields, and the worker calls `update_conversion_log` on failure (with `encoding_stats=None`) parallel to the success path.
+
 ## [0.4.8] — 2026-05-08
 
 ### Added

@@ -1644,6 +1644,20 @@ class QueueWorker:
                         await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user")
                 else:
                     await self.queue.update_status(job_id, "failed", error_log=result["error"])
+                    # Persist ffmpeg_command + ffmpeg_log on failure too
+                    # so the Completed-tab failed-job expand can show the
+                    # invocation + full log. Pre-v0.4.9 these only got
+                    # written for successful encodes.
+                    if result.get("ffmpeg_command") or result.get("ffmpeg_log"):
+                        try:
+                            await self.queue.update_conversion_log(
+                                job_id,
+                                result.get("ffmpeg_command"),
+                                result.get("ffmpeg_log"),
+                                None,  # no encoding_stats on failure
+                            )
+                        except Exception as exc:
+                            print(f"[WORKER] Failed to persist ffmpeg log on failure (non-fatal): {exc}", flush=True)
                     await ws_manager.send_job_complete(job_id, "failed", 0, result["error"])
                     try:
                         from backend.notifications import send_notification

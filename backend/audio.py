@@ -44,15 +44,17 @@ def build_remux_cmd(
         if not ext_subs:
             sub_codec_args = []  # will use global -c copy
 
-    # Map external subtitle inputs
+    # Map external subtitle inputs. v0.4.9+: copy SRT/ASS/SSA byte-wise
+    # rather than re-encoding through the strict UTF-8 SRT encoder.
+    # See converter.py for full rationale (mirror of the same fix).
     for i, es in enumerate(ext_subs):
         input_idx = i + 1
         cmd += ["-map", f"{input_idx}:s"]
         codec = (es.get("codec") or "subrip").lower()
-        if codec in ("subrip", "srt", "webvtt"):
-            sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
-        elif codec in ("ass", "ssa"):
+        if codec in ("subrip", "srt", "ass", "ssa"):
             sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+        elif codec in ("webvtt",):
+            sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
         else:
             sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
         lang = es.get("language") or "und"
