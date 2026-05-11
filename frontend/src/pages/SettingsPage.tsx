@@ -3529,6 +3529,25 @@ volumes:
               New files detected in scanned folders by the watcher that need conversion or audio cleanup will be automatically added to the queue using your default encoding settings.
             </div>
 
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 16,
+                          opacity: encoding?.auto_queue_new ? 1 : 0.5 }}>
+              <span style={labelStyle}>Auto-queue priority:</span>
+              <select style={{ ...inputStyle, width: 130 }}
+                value={String(encoding?.auto_queue_priority ?? 0)}
+                disabled={!encoding?.auto_queue_new}
+                onChange={e => setEncoding({
+                  ...encoding,
+                  auto_queue_priority: parseInt(e.target.value, 10),
+                })}>
+                <option value="0">Normal</option>
+                <option value="1">High</option>
+                <option value="2">Highest</option>
+              </select>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>
+                Newly-detected files use this priority. Rules with a Queue Priority action override this setting.
+              </span>
+            </div>
+
             {/* Conversion filters */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
               <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Conversion Filters</div>
