@@ -63,6 +63,7 @@ _ENCODING_DEFAULTS = {
     "audio_bitrate": "128",
     "audio_downmix": "false",
     "auto_queue_new": "false",
+    "auto_queue_priority": "0",
     "auto_convert_lossless": "false",
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
@@ -441,6 +442,11 @@ async def get_encoding_settings():
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
     }
     try:
+        _aqp = int(merged.get("auto_queue_priority", "0") or 0)
+    except (TypeError, ValueError):
+        _aqp = 0
+    result["auto_queue_priority"] = max(0, min(2, _aqp))
+    try:
         result["always_keep_languages"] = json.loads(
             merged.get("always_keep_languages", '[]')
         )
@@ -792,6 +798,12 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["audio_downmix"] = "true" if update.audio_downmix else "false"
         if update.auto_queue_new is not None:
             updates["auto_queue_new"] = "true" if update.auto_queue_new else "false"
+        if update.auto_queue_priority is not None:
+            try:
+                v = int(update.auto_queue_priority)
+            except (TypeError, ValueError):
+                v = 0
+            updates["auto_queue_priority"] = str(max(0, min(2, v)))
         if update.auto_convert_lossless is not None:
             updates["auto_convert_lossless"] = "true" if update.auto_convert_lossless else "false"
         if update.lossless_target_codec is not None:

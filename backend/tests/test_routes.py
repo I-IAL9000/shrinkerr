@@ -130,3 +130,35 @@ async def test_emby_settings_round_trip(client):
     assert data["emby_pause_on_stream"] is True
     assert data["emby_pause_stream_threshold"] == 3
     assert data["emby_pause_transcode_only"] is True
+
+
+@pytest.mark.asyncio
+async def test_auto_queue_priority_round_trip(client):
+    """PUT then GET — auto_queue_priority setting must persist (Normal/High/Highest).
+    v0.5.0+."""
+    # Default should be 0 (Normal) on a fresh DB
+    get0 = await client.get("/api/settings/encoding")
+    assert get0.status_code == 200
+    assert get0.json().get("auto_queue_priority", 0) == 0
+
+    # PUT a non-default value
+    put_resp = await client.put("/api/settings/encoding",
+                                  json={"auto_queue_priority": 2})
+    assert put_resp.status_code == 200, put_resp.text
+
+    # GET should return the new value as int
+    get_resp = await client.get("/api/settings/encoding")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["auto_queue_priority"] == 2
+
+    # Clamp out-of-range values to [0, 2]
+    put_low = await client.put("/api/settings/encoding",
+                                json={"auto_queue_priority": -5})
+    assert put_low.status_code == 200
+    assert (await client.get("/api/settings/encoding")).json()["auto_queue_priority"] == 0
+
+    put_high = await client.put("/api/settings/encoding",
+                                 json={"auto_queue_priority": 99})
+    assert put_high.status_code == 200
+    assert (await client.get("/api/settings/encoding")).json()["auto_queue_priority"] == 2
