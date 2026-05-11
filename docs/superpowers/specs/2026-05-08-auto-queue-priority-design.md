@@ -51,22 +51,51 @@ Stored as a string in the `settings` table like all other encoding settings (`"0
 
 ### Auto-queue resolution flow (new)
 
-For each new file the watcher detects:
+For each batch of new files the watcher detects:
 
 ```
-1. Resolve rules:  matched_rule = resolve_rules_for_batch([file_path])[file_path]
-2. Pick encoder:   matched_rule.encoder         OR settings.default_encoder
-3. Pick preset:    matched_rule.nvenc_preset    OR settings.nvenc_preset
-4. Pick cq:        matched_rule.nvenc_cq        OR settings.nvenc_cq
+1. Resolve rules:  rule_results = await resolve_rules_for_batch(
+                       [f.file_path for f in scanned_files],
+                       extra_context=None,  # auto-queue has no nzbget category
+                   )
+2. For each file:
+   matched_rule = rule_results.get(file.file_path)
+3. Short-circuit if rule action is skip or ignore:
+   if matched_rule and matched_rule.get("action") in ("skip", "ignore"):
+       continue   # don't enqueue this file
+4. Pick encoder:   matched_rule.encoder         OR settings.default_encoder
+5. Pick preset:    matched_rule.nvenc_preset    OR settings.nvenc_preset
+6. Pick cq:        matched_rule.nvenc_cq        OR settings.nvenc_cq
    (same for libx265_crf, libx265_preset, qsv_*, vaapi_*, target_resolution,
     audio_codec, audio_bitrate)
-5. Pick priority:  matched_rule.queue_priority  OR settings.auto_queue_priority OR 0
-6. add_job(file_path, ..., priority=picked_priority)
+7. Pick priority:  matched_rule.queue_priority  OR settings.auto_queue_priority OR 0
+8. add_job(file_path, ..., priority=picked_priority)
 ```
 
-The "rule wins, then global setting, then default" precedence is what makes the two pieces (Settings dropdown + rules) compose cleanly. A user with no rules just sets the dropdown to High. A user with rules can override per-file.
+**Notes:**
 
-Skip / ignore actions from rules (existing `action: "skip"` / `action: "ignore"`) continue to work — auto-queue respects them the same way the other queue paths do.
+- `resolve_rules_for_batch` is `async` and **must be awaited**. `_auto_queue_new_files` is already an `async def` so this is straightforward.
+- `extra_context=None` is passed because auto-queue has no nzbget category to surface; matches what the watcher knows. The existing call site at `routes/jobs.py:904` uses `extra_context` only when the request payload carries `nzbget_category`.
+- Action short-circuit mirrors the precedent at `routes/jobs.py:946-948`. The full list of actions that suppress enqueue: `"skip"`, `"ignore"`. Any other action (or no rule match) proceeds to enqueue.
+
+### Priority precedence — OR-cascade (not `max()`)
+
+The spec's precedence is **OR-cascade** — first non-None value wins. Specifically:
+
+```python
+priority = (
+    (matched_rule or {}).get("queue_priority")   # 0/1/2 from rule, or None
+    if matched_rule else None
+)
+if priority is None:
+    priority = int(settings.get("auto_queue_priority", "0") or 0)
+```
+
+This **differs** from the manual-queueing path at `routes/jobs.py:973`, which uses `max(payload.priority, rule.get("queue_priority") or 0)` — i.e. for manual queueing the rule can only *raise* the user's per-job priority, never lower it.
+
+**Why different**: manual queueing has an explicit per-job `payload.priority` chosen by the user clicking "Add to queue with Priority X" — the rule shouldn't be able to override that downward. Auto-queue has no per-file user choice — only the global Settings fallback — so the rule fully wins (including lowering), since the rule is the per-file customization mechanism by definition.
+
+Documented here so the implementer (a) doesn't copy the `max(...)` semantics from `routes/jobs.py:973` without thinking, and (b) the future reader understands the divergence is intentional.
 
 ### Settings UI
 
@@ -101,7 +130,7 @@ Three scenarios, in order of likely impact:
 
 1. **Auto-queue off**: zero change. The dropdown is rendered but disabled.
 2. **Auto-queue on, no rules with `queue_priority`**: behavior identical, except the new dropdown is now visible. Default value (Normal) matches today's behavior.
-3. **Auto-queue on, rules with `queue_priority` defined**: those rules **now apply** to auto-queued files. Previously the rules were silently ignored for this code path. If a user had a "Priority: Highest" rule on Movies, all newly-Sonarr-dropped movies now jump to the front of the queue automatically. This matches stated intent of the rules system; calling it out in the v0.5.0 CHANGELOG entry under Fixed.
+3. **Auto-queue on, rules with ANY action defined**: those rules **now apply** to auto-queued files — not just `queue_priority`. Previously the entire rules engine was silently bypassed for this code path. Specifically: encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, qsv_*, vaapi_*, target_resolution, audio_codec, audio_bitrate, queue_priority, AND skip / ignore actions all now apply to auto-queued files. If a user had a "Movies → encoder libx265, preset slow" rule, newly-dropped movies now encode with libx265 + slow preset instead of falling back to the global default_encoder. Called out in the v0.5.0 CHANGELOG under **Fixed** as a behavioral change. Users who have rules they thought only applied to manual queueing should review them after upgrade.
 
 ## Testing
 
