@@ -683,6 +683,52 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.3.136 heal skipped: {exc}", flush=True)
 
+        # v0.5.2 heal: same destructive-late-update symptom as v0.3.137, but
+        # surfaced via the audio-codec-rename code path (queue.py:2242+).
+        # When a HEVC→HEVC re-encode triggered audio rename (DTS-HD MA→EAC3
+        # etc), the audio-rename UPDATE only set file_path on scan_results
+        # and left `converted=0`. The late-update site's `already_correct`
+        # check then returned False and ran the destructive DELETE+UPDATE,
+        # wiping the freshly-renamed row. Re-discoverable by the watcher
+        # as is_new=1, converted=1 (set later) with new_detected_at populated.
+        # v0.3.137's heal was one-shot — fires once at startup — so rows
+        # broken by post-v0.3.137 conversions weren't healed. Drop the
+        # `original_file_path != file_path` constraint too: audio rename
+        # paths may have race conditions where original_file_path on jobs
+        # didn't get persisted cleanly. Run once on v0.5.2 upgrade.
+        try:
+            flag = "_v0_5_2_audio_rename_destructive_heal"
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag,)
+            ) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute(
+                    """UPDATE scan_results
+                       SET converted = 1, is_new = 0, new_detected_at = NULL
+                       WHERE file_path IN (
+                           SELECT file_path FROM jobs
+                           WHERE status = 'completed'
+                             AND job_type IN ('convert', 'combined')
+                             AND space_saved > 0
+                       )
+                       AND (converted = 0 OR is_new = 1 OR new_detected_at IS NOT NULL)"""
+                )
+                healed = cur.rowcount
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                    (flag,),
+                )
+                if healed:
+                    print(
+                        f"[DB] v0.5.2 heal: fixed converted/is_new/new_detected_at on "
+                        f"{healed} post-conversion scan_results row(s) wiped by the "
+                        f"audio-rename destructive-late-update bug",
+                        flush=True,
+                    )
+        except Exception as exc:
+            print(f"[DB] v0.5.2 heal skipped: {exc}", flush=True)
+
         await db.commit()
     finally:
         await db.close()

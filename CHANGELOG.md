@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-05-11
+
+### Fixed
+- **HEVC→HEVC re-encodes leaving newly-converted files showing as NEW in the Scanner.** Reproduced on a Farscape Season 2 re-encode pass that only changed audio (DTS-HD MA → EAC3, video stream `d3g`-tagged HEVC pass-through). Root cause: the audio-codec-rename path at `queue.py:2242+` (which renames the on-disk file when the audio codec marker in the filename changes — e.g. `…DTSHDMA.mkv` → `…EAC3.mkv`) only updated `scan_results.file_path`, leaving `converted=0`. The late post-conversion update site then ran its `already_correct` check (introduced in v0.3.137 to skip duplicate work), which looks for `converted=1` on the row at the new path — found `converted=0`, returned False, fell into the destructive DELETE+UPDATE pattern. The DELETE wiped the freshly-renamed row at the new path, the UPDATE matched 0 rows (original file_path no longer existed in scan_results), and the watcher's next sweep re-INSERTed the row as `is_new=1, new_detected_at=now`. Net symptom: row showing `converted=1, is_new=1, new_detected_at=recent` — three fields in an internally inconsistent state. Fix: (1) audio-rename UPDATE now also sets `converted=1, is_new=0, new_detected_at=NULL` parallel to the early/late update sites; (2) late-update site's `already_correct` check is now more permissive — also accepts "row exists at new path AND no row at old path" (rename happened upstream regardless of `converted` flag) before falling into destructive DELETE+UPDATE; (3) one-shot heal migration `_v0_5_2_audio_rename_destructive_heal` clears `is_new` + `new_detected_at` and sets `converted=1` on any scan_results row matching a successful completed conversion job (drops v0.3.137 heal's `original_file_path != file_path` constraint, since audio-rename code paths may not persist `original_file_path` reliably; the v0.3.137 heal was one-shot so post-v0.3.137 conversions weren't caught either way).
+
 ## [0.5.1] — 2026-05-08
 
 ### Added

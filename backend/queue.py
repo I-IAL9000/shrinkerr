@@ -2244,7 +2244,9 @@ class QueueWorker:
                                 (current_file_path, job_id),
                             )
                             await db_ac.execute(
-                                "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
+                                "UPDATE scan_results SET file_path = ?, "
+                                "converted = 1, is_new = 0, new_detected_at = NULL "
+                                "WHERE file_path = ?",
                                 (current_file_path, old_path),
                             )
                             await db_ac.commit()
@@ -2438,7 +2440,19 @@ class QueueWorker:
                         (current_file_path,),
                     ) as cur:
                         existing = await cur.fetchone()
-                    already_correct = bool(existing and existing["converted"])
+                    # Also check if the original file_path row is gone — if
+                    # so, the rename already happened upstream (e.g. early
+                    # update or audio-codec-rename site), even if converted
+                    # somehow didn't get set. v0.5.2: tolerate this case
+                    # rather than falling into the destructive DELETE+UPDATE.
+                    async with db.execute(
+                        "SELECT 1 FROM scan_results WHERE file_path = ?",
+                        (file_path,),
+                    ) as cur:
+                        original_still_present = await cur.fetchone() is not None
+                    already_correct = bool(existing and existing["converted"]) or (
+                        existing is not None and not original_still_present
+                    )
                     if not already_correct:
                         # Get new file size
                         try:
