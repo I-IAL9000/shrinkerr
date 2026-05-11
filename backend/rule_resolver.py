@@ -3,10 +3,32 @@
 import json
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from backend.database import connect_db
+
+_AGE_UNITS = {"h": 1, "d": 24, "w": 168}
+
+
+def _parse_age_hours(s: str) -> Optional[int]:
+    """Parse a date_added value '24h'/'7d'/'4w' into hours.
+    Returns None on malformed input OR zero (rule then short-circuits
+    to False). Rejecting zero is intentional — '0h' is semantically
+    nonsense for a comparison ('newer than 0 hours ago' is always
+    false; 'older than 0 hours' is always true). Forcing it to return
+    False matches the spec's existing 'malformed value → False'
+    semantics rather than silently producing surprising tautologies.
+    v0.5.1+."""
+    s = (s or "").strip().lower()
+    m = re.match(r"^(\d+)\s*([hdw])$", s)
+    if not m:
+        return None
+    hours = int(m.group(1)) * _AGE_UNITS[m.group(2)]
+    if hours <= 0:
+        return None
+    return hours
 
 
 def _make_rule_result(rule: dict) -> dict:
@@ -261,6 +283,41 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
             return file_size < threshold_bytes
         return False
 
+    if ctype == "date_added":
+        # Operator semantics: comparison is against file AGE
+        # (now − detected_at), not raw timestamps. less_than 24h means
+        # "age < 24h" = "newer than 24h". The frontend labels less_than
+        # as "newer than" and greater_than as "older than" to match how
+        # users read time. Future maintainers seeing `less_than` here
+        # should know it maps inversely to a user-facing "newer than"
+        # (older file = larger age value). v0.5.1+.
+        detected_at = scan_row.get("new_detected_at")
+        if not detected_at:
+            # NULL = file has no watcher-recorded first-seen timestamp.
+            # Three populations land here: pre-watcher library rows,
+            # files added via the manual scanner (which only sets
+            # new_detected_at when mark_new=True; ad-hoc scans don't),
+            # and files imported via paths that bypass both. Treat all
+            # as ancient: older-than returns True (matches "all backlog
+            # files are older than 30 days"), newer-than returns False
+            # (user wants fresh arrivals — NULL = no fresh evidence).
+            return op == "greater_than"
+        age_hours = _parse_age_hours(value)
+        if age_hours is None:
+            return False  # malformed value or zero
+        try:
+            dt = datetime.fromisoformat(detected_at.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            file_age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+        except (ValueError, TypeError):
+            return False
+        if op == "less_than":     # "newer than N units ago"
+            return file_age_hours < age_hours
+        if op == "greater_than":  # "older than N units ago"
+            return file_age_hours > age_hours
+        return False
+
     # 7. Media type — detect TV vs movie
     if ctype == "media_type":
         detected = _detect_media_type(file_path)
@@ -445,8 +502,8 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
         if file_paths:
             placeholders = ",".join("?" * len(file_paths))
             async with db.execute(
-                f"SELECT file_path, file_size, video_codec, video_height, audio_tracks_json "
-                f"FROM scan_results WHERE file_path IN ({placeholders})",
+                f"SELECT file_path, file_size, video_codec, video_height, audio_tracks_json, "
+                f"new_detected_at FROM scan_results WHERE file_path IN ({placeholders})",
                 file_paths
             ) as cur:
                 for row in await cur.fetchall():
