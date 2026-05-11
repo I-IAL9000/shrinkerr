@@ -24,6 +24,7 @@
 | `backend/tests/test_routes.py` | One round-trip test for `auto_queue_priority` |
 | `backend/tests/test_watcher.py` | NEW file — two tests for `_auto_queue_new_files` priority resolution |
 | `frontend/src/pages/SettingsPage.tsx` | New dropdown in Automation section near `auto_queue_new` checkbox + save-handler key |
+| `frontend/src/api.ts` | **No change** — settings response is `apiFetch<any>` so no type to extend; the dropdown reads `encoding?.auto_queue_priority` and writes via the existing `updateEncodingSettings` export. |
 | `CHANGELOG.md` | v0.5.0 entry: Added (dropdown) + Fixed (rules-engine gap, full action surface enumerated) |
 | `VERSION` | `0.5.0` |
 
@@ -108,17 +109,23 @@ auto_queue_priority: Optional[Any] = None
 
 - [ ] **Step 5: Add the default to `_ENCODING_DEFAULTS` in `backend/routes/settings.py`**
 
-Find the dict (search for `auto_queue_new` or `_ENCODING_DEFAULTS`) and add:
+Locate `_ENCODING_DEFAULTS` and the surrounding `auto_queue_new` row:
 
-```python
-"auto_queue_priority": "0",
+```bash
+grep -n "_ENCODING_DEFAULTS\|auto_queue_new" backend/routes/settings.py | head
 ```
 
-Place it near the existing `auto_queue_new` default for readability.
+Add the line `"auto_queue_priority": "0",` near the existing `auto_queue_new` default (likely 1-2 lines below, depending on the dict's existing ordering).
 
 - [ ] **Step 6: Add the GET response builder line**
 
-Find where `auto_queue_new` is surfaced in the response builder (search for `result["auto_queue_new"]`) and add right after:
+Locate where `auto_queue_new` is surfaced in the response (the function that builds the `result` dict from `merged`):
+
+```bash
+grep -n 'result\["auto_queue_new"\]\|result\[.auto_queue_new.\]' backend/routes/settings.py
+```
+
+Right after the matching line, append:
 
 ```python
 try:
@@ -132,7 +139,13 @@ The clamp guards against malformed stored values.
 
 - [ ] **Step 7: Add the PUT save handler**
 
-In `update_encoding_settings` (around the other `auto_queue_*` writes), add:
+Locate the existing `auto_queue_new` write inside `update_encoding_settings`:
+
+```bash
+grep -n "update.auto_queue_new\|updates\[.auto_queue_new.\]" backend/routes/settings.py
+```
+
+Right after that block, append:
 
 ```python
 if update.auto_queue_priority is not None:

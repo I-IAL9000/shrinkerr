@@ -66,8 +66,10 @@ For each batch of new files the watcher detects:
 4. Pick encoder:   matched_rule.encoder         OR settings.default_encoder
 5. Pick preset:    matched_rule.nvenc_preset    OR settings.nvenc_preset
 6. Pick cq:        matched_rule.nvenc_cq        OR settings.nvenc_cq
-   (same for libx265_crf, libx265_preset, qsv_*, vaapi_*, target_resolution,
-    audio_codec, audio_bitrate)
+   (same for libx265_crf, libx265_preset, target_resolution, audio_codec,
+    audio_bitrate — these are the kwargs `add_job` actually accepts;
+    qsv_*/vaapi_* settings are NOT passed per-job, they're worker-side
+    only)
 7. Pick priority:  matched_rule.queue_priority  OR settings.auto_queue_priority OR 0
 8. add_job(file_path, ..., priority=picked_priority)
 ```
@@ -130,7 +132,7 @@ Three scenarios, in order of likely impact:
 
 1. **Auto-queue off**: zero change. The dropdown is rendered but disabled.
 2. **Auto-queue on, no rules with `queue_priority`**: behavior identical, except the new dropdown is now visible. Default value (Normal) matches today's behavior.
-3. **Auto-queue on, rules with ANY action defined**: those rules **now apply** to auto-queued files — not just `queue_priority`. Previously the entire rules engine was silently bypassed for this code path. Specifically: encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, qsv_*, vaapi_*, target_resolution, audio_codec, audio_bitrate, queue_priority, AND skip / ignore actions all now apply to auto-queued files. If a user had a "Movies → encoder libx265, preset slow" rule, newly-dropped movies now encode with libx265 + slow preset instead of falling back to the global default_encoder. Called out in the v0.5.0 CHANGELOG under **Fixed** as a behavioral change. Users who have rules they thought only applied to manual queueing should review them after upgrade.
+3. **Auto-queue on, rules with ANY action defined**: those rules **now apply** to auto-queued files — not just `queue_priority`. Previously the entire rules engine was silently bypassed for this code path. Specifically: encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution, audio_codec, audio_bitrate, queue_priority, AND skip / ignore actions all now apply to auto-queued files. If a user had a "Movies → encoder libx265, preset slow" rule, newly-dropped movies now encode with libx265 + slow preset instead of falling back to the global default_encoder. Called out in the v0.5.0 CHANGELOG under **Fixed** as a behavioral change. Users who have rules they thought only applied to manual queueing should review them after upgrade.
 
 ## Testing
 
