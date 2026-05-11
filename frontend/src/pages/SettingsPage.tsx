@@ -357,13 +357,14 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   };
   const loadPlexOpts = () => getPlexOptions().then(setPlexOpts).catch(() => {});
 
-  const CONDITION_TYPES: Record<string, { label: string; group: string; operators: { value: string; label: string }[]; valueType: "select" | "text" | "number" }> = {
+  const CONDITION_TYPES: Record<string, { label: string; group: string; operators: { value: string; label: string }[]; valueType: "select" | "text" | "number" | "duration" }> = {
     directory: { label: "Media Directory", group: "Path", operators: [{ value: "is", label: "is" }], valueType: "select" },
     source: { label: "Source", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     resolution: { label: "Resolution", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     video_codec: { label: "Video Codec", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     audio_codec: { label: "Audio Codec", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "select" },
     file_size: { label: "File Size (GB)", group: "File", operators: [{ value: "greater_than", label: "greater than" }, { value: "less_than", label: "less than" }], valueType: "number" },
+    date_added: { label: "Date Added", group: "File", operators: [{ value: "less_than", label: "newer than" }, { value: "greater_than", label: "older than" }], valueType: "duration" },
     media_type: { label: "Type", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
     title: { label: "Title", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "text" },
     release_group: { label: "Release Group", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
@@ -3287,6 +3288,29 @@ volumes:
                               <option value="">Select category...</option>
                               {(condOpts.nzbget_categories || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
+                          }
+
+                          if (cond.type === "date_added") {
+                            const m = (cond.value || "").match(/^(\d+)([hdw])$/);
+                            const num = m ? m[1] : "";
+                            const unit = m ? m[2] : "h";
+                            const setBoth = (n: string, u: string) =>
+                              updateConditionValue(condIdx, `${n || "0"}${u}`);
+                            return (
+                              <div style={{ display: "flex", gap: 6, flex: 1 }}>
+                                <input style={{ ...inputStyle, width: 80 }}
+                                       type="number" min="1" placeholder="24"
+                                       value={num}
+                                       onChange={e => setBoth(e.target.value, unit)} />
+                                <select style={{ ...inputStyle, width: 110 }}
+                                        value={unit}
+                                        onChange={e => setBoth(num, e.target.value)}>
+                                  <option value="h">hours</option>
+                                  <option value="d">days</option>
+                                  <option value="w">weeks</option>
+                                </select>
+                              </div>
+                            );
                           }
 
                           if (ct.valueType === "number") {
