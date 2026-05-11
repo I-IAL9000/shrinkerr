@@ -66,26 +66,53 @@ _AGE_UNITS = {"h": 1, "d": 24, "w": 168}
 
 def _parse_age_hours(s: str) -> Optional[int]:
     """Parse a date_added value '24h'/'7d'/'4w' into hours.
-    Returns None on malformed input (rule then short-circuits to False)."""
+    Returns None on malformed input OR zero (rule then short-circuits
+    to False). Rejecting zero is intentional — `"0h"` is semantically
+    nonsense for a comparison ("newer than 0 hours ago" is always
+    false; "older than 0 hours" is always true). Forcing it to return
+    False matches the spec's existing "malformed value → False"
+    semantics rather than silently producing surprising tautologies."""
     s = (s or "").strip().lower()
     m = re.match(r"^(\d+)\s*([hdw])$", s)
     if not m:
         return None
-    return int(m.group(1)) * _AGE_UNITS[m.group(2)]
+    hours = int(m.group(1)) * _AGE_UNITS[m.group(2)]
+    if hours <= 0:
+        return None
+    return hours
 ```
 
-**3. Add `date_added` handler in `_check_condition`** right after the `file_size` block (around line 263 — keeps related "comparison-style" conditions adjacent):
+**3. Add `date_added` handler in `_check_condition`** right after the `file_size` block (around line 263 — keeps related "comparison-style" conditions adjacent).
+
+Note on guard ordering: `_check_condition` has a top-level `if not value: return False` guard at line 197-198 that fires BEFORE any `ctype == "..."` dispatch. So a missing/empty `value` is already filtered out by the time this handler runs — the implementer should NOT add a separate value check before the NULL-detected_at branch (that would be redundant). The handler's own `_parse_age_hours` call handles malformed-but-non-empty input.
+
+Note on operator semantics: backend operator tokens `less_than`/`greater_than` here compare **age** (now − detected_at) against the threshold, NOT raw timestamps. So `less_than 24h` means "file age is less than 24 hours" = "file is newer than 24 hours old". The frontend labels these operators "newer than"/"older than" because that's how humans read time comparisons. Future maintainers seeing `less_than` in a `date_added` condition should know this maps inversely to a user-facing `newer than` (the older the file, the larger its age). The in-code comment below reinforces this.
 
 ```python
 if ctype == "date_added":
+    # Operator semantics: comparison is against file AGE (now − detected_at),
+    # not raw timestamps. less_than 24h = "age < 24h" = "newer than 24h".
+    # Frontend labels less_than as "newer than" and greater_than as "older
+    # than" to match user reading. v0.5.1+.
     detected_at = scan_row.get("new_detected_at")
     if not detected_at:
-        # NULL = file existed before watcher first observed it.
-        # Treat as ancient: newer-than returns False, older-than returns True.
+        # NULL = file has no watcher-recorded first-seen timestamp. Three
+        # populations land here:
+        #   1. Pre-watcher library (rows from manual scans before the
+        #      watcher started running with mark_new=True)
+        #   2. Files added via the manual scanner (scan.py only sets
+        #      new_detected_at when mark_new=True; watcher sets it,
+        #      ad-hoc scans typically don't)
+        #   3. Files imported via paths that bypass both
+        # Treat all as ancient: older-than returns True (matches the
+        # "all backlog files are older than 30 days" use case), newer-than
+        # returns False (the user's intent with "newer than N" is to
+        # target fresh arrivals — NULL means we have no fresh-arrival
+        # evidence).
         return op == "greater_than"
     age_hours = _parse_age_hours(value)
     if age_hours is None:
-        return False  # malformed value
+        return False  # malformed value or zero
     try:
         from datetime import datetime, timezone
         dt = datetime.fromisoformat(detected_at.replace("Z", "+00:00"))
@@ -181,6 +208,7 @@ Add to `backend/tests/test_rule_resolver.py` (create if it doesn't exist):
 - `test_date_added_null_treated_as_ancient_for_older_than` — `greater_than 7d` with `new_detected_at = NULL` → True
 - `test_date_added_null_returns_false_for_newer_than` — `less_than 7d` with `new_detected_at = NULL` → False
 - `test_date_added_malformed_value_returns_false` — `value = "foo"` → False
+- `test_date_added_zero_value_returns_false` — `value = "0h"` and `value = "0d"` → False for both operators (zero is rejected by `_parse_age_hours`)
 - `test_date_added_units_conversion` — `less_than 1d` parses identically to `less_than 24h` (asserts parser correctness via the resolver's external behavior)
 
 ### Integration
