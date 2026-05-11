@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-05-08
+
+### Added
+- **Auto-queue priority** Settings dropdown (Normal / High / Highest) in the Automation section. Newly-detected Sonarr/Radarr-dropped files inherit this priority when auto-queued, jumping them ahead of the manual backlog. Resolves the GitHub feature request "Auto-Queue: Set Priority".
+
+### Fixed
+- **`encoding_rules` now apply to auto-queued files.** Pre-fix `watcher._auto_queue_new_files` called `add_job` with global Settings defaults and silently bypassed the rules engine — the only queue-entry path that didn't. Now the watcher calls `resolve_rules_for_batch` and rule actions take effect across the full surface: `encoder`, `nvenc_preset`, `nvenc_cq`, `libx265_crf`, `libx265_preset`, `target_resolution`, `audio_codec`, `audio_bitrate`, `queue_priority`, and `skip` / `ignore` actions. **Behavior change for users with existing rules**: rules you wrote thinking they only applied to manual queueing now apply to auto-queue too. Review your rules after upgrade if this matters. Priority precedence: rule's `queue_priority` > new Settings dropdown > 0 (Normal). Note: precedence uses OR-cascade (rule fully wins, including lowering), deliberately different from the manual-queue path which uses `max(payload.priority, rule.queue_priority)` to protect the user's per-job choice as a floor.
+
 ## [0.4.9] — 2026-05-08
 
 ### Fixed
