@@ -194,7 +194,6 @@ def _parse_age_hours(s: str) -> Optional[int]:
     False matches the spec's existing 'malformed value → False'
     semantics rather than silently producing surprising tautologies.
     v0.5.1+."""
-    import re
     s = (s or "").strip().lower()
     m = re.match(r"^(\d+)\s*([hdw])$", s)
     if not m:
@@ -204,6 +203,8 @@ def _parse_age_hours(s: str) -> Optional[int]:
         return None
     return hours
 ```
+
+(`re` is already imported at the top of `backend/rule_resolver.py:5`; the helper uses the module-level import directly.)
 
 - [ ] **Step 6: Add the `date_added` handler to `_check_condition`**
 

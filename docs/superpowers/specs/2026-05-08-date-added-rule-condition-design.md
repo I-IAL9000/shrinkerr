@@ -171,7 +171,7 @@ date_added: {
   const num = m ? m[1] : "";
   const unit = m ? m[2] : "h";
   const setBoth = (n: string, u: string) =>
-    updateCondition(idx, "value", `${n || "0"}${u}`);
+    updateConditionValue(condIdx, `${n || "0"}${u}`);
   return (
     <div style={{ display: "flex", gap: 6, flex: 1 }}>
       <input style={{ ...inputStyle, width: 80 }}
@@ -190,7 +190,7 @@ date_added: {
 })()}
 ```
 
-The `updateCondition(idx, key, value)` helper already exists for the other value editors; the duration editor uses it to set the combined `${num}${unit}` string into `cond.value`.
+The `updateConditionValue(condIdx, newValue)` helper already exists at `SettingsPage.tsx:394` and is used by every other value editor in the file; the duration editor uses it to set the combined `${num}${unit}` string into `cond.value`. Variable name is `condIdx` (the loop variable in the surrounding `.map((cond, condIdx) => ...)`), not `idx`.
 
 ## API Differences from Existing Conditions
 
@@ -215,7 +215,7 @@ Add to `backend/tests/test_rule_resolver.py` (create if it doesn't exist):
 
 Extend `backend/tests/test_watcher.py`:
 
-- `test_auto_queue_date_added_rule_fires_for_new_file` — auto-queue a fake `ScannedFile`; mock `resolve_rules_for_batch` to return a rule with `conditions: [{type: "date_added", operator: "less_than", value: "24h"}]` and `queue_priority: 2`; assert the resulting `add_job` call gets `priority=2`.
+- `test_auto_queue_date_added_rule_fires_with_priority` — auto-queue a fake `ScannedFile`; mock `resolve_rules_for_batch` to return a rule with `queue_priority: 2` (simulating a `date_added` condition that matched upstream); assert the resulting `add_job` call gets `priority=2`. (The condition matching itself is unit-tested in `test_rule_resolver.py`; this test just verifies the watcher applies a `date_added`-rule's `queue_priority` to the enqueued job.)
 
 (The condition matching itself isn't exercised here — that's covered by the unit tests above. This test just verifies the watcher correctly applies a rule that uses the new condition.)
 
@@ -242,7 +242,7 @@ Implementation order:
 
 **Modified:**
 - `backend/rule_resolver.py` — `_parse_age_hours` helper, `date_added` `ctype` branch, scan_data SELECT
-- `backend/tests/test_rule_resolver.py` — NEW or extended with 7 unit tests
+- `backend/tests/test_rule_resolver.py` — NEW file with 10 unit tests (3 parser-focused + 7 handler-focused)
 - `backend/tests/test_watcher.py` — 1 integration test
 - `frontend/src/pages/SettingsPage.tsx` — `valueType: "duration"` added to enum, `date_added` CONDITION_TYPES entry, value editor branch
 - `CHANGELOG.md` — v0.5.1 Added entry
