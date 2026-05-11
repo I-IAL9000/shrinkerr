@@ -166,3 +166,51 @@ async def test_auto_queue_ignore_action_short_circuits(test_db):
             await watcher._auto_queue_new_files([scanned])
 
     add_job_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_auto_queue_date_added_rule_fires_with_priority(test_db):
+    """Integration: a rule with date_added condition (matched upstream)
+    correctly contributes queue_priority to the auto-queued job.
+    Condition matching itself is unit-tested in test_rule_resolver.py;
+    this test verifies the watcher applies a date_added-rule's
+    queue_priority value to add_job. v0.5.1+."""
+    import aiosqlite
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    scanned = _fake_scanned("/media/fresh.mkv")
+
+    # resolve_rules_for_batch is mocked — assume the date_added condition
+    # matched and the rule resolved to queue_priority=2. The watcher
+    # doesn't care HOW the rule matched, only WHAT the resolved rule says.
+    rule_results = {
+        "/media/fresh.mkv": {
+            "queue_priority": 2,
+            "action": "encode",
+            "encoder": None, "nvenc_preset": None, "nvenc_cq": None,
+            "libx265_crf": None, "libx265_preset": None,
+            "target_resolution": None, "audio_codec": None,
+            "audio_bitrate": None,
+        },
+    }
+
+    captured = {}
+    async def fake_add_job(file_path, job_type, **kwargs):
+        captured["file_path"] = file_path
+        captured.update(kwargs)
+
+    with patch("backend.queue.JobQueue") as MockQueue:
+        MockQueue.return_value.add_job = AsyncMock(side_effect=fake_add_job)
+        with patch("backend.rule_resolver.resolve_rules_for_batch",
+                   new=AsyncMock(return_value=rule_results)):
+            await watcher._auto_queue_new_files([scanned])
+
+    assert captured.get("priority") == 2, \
+        f"Expected priority=2 from date_added rule, got {captured.get('priority')}"
