@@ -3129,6 +3129,7 @@ volumes:
                             <option value="video_codec">Video Codec</option>
                             <option value="audio_codec">Audio Codec</option>
                             <option value="file_size">File Size (GB)</option>
+                            <option value="date_added">Date Added</option>
                             <option value="media_type">Type</option>
                             <option value="title">Title</option>
                             <option value="release_group">Release Group</option>

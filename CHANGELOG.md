@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-05-11
+
+### Fixed
+- **Date Added rule condition wasn't appearing in the rule-builder dropdown.** v0.5.1 wired `date_added` into the `CONDITION_TYPES` dict, the value-editor switch (number + units), and the backend rule resolver — but missed the dropdown itself, which is a hardcoded list of `<option>` elements rather than iterated from `CONDITION_TYPES`. Added `<option value="date_added">Date Added</option>` to the File optgroup, between File Size and Type, matching the position in `CONDITION_TYPES`.
+
 ## [0.5.2] — 2026-05-11
 
 ### Fixed
