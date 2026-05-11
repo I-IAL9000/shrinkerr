@@ -11,6 +11,13 @@ from backend.config import settings
 from backend.database import DB_PATH
 
 
+def _safe_int(s, default):
+    try:
+        return int(s)
+    except (TypeError, ValueError):
+        return default
+
+
 class FileWatcher:
     def __init__(self, db_path: str, interval_minutes: int = 5):
         self.db_path = db_path
@@ -317,7 +324,13 @@ class FileWatcher:
         return len(results)
 
     async def _auto_queue_new_files(self, results: list) -> int:
-        """Auto-enqueue new files that need work, if the setting is enabled."""
+        """Auto-enqueue new files that need work, if the setting is enabled.
+
+        v0.5.0+: now goes through the rules engine (resolve_rules_for_batch)
+        like every other queue-entry path. Priority precedence:
+            rule.queue_priority  OR  settings.auto_queue_priority  OR  0
+        Skip / ignore rule actions short-circuit enqueue.
+        """
         # Check setting
         db = await aiosqlite.connect(self.db_path)
         try:
@@ -332,7 +345,7 @@ class FileWatcher:
         if not enabled:
             return 0
 
-        # Load default encoder settings
+        # Load all settings (used as fallbacks when a rule doesn't override)
         db = await aiosqlite.connect(self.db_path)
         try:
             settings = {}
@@ -343,29 +356,65 @@ class FileWatcher:
         finally:
             await db.close()
 
-        encoder = settings.get("default_encoder", "nvenc")
-        nvenc_preset = settings.get("nvenc_preset", "p6")
-        nvenc_cq = int(settings.get("nvenc_cq", "20"))
-        audio_codec = settings.get("audio_codec", "copy")
-        audio_bitrate = int(settings.get("audio_bitrate", "128"))
+        default_encoder = settings.get("default_encoder", "nvenc")
+        default_nvenc_preset = settings.get("nvenc_preset", "p6")
+        default_nvenc_cq = _safe_int(settings.get("nvenc_cq", "20"), 20)
+        default_libx265_preset = settings.get("libx265_preset", "medium")
+        default_libx265_crf = _safe_int(settings.get("libx265_crf", "20"), 20)
+        default_target_res = settings.get("target_resolution", "")
+        default_audio_codec = settings.get("audio_codec", "copy")
+        default_audio_bitrate = _safe_int(settings.get("audio_bitrate", "128"), 128)
+        default_priority = max(0, min(2, _safe_int(settings.get("auto_queue_priority", "0") or 0, 0)))
+
+        # Resolve rules for the whole batch at once (one DB hit instead of per-file).
+        # extra_context=None because auto-queue has no nzbget category to surface.
+        from backend.rule_resolver import resolve_rules_for_batch
+        file_paths = [s.file_path for s in results]
+        rule_results = await resolve_rules_for_batch(file_paths, extra_context=None)
 
         from backend.queue import JobQueue
         queue = JobQueue(self.db_path)
 
         queued = 0
+        skipped_by_rule = 0
         for scanned in results:
-            tracks_to_remove = [t.stream_index for t in scanned.audio_tracks if not t.keep and not t.locked]
+            tracks_to_remove = [t.stream_index for t in scanned.audio_tracks
+                                if not t.keep and not t.locked]
             has_removable = len(tracks_to_remove) > 0
 
             if not scanned.needs_conversion and not has_removable:
                 continue
 
+            # Skip / ignore actions from rules short-circuit enqueue.
+            # Mirrors routes/jobs.py:946-948.
+            rule = rule_results.get(scanned.file_path)
+            if rule and rule.get("action") in ("skip", "ignore"):
+                skipped_by_rule += 1
+                continue
+
+            # Determine job type
             if scanned.needs_conversion and has_removable:
                 job_type = "combined"
             elif scanned.needs_conversion:
                 job_type = "convert"
             else:
                 job_type = "audio"
+
+            # Resolve every kwarg via OR-cascade: rule wins, else global default.
+            # NOTE: this is different from routes/jobs.py:973's `max(...)`
+            # because auto-queue has no per-file user choice that should act
+            # as a floor — the rule fully wins (including lowering).
+            r = rule or {}
+            encoder = r.get("encoder") or default_encoder
+            nvenc_preset = r.get("nvenc_preset") or default_nvenc_preset
+            nvenc_cq = r.get("nvenc_cq") if r.get("nvenc_cq") is not None else default_nvenc_cq
+            libx265_preset = r.get("libx265_preset") or default_libx265_preset
+            libx265_crf = r.get("libx265_crf") if r.get("libx265_crf") is not None else default_libx265_crf
+            target_resolution = r.get("target_resolution") or default_target_res
+            audio_codec = r.get("audio_codec") or default_audio_codec
+            audio_bitrate = r.get("audio_bitrate") if r.get("audio_bitrate") is not None else default_audio_bitrate
+            rule_pri = r.get("queue_priority")
+            priority = rule_pri if rule_pri is not None else default_priority
 
             await queue.add_job(
                 file_path=scanned.file_path,
@@ -375,13 +424,20 @@ class FileWatcher:
                 original_size=scanned.file_size,
                 nvenc_preset=nvenc_preset,
                 nvenc_cq=nvenc_cq,
+                libx265_preset=libx265_preset,
+                libx265_crf=libx265_crf,
+                target_resolution=target_resolution,
                 audio_codec=audio_codec,
                 audio_bitrate=audio_bitrate,
+                priority=priority,
             )
             queued += 1
 
-        if queued:
-            print(f"[WATCHER] Auto-queued {queued} new files", flush=True)
+        if queued or skipped_by_rule:
+            msg = f"[WATCHER] Auto-queued {queued} new files"
+            if skipped_by_rule:
+                msg += f" ({skipped_by_rule} skipped by rule)"
+            print(msg, flush=True)
         return queued
 
     async def _refresh_metadata_for_files(self, file_paths: list[str]) -> int:
