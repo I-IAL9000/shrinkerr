@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-05-08
+
+### Added
+- **`date_added` rule condition** for time-based rule firing. Lets users write rules like "Date Added newer than 24 hours → Queue Priority: Highest" to specifically target newly-arrived files. Operators: "newer than" / "older than". Value editor: number input + units dropdown (hours / days / weeks). Data source: `scan_results.new_detected_at` (the watcher's first-seen timestamp — resilient to filesystem touch / chmod / remux operations, matches the "NEW" badge semantics). Files with no recorded detection time (pre-watcher library, scanner-added rows, bypass paths) are treated as ancient: "older than" matches, "newer than" does not. Composes with v0.5.0's auto-queue priority work — the alternative pattern the original GitHub feature request suggested is now usable.
+
 ## [0.5.0] — 2026-05-08
 
 ### Added
