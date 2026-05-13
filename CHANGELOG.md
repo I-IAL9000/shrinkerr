@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] — 2026-05-11
+
+### Fixed
+- **DVD MPEG-2 (and any non-h264 source) files treated as already-converted** in the queue estimation modal — savings showed `0 MB`, the job got dispatched as `cleanup_only`, and only flipping "Force re-encode all files (including x265)" actually transcoded them. Root cause: `scan_results.needs_conversion` is a derived field (video_codec × source_codecs setting) but stored at scan time. When users widened "Convert From (source codecs)" in Settings to enable MPEG-2 / MPEG-4 / VC-1 after their files were first scanned, the stored `needs_conversion=0` values stayed stale. The queue's estimation loop reads the stored field (`routes/jobs.py:1773`), returns 0 savings, and dispatches as cleanup-only. Fix: (1) new `recompute_needs_conversion` helper in `scanner.py` that recomputes the field for every `converted=0` row against any source_codecs list (using the canonical `CODEC_FAMILIES` mapping); (2) one-shot heal `_v0_5_4_recompute_needs_conversion` runs once on upgrade and realigns existing rows against the user's current setting; (3) settings PUT handler now calls the same recompute whenever `source_codecs` changes, so this can't recur on the next setting tweak. Symptom-matching behavior — including the "MPEG-2 file with no estimated savings" you'd see on DVD rips — fixes itself on first container restart.
+
 ## [0.5.3] — 2026-05-11
 
 ### Fixed

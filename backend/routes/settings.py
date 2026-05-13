@@ -1060,6 +1060,25 @@ async def update_encoding_settings(update: SettingsUpdate):
                 )
             except Exception as exc:
                 print(f"[SETTINGS] Could not sync parallel_jobs to local node max_jobs: {exc}", flush=True)
+        # source_codecs change → recompute scan_results.needs_conversion in
+        # bulk. The field is derived (video_codec × source_codecs) but
+        # stored at scan time, so without this sweep existing rows go stale:
+        # enable MPEG-2 in Settings and the MPEG-2 files scanned under the
+        # old narrower setting still show `needs_conversion=0`, making the
+        # queue treat them as cleanup-only. v0.5.4.
+        if "source_codecs" in updates:
+            try:
+                from backend.scanner import recompute_needs_conversion
+                source_codecs = json.loads(updates["source_codecs"])
+                flipped = await recompute_needs_conversion(db, source_codecs)
+                if flipped:
+                    print(
+                        f"[SETTINGS] source_codecs changed → recomputed "
+                        f"needs_conversion on {flipped} scan_results row(s)",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(f"[SETTINGS] Could not recompute needs_conversion after source_codecs change: {exc}", flush=True)
         await db.commit()
     finally:
         await db.close()

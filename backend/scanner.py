@@ -205,6 +205,54 @@ def is_av1(codec: str) -> bool:
     return c in ("av1", "av01", "libaom-av1", "libsvtav1", "svt-av1")
 
 
+def expand_source_codecs(source_codecs: list[str]) -> set[str]:
+    """Expand a list of source-codec family names (e.g. 'mpeg2') into the
+    full set of lowercase ffprobe codec strings they cover (e.g. 'mpeg2video',
+    'mpeg2'). Used for recomputing scan_results.needs_conversion in bulk
+    when source_codecs changes."""
+    names: set[str] = set()
+    for source in source_codecs:
+        if source in CODEC_FAMILIES:
+            names.update(CODEC_FAMILIES[source])
+        else:
+            names.add(source.lower())
+    return names
+
+
+async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
+    """Recompute `needs_conversion` on every non-converted scan_results row
+    based on the current source_codecs setting. Returns the number of rows
+    whose value flipped.
+
+    `needs_conversion` is derived from `video_codec` × `source_codecs`, but
+    it's stored on the row at scan time. When the user widens/narrows the
+    source_codecs setting (Settings → Convert From) the stored values go
+    stale: a file scanned under `["h264"]` keeps `needs_conversion=0` even
+    after the user enables MPEG-2. The queue UI then estimates 0 savings
+    and skips the file to cleanup-only. This helper realigns the stored
+    values with the current setting in one pass."""
+    codec_names = expand_source_codecs(source_codecs)
+    # Compute the new needs_conversion column for every converted=0 row in
+    # Python (small DB, simple compare). Then UPDATE only the rows that
+    # actually flip — cheaper than blanket UPDATE.
+    flipped = 0
+    async with db.execute(
+        "SELECT file_path, video_codec, needs_conversion FROM scan_results "
+        "WHERE converted = 0"
+    ) as cur:
+        rows = await cur.fetchall()
+    for row in rows:
+        vc = (row["video_codec"] or "").lower()
+        should_convert = 1 if vc in codec_names else 0
+        if int(row["needs_conversion"] or 0) != should_convert:
+            await db.execute(
+                "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
+                (should_convert, row["file_path"]),
+            )
+            flipped += 1
+    return flipped
+
+
 # Language variant groups — codes that represent the same spoken language
 LANGUAGE_EQUIVALENTS = {
     # Norwegian

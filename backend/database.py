@@ -729,6 +729,52 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.5.2 heal skipped: {exc}", flush=True)
 
+        # v0.5.4 heal: recompute scan_results.needs_conversion against the
+        # current source_codecs setting. The field is derived (video_codec
+        # × source_codecs) but stored at scan time, so when the user widens
+        # the codec list (e.g. enables MPEG-2 after a fresh install scanned
+        # under the legacy `["h264"]`-only default) existing rows keep
+        # `needs_conversion=0`. The queue's estimation reads the stored
+        # field, returns 0 savings, and the file gets queued as cleanup-only
+        # — exactly the symptom of DVD MPEG-2 files being treated as
+        # already-converted. v0.5.4 also wires a recompute into the Settings
+        # PUT handler so this can't recur, but existing installs need this
+        # one-shot pass for files scanned before the upgrade.
+        try:
+            flag = "_v0_5_4_recompute_needs_conversion"
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag,)
+            ) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                async with db.execute(
+                    "SELECT value FROM settings WHERE key = 'source_codecs'"
+                ) as cur:
+                    row = await cur.fetchone()
+                if row and row[0]:
+                    try:
+                        import json as _json
+                        source_codecs = _json.loads(row[0])
+                    except Exception:
+                        source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+                else:
+                    source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+                from backend.scanner import recompute_needs_conversion
+                flipped = await recompute_needs_conversion(db, source_codecs)
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                    (flag,),
+                )
+                if flipped:
+                    print(
+                        f"[DB] v0.5.4 heal: realigned needs_conversion on "
+                        f"{flipped} scan_results row(s) against current "
+                        f"source_codecs {source_codecs}",
+                        flush=True,
+                    )
+        except Exception as exc:
+            print(f"[DB] v0.5.4 heal skipped: {exc}", flush=True)
+
         await db.commit()
     finally:
         await db.close()
