@@ -8,96 +8,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5.10] — 2026-05-11
 
 ### Fixed
-- **NVENC + NVDEC jobs still failed on v0.5.9** with a slightly different error than v0.5.7's: `Impossible to convert between the formats supported by the filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'`. The v0.5.8 fix added the right `scale_cuda=format=p010le` filter, but the NVENC encoder block kept emitting `-pix_fmt p010le` on the *output* side. `-pix_fmt` declares the encoder's input format in CPU memory; with HW decode keeping frames on the GPU after `scale_cuda`, the encoder sees a CUDA surface AND a contradictory directive saying it should expect CPU memory. ffmpeg tries to insert `auto_scale_0` to bridge `cuda(p010le)` → `p010le (CPU)`, which it can't do without an explicit `hwdownload` step, and the encoder bombs before processing a single packet. Fix: emit `-pix_fmt` only on the software-decode path; with HW decode the `scale_cuda=format=X` filter already dictates the surface format. QSV/VAAPI paths never had `-pix_fmt` set, so they were unaffected and continue to work. **This was a real testing-discipline failure on my part — I shipped HW pipeline changes twice (v0.5.7, v0.5.8) without actually running ffmpeg with CUDA; the canonical pattern I copied was incomplete. Going forward, HW decode changes should be verified against a real NVIDIA test box before tagging.**
+- NVENC+NVDEC: drop `-pix_fmt` from encoder — `scale_cuda=format=X` already sets the surface format; leaving `-pix_fmt` made ffmpeg try and fail to bridge CUDA→CPU.
 
 ## [0.5.9] — 2026-05-11
 
 ### Added
-- **NVENC bit-depth choice** in Settings → Encoding → NVENC card. New dropdown with three options:
-  - **10-bit (main10 / p010le)** — Default. Preserves the pre-v0.5.9 hardcoded behaviour. Best quality (reduces banding artifacts), slightly larger files on some sources, **requires Pascal-or-newer NVIDIA** (GTX 10xx, Quadro P-series, RTX). Excludes Maxwell silicon (GTX 9xx, GTX 750 Ti, Quadro M-series).
-  - **8-bit (main / nv12)** — Maxwell-compatible. Smaller files on most material, faster encode, fully sufficient for 8-bit source content. The right choice if your NVENC card is older than GTX 10xx, or if you've A/B-tested and prefer the size win.
-  - **Match source** — Probes the source pix_fmt at job time and picks 10-bit only when source is already 10-bit (`yuv420p10le`, `yuv420p12le`, p010 surfaces), otherwise 8-bit. Avoids the 8→10 bit upconvert overhead for 8-bit sources without giving up quality on 10-bit ones. Resolution decision is logged per-job (`[CONVERT] NVENC bit-depth auto: source pix_fmt='yuv420p' → encoding 8bit`).
-- Probe now captures `video_pix_fmt` alongside `video_codec` from ffprobe — driver for the auto-mode bit-depth resolution. Exposed on `scanner.probe_file()` return dict.
+- NVENC bit-depth dropdown (10-bit / 8-bit / Match source). 8-bit unblocks Maxwell cards; Match source picks per-job from probed pix_fmt.
 
 ### Fixed
-- **`-threads N` now emitted both pre-input AND post-encoder.** Per the GitHub feature requester's observation: "ffmpeg will only apply it for that processing portion." `-threads` is a per-codec-context option, not a global. The v0.5.6 pre-input placement caps decoder threads, but software encoders (libx265 specifically) need the cap on the encoder side too — without it, the `Parallel Jobs > 1` + `FFmpeg Threads Per Job = 2` setting only constrained decode, while libx265 encode kept grabbing every available core. Now emitted at both boundaries. NVENC/QSV/VAAPI ignore the flag (GPU does the heavy lifting) so the redundant post-encoder copy is harmless on hardware paths and a real cap on libx265.
-
-### Behaviour notes
-- The 10-bit default means existing v0.5.7/v0.5.8 users see no behaviour change unless they actively switch the new dropdown.
-- Maxwell-era NVENC users (anyone whose NVENC capability detection works but who's been hitting profile/format errors on encode) should pick **8-bit** to make NVENC usable. The capability detection (`encoder_caps.py`) can't yet distinguish Maxwell from Pascal+, so the dropdown defaults to 10-bit and Maxwell users have to flip it manually. Surfaced in the help text.
-- "Match source" is the recommended setting for users with mixed libraries — 8-bit Blu-ray rips encode as 8-bit (smaller, faster), 10-bit anime / 4K HDR remuxes encode as 10-bit (preserves source precision). The decision is per-job, not per-session.
-- The NVENC+NVDEC `scale_cuda=format=` filter (added in v0.5.8 to bridge the pix_fmt mismatch) now picks `p010le` or `nv12` based on the resolved bit depth — keeps the HW decode pipeline correct in both modes.
+- `-threads N` emitted post-encoder too — pre-input only capped decoder threads, leaving libx265 encode uncapped.
 
 ## [0.5.8] — 2026-05-11
 
 ### Fixed
-- **NVENC + NVDEC jobs failed immediately with `ffmpeg exited with code 218`** (regression introduced in v0.5.7). The full error in the ffmpeg log was `Impossible to convert between the formats supported by the filter 'Parsed_null_0' and the filter 'auto_scale_0'`, followed by `[vost#0:0/hevc_nvenc] Could not open encoder before EOF`. Root cause: NVDEC outputs 8-bit nv12 frames as CUDA surfaces (the common case — any 8-bit H.264 / HEVC source), but Shrinkerr's NVENC config forces `-pix_fmt p010le -profile:v main10` for 10-bit output. With software decode, libavcodec emits CPU-side nv12 frames and ffmpeg's auto-format converter transparently upconverts to p010le. With NVDEC, frames live in CUDA surfaces and ffmpeg's auto-converter can't bridge GPU↔CPU pix_fmts, so the encoder bombs out before processing a single packet. Fix: always emit `scale_cuda=format=p010le` in the filter chain for NVENC+NVDEC (becomes `scale_cuda=WxH:format=p010le` when a target resolution is also set). The filter does the 8→10 bit conversion on-GPU and is a no-op when the source was already 10-bit. **This affected every NVENC user who had `nvenc_hw_decode=true`** (the v0.5.7 default), so any v0.5.7 upgrade where the user didn't manually disable the toggle was broken on first job. Apologies — Task 4 sanity tests checked cmd structure but didn't exercise real ffmpeg, so the pix_fmt mismatch wasn't caught pre-release.
+- NVENC+NVDEC jobs failed on first encode. Added `scale_cuda=format=p010le` to convert nv12 CUDA surfaces to 10-bit on-GPU.
 
 ## [0.5.7] — 2026-05-11
 
 ### Added
-- **Hardware decode support** for the full encoder lineup. Each encoder card in Settings → Encoding gets a new toggle:
-  - **NVENC + NVDEC** (default on) — `-hwaccel cuda -hwaccel_output_format cuda` before `-i`, frames stay on the GPU through `scale_cuda` straight into the encoder. No PCIe transfer.
-  - **QSV + QSV decode** (default on) — `-hwaccel qsv -hwaccel_output_format qsv`, frames stay on the iGPU through `scale_qsv`. No upload overhead.
-  - **VAAPI + VAAPI decode** (default on) — `-hwaccel vaapi -hwaccel_output_format vaapi` plus `scale_vaapi`/`format=nv12`. No `hwupload` filter needed since frames are already on the DRM device.
-  - **libx265 + NVDEC mixed mode** (default off, opt-in) — `-hwaccel cuda` (no `_output_format`) with `hwdownload,format=nv12` filter. Frames decoded on GPU and downloaded to CPU for software encode. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe readback usually exceeds the savings. The original GitHub feature request's exact niche use case.
-- **Capability detection** for the three HW decoders via a new `_ffmpeg_hwaccels()` probe in `encoder_caps.py`. Each decode toggle is disabled in the UI when its hardware isn't detected, with a "NVDEC/QSV/VAAPI not detected on this host" note. Probe gates HW decode availability on BOTH the ffmpeg backend being compiled in AND the matching encoder being available (e.g. NVDEC needs an NVIDIA GPU + working CUDA driver, same gate as NVENC).
-- **Per-source-codec gating** via `hw_decode_supports(decoder, source_codec)` in `converter.py`. Each HW decoder supports a conservative codec subset (NVIDIA SDK 12.x / Intel Media Driver / Mesa VA-API intersections). When a job's source codec isn't supported by the chosen decoder, the worker silently falls back to software decode with a clear log line: `[CONVERT] HW decode unavailable for codec 'msmpeg4v3' on NVDEC — software fallback for this job`. No job failure, no UI noise — exotic codecs just take the slower path. Every job also logs its full decode/encode pipeline (`[CONVERT] Decode: CUDA (on-device) → Encode: nvenc (source codec: h264)`) so debugging "is my GPU actually being used" doesn't require parsing ffmpeg's verbose output.
+- Hardware decode (NVDEC / QSV / VAAPI) paired with each encoder, plus opt-in libx265+NVDEC mixed mode. Native pairs default on; unsupported codecs fall back silently to software.
+- Capability probe via `ffmpeg -hwaccels`; each toggle gated on matching encoder + backend availability.
 
 ### Changed
-- **VMAF is skipped when hardware decode is active for a job.** VMAF needs software-decoded source frames to compare against the encoded output, and re-decoding the source in software for VMAF alone would double source-file I/O. When `vmaf_analysis_enabled=true` AND any HW decode path is active for the job, the worker logs `[CONVERT] VMAF skipped — hardware decode is active for this job (backend=cuda, on_device=True)` and bypasses the VMAF block. The VMAF quality threshold gate is bypassed silently along with it. Three UI surfaces communicate this unambiguously: (1) the VMAF settings section gains a yellow warning chip that dynamically counts how many HW decode toggles are currently on ("⚠ VMAF will not run on hardware-decoded jobs. With **3** hardware decode toggles currently on (NVENC+NVDEC, QSV, VAAPI), jobs that use those encoders will skip VMAF…"); (2) each HW decode toggle's help text shows "⚠ VMAF won't run on jobs that use this decoder. See the VMAF section." when VMAF is also enabled; (3) worker logs make the skip explicit per-job. To enforce VMAF on every job, disable the relevant HW decode toggles.
+- VMAF is skipped on hardware-decoded jobs (needs software-decoded source frames). Surfaced via warning chip, per-toggle help text, and worker log.
 
 ### Fixed
-- **VAAPI filter chain** for native VAAPI+decode pairs no longer emits the spurious `format=nv12,hwupload` filter — frames are already on the DRM device after `-hwaccel vaapi -hwaccel_output_format vaapi`, so only `scale_vaapi=...,format=nv12` (or bare `format=nv12` when no scale) is needed. The pre-v0.5.7 software-decode path still emits `hwupload` as required.
-- **Remote workers propagate HW decode settings.** Distributed-mode users: the server-side job-dispatch code (`routes/nodes.py`) now packs the 4 new HW decode keys into the assigned-job payload, and the worker-side code (`worker_mode.py`) reads them into `worker_settings`. Without this, remote workers would silently use the converter's hardcoded defaults instead of the admin's server-level settings. Matches the existing propagation pattern for `vmaf_analysis_enabled` / `vmaf_min_score` / `default_libx265_preset`.
-
-### Behaviour notes
-- Existing software-decode users see **no behaviour change** unless they actively toggle on the new HW decode controls. The pre-v0.5.7 ffmpeg command is emitted bit-for-bit identically when `use_hw_decode=False` (the default for legacy callers and the path taken when all four toggles are off).
-- New installs and upgrades default the **three native pair toggles to on** because frames-stay-on-device is the natural pairing for HW encoders. On hosts without the matching decoder hardware, the toggles disable themselves automatically via capability probe.
-- The **libx265 + NVDEC mixed-mode toggle defaults off** because the cross-bus GPU→CPU readback is a real cost that often exceeds the decode savings on modern CPUs. Opt-in only.
-- Closes the "NVDEC / GPU decoding" portion of the GitHub feature request.
+- VAAPI native-pair filter chain no longer emits redundant `format=nv12,hwupload`.
+- Remote workers now receive the 4 HW decode settings via the job payload.
 
 ## [0.5.6] — 2026-05-11
 
 ### Added
-- **FFmpeg threads per job** Settings slider (Encoding → after Parallel Jobs). Caps ffmpeg's per-process thread count via the `-threads N` flag, emitted as a top-level option before `-i`. Default `0` = ffmpeg auto (uses every available core — pre-v0.5.6 behaviour, unchanged for existing installs). Useful when `Parallel Jobs > 1` on older CPUs: without a cap, two libx265 jobs on an 8-core box each spin up 8 threads and fight for cores, eroding throughput. Recommended values: `1–2` for parallel software encodes, `1–2` for NVENC/QSV/VAAPI (the GPU does the heavy lifting, ffmpeg just needs threads for muxing/filters), or leave at `auto` for a single job saturating a modern many-core CPU. Closes a piece of the "h264 / NVDEC / threads" GitHub feature request.
+- `FFmpeg Threads Per Job` Settings slider (caps `-threads N`). Default `0` = ffmpeg auto.
 
 ### Changed
-- **Authentication settings UX overhaul.** Several users reported locking themselves out by toggling auth without realising it (the Enable checkbox sat in the section header on the far right, low-contrast in dark mode) and being unable to find the toggle again. Three fixes: (1) the Enable toggle moved to the **left side of the section**, inside a bordered chip with a clear "Enable username / password login" label and an explicit "(Enabled)" / "(Disabled)" badge that turns green when on. (2) Username and password fields now **always render** — disabled (greyed-out at 0.55 opacity) when auth is off, so users can see what fields exist before flipping the toggle. Pre-v0.5.6 the fields were conditionally rendered, hiding what was about to happen. (3) An auth-active green banner appears under the toggle when auth is on: "Login required. Visitors will need either the username + password below or the API key (workers / scripts)." Makes the state unambiguous.
-- **README: new troubleshooting entry** for the lockout case — `docker exec sqlite3` one-liners to either disable auth or clear the password hash, no database deletion required. Pre-v0.5.6 users in this situation were nuking `data/` to recover.
+- Auth UX: Enable toggle moved to left side as a labelled chip, username/password fields always rendered (disabled when off), green active-auth banner.
+- README troubleshooting entry with `sqlite3` one-liners to recover from auth lockout without nuking the data volume.
 
 ## [0.5.5] — 2026-05-11
 
 ### Fixed
-- **Non-h264 source files kept their old codec tag in the filename after conversion** (DVD MPEG-2, XviD, DivX, VC-1, WMV, VP9). E.g. `36 Fillette (1988) 576p AC3 2.0 MPEG.mkv` stayed `…MPEG.mkv` even after a successful HEVC re-encode — the rename function `rename_source_to_target_codec` (`backend/converter.py:509`) only matched `x264`/`h264`/`AVC`, silently leaving every other source codec untouched. Symptom: post-conversion filenames misrepresented the actual codec, and re-scans saw "MPEG" in the name and (depending on detection state) could re-flag the file. Extended the regex set to cover every family in `CODEC_FAMILIES` / Settings → Convert From: `MPEG[-_. ]?2`, bare `MPEG` (case-sensitive to avoid matching unrelated substrings like "Stomping"), `MPEG[-_. ]?4`, `XviD`, `DivX`, `DX50`, `VC[-_. ]?1`, `WMV[0-9]?`, `VP[-_. ]?9`. Back-compat with x264/h264/AVC preserved. All existing call sites already invoked this function for the rename step, so the fix lands automatically on the next conversion of any non-h264 file.
+- Filename rename after conversion now covers all non-h264 sources (MPEG-2, MPEG-4, XviD, DivX, VC-1, WMV, VP9). Was only matching x264/h264/AVC.
 
 ## [0.5.4] — 2026-05-11
 
 ### Fixed
-- **DVD MPEG-2 (and any non-h264 source) files treated as already-converted** in the queue estimation modal — savings showed `0 MB`, the job got dispatched as `cleanup_only`, and only flipping "Force re-encode all files (including x265)" actually transcoded them. Root cause: `scan_results.needs_conversion` is a derived field (video_codec × source_codecs setting) but stored at scan time. When users widened "Convert From (source codecs)" in Settings to enable MPEG-2 / MPEG-4 / VC-1 after their files were first scanned, the stored `needs_conversion=0` values stayed stale. The queue's estimation loop reads the stored field (`routes/jobs.py:1773`), returns 0 savings, and dispatches as cleanup-only. Fix: (1) new `recompute_needs_conversion` helper in `scanner.py` that recomputes the field for every `converted=0` row against any source_codecs list (using the canonical `CODEC_FAMILIES` mapping); (2) one-shot heal `_v0_5_4_recompute_needs_conversion` runs once on upgrade and realigns existing rows against the user's current setting; (3) settings PUT handler now calls the same recompute whenever `source_codecs` changes, so this can't recur on the next setting tweak. Symptom-matching behavior — including the "MPEG-2 file with no estimated savings" you'd see on DVD rips — fixes itself on first container restart.
+- `scan_results.needs_conversion` recomputes when `source_codecs` setting changes (PUT handler + one-shot heal on upgrade). Existing rows scanned under a narrower source list were stuck at `needs_conversion=0`.
 
 ## [0.5.3] — 2026-05-11
 
 ### Fixed
-- **Date Added rule condition wasn't appearing in the rule-builder dropdown.** v0.5.1 wired `date_added` into the `CONDITION_TYPES` dict, the value-editor switch (number + units), and the backend rule resolver — but missed the dropdown itself, which is a hardcoded list of `<option>` elements rather than iterated from `CONDITION_TYPES`. Added `<option value="date_added">Date Added</option>` to the File optgroup, between File Size and Type, matching the position in `CONDITION_TYPES`.
+- Date Added rule condition now appears in the rule-builder dropdown (v0.5.1 wired the backend but missed the hardcoded `<option>` list).
 
 ## [0.5.2] — 2026-05-11
 
 ### Fixed
-- **HEVC→HEVC re-encodes leaving newly-converted files showing as NEW in the Scanner.** Reproduced on a Farscape Season 2 re-encode pass that only changed audio (DTS-HD MA → EAC3, video stream `d3g`-tagged HEVC pass-through). Root cause: the audio-codec-rename path at `queue.py:2242+` (which renames the on-disk file when the audio codec marker in the filename changes — e.g. `…DTSHDMA.mkv` → `…EAC3.mkv`) only updated `scan_results.file_path`, leaving `converted=0`. The late post-conversion update site then ran its `already_correct` check (introduced in v0.3.137 to skip duplicate work), which looks for `converted=1` on the row at the new path — found `converted=0`, returned False, fell into the destructive DELETE+UPDATE pattern. The DELETE wiped the freshly-renamed row at the new path, the UPDATE matched 0 rows (original file_path no longer existed in scan_results), and the watcher's next sweep re-INSERTed the row as `is_new=1, new_detected_at=now`. Net symptom: row showing `converted=1, is_new=1, new_detected_at=recent` — three fields in an internally inconsistent state. Fix: (1) audio-rename UPDATE now also sets `converted=1, is_new=0, new_detected_at=NULL` parallel to the early/late update sites; (2) late-update site's `already_correct` check is now more permissive — also accepts "row exists at new path AND no row at old path" (rename happened upstream regardless of `converted` flag) before falling into destructive DELETE+UPDATE; (3) one-shot heal migration `_v0_5_2_audio_rename_destructive_heal` clears `is_new` + `new_detected_at` and sets `converted=1` on any scan_results row matching a successful completed conversion job (drops v0.3.137 heal's `original_file_path != file_path` constraint, since audio-rename code paths may not persist `original_file_path` reliably; the v0.3.137 heal was one-shot so post-v0.3.137 conversions weren't caught either way).
+- HEVC→HEVC audio-only re-encodes no longer leave files showing as NEW. Audio-rename path now sets `converted=1, is_new=0, new_detected_at=NULL`; one-shot heal repairs already-broken rows.
 
 ## [0.5.1] — 2026-05-08
 
 ### Added
-- **`date_added` rule condition** for time-based rule firing. Lets users write rules like "Date Added newer than 24 hours → Queue Priority: Highest" to specifically target newly-arrived files. Operators: "newer than" / "older than". Value editor: number input + units dropdown (hours / days / weeks). Data source: `scan_results.new_detected_at` (the watcher's first-seen timestamp — resilient to filesystem touch / chmod / remux operations, matches the "NEW" badge semantics). Files with no recorded detection time (pre-watcher library, scanner-added rows, bypass paths) are treated as ancient: "older than" matches, "newer than" does not. Composes with v0.5.0's auto-queue priority work — the alternative pattern the original GitHub feature request suggested is now usable.
+- `date_added` rule condition (newer than / older than, hours/days/weeks). Sourced from `scan_results.new_detected_at`.
 
 ## [0.5.0] — 2026-05-08
 
 ### Added
-- **Auto-queue priority** Settings dropdown (Normal / High / Highest) in the Automation section. Newly-detected Sonarr/Radarr-dropped files inherit this priority when auto-queued, jumping them ahead of the manual backlog. Resolves the GitHub feature request "Auto-Queue: Set Priority".
+- Auto-queue priority Settings dropdown (Normal / High / Highest). New files inherit this priority when auto-queued.
 
 ### Fixed
-- **`encoding_rules` now apply to auto-queued files.** Pre-fix `watcher._auto_queue_new_files` called `add_job` with global Settings defaults and silently bypassed the rules engine — the only queue-entry path that didn't. Now the watcher calls `resolve_rules_for_batch` and rule actions take effect across the full surface: `encoder`, `nvenc_preset`, `nvenc_cq`, `libx265_crf`, `libx265_preset`, `target_resolution`, `audio_codec`, `audio_bitrate`, `queue_priority`, and `skip` / `ignore` actions. **Behavior change for users with existing rules**: rules you wrote thinking they only applied to manual queueing now apply to auto-queue too. Review your rules after upgrade if this matters. Priority precedence: rule's `queue_priority` > new Settings dropdown > 0 (Normal). Note: precedence uses OR-cascade (rule fully wins, including lowering), deliberately different from the manual-queue path which uses `max(payload.priority, rule.queue_priority)` to protect the user's per-job choice as a floor.
+- `encoding_rules` now apply to auto-queued files (previously bypassed rule engine). **Behavior change**: rules you wrote thinking they only applied to manual queueing now apply to auto-queue too.
 
 ## [0.4.9] — 2026-05-08
 
