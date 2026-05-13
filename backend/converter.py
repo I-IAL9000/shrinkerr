@@ -507,21 +507,45 @@ def _hevc_tag_for_encoder(encoder: str | None) -> str:
 
 
 def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> str:
-    """Rewrite x264/h264/AVC codec tags in `filename` for the output encoder.
+    """Rewrite source-codec tags in `filename` for the output encoder.
 
     The target label depends on `encoder` — see `_hevc_tag_for_encoder`.
     Keeps the old behaviour (always `x265`) when `encoder` is None for
     back-compat with callers that haven't been updated yet.
+
+    Covers every source family Shrinkerr offers in Settings → Convert From:
+    h264/x264/AVC, MPEG-2/MPEG2/MPEG, MPEG-4/XviD/DivX/DX50, VC-1/WMV,
+    VP9. Without this, a DVD MPEG-2 file like
+    `36 Fillette (1988) 576p AC3 2.0 MPEG.mkv` got converted to HEVC but
+    kept the misleading `MPEG` in its filename. v0.5.5 broadened the patterns.
     """
     target = _hevc_tag_for_encoder(encoder) if encoder is not None else "x265"
-    # `[._-]?` allows scene-tag variants with a literal separator between
-    # the letter and the digits — `H.264` (Amazon Prime convention),
-    # `h-264`, `h_264`. Pre-v0.3.102 the patterns required adjacency
-    # (`\bh264\b`), so a file like `…H.264-NTb.mkv` got converted to HEVC
-    # but kept the misleading H.264 in its filename.
+    # H.264 / x264 / AVC. `[._-]?` allows scene-tag variants with a
+    # literal separator between the letter and the digits — `H.264`
+    # (Amazon Prime convention), `h-264`, `h_264`. Pre-v0.3.102 the
+    # patterns required adjacency (`\bh264\b`), so a file like
+    # `…H.264-NTb.mkv` got converted to HEVC but kept the misleading
+    # H.264 in its filename.
     result = re.sub(r'\bx[._-]?264\b', target, filename, flags=re.IGNORECASE)
     result = re.sub(r'\bh[._-]?264\b', target, result, flags=re.IGNORECASE)
     result = re.sub(r'\bAVC\b', target, result)
+    # MPEG-2 / MPEG2 / MPEG (DVD rips). Match the digits-bearing forms
+    # first so `MPEG-2` doesn't get partially consumed by the bare `MPEG`
+    # pattern. Bare `MPEG` is intentionally last and case-sensitive so
+    # we don't munge unrelated words like "Stomping" or filenames that
+    # happen to share the substring.
+    result = re.sub(r'\bMPEG[._\-\s]?2\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bMPEG\b', target, result)
+    # MPEG-4 Part 2 / XviD / DivX / DX50.
+    result = re.sub(r'\bMPEG[._\-\s]?4\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bXviD\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bDivX\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bDX50\b', target, result, flags=re.IGNORECASE)
+    # VC-1 / WMV (Windows Media). Wmv9 / VC1 / VC-1 etc.
+    result = re.sub(r'\bVC[._\-\s]?1\b', target, result, flags=re.IGNORECASE)
+    result = re.sub(r'\bWMV[0-9]?\b', target, result, flags=re.IGNORECASE)
+    # VP9 (YouTube/WebM rips occasionally hit this path).
+    result = re.sub(r'\bVP[._\-\s]?9\b', target, result, flags=re.IGNORECASE)
     # Remove "Remux" since re-encoded files are no longer remuxes
     result = re.sub(r'\s*\bRemux\b\s*', ' ', result, flags=re.IGNORECASE).strip()
     # Clean up any double spaces left behind

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] — 2026-05-11
+
+### Fixed
+- **Non-h264 source files kept their old codec tag in the filename after conversion** (DVD MPEG-2, XviD, DivX, VC-1, WMV, VP9). E.g. `36 Fillette (1988) 576p AC3 2.0 MPEG.mkv` stayed `…MPEG.mkv` even after a successful HEVC re-encode — the rename function `rename_source_to_target_codec` (`backend/converter.py:509`) only matched `x264`/`h264`/`AVC`, silently leaving every other source codec untouched. Symptom: post-conversion filenames misrepresented the actual codec, and re-scans saw "MPEG" in the name and (depending on detection state) could re-flag the file. Extended the regex set to cover every family in `CODEC_FAMILIES` / Settings → Convert From: `MPEG[-_. ]?2`, bare `MPEG` (case-sensitive to avoid matching unrelated substrings like "Stomping"), `MPEG[-_. ]?4`, `XviD`, `DivX`, `DX50`, `VC[-_. ]?1`, `WMV[0-9]?`, `VP[-_. ]?9`. Back-compat with x264/h264/AVC preserved. All existing call sites already invoked this function for the rename step, so the fix lands automatically on the next conversion of any non-h264 file.
+
 ## [0.5.4] — 2026-05-11
 
 ### Fixed
