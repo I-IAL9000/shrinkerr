@@ -502,6 +502,49 @@ def _build_ffmpeg_cmd_impl(
     return cmd
 
 
+# v0.5.7: HW decode codec support tables. Conservative — only codecs
+# we have strong evidence work on current driver/SDK versions. When the
+# table says False, we silently fall back to software decode with a
+# worker log line; failing the job would be worse UX than a slower decode.
+#
+# NVDEC: per NVIDIA Video Codec SDK 12.x decode matrix.
+# QSV: per Intel Media Driver decode capabilities (gen-dependent but
+#      the listed codecs work on Gen9+, which is everything Shrinkerr
+#      supports as an encoder host).
+# VAAPI: per Mesa VA-API + Intel iHD intersection.
+_NVDEC_SUPPORTED = frozenset({
+    "h264", "hevc", "h265",
+    "vp9", "av1", "av01",
+    "mpeg2video", "mpeg2", "mpeg4", "vc1", "wmv3",
+})
+_QSV_DECODE_SUPPORTED = frozenset({
+    "h264", "hevc", "h265",
+    "vp9", "av1", "av01",
+    "mpeg2video", "mjpeg",
+})
+_VAAPI_DECODE_SUPPORTED = frozenset({
+    "h264", "hevc", "h265",
+    "vp9", "av1", "av01",
+    "mpeg2video", "vc1", "wmv3",
+})
+
+
+def hw_decode_supports(decoder: str, source_codec: str | None) -> bool:
+    """True if `decoder` ('cuda'/'qsv'/'vaapi') can hardware-decode
+    `source_codec` (lowercase ffprobe codec name). Returns False when
+    source_codec is None/empty so probe failures fall back to software
+    rather than crashing the cmd builder."""
+    if not source_codec:
+        return False
+    c = source_codec.lower()
+    table = {
+        "cuda": _NVDEC_SUPPORTED,
+        "qsv": _QSV_DECODE_SUPPORTED,
+        "vaapi": _VAAPI_DECODE_SUPPORTED,
+    }
+    return c in table.get(decoder, frozenset())
+
+
 def _hevc_tag_for_encoder(encoder: str | None) -> str:
     """Pick the right codec/encoder label for the output filename.
 
