@@ -1025,7 +1025,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <span style={{ fontSize: 14, fontWeight: 500 }}>Use NVDEC for decode (mixed mode)</span>
                     </label>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Defaults off.
+                      Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Falls back silently to software decode for unsupported source codecs. Defaults off.
                       {!encoderCaps?.nvdec_available && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
                           NVDEC not detected on this host.
