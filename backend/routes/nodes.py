@@ -382,7 +382,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'libx265_preset', 'libx265_crf', "
             "              'nvenc_preset', 'nvenc_cq', 'default_encoder', "
             "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf', "
-            "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq')"
+            "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq', "
+            "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -441,6 +442,19 @@ async def request_job(req: RequestJobBody, request: Request):
     else:
         assigned["default_nvenc_preset"] = None
         assigned["default_nvenc_cq"] = None
+    # HW decode settings so remote workers honour the server's configured policy
+    assigned["nvenc_hw_decode"] = (
+        srv_settings.get("nvenc_hw_decode", "true").lower() == "true"
+    )
+    assigned["qsv_hw_decode"] = (
+        srv_settings.get("qsv_hw_decode", "true").lower() == "true"
+    )
+    assigned["vaapi_hw_decode"] = (
+        srv_settings.get("vaapi_hw_decode", "true").lower() == "true"
+    )
+    assigned["libx265_use_nvdec"] = (
+        srv_settings.get("libx265_use_nvdec", "false").lower() == "true"
+    )
     print(f"[NODES] Assigned job {job['id']} ({job.get('encoder') or 'default'}) to node '{req.node_id}' ({node['name']})", flush=True)
 
     # Broadcast that this node is now working

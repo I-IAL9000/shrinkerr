@@ -472,6 +472,14 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 # talking to a newer worker).
                 "vmaf_analysis_enabled": bool(job.get("vmaf_analysis_enabled", False)),
                 "vmaf_min_score": float(job.get("vmaf_min_score") or 0),
+                # HW decode settings come from the server-side payload so remote
+                # workers honour the server's configured policy. Falls back to
+                # defaults if the server didn't send the fields (older server
+                # talking to a newer worker).
+                "nvenc_hw_decode": bool(job.get("nvenc_hw_decode", True)),
+                "qsv_hw_decode": bool(job.get("qsv_hw_decode", True)),
+                "vaapi_hw_decode": bool(job.get("vaapi_hw_decode", True)),
+                "libx265_use_nvdec": bool(job.get("libx265_use_nvdec", False)),
                 "trash_original_after_conversion": False,
                 "backup_original_days": 0,
             }
