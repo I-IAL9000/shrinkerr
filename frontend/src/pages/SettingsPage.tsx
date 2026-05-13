@@ -896,6 +896,34 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {encoding.default_encoder === "nvenc" && (
                 <>
+                  {/* v0.5.7: NVDEC hardware decode pairing */}
+                  <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
+                                border: "1px solid var(--border)", borderRadius: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10,
+                                    cursor: encoderCaps?.nvdec_available ? "pointer" : "not-allowed",
+                                    opacity: encoderCaps?.nvdec_available ? 1 : 0.5 }}>
+                      <input type="checkbox"
+                        checked={encoding?.nvenc_hw_decode ?? true}
+                        disabled={!encoderCaps?.nvdec_available}
+                        onChange={e => setEncoding({ ...encoding, nvenc_hw_decode: e.target.checked })}
+                        style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use NVDEC for decode</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      Decodes the source on the GPU before NVENC encodes it. Frames stay on-device — no PCIe transfer. Falls back silently to software decode for unsupported source codecs (MS-MPEG4v3, exotic formats).
+                      {!encoderCaps?.nvdec_available && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          NVDEC not detected on this host.
+                        </span>
+                      )}
+                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.nvenc_hw_decode ?? true) && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   {/* NVENC Preset */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -983,6 +1011,34 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               )}
               {encoding.default_encoder === "libx265" && (
                 <>
+                  {/* v0.5.7: libx265 + NVDEC mixed mode (cross-bus opt-in) */}
+                  <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
+                                border: "1px solid var(--border)", borderRadius: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10,
+                                    cursor: encoderCaps?.nvdec_available ? "pointer" : "not-allowed",
+                                    opacity: encoderCaps?.nvdec_available ? 1 : 0.5 }}>
+                      <input type="checkbox"
+                        checked={encoding?.libx265_use_nvdec ?? false}
+                        disabled={!encoderCaps?.nvdec_available}
+                        onChange={e => setEncoding({ ...encoding, libx265_use_nvdec: e.target.checked })}
+                        style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use NVDEC for decode (mixed mode)</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Defaults off.
+                      {!encoderCaps?.nvdec_available && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          NVDEC not detected on this host.
+                        </span>
+                      )}
+                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && encoding?.libx265_use_nvdec && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   {/* libx265 Preset */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1078,6 +1134,34 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   default (closest analog to NVENC's CQ). v0.3.68+. */}
               {encoding.default_encoder === "qsv" && (
                 <>
+                  {/* v0.5.7: QSV hardware decode pairing */}
+                  <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
+                                border: "1px solid var(--border)", borderRadius: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10,
+                                    cursor: encoderCaps?.qsv_decode_available ? "pointer" : "not-allowed",
+                                    opacity: encoderCaps?.qsv_decode_available ? 1 : 0.5 }}>
+                      <input type="checkbox"
+                        checked={encoding?.qsv_hw_decode ?? true}
+                        disabled={!encoderCaps?.qsv_decode_available}
+                        onChange={e => setEncoding({ ...encoding, qsv_hw_decode: e.target.checked })}
+                        style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use QSV for decode</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      Decodes the source on the Intel iGPU before QSV encodes it. Frames stay on-die — no upload overhead. Falls back silently to software decode for unsupported source codecs.
+                      {!encoderCaps?.qsv_decode_available && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          QSV decode not detected on this host.
+                        </span>
+                      )}
+                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.qsv_hw_decode ?? true) && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>QSV Preset</span>
@@ -1140,6 +1224,34 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   is a 0-7 driver-side knob (lower = more analysis). v0.3.68+. */}
               {encoding.default_encoder === "vaapi" && (
                 <>
+                  {/* v0.5.7: VAAPI hardware decode pairing */}
+                  <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
+                                border: "1px solid var(--border)", borderRadius: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10,
+                                    cursor: encoderCaps?.vaapi_decode_available ? "pointer" : "not-allowed",
+                                    opacity: encoderCaps?.vaapi_decode_available ? 1 : 0.5 }}>
+                      <input type="checkbox"
+                        checked={encoding?.vaapi_hw_decode ?? true}
+                        disabled={!encoderCaps?.vaapi_decode_available}
+                        onChange={e => setEncoding({ ...encoding, vaapi_hw_decode: e.target.checked })}
+                        style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use VAAPI for decode</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      Decodes the source on the GPU/iGPU via VAAPI before encoding. Frames stay on the DRM device. Falls back silently to software decode for unsupported source codecs.
+                      {!encoderCaps?.vaapi_decode_available && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          VAAPI decode not detected on this host.
+                        </span>
+                      )}
+                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.vaapi_hw_decode ?? true) && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>VAAPI Compression Level</span>

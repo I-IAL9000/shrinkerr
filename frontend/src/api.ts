@@ -596,6 +596,12 @@ export interface EncoderCaps {
   available: string[];
   qsv_render_node?: string | null;
   vaapi_render_node?: string | null;
+  // v0.5.7: hardware DECODE availability per backend. Gates the
+  // HW decode toggles in Settings — when False the toggle is
+  // disabled with a "not detected" note.
+  nvdec_available?: boolean;
+  qsv_decode_available?: boolean;
+  vaapi_decode_available?: boolean;
 }
 export const getEncoderCaps = (force = false) =>
   apiFetch<EncoderCaps>(`/stats/encoder-caps${force ? "?force=1" : ""}`);
