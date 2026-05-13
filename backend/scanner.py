@@ -53,6 +53,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
     fmt = data.get("format", {})
 
     video_codec = ""
+    video_pix_fmt = ""
     video_width = 0
     video_height = 0
     video_fps: float = 0.0
@@ -63,6 +64,11 @@ async def probe_file(file_path: str) -> Optional[dict]:
         codec_type = stream.get("codec_type", "")
         if codec_type == "video" and not video_codec:
             video_codec = stream.get("codec_name", "")
+            # v0.5.9: pix_fmt drives the NVENC bit-depth `auto` mode
+            # ("yuv420p10le" / "yuv420p12le" → 10-bit out, anything else
+            # → 8-bit out). Captured here once at probe time so every
+            # consumer downstream sees the same value.
+            video_pix_fmt = stream.get("pix_fmt", "") or ""
             video_width = stream.get("width", 0) or 0
             video_height = stream.get("height", 0) or 0
             # Frame rate: prefer r_frame_rate ("24000/1001" → 23.976),
@@ -141,6 +147,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
 
     return {
         "video_codec": video_codec,
+        "video_pix_fmt": video_pix_fmt,
         "video_width": video_width,
         "video_height": video_height,
         "video_fps": video_fps,

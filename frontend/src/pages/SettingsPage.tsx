@@ -924,6 +924,21 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     </div>
                   </div>
 
+                  {/* v0.5.9: NVENC bit-depth choice */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ ...labelStyle, marginBottom: 6 }}>Bit Depth</div>
+                    <select value={encoding?.nvenc_bit_depth || "10bit"}
+                      onChange={e => setEncoding({ ...encoding, nvenc_bit_depth: e.target.value })}
+                      style={{ ...inputStyle, width: "100%", maxWidth: 360 }}>
+                      <option value="10bit">10-bit (main10 / p010le) — default</option>
+                      <option value="8bit">8-bit (main / nv12) — Maxwell-compatible</option>
+                      <option value="auto">Match source (10-bit in → 10-bit out, else 8-bit)</option>
+                    </select>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      <strong>10-bit</strong> is best for quality (less banding, slightly larger files on most sources) but requires <strong>Pascal-or-newer NVIDIA</strong> (GTX 10xx / Quadro P-series / RTX). <strong>8-bit</strong> is the only option for Maxwell silicon (GTX 9xx / 750 Ti / Quadro M-series), produces smaller files on most material, and encodes a little faster. <strong>Match source</strong> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it.
+                    </div>
+                  </div>
+
                   {/* NVENC Preset */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>

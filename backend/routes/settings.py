@@ -43,6 +43,13 @@ _ENCODING_DEFAULTS = {
     "qsv_hw_decode": "true",
     "vaapi_hw_decode": "true",
     "libx265_use_nvdec": "false",
+    # v0.5.9: NVENC bit-depth choice. "10bit" preserves pre-v0.5.9
+    # hardcoded behaviour (main10 / p010le — best quality but excludes
+    # Maxwell GPUs from NVENC). "8bit" emits main / nv12 (Maxwell-
+    # compatible, smaller files on some sources, faster encode). "auto"
+    # probes source pix_fmt at job time and picks 10-bit only when source
+    # is 10-bit, else 8-bit.
+    "nvenc_bit_depth": "10bit",
     # libx265 fallback used by CPU workers when they have to take an NVENC
     # job. Empty = fall back to the NVENC→libx265 translation table.
     "nvenc_cpu_fallback_preset": "",
@@ -429,6 +436,8 @@ async def get_encoding_settings():
         "qsv_hw_decode": merged.get("qsv_hw_decode", "true").lower() == "true",
         "vaapi_hw_decode": merged.get("vaapi_hw_decode", "true").lower() == "true",
         "libx265_use_nvdec": merged.get("libx265_use_nvdec", "false").lower() == "true",
+        # v0.5.9: nvenc_bit_depth — "10bit" / "8bit" / "auto"
+        "nvenc_bit_depth": merged.get("nvenc_bit_depth", "10bit"),
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
         "nvenc_cpu_fallback_crf": merged.get("nvenc_cpu_fallback_crf", ""),
         "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
@@ -763,6 +772,11 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["vaapi_hw_decode"] = "true" if update.vaapi_hw_decode else "false"
         if update.libx265_use_nvdec is not None:
             updates["libx265_use_nvdec"] = "true" if update.libx265_use_nvdec else "false"
+        if update.nvenc_bit_depth is not None:
+            v = str(update.nvenc_bit_depth).lower()
+            if v not in ("10bit", "8bit", "auto"):
+                v = "10bit"  # silent fallback to safe default
+            updates["nvenc_bit_depth"] = v
         if update.nvenc_cpu_fallback_preset is not None:
             # Empty string = "unset", worker falls back to NVENC→libx265 translation
             updates["nvenc_cpu_fallback_preset"] = update.nvenc_cpu_fallback_preset.strip()

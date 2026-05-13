@@ -66,6 +66,10 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("qsv_hw_decode",                    True,      _str_to_bool),
     ("vaapi_hw_decode",                  True,      _str_to_bool),
     ("libx265_use_nvdec",                False,     _str_to_bool),
+    # v0.5.9: NVENC bit-depth choice. String "10bit" (default) / "8bit" /
+    # "auto". The "auto" path probes source pix_fmt and resolves per-job
+    # in convert_file. 10-bit needs Pascal+; 8-bit is Maxwell-compatible.
+    ("nvenc_bit_depth",                  "10bit",   str),
     # Process limits
     ("ffmpeg_timeout",                   21600,     int),
     ("ffprobe_timeout",                  30,        int),
@@ -262,6 +266,13 @@ def _build_ffmpeg_cmd_impl(
     hw_decode_keeps_on_device: bool = True,
     # Used for logging only — the codec gating happened in the caller.
     source_codec: str | None = None,
+    # v0.5.9: NVENC output bit depth. "10bit" emits main10/p010le (the
+    # pre-v0.5.9 hardcoded behaviour); "8bit" emits main/nv12 (Maxwell-
+    # compatible, smaller files on most sources). The caller resolves
+    # "auto" against the source pix_fmt before reaching this function,
+    # so by the time we see it the value is one of "10bit" / "8bit".
+    # No-op for non-NVENC encoders.
+    nvenc_bit_depth: str = "10bit",
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -328,25 +339,25 @@ def _build_ffmpeg_cmd_impl(
         if hw_decode_backend == "cuda":
             # NVENC + NVDEC.
             #
-            # The `format=p010le` part is REQUIRED even when the user
-            # didn't pick a target resolution. Why: NVDEC outputs nv12
-            # CUDA surfaces for 8-bit sources (the common case — H.264
-            # yuv420p Blu-ray rips, etc), while Shrinkerr's NVENC config
-            # forces `-pix_fmt p010le -profile:v main10` for 10-bit
-            # output. With software decode, libavcodec emits CPU frames
-            # and ffmpeg auto-converts nv12→p010le transparently. With
-            # NVDEC, frames live in CUDA surfaces and ffmpeg's
-            # auto-format converter can't bridge CUDA↔CPU pix_fmts —
+            # The `format=` part is REQUIRED even when the user didn't
+            # pick a target resolution. Why: NVDEC outputs nv12 CUDA
+            # surfaces for 8-bit sources and p010 surfaces for 10-bit
+            # sources, while hevc_nvenc with `-pix_fmt p010le` expects
+            # p010 input and with `-pix_fmt nv12` expects nv12.
+            # ffmpeg's auto-format converter can't bridge CUDA↔CPU
+            # pix_fmts, so without an explicit on-GPU format conversion
             # the encoder bombs with:
             #   "Impossible to convert between the formats supported by
             #    the filter 'Parsed_null_0' and the filter 'auto_scale_0'"
-            # scale_cuda=format=p010le does the 8→10 bit conversion
-            # on-GPU and is a no-op when the source was already 10-bit.
-            # v0.5.7 → v0.5.8.
+            # scale_cuda=format=<target> does the bit-depth alignment
+            # on-GPU and is a no-op when the source surface already
+            # matches the target. v0.5.7→v0.5.8 fixed the always-p010le
+            # case; v0.5.9 made the target depend on nvenc_bit_depth.
+            _cuda_target_fmt = "p010le" if nvenc_bit_depth == "10bit" else "nv12"
             if scale:
-                cmd += ["-vf", f"scale_cuda={scale}:format=p010le"]
+                cmd += ["-vf", f"scale_cuda={scale}:format={_cuda_target_fmt}"]
             else:
-                cmd += ["-vf", "scale_cuda=format=p010le"]
+                cmd += ["-vf", f"scale_cuda=format={_cuda_target_fmt}"]
         elif hw_decode_backend == "qsv":
             # QSV + QSV decode. scale_qsv keeps frames on iGPU.
             if scale:
@@ -396,6 +407,20 @@ def _build_ffmpeg_cmd_impl(
     )
 
     if encoder == "nvenc":
+        # v0.5.9: profile + pix_fmt are now bit-depth dependent.
+        # 10-bit (Pascal+): main10 / p010le — best quality, larger files
+        #                   on some sources, blocks Maxwell GTX 9xx silicon
+        # 8-bit (Maxwell+): main / nv12 — Maxwell-compatible, smaller files
+        #                   on most sources, faster encode, fully sufficient
+        #                   for 8-bit source material
+        # The caller resolved "auto" against the source pix_fmt before we
+        # got here, so by now it's one of "10bit" / "8bit".
+        if nvenc_bit_depth == "8bit":
+            _nvenc_profile = "main"
+            _nvenc_pix_fmt = "nv12"
+        else:
+            _nvenc_profile = "main10"
+            _nvenc_pix_fmt = "p010le"
         cmd += [
             "-c:v", "hevc_nvenc",
             "-preset", nvenc_preset,
@@ -403,8 +428,8 @@ def _build_ffmpeg_cmd_impl(
             "-rc", "vbr",
             "-cq", str(cq),
             "-b:v", "0",
-            "-profile:v", "main10",
-            "-pix_fmt", "p010le",
+            "-profile:v", _nvenc_profile,
+            "-pix_fmt", _nvenc_pix_fmt,
         ]
     elif encoder == "qsv":
         # Intel Quick Sync HEVC. `global_quality` is QSV's ICQ-mode
@@ -444,6 +469,19 @@ def _build_ffmpeg_cmd_impl(
             "-pix_fmt", "yuv420p10le",
             "-x265-params", "aq-mode=3:rd=4:psy-rd=2.0",
         ]
+
+    # v0.5.9: emit `-threads N` AFTER the encoder spec too. ffmpeg's
+    # `-threads` is per-codec-context: the pre-input copy (v0.5.6) caps
+    # decoder threads, but software encoders (libx265 here) need the cap
+    # on the encoder side to actually take effect. NVENC/QSV/VAAPI
+    # ignore -threads (the GPU does the heavy lifting), so this is a
+    # no-op redundancy on the hardware encode paths and a real cap on
+    # libx265 — both desirable. Per the GitHub feature requester's
+    # observation: "ffmpeg will only apply it for that processing
+    # portion" so it has to be applied at every boundary you want
+    # capped.
+    if ffmpeg_threads and ffmpeg_threads > 0:
+        cmd += ["-threads", str(ffmpeg_threads)]
 
     # Map ONLY the first video stream (0:v:0) — NOT all video streams.
     # Some files have cover art (PNG/JPEG attached_pic) registered as extra video streams.
@@ -1520,6 +1558,10 @@ async def convert_file(
     # resolution block below — even if the probe try-block fails (which
     # also defeats HW decode gating; we fall back to software decode).
     source_video_codec: str | None = None
+    # v0.5.9: source pix_fmt also pre-initialised so the bit-depth `auto`
+    # resolution block has a safe value when the probe fails (defaults
+    # to 8-bit encode, the safer fallback).
+    source_pix_fmt: str = ""
     try:
         from backend.scanner import probe_file
         probe_data = await probe_file(input_path)
@@ -1536,6 +1578,10 @@ async def convert_file(
             # stream). Captured here so it's in scope for the HW-decode
             # resolution block before _build_ffmpeg_cmd_impl.
             source_video_codec = probe_data.get("video_codec") or None
+            # v0.5.9: source pix_fmt for `nvenc_bit_depth=auto` resolution.
+            # Probed by scanner.probe_file; "yuv420p10le" / "yuv420p12le"
+            # signal 10-bit source, everything else (yuv420p, nv12) is 8-bit.
+            source_pix_fmt = probe_data.get("video_pix_fmt") or ""
 
             # Lossless audio auto-conversion
             if live_settings.get("auto_convert_lossless", False) and probe_audio_tracks:
@@ -1781,6 +1827,34 @@ async def convert_file(
 
     hw_decode_active = _hw_use
 
+    # v0.5.9: resolve effective NVENC bit depth per job. The setting is
+    # one of "10bit" / "8bit" / "auto":
+    #   - "10bit": always main10 / p010le (pre-v0.5.9 hardcoded behaviour)
+    #   - "8bit":  always main / nv12 (Maxwell-compatible, smaller files
+    #              on most sources, faster encode)
+    #   - "auto":  probe source pix_fmt; encode 10-bit only when source
+    #              is 10-bit (yuv420p10le / yuv420p12le / p010 surfaces),
+    #              else 8-bit. Avoids unnecessary 8→10 bit upconvert.
+    _bit_depth_setting = str(live_settings.get("nvenc_bit_depth", "10bit")).lower()
+    if _bit_depth_setting == "8bit":
+        nvenc_effective_bit_depth = "8bit"
+    elif _bit_depth_setting == "auto":
+        pf = (source_pix_fmt or "").lower()
+        # Any pix_fmt with "10" or "12" in the bit-depth suffix counts as
+        # high-bit-depth source: yuv420p10le, yuv422p10le, yuv444p10le,
+        # yuv420p12le, p010le, p012le, etc.
+        is_10bit_source = ("p10" in pf) or ("p12" in pf) or ("10le" in pf) or ("12le" in pf)
+        nvenc_effective_bit_depth = "10bit" if is_10bit_source else "8bit"
+        if encoder == "nvenc":
+            print(
+                f"[CONVERT] NVENC bit-depth auto: source pix_fmt='{pf or 'unknown'}' "
+                f"→ encoding {nvenc_effective_bit_depth}",
+                flush=True,
+            )
+    else:
+        # Default and any unrecognised value fall through to 10bit.
+        nvenc_effective_bit_depth = "10bit"
+
     cmd = _build_ffmpeg_cmd_impl(
         encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
@@ -1799,6 +1873,7 @@ async def convert_file(
         hw_decode_backend=_hw_backend,
         hw_decode_keeps_on_device=_hw_on_device,
         source_codec=_src_codec_lower,
+        nvenc_bit_depth=nvenc_effective_bit_depth,
     )
 
     # Append custom ffmpeg flags if configured

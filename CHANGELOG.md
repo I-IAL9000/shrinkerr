@@ -5,6 +5,24 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.9] — 2026-05-11
+
+### Added
+- **NVENC bit-depth choice** in Settings → Encoding → NVENC card. New dropdown with three options:
+  - **10-bit (main10 / p010le)** — Default. Preserves the pre-v0.5.9 hardcoded behaviour. Best quality (reduces banding artifacts), slightly larger files on some sources, **requires Pascal-or-newer NVIDIA** (GTX 10xx, Quadro P-series, RTX). Excludes Maxwell silicon (GTX 9xx, GTX 750 Ti, Quadro M-series).
+  - **8-bit (main / nv12)** — Maxwell-compatible. Smaller files on most material, faster encode, fully sufficient for 8-bit source content. The right choice if your NVENC card is older than GTX 10xx, or if you've A/B-tested and prefer the size win.
+  - **Match source** — Probes the source pix_fmt at job time and picks 10-bit only when source is already 10-bit (`yuv420p10le`, `yuv420p12le`, p010 surfaces), otherwise 8-bit. Avoids the 8→10 bit upconvert overhead for 8-bit sources without giving up quality on 10-bit ones. Resolution decision is logged per-job (`[CONVERT] NVENC bit-depth auto: source pix_fmt='yuv420p' → encoding 8bit`).
+- Probe now captures `video_pix_fmt` alongside `video_codec` from ffprobe — driver for the auto-mode bit-depth resolution. Exposed on `scanner.probe_file()` return dict.
+
+### Fixed
+- **`-threads N` now emitted both pre-input AND post-encoder.** Per the GitHub feature requester's observation: "ffmpeg will only apply it for that processing portion." `-threads` is a per-codec-context option, not a global. The v0.5.6 pre-input placement caps decoder threads, but software encoders (libx265 specifically) need the cap on the encoder side too — without it, the `Parallel Jobs > 1` + `FFmpeg Threads Per Job = 2` setting only constrained decode, while libx265 encode kept grabbing every available core. Now emitted at both boundaries. NVENC/QSV/VAAPI ignore the flag (GPU does the heavy lifting) so the redundant post-encoder copy is harmless on hardware paths and a real cap on libx265.
+
+### Behaviour notes
+- The 10-bit default means existing v0.5.7/v0.5.8 users see no behaviour change unless they actively switch the new dropdown.
+- Maxwell-era NVENC users (anyone whose NVENC capability detection works but who's been hitting profile/format errors on encode) should pick **8-bit** to make NVENC usable. The capability detection (`encoder_caps.py`) can't yet distinguish Maxwell from Pascal+, so the dropdown defaults to 10-bit and Maxwell users have to flip it manually. Surfaced in the help text.
+- "Match source" is the recommended setting for users with mixed libraries — 8-bit Blu-ray rips encode as 8-bit (smaller, faster), 10-bit anime / 4K HDR remuxes encode as 10-bit (preserves source precision). The decision is per-job, not per-session.
+- The NVENC+NVDEC `scale_cuda=format=` filter (added in v0.5.8 to bridge the pix_fmt mismatch) now picks `p010le` or `nv12` based on the resolved bit depth — keeps the HW decode pipeline correct in both modes.
+
 ## [0.5.8] — 2026-05-11
 
 ### Fixed
