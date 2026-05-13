@@ -137,6 +137,14 @@ class SettingsUpdate(BaseModel):
     qsv_lookahead: Optional[bool] = None
     vaapi_qp: Optional[int] = None
     vaapi_compression_level: Optional[int] = None
+    # v0.5.7: hardware decode toggles. Native pairs (encoder + matching
+    # decoder) default on — frames stay on the device, no PCIe transfer.
+    # libx265+NVDEC defaults off because it requires GPU→CPU readback
+    # per frame, only a win when the CPU is the bottleneck.
+    nvenc_hw_decode: Optional[bool] = None
+    qsv_hw_decode: Optional[bool] = None
+    vaapi_hw_decode: Optional[bool] = None
+    libx265_use_nvdec: Optional[bool] = None
     parallel_jobs: Optional[int] = None
     # v0.5.6: cap ffmpeg's per-job thread count. 0 = ffmpeg auto (uses all
     # cores, the pre-v0.5.6 behaviour). 1-16 = explicit cap. Recommended

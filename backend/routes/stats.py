@@ -655,6 +655,10 @@ async def get_encoder_caps(force: bool = False):
         # the QSV / VAAPI commands will pin to.
         "qsv_render_node": caps.qsv_render_node,
         "vaapi_render_node": caps.vaapi_render_node,
+        # v0.5.7: HW decode availability (gates the UI toggles).
+        "nvdec_available": caps.nvdec_available,
+        "qsv_decode_available": caps.qsv_decode_available,
+        "vaapi_decode_available": caps.vaapi_decode_available,
     }
 
 

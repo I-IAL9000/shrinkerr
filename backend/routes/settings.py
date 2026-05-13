@@ -38,6 +38,11 @@ _ENCODING_DEFAULTS = {
     # compression_level (0–7, lower = more analysis). v0.3.68+.
     "vaapi_qp": "22",
     "vaapi_compression_level": "4",
+    # v0.5.7: hardware decode. Native pairs default on; cross-bus opt-in.
+    "nvenc_hw_decode": "true",
+    "qsv_hw_decode": "true",
+    "vaapi_hw_decode": "true",
+    "libx265_use_nvdec": "false",
     # libx265 fallback used by CPU workers when they have to take an NVENC
     # job. Empty = fall back to the NVENC→libx265 translation table.
     "nvenc_cpu_fallback_preset": "",
@@ -420,6 +425,10 @@ async def get_encoding_settings():
         "qsv_lookahead": merged.get("qsv_lookahead", "false").lower() == "true",
         "vaapi_qp": int(merged.get("vaapi_qp", 22)),
         "vaapi_compression_level": int(merged.get("vaapi_compression_level", 4)),
+        "nvenc_hw_decode": merged.get("nvenc_hw_decode", "true").lower() == "true",
+        "qsv_hw_decode": merged.get("qsv_hw_decode", "true").lower() == "true",
+        "vaapi_hw_decode": merged.get("vaapi_hw_decode", "true").lower() == "true",
+        "libx265_use_nvdec": merged.get("libx265_use_nvdec", "false").lower() == "true",
         "nvenc_cpu_fallback_preset": merged.get("nvenc_cpu_fallback_preset", ""),
         "nvenc_cpu_fallback_crf": merged.get("nvenc_cpu_fallback_crf", ""),
         "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
@@ -746,6 +755,14 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["vaapi_qp"] = str(update.vaapi_qp)
         if update.vaapi_compression_level is not None:
             updates["vaapi_compression_level"] = str(update.vaapi_compression_level)
+        if update.nvenc_hw_decode is not None:
+            updates["nvenc_hw_decode"] = "true" if update.nvenc_hw_decode else "false"
+        if update.qsv_hw_decode is not None:
+            updates["qsv_hw_decode"] = "true" if update.qsv_hw_decode else "false"
+        if update.vaapi_hw_decode is not None:
+            updates["vaapi_hw_decode"] = "true" if update.vaapi_hw_decode else "false"
+        if update.libx265_use_nvdec is not None:
+            updates["libx265_use_nvdec"] = "true" if update.libx265_use_nvdec else "false"
         if update.nvenc_cpu_fallback_preset is not None:
             # Empty string = "unset", worker falls back to NVENC→libx265 translation
             updates["nvenc_cpu_fallback_preset"] = update.nvenc_cpu_fallback_preset.strip()
