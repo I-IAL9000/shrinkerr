@@ -5,6 +5,30 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.7] — 2026-05-11
+
+### Added
+- **Hardware decode support** for the full encoder lineup. Each encoder card in Settings → Encoding gets a new toggle:
+  - **NVENC + NVDEC** (default on) — `-hwaccel cuda -hwaccel_output_format cuda` before `-i`, frames stay on the GPU through `scale_cuda` straight into the encoder. No PCIe transfer.
+  - **QSV + QSV decode** (default on) — `-hwaccel qsv -hwaccel_output_format qsv`, frames stay on the iGPU through `scale_qsv`. No upload overhead.
+  - **VAAPI + VAAPI decode** (default on) — `-hwaccel vaapi -hwaccel_output_format vaapi` plus `scale_vaapi`/`format=nv12`. No `hwupload` filter needed since frames are already on the DRM device.
+  - **libx265 + NVDEC mixed mode** (default off, opt-in) — `-hwaccel cuda` (no `_output_format`) with `hwdownload,format=nv12` filter. Frames decoded on GPU and downloaded to CPU for software encode. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe readback usually exceeds the savings. The original GitHub feature request's exact niche use case.
+- **Capability detection** for the three HW decoders via a new `_ffmpeg_hwaccels()` probe in `encoder_caps.py`. Each decode toggle is disabled in the UI when its hardware isn't detected, with a "NVDEC/QSV/VAAPI not detected on this host" note. Probe gates HW decode availability on BOTH the ffmpeg backend being compiled in AND the matching encoder being available (e.g. NVDEC needs an NVIDIA GPU + working CUDA driver, same gate as NVENC).
+- **Per-source-codec gating** via `hw_decode_supports(decoder, source_codec)` in `converter.py`. Each HW decoder supports a conservative codec subset (NVIDIA SDK 12.x / Intel Media Driver / Mesa VA-API intersections). When a job's source codec isn't supported by the chosen decoder, the worker silently falls back to software decode with a clear log line: `[CONVERT] HW decode unavailable for codec 'msmpeg4v3' on NVDEC — software fallback for this job`. No job failure, no UI noise — exotic codecs just take the slower path. Every job also logs its full decode/encode pipeline (`[CONVERT] Decode: CUDA (on-device) → Encode: nvenc (source codec: h264)`) so debugging "is my GPU actually being used" doesn't require parsing ffmpeg's verbose output.
+
+### Changed
+- **VMAF is skipped when hardware decode is active for a job.** VMAF needs software-decoded source frames to compare against the encoded output, and re-decoding the source in software for VMAF alone would double source-file I/O. When `vmaf_analysis_enabled=true` AND any HW decode path is active for the job, the worker logs `[CONVERT] VMAF skipped — hardware decode is active for this job (backend=cuda, on_device=True)` and bypasses the VMAF block. The VMAF quality threshold gate is bypassed silently along with it. Three UI surfaces communicate this unambiguously: (1) the VMAF settings section gains a yellow warning chip that dynamically counts how many HW decode toggles are currently on ("⚠ VMAF will not run on hardware-decoded jobs. With **3** hardware decode toggles currently on (NVENC+NVDEC, QSV, VAAPI), jobs that use those encoders will skip VMAF…"); (2) each HW decode toggle's help text shows "⚠ VMAF won't run on jobs that use this decoder. See the VMAF section." when VMAF is also enabled; (3) worker logs make the skip explicit per-job. To enforce VMAF on every job, disable the relevant HW decode toggles.
+
+### Fixed
+- **VAAPI filter chain** for native VAAPI+decode pairs no longer emits the spurious `format=nv12,hwupload` filter — frames are already on the DRM device after `-hwaccel vaapi -hwaccel_output_format vaapi`, so only `scale_vaapi=...,format=nv12` (or bare `format=nv12` when no scale) is needed. The pre-v0.5.7 software-decode path still emits `hwupload` as required.
+- **Remote workers propagate HW decode settings.** Distributed-mode users: the server-side job-dispatch code (`routes/nodes.py`) now packs the 4 new HW decode keys into the assigned-job payload, and the worker-side code (`worker_mode.py`) reads them into `worker_settings`. Without this, remote workers would silently use the converter's hardcoded defaults instead of the admin's server-level settings. Matches the existing propagation pattern for `vmaf_analysis_enabled` / `vmaf_min_score` / `default_libx265_preset`.
+
+### Behaviour notes
+- Existing software-decode users see **no behaviour change** unless they actively toggle on the new HW decode controls. The pre-v0.5.7 ffmpeg command is emitted bit-for-bit identically when `use_hw_decode=False` (the default for legacy callers and the path taken when all four toggles are off).
+- New installs and upgrades default the **three native pair toggles to on** because frames-stay-on-device is the natural pairing for HW encoders. On hosts without the matching decoder hardware, the toggles disable themselves automatically via capability probe.
+- The **libx265 + NVDEC mixed-mode toggle defaults off** because the cross-bus GPU→CPU readback is a real cost that often exceeds the decode savings on modern CPUs. Opt-in only.
+- Closes the "NVDEC / GPU decoding" portion of the GitHub feature request.
+
 ## [0.5.6] — 2026-05-11
 
 ### Added
