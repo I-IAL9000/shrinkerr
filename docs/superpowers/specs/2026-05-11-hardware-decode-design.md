@@ -128,6 +128,22 @@ VMAF requires software-decoded source frames to compare against the encoded outp
 
 **Implementation:** in `convert_file()`, compute `hw_decode_active = bool(...)` per job. When deciding whether to run VMAF, gate on `not hw_decode_active`. Surface the skip reason in the conversion log so the user understands.
 
+**User-facing communication (REQUIRED — must be impossible to miss):**
+
+1. **VMAF settings section** (`SettingsPage.tsx`, VMAF block) — add a yellow/warning info chip directly under the VMAF enable toggle that's visible whenever ANY HW decode toggle is on:
+
+   > ⚠ VMAF runs on software-decoded source frames. Jobs that use hardware decode (NVENC+NVDEC, QSV+QSV, VAAPI+VAAPI, or libx265+NVDEC) will skip VMAF — the score won't be computed and the quality threshold won't be applied. To enforce VMAF on every job, disable the hardware decode toggles in the encoder section above.
+
+   The chip dynamically counts which decode toggles are currently on ("3 of 4 encoders") so users see the immediate impact.
+
+2. **Each HW decode toggle** (in the encoder cards) — when the toggle is being flipped to ON and VMAF is also currently enabled, append a sub-line to the toggle's help text:
+
+   > ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+
+3. **Job-report skip line** — already covered: jobs that skipped VMAF show `VMAF skipped: hardware decode enabled` in the expanded job view, in the same slot the score would otherwise render.
+
+This three-surface approach guarantees a user can't enable HW decode + VMAF without knowing they're mutually exclusive at job time, and a user wondering why their VMAF threshold isn't catching low-quality encodes will find the explanation at every place they'd look.
+
 **Future option (out of scope for v0.5.7):** run a second software-decode pass purely for VMAF reference frames, costing 1 extra source-file read per job. Captured as a TODO comment near the skip site.
 
 ### UI layout (inline with encoder cards)
@@ -187,7 +203,7 @@ Provides debuggability when users wonder "is my GPU actually being used."
 
 1. **Each native HW pair toggle** (NVENC+NVDEC, QSV+QSV, VAAPI+VAAPI) adds the matching `-hwaccel` flag and filter chain when on, and is omitted entirely when off.
 2. **Source codec probe** runs before cmd assembly; unsupported codecs fall back silently with a log line.
-3. **VMAF is skipped** with a clear job-report message when any HW decode path is active for that job.
+3. **VMAF is skipped** with a clear job-report message when any HW decode path is active for that job, AND the incompatibility is surfaced in the UI at three places (VMAF settings warning chip with dynamic toggle-count, encoder-card help text when both VMAF and HW decode are enabled, job-report skip message).
 4. **libx265 + NVDEC mixed mode** works end-to-end on a NVENC-capable host; toggle is independent of `nvenc_hw_decode`.
 5. **Capability probes** correctly disable each toggle in the UI when the hardware isn't present.
 6. **No regression** for users who leave all toggles at default — pre-v0.5.7 behaviour preserved bit-for-bit (default-off for libx265+NVDEC; default-on for native pairs means slightly faster but otherwise equivalent encodes).
