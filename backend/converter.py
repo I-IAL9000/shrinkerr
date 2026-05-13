@@ -57,6 +57,15 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     # v0.3.67+.
     ("vaapi_qp",                         22,        int),
     ("vaapi_compression_level",          4,         int),
+    # v0.5.7: hardware decode toggles. Native pairs (encoder + matching
+    # decoder) default on — frames stay on the device, no PCIe transfer.
+    # libx265 + NVDEC defaults off because it requires GPU→CPU readback
+    # per frame, only a win when the CPU is the bottleneck. Saved as
+    # 'true'/'false' strings in DB by routes/settings.py; coerced here.
+    ("nvenc_hw_decode",                  True,      _str_to_bool),
+    ("qsv_hw_decode",                    True,      _str_to_bool),
+    ("vaapi_hw_decode",                  True,      _str_to_bool),
+    ("libx265_use_nvdec",                False,     _str_to_bool),
     # Process limits
     ("ffmpeg_timeout",                   21600,     int),
     ("ffprobe_timeout",                  30,        int),
@@ -1467,6 +1476,14 @@ async def convert_file(
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
     audio_bitrate = override_audio_bitrate if override_audio_bitrate is not None else live_settings.get("audio_bitrate", 128)
+    # v0.5.7: hardware decode settings. Resolved per-job below once
+    # the source codec is known (see HW-decode resolution block before
+    # the _build_ffmpeg_cmd_impl call). Coerced to bool by
+    # get_live_encoding_settings via _str_to_bool, matching qsv_lookahead.
+    nvenc_hw_decode = bool(live_settings.get("nvenc_hw_decode", True))
+    qsv_hw_decode = bool(live_settings.get("qsv_hw_decode", True))
+    vaapi_hw_decode = bool(live_settings.get("vaapi_hw_decode", True))
+    libx265_use_nvdec = bool(live_settings.get("libx265_use_nvdec", False))
 
     # Probe file for audio/subtitle stream details
     lossless_conversion = None
@@ -1482,6 +1499,10 @@ async def convert_file(
     # frame-counter-based progress = current_frame / total_expected.
     # v0.3.43+.
     source_video_fps: float = 0.0
+    # v0.5.7: initialised here so it's always in scope for the HW-decode
+    # resolution block below — even if the probe try-block fails (which
+    # also defeats HW decode gating; we fall back to software decode).
+    source_video_codec: str | None = None
     try:
         from backend.scanner import probe_file
         probe_data = await probe_file(input_path)
@@ -1493,6 +1514,11 @@ async def convert_file(
 
             probe_audio_tracks = probe_data.get("audio_tracks") or []
             source_video_fps = float(probe_data.get("video_fps") or 0.0)
+            # v0.5.7: source codec for HW decode gating + log line. Already
+            # populated by scanner.probe_file (codec_name of first video
+            # stream). Captured here so it's in scope for the HW-decode
+            # resolution block before _build_ffmpeg_cmd_impl.
+            source_video_codec = probe_data.get("video_codec") or None
 
             # Lossless audio auto-conversion
             if live_settings.get("auto_convert_lossless", False) and probe_audio_tracks:
@@ -1690,6 +1716,54 @@ async def convert_file(
         ffmpeg_threads = int(live_settings.get("ffmpeg_threads", 0) or 0)
     except (TypeError, ValueError):
         ffmpeg_threads = 0
+
+    # v0.5.7: compute HW decode parameters for this specific job based
+    # on encoder choice + user setting + per-codec support. Silent
+    # fallback to software decode when codec unsupported — logged but
+    # not surfaced as a job failure.
+    _hw_use = False
+    _hw_backend: str | None = None
+    _hw_on_device = True
+    _src_codec_lower = (source_video_codec or "").lower() if source_video_codec else None
+    if encoder == "nvenc" and nvenc_hw_decode:
+        if hw_decode_supports("cuda", _src_codec_lower):
+            _hw_use = True
+            _hw_backend = "cuda"
+            _hw_on_device = True
+        else:
+            print(f"[CONVERT] HW decode unavailable for codec "
+                  f"'{_src_codec_lower}' on NVDEC — software fallback for this job",
+                  flush=True)
+    elif encoder == "qsv" and qsv_hw_decode:
+        if hw_decode_supports("qsv", _src_codec_lower):
+            _hw_use = True
+            _hw_backend = "qsv"
+            _hw_on_device = True
+        else:
+            print(f"[CONVERT] HW decode unavailable for codec "
+                  f"'{_src_codec_lower}' on QSV — software fallback for this job",
+                  flush=True)
+    elif encoder == "vaapi" and vaapi_hw_decode:
+        if hw_decode_supports("vaapi", _src_codec_lower):
+            _hw_use = True
+            _hw_backend = "vaapi"
+            _hw_on_device = True
+        else:
+            print(f"[CONVERT] HW decode unavailable for codec "
+                  f"'{_src_codec_lower}' on VAAPI — software fallback for this job",
+                  flush=True)
+    elif encoder == "libx265" and libx265_use_nvdec:
+        if hw_decode_supports("cuda", _src_codec_lower):
+            _hw_use = True
+            _hw_backend = "cuda"
+            _hw_on_device = False  # mixed mode — readback to CPU
+        else:
+            print(f"[CONVERT] HW decode unavailable for codec "
+                  f"'{_src_codec_lower}' on NVDEC (libx265 mixed mode) — software fallback",
+                  flush=True)
+
+    hw_decode_active = _hw_use
+
     cmd = _build_ffmpeg_cmd_impl(
         encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
@@ -1704,6 +1778,10 @@ async def convert_file(
         subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
         external_subtitle_files=external_sub_files,
         ffmpeg_threads=ffmpeg_threads,
+        use_hw_decode=_hw_use,
+        hw_decode_backend=_hw_backend,
+        hw_decode_keeps_on_device=_hw_on_device,
+        source_codec=_src_codec_lower,
     )
 
     # Append custom ffmpeg flags if configured
@@ -2076,6 +2154,19 @@ async def convert_file(
     # "measurement-suspect" glyph so a user staring at a "Poor" tier on a
     # visually-fine encode knows they shouldn't trust it. v0.3.32+.
     vmaf_uncertain = False
+    # v0.5.7: VMAF skipped when HW decode is active for this job.
+    # VMAF needs software-decoded source frames; running a second
+    # software-decode pass purely for VMAF reference would double
+    # source-file I/O. Skip silently here; the existing decision log
+    # below still prints, and this extra line makes the situation
+    # explicit in the worker log.
+    if vmaf_enabled and hw_decode_active:
+        print(
+            f"[CONVERT] VMAF skipped — hardware decode is active for this job "
+            f"(backend={_hw_backend}, on_device={_hw_on_device})",
+            flush=True,
+        )
+        vmaf_enabled = False
     # Always log the decision — previously a false `vmaf_enabled` silently skipped
     # the whole block, making "why didn't VMAF run?" impossible to answer without
     # re-reading settings and re-running.
