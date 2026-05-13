@@ -7,7 +7,10 @@ This is the "what do I actually pick" guide. For system-level setup see
 ## Contents
 - [NVENC vs libx265](#nvenc-vs-libx265)
 - [NVENC presets and CQ](#nvenc-presets-and-cq)
+- [NVENC bit depth](#nvenc-bit-depth)
 - [libx265 presets and CRF](#libx265-presets-and-crf)
+- [Hardware decode (NVDEC / QSV / VAAPI)](#hardware-decode-nvdec--qsv--vaapi)
+- [FFmpeg threads per job](#ffmpeg-threads-per-job)
 - [VMAF quality validation](#vmaf-quality-validation)
 - [Resolution-aware CQ](#resolution-aware-cq)
 - [Cross-encoder fallback settings](#cross-encoder-fallback-settings)
@@ -66,6 +69,23 @@ Lower = higher quality, larger files.
 with NVENC's efficiency sweet spot, and about 55–65% smaller files than
 1080p x264 web-dl sources.
 
+## NVENC bit depth
+
+Settings → Video → Encoding → NVENC card → "Bit Depth". Three options:
+
+| Option | Profile / pix_fmt | Use case |
+|---|---|---|
+| **10-bit** (main10 / p010le) | `-profile:v main10 -pix_fmt p010le` | Default. Best quality (reduces banding). Requires Pascal-or-newer NVIDIA (GTX 10xx, Quadro P-series, RTX). |
+| **8-bit** (main / nv12) | `-profile:v main -pix_fmt nv12` | Maxwell-compatible (GTX 9xx, GTX 750 Ti, Quadro M-series). Smaller files on most material, faster encode. |
+| **Match source** | Probes pix_fmt per job | 10-bit only when source is already 10-bit, else 8-bit. Avoids the 8→10 bit upconvert when input doesn't benefit. |
+
+10-bit HEVC NVENC requires Pascal silicon (GTX 1050+ / Quadro P-series).
+Maxwell silicon (GTX 9xx / 750 Ti / Quadro M-series) supports NVENC HEVC
+but only 8-bit — pick the 8-bit option to make NVENC usable on those
+cards. "Match source" is the recommended setting for mixed libraries —
+8-bit Blu-ray rips encode as 8-bit (smaller, faster), 10-bit anime / 4K
+HDR encodes as 10-bit (preserves source precision).
+
 ## libx265 presets and CRF
 
 Unlike NVENC, libx265 preset cost is **exponential**. Bumping one notch
@@ -91,6 +111,72 @@ practical range.
 - Quality-first on a small library: `slow / CRF 20`
 - Archival masters: `veryslow / CRF 18`
 - Budget / older hardware: `veryfast / CRF 24`
+
+## Hardware decode (NVDEC / QSV / VAAPI)
+
+Pre-v0.5.7 Shrinkerr always decoded sources on the CPU (libavcodec) even
+when encoding on the GPU. v0.5.7 added hardware decode pairings so frames
+can stay on the device — typical CPU load on a 2-job NVENC setup drops
+from 80–90% to under 10%.
+
+Each encoder card in Settings → Video has its own toggle:
+
+| Toggle (encoder card) | Default | Pipeline |
+|---|---|---|
+| **Use NVDEC for decode** (NVENC) | On | `-hwaccel cuda -hwaccel_output_format cuda` + `scale_cuda` filter. Frames stay on the GPU. |
+| **Use QSV for decode** (QSV) | On | `-hwaccel qsv -hwaccel_output_format qsv` + `scale_qsv`. Frames stay on the iGPU. |
+| **Use VAAPI for decode** (VAAPI) | On | `-hwaccel vaapi -hwaccel_output_format vaapi` + `scale_vaapi`. Frames stay on the DRM device. |
+| **Use NVDEC for decode (mixed mode)** (libx265) | Off | `-hwaccel cuda` then `hwdownload,format=nv12`. Decode on GPU, encode on CPU. Niche: slow CPU + fast dGPU. |
+
+Each toggle disables itself in the UI when its matching hardware isn't
+detected (checked via `ffmpeg -hwaccels` + the encoder probe).
+
+**Codec gating.** Each hardware decoder supports a subset of source
+codecs. When a job's source codec isn't supported (e.g. MS-MPEG4v3 on
+NVDEC, MJPEG on VAAPI), Shrinkerr silently falls back to software decode
+for that specific job and logs the fallback in the worker output:
+
+```
+[CONVERT] HW decode unavailable for codec 'msmpeg4v3' on NVDEC
+          — software fallback for this job
+```
+
+No job failure, no UI noise — exotic codecs just take the slower path.
+
+**VMAF interaction.** VMAF compares software-decoded source frames to
+the encoded output. With hardware decode on, source frames live on the
+GPU and VMAF can't read them — re-decoding the source in software for
+VMAF alone would double source I/O. Shrinkerr skips VMAF on those jobs
+and logs the skip; the VMAF settings section shows a yellow warning chip
+listing which decoders are currently on. If you rely on
+`vmaf_min_score` as an auto-reject gate, disable the relevant hardware
+decode toggles to make VMAF run again.
+
+**Distributed mode.** Hardware decode settings propagate from the server
+to remote workers automatically — see
+[Remote workers](remote-workers.md#per-node-controls). Each worker
+respects the server's settings at job-dispatch time.
+
+## FFmpeg threads per job
+
+Settings → Video → Encoding → "FFmpeg Threads Per Job". Caps the
+`-threads N` flag on ffmpeg. Default `0` = ffmpeg auto (uses all
+available cores).
+
+The default works fine for a single encode at a time. With `Parallel
+Jobs > 1` on an older CPU, two libx265 processes each spawn N threads
+and fight each other for cores — measurable throughput loss:
+
+| Parallel Jobs | Threads (recommended) |
+|---|---|
+| 1 | 0 (auto) |
+| 2+ on libx265 | 1–2 per job |
+| 2+ on NVENC/QSV/VAAPI | 1–2 per job (GPU does the heavy lifting; ffmpeg just needs threads for muxing / filters) |
+
+ffmpeg's `-threads` flag is per-codec-context — Shrinkerr emits it both
+pre-input (caps decoder threads) and post-encoder (caps libx265 encoder
+threads). NVENC/QSV/VAAPI ignore the flag, so the post-encoder copy is
+harmless redundancy on hardware paths and a real cap on libx265.
 
 ## VMAF quality validation
 

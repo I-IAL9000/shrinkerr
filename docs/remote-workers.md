@@ -13,6 +13,7 @@ encoding.
 - [Path mappings](#path-mappings)
 - [Capability-based job routing](#capability-based-job-routing)
 - [Encoder translation (NVENC ↔ libx265)](#encoder-translation-nvenc--libx265)
+- [Settings propagated to workers](#settings-propagated-to-workers)
 - [Per-node controls](#per-node-controls)
 - [Pause / schedule / affinity](#pause--schedule--affinity)
 - [Circuit breaker](#circuit-breaker)
@@ -249,6 +250,25 @@ efficiency shows up as a smaller file).
 **Symmetric for libx265 → NVENC** (see Settings → Video → libx265
 section → "GPU fallback"): pin specific NVENC preset + CQ for when a
 GPU worker picks up a libx265 job.
+
+## Settings propagated to workers
+
+Workers don't read the server's settings table directly — the server
+packs the relevant values into each assigned-job payload, and the
+worker uses those when building its ffmpeg command. The propagated
+set includes encoder presets, CRF/CQ, VMAF toggles, fallback pairs,
+and (v0.5.7+) the four hardware decode toggles
+(`nvenc_hw_decode` / `qsv_hw_decode` / `vaapi_hw_decode` /
+`libx265_use_nvdec`) plus the NVENC bit-depth choice
+(`nvenc_bit_depth`). Change a setting on the server and the next
+job dispatched to a worker picks it up automatically — no per-worker
+config edit needed.
+
+If a worker's hardware doesn't match what the server requested (e.g.
+`nvenc_hw_decode=true` on a worker without an NVIDIA card), the
+worker's local capability gates kick in and silently fall back to
+software decode for that job. See
+[Hardware decode](encoding-guide.md#hardware-decode-nvdec--qsv--vaapi).
 
 ## Per-node controls
 
