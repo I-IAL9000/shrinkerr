@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.8] — 2026-05-11
+
+### Fixed
+- **NVENC + NVDEC jobs failed immediately with `ffmpeg exited with code 218`** (regression introduced in v0.5.7). The full error in the ffmpeg log was `Impossible to convert between the formats supported by the filter 'Parsed_null_0' and the filter 'auto_scale_0'`, followed by `[vost#0:0/hevc_nvenc] Could not open encoder before EOF`. Root cause: NVDEC outputs 8-bit nv12 frames as CUDA surfaces (the common case — any 8-bit H.264 / HEVC source), but Shrinkerr's NVENC config forces `-pix_fmt p010le -profile:v main10` for 10-bit output. With software decode, libavcodec emits CPU-side nv12 frames and ffmpeg's auto-format converter transparently upconverts to p010le. With NVDEC, frames live in CUDA surfaces and ffmpeg's auto-converter can't bridge GPU↔CPU pix_fmts, so the encoder bombs out before processing a single packet. Fix: always emit `scale_cuda=format=p010le` in the filter chain for NVENC+NVDEC (becomes `scale_cuda=WxH:format=p010le` when a target resolution is also set). The filter does the 8→10 bit conversion on-GPU and is a no-op when the source was already 10-bit. **This affected every NVENC user who had `nvenc_hw_decode=true`** (the v0.5.7 default), so any v0.5.7 upgrade where the user didn't manually disable the toggle was broken on first job. Apologies — Task 4 sanity tests checked cmd structure but didn't exercise real ffmpeg, so the pix_fmt mismatch wasn't caught pre-release.
+
 ## [0.5.7] — 2026-05-11
 
 ### Added

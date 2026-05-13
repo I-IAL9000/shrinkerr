@@ -326,10 +326,27 @@ def _build_ffmpeg_cmd_impl(
         # Native pair: frames stay on device. Scale with the matching
         # device-native scaler; no hwupload needed.
         if hw_decode_backend == "cuda":
-            # NVENC + NVDEC. scale_cuda for resolution change, otherwise
-            # frames flow straight through with no -vf at all.
+            # NVENC + NVDEC.
+            #
+            # The `format=p010le` part is REQUIRED even when the user
+            # didn't pick a target resolution. Why: NVDEC outputs nv12
+            # CUDA surfaces for 8-bit sources (the common case — H.264
+            # yuv420p Blu-ray rips, etc), while Shrinkerr's NVENC config
+            # forces `-pix_fmt p010le -profile:v main10` for 10-bit
+            # output. With software decode, libavcodec emits CPU frames
+            # and ffmpeg auto-converts nv12→p010le transparently. With
+            # NVDEC, frames live in CUDA surfaces and ffmpeg's
+            # auto-format converter can't bridge CUDA↔CPU pix_fmts —
+            # the encoder bombs with:
+            #   "Impossible to convert between the formats supported by
+            #    the filter 'Parsed_null_0' and the filter 'auto_scale_0'"
+            # scale_cuda=format=p010le does the 8→10 bit conversion
+            # on-GPU and is a no-op when the source was already 10-bit.
+            # v0.5.7 → v0.5.8.
             if scale:
-                cmd += ["-vf", f"scale_cuda={scale}"]
+                cmd += ["-vf", f"scale_cuda={scale}:format=p010le"]
+            else:
+                cmd += ["-vf", "scale_cuda=format=p010le"]
         elif hw_decode_backend == "qsv":
             # QSV + QSV decode. scale_qsv keeps frames on iGPU.
             if scale:
