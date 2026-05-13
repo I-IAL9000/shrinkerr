@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.10] — 2026-05-11
+
+### Fixed
+- **NVENC + NVDEC jobs still failed on v0.5.9** with a slightly different error than v0.5.7's: `Impossible to convert between the formats supported by the filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'`. The v0.5.8 fix added the right `scale_cuda=format=p010le` filter, but the NVENC encoder block kept emitting `-pix_fmt p010le` on the *output* side. `-pix_fmt` declares the encoder's input format in CPU memory; with HW decode keeping frames on the GPU after `scale_cuda`, the encoder sees a CUDA surface AND a contradictory directive saying it should expect CPU memory. ffmpeg tries to insert `auto_scale_0` to bridge `cuda(p010le)` → `p010le (CPU)`, which it can't do without an explicit `hwdownload` step, and the encoder bombs before processing a single packet. Fix: emit `-pix_fmt` only on the software-decode path; with HW decode the `scale_cuda=format=X` filter already dictates the surface format. QSV/VAAPI paths never had `-pix_fmt` set, so they were unaffected and continue to work. **This was a real testing-discipline failure on my part — I shipped HW pipeline changes twice (v0.5.7, v0.5.8) without actually running ffmpeg with CUDA; the canonical pattern I copied was incomplete. Going forward, HW decode changes should be verified against a real NVIDIA test box before tagging.**
+
 ## [0.5.9] — 2026-05-11
 
 ### Added

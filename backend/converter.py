@@ -429,8 +429,25 @@ def _build_ffmpeg_cmd_impl(
             "-cq", str(cq),
             "-b:v", "0",
             "-profile:v", _nvenc_profile,
-            "-pix_fmt", _nvenc_pix_fmt,
         ]
+        # v0.5.10: emit -pix_fmt ONLY when frames live in CPU memory
+        # (software decode path). With HW decode keeping frames on the
+        # GPU, `scale_cuda=format=X` already dictates the surface format
+        # — adding `-pix_fmt X` here makes ffmpeg believe the encoder
+        # expects X in CPU memory, so it tries to auto-insert a scale
+        # filter to convert cuda(X) → X (CPU), which it can't do without
+        # an explicit hwdownload. That's exactly the error v0.5.8/v0.5.9
+        # users hit:
+        #   "Impossible to convert between the formats supported by the
+        #    filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'"
+        # QSV/VAAPI never had -pix_fmt set, so they weren't affected.
+        _nvenc_native_hw = (
+            use_hw_decode
+            and hw_decode_keeps_on_device
+            and hw_decode_backend == "cuda"
+        )
+        if not _nvenc_native_hw:
+            cmd += ["-pix_fmt", _nvenc_pix_fmt]
     elif encoder == "qsv":
         # Intel Quick Sync HEVC. `global_quality` is QSV's ICQ-mode
         # quality target — closest analogue to NVENC's CQ. 8-bit `main`
