@@ -226,24 +226,29 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
     has_nvidia = _nvidia_present()
     intel_node = _intel_render_node()
     va_node = _vaapi_render_node()
-
     hwaccels = _ffmpeg_hwaccels()
-    # NVDEC = ffmpeg has cuda hwaccel compiled in AND we already have
-    # NVENC (= NVIDIA GPU + working CUDA driver). Splitting them would
-    # produce false positives on hosts with cuda support but no GPU.
-    nvdec = ("cuda" in hwaccels) and bool(("hevc_nvenc" in encoders) and has_nvidia)
-    qsv_decode = ("qsv" in hwaccels) and bool(("hevc_qsv" in encoders) and intel_node is not None) and bool(intel_node)
-    vaapi_decode = ("vaapi" in hwaccels) and bool(("hevc_vaapi" in encoders) and va_node is not None) and bool(va_node)
+
+    # Single source of truth for each encoder's availability. Reused
+    # below for both encoder + matching HW decode flags.
+    nvenc = ("hevc_nvenc" in encoders) and has_nvidia
+    # QSV requires Intel hardware specifically — having ANY render
+    # node isn't enough. On a NUC9-style multi-GPU host, the only
+    # render node may be the NVIDIA card; QSV would fail at runtime.
+    qsv = ("hevc_qsv" in encoders) and (intel_node is not None)
+    # VAAPI works on Intel + AMD. Excluded from NVIDIA-only hosts.
+    vaapi = ("hevc_vaapi" in encoders) and (va_node is not None)
+
+    # v0.5.7: HW decode is gated on hwaccel compiled in AND matching
+    # encoder available. Same gates the encoder uses — splitting them
+    # would produce false positives.
+    nvdec = ("cuda" in hwaccels) and nvenc
+    qsv_decode = ("qsv" in hwaccels) and qsv
+    vaapi_decode = ("vaapi" in hwaccels) and vaapi
 
     _cached = EncoderCaps(
-        nvenc=("hevc_nvenc" in encoders) and has_nvidia,
-        # QSV requires Intel hardware specifically — having ANY render
-        # node isn't enough. On a NUC9-style multi-GPU host, the only
-        # render node may be the NVIDIA card; QSV would fail at runtime.
-        # Per-driver detection avoids surfacing the option in that case.
-        qsv=("hevc_qsv" in encoders) and intel_node is not None,
-        # VAAPI works on Intel + AMD. Excluded from NVIDIA-only hosts.
-        vaapi=("hevc_vaapi" in encoders) and va_node is not None,
+        nvenc=nvenc,
+        qsv=qsv,
+        vaapi=vaapi,
         qsv_render_node=intel_node,
         vaapi_render_node=va_node,
         nvdec_available=nvdec,
