@@ -235,6 +235,9 @@ def _build_ffmpeg_cmd_impl(
     # Each dict: {path, codec, language, forced}
     external_subtitle_files: list[dict] | None = None,
     subtitle_streams_to_remove: set | None = None,
+    # v0.5.6: cap ffmpeg's thread count via `-threads N`. 0 = ffmpeg auto
+    # (uses all available cores, pre-v0.5.6 behaviour). 1-16 = explicit cap.
+    ffmpeg_threads: int = 0,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -255,6 +258,15 @@ def _build_ffmpeg_cmd_impl(
     # syntax). NVENC and libx265 still need no pre-input args (NVENC
     # reads the GPU via the CUDA driver; libx265 is software).
     cmd = ["ffmpeg", "-y"]
+    # v0.5.6: optional global thread cap. Emitted as a top-level option
+    # before any input so it scopes ffmpeg's overall worker pool. Default
+    # 0 means "ffmpeg decides" (use all cores) — historical behaviour.
+    # Values 1-2 are useful when parallel_jobs > 1 on older CPUs to avoid
+    # 16 threads fighting for 8 cores. Has marginal effect on HW encoders
+    # (NVENC/QSV/VAAPI) since the GPU does the heavy lifting — software
+    # encode (libx265) is where this matters.
+    if ffmpeg_threads and ffmpeg_threads > 0:
+        cmd += ["-threads", str(ffmpeg_threads)]
     if encoder in ("vaapi", "qsv"):
         from backend.encoder_caps import detect_encoders
         caps = detect_encoders()
@@ -1570,6 +1582,11 @@ async def convert_file(
     except Exception as exc:
         print(f"[CONVERT] External sub loading failed (non-fatal): {exc}", flush=True)
 
+    # v0.5.6: thread cap from live settings (0 = ffmpeg auto).
+    try:
+        ffmpeg_threads = int(live_settings.get("ffmpeg_threads", 0) or 0)
+    except (TypeError, ValueError):
+        ffmpeg_threads = 0
     cmd = _build_ffmpeg_cmd_impl(
         encode_input_path, temp_path, encoder=encoder,
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
@@ -1583,6 +1600,7 @@ async def convert_file(
         audio_streams_to_keep=audio_streams_to_keep,
         subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
         external_subtitle_files=external_sub_files,
+        ffmpeg_threads=ffmpeg_threads,
     )
 
     # Append custom ffmpeg flags if configured

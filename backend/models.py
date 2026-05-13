@@ -138,6 +138,10 @@ class SettingsUpdate(BaseModel):
     vaapi_qp: Optional[int] = None
     vaapi_compression_level: Optional[int] = None
     parallel_jobs: Optional[int] = None
+    # v0.5.6: cap ffmpeg's per-job thread count. 0 = ffmpeg auto (uses all
+    # cores, the pre-v0.5.6 behaviour). 1-16 = explicit cap. Recommended
+    # 1-2 when running multiple parallel jobs on older CPUs.
+    ffmpeg_threads: Optional[Any] = None
     ffmpeg_timeout: Optional[int] = None
     ffprobe_timeout: Optional[int] = None
     audio_cleanup_enabled: Optional[bool] = None

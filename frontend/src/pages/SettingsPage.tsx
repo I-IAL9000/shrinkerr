@@ -831,6 +831,25 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </div>
               </div>
 
+              {/* FFmpeg threads per job */}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={labelStyle}>FFmpeg Threads Per Job</span>
+                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>
+                    {(encoding?.ffmpeg_threads ?? 0) === 0 ? "auto" : encoding?.ffmpeg_threads}
+                  </span>
+                </div>
+                <input type="range" min={0} max={16} value={encoding?.ffmpeg_threads ?? 0}
+                  onChange={(e) => setEncoding({ ...encoding, ffmpeg_threads: parseInt(e.target.value) })}
+                  style={{ width: "100%", accentColor: "var(--accent)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                  <span>auto</span><span>2</span><span>4</span><span>8</span><span>12</span><span>16</span>
+                </div>
+                <div style={helpStyle}>
+                  <strong>auto (0)</strong> lets ffmpeg use every available core per job — fine for a single job, but with <strong>Parallel Jobs &gt; 1</strong> two jobs on an 8-core CPU each try to use all 8 cores and fight each other, eroding throughput. <strong>1–2</strong> is a good cap for older CPUs running parallel software (libx265) encodes. <strong>NVENC / QSV / VAAPI</strong> users can usually leave this at <strong>1–2</strong> too — the GPU does the heavy lifting, ffmpeg just needs threads for muxing and filtering. Set higher if you want a single job to fully saturate a modern many-core CPU.
+                </div>
+              </div>
+
               {/* Target Resolution */}
               <div>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>Target Resolution</div>
@@ -3893,35 +3912,64 @@ volumes:
           </h2>
           {/* Authentication */}
           <div style={sectionStyle}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ color: "white", margin: 0 }}>Authentication</h3>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.auth_enabled ? "Enabled" : "Disabled"}</span>
-                <input type="checkbox" checked={encoding?.auth_enabled || false}
-                  onChange={() => setEncoding({ ...encoding, auth_enabled: !encoding?.auth_enabled })}
-                  style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-              </label>
-            </div>
+            <h3 style={{ color: "white", margin: 0, marginBottom: 12 }}>Authentication</h3>
 
+            {/* Enable toggle — left-aligned, prominent. Pre-v0.5.6 the
+                toggle sat in the section header on the right; users in
+                dark mode reported missing it entirely and locking
+                themselves out. */}
+            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 14, padding: "8px 10px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 4, width: "fit-content" }}>
+              <input type="checkbox" checked={encoding?.auth_enabled || false}
+                onChange={() => setEncoding({ ...encoding, auth_enabled: !encoding?.auth_enabled })}
+                style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+              <span style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
+                Enable username / password login
+              </span>
+              <span style={{ fontSize: 12, color: encoding?.auth_enabled ? "var(--success)" : "var(--text-muted)", marginLeft: 6 }}>
+                ({encoding?.auth_enabled ? "Enabled" : "Disabled"})
+              </span>
+            </label>
+
+            {/* Active-auth banner. Pre-v0.5.6 there was no visible signal
+                that auth was on except the toggle, which several users
+                missed in dark mode. Make the state unambiguous. */}
             {encoding?.auth_enabled && (
-              <>
-                <div style={{ marginBottom: 12 }}>
-                  <div style={labelStyle}>Username</div>
-                  <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
-                    value={encoding?.auth_username || ""}
-                    onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
-                    placeholder="admin" />
-                </div>
-                <div style={{ marginBottom: 12 }}>
-                  <div style={labelStyle}>Password</div>
-                  <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
-                    value={encoding?.auth_password || ""}
-                    onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
-                    placeholder="Enter new password..." />
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave empty to keep current password</div>
-                </div>
-              </>
+              <div style={{
+                padding: "10px 12px",
+                marginBottom: 14,
+                backgroundColor: "rgba(74, 222, 128, 0.08)",
+                border: "1px solid rgba(74, 222, 128, 0.35)",
+                borderRadius: 4,
+                fontSize: 13,
+                color: "var(--text-primary)",
+                lineHeight: 1.5,
+              }}>
+                <strong style={{ color: "var(--success)" }}>Login required.</strong> Visitors will need either the username + password below or the API key (workers / scripts). If you lock yourself out, see the recovery instructions in the README.
+              </div>
             )}
+
+            {/* Credentials — always rendered. Disabled when auth is off so
+                users can see what fields exist (and pre-fill them) before
+                flipping the toggle. v0.5.6: previously rendered
+                conditionally, which surprised users who couldn't see the
+                fields until after enabling. */}
+            <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
+              <div style={labelStyle}>Username</div>
+              <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
+                value={encoding?.auth_username || ""}
+                disabled={!encoding?.auth_enabled}
+                onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
+                placeholder="admin" />
+            </div>
+            <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
+              <div style={labelStyle}>Password</div>
+              <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
+                value={encoding?.auth_password || ""}
+                disabled={!encoding?.auth_enabled}
+                onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
+                placeholder="Enter new password..." />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave empty to keep current password</div>
+            </div>
 
             {/* API Key section — masked by default, reveal or copy pulls
                  the real value via a dedicated endpoint so the bulk GET

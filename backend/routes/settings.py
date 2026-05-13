@@ -47,6 +47,8 @@ _ENCODING_DEFAULTS = {
     "libx265_gpu_fallback_preset": "",
     "libx265_gpu_fallback_cq": "",
     "parallel_jobs": "1",
+    # v0.5.6: 0 = ffmpeg auto (use all cores, pre-v0.5.6 behaviour).
+    "ffmpeg_threads": "0",
     "ffmpeg_timeout": "21600",
     "ffprobe_timeout": "30",
     "audio_cleanup_enabled": "true",
@@ -423,6 +425,7 @@ async def get_encoding_settings():
         "libx265_gpu_fallback_preset": merged.get("libx265_gpu_fallback_preset", ""),
         "libx265_gpu_fallback_cq": merged.get("libx265_gpu_fallback_cq", ""),
         "parallel_jobs": int(merged.get("parallel_jobs", 1)),
+        "ffmpeg_threads": int(merged.get("ffmpeg_threads", 0)),
         "ffmpeg_timeout": int(merged.get("ffmpeg_timeout", 21600)),
         "ffprobe_timeout": int(merged.get("ffprobe_timeout", 30)),
         "audio_cleanup_enabled": merged.get("audio_cleanup_enabled", "true").lower() == "true",
@@ -768,6 +771,12 @@ async def update_encoding_settings(update: SettingsUpdate):
                     updates["libx265_gpu_fallback_cq"] = ""
         if update.parallel_jobs is not None:
             updates["parallel_jobs"] = str(max(1, min(16, update.parallel_jobs)))
+        if update.ffmpeg_threads is not None:
+            try:
+                v = int(update.ffmpeg_threads)
+            except (TypeError, ValueError):
+                v = 0
+            updates["ffmpeg_threads"] = str(max(0, min(16, v)))
         if update.ffmpeg_timeout is not None:
             updates["ffmpeg_timeout"] = str(update.ffmpeg_timeout)
         if update.ffprobe_timeout is not None:

@@ -5,6 +5,15 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] — 2026-05-11
+
+### Added
+- **FFmpeg threads per job** Settings slider (Encoding → after Parallel Jobs). Caps ffmpeg's per-process thread count via the `-threads N` flag, emitted as a top-level option before `-i`. Default `0` = ffmpeg auto (uses every available core — pre-v0.5.6 behaviour, unchanged for existing installs). Useful when `Parallel Jobs > 1` on older CPUs: without a cap, two libx265 jobs on an 8-core box each spin up 8 threads and fight for cores, eroding throughput. Recommended values: `1–2` for parallel software encodes, `1–2` for NVENC/QSV/VAAPI (the GPU does the heavy lifting, ffmpeg just needs threads for muxing/filters), or leave at `auto` for a single job saturating a modern many-core CPU. Closes a piece of the "h264 / NVDEC / threads" GitHub feature request.
+
+### Changed
+- **Authentication settings UX overhaul.** Several users reported locking themselves out by toggling auth without realising it (the Enable checkbox sat in the section header on the far right, low-contrast in dark mode) and being unable to find the toggle again. Three fixes: (1) the Enable toggle moved to the **left side of the section**, inside a bordered chip with a clear "Enable username / password login" label and an explicit "(Enabled)" / "(Disabled)" badge that turns green when on. (2) Username and password fields now **always render** — disabled (greyed-out at 0.55 opacity) when auth is off, so users can see what fields exist before flipping the toggle. Pre-v0.5.6 the fields were conditionally rendered, hiding what was about to happen. (3) An auth-active green banner appears under the toggle when auth is on: "Login required. Visitors will need either the username + password below or the API key (workers / scripts)." Makes the state unambiguous.
+- **README: new troubleshooting entry** for the lockout case — `docker exec sqlite3` one-liners to either disable auth or clear the password hash, no database deletion required. Pre-v0.5.6 users in this situation were nuking `data/` to recover.
+
 ## [0.5.5] — 2026-05-11
 
 ### Fixed
