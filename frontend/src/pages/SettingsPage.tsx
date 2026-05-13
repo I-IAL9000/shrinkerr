@@ -1312,6 +1312,38 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     style={{ accentColor: "var(--accent)" }} />
                   <span style={labelStyle}>VMAF quality analysis</span>
                 </label>
+                {/* v0.5.7: HW decode / VMAF incompatibility surface.
+                    Renders only when VMAF is enabled AND at least one HW decode
+                    toggle is currently on. Dynamically counts active decoders so
+                    users see the immediate impact. Mirror messaging in each
+                    encoder card's HW decode toggle help text. */}
+                {(() => {
+                  const vmafOn = encoding.vmaf_analysis_enabled === true ||
+                                 encoding.vmaf_analysis_enabled === "true" ||
+                                 encoding.vmaf_analysis_enabled == null;
+                  if (!vmafOn) return null;
+                  const activeDecoders: string[] = [];
+                  if (encoding?.nvenc_hw_decode ?? true) activeDecoders.push("NVENC+NVDEC");
+                  if (encoding?.qsv_hw_decode ?? true) activeDecoders.push("QSV");
+                  if (encoding?.vaapi_hw_decode ?? true) activeDecoders.push("VAAPI");
+                  if (encoding?.libx265_use_nvdec) activeDecoders.push("libx265+NVDEC");
+                  if (activeDecoders.length === 0) return null;
+                  return (
+                    <div style={{
+                      marginTop: 8, marginBottom: 12, padding: "10px 12px",
+                      backgroundColor: "rgba(255, 200, 80, 0.10)",
+                      border: "1px solid rgba(255, 200, 80, 0.45)",
+                      borderRadius: 4, fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5,
+                    }}>
+                      <strong style={{ color: "var(--warning)" }}>⚠ VMAF will not run on hardware-decoded jobs.</strong>{" "}
+                      VMAF compares the encoded output to software-decoded source frames. With{" "}
+                      <strong>{activeDecoders.length}</strong> hardware decode toggle{activeDecoders.length > 1 ? "s" : ""}{" "}
+                      currently on ({activeDecoders.join(", ")}), jobs that use those encoders will skip VMAF — no score
+                      is computed and the quality threshold won't be applied. To enforce VMAF on every job,
+                      disable the hardware decode toggles in the encoder section above.
+                    </div>
+                  );
+                })()}
                 <div style={helpStyle}>
                   <strong>VMAF</strong> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix.
                   It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality.
