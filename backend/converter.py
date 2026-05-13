@@ -238,6 +238,21 @@ def _build_ffmpeg_cmd_impl(
     # v0.5.6: cap ffmpeg's thread count via `-threads N`. 0 = ffmpeg auto
     # (uses all available cores, pre-v0.5.6 behaviour). 1-16 = explicit cap.
     ffmpeg_threads: int = 0,
+    # v0.5.7: hardware decode wiring. Caller sets these from live
+    # settings + per-encoder availability + per-source-codec gating.
+    # When False, no -hwaccel flag is emitted and the filter chain
+    # stays in its pre-v0.5.7 software-decode form.
+    use_hw_decode: bool = False,
+    # 'cuda' / 'qsv' / 'vaapi' — what backend to use when use_hw_decode
+    # is True. Determined by caller based on encoder + libx265_use_nvdec.
+    hw_decode_backend: str | None = None,
+    # When True, frames stay on the device (decoder output_format =
+    # backend's native surface). When False (libx265+NVDEC mixed mode),
+    # emit `-hwaccel cuda` without `-hwaccel_output_format` so frames
+    # are downloaded to CPU memory for libx265.
+    hw_decode_keeps_on_device: bool = True,
+    # Used for logging only — the codec gating happened in the caller.
+    source_codec: str | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -267,6 +282,14 @@ def _build_ffmpeg_cmd_impl(
     # encode (libx265) is where this matters.
     if ffmpeg_threads and ffmpeg_threads > 0:
         cmd += ["-threads", str(ffmpeg_threads)]
+    # v0.5.7: HW decode pre-input flags. Must come before the VAAPI/QSV
+    # init_hw_device calls because those refer to the device that will
+    # be set up by -hwaccel.
+    if use_hw_decode and hw_decode_backend:
+        cmd += ["-hwaccel", hw_decode_backend]
+        if hw_decode_keeps_on_device:
+            cmd += ["-hwaccel_output_format", hw_decode_backend]
+        # else: libx265+NVDEC mixed mode — frames downloaded to CPU
     if encoder in ("vaapi", "qsv"):
         from backend.encoder_caps import detect_encoders
         caps = detect_encoders()
@@ -286,28 +309,65 @@ def _build_ffmpeg_cmd_impl(
     for es in ext_subs:
         cmd += ["-i", es["path"]]
 
-    # Resolution scaling (applied before video encoder)
+    # Resolution scaling + decode/encode filter chain wiring.
+    # v0.5.7: when HW decode is on, scale on the device matching the
+    # decoder backend; when off, retain pre-v0.5.7 software-scale path.
     scale = RESOLUTION_MAP.get(target_resolution)
-    if encoder == "vaapi":
-        # VAAPI needs frames on the GPU before they hit hevc_vaapi. The
-        # hwupload filter does the CPU→GPU copy; format=nv12 forces the
-        # 8-bit 4:2:0 layout the hardware encoder expects. Combined with
-        # an optional scale stage so we stay on a single -vf chain.
+    if use_hw_decode and hw_decode_keeps_on_device:
+        # Native pair: frames stay on device. Scale with the matching
+        # device-native scaler; no hwupload needed.
+        if hw_decode_backend == "cuda":
+            # NVENC + NVDEC. scale_cuda for resolution change, otherwise
+            # frames flow straight through with no -vf at all.
+            if scale:
+                cmd += ["-vf", f"scale_cuda={scale}"]
+        elif hw_decode_backend == "qsv":
+            # QSV + QSV decode. scale_qsv keeps frames on iGPU.
+            if scale:
+                cmd += ["-vf", f"scale_qsv={scale}"]
+        elif hw_decode_backend == "vaapi":
+            # VAAPI + VAAPI decode. scale_vaapi keeps frames on DRM device.
+            # Still need format=nv12 to match what hevc_vaapi expects.
+            if scale:
+                cmd += ["-vf", f"scale_vaapi={scale},format=nv12"]
+            else:
+                cmd += ["-vf", "format=nv12"]
+    elif use_hw_decode and not hw_decode_keeps_on_device:
+        # libx265 + NVDEC mixed mode: frames downloaded to CPU after
+        # decode. Use software scale on the CPU-side frames.
         if scale:
-            cmd += ["-vf", f"scale={scale},format=nv12,hwupload"]
+            cmd += ["-vf", f"hwdownload,format=nv12,scale={scale}"]
         else:
-            cmd += ["-vf", "format=nv12,hwupload"]
-    elif encoder == "qsv":
-        # hevc_qsv accepts software-decoded frames directly — ffmpeg
-        # uploads to the iGPU internally. So scaling stays on the CPU
-        # side here (sw scale → encoder), which is fine for typical
-        # workloads. Hardware-decode + scale_qsv would be faster but is
-        # an optimisation for a later release.
-        if scale:
+            cmd += ["-vf", "hwdownload,format=nv12"]
+    else:
+        # Software decode — pre-v0.5.7 behaviour.
+        if encoder == "vaapi":
+            # VAAPI software-decoded input needs hwupload to reach the encoder.
+            if scale:
+                cmd += ["-vf", f"scale={scale},format=nv12,hwupload"]
+            else:
+                cmd += ["-vf", "format=nv12,hwupload"]
+        elif encoder == "qsv":
+            # QSV software-decoded input: ffmpeg uploads internally.
+            if scale:
+                cmd += ["-vf", f"scale={scale}"]
+        elif scale:
+            # NVENC / libx265 software scale.
             cmd += ["-vf", f"scale={scale}"]
-    elif scale:
-        # NVENC / libx265 — software scale (matches pre-v0.3.67 behaviour).
-        cmd += ["-vf", f"scale={scale}"]
+    # v0.5.7: log the decode/encode pipeline so debugging "is my GPU
+    # being used" doesn't require reading ffmpeg's verbose output.
+    if use_hw_decode and hw_decode_backend:
+        if hw_decode_keeps_on_device:
+            _decode_label = f"{hw_decode_backend.upper()} (on-device)"
+        else:
+            _decode_label = f"{hw_decode_backend.upper()} + CPU readback"
+    else:
+        _decode_label = f"software ({source_codec or 'unknown'})"
+    print(
+        f"[CONVERT] Decode: {_decode_label} → Encode: {encoder} "
+        f"(source codec: {source_codec or 'unknown'})",
+        flush=True,
+    )
 
     if encoder == "nvenc":
         cmd += [
