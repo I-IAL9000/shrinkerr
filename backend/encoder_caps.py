@@ -46,6 +46,14 @@ class EncoderCaps:
     vaapi: bool
     qsv_render_node: str | None = None
     vaapi_render_node: str | None = None
+    # v0.5.7: hardware DECODE capability. Tied to the same ffmpeg
+    # `-hwaccels` probe — if the backend is compiled in AND the
+    # corresponding encoder is also available (NVDEC needs an NVIDIA
+    # GPU which is the same gate as NVENC, etc.), we expose the decode
+    # toggle in the UI.
+    nvdec_available: bool = False
+    qsv_decode_available: bool = False
+    vaapi_decode_available: bool = False
 
     @property
     def available(self) -> list[str]:
@@ -82,6 +90,37 @@ def _ffmpeg_encoders() -> set[str]:
         parts = line.strip().split()
         if len(parts) >= 2:
             names.add(parts[1])
+    return names
+
+
+def _ffmpeg_hwaccels() -> set[str]:
+    """Return the set of hwaccel backends ffmpeg has compiled in.
+    Empty set on any error. Output of `ffmpeg -hwaccels`:
+
+        Hardware acceleration methods:
+        cuda
+        vaapi
+        qsv
+        ...
+    """
+    if not shutil.which("ffmpeg"):
+        return set()
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-hwaccels"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        return set()
+    if proc.returncode != 0:
+        return set()
+    names: set[str] = set()
+    for line in (proc.stdout or "").splitlines():
+        s = line.strip()
+        # Skip header line "Hardware acceleration methods:"
+        if not s or s.endswith(":"):
+            continue
+        names.add(s)
     return names
 
 
@@ -188,6 +227,14 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
     intel_node = _intel_render_node()
     va_node = _vaapi_render_node()
 
+    hwaccels = _ffmpeg_hwaccels()
+    # NVDEC = ffmpeg has cuda hwaccel compiled in AND we already have
+    # NVENC (= NVIDIA GPU + working CUDA driver). Splitting them would
+    # produce false positives on hosts with cuda support but no GPU.
+    nvdec = ("cuda" in hwaccels) and bool(("hevc_nvenc" in encoders) and has_nvidia)
+    qsv_decode = ("qsv" in hwaccels) and bool(("hevc_qsv" in encoders) and intel_node is not None) and bool(intel_node)
+    vaapi_decode = ("vaapi" in hwaccels) and bool(("hevc_vaapi" in encoders) and va_node is not None) and bool(va_node)
+
     _cached = EncoderCaps(
         nvenc=("hevc_nvenc" in encoders) and has_nvidia,
         # QSV requires Intel hardware specifically — having ANY render
@@ -199,5 +246,8 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
         vaapi=("hevc_vaapi" in encoders) and va_node is not None,
         qsv_render_node=intel_node,
         vaapi_render_node=va_node,
+        nvdec_available=nvdec,
+        qsv_decode_available=qsv_decode,
+        vaapi_decode_available=vaapi_decode,
     )
     return _cached
