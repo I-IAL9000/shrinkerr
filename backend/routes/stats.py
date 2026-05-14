@@ -115,23 +115,42 @@ async def get_stats_summary():
     jobs_with_time = 0
     files_audio_cleaned = 0
 
-    # Load configured media directories for library-level grouping
-    _media_dirs = []
+    # Load configured media directories for library-level grouping.
+    # Both `path` and `label` — the label is the user's display name and
+    # takes precedence; the path is the matching key + fallback derivation.
+    _media_dirs: list[dict] = []
     try:
-        async with db.execute("SELECT path FROM media_dirs ORDER BY LENGTH(path) DESC") as cur:
-            _media_dirs = [r["path"].rstrip("/") for r in await cur.fetchall()]
+        async with db.execute("SELECT path, label FROM media_dirs ORDER BY LENGTH(path) DESC") as cur:
+            _media_dirs = [
+                {"path": r["path"].rstrip("/"), "label": (r["label"] or "").strip()}
+                for r in await cur.fetchall()
+            ]
     except Exception:
         pass
 
+    def _volume_name_from_path(p: str) -> str:
+        """Disk-space-card-style derivation: `/media/<X>/...` → `X`,
+        else first non-empty path segment. Used to keep this card's
+        labels consistent with the disk-space breakdown when no
+        user-set label is available."""
+        parts = [seg for seg in p.split("/") if seg]
+        if len(parts) >= 2 and parts[0].lower() == "media":
+            return parts[1]
+        return parts[0] if parts else "Unknown"
+
     def _get_library_name(file_path: str) -> str:
-        """Map a file path to its configured media directory label."""
+        """Map a file path to its configured media directory's display
+        name. v0.5.11+ prefers `MediaDir.label` (the user's explicit name
+        in Settings → Media Directories). Falls back to the volume-name
+        logic used by the disk-space card so both dashboard cards label
+        the same path consistently — pre-v0.5.11 this used the last path
+        component, so `/media/Downloads/completed` showed as "completed"
+        on this card but "Downloads" on the disk-space one."""
         for d in _media_dirs:
-            if file_path.startswith(d + "/") or file_path.startswith(d):
-                # Return the last component of the media dir path as the label
-                return d.rstrip("/").split("/")[-1]
-        # Fallback: use 3rd path component (e.g. /media/TV1/... -> TV1)
-        parts = file_path.split("/")
-        return parts[2] if len(parts) >= 3 else "Unknown"
+            if file_path.startswith(d["path"] + "/") or file_path == d["path"]:
+                return d["label"] or _volume_name_from_path(d["path"])
+        # No configured MediaDir matched — derive directly from the file path
+        return _volume_name_from_path(file_path)
 
     for j in completed:
         saved = max(0, j["space_saved"] or 0)

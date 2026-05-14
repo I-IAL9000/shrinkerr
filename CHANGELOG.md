@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] — 2026-05-14
+
+### Fixed
+- Dashboard "Saved by Library" now uses `MediaDir.label` (set via Settings) and falls back to the same `/media/<X>/...` volume-name logic the disk-space card uses — labels now match between the two cards. **Side effect**: nested MediaDirs (e.g. `/media/Misc/tv`) without an explicit label merge into the parent volume's row.
+
 ## [0.5.10] — 2026-05-11
 
 ### Fixed
