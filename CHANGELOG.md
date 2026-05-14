@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.13] — 2026-05-14
+
+### Changed
+- Image hardening pass: `apt-get upgrade` at build time, NVENC base bumped from CUDA 12.3.1 / Ubuntu 22.04 to CUDA 12.6.3 / Ubuntu 24.04 (and Python 3.12). Same NVIDIA driver floor (525.60.13+). Knocks Docker Scout's High/Medium CVE counts down materially without changing runtime behaviour.
+
+### Added
+- `pip-audit` CI workflow scans `requirements.txt` weekly + on PRs that touch it. Informational (non-blocking) — surfaces vulnerable Python deps in the Actions tab.
+
 ## [0.5.12] — 2026-05-14
 
 ### Fixed

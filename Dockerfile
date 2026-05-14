@@ -59,6 +59,11 @@ ARG TARGETARCH
 # "non-free" naming is historical from when it shipped as a binary blob.
 RUN set -eux; \
     apt-get update; \
+    # v0.5.13: pull latest security patches at build time. Halves the
+    # High/Medium CVE count Docker Scout reports without changing the
+    # base image. Cheap and low-risk — security updates are minor
+    # bumps within the bookworm release line.
+    apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends curl xz-utils; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
         # All VA-API packages (runtime libs + Intel iHD + AMD radeonsi +

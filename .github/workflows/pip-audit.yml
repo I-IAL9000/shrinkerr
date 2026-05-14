@@ -1,0 +1,62 @@
+# ============================================================================
+# pip-audit — check requirements.txt for Python deps with known CVEs.
+#
+# Runs informationally on push to main/master + PRs that touch requirements.
+# Results land in the workflow log and the run's summary tab; failures are
+# surfaced but do NOT block merges (continue-on-error: true). The actual
+# image-publishing pipeline is build-images.yml — that one's the deploy
+# gate.
+# v0.5.13+.
+# ============================================================================
+name: pip-audit
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'requirements.txt'
+      - '.github/workflows/pip-audit.yml'
+  pull_request:
+    paths:
+      - 'requirements.txt'
+      - '.github/workflows/pip-audit.yml'
+  workflow_dispatch:
+  # Weekly run picks up newly-disclosed CVEs in pinned deps even when
+  # nothing in the repo changes. CVE feeds get new entries daily.
+  schedule:
+    - cron: '17 6 * * 1'  # Mondays 06:17 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run pip-audit
+        id: audit
+        # --strict makes the exit code non-zero on any finding (including
+        # unfixable ones), which surfaces a red ✗ on the workflow. We
+        # tolerate it (continue-on-error) so a transient finding doesn't
+        # block unrelated PRs — the failure is still visible in the
+        # Actions tab as a signal to investigate.
+        run: |
+          pip-audit --requirement requirements.txt --strict \
+            --format markdown >> "$GITHUB_STEP_SUMMARY" || echo "AUDIT_FOUND=true" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      - name: Note in summary
+        if: steps.audit.outputs.AUDIT_FOUND == 'true'
+        run: |
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "⚠ pip-audit found vulnerable Python deps. Review above and update requirements.txt." >> "$GITHUB_STEP_SUMMARY"

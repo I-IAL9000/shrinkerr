@@ -21,7 +21,13 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Runtime — CUDA base image, x86_64 only.
-FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
+# v0.5.13: bumped from cuda:12.3.1-runtime-ubuntu22.04 to
+# cuda:12.6.3-runtime-ubuntu24.04 for the lower CVE count Ubuntu 24.04
+# carries vs 22.04. CUDA 12.6's driver floor is the same 525.60.13+ as
+# 12.3, so existing users don't need to upgrade their NVIDIA driver.
+# Ubuntu 24.04 ships Python 3.12 by default (3.11 was 22.04's default),
+# so the apt-get install list below moves to python3.12 too.
+FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04
 
 # Install Python, curl, and GPG for repo signing.
 #
@@ -32,8 +38,12 @@ FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04
 # v0.3.67+. See the base Dockerfile for the rationale.
 RUN set -eux; \
     apt-get update; \
+    # v0.5.13: pull latest security patches at build time. Same
+    # rationale as the CPU Dockerfile — cheap, knocks down the bulk
+    # of Scout-reported CVEs without changing the base image.
+    apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends \
-        python3.11 python3.11-venv python3-pip \
+        python3.12 python3.12-venv python3-pip \
         curl xz-utils \
         libva-drm2 \
         intel-media-va-driver-non-free \
@@ -124,14 +134,19 @@ ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
 ARG NVENC_MIN_DRIVER=525.60.13
 ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
 
-# Use python3.11 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+# Use python3.12 as default (Ubuntu 24.04's stock Python, v0.5.13+)
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install Python dependencies.
+# Ubuntu 24.04's system Python carries the PEP 668 "externally-managed"
+# marker that blocks pip on the system interpreter unless --break-system-
+# packages is passed. This is a single-app container so installing into
+# the system Python is the right call; the flag is the standard escape
+# hatch for the Docker use case. v0.5.13+.
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy backend and version file
 COPY backend/ backend/
