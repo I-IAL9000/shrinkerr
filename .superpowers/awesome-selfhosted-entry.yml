@@ -1,0 +1,31 @@
+# Submission for awesome-selfhosted-data
+# https://github.com/awesome-selfhosted/awesome-selfhosted-data
+#
+# Submit no earlier than ~2026-07-22 — the awesome-selfhosted CONTRIBUTING
+# guide requires "first released more than 4 months ago" and Shrinkerr's
+# first commit was 2026-03-22.
+#
+# Submission process:
+#   1. Fork github.com/awesome-selfhosted/awesome-selfhosted-data
+#   2. Create file: software/shrinkerr.yml with the content below
+#      (everything below the `--- ENTRY BELOW ---` line, no extra
+#      indentation, no surrounding YAML wrapper)
+#   3. Open a PR titled "add Shrinkerr"
+#   4. Maintainer reviews and either merges or asks for tweaks
+#
+# The bottom auto-fields (stargazers_count, updated_at, archived,
+# current_release, commit_history) are filled in by their CI — don't
+# include them in the submission.
+#
+# --- ENTRY BELOW ---
+name: Shrinkerr
+website_url: https://github.com/I-IAL9000/shrinkerr
+description: Re-encodes H.264 / MPEG-2 / VC-1 / older codecs to HEVC with NVENC (NVIDIA) or libx265 (CPU). Validates encodes with VMAF, distributes work across multiple nodes, and integrates with Plex / Jellyfin / Emby and Sonarr / Radarr / NZBGet. (alternative to Tdarr, Unmanic)
+licenses:
+  - Apache-2.0
+platforms:
+  - Python
+  - Docker
+tags:
+  - Media Management
+source_code_url: https://github.com/I-IAL9000/shrinkerr
