@@ -494,16 +494,22 @@ Fixed in v0.3.0 (virtualized list + throttled WebSocket progress). If you're sti
 <details>
 <summary><b>I locked myself out of the UI — wrong password / forgot username after enabling Authentication</b></summary>
 
-You don't need to nuke the database. The auth toggle, username, and password hash all live in the `settings` table — flip them directly with `sqlite3`:
+You don't need to nuke the database. The auth toggle, username, and password hash all live in the `settings` table — flip them directly via the container's Python (the `sqlite3` CLI isn't installed in the image, but Python's stdlib `sqlite3` module is):
 
 ```bash
 # 1. Disable auth entirely (fastest unlock — log back in, fix the credentials, re-enable)
-docker exec -it shrinkerr sqlite3 /app/data/shrinkerr.db \
-  "UPDATE settings SET value='false' WHERE key='auth_enabled';"
+docker exec shrinkerr python3 -c "
+import sqlite3
+sqlite3.connect('/app/data/shrinkerr.db').execute(
+    \"UPDATE settings SET value='false' WHERE key='auth_enabled'\"
+).connection.commit()"
 
 # 2. Or just clear the password hash (auth stays on, but blank password works)
-docker exec -it shrinkerr sqlite3 /app/data/shrinkerr.db \
-  "UPDATE settings SET value='' WHERE key='auth_password_hash';"
+docker exec shrinkerr python3 -c "
+import sqlite3
+sqlite3.connect('/app/data/shrinkerr.db').execute(
+    \"UPDATE settings SET value='' WHERE key='auth_password_hash'\"
+).connection.commit()"
 
 # Either way, restart so the auth cache invalidates immediately
 docker compose restart
