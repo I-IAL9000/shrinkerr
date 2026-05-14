@@ -1,5 +1,11 @@
 # ============================================================================
-# Build and publish Shrinkerr images to GHCR (GitHub Container Registry).
+# Build and publish Shrinkerr images.
+#
+# Primary registry: GHCR (GitHub Container Registry). Always pushed.
+# Optional mirror: Docker Hub. Push only when the DOCKERHUB_USERNAME and
+# DOCKERHUB_TOKEN repository secrets are set — Docker Hub is the only
+# registry that exposes public pull counts, so mirroring there gives us
+# real download numbers (GHCR doesn't surface pull counts at all). v0.5.10+.
 #
 # Triggered on:
 #   - push to main/master  → floating tags (:latest, :edge, :nvenc, :edge-nvenc)
@@ -44,6 +50,11 @@ permissions:
 # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Expose the Docker Hub username at the env level so steps can gate on
+  # `env.DOCKERHUB_USERNAME != ''` (secret refs aren't directly usable in
+  # `if:` expressions across all contexts). Empty when the secret isn't
+  # configured — Docker Hub mirroring stays off in that case.
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
 jobs:
   build:
@@ -108,29 +119,57 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        # Optional mirror. Only runs when both DOCKERHUB_USERNAME and
+        # DOCKERHUB_TOKEN secrets are set. Forks without these secrets
+        # configured continue to push GHCR-only.
+        if: env.DOCKERHUB_USERNAME != '' && (github.event_name != 'workflow_dispatch' || inputs.push_images)
+        uses: docker/login-action@v3
+        with:
+          # No `registry:` → defaults to docker.io.
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Compute tags
         id: tags
-        # Produce a newline-separated list of tags for this variant:
-        #   - On a tag push (v0.9.0): ghcr.io/owner/shrinkerr:v0.9.0 (+ floating)
-        #   - On main/master push:    ghcr.io/owner/shrinkerr:<suffix>
+        # Produce a newline-separated list of tags for this variant. Each
+        # registry base gets the same suffix expansion:
+        #   - On a tag push (v0.9.0): <base>:v0.9.0 + <base>:<suffix-floating>
+        #   - On main/master push:    <base>:<suffix>
         #   - workflow_dispatch:      same as main/master
+        # GHCR is always included. Docker Hub is added when DOCKERHUB_USERNAME
+        # is configured — `docker/build-push-action` pushes each tag to its
+        # respective registry (we logged into both in the prior steps).
         # GitHub lowercases image names but `github.repository_owner` preserves
-        # case — force lowercase so GHCR accepts the tag.
+        # case — force lowercase so GHCR / Docker Hub both accept the tag.
         run: |
           OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          BASE="ghcr.io/${OWNER}/shrinkerr"
           SUFFIX="${{ matrix.variant.suffix }}"
-          TAGS=""
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
-            if [[ "$SUFFIX" == "latest" ]]; then
-              TAGS="${BASE}:${VERSION}"$'\n'"${BASE}:latest"
-            else
-              TAGS="${BASE}:${VERSION}-${SUFFIX}"$'\n'"${BASE}:${SUFFIX}"
-            fi
-          else
-            TAGS="${BASE}:${SUFFIX}"
+
+          # Build the registry base list. GHCR always present; Docker Hub
+          # appended only when the mirror credentials are configured.
+          REGISTRY_BASES=("ghcr.io/${OWNER}/shrinkerr")
+          if [[ -n "${DOCKERHUB_USERNAME:-}" ]]; then
+            DH_USER="$(echo "${DOCKERHUB_USERNAME}" | tr '[:upper:]' '[:lower:]')"
+            REGISTRY_BASES+=("docker.io/${DH_USER}/shrinkerr")
           fi
+
+          TAGS=""
+          for BASE in "${REGISTRY_BASES[@]}"; do
+            if [[ "${{ github.ref_type }}" == "tag" ]]; then
+              VERSION="${GITHUB_REF#refs/tags/}"
+              if [[ "$SUFFIX" == "latest" ]]; then
+                TAGS+="${BASE}:${VERSION}"$'\n'"${BASE}:latest"$'\n'
+              else
+                TAGS+="${BASE}:${VERSION}-${SUFFIX}"$'\n'"${BASE}:${SUFFIX}"$'\n'
+              fi
+            else
+              TAGS+="${BASE}:${SUFFIX}"$'\n'
+            fi
+          done
+          # Trim trailing blank line for cleaner logs.
+          TAGS="${TAGS%$'\n'}"
+
           {
             echo "tags<<EOF"
             echo "$TAGS"
