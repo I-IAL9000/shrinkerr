@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.12] — 2026-05-14
+
+### Fixed
+- "Saved by Library" no longer shows two rows for case-differing historical paths (e.g. `downloads` + `Downloads` from a directory rename). Fallback labels are normalized to start with a capital when entirely lowercase; mixed-case names (M2T2, TV1, user-set labels) untouched.
+
 ## [0.5.11] — 2026-05-14
 
 ### Fixed

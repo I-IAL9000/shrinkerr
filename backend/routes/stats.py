@@ -132,11 +132,24 @@ async def get_stats_summary():
         """Disk-space-card-style derivation: `/media/<X>/...` → `X`,
         else first non-empty path segment. Used to keep this card's
         labels consistent with the disk-space breakdown when no
-        user-set label is available."""
+        user-set label is available.
+
+        v0.5.12: normalize all-lowercase results to start with a capital
+        letter so historical jobs whose paths differ only by case (e.g.
+        old `/downloads/...` rows after the directory was renamed to
+        `/Downloads/...`) collapse into one library row instead of two.
+        Mixed-case and all-uppercase names (M2T2, TV1, etc.) and user-
+        set labels are left untouched."""
         parts = [seg for seg in p.split("/") if seg]
         if len(parts) >= 2 and parts[0].lower() == "media":
-            return parts[1]
-        return parts[0] if parts else "Unknown"
+            name = parts[1]
+        else:
+            name = parts[0] if parts else "Unknown"
+        # Capitalize first letter only when the string is entirely lowercase.
+        # str.capitalize() would also lowercase the tail, breaking "TV1" → "Tv1".
+        if name and name.islower():
+            name = name[0].upper() + name[1:]
+        return name
 
     def _get_library_name(file_path: str) -> str:
         """Map a file path to its configured media directory's display
