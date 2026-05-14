@@ -21,8 +21,15 @@ other scenario people actually hit.
 
 ## Picking an image variant
 
-Four tags are published to
-[ghcr.io/i-ial9000/shrinkerr](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr):
+Four tags are published to two registries simultaneously — pick whichever
+you prefer:
+
+- [`ghcr.io/i-ial9000/shrinkerr`](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr) — GitHub Container Registry. No anonymous-pull rate limits.
+- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub mirror. Familiar default for many users; anonymous pulls are capped at 100 per 6 hours per IP.
+
+Image content is identical on both. The compose snippets in this guide
+use `ghcr.io/...`; substitute `pal9000/shrinkerr:<tag>` if you'd rather
+pull from Docker Hub.
 
 | Tag | Platforms | Encoders | Use when |
 |---|---|---|---|

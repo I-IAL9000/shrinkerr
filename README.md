@@ -114,7 +114,12 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 
 ## Image variants
 
-Four tags are published to [ghcr.io/i-ial9000/shrinkerr](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr):
+Four tags are published to two registries — pick whichever you prefer:
+
+- [`ghcr.io/i-ial9000/shrinkerr`](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr) — GitHub Container Registry (no rate limits on anonymous pulls)
+- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub (mirror; familiar default, anonymous pulls are rate-limited to 100 / 6h / IP)
+
+Both registries publish the same tags simultaneously:
 
 | Tag | Platforms | Encoding | When to use |
 |---|---|---|---|
@@ -124,6 +129,8 @@ Four tags are published to [ghcr.io/i-ial9000/shrinkerr](https://github.com/I-IA
 | `:edge-nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host running a very recent driver. ffmpeg master, needs driver 570+. |
 
 **All variants share the same database schema and settings format** — you can switch between them with a single `image:` line change and a `docker compose pull && docker compose up -d`. The app's runtime capability detection handles the encoder difference transparently.
+
+The compose snippets below use `ghcr.io/...`; substitute `pal9000/shrinkerr:<tag>` if you prefer Docker Hub.
 
 ---
 
