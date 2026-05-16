@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.14] — 2026-05-14
+
+### Fixed
+- NVENC + NVDEC jobs failing with `CUDA_ERROR_INVALID_VALUE` on x264 sources with many reference frames. NVDEC's 32-surface hardware limit was exceeded because the H.264 decoder's thread count (defaulting to `nproc`) drove surface allocation past 32. Pin decoder threads to 1 whenever NVDEC is on — encoder threads still respect the `FFmpeg Threads Per Job` setting.
+
 ## [0.5.13] — 2026-05-14
 
 ### Changed

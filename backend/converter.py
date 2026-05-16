@@ -310,6 +310,23 @@ def _build_ffmpeg_cmd_impl(
         if hw_decode_keeps_on_device:
             cmd += ["-hwaccel_output_format", hw_decode_backend]
         # else: libx265+NVDEC mixed mode — frames downloaded to CPU
+
+        # v0.5.14: NVDEC has a 32-surface hardware limit. The H.264
+        # decoder allocates surfaces proportional to its thread count,
+        # so on a 12-16-thread host with a dense-ref-frame x264 source
+        # ffmpeg's default (nproc) pushes the surface request past 32
+        # and CUVID errors with `CUDA_ERROR_INVALID_VALUE`:
+        #   "Using more than 32 (34) decode surfaces might cause nvdec
+        #    to fail. Try lowering the amount of threads. Using 16."
+        # Pin decoder threads to 1 here — the GPU does the actual
+        # decode, CPU threads just feed it. This is a per-input scope
+        # (it's between the hwaccel flags and `-i input.mkv`) so the
+        # encoder side still uses the user's `ffmpeg_threads` setting
+        # via the post-encoder `-threads N` from v0.5.9. Applies to
+        # NVDEC only — QSV / VAAPI have larger surface budgets and
+        # don't hit this limit at realistic thread counts.
+        if hw_decode_backend == "cuda":
+            cmd += ["-threads", "1"]
     if encoder in ("vaapi", "qsv"):
         from backend.encoder_caps import detect_encoders
         caps = detect_encoders()
