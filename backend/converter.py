@@ -877,6 +877,45 @@ def _build_audio_conversion_summary(
     return sorted(sources)
 
 
+def rename_source_quality_in_filename(filename: str) -> str:
+    """Normalize source-quality tags in `filename` after conversion.
+
+    A full Blu-ray disc rip (BR-DISK) becomes a Bluray rip once it's
+    been re-encoded; a full DVD (DVD-R / DVD5 / DVD9) becomes a
+    DVDRip. The tag in the filename should reflect what the file
+    actually is.
+
+    Case-insensitive matching; output uses the canonical scene-style
+    forms ("Bluray" and "DVDRip"). Leaves already-encoded source tags
+    (Bluray / BDRip / DVDRip / WEB-DL / HDTV / WEBRip / etc.) alone.
+
+    Examples (post-conversion filename normalization):
+      "Movie.2020.1080p.BR-DISK.x264-GRP.mkv" → "Movie.2020.1080p.Bluray.x265-GRP.mkv"
+      "Show.S01.DVD-R.AC3.mkv"                → "Show.S01.DVDRip.AC3.mkv"
+      "Foo.BD50.x264.mkv"                     → "Foo.Bluray.x265.mkv"
+
+    v0.5.18+.
+    """
+    result = filename
+    # Blu-ray disc tier → "Bluray"
+    #   BR-DISK / BRDISK / BR.DISK / BR_DISK
+    result = re.sub(r'\bBR[\s._-]?DISK\b', 'Bluray', result, flags=re.IGNORECASE)
+    #   BD25 / BD50 / BD100 (single/dual/triple-layer disc-size tags).
+    #   Bare "BD" is intentionally NOT matched — it's ambiguous and
+    #   appears in release group names ("BD-Crew" etc).
+    result = re.sub(r'\bBD[\s._-]?(?:25|50|100)\b', 'Bluray', result, flags=re.IGNORECASE)
+    # DVD disc tier → "DVDRip"
+    #   DVD-R / DVDR / DVD.R / DVD_R. The trailing \b prevents matching
+    #   inside "DVDRip" (R is followed by "i", a word char, so \b fails).
+    #   It also leaves DVD-RW / DVD-RAM alone for the same reason.
+    result = re.sub(r'\bDVD[\s._-]?R\b', 'DVDRip', result, flags=re.IGNORECASE)
+    #   DVD5 / DVD9 (single/dual-layer DVD-size tags).
+    result = re.sub(r'\bDVD[\s._-]?(?:5|9)\b', 'DVDRip', result, flags=re.IGNORECASE)
+    # Clean up any double spaces left over.
+    result = re.sub(r'  +', ' ', result)
+    return result
+
+
 def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
     """Replace audio codec tags in a filename with the actual primary audio codec."""
     # Build a combined pattern matching any known audio codec tag
@@ -895,6 +934,9 @@ def get_output_path(input_path: str, suffix: str = "", encoder: str | None = Non
     """
     p = Path(input_path)
     new_stem = rename_source_to_target_codec(p.stem, encoder=encoder)
+    # v0.5.18: normalize disc-tier source tags (BR-DISK→Bluray, DVD-R→DVDRip)
+    # since the re-encoded file is no longer a disc rip.
+    new_stem = rename_source_quality_in_filename(new_stem)
     if suffix:
         new_stem = new_stem + suffix
     return str(p.parent / (new_stem + ".mkv"))

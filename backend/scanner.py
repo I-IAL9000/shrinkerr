@@ -917,7 +917,7 @@ async def scan_directory(
     #   - libx265 output → `x265` in the filename
     #   - NVENC   output → `h265`
     # so we check BOTH possibilities, not just `x265`.
-    from backend.converter import rename_source_to_target_codec
+    from backend.converter import rename_source_to_target_codec, rename_source_quality_in_filename
     all_paths_set = {str(f) for f in all_files}
     skip_paths: set[str] = set()
     for f in all_files:
@@ -925,6 +925,10 @@ async def scan_directory(
         candidates: set[str] = set()
         for encoder in ("libx265", "nvenc"):
             renamed = rename_source_to_target_codec(name, encoder=encoder)
+            # v0.5.18: match get_output_path()'s rename chain so disc-tier
+            # source siblings (e.g. "X.BR-DISK.x264.mkv" → "X.Bluray.x265.mkv")
+            # are correctly detected and the source gets skip-flagged.
+            renamed = rename_source_quality_in_filename(renamed)
             if renamed != name:
                 # The conversion pipeline always writes .mkv regardless of
                 # source container, so match the HEVC sibling with that

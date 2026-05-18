@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.18] — 2026-05-18
+
+### Fixed
+- Disc-tier source tags now get normalized in the post-conversion filename: `BR-DISK` / `BD25` / `BD50` / `BD100` → `Bluray`, `DVD-R` / `DVDR` / `DVD5` / `DVD9` → `DVDRip`. The re-encoded file is no longer a disc rip, so the tag should reflect what the file actually is. Already-encoded forms (`Bluray`, `DVDRip`, `WEB-DL`, `HDTV` etc.) are left alone, as are unrelated tokens (`DVD-RW`, `DVD-RAM`). Scanner sibling-detection updated to match the new naming chain so disc-tier originals get skip-flagged when their re-encoded sibling already exists.
+
 ## [0.5.17] — 2026-05-18
 
 ### Added
