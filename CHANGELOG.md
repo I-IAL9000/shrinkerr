@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.15] — 2026-05-18
+
+### Fixed
+- "Reorder native language to first audio stream" toggle was entirely cosmetic — the field had no model definition, no DB default, no GET wiring, and no PUT branch, so saves were silently dropped and the worker's missing-row fallback always returned True. Now fully wired through the standard model → DEFAULTS → GET → PUT → cache-invalidation pipeline (issue #11). Default preserved as on; users who want the native track left in place can now actually turn it off.
+- `keep_native_language` save did not invalidate the worker's in-memory cache, so changes only took effect after a container restart. Added to the cache-invalidation set alongside `reorder_native_audio`.
+
 ## [0.5.14] — 2026-05-14
 
 ### Fixed

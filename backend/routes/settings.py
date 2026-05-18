@@ -67,6 +67,10 @@ _ENCODING_DEFAULTS = {
     "always_keep_languages": '[]',
     "ignore_unknown_tracks": "true",
     "keep_native_language": "true",
+    # v0.5.15: reorder native-language track to first audio position.
+    # Default True preserves pre-v0.5.15 behaviour (where this was
+    # hardcoded-on via a silently-broken save path). Issue #11.
+    "reorder_native_audio": "true",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
@@ -449,6 +453,7 @@ async def get_encoding_settings():
         "audio_cleanup_enabled": merged.get("audio_cleanup_enabled", "true").lower() == "true",
         "ignore_unknown_tracks": merged.get("ignore_unknown_tracks", "true").lower() == "true",
         "keep_native_language": merged.get("keep_native_language", "true").lower() == "true",
+        "reorder_native_audio": merged.get("reorder_native_audio", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
@@ -818,6 +823,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["ignore_unknown_tracks"] = "true" if update.ignore_unknown_tracks else "false"
         if update.keep_native_language is not None:
             updates["keep_native_language"] = "true" if update.keep_native_language else "false"
+        if update.reorder_native_audio is not None:
+            updates["reorder_native_audio"] = "true" if update.reorder_native_audio else "false"
         if update.target_codec is not None:
             updates["target_codec"] = update.target_codec
         if update.target_resolution is not None:
@@ -1123,8 +1130,18 @@ async def update_encoding_settings(update: SettingsUpdate):
     finally:
         await db.close()
 
-    # Invalidate settings cache if relevant keys changed
-    cache_keys = {"sub_keep_languages", "sub_keep_unknown", "sub_cleanup_enabled", "audio_cleanup_enabled"}
+    # Invalidate settings cache if relevant keys changed.
+    # v0.5.15: added `keep_native_language` and `reorder_native_audio` —
+    # both are read via `_is_cleanup_enabled` (scanner.py:516) which
+    # caches results module-level, so without invalidation a save here
+    # is invisible to the worker until the next container restart.
+    # Pre-v0.5.15 these were missing from the set, which contributed
+    # to issue #11 ("Reorder native language always re-enabled").
+    cache_keys = {
+        "sub_keep_languages", "sub_keep_unknown",
+        "sub_cleanup_enabled", "audio_cleanup_enabled",
+        "keep_native_language", "reorder_native_audio",
+    }
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache
         invalidate_sub_settings_cache()

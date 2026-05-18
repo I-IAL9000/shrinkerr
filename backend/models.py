@@ -158,6 +158,11 @@ class SettingsUpdate(BaseModel):
     always_keep_languages: Optional[list[str]] = None
     ignore_unknown_tracks: Optional[bool] = None
     keep_native_language: Optional[bool] = None
+    # v0.5.15: reorder native-language track to first position.
+    # Pre-v0.5.15 this checkbox existed in the UI but was never wired
+    # through the model/DEFAULTS/GET/PUT, so saves were silently dropped
+    # and the worker always defaulted to True. Issue #11.
+    reorder_native_audio: Optional[bool] = None
     target_codec: Optional[str] = None
     target_resolution: Optional[str] = None
     source_codecs: Optional[list[str]] = None
