@@ -563,8 +563,67 @@ def classify_audio_tracks(
     native = native_language.lower() if native_language else "und"
     auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
 
+    # v0.5.16: smart selection per always-keep language.
+    # Pre-v0.5.16: any track in an always-keep language got `locked=True`
+    # and `keep=True`. The lock prevented users from deleting duplicates
+    # ("3 English tracks, can't remove the AAC 2.0 because eng is on
+    # always-keep" — issue #11). Now: for each always-keep language with
+    # multiple tracks, pick the highest-quality one (channels desc, then
+    # codec rank) as the default-kept track; other tracks in that
+    # language fall through to the standard rules. The `locked` field is
+    # kept for back-compat but always False — the UI dropped its lock
+    # rendering in the same release, so all tracks render as editable
+    # checkboxes regardless.
+    def _audio_track_rank(t: dict) -> tuple:
+        """Higher tuple → better track. Channels first (5.1 > 2.0),
+        then codec quality ranking (lossless object > lossless > lossy)."""
+        channels = t.get("channels", 0) or 0
+        codec = (t.get("codec") or "").lower()
+        profile = (t.get("profile") or "").lower()
+        # Codec ranking matches the ladder Shrinkerr uses elsewhere
+        # for is_lossless_audio() / lossless-conversion heuristics.
+        if "truehd" in codec:
+            codec_score = 100
+        elif "flac" in codec or "pcm" in codec or "alac" in codec:
+            codec_score = 95
+        elif "dts" in codec:
+            if "ma" in profile or "master" in profile:
+                codec_score = 92   # DTS-HD MA
+            elif "hra" in profile:
+                codec_score = 85
+            else:
+                codec_score = 80   # plain DTS
+        elif "eac3" in codec or "e-ac-3" in codec:
+            codec_score = 70       # Dolby Digital Plus
+        elif "ac3" in codec:
+            codec_score = 65       # Dolby Digital
+        elif "aac" in codec:
+            codec_score = 55
+        elif "opus" in codec:
+            codec_score = 50
+        else:
+            codec_score = 30
+        return (channels, codec_score)
+
+    # First pass: for each always-keep language with multiple tracks,
+    # pick the winner. Single-track languages always win by default.
+    always_keep_by_lang: dict[str, list[int]] = {}
+    for idx, track in enumerate(tracks):
+        lang = (track.get("language") or "und").lower()
+        if any(languages_match(lang, k) for k in always_keep):
+            always_keep_by_lang.setdefault(lang, []).append(idx)
+    always_keep_winners: set[int] = set()
+    for lang, indices in always_keep_by_lang.items():
+        if len(indices) == 1:
+            always_keep_winners.add(indices[0])
+        else:
+            # Highest-ranking track wins; ties broken by earliest stream
+            # (`-i` to keep the rank-key max stable across equal ranks).
+            best = max(indices, key=lambda i: (_audio_track_rank(tracks[i]), -i))
+            always_keep_winners.add(best)
+
     result = []
-    for track in tracks:
+    for idx, track in enumerate(tracks):
         lang = (track.get("language") or "und").lower()
         bitrate = track.get("bitrate")
         size_estimate = None
@@ -575,20 +634,17 @@ def classify_audio_tracks(
             except (ValueError, TypeError):
                 size_estimate = None
 
-        # Check always_keep with variant matching
-        is_always_keep = any(languages_match(lang, k) for k in always_keep)
-        if is_always_keep:
+        # Smart-selection result: only the per-language winner counts as
+        # an always-keep default. Other duplicates fall through to the
+        # standard rules below.
+        if idx in always_keep_winners:
             keep = True
-            locked = True
         elif auto_keep_native and languages_match(lang, native):
             keep = True
-            locked = False
         elif lang == "und":
             keep = True
-            locked = False
         else:
             keep = False
-            locked = False
 
         result.append(
             AudioTrack(
@@ -601,7 +657,7 @@ def classify_audio_tracks(
                 profile=track.get("profile"),
                 size_estimate_bytes=size_estimate,
                 keep=keep,
-                locked=locked,
+                locked=False,  # v0.5.16: lock semantic removed; UI now allows override
             )
         )
 

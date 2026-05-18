@@ -1758,7 +1758,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   )}
                 </div>
                 <div style={helpStyle}>
-                  Audio tracks in these languages will always be kept (locked). Only tracks in other languages will be suggested for removal.
+                  Audio tracks in these languages are kept by default. If a file has multiple tracks in the same language, only the highest-quality one is selected — you can override per-track in the file detail editor.
                 </div>
               </div>
 
@@ -1993,7 +1993,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <span> — </span>
                 {keepLangs.length === 0
                   ? "Only the native language track is kept"
-                  : `${keepLangs.length} language${keepLangs.length > 1 ? "s" : ""} locked, plus native auto-detected per file`}
+                  : `${keepLangs.length} language${keepLangs.length > 1 ? "s" : ""} kept by default, plus native auto-detected per file`}
               </div>
             </div>
             </div>

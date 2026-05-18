@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.16] — 2026-05-18
+
+### Changed
+- "Always Keep Languages" no longer locks every track in those languages. When a file has multiple tracks in the same always-keep language (e.g. 3 English tracks: EAC3 5.1, AAC 2.0, AAC commentary), only the highest-quality one — ranked by channels desc then codec quality (TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC) — is kept by default; the others fall through to the standard rules. All tracks render as editable checkboxes so users can override per-track, even on always-keep languages. **Behaviour change for users with multi-track libraries**: re-scanning will mark redundant same-language tracks for removal. Issue #11.
+
 ## [0.5.15] — 2026-05-18
 
 ### Fixed

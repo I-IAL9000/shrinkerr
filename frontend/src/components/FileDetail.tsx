@@ -343,21 +343,19 @@ function SubTrackRow({ track, filePath, onToggle, isExternal }: {
     ? track.external_path.split("/").pop() || track.title
     : null;
 
+  // v0.5.16: lock branch removed (issue #11). Every track renders as an
+  // editable checkbox so users can override always-keep defaults. See
+  // AudioTrackRow.tsx + scanner.classify_audio_tracks for the smart-
+  // selection logic that picks defaults.
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, padding: "2px 0" }}>
-      {track.locked ? (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.5 }}>
-          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
-        </svg>
-      ) : (
-        <input
-          type="checkbox"
-          checked={!track.keep}
-          onChange={() => onToggle?.(filePath, track.stream_index)}
-          onClick={(e) => e.stopPropagation()}
-          style={{ accentColor: "var(--accent)", cursor: "pointer" }}
-        />
-      )}
+      <input
+        type="checkbox"
+        checked={!track.keep}
+        onChange={() => onToggle?.(filePath, track.stream_index)}
+        onClick={(e) => e.stopPropagation()}
+        style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+      />
       <span style={{ color: track.keep ? "var(--text-secondary)" : "var(--text-muted)", textDecoration: track.keep ? "none" : "line-through" }}>
         {track.language.toUpperCase()} — {track.codec}
         {track.title && !isExternal && ` — ${track.title}`}
@@ -366,7 +364,6 @@ function SubTrackRow({ track, filePath, onToggle, isExternal }: {
       {isExternal && basename && (
         <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.7 }}>{basename}</span>
       )}
-      {track.locked && <span style={{ opacity: 0.4, fontSize: 10 }}>(always keep)</span>}
     </div>
   );
 }
