@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.20] — 2026-05-18
+
+### Fixed
+- Subtitle tracks in the file's native language were kept by default even when they weren't in "Keep Subtitle Languages" — German subs on a German-audio movie etc. Pre-v0.5.20 audio and subs shared the `keep_native_language` rule, which makes sense for audio (keep the original audio track) but is rarely useful for subs. Split into a separate **"Auto-keep native language subtitle tracks"** toggle (Settings → Subtitles), default **off**. Existing users who relied on the old behaviour (SDH on same-language audio) can opt back in.
+- Existing audio toggle label clarified from "Auto-keep native language tracks" to "Auto-keep native language **audio** tracks" — same setting, just no longer ambiguous about which media type it controls.
+
 ## [0.5.19] — 2026-05-18
 
 ### Fixed

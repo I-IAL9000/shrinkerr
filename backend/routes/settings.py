@@ -67,6 +67,13 @@ _ENCODING_DEFAULTS = {
     "always_keep_languages": '[]',
     "ignore_unknown_tracks": "true",
     "keep_native_language": "true",
+    # v0.5.20: native-language rule for subs is independent of audio
+    # and defaults OFF. Pre-v0.5.20 native-language subs were kept
+    # alongside native audio (German subs on a German movie etc.),
+    # which is rarely useful. Existing users who want that behaviour
+    # can opt in via the new "Auto-keep native language subtitle
+    # tracks" toggle in Settings → Subtitles.
+    "keep_native_subs": "false",
     # v0.5.15: reorder native-language track to first audio position.
     # Default True preserves pre-v0.5.15 behaviour (where this was
     # hardcoded-on via a silently-broken save path). Issue #11.
@@ -458,6 +465,7 @@ async def get_encoding_settings():
         "audio_cleanup_enabled": merged.get("audio_cleanup_enabled", "true").lower() == "true",
         "ignore_unknown_tracks": merged.get("ignore_unknown_tracks", "true").lower() == "true",
         "keep_native_language": merged.get("keep_native_language", "true").lower() == "true",
+        "keep_native_subs": merged.get("keep_native_subs", "false").lower() == "true",
         "reorder_native_audio": merged.get("reorder_native_audio", "true").lower() == "true",
         "always_keep_dedup": merged.get("always_keep_dedup", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
@@ -829,6 +837,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["ignore_unknown_tracks"] = "true" if update.ignore_unknown_tracks else "false"
         if update.keep_native_language is not None:
             updates["keep_native_language"] = "true" if update.keep_native_language else "false"
+        if update.keep_native_subs is not None:
+            updates["keep_native_subs"] = "true" if update.keep_native_subs else "false"
         if update.reorder_native_audio is not None:
             updates["reorder_native_audio"] = "true" if update.reorder_native_audio else "false"
         if update.always_keep_dedup is not None:
@@ -1149,7 +1159,7 @@ async def update_encoding_settings(update: SettingsUpdate):
         "sub_keep_languages", "sub_keep_unknown",
         "sub_cleanup_enabled", "audio_cleanup_enabled",
         "keep_native_language", "reorder_native_audio",
-        "always_keep_dedup",
+        "always_keep_dedup", "keep_native_subs",
     }
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache

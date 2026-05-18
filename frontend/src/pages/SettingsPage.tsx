@@ -1778,10 +1778,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.keep_native_language !== false}
                   onChange={() => setEncoding({ ...encoding, keep_native_language: encoding.keep_native_language === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Auto-keep native language tracks</span>
+                <span style={labelStyle}>Auto-keep native language audio tracks</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Automatically keep audio and subtitle tracks matching each file's detected native language. Disable if you only want to keep dubbed/specified language tracks.
+                Automatically keep audio tracks matching each file's detected native language. Disable if you only want to keep dubbed / specified language tracks. (Subtitles have their own toggle in the Subtitles section — they're off by default.)
               </div>
 
               {/* Reorder native language first */}
@@ -2095,6 +2095,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
                 Subtitle tracks tagged as "und" or with no language metadata
+              </div>
+
+              {/* v0.5.20: Auto-keep native-language subs (separate from audio) */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.keep_native_subs === true || encoding.keep_native_subs === "true"}
+                  onChange={() => setEncoding({ ...encoding, keep_native_subs: !(encoding.keep_native_subs === true || encoding.keep_native_subs === "true") })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Auto-keep native language subtitle tracks</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
+                Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <strong>off</strong> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons.
               </div>
 
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start" }}>

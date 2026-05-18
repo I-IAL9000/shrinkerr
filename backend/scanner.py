@@ -513,8 +513,11 @@ def detect_external_subtitles(video_path: str) -> list[dict]:
 _cleanup_enabled_cache: dict[str, bool] = {}
 
 
-def _is_cleanup_enabled(key: str) -> bool:
-    """Check if audio/subtitle cleanup is enabled in DB settings. Cached per key."""
+def _is_cleanup_enabled(key: str, default: bool = True) -> bool:
+    """Check if a boolean cleanup-related setting is enabled in the DB.
+    Cached per key. v0.5.20+: `default` lets callers override the
+    missing-row fallback per key — most settings default True, but new
+    additions like `keep_native_subs` default False."""
     if key in _cleanup_enabled_cache:
         return _cleanup_enabled_cache[key]
     try:
@@ -523,11 +526,11 @@ def _is_cleanup_enabled(key: str) -> bool:
         try:
             cur = db.execute("SELECT value FROM settings WHERE key = ?", (key,))
             row = cur.fetchone()
-            val = row[0].lower() == "true" if row else True
+            val = row[0].lower() == "true" if row else default
         finally:
             db.close()
     except Exception:
-        val = True
+        val = default
     _cleanup_enabled_cache[key] = val
     return val
 
@@ -801,7 +804,13 @@ def classify_subtitle_tracks(
 
     sub_keep_langs, sub_keep_unknown = _load_sub_settings()
     native = native_language.lower() if native_language else "und"
-    auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
+    # v0.5.20: subs use a SEPARATE native-language toggle from audio.
+    # Pre-v0.5.20 they shared `keep_native_language`, which meant
+    # toggling on "keep native audio" also kept native-language subs —
+    # almost always noise (German subs on a German movie etc.). The new
+    # `keep_native_subs` defaults False; users who want native subs for
+    # SDH / hearing-impaired reasons can opt in explicitly.
+    auto_keep_native = _is_cleanup_enabled("keep_native_subs", default=False)
 
     result = []
     for track in tracks:

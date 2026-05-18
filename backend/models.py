@@ -158,6 +158,14 @@ class SettingsUpdate(BaseModel):
     always_keep_languages: Optional[list[str]] = None
     ignore_unknown_tracks: Optional[bool] = None
     keep_native_language: Optional[bool] = None
+    # v0.5.20: separate native-language rule for subtitles. Pre-v0.5.20
+    # `keep_native_language` controlled both audio AND subs, which made
+    # sense for audio ("keep the original audio track") but produced
+    # noise for subs ("keep German subs on a German movie just because
+    # German is the file's native language"). Independent setting,
+    # default False — subs are kept only if their language is in
+    # `sub_keep_languages` (or `und` + `sub_keep_unknown`, or forced).
+    keep_native_subs: Optional[bool] = None
     # v0.5.15: reorder native-language track to first position.
     # Pre-v0.5.15 this checkbox existed in the UI but was never wired
     # through the model/DEFAULTS/GET/PUT, so saves were silently dropped
