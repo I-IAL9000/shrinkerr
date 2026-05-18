@@ -605,8 +605,15 @@ def classify_audio_tracks(
             codec_score = 30
         return (channels, codec_score)
 
-    # First pass: for each always-keep language with multiple tracks,
-    # pick the winner. Single-track languages always win by default.
+    # v0.5.17: `always_keep_dedup` toggles whether multi-track
+    # always-keep languages get smart selection (only best kept) or the
+    # pre-v0.5.16 behaviour (every track kept). Default True. When off,
+    # every always-keep-language track is added to the winners set so
+    # the keep=True branch fires for all of them.
+    dedup_enabled = _is_cleanup_enabled("always_keep_dedup")  # defaults True
+
+    # First pass: for each always-keep language, decide which tracks
+    # default to keep=True.
     always_keep_by_lang: dict[str, list[int]] = {}
     for idx, track in enumerate(tracks):
         lang = (track.get("language") or "und").lower()
@@ -614,8 +621,9 @@ def classify_audio_tracks(
             always_keep_by_lang.setdefault(lang, []).append(idx)
     always_keep_winners: set[int] = set()
     for lang, indices in always_keep_by_lang.items():
-        if len(indices) == 1:
-            always_keep_winners.add(indices[0])
+        if not dedup_enabled or len(indices) == 1:
+            # Keep every track when dedup is off, or there's only one.
+            always_keep_winners.update(indices)
         else:
             # Highest-ranking track wins; ties broken by earliest stream
             # (`-i` to keep the rank-key max stable across equal ranks).

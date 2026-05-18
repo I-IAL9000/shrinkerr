@@ -1758,8 +1758,19 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   )}
                 </div>
                 <div style={helpStyle}>
-                  Audio tracks in these languages are kept by default. If a file has multiple tracks in the same language, only the highest-quality one is selected — you can override per-track in the file detail editor.
+                  Audio tracks in these languages are kept by default. You can override per-track in the file detail editor.
                 </div>
+              </div>
+
+              {/* v0.5.17: dedup tracks in always-keep languages */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.always_keep_dedup !== false}
+                  onChange={() => setEncoding({ ...encoding, always_keep_dedup: encoding.always_keep_dedup === false })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Keep only the best track per always-keep language</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                When a file has multiple tracks in the same always-keep language (e.g. EAC3 5.1 + AAC 2.0 + commentary, all English), keep only the highest-quality one by default (ranked by channels, then codec: TrueHD &gt; FLAC/PCM &gt; DTS-HD MA &gt; DTS &gt; EAC3 &gt; AC3 &gt; AAC). Turn off to keep every track in always-keep languages — you can still uncheck individual tracks in the file detail editor.
               </div>
 
               {/* Keep native language */}

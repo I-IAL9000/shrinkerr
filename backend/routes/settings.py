@@ -71,6 +71,11 @@ _ENCODING_DEFAULTS = {
     # Default True preserves pre-v0.5.15 behaviour (where this was
     # hardcoded-on via a silently-broken save path). Issue #11.
     "reorder_native_audio": "true",
+    # v0.5.17: dedupe tracks in always-keep languages. Default True
+    # preserves v0.5.16's smart-selection behaviour; users with
+    # multi-track libraries who want every always-keep-language track
+    # kept can flip this off. Issue #11 follow-up.
+    "always_keep_dedup": "true",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
@@ -454,6 +459,7 @@ async def get_encoding_settings():
         "ignore_unknown_tracks": merged.get("ignore_unknown_tracks", "true").lower() == "true",
         "keep_native_language": merged.get("keep_native_language", "true").lower() == "true",
         "reorder_native_audio": merged.get("reorder_native_audio", "true").lower() == "true",
+        "always_keep_dedup": merged.get("always_keep_dedup", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
@@ -825,6 +831,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["keep_native_language"] = "true" if update.keep_native_language else "false"
         if update.reorder_native_audio is not None:
             updates["reorder_native_audio"] = "true" if update.reorder_native_audio else "false"
+        if update.always_keep_dedup is not None:
+            updates["always_keep_dedup"] = "true" if update.always_keep_dedup else "false"
         if update.target_codec is not None:
             updates["target_codec"] = update.target_codec
         if update.target_resolution is not None:
@@ -1141,6 +1149,7 @@ async def update_encoding_settings(update: SettingsUpdate):
         "sub_keep_languages", "sub_keep_unknown",
         "sub_cleanup_enabled", "audio_cleanup_enabled",
         "keep_native_language", "reorder_native_audio",
+        "always_keep_dedup",
     }
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache

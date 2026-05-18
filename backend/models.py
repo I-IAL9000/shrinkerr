@@ -163,6 +163,14 @@ class SettingsUpdate(BaseModel):
     # through the model/DEFAULTS/GET/PUT, so saves were silently dropped
     # and the worker always defaulted to True. Issue #11.
     reorder_native_audio: Optional[bool] = None
+    # v0.5.17: when multiple tracks share an always-keep language,
+    # default-keep only the highest-quality one (True) or default-keep
+    # all of them (False). True preserves v0.5.16's behaviour; False
+    # restores pre-v0.5.16's "keep every track in an always-keep
+    # language" default. Independent of the lock semantic which was
+    # removed in v0.5.16 — even with this off, tracks remain
+    # user-editable. Issue #11 follow-up.
+    always_keep_dedup: Optional[bool] = None
     target_codec: Optional[str] = None
     target_resolution: Optional[str] = None
     source_codecs: Optional[list[str]] = None

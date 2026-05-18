@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.17] — 2026-05-18
+
+### Added
+- "Keep only the best track per always-keep language" toggle in Settings → Audio. Default on (preserves v0.5.16's smart-selection behaviour); turn off to keep every track in always-keep languages, pre-v0.5.16 style. Per-track overrides via the file editor still work in either mode.
+
 ## [0.5.16] — 2026-05-18
 
 ### Changed
