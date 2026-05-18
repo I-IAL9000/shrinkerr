@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.19] — 2026-05-18
+
+### Fixed
+- Conversion failing with `ffmpeg exited with code 234` / `Subtitle encoding currently only possible from text to text or bitmap to bitmap` on files with a multi-stream external sidecar subtitle (notably VobSub `.idx`/`.sub` pairs carrying multiple language streams in one file). The cmd builder emitted `-map 1:s` to pull every sub stream from each external input but only set a codec for the first output sub-stream index per file — ffmpeg picked its matroska default (`ass`/`ssa`, a text codec) for the remaining streams and tried to encode dvdsub bitmap → ass text. Added a catch-all `-c:s copy` after the per-stream specs so any unset external sub stream defaults to byte-copy; the per-stream specifiers above still win for the streams they name (webvtt → srt path preserved).
+
 ## [0.5.18] — 2026-05-18
 
 ### Fixed

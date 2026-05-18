@@ -632,6 +632,20 @@ def _build_ffmpeg_cmd_impl(
             if es.get("forced"):
                 cmd += [f"-disposition:s:{out_sub_idx}", "forced"]
             out_sub_idx += 1
+        # v0.5.19: catch-all `-c:s copy` for any unset external-sub
+        # output streams. Each ext_subs entry maps with `-map 1:s` (all
+        # streams in the input), but a VobSub `.idx` typically carries
+        # multiple language streams in one file. The per-stream codec
+        # spec above (`-c:s:N copy`) only sets ONE output index per
+        # entry; the additional streams pulled in by `-map 1:s` had no
+        # codec setting and defaulted to matroska's text default (ass).
+        # That triggered "Subtitle encoding currently only possible
+        # from text to text or bitmap to bitmap" when ffmpeg tried to
+        # transcode dvdsub bitmap → ass text. The unindexed `-c:s
+        # copy` sets the default for ALL output sub streams; the
+        # per-stream specifiers above still win for the streams they
+        # name (so the webvtt → srt conversion path is preserved).
+        cmd += ["-c:s", "copy"]
         print(f"[CONVERT] Merging {len(ext_subs)} external subtitle(s)", flush=True)
 
     # Map attachments (fonts etc.)
