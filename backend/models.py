@@ -166,6 +166,13 @@ class SettingsUpdate(BaseModel):
     # default False — subs are kept only if their language is in
     # `sub_keep_languages` (or `und` + `sub_keep_unknown`, or forced).
     keep_native_subs: Optional[bool] = None
+    # v0.5.21: external subtitle merge. Pre-v0.5.21 both fields existed
+    # in the UI but had no model/DEFAULTS/GET/PUT wiring — saves were
+    # silently dropped, and the worker's `_is_cleanup_enabled` fallback
+    # defaulted True for missing rows, so merging happened regardless
+    # of the UI state.
+    merge_external_subs: Optional[bool] = None
+    delete_external_subs_after_merge: Optional[bool] = None
     # v0.5.15: reorder native-language track to first position.
     # Pre-v0.5.15 this checkbox existed in the UI but was never wired
     # through the model/DEFAULTS/GET/PUT, so saves were silently dropped

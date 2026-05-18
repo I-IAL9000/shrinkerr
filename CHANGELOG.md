@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.21] — 2026-05-18
+
+### Fixed
+- "Merge external subtitles into video" and "Delete external subtitle files after merging" toggles weren't persisting — both fields existed in the UI but had zero wiring through `models.py` / `_ENCODING_DEFAULTS` / GET / PUT (same shape as the `reorder_native_audio` bug from issue #11). The worker's `_is_cleanup_enabled` missing-row fallback defaulted True, so external-sub merging happened invisibly even when the UI showed the toggles off. Wired both fields end-to-end, defaulted both off, and switched the worker's reads to `default=False` so unset DB rows match the UI's rendering. **Behaviour note**: existing installs that never explicitly toggled these were getting silent merging — after upgrade, merging stops unless the user opts in.
+
 ## [0.5.20] — 2026-05-18
 
 ### Fixed

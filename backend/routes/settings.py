@@ -74,6 +74,14 @@ _ENCODING_DEFAULTS = {
     # can opt in via the new "Auto-keep native language subtitle
     # tracks" toggle in Settings → Subtitles.
     "keep_native_subs": "false",
+    # v0.5.21: external subtitle merging. Both default off to match the
+    # UI's `?? false` rendering. Pre-v0.5.21 the worker's missing-row
+    # fallback was True (so merging happened invisibly even with the UI
+    # toggle off); existing installs that DON'T have explicit DB rows
+    # will see merging stop after upgrade, which matches what the UI
+    # has always shown.
+    "merge_external_subs": "false",
+    "delete_external_subs_after_merge": "false",
     # v0.5.15: reorder native-language track to first audio position.
     # Default True preserves pre-v0.5.15 behaviour (where this was
     # hardcoded-on via a silently-broken save path). Issue #11.
@@ -466,6 +474,8 @@ async def get_encoding_settings():
         "ignore_unknown_tracks": merged.get("ignore_unknown_tracks", "true").lower() == "true",
         "keep_native_language": merged.get("keep_native_language", "true").lower() == "true",
         "keep_native_subs": merged.get("keep_native_subs", "false").lower() == "true",
+        "merge_external_subs": merged.get("merge_external_subs", "false").lower() == "true",
+        "delete_external_subs_after_merge": merged.get("delete_external_subs_after_merge", "false").lower() == "true",
         "reorder_native_audio": merged.get("reorder_native_audio", "true").lower() == "true",
         "always_keep_dedup": merged.get("always_keep_dedup", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
@@ -839,6 +849,10 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["keep_native_language"] = "true" if update.keep_native_language else "false"
         if update.keep_native_subs is not None:
             updates["keep_native_subs"] = "true" if update.keep_native_subs else "false"
+        if update.merge_external_subs is not None:
+            updates["merge_external_subs"] = "true" if update.merge_external_subs else "false"
+        if update.delete_external_subs_after_merge is not None:
+            updates["delete_external_subs_after_merge"] = "true" if update.delete_external_subs_after_merge else "false"
         if update.reorder_native_audio is not None:
             updates["reorder_native_audio"] = "true" if update.reorder_native_audio else "false"
         if update.always_keep_dedup is not None:
@@ -1160,6 +1174,7 @@ async def update_encoding_settings(update: SettingsUpdate):
         "sub_cleanup_enabled", "audio_cleanup_enabled",
         "keep_native_language", "reorder_native_audio",
         "always_keep_dedup", "keep_native_subs",
+        "merge_external_subs", "delete_external_subs_after_merge",
     }
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache

@@ -1832,7 +1832,11 @@ async def convert_file(
     external_sub_files: list[dict] | None = None
     try:
         from backend.scanner import _is_cleanup_enabled
-        if _is_cleanup_enabled("merge_external_subs"):
+        # v0.5.21: explicit default=False matches the UI's `?? false`
+        # rendering. Pre-v0.5.21 missing-row fallback was True, so
+        # external subs got merged even when the UI showed the toggle
+        # off (which always did because saves were silently dropped).
+        if _is_cleanup_enabled("merge_external_subs", default=False):
             import aiosqlite as _aiosqlite
             from backend.database import DB_PATH as _DB_PATH
             db_es = await _aiosqlite.connect(_DB_PATH)
@@ -2847,7 +2851,9 @@ async def convert_file(
     if external_sub_files:
         try:
             from backend.scanner import _is_cleanup_enabled as _ice
-            _should_delete_ext_subs = _ice("delete_external_subs_after_merge")
+            # v0.5.21: explicit default=False to match UI default and
+            # avoid silent file deletion on missing-row installs.
+            _should_delete_ext_subs = _ice("delete_external_subs_after_merge", default=False)
         except Exception:
             pass
     if external_sub_files and _should_delete_ext_subs:
