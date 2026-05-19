@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.24] — 2026-05-19
+
+### Fixed
+- Audit pass for the v0.5.23 silent-fail pattern (unchunked SQL `IN (…)` / OR'd `LIKE` clauses): chunked the remaining at-risk sites that could exceed SQLite's variable / expression-depth limits with 1000+ items. Fixed: `queue_health_checks` folder→file expansion (same bug as v0.5.23 in the Scanner's bulk Health Check button), `rule_resolver.resolve_rules_for_batch` (called from estimate/queue add with the full user selection), `bulk job priority update`, `batch rename probe load`, `poster cache batch lookup`, watcher's `stale_paths` DELETE. Behaviour unchanged for typical selections; only adds resilience at scale.
+
 ## [0.5.23] — 2026-05-19
 
 ### Fixed

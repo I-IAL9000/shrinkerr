@@ -497,17 +497,25 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
         # Pre-parse conditions for each rule
         rules_with_conds = [(rule, _parse_rule_conditions(rule)) for rule in rules]
 
-        # Batch load scan_results for all file paths
+        # Batch load scan_results for all file paths.
+        # v0.5.24: chunked the IN clause. resolve_rules_for_batch is called
+        # from the estimate / queue-add paths with the user's full
+        # selection — 1000+ items isn't unusual on a big library. Older
+        # SQLite builds cap variable count at 999, and even modern builds
+        # benefit from a smaller per-query plan.
         scan_data: dict[str, dict] = {}
         if file_paths:
-            placeholders = ",".join("?" * len(file_paths))
-            async with db.execute(
-                f"SELECT file_path, file_size, video_codec, video_height, audio_tracks_json, "
-                f"new_detected_at FROM scan_results WHERE file_path IN ({placeholders})",
-                file_paths
-            ) as cur:
-                for row in await cur.fetchall():
-                    scan_data[row["file_path"]] = dict(row)
+            CHUNK = 900
+            for i in range(0, len(file_paths), CHUNK):
+                chunk = file_paths[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                async with db.execute(
+                    f"SELECT file_path, file_size, video_codec, video_height, audio_tracks_json, "
+                    f"new_detected_at FROM scan_results WHERE file_path IN ({placeholders})",
+                    chunk,
+                ) as cur:
+                    for row in await cur.fetchall():
+                        scan_data[row["file_path"]] = dict(row)
 
         # Check if any rule uses Plex metadata
         plex_types = {"label", "collection", "genre", "library"}

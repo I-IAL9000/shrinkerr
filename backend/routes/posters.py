@@ -282,13 +282,22 @@ async def resolve_posters(req: ResolveRequest):
         result = {}
         uncached = []
 
-        # Batch query for all requested paths at once
-        placeholders = ",".join("?" for _ in req.paths)
-        async with db.execute(
-            f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at FROM poster_cache WHERE folder_path IN ({placeholders})",
-            req.paths,
-        ) as cur:
-            cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
+        # Batch query for all requested paths at once.
+        # v0.5.24: chunked IN clause — the Poster Grid view loads visible
+        # posters in batches, and `req.paths` from a "load all" / scroll
+        # can be 1000+ on a big library. Older SQLite builds (variable
+        # cap 999) would fail; modern is fine but smaller plans don't
+        # hurt.
+        CHUNK = 900
+        cached_rows: dict = {}
+        for i in range(0, len(req.paths), CHUNK):
+            chunk = req.paths[i:i + CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            async with db.execute(
+                f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at FROM poster_cache WHERE folder_path IN ({placeholders})",
+                chunk,
+            ) as cur:
+                cached_rows.update({r["folder_path"]: r for r in await cur.fetchall()})
 
         # Stale-placeholder TTL (v0.3.138+). A `source='placeholder'` row
         # means the resolver couldn't find a TMDB/Plex match the last time

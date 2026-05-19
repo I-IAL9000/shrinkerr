@@ -103,15 +103,22 @@ async def _load_probe_info(file_paths: list[str]) -> dict[str, dict]:
     """Pull cached audio tracks + resolution from scan_results for a set of files."""
     if not file_paths:
         return {}
+    # v0.5.24: chunked IN clause — batch rename operations against the
+    # full Scanner selection can carry 1000+ paths and otherwise risk
+    # SQLite's variable-count limit on older builds.
+    CHUNK = 900
+    rows: list = []
     db = await connect_db()
     try:
-        placeholders = ",".join("?" * len(file_paths))
-        async with db.execute(
-            f"SELECT file_path, audio_tracks_json, video_height FROM scan_results "
-            f"WHERE file_path IN ({placeholders})",
-            file_paths,
-        ) as cur:
-            rows = await cur.fetchall()
+        for i in range(0, len(file_paths), CHUNK):
+            chunk = file_paths[i:i + CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            async with db.execute(
+                f"SELECT file_path, audio_tracks_json, video_height FROM scan_results "
+                f"WHERE file_path IN ({placeholders})",
+                chunk,
+            ) as cur:
+                rows.extend(await cur.fetchall())
     finally:
         await db.close()
     out: dict = {}

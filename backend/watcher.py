@@ -79,20 +79,30 @@ class FileWatcher:
         """
         if not stale_paths:
             return 0
+        # v0.5.24: chunked the IN clause. A bulk filesystem change (mass
+        # rename, mount swap, source-tree restructure) can yield 1000+
+        # stale paths in one poll — older SQLite builds would error out
+        # at 999 variables, and modern builds still benefit from smaller
+        # per-statement plans.
+        CHUNK = 900
+        deleted = 0
         db = await aiosqlite.connect(self.db_path)
         try:
-            placeholders = ",".join("?" * len(stale_paths))
-            result = await db.execute(
-                f"""DELETE FROM scan_results
-                    WHERE file_path IN ({placeholders})
-                      AND file_path NOT IN (
-                          SELECT file_path FROM jobs
-                          WHERE status IN ('pending', 'running')
-                      )""",
-                stale_paths,
-            )
+            for i in range(0, len(stale_paths), CHUNK):
+                chunk = stale_paths[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                result = await db.execute(
+                    f"""DELETE FROM scan_results
+                        WHERE file_path IN ({placeholders})
+                          AND file_path NOT IN (
+                              SELECT file_path FROM jobs
+                              WHERE status IN ('pending', 'running')
+                          )""",
+                    chunk,
+                )
+                deleted += result.rowcount or 0
             await db.commit()
-            return result.rowcount
+            return deleted
         finally:
             await db.close()
 
