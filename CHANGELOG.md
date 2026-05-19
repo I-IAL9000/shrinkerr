@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.23] — 2026-05-19
+
+### Fixed
+- Scanner's "Select all + Add to queue" with 1000+ folders silently returned `0 Files to process` in the estimate modal. The folder→file expansion built one OR'd LIKE clause per folder in a single SQL query — with ~1000+ folders the expression depth blew past SQLite's `SQLITE_LIMIT_EXPR_DEPTH` default of 1000 and the SELECT returned no rows. Chunked the expansion to 800 folders per query in both the estimate and add-from-scan paths.
+
 ## [0.5.22] — 2026-05-19
 
 ### Fixed

@@ -119,14 +119,16 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 
     file_paths = list(payload.file_paths)
 
-    # Resolve folder paths (ending with /) to actual file paths, respecting active filter
+    # Resolve folder paths (ending with /) to actual file paths, respecting active filter.
+    # v0.5.23: chunked the OR'd LIKE clauses — see _estimate_jobs_impl for
+    # the same fix and rationale. Pre-v0.5.23 a Scanner "Select all" with
+    # 1000+ folders blew past SQLite's expression-depth limit; the query
+    # failed silently and the queue add produced 0 jobs.
+    FOLDER_CHUNK = 800
     folder_paths = [p for p in file_paths if p.endswith("/")]
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
         active_filter = payload.filter or "all"
-        # Single query with OR'd LIKE clauses — much faster than N separate queries
-        like_clause = " OR ".join(["file_path LIKE ?" for _ in folder_paths])
-        like_args = [fp + "%" for fp in folder_paths]
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
@@ -135,29 +137,42 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             db_resolve.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_resolve)
-                async with db_resolve.execute(
-                    f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
-                    like_args,
-                ) as cur:
-                    rows = await cur.fetchall()
-                total_rows = len(rows)
-                for row in rows:
-                    enriched = _enrich_row_minimal(dict(row), ctx)
-                    if _matches_filter(enriched, active_filter):
-                        file_paths.append(enriched["file_path"])
-                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s): {len(file_paths)}/{total_rows} files matched filter '{active_filter}'", flush=True)
+                total_rows = 0
+                matched = 0
+                for i in range(0, len(folder_paths), FOLDER_CHUNK):
+                    chunk = folder_paths[i:i + FOLDER_CHUNK]
+                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
+                    like_args = [fp + "%" for fp in chunk]
+                    async with db_resolve.execute(
+                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                        like_args,
+                    ) as cur:
+                        rows = await cur.fetchall()
+                    total_rows += len(rows)
+                    for row in rows:
+                        enriched = _enrich_row_minimal(dict(row), ctx)
+                        if _matches_filter(enriched, active_filter):
+                            file_paths.append(enriched["file_path"])
+                            matched += 1
+                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s): {matched}/{total_rows} files matched filter '{active_filter}'", flush=True)
             finally:
                 await db_resolve.close()
         else:
             db_resolve = await connect_db()
             try:
-                async with db_resolve.execute(
-                    f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
-                    like_args,
-                ) as cur:
-                    rows = await cur.fetchall()
-                    file_paths.extend(r["file_path"] for r in rows)
-                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {len(rows)} files", flush=True)
+                total_added = 0
+                for i in range(0, len(folder_paths), FOLDER_CHUNK):
+                    chunk = folder_paths[i:i + FOLDER_CHUNK]
+                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
+                    like_args = [fp + "%" for fp in chunk]
+                    async with db_resolve.execute(
+                        f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                        like_args,
+                    ) as cur:
+                        rows = await cur.fetchall()
+                        file_paths.extend(r["file_path"] for r in rows)
+                        total_added += len(rows)
+                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {total_added} files", flush=True)
             finally:
                 await db_resolve.close()
     print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
@@ -1535,14 +1550,20 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.content_detect import detect_content_type_from_path, get_resolution_tier, get_recommended_cq
     import re
 
-    # Resolve folder paths to actual file paths, respecting active filter
+    # Resolve folder paths to actual file paths, respecting active filter.
+    # v0.5.23: chunk the OR'd LIKE clauses. With >1000 folder paths in one
+    # query, SQLite blows past `SQLITE_LIMIT_EXPR_DEPTH` (default 1000)
+    # building the OR'd expression tree — the SELECT fails silently and
+    # the estimate returns total_files=0. Same as the scan_rows IN-clause
+    # chunking on line ~1730. Bigger libraries with the Scanner page's
+    # "Select all + filter" hit this hard (1413 folder paths exhausted
+    # the depth budget).
+    FOLDER_CHUNK = 800
     file_paths = list(payload.file_paths)
     folder_paths = [p for p in file_paths if p.endswith("/")]
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
         active_filter = payload.filter or "all"
-        like_clause = " OR ".join(["file_path LIKE ?" for _ in folder_paths])
-        like_args = [fp + "%" for fp in folder_paths]
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
@@ -1551,24 +1572,32 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             db_r.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_r)
-                async with db_r.execute(
-                    f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
-                    like_args,
-                ) as cur:
-                    for row in await cur.fetchall():
-                        enriched = _enrich_row_minimal(dict(row), ctx)
-                        if _matches_filter(enriched, active_filter):
-                            file_paths.append(enriched["file_path"])
+                for i in range(0, len(folder_paths), FOLDER_CHUNK):
+                    chunk = folder_paths[i:i + FOLDER_CHUNK]
+                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
+                    like_args = [fp + "%" for fp in chunk]
+                    async with db_r.execute(
+                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                        like_args,
+                    ) as cur:
+                        for row in await cur.fetchall():
+                            enriched = _enrich_row_minimal(dict(row), ctx)
+                            if _matches_filter(enriched, active_filter):
+                                file_paths.append(enriched["file_path"])
             finally:
                 await db_r.close()
         else:
             db_r = await connect_db()
             try:
-                async with db_r.execute(
-                    f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
-                    like_args,
-                ) as cur:
-                    file_paths.extend(r["file_path"] for r in await cur.fetchall())
+                for i in range(0, len(folder_paths), FOLDER_CHUNK):
+                    chunk = folder_paths[i:i + FOLDER_CHUNK]
+                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
+                    like_args = [fp + "%" for fp in chunk]
+                    async with db_r.execute(
+                        f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                        like_args,
+                    ) as cur:
+                        file_paths.extend(r["file_path"] for r in await cur.fetchall())
             finally:
                 await db_r.close()
 
