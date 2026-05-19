@@ -14,7 +14,23 @@ router = APIRouter(prefix="/api/stats")
 
 def _source_type(name: str) -> str:
     n = name.lower()
-    if re.search(r"blu[\-\s]?ray|bdremux|bdrip", n):
+    # v0.5.25: Remux checked BEFORE Blu-ray. Scene-naming convention
+    # marks remuxes with BOTH tags ("Movie.1080p.BluRay.Remux.AVC..."),
+    # and "Remux" is the more specific / dashboard-meaningful category
+    # — users want to see how many lossless rips they've processed,
+    # not have them silently bucketed as plain Blu-ray. Pre-v0.5.25 the
+    # BluRay check ran first and captured all of them, leaving the
+    # Remux bucket near-empty.
+    #
+    # Note: this works in concert with the caller switching to
+    # `original_file_path` for completed jobs — v0.5.5's
+    # `rename_source_to_target_codec` strips "Remux" from the
+    # post-conversion filename ("a re-encoded file is no longer a
+    # remux"), so looking at the current `file_path` would miss them
+    # even with the fixed order.
+    if "remux" in n:
+        return "Remux"
+    if re.search(r"blu[\-\s]?ray|bdrip", n):
         return "Blu-ray"
     if "web-dl" in n or "webdl" in n:
         return "WEB-DL"
@@ -24,8 +40,6 @@ def _source_type(name: str) -> str:
         return "HDTV"
     if "dvdrip" in n or "dvd" in n:
         return "DVD"
-    if "remux" in n:
-        return "Remux"
     return "Other"
 
 
@@ -69,8 +83,13 @@ async def get_stats_summary():
     db = await connect_db()
     try:
         # --- Completed jobs ---
+        # v0.5.25: include original_file_path so the source-type
+        # detection can read the pre-conversion filename — v0.5.5's
+        # `rename_source_to_target_codec` strips "Remux" post-conversion,
+        # so current file_path categorization misses every Remux job
+        # the user has actually processed.
         rows = await db.execute_fetchall(
-            "SELECT file_path, job_type, status, space_saved, original_size, "
+            "SELECT file_path, original_file_path, job_type, status, space_saved, original_size, "
             "audio_tracks_to_remove, started_at, completed_at "
             "FROM jobs WHERE status = 'completed'"
         )
@@ -191,10 +210,19 @@ async def get_stats_summary():
         if j["job_type"] in ("audio", "combined") and len(tracks) > 0:
             files_audio_cleaned += 1
 
-        # Source type / resolution
-        src = _source_type(fname)
+        # Source type / resolution.
+        # v0.5.25: detect from original_file_path when available — the
+        # post-conversion `fname` has had `Remux` (and various source-
+        # codec tags) rewritten/stripped by `rename_source_to_target_codec`
+        # + `rename_source_quality_in_filename`, so reading the current
+        # path under-reports Remux / over-counts plain Blu-ray. Fall
+        # back to fname for legacy jobs without original_file_path.
+        src_name = (j.get("original_file_path") or j["file_path"]).rsplit("/", 1)[-1]
+        src = _source_type(src_name)
         source_types[src] += 1
-        resolutions[_resolution(fname)] += 1
+        # Resolution-by-source uses the same source name so the two
+        # cards (Source Types pie + Avg Reduction by Source) align.
+        resolutions[_resolution(src_name)] += 1
 
         # Savings by source
         if orig > 0:

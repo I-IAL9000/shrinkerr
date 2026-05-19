@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.25] — 2026-05-19
+
+### Fixed
+- Dashboard "Source Types" pie and "Avg Reduction by Source" under-counted Remux jobs (showed only 1 even with many remuxes converted). Two compounding causes: (1) `_source_type()` checked `BluRay` before `Remux`, so scene-named files like `…1080p.BluRay.Remux.AVC…` always bucketed as Blu-ray; (2) v0.5.5's `rename_source_to_target_codec` strips the `Remux` tag post-conversion, so even with a fixed order the current `file_path` no longer carried the marker. Now categorizes Remux first, and reads the source-type from `original_file_path` when available (falling back to `file_path` for legacy jobs).
+
 ## [0.5.24] — 2026-05-19
 
 ### Fixed
