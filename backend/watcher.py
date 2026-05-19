@@ -101,7 +101,7 @@ class FileWatcher:
         if not new_files:
             return 0
 
-        from backend.scanner import probe_file, detect_native_language, is_x264, is_x265, is_av1
+        from backend.scanner import probe_file, detect_native_language, is_x264, is_x265, is_av1, codec_matches_source
         from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, estimate_savings
         from backend.models import ScannedFile
 
@@ -133,6 +133,29 @@ class FileWatcher:
             pass
 
         import time as _time
+
+        # v0.5.22: load source_codecs once per poll so codec matching
+        # matches what the scanner + webhook do. Pre-v0.5.22 the watcher
+        # hardcoded `is_x264(video_codec)` — only H.264 was recognised as
+        # "needs conversion", so MPEG-2 / MPEG-4 / VC-1 / WMV files
+        # auto-discovered via filesystem watching never got a `convert`
+        # job even though they were in the user's source_codecs list.
+        # HEVC was unaffected (not in default source_codecs either way).
+        source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+        try:
+            import json as _json
+            db3 = await aiosqlite.connect(self.db_path)
+            try:
+                async with db3.execute(
+                    "SELECT value FROM settings WHERE key = 'source_codecs'"
+                ) as cur:
+                    row = await cur.fetchone()
+                    if row and row[0]:
+                        source_codecs = _json.loads(row[0])
+            finally:
+                await db3.close()
+        except Exception:
+            pass
 
         results = []
         new_file_paths = []
@@ -195,7 +218,10 @@ class FileWatcher:
             except Exception:
                 pass
 
-            needs_conversion = is_x264(video_codec)
+            # v0.5.22: was `is_x264(video_codec)` — only matched h264 and
+            # silently classified MPEG-2 / MPEG-4 / VC-1 as "no
+            # conversion needed" regardless of source_codecs.
+            needs_conversion = codec_matches_source(video_codec, source_codecs)
             audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
             raw_subs = probe.get("subtitle_tracks", [])
             subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)

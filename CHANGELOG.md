@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.22] — 2026-05-19
+
+### Fixed
+- Watcher's auto-queue path used the pre-v0.5.4 `is_x264()` codec check — only H.264 was treated as "needs conversion", so MPEG-2 / MPEG-4 / VC-1 / WMV files auto-discovered via filesystem watching never got a `convert` job even when those codecs were in the user's source_codecs list. Now uses `codec_matches_source(video_codec, source_codecs)` like the scanner and webhook paths. HEVC files were unaffected (correctly skipped either way).
+
 ## [0.5.21] — 2026-05-18
 
 ### Fixed
