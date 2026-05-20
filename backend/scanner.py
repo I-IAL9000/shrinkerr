@@ -988,12 +988,35 @@ async def scan_directory(
 
     # Collect all candidate files first
     all_files = []
-    for root, _dirs, files in os.walk(dir_path):
+    for root, dirs, files in os.walk(dir_path):
+        root_path = Path(root)
+
+        # v0.6.0: disc-folder detection. When a directory contains a
+        # VIDEO_TS/VIDEO_TS.IFO or BDMV/index.bdmv marker, register the
+        # marker file as a single scan item and skip descent into the
+        # disc subdirectory — its VOBs / M2TS are opaque to Shrinkerr.
+        # BDMV wins on combo discs (handled inside _classify_disc).
+        disc_type = _classify_disc(root_path)
+        if disc_type:
+            marker = _disc_marker_path(root_path, disc_type)
+            if marker.is_file():
+                all_files.append(marker)
+            # Don't recurse INTO VIDEO_TS/BDMV — they're internal to the disc.
+            # Mutating `dirs` in-place is the documented way to prune os.walk
+            # descent.
+            dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
+            # Skip the files-in-this-dir loop too — disc-root folders typically
+            # don't have video files alongside VIDEO_TS/BDMV, but if they did
+            # they'd be part of the disc release (subtitle sidecars, etc.) and
+            # not standalone media. They get picked up on subsequent walks of
+            # the same dir if separate (sibling MKVs etc).
+            continue
+
         for name in files:
             if name.startswith("."):
                 continue  # Skip hidden/dot files (macOS resource forks, etc.)
             if Path(name).suffix.lower() in extensions:
-                all_files.append(Path(root) / name)
+                all_files.append(root_path / name)
 
     # Detect duplicate x264 / HEVC pairs — if an HEVC version of the same
     # release already exists next to the x264 source, skip the x264. This
@@ -1246,6 +1269,7 @@ async def scan_directory(
             duration=duration,
             probe_status="ok",
             video_height=probe.get("video_height", 0),
+            disc_type=probe.get("disc_type"),  # v0.6.0
         )
         if result_callback:
             await result_callback(scanned)

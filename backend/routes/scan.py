@@ -65,8 +65,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -92,7 +92,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_removable_tracks_flag=excluded.has_removable_tracks_flag,
                        has_removable_subs_flag=excluded.has_removable_subs_flag,
                        has_lossless_audio_flag=excluded.has_lossless_audio_flag,
-                       has_external_subs_flag=excluded.has_external_subs_flag
+                       has_external_subs_flag=excluded.has_external_subs_flag,
+                       disc_type=excluded.disc_type
                 """,
                 (
                     scanned.file_path,
@@ -114,6 +115,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     has_removable_subs,
                     has_lossless,
                     1 if getattr(scanned, 'has_external_subs', False) else 0,
+                    getattr(scanned, 'disc_type', None),  # v0.6.0
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )

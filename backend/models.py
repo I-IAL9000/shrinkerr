@@ -48,6 +48,10 @@ class ScannedFile(BaseModel):
     duration: Optional[float] = None  # Duration in seconds (from ffprobe)
     probe_status: str = "ok"  # "ok", "corrupt", "truncated"
     video_height: int = 0  # Video resolution height (e.g., 1080, 2160)
+    # v0.6.0: 'dvd' / 'bdmv' / None — set when the scanner walks into a
+    # VIDEO_TS/BDMV folder structure and registers the marker file as
+    # a single scan item instead of recursing into the disc payload.
+    disc_type: Optional[str] = None
 
 class ScanRequest(BaseModel):
     paths: list[str]
