@@ -6,12 +6,15 @@ from backend.disc_metadata import _iso639_1_to_2
 
 
 class TestIso639Mapping:
-    def test_known_codes_map_to_three_letter(self):
-        assert _iso639_1_to_2("en") == "eng"
-        assert _iso639_1_to_2("de") == "ger"
-        assert _iso639_1_to_2("fr") == "fre"
-        assert _iso639_1_to_2("ja") == "jpn"
-        assert _iso639_1_to_2("is") == "ice"
+    @pytest.mark.parametrize("code,expected", [
+        ("en", "eng"),
+        ("de", "ger"),
+        ("fr", "fre"),
+        ("ja", "jpn"),
+        ("is", "ice"),
+    ])
+    def test_known_codes_map_to_three_letter(self, code, expected):
+        assert _iso639_1_to_2(code) == expected
 
     def test_uppercase_input_normalized(self):
         assert _iso639_1_to_2("EN") == "eng"
@@ -30,7 +33,6 @@ class TestIso639Mapping:
         # Some discs pad codes with spaces
         assert _iso639_1_to_2("  ") == ""
 
-    def test_too_short_or_too_long_returns_empty(self):
-        assert _iso639_1_to_2("e") == ""
-        assert _iso639_1_to_2("eng") == ""  # 3-letter input not allowed here
-        assert _iso639_1_to_2("") == ""
+    @pytest.mark.parametrize("code", ["e", "eng", ""])
+    def test_too_short_or_too_long_returns_empty(self, code):
+        assert _iso639_1_to_2(code) == ""

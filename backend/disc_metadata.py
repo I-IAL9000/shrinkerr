@@ -15,7 +15,6 @@ empty lists. Callers map empty → "und" at the merge step. Logs a
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 
 # ISO 639-1 (2-letter) → ISO 639-2 (3-letter, "B" form matching ffprobe's convention).
