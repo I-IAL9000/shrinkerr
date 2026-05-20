@@ -1,10 +1,11 @@
 """Unit tests for backend.disc_metadata. v0.6.5+."""
 
+import struct
 from pathlib import Path
 
 import pytest
 
-from backend.disc_metadata import _iso639_1_to_2, _parse_dvd_ifo
+from backend.disc_metadata import _iso639_1_to_2, _find_main_bdmv_playlist, _parse_dvd_ifo
 
 
 class TestIso639Mapping:
@@ -134,11 +135,6 @@ class TestDvdIfoParser:
         path = self._write_fixture(tmp_path, bytes(fixture))
         result = _parse_dvd_ifo(path)
         assert len(result["audio"]) <= 8
-
-
-import struct
-
-from backend.disc_metadata import _find_main_bdmv_playlist
 
 
 def _build_mpls_with_duration(seconds: float) -> bytes:
