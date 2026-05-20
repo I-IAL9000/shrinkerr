@@ -1346,12 +1346,6 @@ async def scan_directory(
         savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration)
         savings_gb = round(savings_bytes / (1024 ** 3), 3)
 
-        # Get file modification time from disk
-        try:
-            file_mtime = os.path.getmtime(str(file_path))
-        except OSError:
-            file_mtime = None
-
         # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
         # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
         # disc-root folder (file_path.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
@@ -1360,6 +1354,20 @@ async def scan_directory(
             display_name = file_path.parent.parent.name
         else:
             display_name = file_path.name
+
+        # Get file modification time from disk. For discs, the marker file
+        # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring
+        # timestamp — often decades old — which makes "Newest" sort treat
+        # freshly-added discs as ancient. Use the disc-root folder's mtime
+        # instead, which reflects when the user actually copied the disc
+        # into their library. v0.6.3+.
+        try:
+            if disc_type_val:
+                file_mtime = file_path.parent.parent.stat().st_mtime
+            else:
+                file_mtime = os.path.getmtime(str(file_path))
+        except OSError:
+            file_mtime = None
 
         scanned = ScannedFile(
             file_path=str(file_path),

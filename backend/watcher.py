@@ -313,12 +313,6 @@ class FileWatcher:
 
             savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration)
 
-            # Get file modification time from disk
-            try:
-                file_mtime = os.path.getmtime(file_path)
-            except OSError:
-                file_mtime = None
-
             p = Path(file_path)
             # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
             # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
@@ -328,6 +322,20 @@ class FileWatcher:
                 display_name = p.parent.parent.name
             else:
                 display_name = p.name
+
+            # Get file modification time from disk. For discs, the marker file
+            # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring
+            # timestamp — often decades old — which makes "Newest" sort treat
+            # freshly-added discs as ancient. Use the disc-root folder's mtime
+            # instead, which reflects when the user actually copied the disc
+            # into their library. v0.6.3+.
+            try:
+                if disc_type_val:
+                    file_mtime = p.parent.parent.stat().st_mtime
+                else:
+                    file_mtime = os.path.getmtime(file_path)
+            except OSError:
+                file_mtime = None
 
             scanned = ScannedFile(
                 file_path=file_path,

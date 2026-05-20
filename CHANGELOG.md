@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] — 2026-05-20
+
+### Fixed
+- Disc rows sorted as "oldest" in date-based views because `os.path.getmtime` on the marker file (`VIDEO_TS.IFO` / `BDMV/index.bdmv`) returned the original DVD/BDMV authoring timestamp — often decades old — instead of when the user added the disc to their library. Both scanner and watcher now use the disc-root folder's mtime for `file_mtime` on disc rows, which reflects the actual "added to library" time. Regular file rows unchanged.
+
 ## [0.6.2] — 2026-05-20
 
 ### Fixed
