@@ -2469,15 +2469,19 @@ class QueueWorker:
                             "DELETE FROM scan_results WHERE file_path = ?",
                             (current_file_path,),
                         )
+                        # v0.6.0: clear disc_type — after a disc→MKV
+                        # conversion the row's file_path now points at an
+                        # ordinary MKV, and leaving disc_type='dvd'/'bdmv'
+                        # would make the row perpetually render as a disc.
                         if new_size:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
+                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
                                 (current_file_path, new_size, file_path),
                             )
                         else:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL "
+                                "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
                                 (current_file_path, file_path),
                             )

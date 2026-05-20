@@ -107,7 +107,9 @@ function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string): Titl
 
 function parseFile(row: any): ScannedFile {
   return {
-    ...row, file_name: row.file_path.split("/").pop(),
+    // v0.6.0: prefer backend-supplied disc-aware file_name (movie folder
+    // name for disc rows whose file_path points at the marker file).
+    ...row, file_name: row.file_name ?? row.file_path.split("/").pop(),
     folder_name: row.file_path.split("/").slice(-2, -1)[0],
     file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
     audio_tracks: row.audio_tracks || [], subtitle_tracks: row.subtitle_tracks || [],

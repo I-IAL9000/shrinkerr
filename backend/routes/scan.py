@@ -1202,6 +1202,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
     fp = row["file_path"]
     sz = row["file_size"] or 0
     dur = row["duration"] or 0
+    disc_type = row.get("disc_type")
 
     is_ignored = _check_ignored(fp, ctx)
     bitrate = (sz * 8 / dur) if dur > 0 else 0
@@ -1212,6 +1213,10 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
     return {
         "id": row["id"],
         "file_path": fp,
+        # v0.6.0: disc-aware file_name. For disc folders (file_path points
+        # at the VIDEO_TS.IFO / BDMV/index.bdmv marker), use the disc-root
+        # folder name (parent.parent). Regular files use the basename.
+        "file_name": _disc_aware_file_name(fp, disc_type),
         "file_size": sz,
         "video_codec": row.get("video_codec"),
         "needs_conversion": bool(row.get("needs_conversion")),
@@ -1242,7 +1247,28 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         # Type filter (movie/tv/other) — combines filename-bracket detection
         # with the containing media-dir's user-set label. v0.3.76+.
         "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
+        # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
+        # to render disc badges and skip per-track UI that doesn't apply.
+        "disc_type": disc_type,
     }
+
+
+def _disc_aware_file_name(fp: str, disc_type: str | None) -> str:
+    """Display-name for a scan row.
+
+    For disc folders, `file_path` points at the marker inside VIDEO_TS/
+    or BDMV/ (~KB file), so the basename ('VIDEO_TS.IFO' / 'index.bdmv')
+    is useless as a label. Use the disc-root folder name two levels up.
+    Regular files just use the basename.
+    """
+    if not fp:
+        return ""
+    if disc_type:
+        # /movies/Some Movie/VIDEO_TS/VIDEO_TS.IFO -> "Some Movie"
+        parts = fp.rstrip("/").split("/")
+        if len(parts) >= 3:
+            return parts[-3]
+    return fp.rsplit("/", 1)[-1]
 
 
 def _enrich_row(row: dict, ctx: dict) -> dict:
@@ -1250,6 +1276,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
     fp = row["file_path"]
     sz = row["file_size"] or 0
     dur = row["duration"] or 0
+    disc_type = row.get("disc_type")
 
     is_ignored = _check_ignored(fp, ctx)
     bitrate = (sz * 8 / dur) if dur > 0 else 0
@@ -1260,6 +1287,10 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
     return {
         "id": row["id"],
         "file_path": fp,
+        # v0.6.0: disc-aware file_name (see _disc_aware_file_name). Without
+        # this, the frontend recomputes from file_path.split("/").pop(),
+        # which returns the marker basename ('VIDEO_TS.IFO') for discs.
+        "file_name": _disc_aware_file_name(fp, disc_type),
         "file_size": sz,
         "video_codec": row.get("video_codec"),
         "needs_conversion": bool(row.get("needs_conversion")),
@@ -1298,6 +1329,9 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         # Type filter (movie/tv/other) — combines filename-bracket detection
         # with the containing media-dir's user-set label. v0.3.76+.
         "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
+        # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
+        # to render disc badges and skip per-track UI that doesn't apply.
+        "disc_type": disc_type,
     }
 
 
@@ -1313,7 +1347,8 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     vmaf_score,
     health_status, health_check_type, health_checked_at,
     COALESCE(dup_count, 0) as duplicate_count,
-    dup_group as duplicate_group"""
+    dup_group as duplicate_group,
+    disc_type"""
 
 _SCAN_WHERE = """removed_from_list = 0
     AND file_path NOT LIKE '%%.converting.%%'

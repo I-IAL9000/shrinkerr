@@ -1671,24 +1671,13 @@ async def convert_file(
     p = Path(input_path)
     print(f"[CONVERT] Starting: {input_path} (encoder={encoder}, duration={duration:.1f}s)", flush=True)
 
-    # Check free disk space
-    try:
-        original_size = p.stat().st_size
-    except OSError as exc:
-        print(f"[CONVERT] Cannot stat file: {exc}", flush=True)
-        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
-
-    stat = shutil.disk_usage(str(p.parent))
-    if stat.free < original_size:
-        return {
-            "success": False,
-            "output_path": None,
-            "space_saved": 0,
-            "error": (
-                f"Not enough free disk space: need {original_size} bytes, "
-                f"have {stat.free} bytes free"
-            ),
-        }
+    # v0.6.0: original_size + free-disk-space check are deferred until after
+    # the probe sets `disc_type`. For disc-folder inputs the marker file
+    # (VIDEO_TS.IFO / index.bdmv) is only ~KBs, so using `p.stat().st_size`
+    # here would (a) make the free-disk-space check vacuously pass and
+    # (b) cause the post-encode `space_saved` comparison to wrongly discard
+    # successful encodes as "larger than original". See the disc-aware
+    # recomputation below, after `disc_type` is set.
 
     # v0.6.0: temp_path / final_path computation is deferred until after
     # the probe, so disc-folder inputs (whose marker path sits inside
@@ -1793,6 +1782,36 @@ async def convert_file(
                     print(f"[CONVERT] Lossless audio detected ({', '.join(lossless_names)}), converting to {target_codec} {target_bitrate}k", flush=True)
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
+
+    # v0.6.0: compute original_size + free-disk-space check now that
+    # disc_type is known. For disc folders, the input_path points at a
+    # ~KB marker file inside VIDEO_TS/ or BDMV/ — walk the disc root to
+    # get the real total instead.
+    try:
+        if disc_type:
+            from backend.scanner import _disc_total_size
+            disc_root = Path(input_path).parent.parent
+            original_size = _disc_total_size(disc_root, disc_type)
+            if original_size <= 0:
+                # Fall back to marker stat if disc-walk fails (defensive)
+                original_size = p.stat().st_size
+        else:
+            original_size = p.stat().st_size
+    except OSError as exc:
+        print(f"[CONVERT] Cannot stat file: {exc}", flush=True)
+        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+
+    stat = shutil.disk_usage(str(p.parent))
+    if stat.free < original_size:
+        return {
+            "success": False,
+            "output_path": None,
+            "space_saved": 0,
+            "error": (
+                f"Not enough free disk space: need {original_size} bytes, "
+                f"have {stat.free} bytes free"
+            ),
+        }
 
     # v0.6.0: compute output + temp paths now that disc_type is known.
     # Regular files: existing get_output_path / get_temp_path behaviour.

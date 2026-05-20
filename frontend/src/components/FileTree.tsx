@@ -693,7 +693,10 @@ export default function FileTree({
       const data = await getScanFiles(folderPath, filter);
       const parsed: ScannedFile[] = (Array.isArray(data) ? data : []).map((row: any) => ({
         ...row,
-        file_name: row.file_path.split("/").pop(),
+        // v0.6.0: prefer backend-supplied file_name (disc-aware: returns the
+        // movie folder name for VIDEO_TS.IFO / index.bdmv markers). Fall back
+        // to the basename split for legacy rows that predate the field.
+        file_name: row.file_name ?? row.file_path.split("/").pop(),
         folder_name: row.file_path.split("/").slice(-2, -1)[0],
         file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
         audio_tracks: row.audio_tracks || [],
@@ -784,7 +787,9 @@ export default function FileTree({
           const folder = parts.slice(0, -1).join("/");
           const parsed: ScannedFile = {
             ...row,
-            file_name: parts[parts.length - 1],
+            // v0.6.0: prefer backend-supplied disc-aware file_name (see
+            // _disc_aware_file_name in backend/routes/scan.py).
+            file_name: row.file_name ?? parts[parts.length - 1],
             folder_name: parts[parts.length - 2],
             file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
             audio_tracks: row.audio_tracks || [],
