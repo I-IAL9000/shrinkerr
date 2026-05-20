@@ -958,6 +958,99 @@ def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
     return result
 
 
+def build_disc_output_filename(
+    disc_marker_path: str,
+    disc_type: str,
+    probe_data: dict,
+    encoder: str | None = None,
+) -> str:
+    """Construct a scene-style output filename for a converted disc.
+
+    Disc-folder conversions have no source filename to mutate (regular
+    files go through `rename_source_to_target_codec` etc), so the name
+    is BUILT from the parent folder name + probe-derived tokens
+    (resolution / source-quality / audio codec / channels / encoder
+    tag). Output lands in the parent folder of VIDEO_TS/ or BDMV/.
+
+    Pattern (space-separated scene style):
+      "<parent name> <resolution> <DVDRip|Bluray> [<audio codec> <channels>] <encoder>.mkv"
+
+    Example:
+      `/Movies/Fast-Walking (1982) [tt0083930]/VIDEO_TS/VIDEO_TS.IFO`
+      + disc_type='dvd' + 480p MPEG-2 + AC3 2.0 + libx265
+      → `/Movies/Fast-Walking (1982) [tt0083930]/Fast-Walking (1982) [tt0083930] 480p DVDRip AC3 2.0 x265.mkv`
+
+    Audio/channels tokens are omitted entirely when the probe yields no
+    audio tracks (rare; preserves a useful fallback name).
+
+    v0.6.0+.
+    """
+    from backend.rename import _format_channels
+    p = Path(disc_marker_path)
+    # Marker path is .../<parent>/VIDEO_TS/VIDEO_TS.IFO or .../<parent>/BDMV/index.bdmv.
+    # Strip two segments to get the disc-root (parent) folder.
+    disc_root = p.parent.parent
+    base_name = disc_root.name
+
+    # Resolution token from probe video height
+    h = int(probe_data.get("video_height") or 0)
+    if h >= 2000:
+        res = "2160p"
+    elif h >= 1000:
+        res = "1080p"
+    elif h >= 700:
+        res = "720p"
+    elif h >= 560:
+        res = "576p"  # PAL DVD typical
+    else:
+        res = "480p"  # NTSC DVD typical
+
+    source_quality = "Bluray" if disc_type == "bdmv" else "DVDRip"
+
+    # Primary audio track → scene-style codec + channels tokens.
+    audio_tracks = probe_data.get("audio_tracks") or []
+    audio_token = ""
+    channels_token = ""
+    if audio_tracks:
+        a = audio_tracks[0]
+        codec_raw = (a.get("codec") or "").lower()
+        # Scene-style codec naming (matches the user's existing library
+        # convention; uppercase short form). Add cases here as new codecs
+        # appear in disc rips.
+        if codec_raw == "eac3":
+            audio_token = "EAC3"
+        elif codec_raw == "ac3":
+            audio_token = "AC3"
+        elif codec_raw == "dts":
+            audio_token = "DTS"
+        elif codec_raw == "truehd":
+            audio_token = "TrueHD"
+        elif codec_raw == "flac":
+            audio_token = "FLAC"
+        elif codec_raw == "aac":
+            audio_token = "AAC"
+        elif codec_raw.startswith("pcm"):
+            audio_token = "LPCM"
+        elif codec_raw:
+            audio_token = codec_raw.upper()
+        ch = int(a.get("channels") or 0)
+        if ch > 0:
+            channels_token = _format_channels(ch)
+
+    # Encoder tag — reuse existing helper.
+    codec_tag = _hevc_tag_for_encoder(encoder)
+
+    # Assemble: parent name + space-separated tokens + .mkv
+    tokens = [base_name, res, source_quality]
+    if audio_token:
+        tokens.append(audio_token)
+    if channels_token:
+        tokens.append(channels_token)
+    tokens.append(codec_tag)
+    name = " ".join(tokens) + ".mkv"
+    return str(disc_root / name)
+
+
 def get_output_path(input_path: str, suffix: str = "", encoder: str | None = None) -> str:
     """Return the final output path: rename codec tag, add suffix, and change extension to .mkv.
 
