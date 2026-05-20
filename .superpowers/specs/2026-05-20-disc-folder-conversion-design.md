@@ -139,9 +139,9 @@ Components:
 - `<parent folder name>`: `os.path.basename(os.path.dirname(os.path.dirname(file_path)))` — strip the trailing `/VIDEO_TS/VIDEO_TS.IFO` segments
 - `<resolution>`: derived from probe height — `2160p`, `1080p`, `720p`, `576p` (PAL DVDs), `480p` (NTSC DVDs)
 - `<source-quality>`: hardcoded — `DVDRip` for DVD, `Bluray` for BDMV
-- `<audio codec>`: primary audio track's codec, scene-style — `AC3`, `DTS`, `EAC3`, `TrueHD`, etc.
-- `<channels>`: stereo → `2.0`, 5.1 → `5.1`, 7.1 → `7.1`, etc.
-- `<encoder>`: per v0.5.x — `x265` for libx265, `h265` for NVENC/QSV/VAAPI
+- `<audio codec>`: primary audio track's codec, scene-style — `AC3`, `DTS`, `EAC3`, `TrueHD`, etc. Reuse `backend/rename.py` codec mapping (already used for the `AudioCodec` filename token).
+- `<channels>`: stereo → `2.0`, 5.1 → `5.1`, 7.1 → `7.1`, etc. Reuse `backend/rename.py:_format_channels()` — already exists and handles the edge cases (mono / 6.1 / etc.).
+- `<encoder>`: per v0.5.x — `x265` for libx265, `h265` for NVENC/QSV/VAAPI. Reuse `converter._hevc_tag_for_encoder()`.
 
 The encoder-side rename (`rename_source_to_target_codec`) doesn't apply to disc output (no source codec tag to rewrite). The source-quality rename (`rename_source_quality_in_filename`) also doesn't apply — we're building the name fresh.
 
@@ -188,7 +188,7 @@ The scanner's "skip already-converted siblings" loop (scanner.py:920+) needs awa
 - For a regular file `Foo.x264.mkv`, the sibling check looks for `Foo.x265.mkv` in the same dir
 - For a disc folder `Fast-Walking (1982) [tt0083930]/VIDEO_TS/`, the converted sibling is the constructed-name MKV in the parent folder
 
-If the converted MKV already exists in the parent folder (same name pattern), skip the disc to avoid duplicate work.
+**Matching strategy**: equality on the full constructed name won't work because the constructed name depends on probe-time data (resolution / audio codec / channels) that may have shifted slightly between scans. Use a **prefix match on the parent folder name token** instead — if the parent folder contains ANY `.mkv` file whose stem starts with the parent folder name AND contains either `DVDRip` (for DVD) or `Bluray` (for BDMV), treat that as the converted sibling and skip the disc. This is robust to probe drift and handles user-edited filenames.
 
 ### Rules engine
 
@@ -228,4 +228,4 @@ No new settings. The feature reuses:
 7. **Sibling detection**: scanning a folder that already contains both a disc subdirectory AND its converted MKV skip-flags the disc.
 8. **UI**: Scanner rows for disc items show a disc icon + DVD/Blu-ray badge; file detail panel renders audio/sub tracks from probe; queue progress works.
 9. **No regression on files**: regular file scans/encodes/renames continue working identically to v0.5.26.
-10. **HW decode no-op**: disc conversion with `nvenc_hw_decode=true` doesn't fail (ffmpeg ignores the flag for protocol-based input); worker log notes "HW decode ignored for disc input".
+10. **HW decode no-op**: disc conversion with `nvenc_hw_decode=true` doesn't fail (ffmpeg ignores the flag for protocol-based input); worker log emits a clear note that HW decode is bypassed for disc input (exact wording at the implementer's discretion).
