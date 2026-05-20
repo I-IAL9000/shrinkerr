@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] — 2026-05-20
+
+### Fixed
+- Watcher not auto-discovering newly-dropped DVD `VIDEO_TS/` or Blu-ray `BDMV/` folders. The polling walk filtered files by video extension before the v0.6.0 disc-marker pre-pass could see them, so `.IFO` / `.VOB` / `.m2ts` were dropped at the walk stage and disc folders never registered. Watcher walk now classifies each directory for disc structure first (matching the scanner), records the marker file, and prunes recursion into the disc subdirectory. Manual rescan was unaffected.
+
 ## [0.6.0] — 2026-05-20
 
 ### Added
