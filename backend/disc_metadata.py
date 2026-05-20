@@ -64,6 +64,43 @@ _DVD_SUBP_ATTR_SIZE = 6
 _DVD_SUBP_MAX = 32
 
 
+def _extract_dvd_langs(
+    data: bytes,
+    n_declared: int,
+    start_offset: int,
+    attr_size: int,
+    max_count: int,
+) -> list[str]:
+    """Extract ISO 639-2 language codes from a DVD attr array.
+
+    Each attr entry has lang_code at +2 (2 bytes ASCII ISO 639-1).
+    Trusts `n_declared` when > 0. When `n_declared == 0` falls back to
+    scanning the attr array for non-zero lang_code bytes, stopping at
+    the first all-zero entry — handles DVDs where the authoring tool
+    populated audio/subp attrs without updating the count byte (a known
+    libdvdread compatibility quirk; Fast-Walking 1982 is one such disc).
+    """
+    if n_declared > 0:
+        codes: list[str] = []
+        for i in range(n_declared):
+            off = start_offset + i * attr_size + 2
+            code = data[off:off + 2].decode("ascii", errors="replace")
+            codes.append(_iso639_1_to_2(code))
+        return codes
+
+    # n_declared == 0 — authoring quirk fallback. Scan attrs until the
+    # first all-zero lang_code (sentinel gap), but cap at max_count.
+    codes = []
+    for i in range(max_count):
+        off = start_offset + i * attr_size + 2
+        lang_bytes = data[off:off + 2]
+        if lang_bytes == b"\x00\x00":
+            break
+        code = lang_bytes.decode("ascii", errors="replace")
+        codes.append(_iso639_1_to_2(code))
+    return codes
+
+
 def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
     """Parse a DVD VTS IFO file and extract per-stream language codes.
 
@@ -84,18 +121,22 @@ def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
 
     try:
         n_audio = min(data[_DVD_AUDIO_COUNT_OFFSET], _DVD_AUDIO_MAX)
-        audio = []
-        for i in range(n_audio):
-            off = _DVD_AUDIO_ATTR_OFFSET + i * _DVD_AUDIO_ATTR_SIZE + 2
-            code = data[off:off + 2].decode("ascii", errors="replace")
-            audio.append(_iso639_1_to_2(code))
+        audio = _extract_dvd_langs(
+            data,
+            n_declared=n_audio,
+            start_offset=_DVD_AUDIO_ATTR_OFFSET,
+            attr_size=_DVD_AUDIO_ATTR_SIZE,
+            max_count=_DVD_AUDIO_MAX,
+        )
 
         n_subp = min(data[_DVD_SUBP_COUNT_OFFSET], _DVD_SUBP_MAX)
-        subtitle = []
-        for i in range(n_subp):
-            off = _DVD_SUBP_ATTR_OFFSET + i * _DVD_SUBP_ATTR_SIZE + 2
-            code = data[off:off + 2].decode("ascii", errors="replace")
-            subtitle.append(_iso639_1_to_2(code))
+        subtitle = _extract_dvd_langs(
+            data,
+            n_declared=n_subp,
+            start_offset=_DVD_SUBP_ATTR_OFFSET,
+            attr_size=_DVD_SUBP_ATTR_SIZE,
+            max_count=_DVD_SUBP_MAX,
+        )
 
         return {"audio": audio, "subtitle": subtitle}
     except Exception as exc:

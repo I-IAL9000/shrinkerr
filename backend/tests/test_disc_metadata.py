@@ -141,6 +141,59 @@ class TestDvdIfoParser:
         result = _parse_dvd_ifo(path)
         assert len(result["audio"]) <= 8
 
+    def test_count_zero_but_attr_populated_fallback(self, tmp_path):
+        """Real-world quirk: some DVD authoring tools write a valid
+        audio_attr[0] but leave nr_of_vts_audio_streams = 0 (the count
+        byte). Parser must fall back to scanning attrs in that case.
+        Fast-Walking (1982) is one such disc. v0.6.6+."""
+        # Build a fixture with the exact byte pattern from Fast-Walking's
+        # VTS_01_0.IFO: count=0, audio_attr[0] = 04c1656e00000000 (lang
+        # 'en' at offset +2), audio_attr[1] = all zeros (gap sentinel).
+        buf = bytearray(0x320)
+        buf[0:12] = b"DVDVIDEO-VTS"
+        buf[0x202] = 0  # n_audio reports 0
+        # audio_attr[0]: bytes 0,1 = packed format/etc, bytes 2,3 = 'en'
+        buf[0x204:0x20C] = bytes.fromhex("04c1656e00000000")
+        # audio_attr[1..7] stay all-zero (sentinel gap)
+        buf[0x254] = 0  # n_subp also 0
+        # subp_attr[0..N] stay all-zero — Fast-Walking has no subs
+        path = tmp_path / "VTS_01_0.IFO"
+        path.write_bytes(bytes(buf))
+        assert _parse_dvd_ifo(path) == {"audio": ["eng"], "subtitle": []}
+
+    def test_count_zero_with_multiple_populated_attrs(self, tmp_path):
+        """Fallback should keep collecting until the first all-zero
+        sentinel. Synthetic case: count=0 but audio_attr[0]='en',
+        audio_attr[1]='de', audio_attr[2]=zero gap."""
+        buf = bytearray(0x320)
+        buf[0:12] = b"DVDVIDEO-VTS"
+        buf[0x202] = 0
+        buf[0x204 + 2:0x204 + 4] = b"en"
+        buf[0x20c + 2:0x20c + 4] = b"de"
+        # audio_attr[2] is the zero gap
+        buf[0x254] = 0
+        path = tmp_path / "VTS_01_0.IFO"
+        path.write_bytes(bytes(buf))
+        result = _parse_dvd_ifo(path)
+        assert result["audio"] == ["eng", "ger"]
+        assert result["subtitle"] == []
+
+    def test_count_positive_still_trusted(self, tmp_path):
+        """When n_declared > 0, trust it exactly — don't run the
+        fallback even if attrs beyond the declared count are populated."""
+        buf = bytearray(0x320)
+        buf[0:12] = b"DVDVIDEO-VTS"
+        buf[0x202] = 1  # declares 1 audio stream
+        buf[0x204 + 2:0x204 + 4] = b"en"
+        # audio_attr[1] is populated (would be picked up by fallback)
+        # but the declared count is 1, so trust it
+        buf[0x20c + 2:0x20c + 4] = b"de"
+        buf[0x254] = 0
+        path = tmp_path / "VTS_01_0.IFO"
+        path.write_bytes(bytes(buf))
+        result = _parse_dvd_ifo(path)
+        assert result["audio"] == ["eng"]  # NOT ["eng", "ger"]
+
 
 def _build_mpls_with_duration(seconds: float) -> bytes:
     """Build a minimal valid .mpls fixture whose total PlayItem duration

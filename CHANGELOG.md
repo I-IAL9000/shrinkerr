@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] — 2026-05-20
+
+### Fixed
+- DVD IFO parser missed languages on discs where the audio/subp count byte was 0 but the attr entries were populated (a known authoring-tool quirk libdvdread has documented fallback for) — e.g. Fast-Walking (1982) surfaced its English track as `und`. Parser now falls back to scanning attrs for the first all-zero gap when the count byte is 0; positive counts are still trusted as-is.
+
 ## [0.6.5] — 2026-05-20
 
 ### Added
