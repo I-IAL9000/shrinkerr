@@ -167,6 +167,48 @@ class FileWatcher:
         except Exception:
             pass
 
+        # v0.6.0: disc-folder discovery. When the watcher discovers a path
+        # inside VIDEO_TS/ or BDMV/, or the disc-root folder itself, map
+        # it to the disc-marker file the scanner expects. Deduplicate so
+        # multiple inner-VOB discoveries collapse to a single marker.
+        # The marker is what flows through the rest of the pipeline; the
+        # internal VOB / M2TS files never appear as standalone scan items.
+        from backend.scanner import _classify_disc, _disc_marker_path
+
+        new_files_disc_adjusted: list[str] = []
+        seen_discs: set[str] = set()
+        for fp in new_files:
+            p = Path(fp)
+            # Case A: path is inside VIDEO_TS or BDMV → map to disc-root's marker
+            if any(part in ("VIDEO_TS", "BDMV") for part in p.parts):
+                # Walk up to the disc-root (the folder CONTAINING VIDEO_TS/BDMV)
+                disc_root = p
+                while disc_root.parent != disc_root:
+                    if disc_root.name in ("VIDEO_TS", "BDMV"):
+                        disc_root = disc_root.parent
+                        break
+                    disc_root = disc_root.parent
+                disc_type = _classify_disc(disc_root)
+                if disc_type:
+                    marker = str(_disc_marker_path(disc_root, disc_type))
+                    if marker not in seen_discs:
+                        new_files_disc_adjusted.append(marker)
+                        seen_discs.add(marker)
+                continue  # drop the inner VOB/M2TS path
+            # Case B: path is the disc-root folder itself
+            if p.is_dir():
+                disc_type = _classify_disc(p)
+                if disc_type:
+                    marker = str(_disc_marker_path(p, disc_type))
+                    if marker not in seen_discs:
+                        new_files_disc_adjusted.append(marker)
+                        seen_discs.add(marker)
+                    continue
+            # Default: regular file, pass through
+            new_files_disc_adjusted.append(fp)
+
+        new_files = new_files_disc_adjusted
+
         results = []
         new_file_paths = []
         skipped_ignored = 0
