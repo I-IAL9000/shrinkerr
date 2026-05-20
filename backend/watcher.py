@@ -9,6 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
+from backend.scanner import _classify_disc, _disc_marker_path
 
 
 def _safe_int(s, default):
@@ -173,6 +174,10 @@ class FileWatcher:
         # multiple inner-VOB discoveries collapse to a single marker.
         # The marker is what flows through the rest of the pipeline; the
         # internal VOB / M2TS files never appear as standalone scan items.
+        # v0.6.1: the polling walk is now disc-aware (see _walk_dirs in
+        # check_once), so the common case is already handled upstream;
+        # this pre-pass remains as belt-and-suspenders for any non-walk-
+        # sourced disc path that might land in new_files via future paths.
         from backend.scanner import _classify_disc, _disc_marker_path
 
         new_files_disc_adjusted: list[str] = []
@@ -620,7 +625,22 @@ class FileWatcher:
                 dir_p = Path(dir_path)
                 if not dir_p.exists():
                     continue
-                for root, _dirs, files in os.walk(dir_path):
+                for root, dirs, files in os.walk(dir_path):
+                    root_path = Path(root)
+
+                    # v0.6.1: disc-folder detection — mirror scanner walk so
+                    # newly-dropped VIDEO_TS/ and BDMV/ folders auto-discover.
+                    # Without this the extension filter below drops .IFO /
+                    # .VOB / .m2ts before the disc-marker pre-pass can see
+                    # them, and disc folders never get registered.
+                    disc_type = _classify_disc(root_path)
+                    if disc_type:
+                        marker = _disc_marker_path(root_path, disc_type)
+                        if marker.is_file():
+                            result.add(str(marker))
+                        dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
+                        continue
+
                     for name in files:
                         # Skip temp files from active conversions/remuxing
                         if ".converting." in name or ".remuxing." in name:
