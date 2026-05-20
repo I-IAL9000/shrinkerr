@@ -337,6 +337,11 @@ def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]
         if disc_type == "dvd":
             # Use the same title-set picker that v0.6.2 uses for the
             # concat: VOB list. Same NN → same IFO.
+            # Lazy import — `backend.scanner` imports `parse_disc_languages`
+            # at module level (probe_file integration); a top-level
+            # `from backend.scanner import ...` here would create a circular
+            # import. Importing inside the function defers resolution until
+            # call time, by which point both modules are fully loaded.
             from backend.scanner import _dvd_main_title_vobs
             vobs = _dvd_main_title_vobs(disc_root)
             if not vobs:
