@@ -518,6 +518,16 @@ export default function PosterGrid({
                             <span style={{ flex: 1 }}>{expandedFileDetails.has(file.file_path) ? "\u25BC" : "\u25B6"} {file.file_name}</span>
                             <span className="tree-file-size" style={{ marginLeft: "auto", flexShrink: 0 }}>{file.file_size_gb} GB</span>
                             <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0 }}>{getCodecLabel(file.video_codec, file.needs_conversion)}</span>
+                            {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
+                              <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0, gap: 4 }} title={file.disc_type === "dvd" ? "DVD-Video disc folder" : "Blu-ray disc folder"}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="10"/>
+                                  <circle cx="12" cy="12" r="3"/>
+                                  <path d="M6 12a6 6 0 0 1 6-6"/>
+                                </svg>
+                                {file.disc_type === "dvd" ? "DVD" : "Blu-ray"}
+                              </span>
+                            )}
                             {file.converted && <span style={{ color: "var(--success)", fontSize: 14, flexShrink: 0 }}>&#x2713;</span>}
                             {file.is_new && <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, flexShrink: 0 }}>NEW</span>}
                             {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }}>ignored ✕</button>}

@@ -56,6 +56,10 @@ export interface ScannedFile {
   // score even when the corresponding file-event wasn't logged (or was
   // logged against a pre-rename path that no longer matches).
   vmaf_score?: number | null;
+  // Disc-folder marker: 'dvd' for VIDEO_TS/, 'bdmv' for BDMV/, null/absent
+  // for ordinary video files. Drives the DVD / Blu-ray badge in scanner
+  // rows. v0.6.0+.
+  disc_type?: "dvd" | "bdmv" | null;
 }
 
 export interface Job {

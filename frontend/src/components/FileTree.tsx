@@ -463,6 +463,16 @@ const FileRow = memo(function FileRow({
         <span className={`codec-badge ${codecClass}`}>
           {codecLabel}
         </span>
+        {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
+          <span className={`codec-badge ${codecClass}`} style={{ gap: 4 }} title={file.disc_type === "dvd" ? "DVD-Video disc folder" : "Blu-ray disc folder"}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M6 12a6 6 0 0 1 6-6"/>
+            </svg>
+            {file.disc_type === "dvd" ? "DVD" : "Blu-ray"}
+          </span>
+        )}
         {(file.health_status === "corrupt" || file.probe_status === "corrupt") && (
           <span
             title={`Corrupt${file.health_check_type ? ` (${file.health_check_type} check)` : ""}`}

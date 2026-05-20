@@ -1294,9 +1294,18 @@ async def scan_directory(
         except OSError:
             file_mtime = None
 
+        # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
+        # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
+        # disc-root folder (file_path.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
+        disc_type_val = probe.get("disc_type")
+        if disc_type_val:
+            display_name = file_path.parent.parent.name
+        else:
+            display_name = file_path.name
+
         scanned = ScannedFile(
             file_path=str(file_path),
-            file_name=file_path.name,
+            file_name=display_name,
             folder_name=file_path.parent.name,
             file_size=file_size,
             file_size_gb=round(file_size / (1024 ** 3), 3),
@@ -1316,7 +1325,7 @@ async def scan_directory(
             duration=duration,
             probe_status="ok",
             video_height=probe.get("video_height", 0),
-            disc_type=probe.get("disc_type"),  # v0.6.0
+            disc_type=disc_type_val,  # v0.6.0
         )
         if result_callback:
             await result_callback(scanned)
