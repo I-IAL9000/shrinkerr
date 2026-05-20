@@ -1,7 +1,5 @@
 """Unit tests for backend.disc_metadata. v0.6.5+."""
 
-import struct
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -69,70 +67,70 @@ def _build_dvd_ifo(audio_langs: list[bytes], subp_langs: list[bytes]) -> bytes:
 
 
 class TestDvdIfoParser:
-    def _write_fixture(self, content: bytes) -> Path:
-        td = Path(tempfile.mkdtemp())
-        ifo = td / "VTS_01_0.IFO"
+    def _write_fixture(self, tmp_path: Path, content: bytes) -> Path:
+        ifo = tmp_path / "VTS_01_0.IFO"
         ifo.write_bytes(content)
         return ifo
 
-    def test_single_english_audio_no_subs(self):
+    def test_single_english_audio_no_subs(self, tmp_path):
         fixture = _build_dvd_ifo(audio_langs=[b"en"], subp_langs=[])
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         assert _parse_dvd_ifo(path) == {"audio": ["eng"], "subtitle": []}
 
-    def test_multi_language_audio_and_subs(self):
+    def test_multi_language_audio_and_subs(self, tmp_path):
         fixture = _build_dvd_ifo(
             audio_langs=[b"en", b"de"],
             subp_langs=[b"ja", b"fr"],
         )
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         assert _parse_dvd_ifo(path) == {
             "audio": ["eng", "ger"],
             "subtitle": ["jpn", "fre"],
         }
 
-    def test_unused_slots_produce_empty_strings(self):
+    def test_unused_slots_produce_empty_strings(self, tmp_path):
         # Declare 2 audio streams; first valid, second has zeroed lang_code
         fixture = _build_dvd_ifo(audio_langs=[b"en", b"\x00\x00"], subp_langs=[])
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         result = _parse_dvd_ifo(path)
         assert result["audio"] == ["eng", ""]
 
-    def test_unknown_language_code_returns_empty(self):
+    def test_unknown_language_code_returns_empty(self, tmp_path):
         fixture = _build_dvd_ifo(audio_langs=[b"xx"], subp_langs=[])
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         assert _parse_dvd_ifo(path) == {"audio": [""], "subtitle": []}
 
-    def test_malformed_magic_returns_empty_lists(self):
+    def test_malformed_magic_returns_empty_lists(self, tmp_path):
         fixture = bytearray(0x320)
         fixture[0:12] = b"NOTADVD-VTS-"  # wrong magic
-        path = self._write_fixture(bytes(fixture))
+        path = self._write_fixture(tmp_path, bytes(fixture))
         assert _parse_dvd_ifo(path) == {"audio": [], "subtitle": []}
 
-    def test_truncated_file_returns_empty_lists(self):
+    def test_truncated_file_returns_empty_lists(self, tmp_path):
         # Valid magic but file is too short
         fixture = b"DVDVIDEO-VTS" + b"\x00" * 100
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         assert _parse_dvd_ifo(path) == {"audio": [], "subtitle": []}
 
     def test_missing_file_returns_empty_lists(self):
+        # No fixture needed
         nonexistent = Path("/tmp/does_not_exist_for_test.IFO")
         assert _parse_dvd_ifo(nonexistent) == {"audio": [], "subtitle": []}
 
-    def test_max_streams_8_audio_32_subp(self):
+    def test_max_streams_8_audio_32_subp(self, tmp_path):
         # DVD spec caps: 8 audio, 32 subp. Build a full-cap fixture.
         audio = [b"en"] * 8
         subp = [b"en"] * 32
         fixture = _build_dvd_ifo(audio, subp)
-        path = self._write_fixture(fixture)
+        path = self._write_fixture(tmp_path, fixture)
         result = _parse_dvd_ifo(path)
         assert len(result["audio"]) == 8
         assert len(result["subtitle"]) == 32
 
-    def test_clamps_when_count_exceeds_spec(self):
+    def test_clamps_when_count_exceeds_spec(self, tmp_path):
         # Defensive: if nr_of_streams reports >8 (corrupt IFO), clamp.
         fixture = bytearray(_build_dvd_ifo(audio_langs=[b"en"], subp_langs=[]))
         fixture[0x202] = 200  # nonsensical
-        path = self._write_fixture(bytes(fixture))
+        path = self._write_fixture(tmp_path, bytes(fixture))
         result = _parse_dvd_ifo(path)
         assert len(result["audio"]) <= 8
