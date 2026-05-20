@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from backend.disc_metadata import _iso639_1_to_2, _find_main_bdmv_playlist, _parse_dvd_ifo
+from backend.disc_metadata import (
+    _find_main_bdmv_playlist,
+    _iso639_1_to_2,
+    _parse_bdmv_mpls,
+    _parse_dvd_ifo,
+)
 
 
 class TestIso639Mapping:
@@ -225,3 +230,201 @@ class TestFindMainBdmvPlaylist:
         result = _find_main_bdmv_playlist(playlist_dir)
         assert result is not None
         assert result.name == "00001.mpls"
+
+
+def _build_mpls_full(
+    duration_sec: float,
+    audio_langs: list[bytes],  # 3-byte ISO 639-2
+    pg_langs: list[bytes],     # 3-byte ISO 639-2
+) -> bytes:
+    """Build a complete .mpls fixture with STN_table.
+
+    Audio entries use stream_coding_type=0x81 (AC-3) so the audio
+    StreamAttributes lang_code lives at offset +3 within the
+    attributes block.
+
+    PG (subtitle) entries use stream_coding_type=0x90 (PG); lang_code
+    at offset +2 within the attributes block.
+    """
+    ticks = int(duration_sec * 45000)
+
+    # --- Build StreamEntry + StreamAttributes pairs for audio ---
+    # StreamEntry for PlayItem-resident audio (type 0x01):
+    #   length(1) = 8 ; type(1)=0x01 ; PID (uint16 BE) ; reserved(5)
+    def audio_stream_entry(pid: int) -> bytes:
+        return (
+            b"\x08"   # length
+            + b"\x01" # type 0x01 = elementary stream in PlayItem clip
+            + struct.pack(">H", pid)
+            + b"\x00" * 5
+        )
+
+    def audio_stream_attr(coding_type: int, lang: bytes) -> bytes:
+        # length(1) + coding_type(1) + audio_format_sample_rate(1) + lang(3)
+        # = 5 payload bytes after the length byte
+        # length field reports bytes AFTER the length byte
+        body = bytes([coding_type]) + b"\x00" + lang
+        return bytes([len(body)]) + body
+
+    def pg_stream_entry(pid: int) -> bytes:
+        return (
+            b"\x08"
+            + b"\x01"
+            + struct.pack(">H", pid)
+            + b"\x00" * 5
+        )
+
+    def pg_stream_attr(lang: bytes) -> bytes:
+        # length(1) + coding_type(1) + lang(3)
+        body = b"\x90" + lang
+        return bytes([len(body)]) + body
+
+    # Build streams blob for STN_table body
+    streams_blob = b""
+    for i, lang in enumerate(audio_langs):
+        streams_blob += audio_stream_entry(0x1100 + i)
+        streams_blob += audio_stream_attr(0x81, lang)
+    for i, lang in enumerate(pg_langs):
+        streams_blob += pg_stream_entry(0x1200 + i)
+        streams_blob += pg_stream_attr(lang)
+
+    # STN_table:
+    #   uint16 BE   : length (after this field)
+    #   uint16 BE   : reserved
+    #   uint8       : n_primary_video
+    #   uint8       : n_primary_audio
+    #   uint8       : n_primary_pg
+    #   uint8       : n_primary_ig
+    #   uint8       : n_secondary_audio
+    #   uint8       : n_secondary_video
+    #   uint8       : n_pip_pg
+    #   bytes[5]    : reserved
+    #   streams_blob (video then audio then pg then ig in that order; we
+    #                 emit only audio and pg here)
+    stn_body = (
+        b"\x00\x00"  # reserved
+        + bytes([0, len(audio_langs), len(pg_langs), 0, 0, 0, 0])
+        + b"\x00" * 5
+        + streams_blob
+    )
+    stn_table = struct.pack(">H", len(stn_body)) + stn_body
+
+    # PlayItem:
+    #   uint16 BE : length (after this field)
+    #   bytes[5]  : clip_id
+    #   bytes[4]  : codec_id
+    #   uint16 BE : flags (no multi_angle)
+    #   uint8     : ref_to_STC_id
+    #   uint32 BE : IN_time
+    #   uint32 BE : OUT_time
+    #   bytes[8]  : UO_mask
+    #   uint8     : flags
+    #   uint8     : still_mode
+    #   uint16 BE : still_time
+    #   STN_table
+    pi_payload = (
+        b"00000"
+        + b"M2TS"
+        + b"\x00\x00"
+        + b"\x00"
+        + struct.pack(">I", 0)
+        + struct.pack(">I", ticks)
+        + b"\x00" * 8
+        + b"\x00"
+        + b"\x00"
+        + b"\x00\x00"
+        + stn_table
+    )
+    playitem = struct.pack(">H", len(pi_payload)) + pi_payload
+
+    # PlayList:
+    pl_body = (
+        b"\x00\x00"  # reserved
+        + struct.pack(">H", 1)
+        + struct.pack(">H", 0)
+        + playitem
+    )
+    playlist = struct.pack(">I", len(pl_body)) + pl_body
+
+    # Header (40 bytes)
+    pl_start = 40
+    header = (
+        b"MPLS" + b"0200"
+        + struct.pack(">I", pl_start)
+        + struct.pack(">I", 0)
+        + struct.pack(">I", 0)
+        + b"\x00" * 20
+    )
+    return header + playlist
+
+
+class TestBdmvMplsParser:
+    def test_two_audio_two_subtitle(self, tmp_path):
+        mpls = tmp_path / "00100.mpls"
+        mpls.write_bytes(_build_mpls_full(
+            duration_sec=5000,
+            audio_langs=[b"eng", b"ger"],
+            pg_langs=[b"eng", b"jpn"],
+        ))
+        result = _parse_bdmv_mpls(mpls)
+        assert result == {"audio": ["eng", "ger"], "subtitle": ["eng", "jpn"]}
+
+    def test_french_first_english_second_load_bearing(self, tmp_path):
+        # Mirrors the Elephant BD case: audio[0]=fre, audio[1]=eng.
+        # Stream-order correlation MUST preserve this.
+        mpls = tmp_path / "00800.mpls"
+        mpls.write_bytes(_build_mpls_full(
+            duration_sec=4900,
+            audio_langs=[b"fre", b"eng"],
+            pg_langs=[b"fre", b"eng"],
+        ))
+        result = _parse_bdmv_mpls(mpls)
+        assert result["audio"][0] == "fre"
+        assert result["audio"][1] == "eng"
+        assert result["subtitle"][0] == "fre"
+        assert result["subtitle"][1] == "eng"
+
+    def test_three_byte_lang_passthrough(self, tmp_path):
+        # 3-letter codes pass through after decode
+        mpls = tmp_path / "test.mpls"
+        mpls.write_bytes(_build_mpls_full(
+            duration_sec=100,
+            audio_langs=[b"ice"],
+            pg_langs=[],
+        ))
+        assert _parse_bdmv_mpls(mpls)["audio"] == ["ice"]
+
+    def test_whitespace_padded_lang_returns_empty(self, tmp_path):
+        # Some discs pad with spaces; should strip and empty → ""
+        mpls = tmp_path / "test.mpls"
+        mpls.write_bytes(_build_mpls_full(
+            duration_sec=100,
+            audio_langs=[b"   "],
+            pg_langs=[],
+        ))
+        assert _parse_bdmv_mpls(mpls)["audio"] == [""]
+
+    def test_malformed_magic_returns_empty(self, tmp_path):
+        mpls = tmp_path / "test.mpls"
+        mpls.write_bytes(b"NOTAREAL" + b"\x00" * 1000)
+        assert _parse_bdmv_mpls(mpls) == {"audio": [], "subtitle": []}
+
+    def test_truncated_file_returns_empty(self, tmp_path):
+        mpls = tmp_path / "test.mpls"
+        mpls.write_bytes(b"MPLS0200" + b"\x00" * 4)
+        assert _parse_bdmv_mpls(mpls) == {"audio": [], "subtitle": []}
+
+    def test_missing_file_returns_empty(self):
+        assert _parse_bdmv_mpls(Path("/tmp/nonexistent.mpls")) == {"audio": [], "subtitle": []}
+
+    def test_version_0100_also_parses(self, tmp_path):
+        mpls = tmp_path / "test.mpls"
+        # Patch a v0200 fixture's version field
+        data = bytearray(_build_mpls_full(
+            duration_sec=100,
+            audio_langs=[b"eng"],
+            pg_langs=[],
+        ))
+        data[4:8] = b"0100"
+        mpls.write_bytes(bytes(data))
+        assert _parse_bdmv_mpls(mpls)["audio"] == ["eng"]

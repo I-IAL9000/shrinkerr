@@ -179,3 +179,145 @@ def _find_main_bdmv_playlist(playlist_dir: Path) -> Optional[Path]:
         return None
     candidates.sort(key=lambda t: t[0], reverse=True)
     return candidates[0][1]
+
+
+# BDMV .mpls STN_table layout (BD-ROM Part 3):
+# After the PlayItem header fields (and optional multi_clip block if
+# multi_angle is set, which we don't support here), the STN_table is:
+#   uint16 BE  : length (after this field)
+#   uint16 BE  : reserved
+#   uint8      : n_primary_video
+#   uint8      : n_primary_audio
+#   uint8      : n_primary_pg (subtitles)
+#   uint8      : n_primary_ig (menus)
+#   uint8      : n_secondary_audio
+#   uint8      : n_secondary_video
+#   uint8      : n_pip_pg
+#   bytes[5]   : reserved
+# Then stream blocks in order: video, audio, pg, ig.
+# Each block has a StreamEntry (length-prefixed) + StreamAttributes (length-prefixed).
+# StreamEntry: byte[0] = length-of-rest; byte[1] = type; remaining = type-specific (skip)
+# StreamAttributes for audio (coding_type 0x80-0x86, 0xA1, 0xA2):
+#   byte[0]    = length-of-rest
+#   byte[1]    = stream_coding_type
+#   byte[2]    = audio_format/sample_rate (packed)
+#   bytes[3:6] = lang_code (3-byte ASCII ISO 639-2)
+# StreamAttributes for PG (coding_type 0x90):
+#   byte[0]    = length-of-rest
+#   byte[1]    = stream_coding_type (0x90)
+#   bytes[2:5] = lang_code (3-byte ASCII ISO 639-2)
+_BDMV_AUDIO_CODING_TYPES = {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0xA1, 0xA2}
+_BDMV_PG_CODING_TYPE = 0x90
+
+
+def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
+    """Parse a single .mpls file's primary audio + PG stream language
+    codes from the first PlayItem's STN_table.
+
+    Returns {"audio": [iso639_2, ...], "subtitle": [iso639_2, ...]} in
+    stream order. Empty strings for blank/whitespace codes. Empty lists
+    on any read or parse failure.
+    """
+    try:
+        data = mpls_path.read_bytes()
+    except OSError as exc:
+        print(f"[DISC-META] could not read {mpls_path}: {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
+
+    try:
+        if len(data) < _MPLS_HEADER_BYTES or data[:4] != _MPLS_MAGIC:
+            return {"audio": [], "subtitle": []}
+        if data[4:8] not in _MPLS_VERSIONS:
+            return {"audio": [], "subtitle": []}
+
+        pl_start = struct.unpack(">I", data[8:12])[0]
+        if pl_start + 10 > len(data):
+            return {"audio": [], "subtitle": []}
+
+        n_playitems = struct.unpack(">H", data[pl_start + 6:pl_start + 8])[0]
+        if n_playitems < 1:
+            return {"audio": [], "subtitle": []}
+
+        # First PlayItem starts at pl_start + 10
+        pi_off = pl_start + 10
+        pi_length = struct.unpack(">H", data[pi_off:pi_off + 2])[0]
+        # PlayItem fixed header: length(2) + clip_id(5) + codec_id(4) +
+        # flags(2) + ref(1) + IN(4) + OUT(4) + UO(8) + flags(1) +
+        # still_mode(1) + still_time(2) = 34 bytes.
+        # If is_multi_angle (bit 4 of flags at +11): extra multi_clip data follows.
+        # We don't support multi_angle parsing here; if set, skip this playlist.
+        flags = struct.unpack(">H", data[pi_off + 11:pi_off + 13])[0]
+        is_multi_angle = bool(flags & 0x10)
+        if is_multi_angle:
+            # Multi-angle playlists are rare; bail out, caller picks next-longest.
+            return {"audio": [], "subtitle": []}
+
+        stn_off = pi_off + 34
+        if stn_off + 4 > len(data):
+            return {"audio": [], "subtitle": []}
+        stn_length = struct.unpack(">H", data[stn_off:stn_off + 2])[0]
+        stn_end = stn_off + 2 + stn_length
+        if stn_end > len(data):
+            return {"audio": [], "subtitle": []}
+
+        # Stream counts at stn_off + 4 (skip length+reserved)
+        n_video = data[stn_off + 4]
+        n_audio = data[stn_off + 5]
+        n_pg = data[stn_off + 6]
+        # Stream blocks start at stn_off + 4 + 12 (counts) = stn_off + 16
+        cursor = stn_off + 16
+
+        def skip_stream(cur: int) -> int:
+            """Skip one StreamEntry+StreamAttributes pair, return new cursor."""
+            entry_len = data[cur]
+            cur += 1 + entry_len
+            attr_len = data[cur]
+            cur += 1 + attr_len
+            return cur
+
+        def read_audio_lang(cur: int) -> tuple[str, int]:
+            entry_len = data[cur]
+            cur += 1 + entry_len  # skip StreamEntry
+            attr_len = data[cur]
+            cur += 1
+            # attr_len bytes follow: byte0=coding_type, byte1=audio_format,
+            # bytes2-4 = lang_code
+            if attr_len >= 5 and data[cur] in _BDMV_AUDIO_CODING_TYPES:
+                lang = data[cur + 2:cur + 5].decode("ascii", errors="replace").strip()
+            else:
+                lang = ""
+            cur += attr_len
+            return lang, cur
+
+        def read_pg_lang(cur: int) -> tuple[str, int]:
+            entry_len = data[cur]
+            cur += 1 + entry_len
+            attr_len = data[cur]
+            cur += 1
+            if attr_len >= 4 and data[cur] == _BDMV_PG_CODING_TYPE:
+                lang = data[cur + 1:cur + 4].decode("ascii", errors="replace").strip()
+            else:
+                lang = ""
+            cur += attr_len
+            return lang, cur
+
+        # Skip video streams (we don't need their langs)
+        for _ in range(n_video):
+            cursor = skip_stream(cursor)
+
+        # Read audio
+        audio = []
+        for _ in range(n_audio):
+            lang, cursor = read_audio_lang(cursor)
+            audio.append(lang)
+
+        # Read PG
+        subtitle = []
+        for _ in range(n_pg):
+            lang, cursor = read_pg_lang(cursor)
+            subtitle.append(lang)
+
+        return {"audio": audio, "subtitle": subtitle}
+    except Exception as exc:
+        print(f"[DISC-META] mpls parse failed for {mpls_path}: {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
