@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] — 2026-05-20
+
+### Added
+- **Disc track language detection.** Hand-rolled binary parsers for DVD `VTS_NN_0.IFO` and Blu-ray `.mpls` files now extract per-track language codes and patch them onto disc probe results before classify_audio_tracks runs. Discs no longer surface every audio/subtitle track as `und`; your existing `always_keep_languages` filter now selects correct tracks. Existing disc rows auto-backfill on first watcher cycle (idempotent via `settings.disc_lang_backfilled_v065`); the backfill runs the full classify pipeline so re-tagged rows carry the same schema as freshly-scanned ones. Parser failures fail open — disc still gets added with `und` tracks and a `[DISC-META]` warning logged.
+
 ## [0.6.4] — 2026-05-20
 
 ### Fixed
