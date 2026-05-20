@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-05-20
+
+### Added
+- **DVD and Blu-ray folder support.** Raw `VIDEO_TS/` and `BDMV/` folder structures are now scannable items: Shrinkerr detects them automatically, picks the longest title via ffmpeg's `dvd:/` / `bluray:/` protocols (libdvdread/libdvdnav/libbluray, already in the image), and transcodes that title to HEVC. Output is a scene-style MKV in the disc's parent folder; the original `VIDEO_TS/` or `BDMV/` subdirectory follows your existing post-conversion source-handling setting (delete / trash / backup). Combo discs with both VIDEO_TS and BDMV convert as Blu-ray. Main-feature only — extras and menus discarded.
+
 ## [0.5.26] — 2026-05-20
 
 ### Fixed
