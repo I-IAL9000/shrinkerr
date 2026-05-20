@@ -194,7 +194,7 @@ class FileWatcher:
                     if marker not in seen_discs:
                         new_files_disc_adjusted.append(marker)
                         seen_discs.add(marker)
-                continue  # drop the inner VOB/M2TS path
+                    continue  # drop the inner VOB/M2TS path only if mapped
             # Case B: path is the disc-root folder itself
             if p.is_dir():
                 disc_type = _classify_disc(p)
