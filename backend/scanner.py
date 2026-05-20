@@ -61,11 +61,16 @@ async def probe_file(file_path: str) -> Optional[dict]:
     p = Path(file_path)
     disc_type: Optional[str] = None
     disc_folder: Optional[Path] = None
-    if p.name == "index.bdmv" and p.parent.name == "BDMV":
+    # v0.6.0: case-insensitive marker comparison — DVD-Video / BDMV
+    # specs mandate exact casing on the disc, but case-insensitive
+    # filesystems (macOS HFS+/APFS, Windows NTFS) can store the names
+    # with different casing after rename/extract. Matches the .lower()
+    # convention used elsewhere in this file for filename matching.
+    if p.name.lower() == "index.bdmv" and p.parent.name.lower() == "bdmv":
         disc_type = "bdmv"
         disc_folder = p.parent.parent
         probe_input = f"bluray:{disc_folder}"
-    elif p.name == "VIDEO_TS.IFO" and p.parent.name == "VIDEO_TS":
+    elif p.name.lower() == "video_ts.ifo" and p.parent.name.lower() == "video_ts":
         disc_type = "dvd"
         disc_folder = p.parent.parent
         probe_input = f"dvd:{disc_folder}"
