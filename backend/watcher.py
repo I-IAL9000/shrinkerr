@@ -659,7 +659,12 @@ class FileWatcher:
         )
 
         from pathlib import Path as _Path
-        from backend.scanner import probe_file as _probe_file
+        from backend.scanner import (
+            probe_file as _probe_file,
+            classify_audio_tracks as _classify_audio_tracks,
+            classify_subtitle_tracks as _classify_subtitle_tracks,
+            detect_native_language as _detect_native_language,
+        )
         import json as _json
 
         updated = 0
@@ -669,15 +674,52 @@ class FileWatcher:
             probe = await _probe_file(fp)
             if probe is None:
                 continue
-            audio_tracks = probe.get("audio_tracks", [])
-            subtitle_tracks = probe.get("subtitle_tracks", [])
+
+            raw_audio = probe.get("audio_tracks", [])
+            raw_subs = probe.get("subtitle_tracks", [])
+
+            # Re-derive native_lang from the just-probed (now-language-tagged)
+            # audio tracks. Pre-v0.6.5 these were 'und' so native_language was
+            # whatever the first track happened to be; after re-probe the
+            # IFO/mpls metadata may upgrade it.
+            native_lang = _detect_native_language(raw_audio)
+
+            # Run the same classification pipeline as the canonical scan write
+            # path in backend/routes/scan.py:_write_batch_sync_inner. Pre-fix
+            # the raw probe dicts were written directly — leaner JSON missing
+            # the keep/score/locked fields that downstream consumers (e.g.
+            # backend/routes/jobs.py) read off of these rows.
+            audio_tracks = _classify_audio_tracks(raw_audio, native_lang)
+            subtitle_tracks = _classify_subtitle_tracks(raw_subs, native_lang)
+
+            audio_json = _json.dumps([t.model_dump() for t in audio_tracks])
+            subtitle_json = _json.dumps([t.model_dump() for t in subtitle_tracks])
+
+            # Mirror the subset of derived flags from _write_batch_sync_inner
+            # that depend on track classification. has_lossless_audio_flag is
+            # derived from codec/profile (invariant across re-probe) so we
+            # leave it alone; same for has_external_subs_flag, disc_type,
+            # video_codec, etc. native_language can change because 'und' may
+            # now resolve to a real ISO code.
+            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+
             db2 = await aiosqlite.connect(self.db_path)
             try:
                 await db2.execute(
                     "UPDATE scan_results SET "
-                    "audio_tracks_json = ?, subtitle_tracks_json = ? "
+                    "audio_tracks_json = ?, subtitle_tracks_json = ?, "
+                    "native_language = ?, "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
                     "WHERE file_path = ?",
-                    (_json.dumps(audio_tracks), _json.dumps(subtitle_tracks), fp),
+                    (
+                        audio_json,
+                        subtitle_json,
+                        native_lang,
+                        has_removable,
+                        has_removable_subs,
+                        fp,
+                    ),
                 )
                 await db2.commit()
             finally:
