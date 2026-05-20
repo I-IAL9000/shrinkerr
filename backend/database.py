@@ -372,6 +372,15 @@ async def init_db():
                 await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # v0.6.0: disc_type for DVD VIDEO_TS / Blu-ray BDMV folder items.
+        # NULL = regular file (the default for existing rows + new file
+        # scans); 'dvd' or 'bdmv' for disc-folder scan items. Set by the
+        # scanner when it encounters a VIDEO_TS.IFO or BDMV/index.bdmv
+        # marker file during the walk.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN disc_type TEXT DEFAULT NULL")
+        except Exception:
+            pass
         # Mirror health-check result onto the jobs row so the expanded Completed view can show it
         for col, ctype in [
             ("health_status", "TEXT DEFAULT NULL"),
