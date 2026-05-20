@@ -2067,8 +2067,8 @@ async def convert_file(
     if disc_type:
         _hw_use = False
         _hw_backend = None
-        _hw_on_device = True
-        print(f"[CONVERT] HW decode bypassed for disc input (ffmpeg protocol demux is software-only)", flush=True)
+        _hw_on_device = True  # filter chain skips hwupload; HW path is fully off via _hw_use=False
+        print("[CONVERT] HW decode bypassed for disc input (ffmpeg protocol demux is software-only)", flush=True)
 
     hw_decode_active = _hw_use
 
