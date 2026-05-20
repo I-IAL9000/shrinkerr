@@ -312,9 +312,18 @@ class FileWatcher:
                 file_mtime = None
 
             p = Path(file_path)
+            # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
+            # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
+            # disc-root folder (p.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
+            disc_type_val = probe.get("disc_type")
+            if disc_type_val:
+                display_name = p.parent.parent.name
+            else:
+                display_name = p.name
+
             scanned = ScannedFile(
                 file_path=file_path,
-                file_name=p.name,
+                file_name=display_name,
                 folder_name=p.parent.name,
                 file_size=file_size,
                 file_size_gb=round(file_size / (1024 ** 3), 3),
@@ -331,6 +340,7 @@ class FileWatcher:
                 estimated_savings_gb=round(savings_bytes / (1024 ** 3), 3),
                 file_mtime=file_mtime,
                 duration=duration,
+                disc_type=disc_type_val,  # v0.6.0
             )
             results.append(scanned)
             new_file_paths.append(file_path)
