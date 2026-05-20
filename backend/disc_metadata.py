@@ -321,3 +321,42 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
     except Exception as exc:
         print(f"[DISC-META] mpls parse failed for {mpls_path}: {exc}", flush=True)
         return {"audio": [], "subtitle": []}
+
+
+def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]]:
+    """Public entry point. Given a disc-root folder and disc_type ('dvd'
+    or 'bdmv'), return per-stream language metadata.
+
+    DVD: locates the main title set's VTS_NN_0.IFO and parses it.
+    BDMV: locates the longest .mpls in BDMV/PLAYLIST and parses it.
+
+    Returns {"audio": [...], "subtitle": [...]} on success, or
+    {"audio": [], "subtitle": []} on any error. Never raises.
+    """
+    try:
+        if disc_type == "dvd":
+            # Use the same title-set picker that v0.6.2 uses for the
+            # concat: VOB list. Same NN → same IFO.
+            from backend.scanner import _dvd_main_title_vobs
+            vobs = _dvd_main_title_vobs(disc_root)
+            if not vobs:
+                return {"audio": [], "subtitle": []}
+            # VOB name shape: VTS_NN_M.VOB → IFO is VTS_NN_0.IFO
+            first_vob = vobs[0]
+            parts = first_vob.stem.split("_")  # ['VTS', '01', '1']
+            if len(parts) != 3:
+                return {"audio": [], "subtitle": []}
+            ts_num = parts[1]
+            ifo = disc_root / "VIDEO_TS" / f"VTS_{ts_num}_0.IFO"
+            return _parse_dvd_ifo(ifo)
+        elif disc_type == "bdmv":
+            playlist_dir = disc_root / "BDMV" / "PLAYLIST"
+            mpls = _find_main_bdmv_playlist(playlist_dir)
+            if mpls is None:
+                return {"audio": [], "subtitle": []}
+            return _parse_bdmv_mpls(mpls)
+        else:
+            return {"audio": [], "subtitle": []}
+    except Exception as exc:
+        print(f"[DISC-META] parse_disc_languages failed for {disc_root} ({disc_type}): {exc}", flush=True)
+        return {"audio": [], "subtitle": []}

@@ -269,6 +269,31 @@ async def probe_file(file_path: str) -> Optional[dict]:
         print(f"[SCANNER] No decodable video stream in: {file_path} — marking corrupt", flush=True)
         return None
 
+    # v0.6.5: discs don't carry per-track language in their ffmpeg
+    # output (VOBs/M2TSes lack the tags; libbluray sees what the BD
+    # authored, which is often nothing). Read IFO/mpls sidecar and
+    # patch language fields by stream-order index. Fail-open: parser
+    # errors leave tracks as "und".
+    if disc_type:
+        try:
+            from backend.disc_metadata import parse_disc_languages
+            langs = parse_disc_languages(disc_folder, disc_type)
+            for i, t in enumerate(audio_tracks):
+                if i < len(langs["audio"]) and langs["audio"][i]:
+                    t["language"] = langs["audio"][i]
+            for i, t in enumerate(subtitle_tracks):
+                if i < len(langs["subtitle"]) and langs["subtitle"][i]:
+                    t["language"] = langs["subtitle"][i]
+            if len(audio_tracks) != len(langs["audio"]) or len(subtitle_tracks) != len(langs["subtitle"]):
+                print(
+                    f"[DISC-META] count mismatch for {disc_folder}: "
+                    f"ffmpeg audio={len(audio_tracks)}/IFO {len(langs['audio'])}, "
+                    f"ffmpeg sub={len(subtitle_tracks)}/IFO {len(langs['subtitle'])}",
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f"[DISC-META] failed for {disc_folder}: {exc}", flush=True)
+
     result = {
         "video_codec": video_codec,
         "video_pix_fmt": video_pix_fmt,

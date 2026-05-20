@@ -428,3 +428,54 @@ class TestBdmvMplsParser:
         data[4:8] = b"0100"
         mpls.write_bytes(bytes(data))
         assert _parse_bdmv_mpls(mpls)["audio"] == ["eng"]
+
+
+from backend.disc_metadata import parse_disc_languages
+
+
+class TestParseDiscLanguages:
+    def test_dvd_routes_to_ifo_parser(self, tmp_path):
+        # Build a fake disc-root with VIDEO_TS/VTS_01_0.IFO
+        disc_root = tmp_path / "Movie (1980)"
+        video_ts = disc_root / "VIDEO_TS"
+        video_ts.mkdir(parents=True)
+        (video_ts / "VIDEO_TS.IFO").write_bytes(b"DVDVIDEO-VMG" + b"\x00" * 0x320)
+        (video_ts / "VTS_01_0.IFO").write_bytes(
+            _build_dvd_ifo(audio_langs=[b"en"], subp_langs=[b"fr"])
+        )
+        # Also create a single VOB so _dvd_main_title_vobs picks "01"
+        (video_ts / "VTS_01_1.VOB").write_bytes(b"\x00" * 100)
+        result = parse_disc_languages(disc_root, "dvd")
+        assert result == {"audio": ["eng"], "subtitle": ["fre"]}
+
+    def test_bdmv_routes_to_mpls_parser(self, tmp_path):
+        disc_root = tmp_path / "Movie (1990)"
+        playlist_dir = disc_root / "BDMV" / "PLAYLIST"
+        playlist_dir.mkdir(parents=True)
+        # Two playlists; longer one is the main feature
+        (playlist_dir / "00000.mpls").write_bytes(
+            _build_mpls_full(duration_sec=60, audio_langs=[b"jpn"], pg_langs=[])
+        )
+        (playlist_dir / "00100.mpls").write_bytes(
+            _build_mpls_full(duration_sec=5000, audio_langs=[b"fre", b"eng"], pg_langs=[b"fre", b"eng"])
+        )
+        result = parse_disc_languages(disc_root, "bdmv")
+        assert result == {"audio": ["fre", "eng"], "subtitle": ["fre", "eng"]}
+
+    def test_unknown_disc_type_returns_empty(self, tmp_path):
+        result = parse_disc_languages(tmp_path, "unknown")
+        assert result == {"audio": [], "subtitle": []}
+
+    def test_dvd_with_no_vobs_returns_empty(self, tmp_path):
+        # No VOBs → _dvd_main_title_vobs returns empty → can't pick title set
+        disc_root = tmp_path / "Movie"
+        (disc_root / "VIDEO_TS").mkdir(parents=True)
+        (disc_root / "VIDEO_TS" / "VIDEO_TS.IFO").write_bytes(b"\x00" * 100)
+        result = parse_disc_languages(disc_root, "dvd")
+        assert result == {"audio": [], "subtitle": []}
+
+    def test_bdmv_with_no_playlist_returns_empty(self, tmp_path):
+        disc_root = tmp_path / "Movie"
+        (disc_root / "BDMV" / "PLAYLIST").mkdir(parents=True)  # empty dir
+        result = parse_disc_languages(disc_root, "bdmv")
+        assert result == {"audio": [], "subtitle": []}
