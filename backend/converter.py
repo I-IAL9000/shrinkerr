@@ -1690,7 +1690,10 @@ async def convert_file(
             ),
         }
 
-    temp_path = get_temp_path(input_path)
+    # v0.6.0: temp_path / final_path computation is deferred until after
+    # the probe, so disc-folder inputs (whose marker path sits inside
+    # VIDEO_TS/ or BDMV/) can use the disc-root for both output and temp.
+    # The actual values get assigned below once disc_type is known.
 
     # Read live settings from DB — or use pre_settings if provided (worker mode, no local DB)
     if pre_settings is not None:
@@ -1698,10 +1701,6 @@ async def convert_file(
     else:
         live_settings = await get_live_encoding_settings()
     filename_suffix = live_settings.get("filename_suffix", "")
-    # Pass the effective encoder so the output filename picks the right
-    # codec tag: `x265` for libx265, `h265` for NVENC (see
-    # rename_source_to_target_codec for the rationale).
-    final_path = get_output_path(input_path, suffix=filename_suffix, encoder=encoder)
     nvenc_preset = override_preset if override_preset is not None else live_settings.get("nvenc_preset", "p6")
     libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
     cq = override_cq if override_cq is not None else live_settings.get("nvenc_cq", 20)
@@ -1747,6 +1746,13 @@ async def convert_file(
     # resolution block has a safe value when the probe fails (defaults
     # to 8-bit encode, the safer fallback).
     source_pix_fmt: str = ""
+    # v0.6.0: disc-folder input flag. Set from probe_data["disc_type"]
+    # (scanner returns 'dvd' for VIDEO_TS.IFO inputs, 'bdmv' for
+    # BDMV/index.bdmv inputs); None for regular files. Drives the
+    # protocol-prefixed encode input, the output-filename construction,
+    # the temp-path location, and the HW-decode bypass below.
+    disc_type: str | None = None
+    probe_data: dict | None = None
     try:
         from backend.scanner import probe_file
         probe_data = await probe_file(input_path)
@@ -1767,6 +1773,12 @@ async def convert_file(
             # Probed by scanner.probe_file; "yuv420p10le" / "yuv420p12le"
             # signal 10-bit source, everything else (yuv420p, nv12) is 8-bit.
             source_pix_fmt = probe_data.get("video_pix_fmt") or ""
+            # v0.6.0: disc-folder marker. Set by scanner.probe_file when the
+            # input_path points at a VIDEO_TS.IFO ('dvd') or BDMV/index.bdmv
+            # ('bdmv'). Encode-input then becomes ffmpeg's dvd:/ or bluray:/
+            # protocol with the disc-root folder; ffmpeg auto-selects the
+            # longest title.
+            disc_type = probe_data.get("disc_type") or None
 
             # Lossless audio auto-conversion
             if live_settings.get("auto_convert_lossless", False) and probe_audio_tracks:
@@ -1781,6 +1793,23 @@ async def convert_file(
                     print(f"[CONVERT] Lossless audio detected ({', '.join(lossless_names)}), converting to {target_codec} {target_bitrate}k", flush=True)
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
+
+    # v0.6.0: compute output + temp paths now that disc_type is known.
+    # Regular files: existing get_output_path / get_temp_path behaviour.
+    # Disc inputs: filename built from disc-root folder name + probe tokens
+    # (via build_disc_output_filename); temp lands in the disc-root folder
+    # too (NOT inside VIDEO_TS/ or BDMV/, which get_temp_path would do).
+    # Pass the effective encoder so the output filename picks the right
+    # codec tag: `x265` for libx265, `h265` for NVENC (see
+    # rename_source_to_target_codec for the rationale).
+    if disc_type and probe_data:
+        final_path = build_disc_output_filename(
+            input_path, disc_type, probe_data, encoder=encoder,
+        )
+        temp_path = str(Path(final_path).with_suffix(".converting.mkv"))
+    else:
+        final_path = get_output_path(input_path, suffix=filename_suffix, encoder=encoder)
+        temp_path = get_temp_path(input_path)
 
     # Build inline keep-list for audio:
     #   - Filter out any tracks in audio_tracks_to_remove
@@ -1885,6 +1914,16 @@ async def convert_file(
     _PRESTRIP_SUB_THRESHOLD = 9999
     prestrip_path: str | None = None
     encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
+    # v0.6.0: disc-folder input — encode reads from ffmpeg's dvd:/ or
+    # bluray:/ protocol with the disc-root folder (parent of VIDEO_TS/
+    # or BDMV/). Prestrip never fires for disc inputs (no sub-removal
+    # against a virtual title set), so the protocol path stays through
+    # the encode without further swaps.
+    if disc_type:
+        disc_root = Path(input_path).parent.parent
+        protocol = "bluray" if disc_type == "bdmv" else "dvd"
+        encode_input_path = f"{protocol}:{disc_root}"
+        print(f"[CONVERT] Disc input detected ({disc_type}); using {protocol}:/{disc_root.name}", flush=True)
     if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
         prestrip_path = await _prestrip_subtitles(
             input_path=input_path,
@@ -2019,6 +2058,17 @@ async def convert_file(
             print(f"[CONVERT] HW decode unavailable for codec "
                   f"'{_src_codec_lower}' on NVDEC (libx265 mixed mode) — software fallback",
                   flush=True)
+
+    # v0.6.0: ffmpeg's dvd:/ and bluray:/ protocols always demux through
+    # the native software decoder; -hwaccel is silently ignored. Force
+    # the flags off so the filter-chain logic doesn't try to insert
+    # scale_cuda / hwupload etc. that would expect HW frames the demuxer
+    # never produced.
+    if disc_type:
+        _hw_use = False
+        _hw_backend = None
+        _hw_on_device = True
+        print(f"[CONVERT] HW decode bypassed for disc input (ffmpeg protocol demux is software-only)", flush=True)
 
     hw_decode_active = _hw_use
 
