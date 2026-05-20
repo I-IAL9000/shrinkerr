@@ -2943,7 +2943,42 @@ async def convert_file(
         use_trash = live_settings.get("trash_original_after_conversion", False)
 
         result_backup_path = None
-        if backup_days and backup_days > 0:
+        if disc_type:
+            # v0.6.0: for disc inputs the "source" is the disc subdir
+            # (VIDEO_TS/ or BDMV/), not the marker file inside it. Same
+            # three modes (backup / trash / delete) but operating on the
+            # whole folder.
+            source_to_handle = Path(input_path).parent
+            if backup_days and backup_days > 0:
+                custom_backup = live_settings.get("backup_folder", "")
+                if custom_backup:
+                    backup_dir = Path(custom_backup)
+                    backup_dir = backup_dir / p.parent.parent.name
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    legacy = p.parent.parent / ".squeezarr_backup"
+                    backup_dir = legacy if legacy.exists() else (p.parent.parent / ".shrinkerr_backup")
+                    backup_dir.mkdir(exist_ok=True)
+                backup_path = backup_dir / source_to_handle.name
+                if backup_path.is_symlink():
+                    raise OSError(
+                        f"Refusing to move into backup path — destination is a symlink: {backup_path}"
+                    )
+                shutil.move(str(source_to_handle), str(backup_path))
+                result_backup_path = str(backup_path)
+                print(f"[CONVERT] Disc subdir backed up to: {backup_path}", flush=True)
+            elif use_trash:
+                try:
+                    from send2trash import send2trash
+                    send2trash(str(source_to_handle))
+                    print(f"[CONVERT] Disc subdir moved to trash: {source_to_handle.name}", flush=True)
+                except Exception as trash_exc:
+                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+                    shutil.rmtree(source_to_handle)
+            else:
+                shutil.rmtree(source_to_handle)
+                print(f"[CONVERT] Removed disc subdir: {source_to_handle}", flush=True)
+        elif backup_days and backup_days > 0:
             # Move original to backup folder (custom or .shrinkerr_backup in same dir)
             custom_backup = live_settings.get("backup_folder", "")
             if custom_backup:
