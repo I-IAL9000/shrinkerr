@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.26] — 2026-05-20
+
+### Fixed
+- Conversion failing on **10-bit H.264 sources (Hi10p, `yuv420p10le`)** with `ffmpeg exited with code 218` and "Impossible to convert between the formats supported by the filter 'graph -1 input from stream 0:0' and the filter 'auto_scale_0'". Pascal NVDEC (and older) don't support 10-bit H.264; QSV decode is 8-bit-only for H.264; most VAAPI drivers don't either. Pre-v0.5.26 our codec gate only checked the codec name (`h264` ∈ supported set → True), so the cmd builder emitted `-hwaccel cuda -hwaccel_output_format cuda` and a `scale_cuda=format=p010le` filter. ffmpeg then tried NVDEC, silently fell back to software decode (good), but the now-CPU frames couldn't bridge to the still-present CUDA filter (bad). Extended `hw_decode_supports()` to also check `source_pix_fmt`: any H.264 source with a `p10` / `10le` / `p12` / `12le` pix_fmt now takes the pure-software-decode path on all three HW backends. 10-bit HEVC is unaffected (Pascal+ NVDEC, Gen11+ QSV, and most VAAPI drivers handle it fine). Worker log now also reports the source pix_fmt alongside the codec when HW decode is skipped.
+
 ## [0.5.25] — 2026-05-19
 
 ### Fixed

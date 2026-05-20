@@ -701,14 +701,33 @@ _VAAPI_DECODE_SUPPORTED = frozenset({
 })
 
 
-def hw_decode_supports(decoder: str, source_codec: str | None) -> bool:
+def hw_decode_supports(decoder: str, source_codec: str | None,
+                       source_pix_fmt: str | None = None) -> bool:
     """True if `decoder` ('cuda'/'qsv'/'vaapi') can hardware-decode
     `source_codec` (lowercase ffprobe codec name). Returns False when
     source_codec is None/empty so probe failures fall back to software
-    rather than crashing the cmd builder."""
+    rather than crashing the cmd builder.
+
+    v0.5.26: also gates on `source_pix_fmt`. **10-bit H.264 (Hi10p,
+    yuv420p10le)** is universally unreliable across consumer hardware
+    decoders — Pascal NVDEC and older lack 10-bit H.264 entirely
+    (Turing GP104+ added it), QSV decode is 8-bit-only for H.264,
+    and most VAAPI drivers don't support it either. When the source
+    is Hi10p, ffmpeg silently falls back to software decode but our
+    `scale_cuda=format=p010le` (or `scale_qsv` / `scale_vaapi`) filter
+    still expects HW frames and the encoder bombs with
+    "Impossible to convert between the formats supported by the filter
+    'graph -1 input from stream 0:0' and the filter 'auto_scale_0'".
+    Excluding the case at the gate makes the cmd builder emit pure
+    software decode for these files. 10-bit HEVC is unaffected —
+    Pascal+ NVDEC, Gen11+ QSV, and most VAAPI drivers handle it fine."""
     if not source_codec:
         return False
     c = source_codec.lower()
+    pf = (source_pix_fmt or "").lower()
+    # 10-bit H.264 exclusion (universal across the three HW decoders).
+    if c == "h264" and ("p10" in pf or "10le" in pf or "p12" in pf or "12le" in pf):
+        return False
     table = {
         "cuda": _NVDEC_SUPPORTED,
         "qsv": _QSV_DECODE_SUPPORTED,
@@ -1882,17 +1901,23 @@ async def convert_file(
     _hw_backend: str | None = None
     _hw_on_device = True
     _src_codec_lower = (source_video_codec or "").lower() if source_video_codec else None
+    # v0.5.26: enrich the fallback log line with pix_fmt so users hitting
+    # the 10-bit H.264 exclusion can tell why NVDEC was skipped.
+    _hw_skip_reason = (
+        f"codec '{_src_codec_lower}' pix_fmt '{source_pix_fmt or 'unknown'}'"
+        if source_pix_fmt else f"codec '{_src_codec_lower}'"
+    )
     if encoder == "nvenc" and nvenc_hw_decode:
-        if hw_decode_supports("cuda", _src_codec_lower):
+        if hw_decode_supports("cuda", _src_codec_lower, source_pix_fmt):
             _hw_use = True
             _hw_backend = "cuda"
             _hw_on_device = True
         else:
-            print(f"[CONVERT] HW decode unavailable for codec "
-                  f"'{_src_codec_lower}' on NVDEC — software fallback for this job",
+            print(f"[CONVERT] HW decode unavailable for {_hw_skip_reason} "
+                  f"on NVDEC — software fallback for this job",
                   flush=True)
     elif encoder == "qsv" and qsv_hw_decode:
-        if hw_decode_supports("qsv", _src_codec_lower):
+        if hw_decode_supports("qsv", _src_codec_lower, source_pix_fmt):
             _hw_use = True
             _hw_backend = "qsv"
             _hw_on_device = True
@@ -1901,7 +1926,7 @@ async def convert_file(
                   f"'{_src_codec_lower}' on QSV — software fallback for this job",
                   flush=True)
     elif encoder == "vaapi" and vaapi_hw_decode:
-        if hw_decode_supports("vaapi", _src_codec_lower):
+        if hw_decode_supports("vaapi", _src_codec_lower, source_pix_fmt):
             _hw_use = True
             _hw_backend = "vaapi"
             _hw_on_device = True
@@ -1910,7 +1935,7 @@ async def convert_file(
                   f"'{_src_codec_lower}' on VAAPI — software fallback for this job",
                   flush=True)
     elif encoder == "libx265" and libx265_use_nvdec:
-        if hw_decode_supports("cuda", _src_codec_lower):
+        if hw_decode_supports("cuda", _src_codec_lower, source_pix_fmt):
             _hw_use = True
             _hw_backend = "cuda"
             _hw_on_device = False  # mixed mode — readback to CPU
