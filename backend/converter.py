@@ -1013,26 +1013,9 @@ def build_disc_output_filename(
     channels_token = ""
     if audio_tracks:
         a = audio_tracks[0]
-        codec_raw = (a.get("codec") or "").lower()
-        # Scene-style codec naming (matches the user's existing library
-        # convention; uppercase short form). Add cases here as new codecs
-        # appear in disc rips.
-        if codec_raw == "eac3":
-            audio_token = "EAC3"
-        elif codec_raw == "ac3":
-            audio_token = "AC3"
-        elif codec_raw == "dts":
-            audio_token = "DTS"
-        elif codec_raw == "truehd":
-            audio_token = "TrueHD"
-        elif codec_raw == "flac":
-            audio_token = "FLAC"
-        elif codec_raw == "aac":
-            audio_token = "AAC"
-        elif codec_raw.startswith("pcm"):
-            audio_token = "LPCM"
-        elif codec_raw:
-            audio_token = codec_raw.upper()
+        codec_raw = a.get("codec") or ""
+        if codec_raw:
+            audio_token = get_audio_display_name(codec_raw, a.get("profile") or "")
         ch = int(a.get("channels") or 0)
         if ch > 0:
             channels_token = _format_channels(ch)
