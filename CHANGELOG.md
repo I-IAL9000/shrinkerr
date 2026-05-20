@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.4] — 2026-05-20
+
+### Fixed
+- Disc conversions reported as **failed despite succeeding**. After the encode landed and post-source-handling deleted the `VIDEO_TS/` (or `BDMV/`) subdirectory per the user's delete/trash setting, `rename_external_subtitles()` ran on the now-vanished parent and raised `FileNotFoundError`, which propagated up as a job failure. The encoded MKV was intact — only the job status was wrong. Helper now no-ops cleanly when the parent dir is missing (discs don't have sidecar subs anyway; their subtitles are internal PGS/VobSub streams). Also defends against any future race where the source disappears between encode and rename.
+
 ## [0.6.3] — 2026-05-20
 
 ### Fixed
