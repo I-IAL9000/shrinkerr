@@ -242,6 +242,9 @@ class FileWatcher:
 
             probe = await probe_file(file_path)
             if probe is None:
+                # v0.6.2: disc probes can fail silently. Surface them.
+                if "/VIDEO_TS/VIDEO_TS.IFO" in file_path or "/BDMV/index.bdmv" in file_path.lower():
+                    print(f"[WATCHER] !!! Disc probe FAILED: {file_path}", flush=True)
                 self._probe_failures.add(file_path)
                 skipped_probe += 1
                 continue

@@ -339,6 +339,13 @@ def _build_ffmpeg_cmd_impl(
                 "-init_hw_device", f"vaapi=va:{node}",
                 "-init_hw_device", "qsv=qsv@va",
             ]
+    # v0.6.2: disc-protocol inputs (`concat:VTS_01_1.VOB|...` for DVD,
+    # `bluray:/path` for Blu-ray) need a deeper analysis window for
+    # ffmpeg to lock onto the streams and compute duration before the
+    # encode pipeline starts. Detected from the input string so this
+    # function stays decoupled from disc_type.
+    if input_path.startswith("concat:") or input_path.startswith("bluray:"):
+        cmd += ["-analyzeduration", "200M", "-probesize", "200M"]
     cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
@@ -1940,9 +1947,19 @@ async def convert_file(
     # the encode without further swaps.
     if disc_type:
         disc_root = Path(input_path).parent.parent
-        protocol = "bluray" if disc_type == "bdmv" else "dvd"
-        encode_input_path = f"{protocol}:{disc_root}"
-        print(f"[CONVERT] Disc input detected ({disc_type}); using {protocol}:/{disc_root.name}", flush=True)
+        if disc_type == "dvd":
+            # v0.6.2: DVD encode reads through ffmpeg's `concat:` protocol
+            # over the main-feature VOBs. The v0.6.0 `dvd:/` protocol was
+            # fictional; see scanner._dvd_concat_input docstring.
+            from backend.scanner import _dvd_concat_input
+            encode_input_path = _dvd_concat_input(disc_root)
+            if encode_input_path is None:
+                raise RuntimeError(
+                    f"DVD encode failed: no main-feature VOBs in {disc_root}/VIDEO_TS/"
+                )
+        else:  # bdmv
+            encode_input_path = f"bluray:{disc_root}"
+        print(f"[CONVERT] Disc input detected ({disc_type}); using {disc_type}-concat over disc_root={disc_root.name}", flush=True)
     if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
         prestrip_path = await _prestrip_subtitles(
             input_path=input_path,

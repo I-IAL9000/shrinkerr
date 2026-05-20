@@ -45,6 +45,55 @@ def _disc_total_size(folder: Path, disc_type: str) -> int:
         return 0
 
 
+def _dvd_main_title_vobs(disc_root: Path) -> list[Path]:
+    """Return the ordered VOB chunks of the main-feature title set on a DVD.
+
+    DVD-Video layout: <disc_root>/VIDEO_TS/VTS_NN_M.VOB where NN is the
+    title-set number and M is the chunk (M=0 is the menu, M=1..N is the
+    actual payload). The main feature is the title set with the largest
+    total VOB-1..N size. Returns chunks in order. Empty list if no
+    candidate found.
+
+    v0.6.2: replaces the fictional `dvd:/` protocol used in v0.6.0-0.6.1.
+    Verified against real DVD via `concat:` protocol; libdvdread's
+    `dvdvideo` demuxer was discarded because it requires an ISO/block
+    device, not a folder.
+    """
+    video_ts = disc_root / "VIDEO_TS"
+    if not video_ts.is_dir():
+        return []
+    title_sets: dict[str, list[tuple[int, Path]]] = {}
+    for vob in video_ts.glob("VTS_*.VOB"):
+        # Skip macOS AppleDouble companions (`._VTS_*.VOB`)
+        if vob.name.startswith("."):
+            continue
+        parts = vob.stem.split("_")  # "VTS_01_2" → ["VTS", "01", "2"]
+        if len(parts) != 3:
+            continue
+        ts_num = parts[1]
+        try:
+            chunk = int(parts[2])
+        except ValueError:
+            continue
+        if chunk == 0:
+            continue  # skip menu chunk
+        title_sets.setdefault(ts_num, []).append((chunk, vob))
+    if not title_sets:
+        return []
+    sizes = {ts: sum(v.stat().st_size for _, v in chunks) for ts, chunks in title_sets.items()}
+    main_ts = max(sizes, key=sizes.get)
+    return [v for _, v in sorted(title_sets[main_ts])]
+
+
+def _dvd_concat_input(disc_root: Path) -> Optional[str]:
+    """Build the ffmpeg `concat:` protocol input string for a DVD's main
+    feature, or None if no VOBs found. v0.6.2."""
+    vobs = _dvd_main_title_vobs(disc_root)
+    if not vobs:
+        return None
+    return "concat:" + "|".join(str(v) for v in vobs)
+
+
 async def probe_file(file_path: str) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 
@@ -73,7 +122,10 @@ async def probe_file(file_path: str) -> Optional[dict]:
     elif p.name.lower() == "video_ts.ifo" and p.parent.name.lower() == "video_ts":
         disc_type = "dvd"
         disc_folder = p.parent.parent
-        probe_input = f"dvd:{disc_folder}"
+        probe_input = _dvd_concat_input(disc_folder)
+        if probe_input is None:
+            print(f"[PROBE] DVD probe failed: no main-feature VOBs found in {disc_folder}/VIDEO_TS/", flush=True)
+            return None
     else:
         probe_input = file_path
     cmd = [
@@ -82,8 +134,14 @@ async def probe_file(file_path: str) -> Optional[dict]:
         "-print_format", "json",
         "-show_streams",
         "-show_format",
-        probe_input,
     ]
+    # v0.6.2: disc inputs need a deeper analysis window for ffprobe to
+    # compute duration. The `concat:` protocol over VOBs (DVD) and the
+    # `bluray:` protocol both surface duration only after ffprobe has
+    # read enough of the stream.
+    if disc_type:
+        cmd.extend(["-analyzeduration", "200M", "-probesize", "200M"])
+    cmd.extend(["-i", probe_input])
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
