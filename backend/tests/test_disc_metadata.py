@@ -134,3 +134,98 @@ class TestDvdIfoParser:
         path = self._write_fixture(tmp_path, bytes(fixture))
         result = _parse_dvd_ifo(path)
         assert len(result["audio"]) <= 8
+
+
+import struct
+
+from backend.disc_metadata import _find_main_bdmv_playlist
+
+
+def _build_mpls_with_duration(seconds: float) -> bytes:
+    """Build a minimal valid .mpls fixture whose total PlayItem duration
+    is `seconds` seconds. Single PlayItem, no multi-angle, no STN_table
+    streams (just enough header bytes for duration parsing).
+    Used to test the longest-playlist picker without needing full mpls."""
+    ticks = int(seconds * 45000)
+    # Header (40 bytes)
+    pl_start = 40
+    plm_start = 0  # not used in selection
+    ext_start = 0
+    header = (
+        b"MPLS"
+        + b"0200"
+        + struct.pack(">I", pl_start)
+        + struct.pack(">I", plm_start)
+        + struct.pack(">I", ext_start)
+        + b"\x00" * 20  # reserved
+    )
+    # PlayList @ pl_start: length(4) + reserved(2) + n_playitems(2) + n_subpaths(2)
+    # then PlayItem[]
+    # Minimal PlayItem:
+    #   length(2)
+    #   clip_id(5) + codec_id(4)
+    #   flags(2) + ref_to_STC_id(1)
+    #   IN_time(4) + OUT_time(4)
+    #   UO_mask(8) + flags(1) + still_mode(1) + still_time(2)
+    #   = 34 bytes payload (length covers bytes 2 onwards = 32)
+    # NO multi_clip, NO STN_table (Task 3 doesn't need it, Task 4 will)
+    in_time = 0
+    out_time = ticks
+    playitem = (
+        struct.pack(">H", 32)  # length (after this field)
+        + b"00000"
+        + b"M2TS"
+        + b"\x00\x00"  # flags (no multi_angle)
+        + b"\x00"
+        + struct.pack(">I", in_time)
+        + struct.pack(">I", out_time)
+        + b"\x00" * 8  # UO_mask
+        + b"\x00"  # flags
+        + b"\x00"  # still_mode = none
+        + b"\x00\x00"  # still_time
+    )
+    playlist_body = (
+        b"\x00" * 2  # reserved
+        + struct.pack(">H", 1)  # number_of_PlayItems
+        + struct.pack(">H", 0)  # number_of_SubPaths
+        + playitem
+    )
+    playlist = struct.pack(">I", len(playlist_body)) + playlist_body
+    return header + playlist
+
+
+class TestFindMainBdmvPlaylist:
+    def test_picks_longest_among_multiple(self, tmp_path):
+        playlist_dir = tmp_path / "PLAYLIST"
+        playlist_dir.mkdir()
+        (playlist_dir / "00000.mpls").write_bytes(_build_mpls_with_duration(120))   # 2 min
+        (playlist_dir / "00100.mpls").write_bytes(_build_mpls_with_duration(5000))  # ~83 min (main feature)
+        (playlist_dir / "00200.mpls").write_bytes(_build_mpls_with_duration(60))    # 1 min
+        result = _find_main_bdmv_playlist(playlist_dir)
+        assert result is not None
+        assert result.name == "00100.mpls"
+
+    def test_single_playlist_picked(self, tmp_path):
+        playlist_dir = tmp_path / "PLAYLIST"
+        playlist_dir.mkdir()
+        (playlist_dir / "00000.mpls").write_bytes(_build_mpls_with_duration(4900))
+        result = _find_main_bdmv_playlist(playlist_dir)
+        assert result is not None
+        assert result.name == "00000.mpls"
+
+    def test_empty_dir_returns_none(self, tmp_path):
+        playlist_dir = tmp_path / "PLAYLIST"
+        playlist_dir.mkdir()
+        assert _find_main_bdmv_playlist(playlist_dir) is None
+
+    def test_missing_dir_returns_none(self, tmp_path):
+        assert _find_main_bdmv_playlist(tmp_path / "does_not_exist") is None
+
+    def test_invalid_mpls_skipped(self, tmp_path):
+        playlist_dir = tmp_path / "PLAYLIST"
+        playlist_dir.mkdir()
+        (playlist_dir / "00000.mpls").write_bytes(b"not_a_real_mpls")
+        (playlist_dir / "00001.mpls").write_bytes(_build_mpls_with_duration(1000))
+        result = _find_main_bdmv_playlist(playlist_dir)
+        assert result is not None
+        assert result.name == "00001.mpls"

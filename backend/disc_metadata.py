@@ -14,7 +14,9 @@ empty lists. Callers map empty → "und" at the merge step. Logs a
 
 from __future__ import annotations
 
+import struct
 from pathlib import Path
+from typing import Optional
 
 
 # ISO 639-1 (2-letter) → ISO 639-2 (3-letter, "B" form matching ffprobe's convention).
@@ -99,3 +101,81 @@ def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
     except Exception as exc:
         print(f"[DISC-META] IFO parse failed for {ifo_path}: {exc}", flush=True)
         return {"audio": [], "subtitle": []}
+
+
+# Blu-ray .mpls header layout (BD-ROM Part 3):
+#   bytes [0:4]   : "MPLS" magic
+#   bytes [4:8]   : version ("0100" / "0200" / "0300", ASCII)
+#   bytes [8:12]  : PlayList_start_address (uint32 BE)
+#   bytes [12:16] : PlayListMark_start_address (uint32 BE)
+#   bytes [16:20] : ExtensionData_start_address (uint32 BE)
+#   bytes [20:40] : reserved
+# PlayList:
+#   uint32 BE   : length (bytes after this field)
+#   uint16 BE   : reserved
+#   uint16 BE   : number_of_PlayItems
+#   uint16 BE   : number_of_SubPaths
+#   PlayItem[]
+# Each PlayItem header (first 34 bytes when no multi_angle):
+#   uint16 BE   : length (after this field)
+#   bytes [2:7] : clip_id (5 ASCII)
+#   bytes [7:11]: clip_codec_id (4 ASCII)
+#   uint16 BE   : flags (bit 4 = IsMultiAngle)
+#   uint8       : ref_to_STC_id
+#   uint32 BE   : IN_time (45 kHz ticks)
+#   uint32 BE   : OUT_time
+#   bytes [22:30]: UO_mask
+#   uint8       : flags (PlayItem_random_access_flag)
+#   uint8       : still_mode
+#   uint16 BE   : still_time
+_MPLS_MAGIC = b"MPLS"
+_MPLS_VERSIONS = (b"0100", b"0200", b"0300")
+_MPLS_HEADER_BYTES = 40
+_MPLS_45KHZ = 45000.0  # PlayItem times are in 45 kHz units
+
+
+def _mpls_total_duration(mpls_path: Path) -> float:
+    """Sum all PlayItem durations in a .mpls file. Returns 0.0 on any
+    parse failure (skips the file in the longest-playlist picker)."""
+    try:
+        data = mpls_path.read_bytes()
+        if len(data) < _MPLS_HEADER_BYTES or data[:4] != _MPLS_MAGIC:
+            return 0.0
+        if data[4:8] not in _MPLS_VERSIONS:
+            return 0.0
+        pl_start = struct.unpack(">I", data[8:12])[0]
+        # PlayList: 4 length + 2 reserved + 2 n_playitems + 2 n_subpaths = 10
+        if pl_start + 10 > len(data):
+            return 0.0
+        n_playitems = struct.unpack(">H", data[pl_start + 6:pl_start + 8])[0]
+        cursor = pl_start + 10
+        total_ticks = 0
+        for _ in range(n_playitems):
+            if cursor + 22 > len(data):
+                break
+            pi_length = struct.unpack(">H", data[cursor:cursor + 2])[0]
+            # IN_time at offset 14 within PlayItem; OUT_time at 18.
+            in_time = struct.unpack(">I", data[cursor + 14:cursor + 18])[0]
+            out_time = struct.unpack(">I", data[cursor + 18:cursor + 22])[0]
+            total_ticks += max(0, out_time - in_time)
+            cursor += 2 + pi_length  # skip the whole PlayItem
+        return total_ticks / _MPLS_45KHZ
+    except Exception:
+        return 0.0
+
+
+def _find_main_bdmv_playlist(playlist_dir: Path) -> Optional[Path]:
+    """Return the .mpls file under `playlist_dir` with the largest total
+    PlayItem duration. Replicates libbluray's default 'longest title'
+    pick. Returns None if no .mpls file parses successfully."""
+    if not playlist_dir.is_dir():
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for mpls in sorted(playlist_dir.glob("*.mpls")):
+        dur = _mpls_total_duration(mpls)
+        if dur > 0:
+            candidates.append((dur, mpls))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return candidates[0][1]
