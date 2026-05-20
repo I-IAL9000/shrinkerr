@@ -8,15 +8,76 @@ from backend.config import settings
 from backend.models import AudioTrack, ScannedFile
 
 
+def _classify_disc(folder: Path) -> Optional[str]:
+    """Return 'bdmv', 'dvd', or None for a candidate folder.
+    BDMV wins on combo discs (Blu-ray is the main feature). v0.6.0+."""
+    bdmv_index = folder / "BDMV" / "index.bdmv"
+    if bdmv_index.is_file():
+        return "bdmv"
+    dvd_ifo = folder / "VIDEO_TS" / "VIDEO_TS.IFO"
+    if dvd_ifo.is_file():
+        return "dvd"
+    return None
+
+
+def _disc_marker_path(folder: Path, disc_type: str) -> Path:
+    """Return the real-file path Shrinkerr stores as `scan_results.file_path`
+    for a disc item. Always inside the disc subdirectory; this lets every
+    existing `os.path.dirname(file_path)` consumer keep working without
+    awareness of disc items. v0.6.0+."""
+    if disc_type == "bdmv":
+        return folder / "BDMV" / "index.bdmv"
+    return folder / "VIDEO_TS" / "VIDEO_TS.IFO"
+
+
+def _disc_total_size(folder: Path, disc_type: str) -> int:
+    """Sum bytes of all media-payload files in the disc structure.
+    DVD → all `*.VOB` files under VIDEO_TS/; BDMV → all `*.m2ts` under
+    BDMV/STREAM/. Used as `scan_results.file_size` for disc items since
+    ffprobe's format.size only covers the main title. Returns 0 on any
+    error (caller falls back to whatever size estimate they have). v0.6.0+."""
+    try:
+        if disc_type == "bdmv":
+            stream_dir = folder / "BDMV" / "STREAM"
+            return sum(f.stat().st_size for f in stream_dir.glob("*.m2ts") if f.is_file())
+        return sum(f.stat().st_size for f in (folder / "VIDEO_TS").glob("*.VOB") if f.is_file())
+    except OSError:
+        return 0
+
+
 async def probe_file(file_path: str) -> Optional[dict]:
-    """Run ffprobe on a file and return parsed metadata dict, or None on failure."""
+    """Run ffprobe on a file and return parsed metadata dict, or None on failure.
+
+    v0.6.0: when `file_path` points at a disc-marker file
+    (VIDEO_TS.IFO inside a VIDEO_TS/ folder, or index.bdmv inside a
+    BDMV/ folder), probe the disc-folder via ffmpeg's `dvd:/` or
+    `bluray:/` protocol instead. ffmpeg auto-picks the longest title;
+    the resulting streams + duration are the main feature only.
+    `file_size` is patched to the disc-total via `_disc_total_size()`
+    since ffprobe's `format.size` only covers the main title.
+    `disc_type` ('dvd' / 'bdmv') is added to the return dict so
+    downstream consumers (scanner walk, converter) can branch on it.
+    """
+    p = Path(file_path)
+    disc_type: Optional[str] = None
+    disc_folder: Optional[Path] = None
+    if p.name == "index.bdmv" and p.parent.name == "BDMV":
+        disc_type = "bdmv"
+        disc_folder = p.parent.parent
+        probe_input = f"bluray:{disc_folder}"
+    elif p.name == "VIDEO_TS.IFO" and p.parent.name == "VIDEO_TS":
+        disc_type = "dvd"
+        disc_folder = p.parent.parent
+        probe_input = f"dvd:{disc_folder}"
+    else:
+        probe_input = file_path
     cmd = [
         "ffprobe",
         "-v", "quiet",
         "-print_format", "json",
         "-show_streams",
         "-show_format",
-        file_path,
+        probe_input,
     ]
     proc = None
     try:
@@ -145,7 +206,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
         print(f"[SCANNER] No decodable video stream in: {file_path} — marking corrupt", flush=True)
         return None
 
-    return {
+    result = {
         "video_codec": video_codec,
         "video_pix_fmt": video_pix_fmt,
         "video_width": video_width,
@@ -156,6 +217,17 @@ async def probe_file(file_path: str) -> Optional[dict]:
         "duration": duration,
         "file_size": file_size,
     }
+    # v0.6.0: disc-specific result patches
+    if disc_type:
+        result["disc_type"] = disc_type
+        # ffprobe's format.size for dvd:/bluray: only covers the main title.
+        # Use the on-disk size of all VOB/M2TS payload files for accurate
+        # disk-usage display in the UI.
+        if disc_folder is not None:
+            total = _disc_total_size(disc_folder, disc_type)
+            if total > 0:
+                result["file_size"] = total
+    return result
 
 
 def detect_native_language(audio_tracks: list[dict]) -> str:
