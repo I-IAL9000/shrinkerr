@@ -621,8 +621,89 @@ class FileWatcher:
         finally:
             await db.close()
 
+    async def _backfill_disc_languages_v065(self) -> None:
+        """One-shot v0.6.5 migration: re-probe existing disc rows whose
+        audio tracks are tagged 'und' so they pick up the new IFO/mpls
+        language metadata. Tracked via settings flag
+        'disc_lang_backfilled_v065'. Skips paths whose source has been
+        deleted (stale rows are cleaned up by the normal stale-removal
+        path)."""
+        flag_key = "disc_lang_backfilled_v065"
+        db = await aiosqlite.connect(self.db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag_key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row and row["value"] == "true":
+                return  # already done
+
+            async with db.execute(
+                "SELECT file_path FROM scan_results "
+                "WHERE disc_type IS NOT NULL "
+                "AND audio_tracks_json LIKE '%\"language\":\"und\"%'"
+            ) as cur:
+                candidates = [r["file_path"] for r in await cur.fetchall()]
+        finally:
+            await db.close()
+
+        if not candidates:
+            # Nothing to backfill; still set the flag so we don't re-query.
+            await self._set_setting(flag_key, "true")
+            return
+
+        print(
+            f"[WATCHER] v0.6.5 backfill: re-probing {len(candidates)} disc rows for language metadata",
+            flush=True,
+        )
+
+        from pathlib import Path as _Path
+        from backend.scanner import probe_file as _probe_file
+        import json as _json
+
+        updated = 0
+        for fp in candidates:
+            if not _Path(fp).exists():
+                continue  # stale; let normal stale-removal handle it
+            probe = await _probe_file(fp)
+            if probe is None:
+                continue
+            audio_tracks = probe.get("audio_tracks", [])
+            subtitle_tracks = probe.get("subtitle_tracks", [])
+            db2 = await aiosqlite.connect(self.db_path)
+            try:
+                await db2.execute(
+                    "UPDATE scan_results SET "
+                    "audio_tracks_json = ?, subtitle_tracks_json = ? "
+                    "WHERE file_path = ?",
+                    (_json.dumps(audio_tracks), _json.dumps(subtitle_tracks), fp),
+                )
+                await db2.commit()
+            finally:
+                await db2.close()
+            updated += 1
+
+        print(f"[WATCHER] v0.6.5 backfill: updated {updated} disc rows", flush=True)
+        await self._set_setting(flag_key, "true")
+
+    async def _set_setting(self, key: str, value: str) -> None:
+        """Helper: upsert a row in the settings table."""
+        db = await aiosqlite.connect(self.db_path)
+        try:
+            await db.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)",
+                (key, value),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
     async def check_once(self) -> dict:
         """Run a single check cycle. Only monitors directories that have been scanned."""
+        # v0.6.5: one-shot re-probe of existing disc rows so they pick up
+        # IFO/mpls language metadata. Idempotent via settings flag.
+        await self._backfill_disc_languages_v065()
         scanned_dirs = await self._get_scanned_dirs()
         if not scanned_dirs:
             return {"checked": 0, "new": 0, "removed": 0}
