@@ -101,22 +101,16 @@ def _extract_dvd_langs(
     return codes
 
 
-def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
-    """Parse a DVD VTS IFO file and extract per-stream language codes.
+def _parse_dvd_ifo_bytes(data: bytes) -> dict[str, list[str]]:
+    """Parse a DVD VTS IFO from raw bytes (no file I/O).
 
     Returns {"audio": [iso639_2, ...], "subtitle": [iso639_2, ...]} in
     stream order. Empty strings for unknown/unmapped codes. Empty lists
-    on any read or parse failure (caller treats as 'no metadata
-    available'; tracks stay 'und').
+    on any parse failure. v0.7.0+: extracted from _parse_dvd_ifo to
+    allow ISO-side callers to feed bytes from pycdlib.
     """
-    try:
-        data = ifo_path.read_bytes()
-    except OSError as exc:
-        print(f"[DISC-META] could not read {ifo_path}: {exc}", flush=True)
-        return {"audio": [], "subtitle": []}
-
     if len(data) < _DVD_IFO_HEADER_BYTES or data[:12] != _DVD_IFO_MAGIC:
-        print(f"[DISC-META] bad/short IFO at {ifo_path}", flush=True)
+        print(f"[DISC-META] bad/short IFO bytes (len={len(data)})", flush=True)
         return {"audio": [], "subtitle": []}
 
     try:
@@ -140,8 +134,19 @@ def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
 
         return {"audio": audio, "subtitle": subtitle}
     except Exception as exc:
-        print(f"[DISC-META] IFO parse failed for {ifo_path}: {exc}", flush=True)
+        print(f"[DISC-META] IFO parse failed: {exc}", flush=True)
         return {"audio": [], "subtitle": []}
+
+
+def _parse_dvd_ifo(ifo_path: Path) -> dict[str, list[str]]:
+    """Parse a DVD VTS IFO file path. Thin wrapper around
+    _parse_dvd_ifo_bytes for path-based callers."""
+    try:
+        data = ifo_path.read_bytes()
+    except OSError as exc:
+        print(f"[DISC-META] could not read {ifo_path}: {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
+    return _parse_dvd_ifo_bytes(data)
 
 
 # Blu-ray .mpls header layout (BD-ROM Part 3):
@@ -175,17 +180,15 @@ _MPLS_HEADER_BYTES = 40
 _MPLS_45KHZ = 45000.0  # PlayItem times are in 45 kHz units
 
 
-def _mpls_total_duration(mpls_path: Path) -> float:
-    """Sum all PlayItem durations in a .mpls file. Returns 0.0 on any
-    parse failure (skips the file in the longest-playlist picker)."""
+def _mpls_total_duration_bytes(data: bytes) -> float:
+    """Sum PlayItem durations from .mpls raw bytes. Returns 0.0 on any
+    parse failure. v0.7.0+."""
     try:
-        data = mpls_path.read_bytes()
         if len(data) < _MPLS_HEADER_BYTES or data[:4] != _MPLS_MAGIC:
             return 0.0
         if data[4:8] not in _MPLS_VERSIONS:
             return 0.0
         pl_start = struct.unpack(">I", data[8:12])[0]
-        # PlayList: 4 length + 2 reserved + 2 n_playitems + 2 n_subpaths = 10
         if pl_start + 10 > len(data):
             return 0.0
         n_playitems = struct.unpack(">H", data[pl_start + 6:pl_start + 8])[0]
@@ -195,13 +198,20 @@ def _mpls_total_duration(mpls_path: Path) -> float:
             if cursor + 22 > len(data):
                 break
             pi_length = struct.unpack(">H", data[cursor:cursor + 2])[0]
-            # IN_time at offset 14 within PlayItem; OUT_time at 18.
             in_time = struct.unpack(">I", data[cursor + 14:cursor + 18])[0]
             out_time = struct.unpack(">I", data[cursor + 18:cursor + 22])[0]
             total_ticks += max(0, out_time - in_time)
-            cursor += 2 + pi_length  # skip the whole PlayItem
+            cursor += 2 + pi_length
         return total_ticks / _MPLS_45KHZ
     except Exception:
+        return 0.0
+
+
+def _mpls_total_duration(mpls_path: Path) -> float:
+    """Sum PlayItem durations from a .mpls file path. Thin wrapper."""
+    try:
+        return _mpls_total_duration_bytes(mpls_path.read_bytes())
+    except OSError:
         return 0.0
 
 
@@ -251,20 +261,10 @@ _BDMV_AUDIO_CODING_TYPES = {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0xA1, 0xA2
 _BDMV_PG_CODING_TYPE = 0x90
 
 
-def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
-    """Parse a single .mpls file's primary audio + PG stream language
-    codes from the first PlayItem's STN_table.
-
-    Returns {"audio": [iso639_2, ...], "subtitle": [iso639_2, ...]} in
-    stream order. Empty strings for blank/whitespace codes. Empty lists
-    on any read or parse failure.
-    """
-    try:
-        data = mpls_path.read_bytes()
-    except OSError as exc:
-        print(f"[DISC-META] could not read {mpls_path}: {exc}", flush=True)
-        return {"audio": [], "subtitle": []}
-
+def _parse_bdmv_mpls_bytes(data: bytes) -> dict[str, list[str]]:
+    """Parse a BDMV .mpls from raw bytes. Reads STN_table from the first
+    PlayItem. v0.7.0+: extracted from _parse_bdmv_mpls for ISO-side
+    callers."""
     try:
         if len(data) < _MPLS_HEADER_BYTES or data[:4] != _MPLS_MAGIC:
             return {"audio": [], "subtitle": []}
@@ -279,18 +279,10 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
         if n_playitems < 1:
             return {"audio": [], "subtitle": []}
 
-        # First PlayItem starts at pl_start + 10
         pi_off = pl_start + 10
-        pi_length = struct.unpack(">H", data[pi_off:pi_off + 2])[0]
-        # PlayItem fixed header: length(2) + clip_id(5) + codec_id(4) +
-        # flags(2) + ref(1) + IN(4) + OUT(4) + UO(8) + flags(1) +
-        # still_mode(1) + still_time(2) = 34 bytes.
-        # If is_multi_angle (bit 4 of flags at +11): extra multi_clip data follows.
-        # We don't support multi_angle parsing here; if set, skip this playlist.
         flags = struct.unpack(">H", data[pi_off + 11:pi_off + 13])[0]
         is_multi_angle = bool(flags & 0x10)
         if is_multi_angle:
-            # Multi-angle playlists are rare; bail out, caller picks next-longest.
             return {"audio": [], "subtitle": []}
 
         stn_off = pi_off + 34
@@ -301,15 +293,12 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
         if stn_end > len(data):
             return {"audio": [], "subtitle": []}
 
-        # Stream counts at stn_off + 4 (skip length+reserved)
         n_video = data[stn_off + 4]
         n_audio = data[stn_off + 5]
         n_pg = data[stn_off + 6]
-        # Stream blocks start at stn_off + 4 + 12 (counts) = stn_off + 16
         cursor = stn_off + 16
 
         def skip_stream(cur: int) -> int:
-            """Skip one StreamEntry+StreamAttributes pair, return new cursor."""
             entry_len = data[cur]
             cur += 1 + entry_len
             attr_len = data[cur]
@@ -318,11 +307,9 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
 
         def read_audio_lang(cur: int) -> tuple[str, int]:
             entry_len = data[cur]
-            cur += 1 + entry_len  # skip StreamEntry
+            cur += 1 + entry_len
             attr_len = data[cur]
             cur += 1
-            # attr_len bytes follow: byte0=coding_type, byte1=audio_format,
-            # bytes2-4 = lang_code
             if attr_len >= 5 and data[cur] in _BDMV_AUDIO_CODING_TYPES:
                 lang = data[cur + 2:cur + 5].decode("ascii", errors="replace").strip()
             else:
@@ -342,17 +329,14 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
             cur += attr_len
             return lang, cur
 
-        # Skip video streams (we don't need their langs)
         for _ in range(n_video):
             cursor = skip_stream(cursor)
 
-        # Read audio
         audio = []
         for _ in range(n_audio):
             lang, cursor = read_audio_lang(cursor)
             audio.append(lang)
 
-        # Read PG
         subtitle = []
         for _ in range(n_pg):
             lang, cursor = read_pg_lang(cursor)
@@ -360,8 +344,18 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
 
         return {"audio": audio, "subtitle": subtitle}
     except Exception as exc:
-        print(f"[DISC-META] mpls parse failed for {mpls_path}: {exc}", flush=True)
+        print(f"[DISC-META] mpls parse failed: {exc}", flush=True)
         return {"audio": [], "subtitle": []}
+
+
+def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
+    """Parse a .mpls file path. Thin wrapper around _parse_bdmv_mpls_bytes."""
+    try:
+        data = mpls_path.read_bytes()
+    except OSError as exc:
+        print(f"[DISC-META] could not read {mpls_path}: {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
+    return _parse_bdmv_mpls_bytes(data)
 
 
 def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]]:

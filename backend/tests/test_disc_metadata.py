@@ -532,3 +532,34 @@ class TestParseDiscLanguages:
         (disc_root / "BDMV" / "PLAYLIST").mkdir(parents=True)  # empty dir
         result = parse_disc_languages(disc_root, "bdmv")
         assert result == {"audio": [], "subtitle": []}
+
+
+from backend.disc_metadata import (
+    _parse_dvd_ifo_bytes,
+    _parse_bdmv_mpls_bytes,
+    _mpls_total_duration_bytes,
+)
+
+
+class TestParserBytesAPIs:
+    """v0.7.0+: smoke-test the new _bytes core functions. Most coverage
+    is via the existing path-based tests; these just verify the new entry
+    points are usable directly."""
+
+    def test_parse_dvd_ifo_bytes_with_valid_fixture(self):
+        fixture = _build_dvd_ifo(audio_langs=[b"en"], subp_langs=[])
+        assert _parse_dvd_ifo_bytes(fixture) == {"audio": ["eng"], "subtitle": []}
+
+    def test_parse_dvd_ifo_bytes_with_empty_bytes(self):
+        assert _parse_dvd_ifo_bytes(b"") == {"audio": [], "subtitle": []}
+
+    def test_parse_bdmv_mpls_bytes_with_valid_fixture(self):
+        fixture = _build_mpls_full(
+            duration_sec=100, audio_langs=[b"eng"], pg_langs=[],
+        )
+        assert _parse_bdmv_mpls_bytes(fixture)["audio"] == ["eng"]
+
+    def test_mpls_total_duration_bytes(self):
+        fixture = _build_mpls_with_duration(seconds=120.5)
+        # Allow tiny floating-point drift from the 45 kHz round-trip
+        assert abs(_mpls_total_duration_bytes(fixture) - 120.5) < 0.001
