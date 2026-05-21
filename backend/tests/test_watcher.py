@@ -214,3 +214,241 @@ async def test_auto_queue_date_added_rule_fires_with_priority(test_db):
 
     assert captured.get("priority") == 2, \
         f"Expected priority=2 from date_added rule, got {captured.get('priority')}"
+
+
+# ----------------------------------------------------------------------------
+# v0.7.5: BD ISO language metadata backfill tests.
+#
+# Locks the contract for `_backfill_iso_languages_v075` — the one-shot
+# startup sweep that re-probes existing BD ISO rows whose audio_tracks
+# are all-und (pre-v0.7.4 libbluray-ctypes path) so they pick up real
+# language codes without manual delete-and-rediscover.
+# ----------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v075_idempotent_when_flag_set(test_db):
+    """When iso_lang_backfilled_v075 = 'true' already, the method returns
+    immediately without touching scan_results."""
+    import aiosqlite
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES "
+            "('iso_lang_backfilled_v075', 'true')"
+        )
+        # Seed a row that WOULD be a backfill candidate, to confirm we
+        # don't touch it when the flag is set.
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "/media/movies/Stale (1999)/disc.iso",
+                "Stale (1999)",
+                "bdmv",
+                '[{"language":"und"},{"language":"und"}]',
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    await watcher._backfill_iso_languages_v075()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT audio_tracks_json FROM scan_results WHERE file_path = ?",
+            ("/media/movies/Stale (1999)/disc.iso",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is not None
+        assert row["audio_tracks_json"] == '[{"language":"und"},{"language":"und"}]'
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v075_sets_flag_when_no_candidates(test_db):
+    """Empty result set still sets the flag (so a clean install doesn't
+    re-query scan_results on every watcher cycle)."""
+    import aiosqlite
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    await watcher._backfill_iso_languages_v075()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("iso_lang_backfilled_v075",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row is not None
+        assert row["value"] == "true"
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v075_selector_skips_dvd_iso_and_folder_bd(test_db):
+    """Selector must skip DVD ISO rows AND folder-BD rows even when they
+    have all-und audio_tracks. Only BD ISOs are in scope."""
+    import aiosqlite
+    db = await aiosqlite.connect(test_db)
+    try:
+        # DVD ISO row — should be skipped (disc_type='dvd')
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "/media/movies/Skin (2011)/disc.iso",
+                "Skin (2011)",
+                "dvd",
+                '[{"language":"und"}]',
+            ),
+        )
+        # Folder-BD row — should be skipped (no .iso suffix)
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "/media/movies/Elephant (2003)/BDMV/index.bdmv",
+                "Elephant (2003)",
+                "bdmv",
+                '[{"language":"und"}]',
+            ),
+        )
+        # Non-disc row — should be skipped (disc_type IS NULL)
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "/media/movies/Plain (2020)/movie.mkv",
+                "Plain (2020)",
+                None,
+                '[{"language":"und"}]',
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+
+    # Mock probe_file to detect if anything reached the probe stage.
+    # None of the seeded rows should reach it — all are excluded by SQL.
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock) as mock_probe:
+        await watcher._backfill_iso_languages_v075()
+        assert mock_probe.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v075_skips_partial_coverage(test_db):
+    """A BD ISO row with [eng, und] gets pulled by the SQL LIKE prefilter
+    but must be filtered out in Python — only fully-und (or empty) rows
+    are in scope."""
+    import aiosqlite
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                "/media/movies/Mixed (2010)/disc.iso",
+                "Mixed (2010)",
+                "bdmv",
+                '[{"language":"eng"},{"language":"und"}]',
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock) as mock_probe:
+        await watcher._backfill_iso_languages_v075()
+        # SQL pulls the row (LIKE '%und%' matches), Python rejects it.
+        assert mock_probe.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v075_updates_stale_bd_iso_row(test_db, tmp_path):
+    """End-to-end: an all-und BD ISO row gets re-probed and UPDATE'd
+    with the libbluray-derived language metadata."""
+    import aiosqlite
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    # The ISO path must exist on disk — the backfill skips non-existent
+    # files (stale-row removal handles those separately).
+    iso_path = tmp_path / "Elephant (2003)" / "disc.iso"
+    iso_path.parent.mkdir(parents=True)
+    iso_path.touch()
+    fp = str(iso_path)
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json, subtitle_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                fp,
+                "Elephant (2003)",
+                "bdmv",
+                '[{"language":"und","codec":"truehd","stream_index":1,"channels":6}]',
+                '[]',
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    # Stub probe_file to return what v0.7.4's libbluray path would return
+    # for Elephant.
+    fake_probe = {
+        "audio_tracks": [
+            {"language": "fre", "codec": "truehd", "stream_index": 1, "channels": 6},
+            {"language": "eng", "codec": "ac3",    "stream_index": 2, "channels": 2},
+        ],
+        "subtitle_tracks": [
+            {"language": "fre", "codec": "hdmv_pgs_subtitle", "stream_index": 3},
+            {"language": "fre", "codec": "hdmv_pgs_subtitle", "stream_index": 4},
+        ],
+    }
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+
+    with patch(
+        "backend.scanner.probe_file",
+        new=AsyncMock(return_value=fake_probe),
+    ):
+        await watcher._backfill_iso_languages_v075()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT audio_tracks_json, subtitle_tracks_json, native_language "
+            "FROM scan_results WHERE file_path = ?",
+            (fp,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    assert row is not None
+    audio = json.loads(row["audio_tracks_json"])
+    langs = [t["language"] for t in audio]
+    assert langs == ["fre", "eng"], f"audio langs = {langs!r}"
+    subs = json.loads(row["subtitle_tracks_json"])
+    sub_langs = [t["language"] for t in subs]
+    assert sub_langs == ["fre", "fre"], f"subtitle langs = {sub_langs!r}"

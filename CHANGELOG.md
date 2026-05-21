@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] — 2026-05-21
+
+### Added
+- **One-shot startup backfill for BD ISO language metadata.** v0.7.4 added the libbluray ctypes path that finally extracts languages from UDF-only BD ISOs, but existing scan_results rows that pre-dated the fix kept their stale `und` track tags — users would have had to manually delete each affected row and let it re-discover. v0.7.5 sweeps those rows on first watcher cycle after upgrade: BD ISO rows with all-und (or empty) `audio_tracks_json` are re-probed, re-classified, and written back in-place. DVD ISOs and folder discs are unaffected (their pre-v0.7.4 path already worked); partial-coverage rows (e.g. `[eng, und]`) are left alone per scope. Idempotent via the `iso_lang_backfilled_v075` settings flag. Silent log-only signal (`[WATCHER] v0.7.5 backfill: …`).
+
 ## [0.7.4] — 2026-05-21
 
 ### Added

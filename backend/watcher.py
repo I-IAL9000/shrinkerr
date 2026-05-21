@@ -845,6 +845,131 @@ class FileWatcher:
         print(f"[WATCHER] v0.6.7 backfill: updated {updated} rows", flush=True)
         await self._set_setting(flag_key, "true")
 
+    async def _backfill_iso_languages_v075(self) -> None:
+        """One-shot v0.7.5 migration: re-probe existing BD ISO scan_results
+        rows whose audio_tracks are all-und so they pick up the v0.7.4
+        libbluray ctypes language metadata. Tracked via settings flag
+        'iso_lang_backfilled_v075'. Skips paths whose source has been
+        deleted (stale rows are cleaned up by the normal stale-removal
+        path).
+
+        Scope-locked to BD ISOs (`disc_type='bdmv'` AND `.iso` suffix)
+        with `audio_tracks_json` that is NULL, empty, or every entry
+        carries `language='und'`. Partial-coverage rows (e.g. `[eng,
+        und]`) are out of scope — they reflect either real und tracks
+        or accepted prior state.
+        """
+        flag_key = "iso_lang_backfilled_v075"
+        db = await aiosqlite.connect(self.db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag_key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row and row["value"] == "true":
+                return  # already done
+
+            # Stage 1 — SQL pull. Cheap LIKE-based prefilter for BD ISO
+            # rows that might be stale. Inner double-quotes escaped for
+            # SQL string-literal safety.
+            async with db.execute(
+                "SELECT file_path, audio_tracks_json FROM scan_results "
+                "WHERE disc_type = 'bdmv' "
+                "AND lower(file_path) LIKE '%.iso' "
+                "AND ("
+                "  audio_tracks_json IS NULL "
+                "  OR audio_tracks_json = '[]' "
+                "  OR audio_tracks_json LIKE '%\"language\":\"und\"%'"
+                ")"
+            ) as cur:
+                sql_candidates = await cur.fetchall()
+        finally:
+            await db.close()
+
+        if not sql_candidates:
+            await self._set_setting(flag_key, "true")
+            return
+
+        # Stage 2 — Python filter. SQL `LIKE '%"language":"und"%'` accepts
+        # rows where ANY track is und (incl. [eng, und]). Per the v0.7.5
+        # scope decision, only fully-und (or empty) rows are stale.
+        import json as _json
+        candidates: list[str] = []
+        for r in sql_candidates:
+            raw_json = r["audio_tracks_json"]
+            try:
+                tracks = _json.loads(raw_json) if raw_json else []
+            except (ValueError, TypeError):
+                tracks = []  # corrupt JSON — treat as empty, definitely stale
+            if not tracks or all(
+                t.get("language") == "und" for t in tracks
+            ):
+                candidates.append(r["file_path"])
+
+        if not candidates:
+            await self._set_setting(flag_key, "true")
+            return
+
+        print(
+            f"[WATCHER] v0.7.5 backfill: re-probing {len(candidates)} BD ISO rows for language metadata",
+            flush=True,
+        )
+
+        from pathlib import Path as _Path
+        from backend.scanner import (
+            probe_file as _probe_file,
+            classify_audio_tracks as _classify_audio_tracks,
+            classify_subtitle_tracks as _classify_subtitle_tracks,
+            detect_native_language as _detect_native_language,
+        )
+
+        updated = 0
+        for fp in candidates:
+            if not _Path(fp).exists():
+                continue  # stale; let normal stale-removal handle it
+            probe = await _probe_file(fp)
+            if probe is None:
+                continue
+
+            raw_audio = probe.get("audio_tracks", [])
+            raw_subs = probe.get("subtitle_tracks", [])
+
+            native_lang = _detect_native_language(raw_audio)
+            audio_tracks = _classify_audio_tracks(raw_audio, native_lang)
+            subtitle_tracks = _classify_subtitle_tracks(raw_subs, native_lang)
+
+            audio_json = _json.dumps([t.model_dump() for t in audio_tracks])
+            subtitle_json = _json.dumps([t.model_dump() for t in subtitle_tracks])
+
+            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+
+            db2 = await aiosqlite.connect(self.db_path)
+            try:
+                await db2.execute(
+                    "UPDATE scan_results SET "
+                    "audio_tracks_json = ?, subtitle_tracks_json = ?, "
+                    "native_language = ?, "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
+                    "WHERE file_path = ?",
+                    (
+                        audio_json,
+                        subtitle_json,
+                        native_lang,
+                        has_removable,
+                        has_removable_subs,
+                        fp,
+                    ),
+                )
+                await db2.commit()
+            finally:
+                await db2.close()
+            updated += 1
+
+        print(f"[WATCHER] v0.7.5 backfill: updated {updated} rows", flush=True)
+        await self._set_setting(flag_key, "true")
+
     async def _set_setting(self, key: str, value: str) -> None:
         """Helper: upsert a row in the settings table."""
         db = await aiosqlite.connect(self.db_path)
@@ -865,6 +990,10 @@ class FileWatcher:
         # v0.6.7: one-shot recompute of video_conv_savings_bytes for
         # existing rows using the CQ-calibrated curve. Idempotent.
         await self._backfill_estimated_savings_v067()
+        # v0.7.5: one-shot re-probe of existing BD ISO rows whose
+        # audio_tracks are all-und (pre-v0.7.4 libbluray-ctypes path).
+        # Idempotent.
+        await self._backfill_iso_languages_v075()
         scanned_dirs = await self._get_scanned_dirs()
         if not scanned_dirs:
             return {"checked": 0, "new": 0, "removed": 0}
