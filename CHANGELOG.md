@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] — 2026-05-21
+
+### Fixed
+- ISO disc rows showed the media_dir name (e.g. `Movies2`) instead of the movie-folder name in the scanner UI, and reported the **main-title bytes** (~19 GB) instead of the **ISO file's actual bytes** (~30 GB) for size. Two bugs from v0.7.0's ISO-folder handling: (1) `display_name` used `parent.parent.name` unconditionally, which for ISO inputs (where `file_path` IS the .iso file) points one level too high; (2) the `file_size` patch in `probe_file` only fired for folder discs via `_disc_total_size`, so ISO rows kept ffprobe's `format.size` which only counts the main title libbluray surfaces. New `_disc_display_name` helper handles both folder and ISO cases; `probe_file` now also stats the ISO file directly for accurate on-disk size.
+
 ## [0.7.1] — 2026-05-21
 
 ### Added
