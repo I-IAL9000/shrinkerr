@@ -1,8 +1,10 @@
 """Unit tests for backend.disc_metadata. v0.6.5+."""
 
+import io as _io
 import struct
 from pathlib import Path
 
+import pycdlib
 import pytest
 
 from backend.disc_metadata import (
@@ -565,8 +567,6 @@ class TestParserBytesAPIs:
         assert abs(_mpls_total_duration_bytes(fixture) - 120.5) < 0.001
 
 
-import pycdlib
-import io as _io
 from backend.disc_metadata import _classify_disc_iso
 
 
