@@ -1471,6 +1471,16 @@ async def scan_directory(
         )
         if result_callback:
             await result_callback(scanned)
+            # v0.7.2: after a disc row is written, clear any stale
+            # health_status='corrupt' left over from a previous health-check
+            # that ran while VIDEO_TS/BDMV was deleted mid-conversion. The
+            # fresh probe success means the disc is fine; the row must not
+            # inherit the previous corrupt flag. No-op for non-disc rows
+            # (helper filters on disc_type IS NOT NULL).
+            if disc_type_val:
+                await _clear_stale_disc_health_status(
+                    str(settings.db_path), str(file_path)
+                )
         else:
             results.append(scanned)
 
@@ -1484,3 +1494,30 @@ async def scan_directory(
         )
 
     return results
+
+
+async def _clear_stale_disc_health_status(db_path: str, file_path: str) -> None:
+    """Reset health_status to NULL for a disc row at `file_path`.
+
+    Called after a disc re-probe succeeds, so a previously-stuck
+    health_status='corrupt' (from when the disc subdirectory was
+    deleted mid-conversion in v0.6.x) gets cleared on next discovery.
+    No-op for rows where disc_type IS NULL — file-level health checks
+    are independent. v0.7.2+.
+    """
+    import aiosqlite
+    db = await aiosqlite.connect(db_path)
+    try:
+        cur = await db.execute(
+            "UPDATE scan_results SET health_status = NULL "
+            "WHERE file_path = ? AND disc_type IS NOT NULL AND health_status IS NOT NULL",
+            (file_path,),
+        )
+        if cur.rowcount > 0:
+            print(
+                f"[SCANNER] cleared stale health_status on disc row {file_path}",
+                flush=True,
+            )
+        await db.commit()
+    finally:
+        await db.close()

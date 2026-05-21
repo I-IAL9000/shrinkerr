@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-05-21
+
+### Added
+- **Language metadata for UDF-only Blu-ray ISOs.** Some BD ISOs ship without an ISO 9660 layer (BD-Video spec doesn't require one), which pycdlib rejects with "Valid ISO9660 filesystems must have at least one PVD". v0.7.1 adds `libarchive-tools` (`bsdtar`) to the image and a bsdtar-based fallback for sidecar extraction: when pycdlib can't open an ISO, the parsers enumerate `/BDMV/PLAYLIST/*.mpls` (or `/VIDEO_TS/VTS_NN_*.VOB`) via bsdtar, extract the relevant bytes, and feed them to the existing `_parse_bdmv_mpls_bytes` / `_parse_dvd_ifo_bytes` parsers. Real-world BD ISOs (UDF 2.50/2.60) now produce real language codes instead of `und`. DVD ISOs continue using the fast pycdlib path.
+
+### Fixed
+- Disc rows inherited stale `health_status='corrupt'` after re-discovery. When a previous conversion's post-source-handling deleted `VIDEO_TS/` or `BDMV/`, a concurrent health check would mark the row corrupt; restoring the source folder later caused the watcher to re-INSERT the row with the stale flag still attached. Scanner and watcher now explicitly clear `health_status` on successful disc re-probe (`disc_type IS NOT NULL` only — non-disc rows untouched, file-level health checks unaffected).
+
 ## [0.7.0] — 2026-05-21
 
 ### Added

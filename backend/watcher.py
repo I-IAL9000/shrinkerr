@@ -422,6 +422,19 @@ class FileWatcher:
             now = datetime.now(timezone.utc).isoformat()
             await _write_batch(self.db_path, results, now, mark_new=True)
 
+            # v0.7.2: clear any stale health_status='corrupt' on disc rows
+            # that just got re-discovered. A previous health-check during a
+            # v0.6.x mid-conversion (VIDEO_TS deleted) leaves a corrupt
+            # flag on the disc row; the fresh probe success means that
+            # flag is wrong. No-op for non-disc rows (helper filters on
+            # disc_type IS NOT NULL).
+            from backend.scanner import _clear_stale_disc_health_status
+            for scanned in results:
+                if getattr(scanned, "disc_type", None):
+                    await _clear_stale_disc_health_status(
+                        self.db_path, scanned.file_path
+                    )
+
             # Auto-ignore files in ignored folders
             if ignored_folders:
                 from datetime import datetime as _dt, timezone as _tz

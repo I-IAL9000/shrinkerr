@@ -908,3 +908,84 @@ class TestBsdtarFallback:
     def test_pick_main_mpls_via_bsdtar_handles_missing(self, tmp_path):
         from backend.disc_metadata import _pick_main_mpls_via_bsdtar
         assert _pick_main_mpls_via_bsdtar(tmp_path / "nonexistent.iso") is None
+
+
+class TestDiscHealthStatusReset:
+    """v0.7.2+: when a disc row is re-discovered after a previous health
+    check marked it corrupt (e.g. mid-conversion when VIDEO_TS was
+    deleted), the row should NOT inherit the stale corrupt flag. The
+    fresh probe success clears health_status to NULL."""
+
+    async def _setup_db(self, tmp_path) -> str:
+        import aiosqlite
+        db_path = str(tmp_path / "test.db")
+        db = await aiosqlite.connect(db_path)
+        # Minimal schema matching scan_results subset we touch
+        await db.execute("""CREATE TABLE scan_results (
+            file_path TEXT PRIMARY KEY,
+            disc_type TEXT,
+            health_status TEXT
+        )""")
+        await db.execute(
+            "INSERT INTO scan_results VALUES(?, ?, ?)",
+            ("/test/disc/VIDEO_TS/VIDEO_TS.IFO", "dvd", "corrupt"),
+        )
+        await db.execute(
+            "INSERT INTO scan_results VALUES(?, ?, ?)",
+            ("/test/file.mkv", None, "corrupt"),
+        )
+        await db.commit()
+        await db.close()
+        return db_path
+
+    @pytest.mark.asyncio
+    async def test_clears_disc_row_health_status(self, tmp_path):
+        from backend.scanner import _clear_stale_disc_health_status
+        db_path = await self._setup_db(tmp_path)
+        await _clear_stale_disc_health_status(db_path, "/test/disc/VIDEO_TS/VIDEO_TS.IFO")
+        # Verify health_status is NULL on the disc row
+        import aiosqlite
+        db = await aiosqlite.connect(db_path)
+        async with db.execute(
+            "SELECT health_status FROM scan_results WHERE file_path = ?",
+            ("/test/disc/VIDEO_TS/VIDEO_TS.IFO",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row[0] is None
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_leaves_non_disc_rows_alone(self, tmp_path):
+        """File-level rows (disc_type IS NULL) should NOT have their
+        health_status touched. Their corrupt status is independent."""
+        from backend.scanner import _clear_stale_disc_health_status
+        db_path = await self._setup_db(tmp_path)
+        # Attempt to clear a non-disc row's path
+        await _clear_stale_disc_health_status(db_path, "/test/file.mkv")
+        import aiosqlite
+        db = await aiosqlite.connect(db_path)
+        async with db.execute(
+            "SELECT health_status FROM scan_results WHERE file_path = ?",
+            ("/test/file.mkv",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row[0] == "corrupt"  # untouched
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_idempotent_when_already_null(self, tmp_path):
+        """Running the helper twice on the same disc row is safe."""
+        from backend.scanner import _clear_stale_disc_health_status
+        db_path = await self._setup_db(tmp_path)
+        await _clear_stale_disc_health_status(db_path, "/test/disc/VIDEO_TS/VIDEO_TS.IFO")
+        await _clear_stale_disc_health_status(db_path, "/test/disc/VIDEO_TS/VIDEO_TS.IFO")
+        # Still NULL, no error
+        import aiosqlite
+        db = await aiosqlite.connect(db_path)
+        async with db.execute(
+            "SELECT health_status FROM scan_results WHERE file_path = ?",
+            ("/test/disc/VIDEO_TS/VIDEO_TS.IFO",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row[0] is None
+        await db.close()
