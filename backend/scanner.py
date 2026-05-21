@@ -95,6 +95,29 @@ def _dvd_concat_input(disc_root: Path) -> Optional[str]:
     return "concat:" + "|".join(str(v) for v in vobs)
 
 
+def _disc_display_name(file_path: Path, disc_type: Optional[str]) -> str:
+    """Return the user-facing display name for a scan-result row.
+
+    Folder disc (marker path: `.../<MovieFolder>/VIDEO_TS/VIDEO_TS.IFO`
+    or `.../<MovieFolder>/BDMV/index.bdmv`) → the MovieFolder name,
+    which is parent.parent of the marker.
+
+    ISO disc (file_path IS a `.iso` file, the disc itself) → the ISO's
+    parent folder name (parent of the .iso). parent.parent would give
+    the media_dir (e.g. "Movies2"), which is wrong.
+
+    Non-disc file → the file's own name.
+
+    v0.7.2+: ISO branch added — v0.7.0 used parent.parent unconditionally
+    which produced media-dir-named rows for ISO inputs.
+    """
+    if disc_type:
+        if file_path.is_file() and file_path.suffix.lower() == ".iso":
+            return file_path.parent.name
+        return file_path.parent.parent.name
+    return file_path.name
+
+
 async def probe_file(file_path: str) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 
@@ -343,10 +366,19 @@ async def probe_file(file_path: str) -> Optional[dict]:
         # v0.7.0: gate on .is_dir() — for ISO inputs disc_folder is the
         # .iso file itself, and ffprobe's format.size already reflects
         # the ISO file's bytes (no patch needed).
+        # v0.7.2: actually ffprobe's format.size for `bluray:/some.iso` still
+        # reports only the main-title bytes (~19 GB on a 30 GB BD ISO),
+        # NOT the ISO file's bytes. Stat the ISO file directly for the
+        # accurate on-disk size.
         if disc_folder is not None and disc_folder.is_dir():
             total = _disc_total_size(disc_folder, disc_type)
             if total > 0:
                 result["file_size"] = total
+        elif p.is_file() and p.suffix.lower() == ".iso":
+            try:
+                result["file_size"] = p.stat().st_size
+            except OSError:
+                pass
     return result
 
 
@@ -1424,11 +1456,9 @@ async def scan_directory(
         # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
         # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
         # disc-root folder (file_path.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
+        # v0.7.2: helper handles ISO inputs correctly (parent vs parent.parent).
         disc_type_val = probe.get("disc_type")
-        if disc_type_val:
-            display_name = file_path.parent.parent.name
-        else:
-            display_name = file_path.name
+        display_name = _disc_display_name(file_path, disc_type_val)
 
         # Get file modification time from disk. For discs, the marker file
         # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring

@@ -340,11 +340,10 @@ class FileWatcher:
             # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
             # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
             # disc-root folder (p.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
+            # v0.7.2: helper handles ISO inputs correctly (parent vs parent.parent).
+            from backend.scanner import _disc_display_name
             disc_type_val = probe.get("disc_type")
-            if disc_type_val:
-                display_name = p.parent.parent.name
-            else:
-                display_name = p.name
+            display_name = _disc_display_name(p, disc_type_val)
 
             # Get file modification time from disk. For discs, the marker file
             # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring
