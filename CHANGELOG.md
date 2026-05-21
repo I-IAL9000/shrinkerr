@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] — 2026-05-21
+
+### Added
+- **Language metadata for UDF-only Blu-ray ISOs** (closes v0.7.3's known limitation). bsdtar/libarchive 3.7.2 silently returns empty on UDF 2.50+ BD ISOs, so v0.7.1's fallback didn't actually help the discs it was added for. v0.7.4 adds a tier-3 fallback using libbluray directly via Python ctypes — the same library ffmpeg already uses for `bluray:` protocol encoding, so we know it can read these ISOs. Opens the ISO with `bd_open`, walks titles → clips → streams, reads per-track `lang[4]` from `BLURAY_STREAM_INFO`. ISO 639-2 codes normalized T→B form (`fra`→`fre`, `deu`→`ger`, etc.) to match the rest of the codebase. Adds `libbluray-bin` to both Dockerfiles. Verified against Elephant (2003) UDF-only BD ISO: `audio: [fre, eng]`, `subtitle: [fre, fre]`.
+
 ## [0.7.3] — 2026-05-21
 
 ### Fixed
