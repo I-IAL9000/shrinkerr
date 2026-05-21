@@ -930,6 +930,12 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
     # bd_close(BLURAY *bd) -> void
     libbluray.bd_close.argtypes = [c_void_p]
     libbluray.bd_close.restype = None
+    # bd_get_titles(BLURAY *bd, uint8_t flags, uint32_t min_title_length) -> uint32_t
+    # Must be called BEFORE bd_get_main_title / bd_get_title_info — it
+    # populates the disc's internal title list. Without it, libbluray
+    # emits `Title list not yet read!` and returns -1. v0.7.4 fix.
+    libbluray.bd_get_titles.argtypes = [c_void_p, c_uint8, c_uint32]
+    libbluray.bd_get_titles.restype = c_uint32
     # bd_get_main_title(BLURAY *bd) -> int (returns -1 on failure)
     libbluray.bd_get_main_title.argtypes = [c_void_p]
     libbluray.bd_get_main_title.restype = c_int
@@ -947,6 +953,15 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
         return None
 
     try:
+        # v0.7.4 fix: must call bd_get_titles BEFORE bd_get_main_title to
+        # populate libbluray's internal title list. Without this, libbluray
+        # emits "Title list not yet read!" and bd_get_main_title returns -1.
+        # Pass TITLES_ALL=0 — we just need the side effect of loading the list.
+        title_count = libbluray.bd_get_titles(bd, c_uint8(0), c_uint32(0))
+        if title_count == 0:
+            print(f"[DISC-META] libbluray bd_get_titles returned 0 for {iso_path}", flush=True)
+            return None
+
         main_title_idx = libbluray.bd_get_main_title(bd)
         if main_title_idx < 0:
             print(f"[DISC-META] libbluray bd_get_main_title failed for {iso_path}", flush=True)
