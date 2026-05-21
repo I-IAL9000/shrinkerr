@@ -198,6 +198,14 @@ class FileWatcher:
         seen_discs: set[str] = set()
         for fp in new_files:
             p = Path(fp)
+            # v0.7.0: .iso files are disc images. Unlike folder discs
+            # (which we map to inner marker files), the ISO file itself
+            # IS the scan item. Pass through unchanged; probe_file
+            # handles ISO classification + routing.
+            if p.suffix.lower() == ".iso":
+                # explicit no-op — keep the .iso path as-is, let probe_file route
+                new_files_disc_adjusted.append(fp)
+                continue
             # Case A: path is inside VIDEO_TS or BDMV → map to disc-root's marker
             if any(part in ("VIDEO_TS", "BDMV") for part in p.parts):
                 # Walk up to the disc-root (the folder CONTAINING VIDEO_TS/BDMV)
@@ -850,6 +858,9 @@ class FileWatcher:
             return {"checked": 0, "new": 0, "removed": 0}
 
         extensions = {ext.lower() for ext in settings.video_extensions}
+        extensions.add(".iso")  # v0.7.0: include ISO files for disc-image
+                                # classification (separate from user-configured
+                                # video extensions)
         known_paths = await self._get_known_files()
 
         def _walk_dirs():
