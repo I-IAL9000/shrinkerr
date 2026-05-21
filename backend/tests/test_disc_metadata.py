@@ -778,3 +778,100 @@ class TestIsoExtractors:
             assert _pick_main_mpls_in_iso(iso2) is None
         finally:
             iso2.close()
+
+
+from backend.disc_metadata import parse_disc_languages_iso
+
+
+class TestParseDiscLanguagesIso:
+    def test_dvd_iso_full_pipeline(self, tmp_path):
+        """End-to-end: build a DVD-like ISO with a VTS_01_0.IFO containing
+        a known audio language, run the full parse_disc_languages_iso
+        pipeline, expect the extracted IFO bytes to flow through the
+        bytes parser correctly."""
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        # Build a synthetic IFO with audio=['en']
+        ifo_data = _build_dvd_ifo(audio_langs=[b"en"], subp_langs=[])
+        iso.add_fp(_io.BytesIO(ifo_data), len(ifo_data), udf_path="/VIDEO_TS/VTS_01_0.IFO")
+        # Add a VOB so _pick_main_vts_in_iso picks "01"
+        iso.add_fp(_io.BytesIO(b"\x00" * 1000), 1000, udf_path="/VIDEO_TS/VTS_01_1.VOB")
+        out = tmp_path / "test_dvd.iso"
+        iso.write(str(out))
+        iso.close()
+
+        result = parse_disc_languages_iso(out, "dvd")
+        assert result == {"audio": ["eng"], "subtitle": []}
+
+    def test_bdmv_iso_full_pipeline(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/BDMV")
+        iso.add_directory(udf_path="/BDMV/PLAYLIST")
+        mpls_data = _build_mpls_full(
+            duration_sec=5000,
+            audio_langs=[b"fre", b"eng"],
+            pg_langs=[b"fre", b"eng"],
+        )
+        iso.add_fp(_io.BytesIO(mpls_data), len(mpls_data), udf_path="/BDMV/PLAYLIST/00100.mpls")
+        out = tmp_path / "test_bdmv.iso"
+        iso.write(str(out))
+        iso.close()
+
+        result = parse_disc_languages_iso(out, "bdmv")
+        assert result == {"audio": ["fre", "eng"], "subtitle": ["fre", "eng"]}
+
+    def test_unknown_disc_type_returns_empty(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        out = tmp_path / "empty.iso"
+        iso.write(str(out))
+        iso.close()
+
+        assert parse_disc_languages_iso(out, "unknown") == {"audio": [], "subtitle": []}
+
+    def test_missing_iso_returns_empty(self, tmp_path):
+        assert parse_disc_languages_iso(tmp_path / "nope.iso", "dvd") == {"audio": [], "subtitle": []}
+
+    def test_dvd_iso_missing_ifo_returns_empty(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        # VOB exists but no IFO
+        iso.add_fp(_io.BytesIO(b"\x00" * 100), 100, udf_path="/VIDEO_TS/VTS_01_1.VOB")
+        out = tmp_path / "no_ifo.iso"
+        iso.write(str(out))
+        iso.close()
+
+        assert parse_disc_languages_iso(out, "dvd") == {"audio": [], "subtitle": []}
+
+
+class TestParseDiscLanguagesDispatcher:
+    def test_folder_path_routes_to_existing_logic(self, tmp_path):
+        """Folder path should hit the v0.6.5 folder dispatcher unchanged."""
+        disc_root = tmp_path / "Movie"
+        video_ts = disc_root / "VIDEO_TS"
+        video_ts.mkdir(parents=True)
+        (video_ts / "VTS_01_0.IFO").write_bytes(
+            _build_dvd_ifo(audio_langs=[b"en"], subp_langs=[])
+        )
+        (video_ts / "VTS_01_1.VOB").write_bytes(b"\x00" * 100)
+        result = parse_disc_languages(disc_root, "dvd")
+        assert result == {"audio": ["eng"], "subtitle": []}
+
+    def test_iso_path_routes_to_iso_logic(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        ifo_data = _build_dvd_ifo(audio_langs=[b"de"], subp_langs=[])
+        iso.add_fp(_io.BytesIO(ifo_data), len(ifo_data), udf_path="/VIDEO_TS/VTS_01_0.IFO")
+        iso.add_fp(_io.BytesIO(b"\x00" * 100), 100, udf_path="/VIDEO_TS/VTS_01_1.VOB")
+        out = tmp_path / "test.iso"
+        iso.write(str(out))
+        iso.close()
+        result = parse_disc_languages(out, "dvd")
+        assert result == {"audio": ["ger"], "subtitle": []}
+
+    def test_nonexistent_path_returns_empty(self, tmp_path):
+        assert parse_disc_languages(tmp_path / "missing", "dvd") == {"audio": [], "subtitle": []}

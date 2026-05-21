@@ -528,45 +528,108 @@ def _pick_main_mpls_in_iso(iso) -> Optional[bytes]:
     return candidates[0][1]
 
 
-def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]]:
-    """Public entry point. Given a disc-root folder and disc_type ('dvd'
-    or 'bdmv'), return per-stream language metadata.
+def parse_disc_languages_iso(iso_path: Path, disc_type: str) -> dict[str, list[str]]:
+    """Extract per-stream language codes from an ISO file via pycdlib.
 
-    DVD: locates the main title set's VTS_NN_0.IFO and parses it.
-    BDMV: locates the longest .mpls in BDMV/PLAYLIST and parses it.
+    DVD: find the main title set via VOB-size heuristic, extract that
+    NN's VTS_NN_0.IFO bytes, feed to _parse_dvd_ifo_bytes.
 
-    Returns {"audio": [...], "subtitle": [...]} on success, or
-    {"audio": [], "subtitle": []} on any error. Never raises.
+    BDMV: enumerate all .mpls in BDMV/PLAYLIST, pick the longest by total
+    PlayItem duration, feed its bytes to _parse_bdmv_mpls_bytes.
+
+    Fail-open: any pycdlib / parse error returns {"audio": [], "subtitle": []}.
+    v0.7.0+.
     """
     try:
+        import pycdlib
+    except ImportError:
+        print("[DISC-META] pycdlib not installed; ISO language metadata unavailable", flush=True)
+        return {"audio": [], "subtitle": []}
+
+    if not iso_path.is_file():
+        return {"audio": [], "subtitle": []}
+
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(str(iso_path))
+    except Exception as exc:
+        print(f"[DISC-META] ISO open failed for {iso_path}: {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
+
+    try:
         if disc_type == "dvd":
-            # Use the same title-set picker that v0.6.2 uses for the
-            # concat: VOB list. Same NN → same IFO.
-            # Lazy import — `backend.scanner` imports `parse_disc_languages`
-            # at module level (probe_file integration); a top-level
-            # `from backend.scanner import ...` here would create a circular
-            # import. Importing inside the function defers resolution until
-            # call time, by which point both modules are fully loaded.
-            from backend.scanner import _dvd_main_title_vobs
-            vobs = _dvd_main_title_vobs(disc_root)
-            if not vobs:
+            ts_num = _pick_main_vts_in_iso(iso)
+            if not ts_num:
                 return {"audio": [], "subtitle": []}
-            # VOB name shape: VTS_NN_M.VOB → IFO is VTS_NN_0.IFO
-            first_vob = vobs[0]
-            parts = first_vob.stem.split("_")  # ['VTS', '01', '1']
-            if len(parts) != 3:
+            try:
+                ifo_bytes = _extract_iso_file(iso, f"/VIDEO_TS/VTS_{ts_num}_0.IFO")
+            except FileNotFoundError as exc:
+                print(f"[DISC-META] IFO not found in ISO {iso_path}: {exc}", flush=True)
                 return {"audio": [], "subtitle": []}
-            ts_num = parts[1]
-            ifo = disc_root / "VIDEO_TS" / f"VTS_{ts_num}_0.IFO"
-            return _parse_dvd_ifo(ifo)
+            return _parse_dvd_ifo_bytes(ifo_bytes)
         elif disc_type == "bdmv":
-            playlist_dir = disc_root / "BDMV" / "PLAYLIST"
-            mpls = _find_main_bdmv_playlist(playlist_dir)
-            if mpls is None:
+            mpls_bytes = _pick_main_mpls_in_iso(iso)
+            if mpls_bytes is None:
                 return {"audio": [], "subtitle": []}
-            return _parse_bdmv_mpls(mpls)
+            return _parse_bdmv_mpls_bytes(mpls_bytes)
         else:
             return {"audio": [], "subtitle": []}
     except Exception as exc:
-        print(f"[DISC-META] parse_disc_languages failed for {disc_root} ({disc_type}): {exc}", flush=True)
+        print(f"[DISC-META] parse_disc_languages_iso failed for {iso_path} ({disc_type}): {exc}", flush=True)
         return {"audio": [], "subtitle": []}
+    finally:
+        try:
+            iso.close()
+        except Exception:
+            pass
+
+
+def parse_disc_languages(path: Path, disc_type: str) -> dict[str, list[str]]:
+    """Public entry point. Dispatches on path shape:
+
+      • folder         → existing v0.6.5+ folder logic
+      • .iso file      → new v0.7.0 ISO logic via pycdlib
+      • anything else  → empty result
+
+    Returns {"audio": [...], "subtitle": [...]} on success, empty lists
+    on any failure (parser, ISO read, pycdlib missing, etc.). Never raises.
+    """
+    try:
+        if path.is_dir():
+            return _parse_disc_languages_folder(path, disc_type)
+        if path.suffix.lower() == ".iso" and path.is_file():
+            return parse_disc_languages_iso(path, disc_type)
+        return {"audio": [], "subtitle": []}
+    except Exception as exc:
+        print(f"[DISC-META] parse_disc_languages failed for {path} ({disc_type}): {exc}", flush=True)
+        return {"audio": [], "subtitle": []}
+
+
+def _parse_disc_languages_folder(disc_root: Path, disc_type: str) -> dict[str, list[str]]:
+    """v0.6.5+ folder-based language extraction. Extracted from the old
+    parse_disc_languages body when the dispatcher was introduced in
+    v0.7.0."""
+    if disc_type == "dvd":
+        # Lazy import — `backend.scanner` imports `parse_disc_languages`
+        # at module level (probe_file integration); a top-level
+        # `from backend.scanner import ...` here would create a circular
+        # import. Importing inside the function defers resolution until
+        # call time, by which point both modules are fully loaded.
+        from backend.scanner import _dvd_main_title_vobs
+        vobs = _dvd_main_title_vobs(disc_root)
+        if not vobs:
+            return {"audio": [], "subtitle": []}
+        first_vob = vobs[0]
+        parts = first_vob.stem.split("_")
+        if len(parts) != 3:
+            return {"audio": [], "subtitle": []}
+        ts_num = parts[1]
+        ifo = disc_root / "VIDEO_TS" / f"VTS_{ts_num}_0.IFO"
+        return _parse_dvd_ifo(ifo)
+    elif disc_type == "bdmv":
+        playlist_dir = disc_root / "BDMV" / "PLAYLIST"
+        mpls = _find_main_bdmv_playlist(playlist_dir)
+        if mpls is None:
+            return {"audio": [], "subtitle": []}
+        return _parse_bdmv_mpls(mpls)
+    return {"audio": [], "subtitle": []}
