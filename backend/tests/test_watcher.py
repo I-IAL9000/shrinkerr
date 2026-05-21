@@ -219,22 +219,22 @@ async def test_auto_queue_date_added_rule_fires_with_priority(test_db):
 # ----------------------------------------------------------------------------
 # v0.7.5: BD ISO language metadata backfill tests.
 #
-# Locks the contract for `_backfill_iso_languages_v075` — the one-shot
+# Locks the contract for `_backfill_iso_languages_v076` — the one-shot
 # startup sweep that re-probes existing BD ISO rows whose audio_tracks
 # are all-und (pre-v0.7.4 libbluray-ctypes path) so they pick up real
 # language codes without manual delete-and-rediscover.
 # ----------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_iso_lang_backfill_v075_idempotent_when_flag_set(test_db):
-    """When iso_lang_backfilled_v075 = 'true' already, the method returns
+async def test_iso_lang_backfill_v076_idempotent_when_flag_set(test_db):
+    """When iso_lang_backfilled_v076 = 'true' already, the method returns
     immediately without touching scan_results."""
     import aiosqlite
     db = await aiosqlite.connect(test_db)
     try:
         await db.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES "
-            "('iso_lang_backfilled_v075', 'true')"
+            "('iso_lang_backfilled_v076', 'true')"
         )
         # Seed a row that WOULD be a backfill candidate, to confirm we
         # don't touch it when the flag is set.
@@ -254,7 +254,7 @@ async def test_iso_lang_backfill_v075_idempotent_when_flag_set(test_db):
         await db.close()
 
     watcher = FileWatcher(test_db, interval_minutes=5)
-    await watcher._backfill_iso_languages_v075()
+    await watcher._backfill_iso_languages_v076()
 
     db = await aiosqlite.connect(test_db)
     db.row_factory = aiosqlite.Row
@@ -271,19 +271,19 @@ async def test_iso_lang_backfill_v075_idempotent_when_flag_set(test_db):
 
 
 @pytest.mark.asyncio
-async def test_iso_lang_backfill_v075_sets_flag_when_no_candidates(test_db):
+async def test_iso_lang_backfill_v076_sets_flag_when_no_candidates(test_db):
     """Empty result set still sets the flag (so a clean install doesn't
     re-query scan_results on every watcher cycle)."""
     import aiosqlite
     watcher = FileWatcher(test_db, interval_minutes=5)
-    await watcher._backfill_iso_languages_v075()
+    await watcher._backfill_iso_languages_v076()
 
     db = await aiosqlite.connect(test_db)
     db.row_factory = aiosqlite.Row
     try:
         async with db.execute(
             "SELECT value FROM settings WHERE key = ?",
-            ("iso_lang_backfilled_v075",),
+            ("iso_lang_backfilled_v076",),
         ) as cur:
             row = await cur.fetchone()
         assert row is not None
@@ -293,7 +293,7 @@ async def test_iso_lang_backfill_v075_sets_flag_when_no_candidates(test_db):
 
 
 @pytest.mark.asyncio
-async def test_iso_lang_backfill_v075_selector_skips_dvd_iso_and_folder_bd(test_db):
+async def test_iso_lang_backfill_v076_selector_skips_dvd_iso_and_folder_bd(test_db):
     """Selector must skip DVD ISO rows AND folder-BD rows even when they
     have all-und audio_tracks. Only BD ISOs are in scope."""
     import aiosqlite
@@ -344,12 +344,12 @@ async def test_iso_lang_backfill_v075_selector_skips_dvd_iso_and_folder_bd(test_
     # Mock probe_file to detect if anything reached the probe stage.
     # None of the seeded rows should reach it — all are excluded by SQL.
     with patch("backend.scanner.probe_file", new_callable=AsyncMock) as mock_probe:
-        await watcher._backfill_iso_languages_v075()
+        await watcher._backfill_iso_languages_v076()
         assert mock_probe.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_iso_lang_backfill_v075_skips_partial_coverage(test_db):
+async def test_iso_lang_backfill_v076_skips_partial_coverage(test_db):
     """A BD ISO row with [eng, und] gets pulled by the SQL LIKE prefilter
     but must be filtered out in Python — only fully-und (or empty) rows
     are in scope."""
@@ -374,13 +374,13 @@ async def test_iso_lang_backfill_v075_skips_partial_coverage(test_db):
     watcher = FileWatcher(test_db, interval_minutes=5)
 
     with patch("backend.scanner.probe_file", new_callable=AsyncMock) as mock_probe:
-        await watcher._backfill_iso_languages_v075()
+        await watcher._backfill_iso_languages_v076()
         # SQL pulls the row (LIKE '%und%' matches), Python rejects it.
         assert mock_probe.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_iso_lang_backfill_v075_updates_stale_bd_iso_row(test_db, tmp_path):
+async def test_iso_lang_backfill_v076_updates_stale_bd_iso_row(test_db, tmp_path):
     """End-to-end: an all-und BD ISO row gets re-probed and UPDATE'd
     with the libbluray-derived language metadata."""
     import aiosqlite
@@ -431,7 +431,7 @@ async def test_iso_lang_backfill_v075_updates_stale_bd_iso_row(test_db, tmp_path
         "backend.scanner.probe_file",
         new=AsyncMock(return_value=fake_probe),
     ):
-        await watcher._backfill_iso_languages_v075()
+        await watcher._backfill_iso_languages_v076()
 
     db = await aiosqlite.connect(test_db)
     db.row_factory = aiosqlite.Row
@@ -452,3 +452,85 @@ async def test_iso_lang_backfill_v075_updates_stale_bd_iso_row(test_db, tmp_path
     subs = json.loads(row["subtitle_tracks_json"])
     sub_langs = [t["language"] for t in subs]
     assert sub_langs == ["fre", "fre"], f"subtitle langs = {sub_langs!r}"
+
+
+@pytest.mark.asyncio
+async def test_iso_lang_backfill_v076_matches_production_json_dumps_format(test_db, tmp_path):
+    """Regression test for the v0.7.5 selector bug.
+
+    v0.7.5 used `LIKE '%"language":"und"%'` (no spaces) to filter at the
+    SQL stage. But `json.dumps()` defaults to `(', ', ': ')` separators,
+    so production rows store `"language": "und"` WITH a space. The
+    selector silently matched zero rows on real installs and set its
+    idempotency flag — backfill appeared to run but updated nothing.
+
+    v0.7.6 drops the JSON LIKE clause entirely and does all language-
+    shape filtering in Python where the parse is correct regardless of
+    separator style. This test seeds a row using the EXACT serializer
+    the production code uses (json.dumps on a list of dicts) and asserts
+    the backfill picks it up.
+    """
+    import aiosqlite
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    iso_path = tmp_path / "Realistic (2025)" / "disc.iso"
+    iso_path.parent.mkdir(parents=True)
+    iso_path.touch()
+    fp = str(iso_path)
+
+    # Build the JSON the way production does — through json.dumps on dicts.
+    # Default separators are (', ', ': '), so this string contains
+    # `"language": "und"` with a space after the colon.
+    stored = json.dumps([
+        {"stream_index": 1, "language": "und", "codec": "truehd"},
+        {"stream_index": 2, "language": "und", "codec": "ac3"},
+    ])
+    # Defensive sanity-check: confirm the fixture actually has the
+    # space-separator shape we're trying to catch. If this assert ever
+    # fails, json.dumps defaults changed and the test isn't testing
+    # what it claims.
+    assert '"language": "und"' in stored, \
+        f"fixture lost the space-after-colon shape: {stored!r}"
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json, subtitle_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (fp, "Realistic (2025)", "bdmv", stored, "[]"),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    fake_probe = {
+        "audio_tracks": [
+            {"language": "jpn", "codec": "truehd", "stream_index": 1, "channels": 6},
+        ],
+        "subtitle_tracks": [],
+    }
+    watcher = FileWatcher(test_db, interval_minutes=5)
+
+    with patch("backend.scanner.probe_file", new=AsyncMock(return_value=fake_probe)):
+        await watcher._backfill_iso_languages_v076()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT audio_tracks_json FROM scan_results WHERE file_path = ?",
+            (fp,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    assert row is not None
+    audio = json.loads(row["audio_tracks_json"])
+    langs = [t["language"] for t in audio]
+    assert langs == ["jpn"], (
+        f"audio langs = {langs!r} — backfill failed to match the realistic "
+        f"json.dumps-shaped row (the v0.7.5 selector regression)"
+    )

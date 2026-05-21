@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6] — 2026-05-21
+
+### Fixed
+- **v0.7.5 BD ISO backfill silently matched zero rows.** The selector used a SQL `LIKE '%"language":"und"%'` clause (no spaces) but `json.dumps()` defaults to `(', ', ': ')` separators, so production rows always store `"language": "und"` with a space after the colon. The sweep ran on every fresh install, pulled zero candidates, set the idempotency flag, and exited — no log line, no error, no update. v0.7.6 drops the SQL JSON LIKE clause entirely and does all language-shape filtering in Python where the parse is correct regardless of separator style. A new flag name (`iso_lang_backfilled_v076`) re-runs the sweep on installs that already had the broken v0.7.5 flag set. Adds a regression test that constructs fixtures via the production `json.dumps` serializer so this class of bug can't slip past again.
+
 ## [0.7.5] — 2026-05-21
 
 ### Added

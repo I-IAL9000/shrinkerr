@@ -845,11 +845,11 @@ class FileWatcher:
         print(f"[WATCHER] v0.6.7 backfill: updated {updated} rows", flush=True)
         await self._set_setting(flag_key, "true")
 
-    async def _backfill_iso_languages_v075(self) -> None:
-        """One-shot v0.7.5 migration: re-probe existing BD ISO scan_results
+    async def _backfill_iso_languages_v076(self) -> None:
+        """One-shot v0.7.6 migration: re-probe existing BD ISO scan_results
         rows whose audio_tracks are all-und so they pick up the v0.7.4
         libbluray ctypes language metadata. Tracked via settings flag
-        'iso_lang_backfilled_v075'. Skips paths whose source has been
+        'iso_lang_backfilled_v076'. Skips paths whose source has been
         deleted (stale rows are cleaned up by the normal stale-removal
         path).
 
@@ -858,8 +858,18 @@ class FileWatcher:
         carries `language='und'`. Partial-coverage rows (e.g. `[eng,
         und]`) are out of scope — they reflect either real und tracks
         or accepted prior state.
+
+        v0.7.6 supersedes the broken v0.7.5 sweep. The v0.7.5 selector
+        had a JSON LIKE clause `'%"language":"und"%'` (no spaces) that
+        never matched real stored JSON — `json.dumps()` defaults to
+        `': '` separators, so production rows always store
+        `"language": "und"` with a space. v0.7.6 drops the JSON LIKE
+        clause entirely and does all language-shape filtering in Python
+        where the parse is correct regardless of separator style. New
+        flag name re-runs the sweep on installs that already had the
+        broken v0.7.5 sweep silently set its flag.
         """
-        flag_key = "iso_lang_backfilled_v075"
+        flag_key = "iso_lang_backfilled_v076"
         db = await aiosqlite.connect(self.db_path)
         db.row_factory = aiosqlite.Row
         try:
@@ -870,18 +880,16 @@ class FileWatcher:
             if row and row["value"] == "true":
                 return  # already done
 
-            # Stage 1 — SQL pull. Cheap LIKE-based prefilter for BD ISO
-            # rows that might be stale. Inner double-quotes escaped for
-            # SQL string-literal safety.
+            # Stage 1 — SQL pull. Cheap path-and-type prefilter only;
+            # no JSON LIKE clause (v0.7.5 had `'%"language":"und"%'`
+            # which never matched real stored JSON because json.dumps
+            # default separators include a space after the colon).
+            # Stage-2 Python filter below parses the JSON and applies
+            # the all-und/empty rule correctly regardless of format.
             async with db.execute(
                 "SELECT file_path, audio_tracks_json FROM scan_results "
                 "WHERE disc_type = 'bdmv' "
-                "AND lower(file_path) LIKE '%.iso' "
-                "AND ("
-                "  audio_tracks_json IS NULL "
-                "  OR audio_tracks_json = '[]' "
-                "  OR audio_tracks_json LIKE '%\"language\":\"und\"%'"
-                ")"
+                "AND lower(file_path) LIKE '%.iso'"
             ) as cur:
                 sql_candidates = await cur.fetchall()
         finally:
@@ -912,7 +920,7 @@ class FileWatcher:
             return
 
         print(
-            f"[WATCHER] v0.7.5 backfill: re-probing {len(candidates)} BD ISO rows for language metadata",
+            f"[WATCHER] v0.7.6 backfill: re-probing {len(candidates)} BD ISO rows for language metadata",
             flush=True,
         )
 
@@ -967,7 +975,7 @@ class FileWatcher:
                 await db2.close()
             updated += 1
 
-        print(f"[WATCHER] v0.7.5 backfill: updated {updated} rows", flush=True)
+        print(f"[WATCHER] v0.7.6 backfill: updated {updated} rows", flush=True)
         await self._set_setting(flag_key, "true")
 
     async def _set_setting(self, key: str, value: str) -> None:
@@ -990,10 +998,10 @@ class FileWatcher:
         # v0.6.7: one-shot recompute of video_conv_savings_bytes for
         # existing rows using the CQ-calibrated curve. Idempotent.
         await self._backfill_estimated_savings_v067()
-        # v0.7.5: one-shot re-probe of existing BD ISO rows whose
+        # v0.7.6: one-shot re-probe of existing BD ISO rows whose
         # audio_tracks are all-und (pre-v0.7.4 libbluray-ctypes path).
-        # Idempotent.
-        await self._backfill_iso_languages_v075()
+        # Supersedes the broken v0.7.5 sweep (selector bug). Idempotent.
+        await self._backfill_iso_languages_v076()
         scanned_dirs = await self._get_scanned_dirs()
         if not scanned_dirs:
             return {"checked": 0, "new": 0, "removed": 0}
