@@ -704,15 +704,21 @@ export default function FileTree({
         has_removable_tracks: row.has_removable_tracks || false,
         has_removable_subs: row.has_removable_subs || false,
         estimated_savings_bytes: (() => {
-          let s = row.needs_conversion ? (row.file_size || 0) * 0.3 : 0;
+          // v0.6.7: prefer backend-supplied CQ-calibrated value; fall back
+          // to 0.65 (CQ-25 midpoint) for legacy rows not yet backfilled —
+          // still wrong but much closer than the old 0.30 flat default.
+          let s = row.video_conv_savings_bytes
+            ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
           for (const t of (row.audio_tracks || [])) {
             if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
           }
           return Math.round(s);
         })(),
-        estimated_savings_gb: +(((row.needs_conversion ? (row.file_size || 0) * 0.3 : 0) +
+        estimated_savings_gb: +(((row.video_conv_savings_bytes
+            ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
           (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
         ) / (1024**3)).toFixed(1),
+        video_conv_savings_bytes: row.video_conv_savings_bytes,
         language_source: row.language_source || "heuristic",
         ignored: row.ignored || false,
         is_new: row.is_new || false,
@@ -797,15 +803,21 @@ export default function FileTree({
             has_removable_tracks: row.has_removable_tracks || false,
             has_removable_subs: row.has_removable_subs || false,
             estimated_savings_bytes: (() => {
-              let s = row.needs_conversion ? (row.file_size || 0) * 0.3 : 0;
+              // v0.6.7: prefer backend-supplied CQ-calibrated value; fall
+              // back to 0.65 (CQ-25 midpoint) for legacy rows not yet
+              // backfilled.
+              let s = row.video_conv_savings_bytes
+                ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
               for (const t of (row.audio_tracks || [])) {
                 if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
               }
               return Math.round(s);
             })(),
-            estimated_savings_gb: +(((row.needs_conversion ? (row.file_size || 0) * 0.3 : 0) +
+            estimated_savings_gb: +(((row.video_conv_savings_bytes
+                ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
               (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
             ) / (1024 ** 3)).toFixed(1),
+            video_conv_savings_bytes: row.video_conv_savings_bytes,
             language_source: row.language_source || "heuristic",
             ignored: row.ignored || false,
             is_new: row.is_new || false,

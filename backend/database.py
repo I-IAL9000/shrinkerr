@@ -463,6 +463,14 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN has_external_subs_flag INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.6.7: video-only conversion savings estimate, computed at scan
+        # time from the user's global NVENC CQ via backend.encoding_estimates.
+        # The file-detail panel previously recomputed file_size * 0.30
+        # client-side and disagreed with the queue-estimate modal.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN video_conv_savings_bytes INTEGER DEFAULT 0")
+        except Exception:
+            pass
         # Migration: per-node configuration (pause, affinity, translation, schedule)
         for col, ctype in [
             ("paused", "INTEGER DEFAULT 0"),                    # 0/1 — per-node pause

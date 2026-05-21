@@ -114,6 +114,7 @@ class FileWatcher:
 
         from backend.scanner import probe_file, detect_native_language, is_x264, is_x265, is_av1, codec_matches_source
         from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, estimate_savings
+        from backend.encoding_estimates import video_conv_savings_bytes
         from backend.models import ScannedFile
 
         # Check for ignored files
@@ -153,6 +154,10 @@ class FileWatcher:
         # job even though they were in the user's source_codecs list.
         # HEVC was unaffected (not in default source_codecs either way).
         source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+        # v0.6.7: load global NVENC CQ once per cycle to match the scanner
+        # / queue-estimate's CQ-calibrated savings curve. Pre-v0.6.7 this
+        # path used a flat 0.30 default that disagreed with the modal.
+        global_cq = 25
         try:
             import json as _json
             db3 = await aiosqlite.connect(self.db_path)
@@ -163,6 +168,15 @@ class FileWatcher:
                     row = await cur.fetchone()
                     if row and row[0]:
                         source_codecs = _json.loads(row[0])
+                async with db3.execute(
+                    "SELECT value FROM settings WHERE key = 'nvenc_cq'"
+                ) as cur:
+                    cqrow = await cur.fetchone()
+                    if cqrow and cqrow[0]:
+                        try:
+                            global_cq = int(cqrow[0])
+                        except (TypeError, ValueError):
+                            pass
             finally:
                 await db3.close()
         except Exception:
@@ -311,7 +325,8 @@ class FileWatcher:
 
             # Include x265 files so converted content shows with "x265 ✓" badge
 
-            savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration)
+            savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
+            video_conv_bytes = video_conv_savings_bytes(file_size, global_cq) if needs_conversion else 0
 
             p = Path(file_path)
             # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
@@ -354,6 +369,7 @@ class FileWatcher:
                 has_external_subs=has_external_subs,
                 estimated_savings_bytes=savings_bytes,
                 estimated_savings_gb=round(savings_bytes / (1024 ** 3), 3),
+                video_conv_savings_bytes=video_conv_bytes,
                 file_mtime=file_mtime,
                 duration=duration,
                 disc_type=disc_type_val,  # v0.6.0
@@ -729,6 +745,86 @@ class FileWatcher:
         print(f"[WATCHER] v0.6.5 backfill: updated {updated} disc rows", flush=True)
         await self._set_setting(flag_key, "true")
 
+    async def _backfill_estimated_savings_v067(self) -> None:
+        """One-shot v0.6.7 migration: recompute estimated_savings_bytes
+        + video_conv_savings_bytes for existing scan_results rows using
+        the new CQ-calibrated curve. Idempotent via settings flag
+        'savings_recomputed_v067'.
+
+        Pre-v0.6.7 the scanner used a flat 30% reduction default for the
+        video-conversion portion; existing rows still carry those stale
+        numbers until they're re-scanned. We rewrite them in-place using
+        the same `total_estimated_savings_bytes` helper that scan-time
+        writes go through.
+        """
+        flag_key = "savings_recomputed_v067"
+        db = await aiosqlite.connect(self.db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag_key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row and row["value"] == "true":
+                return  # already done
+
+            # Global CQ — same source as scanner / watcher / estimate modal.
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = 'nvenc_cq'"
+            ) as cur:
+                cqrow = await cur.fetchone()
+                try:
+                    global_cq = int(cqrow["value"]) if cqrow else 25
+                except (TypeError, ValueError):
+                    global_cq = 25
+
+            # Only re-touch rows where the value would actually change —
+            # i.e. rows that need_conversion. Skip rows already at zero
+            # savings (no conversion needed); their numbers are correct.
+            async with db.execute(
+                "SELECT file_path, file_size, needs_conversion, audio_tracks_json, duration "
+                "FROM scan_results "
+                "WHERE removed_from_list = 0 AND needs_conversion = 1"
+            ) as cur:
+                candidates = [dict(r) for r in await cur.fetchall()]
+        finally:
+            await db.close()
+
+        if not candidates:
+            await self._set_setting(flag_key, "true")
+            return
+
+        print(
+            f"[WATCHER] v0.6.7 backfill: recomputing savings for {len(candidates)} rows (cq={global_cq})",
+            flush=True,
+        )
+
+        from backend.encoding_estimates import video_conv_savings_bytes
+
+        # NOTE: scan_results doesn't store total `estimated_savings_bytes`
+        # as a column — the frontend recomputes the audio-removal portion
+        # from `audio_tracks` (with keep=False + size_estimate_bytes) at
+        # render time. So all we need to backfill is the new video-only
+        # CQ-derived column. The audio portion was already correct.
+        updated = 0
+        db2 = await aiosqlite.connect(self.db_path)
+        try:
+            for r in candidates:
+                file_size = r["file_size"] or 0
+                new_video = video_conv_savings_bytes(file_size, global_cq)
+                await db2.execute(
+                    "UPDATE scan_results SET video_conv_savings_bytes = ? "
+                    "WHERE file_path = ?",
+                    (new_video, r["file_path"]),
+                )
+                updated += 1
+            await db2.commit()
+        finally:
+            await db2.close()
+
+        print(f"[WATCHER] v0.6.7 backfill: updated {updated} rows", flush=True)
+        await self._set_setting(flag_key, "true")
+
     async def _set_setting(self, key: str, value: str) -> None:
         """Helper: upsert a row in the settings table."""
         db = await aiosqlite.connect(self.db_path)
@@ -746,6 +842,9 @@ class FileWatcher:
         # v0.6.5: one-shot re-probe of existing disc rows so they pick up
         # IFO/mpls language metadata. Idempotent via settings flag.
         await self._backfill_disc_languages_v065()
+        # v0.6.7: one-shot recompute of video_conv_savings_bytes for
+        # existing rows using the CQ-calibrated curve. Idempotent.
+        await self._backfill_estimated_savings_v067()
         scanned_dirs = await self._get_scanned_dirs()
         if not scanned_dirs:
             return {"checked": 0, "new": 0, "removed": 0}

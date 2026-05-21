@@ -42,6 +42,12 @@ class ScannedFile(BaseModel):
     has_external_subs: bool = False
     estimated_savings_bytes: int
     estimated_savings_gb: float
+    # v0.6.7: video-conversion-only portion of estimated savings (excludes
+    # audio-track removal bytes). Computed at scan/watcher time from the
+    # user's global NVENC CQ via backend.encoding_estimates so the
+    # file-detail panel's "Convert to x265 (est. save ~X GB)" hint shows
+    # the same number as the queue-estimate modal.
+    video_conv_savings_bytes: int = 0
     language_source: str = "heuristic"
     ignored: bool = False
     file_mtime: Optional[float] = None  # File modification time (Unix timestamp)

@@ -1515,23 +1515,10 @@ class EstimateRequest(BaseModel):
     force_reencode: bool = False
 
 
-def _cq_to_savings_pct(cq: int) -> float:
-    """CQ-based empirical savings curve for x264→x265 conversion.
-
-    Calibrated from real-world NVENC results:
-      CQ 23 → ~54% actual, CQ 27 → ~77% actual
-    """
-    if cq <= 15: return 0.25
-    if cq <= 18: return 0.35
-    if cq <= 20: return 0.45
-    if cq <= 22: return 0.50
-    if cq <= 23: return 0.55
-    if cq <= 24: return 0.60
-    if cq <= 25: return 0.65
-    if cq <= 26: return 0.70
-    if cq <= 27: return 0.75
-    if cq <= 28: return 0.77
-    return 0.80
+# v0.6.7: hoisted into backend.encoding_estimates so the scanner /
+# watcher / file-detail panel can share the same curve. Kept the local
+# alias so existing call sites in this module need no churn.
+from backend.encoding_estimates import cq_to_savings_pct as _cq_to_savings_pct
 
 
 @router.post("/estimate")

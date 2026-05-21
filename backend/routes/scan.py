@@ -65,8 +65,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -93,7 +93,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_removable_subs_flag=excluded.has_removable_subs_flag,
                        has_lossless_audio_flag=excluded.has_lossless_audio_flag,
                        has_external_subs_flag=excluded.has_external_subs_flag,
-                       disc_type=excluded.disc_type
+                       disc_type=excluded.disc_type,
+                       video_conv_savings_bytes=excluded.video_conv_savings_bytes
                 """,
                 (
                     scanned.file_path,
@@ -116,6 +117,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     has_lossless,
                     1 if getattr(scanned, 'has_external_subs', False) else 0,
                     getattr(scanned, 'disc_type', None),  # v0.6.0
+                    getattr(scanned, 'video_conv_savings_bytes', 0),  # v0.6.7
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
@@ -1250,6 +1252,10 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
         # to render disc badges and skip per-track UI that doesn't apply.
         "disc_type": disc_type,
+        # v0.6.7: CQ-calibrated video-conversion savings (excludes audio
+        # track removal). Frontend reads this instead of computing
+        # file_size * 0.3 locally.
+        "video_conv_savings_bytes": row.get("video_conv_savings_bytes", 0) or 0,
     }
 
 
@@ -1332,6 +1338,10 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
         # to render disc badges and skip per-track UI that doesn't apply.
         "disc_type": disc_type,
+        # v0.6.7: CQ-calibrated video-conversion savings (excludes audio
+        # track removal). Frontend reads this instead of computing
+        # file_size * 0.3 locally.
+        "video_conv_savings_bytes": row.get("video_conv_savings_bytes", 0) or 0,
     }
 
 
@@ -1348,7 +1358,8 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     health_status, health_check_type, health_checked_at,
     COALESCE(dup_count, 0) as duplicate_count,
     dup_group as duplicate_group,
-    disc_type"""
+    disc_type,
+    COALESCE(video_conv_savings_bytes, 0) as video_conv_savings_bytes"""
 
 _SCAN_WHERE = """removed_from_list = 0
     AND file_path NOT LIKE '%%.converting.%%'

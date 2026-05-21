@@ -39,6 +39,11 @@ export interface ScannedFile {
   has_removable_subs: boolean;
   estimated_savings_bytes: number;
   estimated_savings_gb: number;
+  // v0.6.7: video-conversion-only savings, computed scan-side from the
+  // user's global NVENC CQ via backend.encoding_estimates. FileDetail
+  // reads this so the "Convert to x265 (est. save ~X GB)" hint matches
+  // the queue-estimate modal.
+  video_conv_savings_bytes?: number;
   ignored: boolean;
   is_new: boolean;
   queued: boolean;

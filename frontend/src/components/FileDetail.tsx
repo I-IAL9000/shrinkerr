@@ -99,7 +99,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const audioTracks = file.audio_tracks?.length ? file.audio_tracks : fetchedAudio;
   const subtitleTracks = file.subtitle_tracks?.length ? file.subtitle_tracks : fetchedSubs;
 
-  const convSavings = file.needs_conversion ? file.file_size * 0.3 : 0;
+  // v0.6.7: was `file.file_size * 0.3` — a stale flat 30% reduction default
+  // that disagreed with the queue-estimate modal's CQ-calibrated curve.
+  // Backend now stores the CQ-derived video-only savings on each scan row.
+  const convSavings = file.needs_conversion ? (file.video_conv_savings_bytes || 0) : 0;
 
   const tabBtnStyle = (active: boolean) => ({
     background: "none",

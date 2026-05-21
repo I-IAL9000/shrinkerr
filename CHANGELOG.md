@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] — 2026-05-21
+
+### Fixed
+- Estimated savings shown in the file-detail panel (e.g. "Convert to x265 10-bit (est. save ~8.4 GB)") used a stale 0.30 reduction default while the queue-estimate modal used a CQ-calibrated empirical curve — producing wildly different numbers for the same file. Both now route through a single `backend/encoding_estimates` helper that applies the CQ curve calibrated against real NVENC results. Scan-time `estimated_savings_bytes` + new `video_conv_savings_bytes` column reflect the user's global CQ setting. Existing rows auto-backfill on first watcher cycle.
+
 ## [0.6.6] — 2026-05-20
 
 ### Fixed
