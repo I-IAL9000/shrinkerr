@@ -3,9 +3,9 @@
 Runs INSIDE the production container against the two reference discs:
   - Fast-Walking (1982) DVD  → expect audio[0]='eng'
   - Elephant (2003) BDMV     → expect audio[0]='fre', audio[1]='eng'
-                                expect subtitle[0]='fre', subtitle[1]='eng'
+                                expect subtitle[0]='fre', subtitle[1]='fre'
   - The Skin I Live In (2011) DVD ISO → expect classifier='dvd', audio[0] non-empty
-  - Elephant (2003) BD ISO   → expect audio[:2]=['fre','eng'], subtitle[:2]=['fre','eng']
+  - Elephant (2003) BD ISO   → expect audio[:2]=['fre','eng'], subtitle[:2]=['fre','fre']
 
 Per spec acceptance criterion 10: exits 0 only if all assertions pass.
 A non-zero exit blocks `git tag v0.7.4`.
@@ -34,7 +34,9 @@ DEFAULT_BDMV_ISO = "/media/Misc/Movies2/Elephant (2003) [tt0363589]/rz0u.iso"
 
 EXPECTED_DVD_AUDIO_FIRST = "eng"
 EXPECTED_BDMV_AUDIO = ["fre", "eng"]
-EXPECTED_BDMV_SUBTITLE = ["fre", "eng"]
+# Elephant BD has TWO French PGS subtitle tracks (main + forced/SDH), no English subs.
+# Earlier guesses of ["fre", "eng"] were wrong — confirmed via libbluray ctypes.
+EXPECTED_BDMV_SUBTITLE = ["fre", "fre"]
 
 
 def _ok(msg: str) -> None:
@@ -136,8 +138,8 @@ async def main() -> int:
             else:
                 failures.append(f"BDMV probe audio stream order wrong: {[t.get('language') for t in audio]}")
                 _fail(f"audio langs = {[t.get('language') for t in audio]}")
-            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "eng":
-                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=eng (correct stream order)")
+            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "fre":
+                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=fre (correct stream order)")
             else:
                 failures.append(f"BDMV probe subtitle stream order wrong: {[t.get('language') for t in sub]}")
                 _fail(f"subtitle langs = {[t.get('language') for t in sub]}")
@@ -209,10 +211,10 @@ async def main() -> int:
             failures.append(f"BD ISO audio[:2] wrong: got {audio!r}, expected ['fre','eng']")
             _fail(f"audio = {audio!r}")
         sub = bdmv_iso_langs["subtitle"]
-        if len(sub) >= 2 and sub[0] == "fre" and sub[1] == "eng":
+        if len(sub) >= 2 and sub[0] == "fre" and sub[1] == "fre":
             _ok(f"subtitle[:2]={sub[:2]!r}")
         else:
-            failures.append(f"BD ISO subtitle[:2] wrong: got {sub!r}, expected ['fre','eng']")
+            failures.append(f"BD ISO subtitle[:2] wrong: got {sub!r}, expected ['fre','fre']")
         print(f"    full result: {bdmv_iso_langs}", flush=True)
 
     # --- BD ISO: end-to-end probe + stream-order ---
@@ -230,8 +232,8 @@ async def main() -> int:
             else:
                 failures.append(f"BD ISO audio stream order wrong: {[t.get('language') for t in audio]}")
                 _fail(f"audio langs = {[t.get('language') for t in audio]}")
-            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "eng":
-                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=eng (correct stream order)")
+            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "fre":
+                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=fre (correct stream order)")
             else:
                 failures.append(f"BD ISO subtitle stream order wrong: {[t.get('language') for t in sub]}")
                 _fail(f"subtitle langs = {[t.get('language') for t in sub]}")

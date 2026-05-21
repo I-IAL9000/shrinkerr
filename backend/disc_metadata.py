@@ -44,6 +44,45 @@ def _iso639_1_to_2(code: str) -> str:
     return _ISO639_1_TO_2.get(code.lower(), "")
 
 
+# ISO 639-2 has two 3-letter forms for ~20 languages: T (terminological,
+# used by ISO/native script) and B (bibliographic, the older form most
+# media metadata uses). libbluray and some BD authoring tools emit T;
+# our keep-language settings and ffprobe metadata use B. Normalize to B
+# so disc → settings matching is consistent regardless of disc form.
+# v0.7.4+.
+_ISO639_2_T_TO_B: dict[str, str] = {
+    "fra": "fre",  # French
+    "deu": "ger",  # German
+    "nld": "dut",  # Dutch
+    "isl": "ice",  # Icelandic
+    "zho": "chi",  # Chinese
+    "ces": "cze",  # Czech
+    "mkd": "mac",  # Macedonian
+    "ron": "rum",  # Romanian
+    "slk": "slo",  # Slovak
+    "sqi": "alb",  # Albanian
+    "bod": "tib",  # Tibetan
+    "eus": "baq",  # Basque
+    "kat": "geo",  # Georgian
+    "hye": "arm",  # Armenian
+    "cym": "wel",  # Welsh
+    "fas": "per",  # Persian
+    "mya": "bur",  # Burmese
+    "msa": "may",  # Malay (alt T form)
+}
+
+
+def _normalize_iso639_2(code: str) -> str:
+    """Convert ISO 639-2/T (terminological) to ISO 639-2/B (bibliographic).
+    No-op for codes already in B form, empty strings, or unknown codes.
+    Used to normalize 3-letter codes extracted from BD discs (which often
+    emit T form) so they match the B form Shrinkerr stores in
+    keep_languages and ffprobe surfaces elsewhere. v0.7.4+."""
+    if not code:
+        return code
+    return _ISO639_2_T_TO_B.get(code.lower(), code.lower())
+
+
 # DVD VTS IFO binary layout (libdvdread ifo_types.h, vtsi_mat_t):
 #   bytes [0:12]    : "DVDVIDEO-VTS" magic
 #   byte  [0x202]   : nr_of_vts_audio_streams (0-8)
@@ -312,6 +351,7 @@ def _parse_bdmv_mpls_bytes(data: bytes) -> dict[str, list[str]]:
             cur += 1
             if attr_len >= 5 and data[cur] in _BDMV_AUDIO_CODING_TYPES:
                 lang = data[cur + 2:cur + 5].decode("ascii", errors="replace").strip()
+                lang = _normalize_iso639_2(lang)  # v0.7.4: T → B form
             else:
                 lang = ""
             cur += attr_len
@@ -324,6 +364,7 @@ def _parse_bdmv_mpls_bytes(data: bytes) -> dict[str, list[str]]:
             cur += 1
             if attr_len >= 4 and data[cur] == _BDMV_PG_CODING_TYPE:
                 lang = data[cur + 1:cur + 4].decode("ascii", errors="replace").strip()
+                lang = _normalize_iso639_2(lang)  # v0.7.4: T → B form
             else:
                 lang = ""
             cur += attr_len
@@ -1013,6 +1054,7 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
                 # lang is a 4-byte ASCII field with a null terminator
                 lang_bytes = bytes(stream.lang).rstrip(b"\x00")
                 lang = lang_bytes.decode("ascii", errors="replace").strip()
+                lang = _normalize_iso639_2(lang)  # v0.7.4: T → B form
                 audio_langs.append(lang)
 
             pg_langs: list[str] = []
@@ -1020,6 +1062,7 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
                 stream = clip.pg_streams[i]
                 lang_bytes = bytes(stream.lang).rstrip(b"\x00")
                 lang = lang_bytes.decode("ascii", errors="replace").strip()
+                lang = _normalize_iso639_2(lang)  # v0.7.4: T → B form
                 pg_langs.append(lang)
 
             return {"audio": audio_langs, "subtitle": pg_langs}
