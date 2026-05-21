@@ -875,3 +875,36 @@ class TestParseDiscLanguagesDispatcher:
 
     def test_nonexistent_path_returns_empty(self, tmp_path):
         assert parse_disc_languages(tmp_path / "missing", "dvd") == {"audio": [], "subtitle": []}
+
+
+class TestBsdtarFallback:
+    """v0.7.1+: smoke tests for bsdtar-based extraction. The pycdlib
+    fallback path triggers when bsdtar is available AND pycdlib can't
+    open the ISO (e.g. UDF-only BD ISOs). These tests use pycdlib-
+    writable ISOs since synthesizing a true UDF-only image in test setup
+    is impractical. Real-world coverage comes from the layer-2 gate."""
+
+    def test_bsdtar_available_returns_bool(self):
+        from backend.disc_metadata import _bsdtar_available
+        # Just verify it returns a bool — value depends on system
+        assert isinstance(_bsdtar_available(), bool)
+
+    def test_bsdtar_list_handles_missing_file(self, tmp_path):
+        from backend.disc_metadata import _bsdtar_list_iso
+        # Non-existent ISO returns empty list
+        result = _bsdtar_list_iso(tmp_path / "nonexistent.iso")
+        assert result == []
+
+    def test_bsdtar_extract_raises_on_missing_file(self, tmp_path):
+        from backend.disc_metadata import _bsdtar_extract_iso_file
+        with pytest.raises(FileNotFoundError):
+            _bsdtar_extract_iso_file(tmp_path / "nonexistent.iso", "some/file")
+
+    def test_pick_main_vts_via_bsdtar_handles_missing(self, tmp_path):
+        from backend.disc_metadata import _pick_main_vts_via_bsdtar
+        # Missing ISO returns None (not exception)
+        assert _pick_main_vts_via_bsdtar(tmp_path / "nonexistent.iso") is None
+
+    def test_pick_main_mpls_via_bsdtar_handles_missing(self, tmp_path):
+        from backend.disc_metadata import _pick_main_mpls_via_bsdtar
+        assert _pick_main_mpls_via_bsdtar(tmp_path / "nonexistent.iso") is None

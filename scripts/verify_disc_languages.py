@@ -1,4 +1,4 @@
-"""v0.7.0 pre-tag verification gate.
+"""v0.7.1 pre-tag verification gate.
 
 Runs INSIDE the production container against the two reference discs:
   - Fast-Walking (1982) DVD  → expect audio[0]='eng'
@@ -8,7 +8,7 @@ Runs INSIDE the production container against the two reference discs:
   - Elephant (2003) BD ISO   → expect audio[:2]=['fre','eng'], subtitle[:2]=['fre','eng']
 
 Per spec acceptance criterion 10: exits 0 only if all assertions pass.
-A non-zero exit blocks `git tag v0.7.0`.
+A non-zero exit blocks `git tag v0.7.1`.
 
 Usage from host:
   docker cp scripts/verify_disc_languages.py shrinkerr:/tmp/
@@ -51,7 +51,7 @@ async def main() -> int:
     dvd_root = Path(os.environ.get("SHRINKERR_TEST_DVD", DEFAULT_DVD))
     bdmv_root = Path(os.environ.get("SHRINKERR_TEST_BDMV", DEFAULT_BDMV))
 
-    print(f"=== Layer-2 verification: v0.7.0 disc language metadata ===", flush=True)
+    print(f"=== Layer-2 verification: v0.7.1 disc language metadata ===", flush=True)
     print(f"DVD reference : {dvd_root}", flush=True)
     print(f"BDMV reference: {bdmv_root}", flush=True)
     print()
@@ -201,23 +201,22 @@ async def main() -> int:
         else:
             failures.append(f"BD ISO classifier returned {dt!r}, expected 'bdmv'")
             _fail(f"classifier returned {dt!r}")
-        # v0.7.0: BD ISO language metadata may be empty when pycdlib can't open
-        # a UDF-only ISO. Classifier works via ffmpeg fallback; language
-        # extraction requires .mpls bytes which pycdlib can't reach in UDF-only
-        # mode. Acceptable degradation — tracks land as 'und', user overrides.
         bdmv_iso_langs = parse_disc_languages(bdmv_iso, "bdmv")
-        if bdmv_iso_langs["audio"] and bdmv_iso_langs["audio"] != []:
-            audio = bdmv_iso_langs["audio"]
-            if len(audio) >= 2 and audio[0] == "fre" and audio[1] == "eng":
-                _ok(f"audio[:2]={audio[:2]!r} (full language metadata available)")
-            else:
-                _ok(f"audio={audio!r} (partial / degraded — acceptable for UDF-only BD ISO)")
+        audio = bdmv_iso_langs["audio"]
+        if len(audio) >= 2 and audio[0] == "fre" and audio[1] == "eng":
+            _ok(f"audio[:2]={audio[:2]!r}")
         else:
-            _ok("language metadata empty (degraded for UDF-only BD ISO — pycdlib can't read .mpls; tracks will be 'und')")
+            failures.append(f"BD ISO audio[:2] wrong: got {audio!r}, expected ['fre','eng']")
+            _fail(f"audio = {audio!r}")
+        sub = bdmv_iso_langs["subtitle"]
+        if len(sub) >= 2 and sub[0] == "fre" and sub[1] == "eng":
+            _ok(f"subtitle[:2]={sub[:2]!r}")
+        else:
+            failures.append(f"BD ISO subtitle[:2] wrong: got {sub!r}, expected ['fre','eng']")
         print(f"    full result: {bdmv_iso_langs}", flush=True)
 
-    # --- BD ISO: end-to-end probe ---
-    print("[8/8] BD ISO probe_file integration (Elephant)", flush=True)
+    # --- BD ISO: end-to-end probe + stream-order ---
+    print("[8/8] BD ISO probe_file stream-order (Elephant)", flush=True)
     if bdmv_iso.is_file():
         probe = await probe_file(str(bdmv_iso))
         if probe is None:
@@ -226,30 +225,24 @@ async def main() -> int:
         else:
             audio = probe.get("audio_tracks", [])
             sub = probe.get("subtitle_tracks", [])
-            if probe.get("disc_type") == "bdmv":
-                _ok(f"disc_type={probe.get('disc_type')!r}")
+            if len(audio) >= 2 and audio[0].get("language") == "fre" and audio[1].get("language") == "eng":
+                _ok("audio_tracks[0]=fre, audio_tracks[1]=eng (correct stream order)")
             else:
-                failures.append(f"BD ISO probe disc_type wrong: {probe.get('disc_type')!r}")
-            if len(audio) > 0:
-                _ok(f"audio_tracks={len(audio)} stream(s) surfaced via bluray: protocol")
-                # Language may be und if pycdlib can't extract .mpls — that's
-                # expected for UDF-only BD ISOs and not a v0.7.0 failure.
-                langs = [t.get('language') for t in audio]
-                if 'fre' in langs and 'eng' in langs:
-                    _ok(f"audio languages = {langs} (full metadata available)")
-                else:
-                    _ok(f"audio languages = {langs} (degraded for UDF-only BD ISO — acceptable)")
+                failures.append(f"BD ISO audio stream order wrong: {[t.get('language') for t in audio]}")
+                _fail(f"audio langs = {[t.get('language') for t in audio]}")
+            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "eng":
+                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=eng (correct stream order)")
             else:
-                failures.append("BD ISO probe returned 0 audio tracks")
-                _fail("no audio_tracks")
+                failures.append(f"BD ISO subtitle stream order wrong: {[t.get('language') for t in sub]}")
+                _fail(f"subtitle langs = {[t.get('language') for t in sub]}")
 
     print()
     if failures:
-        print(f"=== FAIL: {len(failures)} assertion(s) failed — do NOT tag v0.7.0 ===", flush=True)
+        print(f"=== FAIL: {len(failures)} assertion(s) failed — do NOT tag v0.7.1 ===", flush=True)
         for f in failures:
             print(f"  - {f}", flush=True)
         return 1
-    print("=== PASS: all assertions OK — safe to git tag v0.7.0 ===", flush=True)
+    print("=== PASS: all assertions OK — safe to git tag v0.7.1 ===", flush=True)
     return 0
 
 

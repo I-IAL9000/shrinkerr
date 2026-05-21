@@ -45,6 +45,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
         python3.12 python3.12-venv python3-pip \
         curl xz-utils \
+        libarchive-tools \
         libva-drm2 \
         intel-media-va-driver-non-free \
         i965-va-driver \

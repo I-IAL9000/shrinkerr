@@ -585,6 +585,131 @@ def _pick_main_mpls_in_iso(iso) -> Optional[bytes]:
     return candidates[0][1]
 
 
+def _bsdtar_available() -> bool:
+    """Check if bsdtar is on PATH. v0.7.1+ uses it as a fallback to
+    pycdlib for UDF-only ISOs."""
+    import shutil as _shutil
+    return _shutil.which("bsdtar") is not None
+
+
+def _bsdtar_list_iso(iso_path: Path) -> list[str]:
+    """List ALL files inside an ISO via bsdtar. Returns full paths with
+    leading slash. Empty list on any error. v0.7.1+."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["bsdtar", "-tf", str(iso_path)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode != 0:
+            return []
+        # bsdtar emits paths without leading slash; normalize.
+        return ["/" + line.rstrip("/") for line in r.stdout.splitlines() if line.strip()]
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        print(f"[DISC-META] bsdtar list failed for {iso_path}: {exc}", flush=True)
+        return []
+
+
+def _bsdtar_extract_iso_file(iso_path: Path, internal_path: str) -> bytes:
+    """Extract a single file from inside an ISO to bytes via bsdtar.
+    `internal_path` should match the bsdtar listing (typically no leading
+    slash). Returns bytes on success. Raises FileNotFoundError on any
+    failure (matches pycdlib's _extract_iso_file contract). v0.7.1+."""
+    import subprocess
+    # bsdtar -xOf <iso> <path>: extract to stdout. bsdtar paths don't
+    # have a leading slash.
+    rel = internal_path.lstrip("/")
+    try:
+        r = subprocess.run(
+            ["bsdtar", "-xOf", str(iso_path), rel],
+            capture_output=True, timeout=60,
+        )
+        if r.returncode == 0 and r.stdout:
+            return r.stdout
+        raise FileNotFoundError(
+            f"bsdtar couldn't extract {rel} from {iso_path}: rc={r.returncode}, stderr={r.stderr[:200].decode('utf-8', 'replace')!r}"
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        raise FileNotFoundError(f"bsdtar extract failed for {rel}: {exc}")
+
+
+def _pick_main_mpls_via_bsdtar(iso_path: Path) -> Optional[bytes]:
+    """Enumerate .mpls files inside an ISO via bsdtar, extract each
+    (small ~1 KB), parse duration via _mpls_total_duration_bytes, return
+    the longest playlist's bytes. None if no playlists. v0.7.1+.
+
+    Used when pycdlib can't open the ISO (UDF-only BD ISO).
+    """
+    entries = _bsdtar_list_iso(iso_path)
+    candidates: list[tuple[float, bytes]] = []
+    for entry in entries:
+        # bsdtar listings vary in casing; normalize to upper for the
+        # check. mpls files live at BDMV/PLAYLIST/*.mpls.
+        normalized = entry.upper()
+        if not normalized.endswith(".MPLS"):
+            continue
+        if "/BDMV/PLAYLIST/" not in normalized:
+            continue
+        try:
+            data = _bsdtar_extract_iso_file(iso_path, entry)
+        except FileNotFoundError:
+            continue
+        dur = _mpls_total_duration_bytes(data)
+        if dur > 0:
+            candidates.append((dur, data))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return candidates[0][1]
+
+
+def _pick_main_vts_via_bsdtar(iso_path: Path) -> Optional[str]:
+    """Enumerate VTS_NN_*.VOB inside an ISO via bsdtar, group by NN, sum
+    sizes, return the NN with the largest total. None if no candidates.
+    v0.7.1+ (parallel path to _pick_main_vts_in_iso for ISOs pycdlib
+    can't open). Note: bsdtar listing doesn't give file sizes directly,
+    so we use `bsdtar -tvf` for verbose listing.
+    """
+    import subprocess, re as _re_mod
+    try:
+        r = subprocess.run(
+            ["bsdtar", "-tvf", str(iso_path)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode != 0:
+            return None
+        lines = r.stdout.splitlines()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        print(f"[DISC-META] bsdtar verbose list failed for {iso_path}: {exc}", flush=True)
+        return None
+
+    # bsdtar -tvf output shape (libarchive):
+    #   -rwxrwxr-x  0 0      0     1073739776 Jan  1 1970 VIDEO_TS/VTS_01_1.VOB
+    # We want size (col 4 after splitting on whitespace) + path (col 8+)
+    title_sets: dict[str, int] = {}
+    for line in lines:
+        parts = line.split(None, 8)
+        if len(parts) < 9:
+            continue
+        try:
+            size = int(parts[4])
+        except ValueError:
+            continue
+        path = parts[8]
+        # Match VTS_NN_M.VOB pattern in the path
+        m = _re_mod.search(r"VTS_(\d{2})_(\d+)\.VOB$", path, _re_mod.IGNORECASE)
+        if not m:
+            continue
+        chunk = int(m.group(2))
+        if chunk == 0:
+            continue  # skip menu chunk
+        ts_num = m.group(1)
+        title_sets[ts_num] = title_sets.get(ts_num, 0) + size
+    if not title_sets:
+        return None
+    return max(title_sets, key=title_sets.get)
+
+
 def parse_disc_languages_iso(iso_path: Path, disc_type: str) -> dict[str, list[str]]:
     """Extract per-stream language codes from an ISO file via pycdlib.
 
@@ -610,8 +735,18 @@ def parse_disc_languages_iso(iso_path: Path, disc_type: str) -> dict[str, list[s
     try:
         iso.open(str(iso_path))
     except Exception as exc:
-        print(f"[DISC-META] ISO open failed for {iso_path}: {exc}", flush=True)
-        return {"audio": [], "subtitle": []}
+        # v0.7.1: pycdlib can't open UDF-only ISOs (no ISO 9660 PVD).
+        # Try bsdtar-based extraction as a fallback. Slower but handles
+        # the BD-only UDF case.
+        print(
+            f"[DISC-META] pycdlib couldn't open {iso_path} ({exc}); "
+            "trying bsdtar fallback for language metadata",
+            flush=True,
+        )
+        if not _bsdtar_available():
+            print("[DISC-META] bsdtar not installed; can't extract language metadata", flush=True)
+            return {"audio": [], "subtitle": []}
+        return _parse_disc_languages_iso_via_bsdtar(iso_path, disc_type)
 
     try:
         if disc_type == "dvd":
@@ -639,6 +774,49 @@ def parse_disc_languages_iso(iso_path: Path, disc_type: str) -> dict[str, list[s
             iso.close()
         except Exception:
             pass
+
+
+def _parse_disc_languages_iso_via_bsdtar(iso_path: Path, disc_type: str) -> dict[str, list[str]]:
+    """Fallback to bsdtar (libarchive) for ISO sidecar extraction when
+    pycdlib can't open the image. Mirrors the pycdlib-based flow:
+
+      DVD: find main title set via VOB-size heuristic, extract that
+           NN's VTS_NN_0.IFO bytes, feed to _parse_dvd_ifo_bytes.
+      BDMV: enumerate .mpls files, pick the longest, feed bytes to
+            _parse_bdmv_mpls_bytes.
+
+    Fail-open: returns empty on any extraction or parse failure.
+    v0.7.1+.
+    """
+    try:
+        if disc_type == "dvd":
+            ts_num = _pick_main_vts_via_bsdtar(iso_path)
+            if not ts_num:
+                return {"audio": [], "subtitle": []}
+            try:
+                ifo_bytes = _bsdtar_extract_iso_file(
+                    iso_path, f"VIDEO_TS/VTS_{ts_num}_0.IFO"
+                )
+            except FileNotFoundError as exc:
+                print(
+                    f"[DISC-META] bsdtar: IFO not found in {iso_path}: {exc}",
+                    flush=True,
+                )
+                return {"audio": [], "subtitle": []}
+            return _parse_dvd_ifo_bytes(ifo_bytes)
+        elif disc_type == "bdmv":
+            mpls_bytes = _pick_main_mpls_via_bsdtar(iso_path)
+            if mpls_bytes is None:
+                return {"audio": [], "subtitle": []}
+            return _parse_bdmv_mpls_bytes(mpls_bytes)
+        return {"audio": [], "subtitle": []}
+    except Exception as exc:
+        print(
+            f"[DISC-META] bsdtar-based parse failed for {iso_path} "
+            f"({disc_type}): {exc}",
+            flush=True,
+        )
+        return {"audio": [], "subtitle": []}
 
 
 def parse_disc_languages(path: Path, disc_type: str) -> dict[str, list[str]]:
