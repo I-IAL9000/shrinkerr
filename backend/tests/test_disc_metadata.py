@@ -647,3 +647,134 @@ class TestClassifyDiscIso:
         iso.write(str(out))
         iso.close()
         assert _classify_disc_iso(out) == "bdmv"
+
+
+from backend.disc_metadata import (
+    _extract_iso_file,
+    _pick_main_vts_in_iso,
+    _pick_main_mpls_in_iso,
+)
+
+
+class TestIsoExtractors:
+    def test_extract_iso_file_udf_path(self, tmp_path):
+        # Build an ISO with a known file
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/X")
+        iso.add_fp(_io.BytesIO(b"HELLO_PAYLOAD"), 13, udf_path="/X/file.bin")
+        out = tmp_path / "x.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            data = _extract_iso_file(iso2, "/X/file.bin")
+            assert data == b"HELLO_PAYLOAD"
+        finally:
+            iso2.close()
+
+    def test_extract_iso_file_missing_raises(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        out = tmp_path / "empty.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            with pytest.raises(FileNotFoundError):
+                _extract_iso_file(iso2, "/does/not/exist")
+        finally:
+            iso2.close()
+
+    def test_pick_main_vts_picks_largest(self, tmp_path):
+        """Build an ISO with two title sets: VTS_01 (3 large VOBs) and
+        VTS_02 (1 small VOB). Picker should return '01'."""
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        # VTS_01: 3 VOBs of 1000 bytes each
+        for i in range(1, 4):
+            iso.add_fp(
+                _io.BytesIO(b"\x00" * 1000), 1000,
+                udf_path=f"/VIDEO_TS/VTS_01_{i}.VOB",
+            )
+        # VTS_02: 1 VOB of 100 bytes
+        iso.add_fp(
+            _io.BytesIO(b"\x00" * 100), 100,
+            udf_path="/VIDEO_TS/VTS_02_1.VOB",
+        )
+        # Menu chunks (should be ignored)
+        iso.add_fp(
+            _io.BytesIO(b"\x00" * 50), 50,
+            udf_path="/VIDEO_TS/VTS_01_0.VOB",
+        )
+        out = tmp_path / "multi_vts.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            assert _pick_main_vts_in_iso(iso2) == "01"
+        finally:
+            iso2.close()
+
+    def test_pick_main_vts_no_vobs_returns_none(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        # only IFO, no VOBs
+        iso.add_fp(_io.BytesIO(b"x" * 100), 100, udf_path="/VIDEO_TS/VIDEO_TS.IFO")
+        out = tmp_path / "novobs.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            assert _pick_main_vts_in_iso(iso2) is None
+        finally:
+            iso2.close()
+
+    def test_pick_main_mpls_picks_longest(self, tmp_path):
+        """Build an ISO with three .mpls of different durations. Picker
+        should return the bytes of the longest."""
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/BDMV")
+        iso.add_directory(udf_path="/BDMV/PLAYLIST")
+        # Three playlists; middle one is longest
+        for name, duration in [("00000.mpls", 60), ("00100.mpls", 5000), ("00200.mpls", 120)]:
+            data = _build_mpls_with_duration(seconds=duration)
+            iso.add_fp(_io.BytesIO(data), len(data), udf_path=f"/BDMV/PLAYLIST/{name}")
+        out = tmp_path / "multi_mpls.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            result = _pick_main_mpls_in_iso(iso2)
+            assert result is not None
+            # The picked bytes should be the longest playlist (~5000 sec)
+            assert abs(_mpls_total_duration_bytes(result) - 5000) < 1
+        finally:
+            iso2.close()
+
+    def test_pick_main_mpls_no_playlist_dir_returns_none(self, tmp_path):
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        out = tmp_path / "empty.iso"
+        iso.write(str(out))
+        iso.close()
+
+        iso2 = pycdlib.PyCdlib()
+        iso2.open(str(out))
+        try:
+            assert _pick_main_mpls_in_iso(iso2) is None
+        finally:
+            iso2.close()

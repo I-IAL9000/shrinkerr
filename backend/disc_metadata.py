@@ -418,6 +418,116 @@ def _classify_disc_iso(iso_path: Path) -> Optional[str]:
             pass
 
 
+def _extract_iso_file(iso, path: str) -> bytes:
+    """Read a file from inside an open pycdlib ISO. Tries UDF facade
+    first, then ISO 9660 (with optional ';1' version suffix).
+    Raises FileNotFoundError if the path is absent in both facades.
+    v0.7.0+."""
+    import io as _io_mod
+    last_exc = None
+    for kwargs in (
+        {"udf_path": path},
+        {"iso_path": path + ";1"},
+        {"iso_path": path},
+    ):
+        try:
+            buf = _io_mod.BytesIO()
+            iso.get_file_from_iso_fp(buf, **kwargs)
+            return buf.getvalue()
+        except Exception as exc:
+            last_exc = exc
+            continue
+    raise FileNotFoundError(f"{path} not found in ISO: {last_exc}")
+
+
+def _pick_main_vts_in_iso(iso) -> Optional[str]:
+    """Enumerate /VIDEO_TS/VTS_NN_*.VOB inside an open ISO, group by NN,
+    sum byte sizes (excluding _0 menu chunks), return the NN with the
+    largest total. Returns None if no candidate found. v0.7.0+ — mirrors
+    folder-based `_dvd_main_title_vobs` logic."""
+    import re as _re_mod
+    title_sets: dict[str, int] = {}
+    # Walk the /VIDEO_TS UDF dir; fall back to ISO 9660 if UDF empty.
+    for walker_kw in ("udf_path", "iso_path"):
+        try:
+            children = list(iso.list_children(**{walker_kw: "/VIDEO_TS"}))
+        except Exception:
+            continue
+        found_any = False
+        for child in children:
+            if child is None:
+                continue
+            try:
+                name = child.file_identifier().decode("utf-8", errors="replace").strip()
+            except Exception:
+                continue
+            if name in (".", "..", ""):
+                continue
+            # Strip ;1 version suffix from ISO 9660 paths
+            name = name.split(";", 1)[0]
+            if name.startswith("."):
+                continue  # AppleDouble companions
+            m = _re_mod.fullmatch(r"VTS_(\d{2})_(\d+)\.VOB", name, _re_mod.IGNORECASE)
+            if not m:
+                continue
+            found_any = True
+            ts_num = m.group(1)
+            chunk = int(m.group(2))
+            if chunk == 0:
+                continue  # skip menu chunk
+            # File size via the directory record
+            try:
+                size = child.get_data_length()
+            except Exception:
+                size = 0
+            title_sets[ts_num] = title_sets.get(ts_num, 0) + size
+        if found_any:
+            break  # don't double-count from a second walker
+
+    if not title_sets:
+        return None
+    return max(title_sets, key=title_sets.get)
+
+
+def _pick_main_mpls_in_iso(iso) -> Optional[bytes]:
+    """Enumerate /BDMV/PLAYLIST/*.mpls inside an open ISO, extract each
+    (small files, ~1 KB), pick the one with the largest total PlayItem
+    duration, return its bytes. Returns None if no playlists found.
+    v0.7.0+ — mirrors folder-based `_find_main_bdmv_playlist`."""
+    candidates: list[tuple[float, bytes]] = []
+    for walker_kw in ("udf_path", "iso_path"):
+        try:
+            children = list(iso.list_children(**{walker_kw: "/BDMV/PLAYLIST"}))
+        except Exception:
+            continue
+        found_any = False
+        for child in children:
+            if child is None:
+                continue
+            try:
+                name = child.file_identifier().decode("utf-8", errors="replace").strip()
+            except Exception:
+                continue
+            name = name.split(";", 1)[0]
+            if not name.lower().endswith(".mpls"):
+                continue
+            found_any = True
+            try:
+                data = _extract_iso_file(iso, f"/BDMV/PLAYLIST/{name}")
+            except FileNotFoundError:
+                continue
+            dur = _mpls_total_duration_bytes(data)
+            if dur > 0:
+                candidates.append((dur, data))
+        if found_any:
+            break
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return candidates[0][1]
+
+
 def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]]:
     """Public entry point. Given a disc-root folder and disc_type ('dvd'
     or 'bdmv'), return per-stream language metadata.
