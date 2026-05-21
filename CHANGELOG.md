@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-05-21
+
+### Added
+- **DVD and Blu-ray ISO file support.** `.iso` files containing VIDEO_TS or BDMV structures are now first-class scan items alongside the v0.6.x unpacked folder support. ffmpeg reads the ISO directly via `-f dvdvideo -i /path.iso` (DVD) or `bluray:/path.iso` (BD) — no kernel mount, no extraction, no Dockerfile changes. Output MKV lands in the ISO's parent folder (or alongside the ISO when it's loose at a media_dir root), with the same scene-style naming + metadata-ID strip applied as folder discs. Post-conversion source-handling unlinks / trashes / backs-up the ISO file per the existing setting. Non-video ISOs (Linux installers, games) are silently ignored. **Limitation:** DVD ISO language metadata is fully extracted via pycdlib + IFO parser; BD ISO language metadata works for ISOs that carry an ISO 9660 + UDF layer but falls back to `und` for UDF-only BD ISOs (a known pycdlib limitation — Blu-Ray-spec doesn't require ISO 9660). The disc still converts correctly; the user just manually selects which audio/subtitle tracks to keep. Classification falls back to ffmpeg's `bluray:` protocol for UDF-only ISOs so they're correctly identified as BDs.
+
 ## [0.6.8] — 2026-05-21
 
 ### Fixed
