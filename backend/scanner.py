@@ -111,12 +111,34 @@ async def probe_file(file_path: str) -> Optional[dict]:
     p = Path(file_path)
     disc_type: Optional[str] = None
     disc_folder: Optional[Path] = None
+    ffprobe_input_args: list[str] = []  # v0.7.0: extra args before -i for disc ISO routing
+    # v0.7.0: ISO file support. If file_path is a .iso, peek inside via
+    # pycdlib to determine disc_type, then route to the appropriate
+    # ffmpeg input syntax. DVD ISO uses `-f dvdvideo -i /path.iso`,
+    # BD ISO uses `bluray:/path.iso`. No mount, no extraction at probe
+    # time. Checked BEFORE folder-marker branches because an .iso file
+    # never has VIDEO_TS/ or BDMV/ as its parent directory.
+    if p.is_file() and p.suffix.lower() == ".iso":
+        from backend.disc_metadata import _classify_disc_iso
+        disc_type = _classify_disc_iso(p)
+        if disc_type == "dvd":
+            disc_folder = p           # ISO IS the disc — disc_folder points at the .iso file, not a dir
+            probe_input = str(p)
+            ffprobe_input_args = ["-f", "dvdvideo"]
+        elif disc_type == "bdmv":
+            disc_folder = p
+            probe_input = f"bluray:{p}"
+        else:
+            # Not a video ISO — fall through to regular-file probe (will
+            # likely fail; but caller treats failures as 'corrupt' and
+            # surfaces the row).
+            probe_input = file_path
     # v0.6.0: case-insensitive marker comparison — DVD-Video / BDMV
     # specs mandate exact casing on the disc, but case-insensitive
     # filesystems (macOS HFS+/APFS, Windows NTFS) can store the names
     # with different casing after rename/extract. Matches the .lower()
     # convention used elsewhere in this file for filename matching.
-    if p.name.lower() == "index.bdmv" and p.parent.name.lower() == "bdmv":
+    elif p.name.lower() == "index.bdmv" and p.parent.name.lower() == "bdmv":
         disc_type = "bdmv"
         disc_folder = p.parent.parent
         probe_input = f"bluray:{disc_folder}"
@@ -142,6 +164,12 @@ async def probe_file(file_path: str) -> Optional[dict]:
     # read enough of the stream.
     if disc_type:
         cmd.extend(["-analyzeduration", "200M", "-probesize", "200M"])
+    # v0.7.0: DVD ISO needs `-f dvdvideo` before `-i` so ffmpeg's
+    # demuxer treats the .iso as a DVD-Video disc image rather than a
+    # raw file. BD ISO uses the `bluray:` protocol on probe_input and
+    # needs no extra args here.
+    if ffprobe_input_args:
+        cmd.extend(ffprobe_input_args)
     cmd.extend(["-i", probe_input])
     proc = None
     try:
@@ -312,7 +340,10 @@ async def probe_file(file_path: str) -> Optional[dict]:
         # ffprobe's format.size for dvd:/bluray: only covers the main title.
         # Use the on-disk size of all VOB/M2TS payload files for accurate
         # disk-usage display in the UI.
-        if disc_folder is not None:
+        # v0.7.0: gate on .is_dir() — for ISO inputs disc_folder is the
+        # .iso file itself, and ffprobe's format.size already reflects
+        # the ISO file's bytes (no patch needed).
+        if disc_folder is not None and disc_folder.is_dir():
             total = _disc_total_size(disc_folder, disc_type)
             if total > 0:
                 result["file_size"] = total
@@ -1051,6 +1082,9 @@ async def scan_directory(
     """
     dir_path = Path(dir_path)
     extensions = {ext.lower() for ext in settings.video_extensions}
+    extensions.add(".iso")  # v0.7.0: include ISO files in the walk for
+                            # disc-image classification (separate from
+                            # user-configured video extensions)
 
     # Load configured source codecs from DB
     source_codecs = ["h264"]  # default
