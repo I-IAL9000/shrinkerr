@@ -985,19 +985,34 @@ def build_disc_output_filename(
     Example:
       `/Movies/Fast-Walking (1982) [tt0083930]/VIDEO_TS/VIDEO_TS.IFO`
       + disc_type='dvd' + 480p MPEG-2 + AC3 2.0 + libx265
-      → `/Movies/Fast-Walking (1982) [tt0083930]/Fast-Walking (1982) [tt0083930] 480p DVDRip AC3 2.0 x265.mkv`
+      → `/Movies/Fast-Walking (1982) [tt0083930]/Fast-Walking (1982) 480p DVDRip AC3 2.0 x265.mkv`
 
     Audio/channels tokens are omitted entirely when the probe yields no
     audio tracks (rare; preserves a useful fallback name).
 
+    v0.6.8+: metadata-ID brackets/braces (e.g. `[tt0363589]`, `[imdb-tt..]`,
+    `[tmdb-123]`, `{tvdb-123}`) are stripped from the FILE name — they
+    belong on the FOLDER (per *arr convention) but not duplicated into
+    the filename itself. The folder structure on disk is unchanged.
+
     v0.6.0+.
     """
+    import re as _re
     from backend.rename import _format_channels
     p = Path(disc_marker_path)
     # Marker path is .../<parent>/VIDEO_TS/VIDEO_TS.IFO or .../<parent>/BDMV/index.bdmv.
     # Strip two segments to get the disc-root (parent) folder.
     disc_root = p.parent.parent
     base_name = disc_root.name
+    # Strip metadata-ID tags ([tt1234567], [imdb-tt..], [tmdb-..], [tvdb-..],
+    # {tmdb-..}, {tvdb-..}) and the whitespace immediately preceding them.
+    # Folder name keeps the IDs (for *arr cataloguing); only the filename
+    # drops them. v0.6.8+.
+    base_name = _re.sub(
+        r"\s*[\[\{](?:tt\d+|(?:imdb|tmdb|tvdb)[-:][a-zA-Z0-9]+)[\]\}]",
+        "",
+        base_name,
+    ).strip()
 
     # Resolution token from probe video height
     h = int(probe_data.get("video_height") or 0)
