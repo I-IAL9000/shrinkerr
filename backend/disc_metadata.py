@@ -386,23 +386,32 @@ def _classify_disc_iso(iso_path: Path) -> Optional[str]:
     `_classify_disc` in scanner.py). Uses pycdlib to read UDF + ISO 9660
     directory tables — no payload extraction at this stage. Fail-open:
     any pycdlib error returns None so non-video ISOs are silently
-    skipped rather than blocking the scan. v0.7.0+.
+    skipped rather than blocking the scan.
+
+    v0.7.0+: ffmpeg fallback for ISOs pycdlib can't open. UDF-only BD
+    ISOs (no ISO 9660 layer) trigger this path — pycdlib requires a
+    Primary Volume Descriptor which UDF-only discs lack. ffmpeg's
+    `bluray:` protocol opens them via libbluray. Slower (~1-5s per
+    probe) but handles real-world BD ISOs that pycdlib rejects.
     """
+    if not iso_path.is_file():
+        return None
+
     try:
         import pycdlib
     except ImportError:
         print("[DISC-META] pycdlib not installed; ISO support disabled", flush=True)
-        return None
-
-    if not iso_path.is_file():
-        return None
+        # No pycdlib at all — go straight to ffmpeg fallback
+        return _classify_disc_iso_via_ffmpeg(iso_path)
 
     iso = pycdlib.PyCdlib()
     try:
         iso.open(str(iso_path))
     except Exception as exc:
-        print(f"[DISC-META] not a valid ISO: {iso_path}: {exc}", flush=True)
-        return None
+        # pycdlib couldn't open — likely a UDF-only BD ISO (no ISO 9660 PVD)
+        # or some other format pycdlib doesn't support. Try ffmpeg.
+        print(f"[DISC-META] pycdlib couldn't open {iso_path} ({exc}); trying ffmpeg fallback", flush=True)
+        return _classify_disc_iso_via_ffmpeg(iso_path)
 
     try:
         # Check BDMV first (combo-disc priority)
@@ -416,6 +425,54 @@ def _classify_disc_iso(iso_path: Path) -> Optional[str]:
             iso.close()
         except Exception:
             pass
+
+
+def _classify_disc_iso_via_ffmpeg(iso_path: Path) -> Optional[str]:
+    """Fallback classification using ffmpeg's `bluray:` and `-f dvdvideo`
+    input syntaxes. Slower than pycdlib (~1-5 seconds per probe) but
+    works on UDF-only ISOs that pycdlib rejects. v0.7.0+.
+
+    Order: BD first (more common for ISOs), then DVD. Returns None if
+    neither probe yields streams (non-video ISO or unreadable image).
+    """
+    import subprocess
+    import json as _json
+
+    # Try BD via bluray: protocol
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_streams",
+             "-print_format", "json", "-i", f"bluray:{iso_path}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            try:
+                data = _json.loads(r.stdout)
+                if data.get("streams"):
+                    return "bdmv"
+            except _json.JSONDecodeError:
+                pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        print(f"[DISC-META] ffmpeg bluray fallback errored for {iso_path}: {exc}", flush=True)
+
+    # Try DVD via -f dvdvideo
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_streams",
+             "-print_format", "json", "-f", "dvdvideo", "-i", str(iso_path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            try:
+                data = _json.loads(r.stdout)
+                if data.get("streams"):
+                    return "dvd"
+            except _json.JSONDecodeError:
+                pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        print(f"[DISC-META] ffmpeg dvdvideo fallback errored for {iso_path}: {exc}", flush=True)
+
+    return None
 
 
 def _extract_iso_file(iso, path: str) -> bytes:
