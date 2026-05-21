@@ -358,6 +358,66 @@ def _parse_bdmv_mpls(mpls_path: Path) -> dict[str, list[str]]:
     return _parse_bdmv_mpls_bytes(data)
 
 
+def _iso_has_path(iso, path: str) -> bool:
+    """Check existence of a path inside an ISO via UDF facade first,
+    then ISO 9660 (with optional ';1' version suffix). Used by the
+    classifier and the sidecar extraction helpers. v0.7.0+."""
+    try:
+        iso.get_record(udf_path=path)
+        return True
+    except Exception:
+        pass
+    try:
+        iso.get_record(iso_path=path + ";1")
+        return True
+    except Exception:
+        pass
+    try:
+        iso.get_record(iso_path=path)
+        return True
+    except Exception:
+        return False
+
+
+def _classify_disc_iso(iso_path: Path) -> Optional[str]:
+    """Peek inside an ISO file and return 'dvd', 'bdmv', or None.
+
+    BDMV wins on combo discs (same priority as folder-based
+    `_classify_disc` in scanner.py). Uses pycdlib to read UDF + ISO 9660
+    directory tables — no payload extraction at this stage. Fail-open:
+    any pycdlib error returns None so non-video ISOs are silently
+    skipped rather than blocking the scan. v0.7.0+.
+    """
+    try:
+        import pycdlib
+    except ImportError:
+        print("[DISC-META] pycdlib not installed; ISO support disabled", flush=True)
+        return None
+
+    if not iso_path.is_file():
+        return None
+
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(str(iso_path))
+    except Exception as exc:
+        print(f"[DISC-META] not a valid ISO: {iso_path}: {exc}", flush=True)
+        return None
+
+    try:
+        # Check BDMV first (combo-disc priority)
+        if _iso_has_path(iso, "/BDMV/index.bdmv"):
+            return "bdmv"
+        if _iso_has_path(iso, "/VIDEO_TS/VIDEO_TS.IFO"):
+            return "dvd"
+        return None
+    finally:
+        try:
+            iso.close()
+        except Exception:
+            pass
+
+
 def parse_disc_languages(disc_root: Path, disc_type: str) -> dict[str, list[str]]:
     """Public entry point. Given a disc-root folder and disc_type ('dvd'
     or 'bdmv'), return per-stream language metadata.

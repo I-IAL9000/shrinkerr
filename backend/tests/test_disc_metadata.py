@@ -563,3 +563,87 @@ class TestParserBytesAPIs:
         fixture = _build_mpls_with_duration(seconds=120.5)
         # Allow tiny floating-point drift from the 45 kHz round-trip
         assert abs(_mpls_total_duration_bytes(fixture) - 120.5) < 0.001
+
+
+import pycdlib
+import io as _io
+from backend.disc_metadata import _classify_disc_iso
+
+
+def _build_minimal_dvd_iso(tmp_path):
+    """Use pycdlib to write a tiny ISO containing /VIDEO_TS/VIDEO_TS.IFO
+    (just enough for classification). UDF + ISO 9660 dual-format."""
+    iso = pycdlib.PyCdlib()
+    iso.new(udf="2.60")
+    iso.add_directory(udf_path="/VIDEO_TS")
+    iso.add_fp(
+        _io.BytesIO(b"DVDVIDEO-VTS" + b"\x00" * 64),
+        len(b"DVDVIDEO-VTS") + 64,
+        udf_path="/VIDEO_TS/VIDEO_TS.IFO",
+    )
+    out = tmp_path / "fake_dvd.iso"
+    iso.write(str(out))
+    iso.close()
+    return out
+
+
+def _build_minimal_bdmv_iso(tmp_path):
+    iso = pycdlib.PyCdlib()
+    iso.new(udf="2.60")
+    iso.add_directory(udf_path="/BDMV")
+    iso.add_fp(
+        _io.BytesIO(b"INDX0200" + b"\x00" * 32),
+        len(b"INDX0200") + 32,
+        udf_path="/BDMV/index.bdmv",
+    )
+    out = tmp_path / "fake_bdmv.iso"
+    iso.write(str(out))
+    iso.close()
+    return out
+
+
+def _build_empty_iso(tmp_path):
+    """Non-video ISO — no VIDEO_TS, no BDMV."""
+    iso = pycdlib.PyCdlib()
+    iso.new(udf="2.60")
+    iso.add_directory(udf_path="/READMES")
+    out = tmp_path / "fake_other.iso"
+    iso.write(str(out))
+    iso.close()
+    return out
+
+
+class TestClassifyDiscIso:
+    def test_dvd_iso_classified(self, tmp_path):
+        iso = _build_minimal_dvd_iso(tmp_path)
+        assert _classify_disc_iso(iso) == "dvd"
+
+    def test_bdmv_iso_classified(self, tmp_path):
+        iso = _build_minimal_bdmv_iso(tmp_path)
+        assert _classify_disc_iso(iso) == "bdmv"
+
+    def test_non_video_iso_returns_none(self, tmp_path):
+        iso = _build_empty_iso(tmp_path)
+        assert _classify_disc_iso(iso) is None
+
+    def test_missing_iso_returns_none(self, tmp_path):
+        assert _classify_disc_iso(tmp_path / "does_not_exist.iso") is None
+
+    def test_garbage_file_returns_none(self, tmp_path):
+        path = tmp_path / "not_an_iso.iso"
+        path.write_bytes(b"definitely not an iso file")
+        assert _classify_disc_iso(path) is None
+
+    def test_combo_iso_prefers_bdmv(self, tmp_path):
+        """If an ISO has both VIDEO_TS and BDMV (rare combo disc),
+        BDMV wins — same priority as the folder-based _classify_disc."""
+        iso = pycdlib.PyCdlib()
+        iso.new(udf="2.60")
+        iso.add_directory(udf_path="/VIDEO_TS")
+        iso.add_fp(_io.BytesIO(b"x" * 100), 100, udf_path="/VIDEO_TS/VIDEO_TS.IFO")
+        iso.add_directory(udf_path="/BDMV")
+        iso.add_fp(_io.BytesIO(b"y" * 100), 100, udf_path="/BDMV/index.bdmv")
+        out = tmp_path / "combo.iso"
+        iso.write(str(out))
+        iso.close()
+        assert _classify_disc_iso(out) == "bdmv"
