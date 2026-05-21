@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] — 2026-05-21
+
+### Fixed
+- Disc conversion output filenames inherited the parent folder's metadata-ID tags — e.g. `Elephant (2003) [tt0363589] 1080p Bluray EAC3 5.1 h265.mkv` instead of the convention `Elephant (2003) 1080p Bluray EAC3 5.1 h265.mkv`. IDs belong on FOLDERS (for *arr cataloguing) but not duplicated into the file name. `build_disc_output_filename` now strips `[tt...]`, `[imdb-...]`, `[tmdb-...]`, `[tvdb-...]`, and `{tmdb-...}` / `{tvdb-...}` forms from the filename token while leaving the folder structure unchanged. Folders that don't carry an ID tag are unaffected.
+
 ## [0.6.7] — 2026-05-21
 
 ### Fixed
