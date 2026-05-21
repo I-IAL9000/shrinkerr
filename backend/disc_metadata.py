@@ -910,17 +910,24 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
         ]
 
     class BLURAY_TITLE_INFO(Structure):
+        # libbluray 1.3.x layout (matches src/libbluray/bluray.h verbatim).
+        # Critical: clip_count BEFORE angle_count; clips BEFORE chapters/marks.
+        # The previous version (v0.7.4-rc1/rc2) had angle_count first which made
+        # ctypes read garbage offsets — clip.audio_stream_count ended up reading
+        # from BLURAY_TITLE_MARK data, surfacing as 0 and the loops silently
+        # produced empty language lists. v0.7.4-rc3 fix.
         _fields_ = [
             ("idx", c_uint32),
             ("playlist", c_uint32),
             ("duration", c_uint64),
+            ("clip_count", c_uint32),
             ("angle_count", c_uint8),
             ("chapter_count", c_uint32),
-            ("clip_count", c_uint32),
             ("mark_count", c_uint32),
+            ("clips", POINTER(BLURAY_CLIP_INFO)),
             ("chapters", c_void_p),     # BLURAY_TITLE_CHAPTER* (unused here)
             ("marks", c_void_p),        # BLURAY_TITLE_MARK* (unused here)
-            ("clips", POINTER(BLURAY_CLIP_INFO)),
+            ("mvc_base_view_r_flag", c_uint8),  # added in libbluray 1.x
         ]
 
     # --- libbluray function signatures ---
@@ -974,9 +981,31 @@ def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str
 
         try:
             ti = ti_ptr.contents
-            if ti.clip_count == 0:
+            # Sanity-check struct layout: clip_count > 1000 means we're
+            # almost certainly reading garbage (real BD discs have <50
+            # clips per title). Bail out rather than segfaulting downstream.
+            if ti.clip_count == 0 or ti.clip_count > 1000:
+                if ti.clip_count > 1000:
+                    print(
+                        f"[DISC-META] libbluray ctypes struct mismatch suspected "
+                        f"for {iso_path} (clip_count={ti.clip_count}); aborting",
+                        flush=True,
+                    )
                 return {"audio": [], "subtitle": []}
             clip = ti.clips[0]
+
+            # Same sanity check on stream counts (real BDs max ~32 of any kind).
+            if (clip.audio_stream_count > 32 or clip.pg_stream_count > 32
+                    or clip.video_stream_count > 32):
+                print(
+                    f"[DISC-META] libbluray ctypes stream-count mismatch "
+                    f"for {iso_path} "
+                    f"(audio={clip.audio_stream_count}, "
+                    f"pg={clip.pg_stream_count}, "
+                    f"video={clip.video_stream_count}); aborting",
+                    flush=True,
+                )
+                return None
 
             audio_langs: list[str] = []
             for i in range(clip.audio_stream_count):
