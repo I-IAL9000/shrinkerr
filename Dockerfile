@@ -18,7 +18,7 @@
 # the native architecture of the builder host (the runner, not the target),
 # so cross-compilation for arm64 doesn't re-run npm inside QEMU. The output
 # is pure JS/CSS, so it's portable across target architectures.
-FROM --platform=$BUILDPLATFORM node:20-slim AS frontend-build
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:20-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
@@ -28,7 +28,14 @@ RUN npm run build
 # Stage 2: runtime image.
 # python:3.11-slim-bookworm is multi-arch (amd64 + arm64) and much smaller
 # than the ubuntu/CUDA image used by the :nvenc variant.
-FROM python:3.11-slim-bookworm
+#
+# v0.7.4: pulled from Google's mirror.gcr.io instead of docker.io to avoid
+# Docker Hub anonymous + authenticated pull rate limits (200/6h on free)
+# from cooking the CI matrix (4 variants × 2 archs × multi-stage). The
+# mirror is a byte-for-byte proxy of Docker Hub's `library/*` namespace,
+# requires no auth, and has no rate limit. Same applies to the node:20-slim
+# pull in stage 1 above, and to Dockerfile.nvenc.
+FROM mirror.gcr.io/library/python:3.11-slim-bookworm
 ARG TARGETARCH
 
 # curl + xz-utils only needed for the ffmpeg download step below; purged at
