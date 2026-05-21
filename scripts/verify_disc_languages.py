@@ -60,8 +60,13 @@ async def main() -> int:
     from backend.scanner import probe_file
 
     # --- DVD: parse only ---
+    # Folder-disc assertions skip-on-missing for either the root OR the
+    # inner disc structure (VIDEO_TS/VIDEO_TS.IFO). Source-handling from
+    # v0.6.x deletes VIDEO_TS after conversion, so a media folder can
+    # exist without the inner disc — that's NOT a v0.7.0 regression.
+    dvd_marker = dvd_root / "VIDEO_TS" / "VIDEO_TS.IFO"
     print("[1/4] DVD parse_disc_languages against Fast-Walking IFO", flush=True)
-    if not dvd_root.is_dir():
+    if not dvd_marker.is_file():
         _ok(f"SKIPPED — folder disc reference not on this NUC (verified in v0.6.5 release)")
     else:
         dvd_langs = parse_disc_languages(dvd_root, "dvd")
@@ -74,29 +79,26 @@ async def main() -> int:
 
     # --- DVD: full probe_file → patched audio_tracks ---
     print("[2/4] DVD probe_file integration (Fast-Walking)", flush=True)
-    if not dvd_root.is_dir():
+    if not dvd_marker.is_file():
         _ok(f"SKIPPED — folder disc reference not on this NUC (verified in v0.6.5 release)")
     else:
-        marker = dvd_root / "VIDEO_TS" / "VIDEO_TS.IFO"
-        if not marker.is_file():
-            failures.append(f"DVD marker missing: {marker}")
-            _fail("marker file not found")
+        marker = dvd_marker
+        probe = await probe_file(str(marker))
+        if probe is None:
+            failures.append("DVD probe_file returned None")
+            _fail("probe failed")
         else:
-            probe = await probe_file(str(marker))
-            if probe is None:
-                failures.append("DVD probe_file returned None")
-                _fail("probe failed")
+            audio = probe.get("audio_tracks", [])
+            if audio and audio[0].get("language") == EXPECTED_DVD_AUDIO_FIRST:
+                _ok(f"audio_tracks[0].language={audio[0].get('language')!r}")
             else:
-                audio = probe.get("audio_tracks", [])
-                if audio and audio[0].get("language") == EXPECTED_DVD_AUDIO_FIRST:
-                    _ok(f"audio_tracks[0].language={audio[0].get('language')!r}")
-                else:
-                    failures.append(f"DVD probe audio[0].language wrong: {audio[0] if audio else 'no tracks'}")
-                    _fail(f"audio_tracks[0]={audio[0] if audio else None}")
+                failures.append(f"DVD probe audio[0].language wrong: {audio[0] if audio else 'no tracks'}")
+                _fail(f"audio_tracks[0]={audio[0] if audio else None}")
 
     # --- BDMV: parse only ---
+    bdmv_marker = bdmv_root / "BDMV" / "index.bdmv"
     print("[3/4] BDMV parse_disc_languages against Elephant mpls", flush=True)
-    if not bdmv_root.is_dir():
+    if not bdmv_marker.is_file():
         _ok(f"SKIPPED — folder disc reference not on this NUC (verified in v0.6.5 release)")
     else:
         bdmv_langs = parse_disc_languages(bdmv_root, "bdmv")
@@ -118,31 +120,27 @@ async def main() -> int:
 
     # --- BDMV: full probe_file → patched tracks (stream-order assertion) ---
     print("[4/4] BDMV probe_file stream-order correlation (Elephant)", flush=True)
-    if not bdmv_root.is_dir():
+    if not bdmv_marker.is_file():
         _ok(f"SKIPPED — folder disc reference not on this NUC (verified in v0.6.5 release)")
     else:
-        marker = bdmv_root / "BDMV" / "index.bdmv"
-        if not marker.is_file():
-            failures.append(f"BDMV marker missing: {marker}")
-            _fail("marker file not found")
+        marker = bdmv_marker
+        probe = await probe_file(str(marker))
+        if probe is None:
+            failures.append("BDMV probe_file returned None")
+            _fail("probe failed")
         else:
-            probe = await probe_file(str(marker))
-            if probe is None:
-                failures.append("BDMV probe_file returned None")
-                _fail("probe failed")
+            audio = probe.get("audio_tracks", [])
+            sub = probe.get("subtitle_tracks", [])
+            if len(audio) >= 2 and audio[0].get("language") == "fre" and audio[1].get("language") == "eng":
+                _ok("audio_tracks[0]=fre, audio_tracks[1]=eng (correct stream order)")
             else:
-                audio = probe.get("audio_tracks", [])
-                sub = probe.get("subtitle_tracks", [])
-                if len(audio) >= 2 and audio[0].get("language") == "fre" and audio[1].get("language") == "eng":
-                    _ok("audio_tracks[0]=fre, audio_tracks[1]=eng (correct stream order)")
-                else:
-                    failures.append(f"BDMV probe audio stream order wrong: {[t.get('language') for t in audio]}")
-                    _fail(f"audio langs = {[t.get('language') for t in audio]}")
-                if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "eng":
-                    _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=eng (correct stream order)")
-                else:
-                    failures.append(f"BDMV probe subtitle stream order wrong: {[t.get('language') for t in sub]}")
-                    _fail(f"subtitle langs = {[t.get('language') for t in sub]}")
+                failures.append(f"BDMV probe audio stream order wrong: {[t.get('language') for t in audio]}")
+                _fail(f"audio langs = {[t.get('language') for t in audio]}")
+            if len(sub) >= 2 and sub[0].get("language") == "fre" and sub[1].get("language") == "eng":
+                _ok("subtitle_tracks[0]=fre, subtitle_tracks[1]=eng (correct stream order)")
+            else:
+                failures.append(f"BDMV probe subtitle stream order wrong: {[t.get('language') for t in sub]}")
+                _fail(f"subtitle langs = {[t.get('language') for t in sub]}")
 
     dvd_iso = Path(os.environ.get("SHRINKERR_TEST_DVD_ISO", DEFAULT_DVD_ISO))
     bdmv_iso = Path(os.environ.get("SHRINKERR_TEST_BDMV_ISO", DEFAULT_BDMV_ISO))
