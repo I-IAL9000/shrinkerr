@@ -273,6 +273,13 @@ def _build_ffmpeg_cmd_impl(
     # so by the time we see it the value is one of "10bit" / "8bit".
     # No-op for non-NVENC encoders.
     nvenc_bit_depth: str = "10bit",
+    # v0.7.0: extra args to splice BEFORE the input `-i`. Used for DVD
+    # ISO routing (`-f dvdvideo`) where the input path is a bare .iso
+    # filename (no protocol prefix) so the demuxer needs an explicit
+    # format hint. Also forces the disc-input analysis window since the
+    # bare .iso path won't match the `concat:` / `bluray:` startswith
+    # check below.
+    pre_input_args: list[str] | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -344,8 +351,13 @@ def _build_ffmpeg_cmd_impl(
     # ffmpeg to lock onto the streams and compute duration before the
     # encode pipeline starts. Detected from the input string so this
     # function stays decoupled from disc_type.
-    if input_path.startswith("concat:") or input_path.startswith("bluray:"):
+    # v0.7.0: pre_input_args (e.g. ["-f", "dvdvideo"] for DVD ISO) implies
+    # a disc input — also force the deeper analysis window since the bare
+    # .iso path won't match the protocol prefix check below.
+    if pre_input_args or input_path.startswith("concat:") or input_path.startswith("bluray:"):
         cmd += ["-analyzeduration", "200M", "-probesize", "200M"]
+    if pre_input_args:
+        cmd += list(pre_input_args)
     cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
@@ -965,7 +977,31 @@ def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
     return result
 
 
-def build_disc_output_filename(
+async def _is_media_dir_root(candidate: Path) -> bool:
+    """Return True if `candidate` is one of the user's configured
+    media_dirs (path equality after normalizing trailing slashes).
+    Used by build_disc_output_filename to decide whether an ISO at
+    `candidate / xxx.iso` is 'loose' (use ISO stem for filename) vs
+    'in a movie folder' (use parent folder name). v0.7.0+."""
+    try:
+        import aiosqlite
+        from backend.database import DB_PATH
+    except ImportError:
+        return False
+    norm = str(candidate).rstrip("/")
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute("SELECT path FROM media_dirs") as cur:
+            for r in await cur.fetchall():
+                if str(r["path"]).rstrip("/") == norm:
+                    return True
+    finally:
+        await db.close()
+    return False
+
+
+async def build_disc_output_filename(
     disc_marker_path: str,
     disc_type: str,
     probe_data: dict,
@@ -995,15 +1031,33 @@ def build_disc_output_filename(
     belong on the FOLDER (per *arr convention) but not duplicated into
     the filename itself. The folder structure on disk is unchanged.
 
+    v0.7.0+: ISO file inputs (`disc_marker_path` points at a `.iso`)
+    produce output in the ISO's parent dir. Base name comes from the
+    parent folder when the ISO sits inside a movie-named folder, or
+    from the ISO stem when the ISO is loose at a `media_dirs` root.
+
     v0.6.0+.
     """
     import re as _re
     from backend.rename import _format_channels
     p = Path(disc_marker_path)
-    # Marker path is .../<parent>/VIDEO_TS/VIDEO_TS.IFO or .../<parent>/BDMV/index.bdmv.
-    # Strip two segments to get the disc-root (parent) folder.
-    disc_root = p.parent.parent
-    base_name = disc_root.name
+    # v0.7.0: ISO file input — output lives in the ISO's parent dir.
+    # Base name comes from the parent folder name unless the ISO is
+    # "loose" at a media_dir root, in which case use the ISO stem.
+    if p.is_file() and p.suffix.lower() == ".iso":
+        iso_parent = p.parent
+        if await _is_media_dir_root(iso_parent):
+            base_name = p.stem
+        else:
+            base_name = iso_parent.name
+        output_dir = iso_parent
+    else:
+        # v0.6.0: folder-based disc — marker path is
+        # .../<parent>/VIDEO_TS/VIDEO_TS.IFO or
+        # .../<parent>/BDMV/index.bdmv. Strip two segments to get the
+        # disc-root (parent) folder.
+        output_dir = p.parent.parent
+        base_name = output_dir.name
     # Strip metadata-ID tags ([tt1234567], [imdb-tt..], [tmdb-..], [tvdb-..],
     # {tmdb-..}, {tvdb-..}) and the whitespace immediately preceding them.
     # Folder name keeps the IDs (for *arr cataloguing); only the filename
@@ -1053,7 +1107,7 @@ def build_disc_output_filename(
         tokens.append(channels_token)
     tokens.append(codec_tag)
     name = " ".join(tokens) + ".mkv"
-    return str(disc_root / name)
+    return str(output_dir / name)
 
 
 def get_output_path(input_path: str, suffix: str = "", encoder: str | None = None) -> str:
@@ -1853,7 +1907,7 @@ async def convert_file(
     # codec tag: `x265` for libx265, `h265` for NVENC (see
     # rename_source_to_target_codec for the rationale).
     if disc_type and probe_data:
-        final_path = build_disc_output_filename(
+        final_path = await build_disc_output_filename(
             input_path, disc_type, probe_data, encoder=encoder,
         )
         temp_path = str(Path(final_path).with_suffix(".converting.mkv"))
@@ -1964,26 +2018,47 @@ async def convert_file(
     _PRESTRIP_SUB_THRESHOLD = 9999
     prestrip_path: str | None = None
     encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
+    # v0.7.0: extra ffmpeg input args (e.g. `-f dvdvideo` for DVD ISO)
+    # that must be emitted BEFORE `-i` in the encode cmd. Spliced in
+    # below after _build_ffmpeg_cmd_impl returns. Empty for folder discs
+    # and regular files.
+    ffmpeg_input_args: list[str] = []
     # v0.6.0: disc-folder input — encode reads from ffmpeg's dvd:/ or
     # bluray:/ protocol with the disc-root folder (parent of VIDEO_TS/
     # or BDMV/). Prestrip never fires for disc inputs (no sub-removal
     # against a virtual title set), so the protocol path stays through
     # the encode without further swaps.
+    # v0.7.0: ISO file input — ffmpeg accepts the ISO directly via
+    # libdvdread (DVD, needs `-f dvdvideo`) or libbluray (BD, via the
+    # `bluray:` protocol on the .iso path). No mount, no extraction.
     if disc_type:
-        disc_root = Path(input_path).parent.parent
-        if disc_type == "dvd":
-            # v0.6.2: DVD encode reads through ffmpeg's `concat:` protocol
-            # over the main-feature VOBs. The v0.6.0 `dvd:/` protocol was
-            # fictional; see scanner._dvd_concat_input docstring.
-            from backend.scanner import _dvd_concat_input
-            encode_input_path = _dvd_concat_input(disc_root)
-            if encode_input_path is None:
-                raise RuntimeError(
-                    f"DVD encode failed: no main-feature VOBs in {disc_root}/VIDEO_TS/"
-                )
-        else:  # bdmv
-            encode_input_path = f"bluray:{disc_root}"
-        print(f"[CONVERT] Disc input detected ({disc_type}); using {disc_type}-concat over disc_root={disc_root.name}", flush=True)
+        _disc_p = Path(input_path)
+        if _disc_p.is_file() and _disc_p.suffix.lower() == ".iso":
+            if disc_type == "dvd":
+                encode_input_path = str(_disc_p)
+                ffmpeg_input_args = ["-f", "dvdvideo"]
+            else:  # bdmv
+                encode_input_path = f"bluray:{_disc_p}"
+            print(
+                f"[CONVERT] Disc input detected ({disc_type}, iso); "
+                f"input={encode_input_path}",
+                flush=True,
+            )
+        else:
+            disc_root = _disc_p.parent.parent
+            if disc_type == "dvd":
+                # v0.6.2: DVD encode reads through ffmpeg's `concat:` protocol
+                # over the main-feature VOBs. The v0.6.0 `dvd:/` protocol was
+                # fictional; see scanner._dvd_concat_input docstring.
+                from backend.scanner import _dvd_concat_input
+                encode_input_path = _dvd_concat_input(disc_root)
+                if encode_input_path is None:
+                    raise RuntimeError(
+                        f"DVD encode failed: no main-feature VOBs in {disc_root}/VIDEO_TS/"
+                    )
+            else:  # bdmv
+                encode_input_path = f"bluray:{disc_root}"
+            print(f"[CONVERT] Disc input detected ({disc_type}, folder); using {disc_type}-concat over disc_root={disc_root.name}", flush=True)
     if len(sub_remove_set) >= _PRESTRIP_SUB_THRESHOLD and subtitle_streams:
         prestrip_path = await _prestrip_subtitles(
             input_path=input_path,
@@ -2179,6 +2254,7 @@ async def convert_file(
         hw_decode_keeps_on_device=_hw_on_device,
         source_codec=_src_codec_lower,
         nvenc_bit_depth=nvenc_effective_bit_depth,
+        pre_input_args=ffmpeg_input_args or None,
     )
 
     # Append custom ffmpeg flags if configured
@@ -3003,7 +3079,40 @@ async def convert_file(
         use_trash = live_settings.get("trash_original_after_conversion", False)
 
         result_backup_path = None
-        if disc_type:
+        if disc_type and Path(input_path).is_file() and Path(input_path).suffix.lower() == ".iso":
+            # v0.7.0: ISO source — single file ops (unlink / trash / move).
+            # Same three modes (backup / trash / delete) as folder discs
+            # but operating on the .iso file directly.
+            iso_source = Path(input_path)
+            if backup_days and backup_days > 0:
+                custom_backup = live_settings.get("backup_folder", "")
+                if custom_backup:
+                    backup_dir = Path(custom_backup) / iso_source.parent.name
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    legacy = iso_source.parent / ".squeezarr_backup"
+                    backup_dir = legacy if legacy.exists() else (iso_source.parent / ".shrinkerr_backup")
+                    backup_dir.mkdir(exist_ok=True)
+                backup_path = backup_dir / iso_source.name
+                if backup_path.is_symlink():
+                    raise OSError(
+                        f"Refusing to move into backup path — destination is a symlink: {backup_path}"
+                    )
+                shutil.move(str(iso_source), str(backup_path))
+                result_backup_path = str(backup_path)
+                print(f"[CONVERT] ISO backed up to: {backup_path}", flush=True)
+            elif use_trash:
+                try:
+                    from send2trash import send2trash
+                    send2trash(str(iso_source))
+                    print(f"[CONVERT] ISO moved to trash: {iso_source.name}", flush=True)
+                except Exception as trash_exc:
+                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+                    iso_source.unlink()
+            else:
+                iso_source.unlink()
+                print(f"[CONVERT] Removed ISO: {iso_source}", flush=True)
+        elif disc_type:
             # v0.6.0: for disc inputs the "source" is the disc subdir
             # (VIDEO_TS/ or BDMV/), not the marker file inside it. Same
             # three modes (backup / trash / delete) but operating on the
