@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] — 2026-05-21
+
+### Fixed
+- ISO disc rows showed the media_dir name (e.g. `Movies2`) instead of the movie-folder name in the scanner UI. v0.7.2 fixed `_disc_display_name` in the scanner/watcher write paths, but `file_name` is computed on-the-fly by `backend/routes/scan.py:_disc_aware_file_name` (the API enricher) and isn't stored in `scan_results`. The enricher used `parts[-3]` for all disc types, which for ISO inputs (`file_path` IS the .iso) points one level too high. Now branches on `.iso` suffix → uses `parts[-2]`.
+
+### Known limitations
+- **UDF-only Blu-ray ISO language metadata.** v0.7.1 added a bsdtar (libarchive) fallback for ISOs pycdlib can't open. Real-world testing showed libarchive 3.7.2 still can't list contents of some UDF 2.50/2.60 BD ISOs (returns empty). For those discs, language metadata falls back to `und` and the user manually selects tracks. The encoding path works fine via ffmpeg's `bluray:` protocol (libbluray reads these ISOs cleanly). v0.7.4 candidate: use `libbluray-bin` tools (`bd_info`, `mpls_dump`) which share the same libbluray that already works for encoding.
+
 ## [0.7.2] — 2026-05-21
 
 ### Fixed

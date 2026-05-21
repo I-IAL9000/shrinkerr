@@ -1262,17 +1262,28 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
 def _disc_aware_file_name(fp: str, disc_type: str | None) -> str:
     """Display-name for a scan row.
 
-    For disc folders, `file_path` points at the marker inside VIDEO_TS/
-    or BDMV/ (~KB file), so the basename ('VIDEO_TS.IFO' / 'index.bdmv')
-    is useless as a label. Use the disc-root folder name two levels up.
-    Regular files just use the basename.
+    Three cases:
+
+    1. Folder disc — `file_path` points at the marker inside VIDEO_TS/
+       or BDMV/ (~KB file). Basename ('VIDEO_TS.IFO' / 'index.bdmv') is
+       useless as a label. Use the disc-root folder name two levels up.
+
+    2. ISO disc (v0.7.3+) — `file_path` IS the `.iso` file. parts[-3]
+       would point one level too high (the media_dir, e.g. "Movies2").
+       Use the parent folder name (parts[-2]), which is the movie folder.
+
+    3. Regular file — basename.
     """
     if not fp:
         return ""
     if disc_type:
-        # /movies/Some Movie/VIDEO_TS/VIDEO_TS.IFO -> "Some Movie"
         parts = fp.rstrip("/").split("/")
+        if fp.lower().endswith(".iso") and len(parts) >= 2:
+            # /media/Misc/Movies2/Elephant (2003) [tt0363589]/rz0u.iso
+            # → "Elephant (2003) [tt0363589]"
+            return parts[-2]
         if len(parts) >= 3:
+            # /movies/Some Movie/VIDEO_TS/VIDEO_TS.IFO → "Some Movie"
             return parts[-3]
     return fp.rsplit("/", 1)[-1]
 
