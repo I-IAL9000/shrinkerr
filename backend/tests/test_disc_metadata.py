@@ -910,6 +910,35 @@ class TestBsdtarFallback:
         assert _pick_main_mpls_via_bsdtar(tmp_path / "nonexistent.iso") is None
 
 
+class TestLibblurayFallback:
+    """v0.7.4+: smoke tests for the libbluray ctypes fallback. The
+    underlying libbluray.so.2 may not be present on dev machines (Debian
+    has it; macOS test envs may not). Tests focus on the "not available"
+    fallback path; real-disc coverage comes from the v0.7.4 verification
+    gate against the user's Elephant ISO."""
+
+    def test_returns_none_when_libbluray_not_loadable(self, tmp_path, monkeypatch):
+        """If ctypes.CDLL raises OSError for all libbluray.so candidates,
+        the helper returns None cleanly (not an exception)."""
+        from backend.disc_metadata import _parse_disc_languages_iso_via_libbluray
+
+        # Use a path that doesn't exist; if libbluray IS loadable, bd_open
+        # will fail and we get None either way. If libbluray ISN'T loadable
+        # (macOS dev), we also get None.
+        result = _parse_disc_languages_iso_via_libbluray(tmp_path / "nonexistent.iso")
+        assert result is None
+
+    def test_returns_none_on_invalid_iso(self, tmp_path):
+        """Garbage file → libbluray bd_open returns NULL → helper returns
+        None. Robust against libbluray-not-loaded too (same outcome)."""
+        from backend.disc_metadata import _parse_disc_languages_iso_via_libbluray
+
+        garbage = tmp_path / "fake.iso"
+        garbage.write_bytes(b"not a valid bluray disc image" * 100)
+        result = _parse_disc_languages_iso_via_libbluray(garbage)
+        assert result is None
+
+
 class TestDiscHealthStatusReset:
     """v0.7.2+: when a disc row is re-discovered after a previous health
     check marked it corrupt (e.g. mid-conversion when VIDEO_TS was

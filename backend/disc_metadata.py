@@ -735,18 +735,31 @@ def parse_disc_languages_iso(iso_path: Path, disc_type: str) -> dict[str, list[s
     try:
         iso.open(str(iso_path))
     except Exception as exc:
-        # v0.7.1: pycdlib can't open UDF-only ISOs (no ISO 9660 PVD).
-        # Try bsdtar-based extraction as a fallback. Slower but handles
-        # the BD-only UDF case.
+        # v0.7.1+ bsdtar fallback first (DVD ISOs sometimes parse via libarchive
+        # where pycdlib fails)
         print(
             f"[DISC-META] pycdlib couldn't open {iso_path} ({exc}); "
             "trying bsdtar fallback for language metadata",
             flush=True,
         )
-        if not _bsdtar_available():
-            print("[DISC-META] bsdtar not installed; can't extract language metadata", flush=True)
-            return {"audio": [], "subtitle": []}
-        return _parse_disc_languages_iso_via_bsdtar(iso_path, disc_type)
+        if _bsdtar_available():
+            result = _parse_disc_languages_iso_via_bsdtar(iso_path, disc_type)
+            # bsdtar fallback returns empty dict on failure (not None) — check
+            # for non-empty audio as a "success" signal
+            if result["audio"] or result["subtitle"]:
+                return result
+        # v0.7.4: libbluray fallback for BD ISOs (UDF-only BDs where libarchive
+        # also fails). Only applies to BDMV inputs — DVDs use libdvdread paths.
+        if disc_type == "bdmv":
+            print(
+                f"[DISC-META] bsdtar fallback didn't produce results; "
+                f"trying libbluray ctypes for {iso_path}",
+                flush=True,
+            )
+            result = _parse_disc_languages_iso_via_libbluray(iso_path)
+            if result is not None:
+                return result
+        return {"audio": [], "subtitle": []}
 
     try:
         if disc_type == "dvd":
@@ -817,6 +830,165 @@ def _parse_disc_languages_iso_via_bsdtar(iso_path: Path, disc_type: str) -> dict
             flush=True,
         )
         return {"audio": [], "subtitle": []}
+
+
+def _parse_disc_languages_iso_via_libbluray(iso_path: Path) -> Optional[dict[str, list[str]]]:
+    """v0.7.4+: extract per-stream language codes via libbluray's C API.
+
+    Used as a third-tier fallback when pycdlib can't open the ISO (no
+    ISO 9660 PVD) AND bsdtar/libarchive can't list it (UDF revision
+    incompatible). libbluray inside ffmpeg already reads these ISOs for
+    encoding; we use the same library via Python ctypes against the
+    system's libbluray.so.2 (installed via the libbluray-bin apt package
+    in v0.7.4).
+
+    Returns {"audio": [iso639_2, ...], "subtitle": [iso639_2, ...]} on
+    success. Returns None if libbluray isn't loadable or fails to open
+    the ISO. Callers should fall back to fail-open empty on None.
+
+    Implementation: bd_open(iso) → bd_get_main_title() → bd_get_title_info()
+    → read clips[0].{audio_streams, pg_streams}[i].lang. lang is 4 bytes:
+    3-byte ISO 639-2 code + null terminator. Properly frees via
+    bd_free_title_info() and bd_close().
+    """
+    import ctypes
+    from ctypes import (
+        c_uint8, c_uint16, c_uint32, c_uint64, c_int,
+        c_char, c_void_p, c_char_p, POINTER, Structure,
+    )
+
+    # Try to load libbluray.so.2 (Debian's libbluray-bin's dep). Fall back
+    # to .so.1 (older Debian) or full path. Return None if not available.
+    libbluray = None
+    for soname in ("libbluray.so.2", "libbluray.so.1", "libbluray.so"):
+        try:
+            libbluray = ctypes.CDLL(soname)
+            break
+        except OSError:
+            continue
+    if libbluray is None:
+        print("[DISC-META] libbluray.so not found; can't use libbluray fallback", flush=True)
+        return None
+
+    # --- ctypes struct definitions ---
+    # Match libbluray 1.3.x ABI on x86_64 Linux. Order MUST match
+    # libbluray/bluray.h. ctypes handles padding automatically.
+
+    class BLURAY_STREAM_INFO(Structure):
+        _fields_ = [
+            ("coding_type", c_uint8),
+            ("format", c_uint8),
+            ("rate", c_uint8),
+            ("char_code", c_uint8),
+            ("lang", c_char * 4),       # ISO 639-2 (3 chars + null)
+            ("pid", c_uint16),
+            ("aspect", c_uint8),
+            ("subpath_id", c_uint8),
+        ]
+
+    class BLURAY_CLIP_INFO(Structure):
+        _fields_ = [
+            ("pkt_count", c_uint32),
+            ("still_mode", c_uint8),
+            ("still_time", c_uint16),
+            ("video_stream_count", c_uint8),
+            ("audio_stream_count", c_uint8),
+            ("pg_stream_count", c_uint8),
+            ("ig_stream_count", c_uint8),
+            ("sec_audio_stream_count", c_uint8),
+            ("sec_video_stream_count", c_uint8),
+            ("video_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("audio_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("pg_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("ig_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("sec_audio_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("sec_video_streams", POINTER(BLURAY_STREAM_INFO)),
+            ("start_time", c_uint64),
+            ("in_time", c_uint64),
+            ("out_time", c_uint64),
+            ("clip_id", c_char * 6),
+        ]
+
+    class BLURAY_TITLE_INFO(Structure):
+        _fields_ = [
+            ("idx", c_uint32),
+            ("playlist", c_uint32),
+            ("duration", c_uint64),
+            ("angle_count", c_uint8),
+            ("chapter_count", c_uint32),
+            ("clip_count", c_uint32),
+            ("mark_count", c_uint32),
+            ("chapters", c_void_p),     # BLURAY_TITLE_CHAPTER* (unused here)
+            ("marks", c_void_p),        # BLURAY_TITLE_MARK* (unused here)
+            ("clips", POINTER(BLURAY_CLIP_INFO)),
+        ]
+
+    # --- libbluray function signatures ---
+    # bd_open(const char *device_path, const char *keyfile_path) -> BLURAY*
+    libbluray.bd_open.argtypes = [c_char_p, c_char_p]
+    libbluray.bd_open.restype = c_void_p
+    # bd_close(BLURAY *bd) -> void
+    libbluray.bd_close.argtypes = [c_void_p]
+    libbluray.bd_close.restype = None
+    # bd_get_main_title(BLURAY *bd) -> int (returns -1 on failure)
+    libbluray.bd_get_main_title.argtypes = [c_void_p]
+    libbluray.bd_get_main_title.restype = c_int
+    # bd_get_title_info(BLURAY *bd, uint32_t title_idx, unsigned int angle) -> BLURAY_TITLE_INFO*
+    libbluray.bd_get_title_info.argtypes = [c_void_p, c_uint32, c_uint32]
+    libbluray.bd_get_title_info.restype = POINTER(BLURAY_TITLE_INFO)
+    # bd_free_title_info(BLURAY_TITLE_INFO *info) -> void
+    libbluray.bd_free_title_info.argtypes = [POINTER(BLURAY_TITLE_INFO)]
+    libbluray.bd_free_title_info.restype = None
+
+    # --- Open the disc ---
+    bd = libbluray.bd_open(str(iso_path).encode("utf-8"), None)
+    if not bd:
+        print(f"[DISC-META] libbluray bd_open failed for {iso_path}", flush=True)
+        return None
+
+    try:
+        main_title_idx = libbluray.bd_get_main_title(bd)
+        if main_title_idx < 0:
+            print(f"[DISC-META] libbluray bd_get_main_title failed for {iso_path}", flush=True)
+            return None
+
+        ti_ptr = libbluray.bd_get_title_info(bd, c_uint32(main_title_idx), c_uint32(0))
+        if not ti_ptr:
+            print(f"[DISC-META] libbluray bd_get_title_info failed for {iso_path}", flush=True)
+            return None
+
+        try:
+            ti = ti_ptr.contents
+            if ti.clip_count == 0:
+                return {"audio": [], "subtitle": []}
+            clip = ti.clips[0]
+
+            audio_langs: list[str] = []
+            for i in range(clip.audio_stream_count):
+                stream = clip.audio_streams[i]
+                # lang is a 4-byte ASCII field with a null terminator
+                lang_bytes = bytes(stream.lang).rstrip(b"\x00")
+                lang = lang_bytes.decode("ascii", errors="replace").strip()
+                audio_langs.append(lang)
+
+            pg_langs: list[str] = []
+            for i in range(clip.pg_stream_count):
+                stream = clip.pg_streams[i]
+                lang_bytes = bytes(stream.lang).rstrip(b"\x00")
+                lang = lang_bytes.decode("ascii", errors="replace").strip()
+                pg_langs.append(lang)
+
+            return {"audio": audio_langs, "subtitle": pg_langs}
+        finally:
+            libbluray.bd_free_title_info(ti_ptr)
+    except Exception as exc:
+        print(f"[DISC-META] libbluray ctypes call failed for {iso_path}: {exc}", flush=True)
+        return None
+    finally:
+        try:
+            libbluray.bd_close(bd)
+        except Exception:
+            pass
 
 
 def parse_disc_languages(path: Path, disc_type: str) -> dict[str, list[str]]:

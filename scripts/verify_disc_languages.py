@@ -1,4 +1,4 @@
-"""v0.7.1 pre-tag verification gate.
+"""v0.7.4 pre-tag verification gate.
 
 Runs INSIDE the production container against the two reference discs:
   - Fast-Walking (1982) DVD  → expect audio[0]='eng'
@@ -8,7 +8,7 @@ Runs INSIDE the production container against the two reference discs:
   - Elephant (2003) BD ISO   → expect audio[:2]=['fre','eng'], subtitle[:2]=['fre','eng']
 
 Per spec acceptance criterion 10: exits 0 only if all assertions pass.
-A non-zero exit blocks `git tag v0.7.1`.
+A non-zero exit blocks `git tag v0.7.4`.
 
 Usage from host:
   docker cp scripts/verify_disc_languages.py shrinkerr:/tmp/
@@ -51,7 +51,7 @@ async def main() -> int:
     dvd_root = Path(os.environ.get("SHRINKERR_TEST_DVD", DEFAULT_DVD))
     bdmv_root = Path(os.environ.get("SHRINKERR_TEST_BDMV", DEFAULT_BDMV))
 
-    print(f"=== Layer-2 verification: v0.7.1 disc language metadata ===", flush=True)
+    print(f"=== Layer-2 verification: v0.7.4 disc language metadata ===", flush=True)
     print(f"DVD reference : {dvd_root}", flush=True)
     print(f"BDMV reference: {bdmv_root}", flush=True)
     print()
@@ -238,11 +238,11 @@ async def main() -> int:
 
     print()
     if failures:
-        print(f"=== FAIL: {len(failures)} assertion(s) failed — do NOT tag v0.7.1 ===", flush=True)
+        print(f"=== FAIL: {len(failures)} assertion(s) failed — do NOT tag v0.7.4 ===", flush=True)
         for f in failures:
             print(f"  - {f}", flush=True)
         return 1
-    print("=== PASS: all assertions OK — safe to git tag v0.7.1 ===", flush=True)
+    print("=== PASS: all assertions OK — safe to git tag v0.7.4 ===", flush=True)
     return 0
 
 
