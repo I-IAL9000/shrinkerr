@@ -8,6 +8,18 @@ from backend.config import settings
 from backend.encoding_estimates import video_conv_savings_bytes
 from backend.models import AudioTrack, ScannedFile
 
+# v0.7.9: how many ffprobe subprocesses to run concurrently within a scan.
+# Default 4 chosen as a balance — meaningful speedup over serial (~4×) without
+# overwhelming the host's I/O or memory. Set to 1 to restore pre-v0.7.9 serial
+# behavior (useful if you see contention with a busy queue worker on the same
+# DB, though WAL + busy_timeout=60s should already prevent the "database is
+# locked" errors that bit older parallel scans). Tune via the
+# SHRINKERR_SCAN_CONCURRENCY env var.
+try:
+    SCAN_CONCURRENCY = max(1, int(os.environ.get("SHRINKERR_SCAN_CONCURRENCY", "4")))
+except ValueError:
+    SCAN_CONCURRENCY = 4
+
 
 def _classify_disc(folder: Path) -> Optional[str]:
     """Return 'bdmv', 'dvd', or None for a candidate folder.
@@ -1279,6 +1291,47 @@ async def scan_directory(
     except Exception:
         pass
 
+    # v0.7.9: parallel ffprobe pre-pass.
+    # Pre-v0.7.9 the per-file loop did probe → classify → emit serially, so a
+    # 120K-file library took ~12h on a NUC. ffprobe is the dominant cost (~300ms
+    # each); classify is cheap (<5ms). Pre-probe in Semaphore-bounded chunks,
+    # then run the existing serial classify loop with the cached probe results.
+    # DB writes still flow through result_callback's batched single-writer path,
+    # so this adds zero new DB contention with a concurrent queue worker.
+    PROBE_CHUNK = max(SCAN_CONCURRENCY * 50, 100)  # ~100-200 files per gather
+    probe_sem = asyncio.Semaphore(SCAN_CONCURRENCY)
+
+    async def _do_probe(fp):
+        async with probe_sem:
+            if cancel_check and cancel_check():
+                return None
+            return await probe_file(str(fp))
+
+    print(
+        f"[SCANNER] Pre-probing {total} files with concurrency={SCAN_CONCURRENCY}",
+        flush=True,
+    )
+    probes: dict[str, Optional[dict]] = {}
+    for chunk_start in range(0, len(all_files), PROBE_CHUNK):
+        if cancel_check and cancel_check():
+            print(
+                f"[SCANNER] Cancelled during pre-probe after {chunk_start} files in {dir_path}",
+                flush=True,
+            )
+            break
+        chunk = all_files[chunk_start : chunk_start + PROBE_CHUNK]
+        chunk_probes = await asyncio.gather(*[_do_probe(fp) for fp in chunk])
+        for fp, pr in zip(chunk, chunk_probes):
+            probes[str(fp)] = pr
+        if progress_callback:
+            await progress_callback(
+                status="scanning",
+                current_file=str(chunk[-1]),
+                files_found=total,
+                files_probed=min(chunk_start + PROBE_CHUNK, total),
+                total_files=total,
+            )
+
     for idx, file_path in enumerate(all_files):
         if cancel_check and cancel_check():
             print(f"[SCANNER] Cancelled after {idx} files in {dir_path}", flush=True)
@@ -1287,16 +1340,12 @@ async def scan_directory(
         # Yield to event loop so other tasks (queue worker, websocket, API) can run
         await asyncio.sleep(0.005)
 
-        if progress_callback:
-            await progress_callback(
-                status="scanning",
-                current_file=str(file_path),
-                files_found=total,
-                files_probed=idx,
-                total_files=total,
-            )
-
-        probe = await probe_file(str(file_path))
+        # v0.7.9: use the pre-computed probe. Falls back to a fresh probe only
+        # if the pre-probe phase was cancelled mid-way and this file's key is
+        # missing — keeps behavior correct on cancel paths.
+        probe = probes.get(str(file_path))
+        if probe is None and str(file_path) not in probes:
+            probe = await probe_file(str(file_path))
         if idx == 0:
             if probe is None:
                 print(f"[SCANNER] WARNING: First file probe FAILED: {file_path}", flush=True)
