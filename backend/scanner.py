@@ -112,20 +112,27 @@ def _disc_display_name(file_path: Path, disc_type: Optional[str]) -> str:
 
     Folder disc (marker path: `.../<MovieFolder>/VIDEO_TS/VIDEO_TS.IFO`
     or `.../<MovieFolder>/BDMV/index.bdmv`) → the MovieFolder name,
-    which is parent.parent of the marker.
+    which is parent.parent of the marker. The folder name IS the
+    user's only handle on a folder disc; the marker basename is
+    cosmetic.
 
     ISO disc (file_path IS a `.iso` file, the disc itself) → the ISO's
-    parent folder name (parent of the .iso). parent.parent would give
-    the media_dir (e.g. "Movies2"), which is wrong.
+    own filename, e.g. `rz0u.iso`. v0.7.2-7.9 returned the parent
+    folder name (the movie folder), but that's often duplicated
+    elsewhere in the UI and obscures which actual disc image is
+    referenced — important for folders holding multiple ISOs or for
+    matching on disk against a release-named .iso.
 
     Non-disc file → the file's own name.
 
-    v0.7.2+: ISO branch added — v0.7.0 used parent.parent unconditionally
-    which produced media-dir-named rows for ISO inputs.
+    v0.7.10+: ISO branch returns the .iso basename, not the parent
+    folder. v0.7.2-7.9: ISO branch was `file_path.parent.name`.
+    v0.7.0-7.1: ISO branch was `file_path.parent.parent.name`
+    (media-dir-named, wrong).
     """
     if disc_type:
         if file_path.is_file() and file_path.suffix.lower() == ".iso":
-            return file_path.parent.name
+            return file_path.name
         return file_path.parent.parent.name
     return file_path.name
 

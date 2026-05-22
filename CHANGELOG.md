@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.10] — 2026-05-21
+
+### Changed
+- **ISO scan rows now display the `.iso` filename** (e.g. `rz0u.iso`) instead of the movie folder name (e.g. `Elephant (2003) [tt0363589]`). Folder discs unchanged (still show the disc-root folder, since the marker basename is useless as a label). Disambiguates folders holding multiple ISOs and matches what the file is actually named on disk. Affects both the scanner write path (`_disc_display_name`) and the API enricher (`_disc_aware_file_name`); `file_name` is computed at API time so existing rows pick up the new label immediately on next page load.
+
 ## [0.7.9] — 2026-05-21
 
 ### Changed

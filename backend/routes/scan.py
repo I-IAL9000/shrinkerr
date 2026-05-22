@@ -1268,9 +1268,13 @@ def _disc_aware_file_name(fp: str, disc_type: str | None) -> str:
        or BDMV/ (~KB file). Basename ('VIDEO_TS.IFO' / 'index.bdmv') is
        useless as a label. Use the disc-root folder name two levels up.
 
-    2. ISO disc (v0.7.3+) — `file_path` IS the `.iso` file. parts[-3]
-       would point one level too high (the media_dir, e.g. "Movies2").
-       Use the parent folder name (parts[-2]), which is the movie folder.
+    2. ISO disc (v0.7.10+) — `file_path` IS the `.iso` file. Return the
+       .iso basename (parts[-1]), e.g. `rz0u.iso`, so the file list
+       shows which actual disc image a row points at instead of the
+       movie folder name (which is often already visible elsewhere
+       and ambiguous when a folder holds multiple ISOs).
+       v0.7.3-7.9 returned the parent folder (parts[-2], the movie
+       folder); v0.7.0-7.1 returned parts[-3] (the media_dir, wrong).
 
     3. Regular file — basename.
     """
@@ -1278,10 +1282,10 @@ def _disc_aware_file_name(fp: str, disc_type: str | None) -> str:
         return ""
     if disc_type:
         parts = fp.rstrip("/").split("/")
-        if fp.lower().endswith(".iso") and len(parts) >= 2:
+        if fp.lower().endswith(".iso") and len(parts) >= 1:
             # /media/Misc/Movies2/Elephant (2003) [tt0363589]/rz0u.iso
-            # → "Elephant (2003) [tt0363589]"
-            return parts[-2]
+            # → "rz0u.iso"
+            return parts[-1]
         if len(parts) >= 3:
             # /movies/Some Movie/VIDEO_TS/VIDEO_TS.IFO → "Some Movie"
             return parts[-3]
