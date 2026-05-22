@@ -1055,7 +1055,48 @@ class FileWatcher:
         disk_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
 
         new_files_all = disk_files - known_paths
-        stale_path_set = known_paths - disk_files
+
+        # v0.7.7: scope stale-row removal to media_dirs that actually exist
+        # on disk this cycle. Previously `stale_path_set = known_paths -
+        # disk_files` was computed across ALL configured media_dirs as one
+        # set — so if a volume mount was missing (e.g. user temporarily
+        # docker-composed with a subset of volumes for RC testing), every
+        # row under the unmounted dirs was flagged stale and hard-DELETEd
+        # by `_remove_stale_entries`. Once gone, recovery required a full
+        # rescan. The scanner's full-rescan orphan cleanup is already
+        # scoped to `completed_paths`; this brings the watcher into line.
+        walked_dirs = [d for d in scanned_dirs if Path(d).exists()]
+        missing_dirs = [d for d in scanned_dirs if d not in walked_dirs]
+        if missing_dirs:
+            print(
+                f"[WATCHER] {len(missing_dirs)} configured media_dir(s) missing "
+                f"from disk this cycle (volume not mounted?); preserving rows "
+                f"under them: {sorted(missing_dirs)}",
+                flush=True,
+            )
+
+        def _is_under_walked(p: str) -> bool:
+            return any(
+                p == d or p.startswith(d.rstrip("/") + "/") for d in walked_dirs
+            )
+
+        raw_stale = known_paths - disk_files
+        stale_path_set = {p for p in raw_stale if _is_under_walked(p)}
+
+        # Sanity belt: if a single cycle would flag more than half of the
+        # walked-dir rows as stale, something is wrong (network mount
+        # hiccup, unreadable dir, filesystem permission issue, …). Abort
+        # stale-removal for this cycle and log loudly. Defensive against
+        # bug classes we haven't thought of yet.
+        walked_known = {p for p in known_paths if _is_under_walked(p)}
+        if walked_known and len(stale_path_set) > len(walked_known) // 2:
+            print(
+                f"[WATCHER] aborting stale-row removal: would delete "
+                f"{len(stale_path_set)}/{len(walked_known)} rows under walked "
+                f"dirs (>50%). Likely a filesystem hiccup; check mounts.",
+                flush=True,
+            )
+            stale_path_set = set()
 
         # Pre-filter ignored files and recently converted files
         db = await aiosqlite.connect(self.db_path)

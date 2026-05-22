@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.7] — 2026-05-21
+
+### Fixed
+- **Watcher hard-DELETEd rows under temporarily-unmounted media volumes.** The watcher's stale-row pass computed `stale = known_paths - disk_files` across all configured media_dirs as one set. When one media_dir was missing from disk (e.g. running a docker-compose with a subset of volumes for RC testing), every row under it was flagged stale and deleted — recoverable only by a full rescan. v0.7.7 scopes the stale set to media_dirs that exist on disk this cycle, matching the scanner's existing `completed_paths` rule. Adds a sanity belt that aborts stale-removal if >50% of walked-dir rows would be deleted in one cycle. Loudly logs both events.
+
 ## [0.7.6] — 2026-05-21
 
 ### Fixed

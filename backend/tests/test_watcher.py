@@ -534,3 +534,138 @@ async def test_iso_lang_backfill_v076_matches_production_json_dumps_format(test_
         f"audio langs = {langs!r} — backfill failed to match the realistic "
         f"json.dumps-shaped row (the v0.7.5 selector regression)"
     )
+
+
+# ----------------------------------------------------------------------------
+# v0.7.7: stale-row removal scoping tests.
+#
+# Locks the contract that the watcher's stale-row removal only deletes rows
+# whose file_path is under a media_dir that exists on disk THIS CYCLE. If
+# a configured media_dir is missing (e.g. volume not mounted during a
+# partial-volume RC test), rows under it must be preserved — they'll be
+# re-discovered when the mount comes back.
+# ----------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stale_removal_v077_preserves_rows_under_unmounted_dir(test_db, tmp_path):
+    """When one of the configured media_dirs is missing from disk this
+    cycle, rows under it must NOT be flagged stale or deleted."""
+    import aiosqlite
+
+    # Set up two media_dirs. One exists on disk; the other doesn't (sim
+    # an unmounted volume). Seed scan_results rows under each.
+    mounted_dir = tmp_path / "MountedVol"
+    mounted_dir.mkdir()
+    unmounted_dir = tmp_path / "UnmountedVol"  # Note: NOT created on disk
+
+    mounted_path  = str(mounted_dir)
+    unmounted_path = str(unmounted_dir)
+
+    # Put one real video file under the mounted dir so the walk finds
+    # something — defends the test from the >50%-stale sanity belt
+    # firing.
+    real_video = mounted_dir / "movie.mkv"
+    real_video.touch()
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        # Register both as auto_scan media_dirs
+        await db.execute(
+            "INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1), (?, 1)",
+            (mounted_path, unmounted_path),
+        )
+        # Row under the mounted dir — matches the real file on disk, so
+        # it's NOT stale.
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
+            (str(real_video), "movie.mkv"),
+        )
+        # Two rows under the unmounted dir — these would historically
+        # have been deleted because their dir doesn't exist on disk this
+        # cycle. v0.7.7 preserves them.
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
+            (f"{unmounted_path}/movie_a.mkv", "movie_a.mkv"),
+        )
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
+            (f"{unmounted_path}/movie_b.mkv", "movie_b.mkv"),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    # Stub the probe path so the new-files branch is a no-op (we're not
+    # testing new-file probing here, only stale removal).
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await watcher.check_once()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT file_path FROM scan_results ORDER BY file_path"
+        ) as cur:
+            surviving = [r["file_path"] for r in await cur.fetchall()]
+    finally:
+        await db.close()
+
+    # All three rows must still be there. Pre-v0.7.7 the two unmounted-
+    # dir rows would have been hard-DELETEd.
+    assert str(real_video) in surviving, \
+        f"mounted-dir row missing: {surviving}"
+    assert f"{unmounted_path}/movie_a.mkv" in surviving, \
+        f"v0.7.7 regression: unmounted-dir row was deleted ({surviving})"
+    assert f"{unmounted_path}/movie_b.mkv" in surviving, \
+        f"v0.7.7 regression: unmounted-dir row was deleted ({surviving})"
+
+
+@pytest.mark.asyncio
+async def test_stale_removal_v077_sanity_belt_aborts_on_majority_stale(test_db, tmp_path):
+    """If a single cycle would flag >50% of walked-dir rows as stale
+    (e.g. unreadable mount, NFS hiccup), abort stale-removal entirely
+    for this cycle. Belt-and-suspenders against bug classes we haven't
+    thought of yet."""
+    import aiosqlite
+
+    # Single media_dir that exists on disk but is empty (zero video
+    # files). Seed scan_results with 10 rows claiming to live under it.
+    # The walk yields zero files → all 10 would be flagged stale → 100%
+    # of walked-dir rows → sanity belt fires.
+    mounted_dir = tmp_path / "WeirdVol"
+    mounted_dir.mkdir()
+    mounted_path = str(mounted_dir)
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)",
+            (mounted_path,),
+        )
+        for i in range(10):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
+                (f"{mounted_path}/movie_{i}.mkv", f"movie_{i}.mkv"),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await watcher.check_once()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute("SELECT COUNT(*) AS n FROM scan_results") as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    # Sanity belt should have preserved all 10 rows. Pre-v0.7.7 (or
+    # without the belt) all 10 would be gone.
+    assert row["n"] == 10, \
+        f"sanity belt didn't fire: {row['n']} rows remain (expected 10)"
+
