@@ -978,6 +978,137 @@ class FileWatcher:
         print(f"[WATCHER] v0.7.6 backfill: updated {updated} rows", flush=True)
         await self._set_setting(flag_key, "true")
 
+    async def _backfill_disc_languages_v078(self) -> None:
+        """One-shot v0.7.8 migration: re-probe existing FOLDER disc
+        scan_results rows whose audio_tracks are all-und or empty so
+        they pick up the v0.6.5 IFO/mpls language metadata. The original
+        v0.6.5 sweep used a SQL `LIKE '%"language":"und"%'` clause that
+        never matched real stored JSON (json.dumps default separators
+        include a space — same bug v0.7.5 had for BD ISOs, fixed in
+        v0.7.6). On real installs the broken selector pulled zero rows
+        and the flag was set to true, so v0.6.5 effectively never ran.
+
+        v0.7.8 mirrors v0.7.6's structure for the folder-disc case: SQL
+        prefilter on disc_type + path-suffix only, Python all-und/empty
+        filter, then probe + classify + UPDATE per row. The UPDATE also
+        clears stale corrupt markers via `_clear_stale_disc_health_status`
+        (extended in v0.7.8 to clear `probe_status` + `health_errors_json`
+        alongside `health_status`).
+
+        Tracked via settings flag 'disc_lang_backfilled_v078'. Scope-locked
+        to FOLDER discs (`disc_type IS NOT NULL AND lower(file_path) NOT
+        LIKE '%.iso'`) — BD ISOs are already handled by v0.7.6's
+        `_backfill_iso_languages_v076`.
+        """
+        flag_key = "disc_lang_backfilled_v078"
+        db = await aiosqlite.connect(self.db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            async with db.execute(
+                "SELECT value FROM settings WHERE key = ?", (flag_key,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row and row["value"] == "true":
+                return  # already done
+
+            # Stage 1 — SQL pull. Path-and-type prefilter only; the JSON
+            # shape check goes through Python (see v0.7.6 commit for why).
+            async with db.execute(
+                "SELECT file_path, audio_tracks_json FROM scan_results "
+                "WHERE disc_type IS NOT NULL "
+                "AND lower(file_path) NOT LIKE '%.iso'"
+            ) as cur:
+                sql_candidates = await cur.fetchall()
+        finally:
+            await db.close()
+
+        if not sql_candidates:
+            await self._set_setting(flag_key, "true")
+            return
+
+        # Stage 2 — Python filter. Same all-und/empty semantics as v0.7.6.
+        import json as _json
+        candidates: list[str] = []
+        for r in sql_candidates:
+            raw_json = r["audio_tracks_json"]
+            try:
+                tracks = _json.loads(raw_json) if raw_json else []
+            except (ValueError, TypeError):
+                tracks = []  # corrupt JSON — treat as empty, definitely stale
+            if not tracks or all(
+                t.get("language") == "und" for t in tracks
+            ):
+                candidates.append(r["file_path"])
+
+        if not candidates:
+            await self._set_setting(flag_key, "true")
+            return
+
+        print(
+            f"[WATCHER] v0.7.8 backfill: re-probing {len(candidates)} folder disc rows for language metadata",
+            flush=True,
+        )
+
+        from pathlib import Path as _Path
+        from backend.scanner import (
+            probe_file as _probe_file,
+            classify_audio_tracks as _classify_audio_tracks,
+            classify_subtitle_tracks as _classify_subtitle_tracks,
+            detect_native_language as _detect_native_language,
+            _clear_stale_disc_health_status as _clear_stale,
+        )
+
+        updated = 0
+        for fp in candidates:
+            if not _Path(fp).exists():
+                continue  # stale; let normal stale-removal handle it
+            probe = await _probe_file(fp)
+            if probe is None:
+                continue
+
+            raw_audio = probe.get("audio_tracks", [])
+            raw_subs = probe.get("subtitle_tracks", [])
+
+            native_lang = _detect_native_language(raw_audio)
+            audio_tracks = _classify_audio_tracks(raw_audio, native_lang)
+            subtitle_tracks = _classify_subtitle_tracks(raw_subs, native_lang)
+
+            audio_json = _json.dumps([t.model_dump() for t in audio_tracks])
+            subtitle_json = _json.dumps([t.model_dump() for t in subtitle_tracks])
+
+            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+
+            db2 = await aiosqlite.connect(self.db_path)
+            try:
+                await db2.execute(
+                    "UPDATE scan_results SET "
+                    "audio_tracks_json = ?, subtitle_tracks_json = ?, "
+                    "native_language = ?, "
+                    "has_removable_tracks_flag = ?, has_removable_subs_flag = ? "
+                    "WHERE file_path = ?",
+                    (
+                        audio_json,
+                        subtitle_json,
+                        native_lang,
+                        has_removable,
+                        has_removable_subs,
+                        fp,
+                    ),
+                )
+                await db2.commit()
+            finally:
+                await db2.close()
+            # The probe succeeded — clear any stale corrupt markers
+            # (health_status / probe_status / health_errors_json) on
+            # this row. v0.7.8's extension of the helper handles the
+            # full corrupt-flag set in one statement.
+            await _clear_stale(self.db_path, fp)
+            updated += 1
+
+        print(f"[WATCHER] v0.7.8 backfill: updated {updated} rows", flush=True)
+        await self._set_setting(flag_key, "true")
+
     async def _set_setting(self, key: str, value: str) -> None:
         """Helper: upsert a row in the settings table."""
         db = await aiosqlite.connect(self.db_path)
@@ -1002,6 +1133,12 @@ class FileWatcher:
         # audio_tracks are all-und (pre-v0.7.4 libbluray-ctypes path).
         # Supersedes the broken v0.7.5 sweep (selector bug). Idempotent.
         await self._backfill_iso_languages_v076()
+        # v0.7.8: same fix applied to folder-disc rows — v0.6.5's
+        # original sweep had the same JSON-LIKE selector bug and
+        # silently matched zero rows on real installs. Also clears
+        # stale corrupt markers (probe_status / health_errors_json)
+        # alongside the language metadata. Idempotent.
+        await self._backfill_disc_languages_v078()
         scanned_dirs = await self._get_scanned_dirs()
         if not scanned_dirs:
             return {"checked": 0, "new": 0, "removed": 0}

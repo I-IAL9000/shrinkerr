@@ -1527,25 +1527,40 @@ async def scan_directory(
 
 
 async def _clear_stale_disc_health_status(db_path: str, file_path: str) -> None:
-    """Reset health_status to NULL for a disc row at `file_path`.
+    """Reset stale corrupt markers on a disc row at `file_path`.
 
-    Called after a disc re-probe succeeds, so a previously-stuck
-    health_status='corrupt' (from when the disc subdirectory was
-    deleted mid-conversion in v0.6.x) gets cleared on next discovery.
+    Called after a disc re-probe succeeds, so previously-stuck flags
+    (from when the disc subdirectory was deleted mid-conversion in
+    v0.6.x, or from an aborted health-check) get cleared on next
+    discovery. v0.7.8 extended this to also clear `probe_status` and
+    `health_errors_json` — the UI's `isCorrupt` derives from EITHER
+    `health_status='corrupt'` OR `probe_status='corrupt'`, so leaving
+    `probe_status` stuck while `health_status` cleared left the
+    "ffprobe couldn't read a video stream" banner showing on a disc
+    that actually probes clean. v0.7.2+ (extended v0.7.8+).
+
     No-op for rows where disc_type IS NULL — file-level health checks
-    are independent. v0.7.2+.
+    are independent.
     """
     import aiosqlite
     db = await aiosqlite.connect(db_path)
     try:
         cur = await db.execute(
-            "UPDATE scan_results SET health_status = NULL "
-            "WHERE file_path = ? AND disc_type IS NOT NULL AND health_status IS NOT NULL",
+            "UPDATE scan_results SET "
+            "  health_status = NULL, "
+            "  probe_status = 'ok', "
+            "  health_errors_json = NULL "
+            "WHERE file_path = ? AND disc_type IS NOT NULL "
+            "  AND ("
+            "    health_status IS NOT NULL "
+            "    OR (probe_status IS NOT NULL AND probe_status != 'ok') "
+            "    OR health_errors_json IS NOT NULL"
+            "  )",
             (file_path,),
         )
         if cur.rowcount > 0:
             print(
-                f"[SCANNER] cleared stale health_status on disc row {file_path}",
+                f"[SCANNER] cleared stale corrupt markers on disc row {file_path}",
                 flush=True,
             )
         await db.commit()

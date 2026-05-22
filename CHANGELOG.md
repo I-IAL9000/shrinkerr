@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.8] — 2026-05-21
+
+### Fixed
+- **v0.6.5 folder-disc backfill silently matched zero rows** (same JSON LIKE bug v0.7.5 had for BD ISOs, fixed in v0.7.6). New `_backfill_disc_languages_v078` runs the equivalent sweep for folder discs with the corrected selector and a fresh idempotency flag so existing installs re-run.
+- **Stale corrupt markers persisted after a successful disc re-probe.** The `_clear_stale_disc_health_status` helper only cleared `health_status`, but the UI's `isCorrupt` is `probe_status === 'corrupt' || health_status === 'corrupt'`, so a probe that cleared `health_status` left the "ffprobe couldn't read a video stream" banner showing whenever `probe_status` was also stuck. Helper now resets `probe_status` (to `'ok'`) and `health_errors_json` alongside `health_status` in one statement; v0.7.8 backfill calls the helper on every successful row update.
+
 ## [0.7.7] — 2026-05-21
 
 ### Fixed

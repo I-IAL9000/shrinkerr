@@ -669,3 +669,160 @@ async def test_stale_removal_v077_sanity_belt_aborts_on_majority_stale(test_db, 
     assert row["n"] == 10, \
         f"sanity belt didn't fire: {row['n']} rows remain (expected 10)"
 
+
+# ----------------------------------------------------------------------------
+# v0.7.8: folder-disc language backfill + extended stale-corrupt helper.
+# ----------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_disc_lang_backfill_v078_updates_folder_disc_and_clears_corrupt_flags(
+    test_db, tmp_path,
+):
+    """End-to-end: an all-und folder-BDMV row with stuck health_status +
+    probe_status gets re-probed AND has all three corrupt markers cleared
+    in the same sweep."""
+    import aiosqlite
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    # Folder-disc marker file (not an ISO suffix — that's what scopes
+    # v078 vs v076).
+    bdmv_dir = tmp_path / "Folder Disc (2020)" / "BDMV"
+    bdmv_dir.mkdir(parents=True)
+    marker = bdmv_dir / "index.bdmv"
+    marker.touch()
+    fp = str(marker)
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json, "
+            " subtitle_tracks_json, health_status, probe_status, "
+            " health_errors_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                fp,
+                "Folder Disc (2020)",
+                "bdmv",
+                # Use the production json.dumps shape (space after colon).
+                json.dumps([{"language": "und", "codec": "truehd", "stream_index": 1}]),
+                "[]",
+                "corrupt",
+                "corrupt",
+                '{"error": "stale"}',
+            ),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    fake_probe = {
+        "audio_tracks": [
+            {"language": "deu", "codec": "truehd", "stream_index": 1, "channels": 6},
+        ],
+        "subtitle_tracks": [],
+    }
+    watcher = FileWatcher(test_db, interval_minutes=5)
+
+    with patch("backend.scanner.probe_file", new=AsyncMock(return_value=fake_probe)):
+        await watcher._backfill_disc_languages_v078()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT audio_tracks_json, health_status, probe_status, "
+            "health_errors_json FROM scan_results WHERE file_path = ?",
+            (fp,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    # Languages updated
+    langs = [t["language"] for t in json.loads(row["audio_tracks_json"])]
+    assert langs == ["deu"], f"audio langs = {langs!r}"
+    # All three corrupt markers cleared (Fix A — extended helper)
+    assert row["health_status"] is None, \
+        f"health_status not cleared: {row['health_status']!r}"
+    assert row["probe_status"] == "ok", \
+        f"probe_status not cleared: {row['probe_status']!r}"
+    assert row["health_errors_json"] is None, \
+        f"health_errors_json not cleared: {row['health_errors_json']!r}"
+
+
+@pytest.mark.asyncio
+async def test_disc_lang_backfill_v078_skips_bd_iso_rows(test_db, tmp_path):
+    """BD ISO rows are out of scope for v078 (already handled by v076).
+    Confirm a BD ISO row with all-und audio is NOT touched by v078."""
+    import aiosqlite
+    import json
+    from unittest.mock import AsyncMock, patch
+
+    iso_path = tmp_path / "BD ISO (2020)" / "disc.iso"
+    iso_path.parent.mkdir(parents=True)
+    iso_path.touch()
+    fp = str(iso_path)
+
+    stored = json.dumps([{"language": "und", "codec": "ac3", "stream_index": 1}])
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?)",
+            (fp, "BD ISO (2020)", "bdmv", stored),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock) as mock_probe:
+        await watcher._backfill_disc_languages_v078()
+        # SQL excludes the .iso row → probe never called
+        assert mock_probe.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_stale_disc_helper_v078_clears_all_three_flags(test_db):
+    """The extended `_clear_stale_disc_health_status` helper resets
+    health_status, probe_status, AND health_errors_json in one call —
+    not just health_status as in v0.7.2-7."""
+    import aiosqlite
+    from backend.scanner import _clear_stale_disc_health_status
+
+    fp = "/media/test/disc.iso"
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO scan_results "
+            "(file_path, file_name, disc_type, health_status, probe_status, "
+            " health_errors_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (fp, "disc.iso", "bdmv", "corrupt", "corrupt", '{"e": "x"}'),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    await _clear_stale_disc_health_status(test_db, fp)
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT health_status, probe_status, health_errors_json "
+            "FROM scan_results WHERE file_path = ?",
+            (fp,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    assert row["health_status"] is None
+    assert row["probe_status"] == "ok"
+    assert row["health_errors_json"] is None
+
+
