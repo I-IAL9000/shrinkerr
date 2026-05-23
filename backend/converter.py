@@ -2537,6 +2537,45 @@ async def convert_file(
             temp.unlink()
         except OSError:
             pass
+        # v0.7.11: propagate the diagnosis back to the source row so the
+        # UI flags it as corrupt and the user doesn't try to convert it
+        # again. ffprobe-time corruption detection only sees container
+        # headers; ffmpeg-decode corruption (corrupt data mid-stream)
+        # never surfaces until conversion is attempted. Without this
+        # mark, the row still shows "Convert to x265 (est. save ...)"
+        # as if healthy. Best-effort: a DB failure here doesn't block
+        # the return-to-caller-with-original-preserved path.
+        try:
+            import aiosqlite as _aiosqlite
+            import json as _json
+            from backend.database import DB_PATH as _DB_PATH
+            _db = await _aiosqlite.connect(_DB_PATH)
+            try:
+                await _db.execute(
+                    "UPDATE scan_results SET "
+                    "  health_status = 'corrupt', "
+                    "  probe_status = 'corrupt', "
+                    "  health_errors_json = ? "
+                    "WHERE file_path = ?",
+                    (
+                        _json.dumps({
+                            "source": "conversion_size_check",
+                            "error": "Output suspiciously small — likely source stream corruption ffprobe didn't catch",
+                            "original_size": original_size,
+                            "output_size": output_size,
+                        }),
+                        input_path,
+                    ),
+                )
+                await _db.commit()
+                print(
+                    f"[CONVERT] Marked source as corrupt in scan_results: {input_path}",
+                    flush=True,
+                )
+            finally:
+                await _db.close()
+        except Exception as _exc:
+            print(f"[CONVERT] Failed to mark source corrupt (non-fatal): {_exc}", flush=True)
         return {
             "success": False,
             "output_path": None,

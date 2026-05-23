@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.11] — 2026-05-21
+
+### Fixed
+- **Files corrupt enough to fail conversion now get flagged as corrupt in the UI** instead of staying labeled healthy. ffprobe sees container headers + first-frames metadata, so a source with corrupt data mid-stream passes the scan-time probe and shows up with "Convert to x265 (est. save N GB)" — until the user tries, the conversion produces a suspiciously-small output (the existing fail-safe catches this and preserves the original), and the row stayed labeled as healthy so the user could try again. v0.7.11 propagates the diagnosis: when the "output too small" check fires, the source row's `health_status` + `probe_status` get set to `corrupt` and the failure details go into `health_errors_json`. UI flags it via the existing isCorrupt indicator on next refresh.
+
 ## [0.7.10] — 2026-05-21
 
 ### Changed
