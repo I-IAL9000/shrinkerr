@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.13] — 2026-05-21
+
+### Fixed
+- **v0.7.12 broke all conversions** with `exit 234 / Error parsing options for input file … Invalid argument`. The `-noautoscale` flag added in v0.7.12 is an ffmpeg *output* option but was placed before `-i`, so ffmpeg rejected it as a misplaced input option. Moved it after all `-i` inputs (still scoped to the NVDEC-native CUDA path). The v0.7.12 mid-stream-crash fix now actually works.
+
 ## [0.7.12] — 2026-05-21
 
 ### Fixed

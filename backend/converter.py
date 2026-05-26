@@ -358,34 +358,35 @@ def _build_ffmpeg_cmd_impl(
         cmd += ["-analyzeduration", "200M", "-probesize", "200M"]
     if pre_input_args:
         cmd += list(pre_input_args)
-    # v0.7.12: disable ffmpeg's auto-inserted scale filter on the
-    # NVDEC-native CUDA path. When the decoder's video parameters
-    # reconfigure mid-stream (a "hwaccel changed" event on certain
-    # x264 WEB-DLs, e.g. Netflix WebRips with embedded cover art and
-    # SAR drift), ffmpeg tries to splice an `auto_scale_0` filter
-    # between the demuxer output and our explicit `scale_cuda` filter
-    # to bridge the new format — but auto_scale_0 is a CPU filter and
-    # can't accept cuda(tv, unknown) frames. Encode dies mid-stream
-    # after gigabytes of successful output with:
-    #   "Impossible to convert between the formats supported by the
-    #    filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'"
-    # Our explicit `scale_cuda=format=...` already handles all the
-    # format alignment the encoder needs, so the auto-scaler is pure
-    # liability here. -noautoscale disables auto-insertion without
-    # affecting any -vf filter we set explicitly. Scoped to the
-    # CUDA-native path to keep QSV/VAAPI/CPU paths untouched.
-    if (
-        use_hw_decode
-        and hw_decode_backend == "cuda"
-        and hw_decode_keeps_on_device
-    ):
-        cmd += ["-noautoscale"]
     cmd += ["-i", input_path]
 
     # Add external subtitle files as additional inputs (input 1, 2, 3, ...)
     ext_subs = external_subtitle_files or []
     for es in ext_subs:
         cmd += ["-i", es["path"]]
+
+    # v0.7.12: disable ffmpeg's auto-inserted scale filter on the
+    # NVDEC-native CUDA path. When the decoder's video parameters
+    # reconfigure mid-stream (a "hwaccel changed" event on certain
+    # x264 WEB-DLs with SAR drift or embedded cover art), ffmpeg
+    # tries to splice an `auto_scale_0` CPU filter between the demuxer
+    # output and our explicit `scale_cuda` filter to bridge the new
+    # format — but auto_scale_0 can't accept cuda(tv, unknown) frames,
+    # so the encode dies mid-stream after gigabytes of good output:
+    #   "Impossible to convert between the formats supported by the
+    #    filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'"
+    # Our explicit `scale_cuda=format=...` already does all the format
+    # alignment hevc_nvenc needs. -noautoscale is an OUTPUT option, so
+    # it MUST go after all -i inputs (v0.7.12 first cut wrongly placed
+    # it before -i, which made ffmpeg reject it as an input option:
+    # exit 234 "Error parsing options for input file"). Scoped to the
+    # CUDA-native path so QSV/VAAPI/CPU paths are untouched.
+    if (
+        use_hw_decode
+        and hw_decode_backend == "cuda"
+        and hw_decode_keeps_on_device
+    ):
+        cmd += ["-noautoscale"]
 
     # Resolution scaling + decode/encode filter chain wiring.
     # v0.5.7: when HW decode is on, scale on the device matching the
