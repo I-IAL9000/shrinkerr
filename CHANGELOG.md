@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.12] — 2026-05-21
+
+### Fixed
+- **NVENC conversion crashed mid-stream on some x264 WEB-DLs** with `Error reinitializing filters! / Impossible to convert between the formats supported by the filter 'Parsed_scale_cuda_0' and the filter 'auto_scale_0'`. ffmpeg auto-inserts an `auto_scale_0` CPU filter to bridge a mid-stream parameter reconfiguration ("hwaccel changed"), but that filter can't accept CUDA frames from our explicit `scale_cuda`. The encode dies after gigabytes of successful output. v0.7.12 adds `-noautoscale` on the NVDEC-native CUDA path so the auto-scaler isn't inserted — our explicit `scale_cuda=format=...` already handles all format alignment the encoder needs. QSV/VAAPI/CPU paths unaffected.
+
 ## [0.7.11] — 2026-05-21
 
 ### Fixed
