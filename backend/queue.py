@@ -1501,7 +1501,26 @@ class QueueWorker:
             await self._run_health_check_job(job_id, file_path, file_name, job, stats)
             return
 
-        # Probe for duration
+        # Probe for duration.
+        # v0.7.16: distinguish "source file is gone" from "source exists but
+        # ffprobe couldn't read it". A missing source almost always means the
+        # file was ALREADY converted (the h265 output replaced the h264
+        # original) and this job is a stale re-queue — e.g. retrying a job
+        # whose work is done, or queueing from a scan row that predates the
+        # conversion. The old code reported both cases as a cryptic
+        # "Failed to probe file"; the missing-source case now gets a clear,
+        # actionable message instead.
+        if not os.path.exists(file_path):
+            print(f"[WORKER] Job {job_id}: source no longer exists: {file_path}", flush=True)
+            await self.queue.update_status(
+                job_id, "failed",
+                error_log=(
+                    "Source file no longer exists — it was most likely already "
+                    "converted (the original is replaced by the HEVC output). "
+                    "Rescan the library to refresh this entry."
+                ),
+            )
+            return
         probe = await probe_file(file_path)
         if probe is None:
             print(f"[WORKER] Job {job_id}: FAILED to probe {file_path}", flush=True)

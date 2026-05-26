@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.16] — 2026-05-21
+
+### Changed
+- **Re-queuing an already-converted file gives a clear message** instead of a cryptic "Failed to probe file". When a conversion job's source no longer exists — almost always because it was already converted (the HEVC output replaced the h264 original) and the job is a stale retry or a queue from a pre-conversion scan row — the worker now reports "Source file no longer exists — most likely already converted; rescan to refresh" rather than treating it as a probe failure.
+
 ## [0.7.15] — 2026-05-21
 
 ### Fixed
