@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.15] — 2026-05-21
+
+### Fixed
+- **v0.7.14 broke conversions** with `name 'encode_start_time' is not defined`. The v0.7.14 refactor moved the encode run-loop into a nested `_run_encode` helper, which scoped `encode_start_time` inside it — but the post-encode stats path (encode_seconds / encode_time) reads it from the outer function. Hoisted it to the outer scope and marked it `nonlocal` in the helper, alongside `all_lines`. Added an AST scope check to the dev process to catch this leak class.
+
 ## [0.7.14] — 2026-05-21
 
 ### Fixed

@@ -2313,6 +2313,13 @@ async def convert_file(
     # Outer-scope state the success path (below) reads back after the run.
     all_lines: list[str] = []
     full_command = ""
+    # encode_start_time is read downstream for encode-duration stats
+    # (encode_seconds / encode_time). It's assigned inside _run_encode at
+    # the start of each attempt, so on a software-decode retry it reflects
+    # the successful attempt's wall-clock. Initialised here so the name
+    # exists in the outer scope (v0.7.14 first cut scoped it inside the
+    # nested helper, breaking the post-encode stats with NameError).
+    encode_start_time = time.monotonic()
 
     # VMAF: store original path so we can compare after encoding (if backup keeps it)
     _vmaf_setting = live_settings.get("vmaf_analysis_enabled", "true")
@@ -2353,7 +2360,7 @@ async def convert_file(
         Assigns the outer `all_lines` so the success path can attach the
         ffmpeg log to its result.
         """
-        nonlocal all_lines
+        nonlocal all_lines, encode_start_time
         try:
             proc = await asyncio.create_subprocess_exec(
                 *run_cmd,
