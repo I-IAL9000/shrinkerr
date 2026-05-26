@@ -1,11 +1,17 @@
 import pytest
 from backend.converter import (
     build_ffmpeg_cmd,
+    _build_ffmpeg_cmd_impl,
     rename_x264_to_x265,
     get_output_path,
     get_temp_path,
     parse_ffmpeg_progress,
 )
+
+
+def _last_input_index(cmd: list) -> int:
+    """Index of the last `-i` flag in an ffmpeg argv."""
+    return max(i for i, a in enumerate(cmd) if a == "-i")
 
 
 def test_build_nvenc_command():
@@ -15,6 +21,54 @@ def test_build_nvenc_command():
     assert cmd[cmd.index("-cq") + 1] == "20"
     assert "main10" in cmd
     assert cmd[-1] == "/media/movie.converting.mkv"
+
+
+# ---------------------------------------------------------------------------
+# v0.7.14: NVDEC-native vs software-decode command structure.
+#
+# Guards two regression classes:
+#   - v0.7.12: -noautoscale placed BEFORE -i (an output option in the input
+#     section) → ffmpeg exit 234 "Error parsing options for input file".
+#   - The software-decode fallback must NOT emit scale_cuda (the filter that
+#     crashes mid-stream on NVDEC partial-fallback).
+# ---------------------------------------------------------------------------
+
+def test_nvenc_cuda_native_command_structure():
+    """NVDEC-native CUDA path: scale_cuda present, and -noautoscale is an
+    OUTPUT option (after the last -i), not an input option."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/movie.mkv", "/media/movie.converting.mkv",
+        encoder="nvenc",
+        use_hw_decode=True,
+        hw_decode_backend="cuda",
+        hw_decode_keeps_on_device=True,
+        nvenc_bit_depth="8bit",
+    )
+    # scale_cuda is the on-GPU format/scale filter.
+    assert any("scale_cuda" in a for a in cmd), f"scale_cuda missing: {cmd}"
+    # -noautoscale must appear AFTER the last input (output-option position).
+    assert "-noautoscale" in cmd, f"-noautoscale missing: {cmd}"
+    assert cmd.index("-noautoscale") > _last_input_index(cmd), (
+        f"-noautoscale is before the last -i (would be parsed as an input "
+        f"option → exit 234): {cmd}"
+    )
+
+
+def test_nvenc_software_decode_no_scale_cuda():
+    """Software-decode fallback (use_hw_decode=False): no scale_cuda, no
+    -noautoscale, but still the NVENC encoder. This is the path the v0.7.14
+    retry rebuilds to dodge the NVDEC mid-stream reconfig crash."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/movie.mkv", "/media/movie.converting.mkv",
+        encoder="nvenc",
+        use_hw_decode=False,
+        hw_decode_backend="cuda",
+        hw_decode_keeps_on_device=False,
+        nvenc_bit_depth="8bit",
+    )
+    assert not any("scale_cuda" in a for a in cmd), f"scale_cuda leaked into software path: {cmd}"
+    assert "-noautoscale" not in cmd, f"-noautoscale should be CUDA-native only: {cmd}"
+    assert "hevc_nvenc" in cmd, f"NVENC encoder missing: {cmd}"
 
 
 def test_build_libx265_command():

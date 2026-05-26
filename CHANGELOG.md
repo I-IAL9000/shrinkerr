@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.14] — 2026-05-21
+
+### Fixed
+- **NVENC conversions that crash mid-stream now auto-retry with software decode.** NVDEC silently falls back to CPU decode for frames it can't handle on-GPU (sources with "unknown" colour metadata, certain WEB-DLs), and that mid-stream CUDA→CPU switch ("hwaccel changed") breaks the `scale_cuda` filter graph with `Error reinitializing filters!` (exit 218) — no input flag prevents it (v0.7.12's `-noautoscale` didn't). v0.7.14 detects that specific failure on the NVDEC-native CUDA path and retries the encode once with software decode + NVENC (software decoders handle every mid-stream change; the GPU still encodes). The fast NVDEC path stays the default for the 99% of files that work. Adds CI tests asserting the rebuilt command's structure (no `scale_cuda` on the software path; `-noautoscale` correctly positioned as an output option).
+
 ## [0.7.13] — 2026-05-21
 
 ### Fixed

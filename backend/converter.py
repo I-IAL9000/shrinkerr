@@ -2258,44 +2258,61 @@ async def convert_file(
         # Default and any unrecognised value fall through to 10bit.
         nvenc_effective_bit_depth = "10bit"
 
-    cmd = _build_ffmpeg_cmd_impl(
-        encode_input_path, temp_path, encoder=encoder,
-        nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
-        qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
-        vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
-        cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
-        lossless_conversion=lossless_conversion,
-        audio_stream_codecs=audio_stream_codecs,
-        target_resolution=target_resolution,
-        subtitle_streams=subtitle_streams,
-        audio_streams_to_keep=audio_streams_to_keep,
-        subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
-        external_subtitle_files=external_sub_files,
-        ffmpeg_threads=ffmpeg_threads,
-        use_hw_decode=_hw_use,
-        hw_decode_backend=_hw_backend,
-        hw_decode_keeps_on_device=_hw_on_device,
-        source_codec=_src_codec_lower,
-        nvenc_bit_depth=nvenc_effective_bit_depth,
-        pre_input_args=ffmpeg_input_args or None,
+    # v0.7.14: NVDEC silently falls back to software decode for frames it
+    # can't decode on-GPU (e.g. sources with "unknown" colour metadata).
+    # That mid-stream CUDA→CPU frame switch shows up as "hwaccel changed"
+    # and breaks the scale_cuda filter graph ("Error reinitializing
+    # filters!", exit 218). No input flag prevents it. When we detect that
+    # specific failure on the NVDEC-native CUDA path, retry once with
+    # software decode — the software decoders handle every mid-stream
+    # change consistently, and NVENC still does the encode.
+    _used_nvdec_native = bool(_hw_use and _hw_on_device and _hw_backend == "cuda")
+    _RECONFIG_SIGNATURES = (
+        "Error reinitializing filters",
+        "auto_scale_0",
+        "hwaccel changed",
     )
 
-    # Append custom ffmpeg flags if configured
-    custom_flags = live_settings.get("custom_ffmpeg_flags", "")
-    if custom_flags.strip():
-        # Insert custom flags before the output path (last element)
-        import shlex
-        extra = shlex.split(custom_flags)
-        cmd = cmd[:-1] + extra + cmd[-1:]
-        print(f"[CONVERT] Custom ffmpeg flags: {custom_flags}", flush=True)
+    def _assemble_cmd(use_hw: bool) -> list:
+        """Build the full ffmpeg argv for an encode attempt. `use_hw`
+        toggles hardware decode — the software-decode retry passes False
+        to bypass NVDEC while keeping the NVENC encoder."""
+        c = _build_ffmpeg_cmd_impl(
+            encode_input_path, temp_path, encoder=encoder,
+            nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
+            qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
+            vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
+            cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
+            lossless_conversion=lossless_conversion,
+            audio_stream_codecs=audio_stream_codecs,
+            target_resolution=target_resolution,
+            subtitle_streams=subtitle_streams,
+            audio_streams_to_keep=audio_streams_to_keep,
+            subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
+            external_subtitle_files=external_sub_files,
+            ffmpeg_threads=ffmpeg_threads,
+            use_hw_decode=use_hw,
+            hw_decode_backend=_hw_backend,
+            # When falling back to software decode, frames are never on the
+            # GPU, so the on-device flag must follow `use_hw`.
+            hw_decode_keeps_on_device=(_hw_on_device and use_hw),
+            source_codec=_src_codec_lower,
+            nvenc_bit_depth=nvenc_effective_bit_depth,
+            pre_input_args=ffmpeg_input_args or None,
+        )
+        # Append custom ffmpeg flags if configured (before the output path).
+        cf = live_settings.get("custom_ffmpeg_flags", "")
+        if cf.strip():
+            import shlex
+            c = c[:-1] + shlex.split(cf) + c[-1:]
+        # During quiet hours, lower process priority.
+        if nice:
+            c = ["nice", "-n", "15", "ionice", "-c", "3"] + c
+        return c
 
-    # During quiet hours, lower process priority
-    if nice:
-        cmd = ["nice", "-n", "15", "ionice", "-c", "3"] + cmd
-        print(f"[CONVERT] Quiet hours: using nice/ionice", flush=True)
-
-    full_command = " ".join(cmd)
-    print(f"[CONVERT] ffmpeg cmd: {' '.join(cmd[:6])} ...", flush=True)
+    # Outer-scope state the success path (below) reads back after the run.
+    all_lines: list[str] = []
+    full_command = ""
 
     # VMAF: store original path so we can compare after encoding (if backup keeps it)
     _vmaf_setting = live_settings.get("vmaf_analysis_enabled", "true")
@@ -2325,149 +2342,201 @@ async def convert_file(
         vmaf_seek = 0.0
         vmaf_duration = 30.0
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        print(f"[CONVERT] ffmpeg started, pid={proc.pid}", flush=True)
-        if proc_callback:
-            proc_callback(proc)
+    async def _run_encode(run_cmd: list) -> dict:
+        """Run one ffmpeg attempt with live progress streaming.
 
-        # ffmpeg writes progress using \r (carriage return), not \n.
-        # Read in small chunks and split on \r to parse progress lines.
-        encode_start_time = time.monotonic()
-        buffer = ""
-        all_lines: list[str] = []  # Full log for conversion history
-        last_lines: list[str] = []  # Last N for error reporting
-        # Sticky error capture (v0.4.8+). Lines matching ffmpeg error
-        # patterns get retained here as they're emitted, so they survive
-        # the rolling 20-line `last_lines` buffer. Without this, files
-        # with large amounts of metadata in the stream listing (e.g. MKVs
-        # with many subtitle/audio streams each carrying _STATISTICS_*
-        # tags) push the actual error line off the end before we capture
-        # it for `error_log`. Cap at 50 lines to bound DB write size.
-        error_lines: list[str] = []
-        _ERROR_PATTERNS = (
-            "[error]", "Error ", "error:", "ERROR ", "ERROR:",
-            "failed", "Failed", "FAILED",
-            "Could not", "could not",
-            "Invalid ", "invalid ",
-            "No such ", "Cannot ", "Unable to ",
-            "Unknown encoder", "Unknown decoder", "Unknown format",
-            "Conversion failed",
-        )
-        # Total expected frames for the progress callback's frame-count
-        # fallback when ffmpeg reports `time=N/A`. Computed from probe
-        # duration × source fps; set to None when we don't know the source
-        # fps (parser then falls back to "no progress update" rather than
-        # emitting bogus values from a nonsense divisor).
-        progress_total_frames: Optional[int] = None
-        if duration > 0 and source_video_fps > 0:
-            progress_total_frames = max(1, int(duration * source_video_fps))
-        while True:
-            chunk = await proc.stderr.read(4096)
-            if not chunk:
-                break
-            buffer += chunk.decode(errors="replace")
-            # Split on \r or \n to find progress lines
-            while "\r" in buffer or "\n" in buffer:
-                # Find earliest delimiter
-                r_pos = buffer.find("\r")
-                n_pos = buffer.find("\n")
-                if r_pos == -1:
-                    pos = n_pos
-                elif n_pos == -1:
-                    pos = r_pos
+        Returns:
+          {"outcome": "ok"}                       — encode succeeded
+          {"outcome": "retry", "result": <dict>}  — failed with an NVDEC
+              reconfig signature; caller MAY retry with software decode.
+          {"outcome": "fail",  "result": <dict>}  — non-retryable failure
+        Assigns the outer `all_lines` so the success path can attach the
+        ffmpeg log to its result.
+        """
+        nonlocal all_lines
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *run_cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            print(f"[CONVERT] ffmpeg started, pid={proc.pid}", flush=True)
+            if proc_callback:
+                proc_callback(proc)
+
+            # ffmpeg writes progress using \r (carriage return), not \n.
+            # Read in small chunks and split on \r to parse progress lines.
+            encode_start_time = time.monotonic()
+            buffer = ""
+            local_all_lines: list[str] = []  # Full log for conversion history
+            last_lines: list[str] = []  # Last N for error reporting
+            # Sticky error capture (v0.4.8+). Lines matching ffmpeg error
+            # patterns get retained here as they're emitted, so they survive
+            # the rolling 20-line `last_lines` buffer. Without this, files
+            # with large amounts of metadata in the stream listing (e.g. MKVs
+            # with many subtitle/audio streams each carrying _STATISTICS_*
+            # tags) push the actual error line off the end before we capture
+            # it for `error_log`. Cap at 50 lines to bound DB write size.
+            error_lines: list[str] = []
+            _ERROR_PATTERNS = (
+                "[error]", "Error ", "error:", "ERROR ", "ERROR:",
+                "failed", "Failed", "FAILED",
+                "Could not", "could not",
+                "Invalid ", "invalid ",
+                "No such ", "Cannot ", "Unable to ",
+                "Unknown encoder", "Unknown decoder", "Unknown format",
+                "Conversion failed",
+            )
+            # Total expected frames for the progress callback's frame-count
+            # fallback when ffmpeg reports `time=N/A`. Computed from probe
+            # duration × source fps; set to None when we don't know the source
+            # fps (parser then falls back to "no progress update" rather than
+            # emitting bogus values from a nonsense divisor).
+            progress_total_frames: Optional[int] = None
+            if duration > 0 and source_video_fps > 0:
+                progress_total_frames = max(1, int(duration * source_video_fps))
+            while True:
+                chunk = await proc.stderr.read(4096)
+                if not chunk:
+                    break
+                buffer += chunk.decode(errors="replace")
+                # Split on \r or \n to find progress lines
+                while "\r" in buffer or "\n" in buffer:
+                    # Find earliest delimiter
+                    r_pos = buffer.find("\r")
+                    n_pos = buffer.find("\n")
+                    if r_pos == -1:
+                        pos = n_pos
+                    elif n_pos == -1:
+                        pos = r_pos
+                    else:
+                        pos = min(r_pos, n_pos)
+                    line = buffer[:pos].strip()
+                    buffer = buffer[pos + 1:]
+                    if line:
+                        # Keep non-progress lines for the full log (skip repetitive progress spam)
+                        if not line.startswith("frame=") and not line.startswith("size="):
+                            local_all_lines.append(line)
+                        last_lines.append(line)
+                        if len(last_lines) > 20:
+                            last_lines.pop(0)
+                        # Sticky error capture — see _ERROR_PATTERNS above.
+                        if any(p in line for p in _ERROR_PATTERNS):
+                            error_lines.append(line)
+                            if len(error_lines) > 50:
+                                error_lines.pop(0)
+                    if progress_callback and line:
+                        parsed = parse_ffmpeg_progress(
+                            line, duration,
+                            start_time=encode_start_time,
+                            total_frames=progress_total_frames,
+                        )
+                        if parsed:
+                            await progress_callback(**parsed)
+
+            await asyncio.wait_for(proc.wait(), timeout=live_settings.get("ffmpeg_timeout", 21600))
+            all_lines = local_all_lines
+
+            if proc.returncode != 0:
+                # Clean up temp file if it exists
+                try:
+                    Path(temp_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+                # Extract meaningful error from ffmpeg output. v0.4.8+:
+                # prefer the sticky `error_lines` we accumulated during the
+                # encode (lines matching error patterns), since those survive
+                # MKVs with heavy stream metadata that would otherwise push
+                # the real error off the rolling 20-line `last_lines` buffer.
+                # Fall back to the last 10 non-progress lines from the rolling
+                # buffer if no pattern matches found.
+                if error_lines:
+                    error_detail = "\n".join(error_lines[-15:])
                 else:
-                    pos = min(r_pos, n_pos)
-                line = buffer[:pos].strip()
-                buffer = buffer[pos + 1:]
-                if line:
-                    # Keep non-progress lines for the full log (skip repetitive progress spam)
-                    if not line.startswith("frame=") and not line.startswith("size="):
-                        all_lines.append(line)
-                    last_lines.append(line)
-                    if len(last_lines) > 20:
-                        last_lines.pop(0)
-                    # Sticky error capture — see _ERROR_PATTERNS above.
-                    if any(p in line for p in _ERROR_PATTERNS):
-                        error_lines.append(line)
-                        if len(error_lines) > 50:
-                            error_lines.pop(0)
-                if progress_callback and line:
-                    parsed = parse_ffmpeg_progress(
-                        line, duration,
-                        start_time=encode_start_time,
-                        total_frames=progress_total_frames,
-                    )
-                    if parsed:
-                        await progress_callback(**parsed)
+                    non_progress = [l for l in last_lines if not l.startswith("frame=") and not l.startswith("size=")]
+                    error_detail = "\n".join(non_progress[-10:]) if non_progress else ""
+                error_msg = f"ffmpeg exited with code {proc.returncode}"
+                if error_detail:
+                    error_msg += f"\n\n{error_detail}"
+                # v0.4.9+: also persist the full command and stderr log on
+                # failure so the Completed-tab failed-job expand can show
+                # the exact invocation. Pre-fix the failure path returned
+                # only `error`, leaving the new ffmpeg_command / ffmpeg_log
+                # collapsible sections empty for any failed job.
+                fail_dict = {
+                    "success": False,
+                    "output_path": None,
+                    "space_saved": 0,
+                    "error": error_msg,
+                    "ffmpeg_command": full_command,
+                    "ffmpeg_log": "\n".join(local_all_lines[-500:]),
+                }
+                # v0.7.14: classify the failure. The NVDEC mid-stream
+                # reconfig crash is retryable with software decode.
+                haystack = "\n".join(local_all_lines[-80:])
+                if any(sig in haystack for sig in _RECONFIG_SIGNATURES):
+                    return {"outcome": "retry", "result": fail_dict}
+                return {"outcome": "fail", "result": fail_dict}
 
-        await asyncio.wait_for(proc.wait(), timeout=live_settings.get("ffmpeg_timeout", 21600))
-
-        if proc.returncode != 0:
-            # Clean up temp file if it exists
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
             try:
                 Path(temp_path).unlink(missing_ok=True)
             except OSError:
                 pass
-            # Extract meaningful error from ffmpeg output. v0.4.8+:
-            # prefer the sticky `error_lines` we accumulated during the
-            # encode (lines matching error patterns), since those survive
-            # MKVs with heavy stream metadata that would otherwise push
-            # the real error off the rolling 20-line `last_lines` buffer.
-            # Fall back to the last 10 non-progress lines from the rolling
-            # buffer if no pattern matches found.
-            if error_lines:
-                error_detail = "\n".join(error_lines[-15:])
-            else:
-                non_progress = [l for l in last_lines if not l.startswith("frame=") and not l.startswith("size=")]
-                error_detail = "\n".join(non_progress[-10:]) if non_progress else ""
-            error_msg = f"ffmpeg exited with code {proc.returncode}"
-            if error_detail:
-                error_msg += f"\n\n{error_detail}"
-            # v0.4.9+: also persist the full command and stderr log on
-            # failure so the Completed-tab failed-job expand can show
-            # the exact invocation. Pre-fix the failure path returned
-            # only `error`, leaving the new ffmpeg_command / ffmpeg_log
-            # collapsible sections empty for any failed job.
-            return {
+            return {"outcome": "fail", "result": {
                 "success": False,
                 "output_path": None,
                 "space_saved": 0,
-                "error": error_msg,
+                "error": "ffmpeg timed out",
                 "ffmpeg_command": full_command,
                 "ffmpeg_log": "\n".join(all_lines[-500:]),
-            }
+            }}
+        except Exception as exc:
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+            if prestrip_path:
+                try: Path(prestrip_path).unlink(missing_ok=True)
+                except OSError: pass
+            return {"outcome": "fail", "result": {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}}
 
-    except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except ProcessLookupError:
-            pass
-        try:
-            Path(temp_path).unlink(missing_ok=True)
-        except OSError:
-            pass
-        return {
-            "success": False,
-            "output_path": None,
-            "space_saved": 0,
-            "error": "ffmpeg timed out",
-            "ffmpeg_command": full_command,
-            "ffmpeg_log": "\n".join(all_lines[-500:]),
-        }
-    except Exception as exc:
-        try:
-            Path(temp_path).unlink(missing_ok=True)
-        except OSError:
-            pass
-        if prestrip_path:
-            try: Path(prestrip_path).unlink(missing_ok=True)
-            except OSError: pass
-        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+        return {"outcome": "ok"}
+
+    # Run the encode, with one software-decode retry on the NVDEC
+    # mid-stream reconfig failure (v0.7.14). The fast NVDEC path is tried
+    # first; only the specific reconfiguration crash on the NVDEC-native
+    # CUDA path triggers the software-decode fallback.
+    _software_retry = False
+    while True:
+        cmd = _assemble_cmd(_hw_use and not _software_retry)
+        full_command = " ".join(cmd)
+        if _software_retry:
+            print(f"[CONVERT] Retrying with software decode: {' '.join(cmd[:6])} ...", flush=True)
+        else:
+            print(f"[CONVERT] ffmpeg cmd: {' '.join(cmd[:6])} ...", flush=True)
+        _enc = await _run_encode(cmd)
+        if _enc["outcome"] == "ok":
+            break
+        if (
+            _enc["outcome"] == "retry"
+            and _used_nvdec_native
+            and not _software_retry
+        ):
+            print(
+                "[CONVERT] NVDEC native decode failed mid-stream "
+                "(hwaccel reconfig); falling back to software decode + "
+                f"{encoder} encode",
+                flush=True,
+            )
+            _software_retry = True
+            continue
+        # Non-retryable, or retry already attempted — return the failure.
+        return _enc["result"]
 
     # Verify output exists and has non-zero size.
     #
