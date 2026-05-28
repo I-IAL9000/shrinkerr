@@ -2631,7 +2631,19 @@ async def convert_file(
     # Sanity check: output suspiciously small (< 5% of original) = likely corrupt
     min_expected = int(original_size * 0.05)
     if output_size < min_expected and original_size > 10 * 1024 * 1024:  # Only for files > 10MB
-        print(f"[CONVERT] Output ({output_size} bytes) is suspiciously small vs original ({original_size} bytes) — likely corrupt, keeping original", flush=True)
+        # v0.7.17: human-readable diagnosis. Lead with "Original file
+        # likely corrupt" (which is what's actually going on) instead of
+        # "Output file suspiciously small" (which made the OUTPUT sound
+        # like the problem). Sizes shown in MB / GB rather than bytes.
+        _output_mb = output_size // (1024 * 1024)
+        _original_gb = original_size / (1024 ** 3)
+        diagnosis_msg = (
+            f"Original file likely corrupt — conversion produced an "
+            f"unusably-small output ({_output_mb} MB from {_original_gb:.2f} GB "
+            f"source). ffmpeg hit data corruption ffprobe doesn't catch "
+            f"upfront. Source row marked corrupt; original preserved."
+        )
+        print(f"[CONVERT] {diagnosis_msg}", flush=True)
         try:
             temp.unlink()
         except OSError:
@@ -2659,7 +2671,7 @@ async def convert_file(
                     (
                         _json.dumps({
                             "source": "conversion_size_check",
-                            "error": "Output suspiciously small — likely source stream corruption ffprobe didn't catch",
+                            "error": "Original file likely corrupt — source stream corruption ffprobe didn't catch (conversion produced an unusably-small output)",
                             "original_size": original_size,
                             "output_size": output_size,
                         }),
@@ -2679,7 +2691,7 @@ async def convert_file(
             "success": False,
             "output_path": None,
             "space_saved": 0,
-            "error": f"Output file suspiciously small ({output_size} bytes vs {original_size} bytes original) — likely corrupt. Original file preserved.",
+            "error": diagnosis_msg,
         }
 
     # If the converted file is LARGER than the original, discard it.

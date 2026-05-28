@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.17] — 2026-05-21
+
+### Changed
+- **Reworded the corrupt-source-detected message** from "Output file suspiciously small (… bytes vs … bytes) — likely corrupt" to lead with the actual diagnosis: "Original file likely corrupt — conversion produced an unusably-small output (N MB from N.NN GB source). ffmpeg hit data corruption ffprobe doesn't catch upfront. Source row marked corrupt; original preserved." The OUTPUT is the symptom; the ORIGINAL is what's corrupt. Same trigger (v0.7.11's <5%-of-original safety check), same DB side-effects (`health_status` / `probe_status` set on the source row).
+
 ## [0.7.16] — 2026-05-21
 
 ### Changed
