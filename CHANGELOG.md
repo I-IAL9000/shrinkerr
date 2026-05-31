@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.19] — 2026-05-21
+
+### Fixed
+- **"database is locked" failures under concurrent writes.** SQLite's `busy_timeout` is per-connection (defaults to 0 = fail immediately) and doesn't persist with the DB file like WAL does. An audit found 118 of 134 `aiosqlite.connect` call sites didn't set the PRAGMA — every one of those would error instantly the moment a concurrent writer held the transaction. v0.7.19 monkey-patches `aiosqlite.connect` at module load in `backend/database.py` so every new connection applies `PRAGMA busy_timeout=60000` automatically. One surgical change, zero call-site edits, fully backward-compatible. Locked down with three tests against the `await` and `async with` invocation patterns.
+
 ## [0.7.18] — 2026-05-21
 
 ### Fixed

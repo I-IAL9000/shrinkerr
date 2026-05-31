@@ -4,7 +4,72 @@ from backend.config import settings
 
 DB_PATH = settings.db_path
 
-BUSY_TIMEOUT = 30000  # 30 seconds — wait for locks instead of failing
+BUSY_TIMEOUT = 60000  # 60 seconds — wait for locks instead of failing
+
+
+# v0.7.19: ensure EVERY aiosqlite connection gets `busy_timeout` applied.
+#
+# Background: SQLite has two distinct lock-handling mechanisms:
+#   - `journal_mode=WAL` is a property of the DATABASE FILE, persists
+#     across reconnects, eliminates reader↔writer blocking entirely.
+#     We've had this enabled since v0.3.x.
+#   - `busy_timeout` is a property of the CONNECTION, does NOT persist,
+#     defaults to 0 (fail immediately) on every fresh connection.
+#     Writer↔writer contention only waits if the connection sets this.
+#
+# An audit of v0.7.18 found 134 `aiosqlite.connect` sites; 118 (88 %) had
+# no `busy_timeout` PRAGMA nearby. Every one of those would raise
+# `database is locked` the instant a concurrent writer held the
+# transaction. v0.7.9's parallel scanner + queue worker + watcher all
+# write concurrently, so the failure was effectively a matter of timing.
+#
+# Rather than edit 118 call sites (each an independent regression risk),
+# we patch `aiosqlite.connect` once here. Every caller gets a wrapper that
+# applies `PRAGMA busy_timeout=<BUSY_TIMEOUT>` immediately after the
+# underlying connection is established. The wrapper supports both
+# `await aiosqlite.connect(...)` and `async with aiosqlite.connect(...)`
+# patterns — those are the only two valid use modes.
+#
+# The patch is idempotent (guarded by `_busy_timeout_patched`) so module
+# reloads during tests don't double-wrap.
+if not getattr(aiosqlite, "_busy_timeout_patched", False):
+    _original_connect = aiosqlite.connect
+
+    class _ConnectionWithBusyTimeout:
+        """Async-context + awaitable wrapper that applies busy_timeout
+        to every connection aiosqlite hands out."""
+
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+
+        async def _apply_pragma(self, db):
+            try:
+                await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT}")
+            except Exception:
+                # PRAGMA failure is non-fatal — the connection still works,
+                # just without our timeout. Better than blocking startup.
+                pass
+
+        async def __aenter__(self):
+            db = await self._wrapped.__aenter__()
+            await self._apply_pragma(db)
+            return db
+
+        async def __aexit__(self, *exc):
+            return await self._wrapped.__aexit__(*exc)
+
+        def __await__(self):
+            async def _do():
+                db = await self._wrapped
+                await self._apply_pragma(db)
+                return db
+            return _do().__await__()
+
+    def _patched_connect(*args, **kwargs):
+        return _ConnectionWithBusyTimeout(_original_connect(*args, **kwargs))
+
+    aiosqlite.connect = _patched_connect
+    aiosqlite._busy_timeout_patched = True
 
 
 def _migrate_legacy_db_filename() -> None:
