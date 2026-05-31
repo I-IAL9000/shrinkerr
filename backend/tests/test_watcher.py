@@ -240,11 +240,12 @@ async def test_iso_lang_backfill_v076_idempotent_when_flag_set(test_db):
         # don't touch it when the flag is set.
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 "/media/movies/Stale (1999)/disc.iso",
-                "Stale (1999)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "bdmv",
                 '[{"language":"und"},{"language":"und"}]',
             ),
@@ -302,11 +303,12 @@ async def test_iso_lang_backfill_v076_selector_skips_dvd_iso_and_folder_bd(test_
         # DVD ISO row — should be skipped (disc_type='dvd')
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 "/media/movies/Skin (2011)/disc.iso",
-                "Skin (2011)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "dvd",
                 '[{"language":"und"}]',
             ),
@@ -314,11 +316,12 @@ async def test_iso_lang_backfill_v076_selector_skips_dvd_iso_and_folder_bd(test_
         # Folder-BD row — should be skipped (no .iso suffix)
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 "/media/movies/Elephant (2003)/BDMV/index.bdmv",
-                "Elephant (2003)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "bdmv",
                 '[{"language":"und"}]',
             ),
@@ -326,11 +329,12 @@ async def test_iso_lang_backfill_v076_selector_skips_dvd_iso_and_folder_bd(test_
         # Non-disc row — should be skipped (disc_type IS NULL)
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 "/media/movies/Plain (2020)/movie.mkv",
-                "Plain (2020)",
+                0,
+                "2026-05-31T00:00:00Z",
                 None,
                 '[{"language":"und"}]',
             ),
@@ -358,11 +362,12 @@ async def test_iso_lang_backfill_v076_skips_partial_coverage(test_db):
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
             (
                 "/media/movies/Mixed (2010)/disc.iso",
-                "Mixed (2010)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "bdmv",
                 '[{"language":"eng"},{"language":"und"}]',
             ),
@@ -398,11 +403,12 @@ async def test_iso_lang_backfill_v076_updates_stale_bd_iso_row(test_db, tmp_path
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json, subtitle_tracks_json) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json, subtitle_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 fp,
-                "Elephant (2003)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "bdmv",
                 '[{"language":"und","codec":"truehd","stream_index":1,"channels":6}]',
                 '[]',
@@ -497,9 +503,9 @@ async def test_iso_lang_backfill_v076_matches_production_json_dumps_format(test_
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json, subtitle_tracks_json) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (fp, "Realistic (2025)", "bdmv", stored, "[]"),
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json, subtitle_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (fp, 0, "2026-05-31T00:00:00Z", "bdmv", stored, "[]"),
         )
         await db.commit()
     finally:
@@ -577,19 +583,19 @@ async def test_stale_removal_v077_preserves_rows_under_unmounted_dir(test_db, tm
         # Row under the mounted dir — matches the real file on disk, so
         # it's NOT stale.
         await db.execute(
-            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
-            (str(real_video), "movie.mkv"),
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+            (str(real_video), 0, "2026-05-31T00:00:00Z"),
         )
         # Two rows under the unmounted dir — these would historically
         # have been deleted because their dir doesn't exist on disk this
         # cycle. v0.7.7 preserves them.
         await db.execute(
-            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
-            (f"{unmounted_path}/movie_a.mkv", "movie_a.mkv"),
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+            (f"{unmounted_path}/movie_a.mkv", 0, "2026-05-31T00:00:00Z"),
         )
         await db.execute(
-            "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
-            (f"{unmounted_path}/movie_b.mkv", "movie_b.mkv"),
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+            (f"{unmounted_path}/movie_b.mkv", 0, "2026-05-31T00:00:00Z"),
         )
         await db.commit()
     finally:
@@ -645,8 +651,8 @@ async def test_stale_removal_v077_sanity_belt_aborts_on_majority_stale(test_db, 
         )
         for i in range(10):
             await db.execute(
-                "INSERT INTO scan_results (file_path, file_name) VALUES (?, ?)",
-                (f"{mounted_path}/movie_{i}.mkv", f"movie_{i}.mkv"),
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (f"{mounted_path}/movie_{i}.mkv", 0, "2026-05-31T00:00:00Z"),
             )
         await db.commit()
     finally:
@@ -697,13 +703,14 @@ async def test_disc_lang_backfill_v078_updates_folder_disc_and_clears_corrupt_fl
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json, "
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json, "
             " subtitle_tracks_json, health_status, probe_status, "
             " health_errors_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 fp,
-                "Folder Disc (2020)",
+                0,
+                "2026-05-31T00:00:00Z",
                 "bdmv",
                 # Use the production json.dumps shape (space after colon).
                 json.dumps([{"language": "und", "codec": "truehd", "stream_index": 1}]),
@@ -770,9 +777,9 @@ async def test_disc_lang_backfill_v078_skips_bd_iso_rows(test_db, tmp_path):
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, audio_tracks_json) "
-            "VALUES (?, ?, ?, ?)",
-            (fp, "BD ISO (2020)", "bdmv", stored),
+            "(file_path, file_size, scan_timestamp, disc_type, audio_tracks_json) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (fp, 0, "2026-05-31T00:00:00Z", "bdmv", stored),
         )
         await db.commit()
     finally:
@@ -798,10 +805,10 @@ async def test_clear_stale_disc_helper_v078_clears_all_three_flags(test_db):
     try:
         await db.execute(
             "INSERT INTO scan_results "
-            "(file_path, file_name, disc_type, health_status, probe_status, "
+            "(file_path, file_size, scan_timestamp, disc_type, health_status, probe_status, "
             " health_errors_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (fp, "disc.iso", "bdmv", "corrupt", "corrupt", '{"e": "x"}'),
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (fp, 0, "2026-05-31T00:00:00Z", "bdmv", "corrupt", "corrupt", '{"e": "x"}'),
         )
         await db.commit()
     finally:

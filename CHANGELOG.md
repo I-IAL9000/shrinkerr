@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.20] — 2026-05-31
+
+### Fixed
+- **Broken watcher tests cleanup.** The v0.7.5–v0.7.8 watcher backfill tests (added under "skip local testing") INSERT'd into `scan_results` with a `file_name` column that doesn't exist and omitted the NOT NULL `file_size` + `scan_timestamp` columns — every one of them raised `OperationalError` immediately. CI never ran pytest so the breakage was silent. All 14 INSERT sites in `backend/tests/test_watcher.py` now use the real schema (drop `file_name`, supply `file_size=0` + sentinel `scan_timestamp`). Full watcher suite (16 tests) and database/audio/converter suites (42 combined) now pass locally. No production code touched.
+
 ## [0.7.19] — 2026-05-21
 
 ### Fixed
