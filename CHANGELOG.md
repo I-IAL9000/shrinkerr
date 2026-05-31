@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.18] — 2026-05-21
+
+### Fixed
+- **Audio-cleanup / remux failed with `Subtitle codec 94213 is not supported`** on sources containing `mov_text` subtitles (codec 94213 = `AV_CODEC_ID_MOV_TEXT`, typically present when an mp4 was previously remuxed to mkv). The remux path used `-map 0:s?` + global `-c copy`, which Matroska's muxer rejects for mov_text. v0.7.18 probes subtitle codecs upfront and builds per-stream maps so mov_text/tx3g get `-c:s:N srt` (lossless for text content) while everything else still copies cleanly. Main convert path already had this logic — this brings the remux path to parity.
+
 ## [0.7.17] — 2026-05-21
 
 ### Changed

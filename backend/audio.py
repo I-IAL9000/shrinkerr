@@ -1,9 +1,45 @@
 import asyncio
+import json
 import re
 import shutil
 import time
 from pathlib import Path
 from typing import Callable, Optional
+
+
+async def _probe_subtitle_stream_codecs(input_path: str) -> dict[int, str]:
+    """Return a `{stream_index: codec_name}` map for every subtitle stream
+    in `input_path`. Used by remux_audio so build_remux_cmd can decide which
+    streams need `-c:s:N srt` (mov_text, tx3g) vs `copy` (everything else).
+    Returns an empty dict on any probe failure — caller treats that the same
+    as "no info" and falls back to the pre-v0.7.18 blanket-copy path.
+    """
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-print_format", "json",
+        "-select_streams", "s",
+        "-show_entries", "stream=index,codec_name",
+        input_path,
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        if proc.returncode != 0:
+            return {}
+        data = json.loads(stdout.decode())
+    except Exception:
+        return {}
+    out: dict[int, str] = {}
+    for s in data.get("streams") or []:
+        idx = s.get("index")
+        codec = s.get("codec_name")
+        if isinstance(idx, int) and codec:
+            out[idx] = str(codec).lower()
+    return out
 
 
 def build_remux_cmd(
@@ -12,6 +48,7 @@ def build_remux_cmd(
     keep_audio_indices: list[int],
     keep_subtitle_indices: list[int] | None = None,
     external_subtitle_files: list[dict] | None = None,
+    subtitle_stream_codecs: dict[int, str] | None = None,
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
@@ -19,7 +56,21 @@ def build_remux_cmd(
     Maps all video and attachment streams plus only the requested audio and subtitle
     streams. External subtitle files (if provided) are added as additional inputs.
     All streams are copied without re-encoding (except text subs that need conversion).
+
+    `subtitle_stream_codecs` (v0.7.18+): optional `{source_stream_index: codec_name}`
+    map. When provided, the keep-all-subs path enumerates streams explicitly so
+    each can get the right `-c:s:N` arg. Without it the keep-all path uses
+    `-map 0:s?` + global `-c copy`, which fails for sources containing
+    matroska-unsupported subtitle codecs (notably `mov_text` from mp4→mkv
+    remuxes — `Subtitle codec 94213 is not supported`). Backward-compatible
+    when None: caller hits the original blanket-copy path.
     """
+    # Subtitle codecs matroska can't accept on -c copy — must be transcoded
+    # to srt. mov_text is the mp4/QuickTime text codec; tx3g is its
+    # 3GPP relative. Both are plain text, so srt conversion is lossless
+    # for the text content (timing + dialogue preserved).
+    CONVERTIBLE_TEXT_SUBS = {"mov_text", "tx3g"}
+
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
     ]
@@ -36,7 +87,24 @@ def build_remux_cmd(
     if keep_subtitle_indices is not None:
         for idx in keep_subtitle_indices:
             cmd += ["-map", f"0:{idx}"]
-            sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+            codec = ((subtitle_stream_codecs or {}).get(idx) or "").lower()
+            if codec in CONVERTIBLE_TEXT_SUBS:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
+            else:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+            out_sub_idx += 1
+    elif subtitle_stream_codecs:
+        # v0.7.18: keep-all-subs path with codec info — enumerate streams
+        # explicitly so we can convert mov_text/tx3g to srt and copy
+        # everything else. Without this path the next branch's `-map 0:s?`
+        # + global `-c copy` fail-muxes any mov_text source.
+        for idx, codec in sorted(subtitle_stream_codecs.items()):
+            cmd += ["-map", f"0:{idx}"]
+            codec_l = (codec or "").lower()
+            if codec_l in CONVERTIBLE_TEXT_SUBS:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
+            else:
+                sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
             out_sub_idx += 1
     else:
         cmd += ["-map", "0:s?"]
@@ -67,8 +135,14 @@ def build_remux_cmd(
     for idx in keep_audio_indices:
         cmd += ["-map", f"0:{idx}"]
 
-    if ext_subs or keep_subtitle_indices is not None:
-        # Use per-stream codec args + copy for non-sub streams
+    if ext_subs or keep_subtitle_indices is not None or subtitle_stream_codecs:
+        # Use per-stream codec args + copy for non-sub streams.
+        # v0.7.18: subtitle_stream_codecs added to this condition — when
+        # we built explicit per-sub maps via the codec-aware path, the
+        # corresponding `-c:s:N` args MUST be emitted (the original
+        # `or ext_subs or keep_subtitle_indices` check missed the new
+        # branch, so sub_codec_args got silently dropped and the global
+        # `-c copy` fell through, defeating the whole mov_text fix).
         cmd += ["-c:v", "copy", "-c:a", "copy"] + sub_codec_args
     else:
         cmd += ["-c", "copy"]
@@ -148,7 +222,18 @@ async def remux_audio(
     temp_path = str(p.parent / (p.stem + ".remuxing.mkv"))
     final_path = str(p.parent / (p.stem + ".mkv"))
 
-    cmd = build_remux_cmd(input_path, temp_path, keep_audio_indices, keep_subtitle_indices)
+    # v0.7.18: probe subtitle codecs so the remux command can convert
+    # mov_text / tx3g to srt instead of failing the mux on `-c copy`
+    # (matroska rejects mov_text as "Subtitle codec 94213 is not
+    # supported"). One quick ffprobe per remux — negligible cost vs.
+    # the whole-file copy that follows.
+    sub_codecs = await _probe_subtitle_stream_codecs(input_path)
+
+    cmd = build_remux_cmd(
+        input_path, temp_path, keep_audio_indices,
+        keep_subtitle_indices=keep_subtitle_indices,
+        subtitle_stream_codecs=sub_codecs or None,
+    )
     # Used by the worker to populate update_conversion_log so the
     # Completed tab's expanded view has something to show on
     # audio-only jobs (track-removal cleanup pass that follows a
