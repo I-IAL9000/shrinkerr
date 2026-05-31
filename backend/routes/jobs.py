@@ -1359,8 +1359,57 @@ async def retry_job(job_id: int):
                         msg = "The file was already converted in a previous run. Marked the job as completed."
                     return {"status": "completed", "job_id": job_id, "message": msg, "new_path": candidate}
 
-    await _queue.update_status(job_id, "pending")
-    return {"status": "pending", "job_id": job_id}
+    # v0.7.21: escalate a type='audio' retry to 'combined' when the source
+    # still needs video conversion.
+    #
+    # Background: when a combined convert+cleanup job's video re-encode is
+    # discarded (e.g. NVENC crash + software-decode retry left a larger
+    # output, or the encoded file would have been bigger than the original),
+    # queue.py spawns an audio-only follow-up that does just the track
+    # cleanup on the unchanged h264 source. If that follow-up fails (e.g.
+    # the v0.7.18 mov_text issue) and the user clicks "retry", the old
+    # code re-ran the SAME job_type — so retry of an audio-only job did
+    # only sub-cleanup and left the file h264, even though the user
+    # expected the full h265 convert.
+    #
+    # Heuristic: if the source file still needs_conversion (per its
+    # scan_results row), the user intent on retry is the full convert.
+    # Escalate the job in place. Audio-only retries on already-h265
+    # sources stay as-is (legitimate track-cleanup use case).
+    escalated = False
+    if row and row["job_type"] == "audio" and row["file_path"]:
+        fp = row["file_path"]
+        if _os.path.exists(fp):
+            db_check = await connect_db()
+            try:
+                async with db_check.execute(
+                    "SELECT needs_conversion FROM scan_results WHERE file_path = ?",
+                    (fp,),
+                ) as cur:
+                    sr = await cur.fetchone()
+                if sr and sr["needs_conversion"]:
+                    await db_check.execute(
+                        "UPDATE jobs SET job_type = 'combined', status = 'pending', "
+                        "error_log = NULL WHERE id = ?",
+                        (job_id,),
+                    )
+                    await db_check.commit()
+                    escalated = True
+                    print(
+                        f"[RETRY] Escalated job {job_id} from audio → combined "
+                        f"(source still needs h265 convert): {fp}",
+                        flush=True,
+                    )
+            finally:
+                await db_check.close()
+
+    if not escalated:
+        await _queue.update_status(job_id, "pending")
+    return {
+        "status": "pending",
+        "job_id": job_id,
+        **({"escalated": "audio→combined"} if escalated else {}),
+    }
 
 
 @router.post("/clear-completed")

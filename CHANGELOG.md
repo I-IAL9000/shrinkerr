@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.21] — 2026-05-31
+
+### Fixed
+- **Retrying a failed combined-encode job now actually re-runs the convert.** When a combined convert+cleanup job's video re-encode got discarded (e.g. NVENC crash, or the encoded output was larger than the original), the queue spawned an audio-only follow-up to apply the track cleanup without re-encoding. If that follow-up failed and the user clicked "retry", the old code re-ran the same audio-only job — so the source stayed h264 even though the user expected a fresh h265 convert. v0.7.21 escalates type='audio' retries to type='combined' when the source's `scan_results.needs_conversion` flag is still set. Audio-only retries on already-h265 sources stay as-is (legitimate track-cleanup use case). The response now returns `{"escalated": "audio→combined"}` when the upgrade fires.
+
 ## [0.7.20] — 2026-05-31
 
 ### Fixed
