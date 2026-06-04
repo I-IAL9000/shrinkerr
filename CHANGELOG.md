@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.23] — 2026-05-31
+
+### Fixed
+- **Manual scans now have the same per-subfolder partial-mount protection as the watcher.** v0.7.22 added a per-subfolder >50%-stale belt to the watcher's auto-removal, but `_scan_worker_process`'s orphan cleanup (the cleanup that runs after a user-initiated scan) didn't have it — a manual scan while a nested mount was pending would still delete every row under the affected subfolder. v0.7.23 mirrors the belt to the scanner side with the same threshold and log shape. **Known trade-off:** legitimate bulk moves now leave stale rows at the old path until manually cleaned from the UI — biased toward not-losing-data given the partial-mount loss has recurred three times.
+
 ## [0.7.22] — 2026-05-31
 
 ### Fixed

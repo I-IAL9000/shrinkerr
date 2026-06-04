@@ -244,16 +244,94 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             "INSERT OR IGNORE INTO _seen_paths (file_path) VALUES (?)",
                             [(p,) for p in seen_paths],
                         )
-                    deleted_total = 0
+
+                    # v0.7.23: per-subfolder sanity belt — mirror of the
+                    # v0.7.22 watcher fix. If any immediate subdirectory
+                    # under a walked path would lose >50% of its known
+                    # rows in this scan, preserve them (likely partial
+                    # mount / unmounted subvolume). User-initiated scans
+                    # weren't immune to the partial-mount problem either:
+                    # if a user scans /media/M2T2 while a nested TV1
+                    # mount is still pending, the walk finds the other
+                    # subfolders but not TV1, flagging every TV1 row
+                    # stale. Same threshold + log shape as the watcher
+                    # belt so behavior is symmetric.
+                    from collections import defaultdict as _dd
+                    preserved_subs: set[str] = set()
                     for path in completed_paths:
-                        cur = db.execute(
-                            """DELETE FROM scan_results
+                        path_norm = path.rstrip("/")
+                        like_pat = path_norm + "/%"
+
+                        # The "would be deleted" set (same filter the
+                        # DELETE below uses), and the full known set.
+                        stale_rows = db.execute(
+                            """SELECT file_path FROM scan_results
                                WHERE file_path LIKE ?
                                  AND file_path NOT IN (SELECT file_path FROM _seen_paths)
                                  AND file_path NOT IN (
                                      SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
                                  )""",
-                            (path.rstrip("/") + "/%",),
+                            (like_pat,),
+                        ).fetchall()
+                        known_rows = db.execute(
+                            "SELECT file_path FROM scan_results WHERE file_path LIKE ?",
+                            (like_pat,),
+                        ).fetchall()
+
+                        def _first_sub(p: str, _root: str = path_norm) -> str | None:
+                            if not p.startswith(_root + "/"):
+                                return None
+                            rest = p[len(_root) + 1:]
+                            first = rest.split("/", 1)[0]
+                            return f"{_root}/{first}" if first else None
+
+                        known_by_sub: dict[str, int] = _dd(int)
+                        stale_by_sub: dict[str, int] = _dd(int)
+                        for (fp,) in known_rows:
+                            s = _first_sub(fp)
+                            if s:
+                                known_by_sub[s] += 1
+                        for (fp,) in stale_rows:
+                            s = _first_sub(fp)
+                            if s:
+                                stale_by_sub[s] += 1
+
+                        for sub, stale_n in stale_by_sub.items():
+                            known_n = known_by_sub.get(sub, 0)
+                            if known_n > 0 and stale_n > known_n // 2:
+                                preserved_subs.add(sub)
+                                print(
+                                    f"[SCANNER] subfolder {sub!r} would lose "
+                                    f"{stale_n}/{known_n} rows this scan (>50%); "
+                                    f"preserving (likely partial mount / "
+                                    f"unmounted subvolume). For legitimate "
+                                    f"bulk moves, clean stale rows from the UI.",
+                                    flush=True,
+                                )
+
+                    deleted_total = 0
+                    for path in completed_paths:
+                        path_norm = path.rstrip("/")
+                        like_pat = path_norm + "/%"
+                        # Inject `AND file_path NOT LIKE '<sub>/%'` per
+                        # preserved subfolder under this walked path.
+                        preserved_here = [
+                            s for s in preserved_subs
+                            if s.startswith(path_norm + "/")
+                        ]
+                        not_likes = ""
+                        params: list = [like_pat]
+                        for s in preserved_here:
+                            not_likes += " AND file_path NOT LIKE ?"
+                            params.append(s + "/%")
+                        cur = db.execute(
+                            f"""DELETE FROM scan_results
+                               WHERE file_path LIKE ?{not_likes}
+                                 AND file_path NOT IN (SELECT file_path FROM _seen_paths)
+                                 AND file_path NOT IN (
+                                     SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
+                                 )""",
+                            params,
                         )
                         deleted_total += cur.rowcount
                     db.commit()
