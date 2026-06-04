@@ -1220,11 +1220,10 @@ class FileWatcher:
         raw_stale = known_paths - disk_files
         stale_path_set = {p for p in raw_stale if _is_under_walked(p)}
 
-        # Sanity belt: if a single cycle would flag more than half of the
-        # walked-dir rows as stale, something is wrong (network mount
-        # hiccup, unreadable dir, filesystem permission issue, …). Abort
-        # stale-removal for this cycle and log loudly. Defensive against
-        # bug classes we haven't thought of yet.
+        # Sanity belt #1 — global: if a single cycle would flag more than
+        # half of the walked-dir rows as stale, something is wrong
+        # (network mount hiccup, unreadable dir, filesystem permission
+        # issue, …). Abort stale-removal for this cycle and log loudly.
         walked_known = {p for p in known_paths if _is_under_walked(p)}
         if walked_known and len(stale_path_set) > len(walked_known) // 2:
             print(
@@ -1234,6 +1233,61 @@ class FileWatcher:
                 flush=True,
             )
             stale_path_set = set()
+
+        # Sanity belt #2 (v0.7.22) — per-subfolder: if any IMMEDIATE
+        # subdirectory of a walked media_dir would lose >50% of its
+        # known rows in one cycle, preserve them. Catches the
+        # partial-mount race the global belt misses: when a Synology
+        # mount comes up but a nested mount under it (e.g. .../TV1) is
+        # still pending, the watcher walks the parent, finds the
+        # *other* subfolders, and would flag every TV1 row stale —
+        # which is only ~10-30 % of total library files, so the global
+        # belt doesn't trip. v0.7.7 had this gap; v0.7.22 closes it.
+        def _first_subfolder(p: str) -> Optional[str]:
+            """Return `<media_dir>/<top-subdir>` of `p`, or None if `p` is
+            at a media_dir's root level. Used to group rows for the
+            per-subfolder ratio check."""
+            for d in walked_dirs:
+                d_norm = d.rstrip("/")
+                if p == d_norm or not p.startswith(d_norm + "/"):
+                    continue
+                rest = p[len(d_norm) + 1:]
+                first_seg = rest.split("/", 1)[0]
+                if first_seg:
+                    return f"{d_norm}/{first_seg}"
+            return None
+
+        if stale_path_set:
+            from collections import defaultdict as _dd
+            known_by_sub: dict[str, int] = _dd(int)
+            stale_by_sub: dict[str, int] = _dd(int)
+            for p in walked_known:
+                sub = _first_subfolder(p)
+                if sub:
+                    known_by_sub[sub] += 1
+            for p in stale_path_set:
+                sub = _first_subfolder(p)
+                if sub:
+                    stale_by_sub[sub] += 1
+
+            preserved_subs: set[str] = set()
+            for sub, stale_n in stale_by_sub.items():
+                known_n = known_by_sub.get(sub, 0)
+                if known_n > 0 and stale_n > known_n // 2:
+                    preserved_subs.add(sub)
+                    print(
+                        f"[WATCHER] subfolder {sub!r} would lose "
+                        f"{stale_n}/{known_n} rows this cycle (>50%); "
+                        f"preserving (likely partial mount / unmounted "
+                        f"subvolume). Trigger a manual rescan once the "
+                        f"mount is back if anything's stale-for-real.",
+                        flush=True,
+                    )
+            if preserved_subs:
+                stale_path_set = {
+                    p for p in stale_path_set
+                    if _first_subfolder(p) not in preserved_subs
+                }
 
         # Pre-filter ignored files and recently converted files
         db = await aiosqlite.connect(self.db_path)

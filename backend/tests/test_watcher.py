@@ -628,6 +628,87 @@ async def test_stale_removal_v077_preserves_rows_under_unmounted_dir(test_db, tm
 
 
 @pytest.mark.asyncio
+async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvolume(test_db, tmp_path):
+    """v0.7.22 per-subfolder sanity belt — when a Synology-style nested
+    mount under a walked media_dir hasn't come up yet, every row under
+    that specific subfolder gets flagged stale (because the walker
+    finds the other subfolders but not this one). The global >50%
+    belt misses this when the unmounted subfolder is <50% of the
+    library. v0.7.22 protects each subfolder individually: any
+    subfolder losing >50% of its known rows in one cycle is preserved.
+    """
+    import aiosqlite
+
+    # Single media_dir with two subfolders. Both are physically present
+    # at scan time, but `TV1/` is empty (simulates a delayed mount).
+    media_dir = tmp_path / "TVShare"
+    media_dir.mkdir()
+    tv1 = media_dir / "TV1"
+    tv1.mkdir()
+    # TV1 is empty — no files inside
+    tv2 = media_dir / "TV2"
+    tv2.mkdir()
+    # TV2 has one real file on disk so the global belt sees plenty of healthy rows
+    tv2_real = tv2 / "show.mkv"
+    tv2_real.touch()
+
+    media_path = str(media_dir)
+
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)",
+            (media_path,),
+        )
+        # TV2 row matching the real file → won't be stale.
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+            (str(tv2_real), 0, "2026-05-31T00:00:00Z"),
+        )
+        # 9 TV2 rows that DO match files (10 total, 1 is real one above).
+        # Seed extras so the global library size is comfortably big.
+        for i in range(9):
+            f = tv2 / f"show_{i}.mkv"
+            f.touch()
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (str(f), 0, "2026-05-31T00:00:00Z"),
+            )
+        # 3 TV1 rows that DON'T match files (nothing in TV1 on disk).
+        # Pre-v0.7.22 these would all be deleted (3 stale out of 13 total
+        # = ~23% global, doesn't trip the global belt). Per-subfolder
+        # belt should fire — TV1 alone is 100% stale (3/3).
+        for i in range(3):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (f"{tv1}/missing_{i}.mkv", 0, "2026-05-31T00:00:00Z"),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await watcher.check_once()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM scan_results WHERE file_path LIKE ?",
+            (f"{tv1}/%",),
+        ) as cur:
+            tv1_remaining = (await cur.fetchone())["n"]
+    finally:
+        await db.close()
+
+    assert tv1_remaining == 3, (
+        f"TV1 rows = {tv1_remaining}, expected 3. Per-subfolder belt didn't "
+        f"fire — the v0.7.22 partial-mount-protection regression hit."
+    )
+
+
+@pytest.mark.asyncio
 async def test_stale_removal_v077_sanity_belt_aborts_on_majority_stale(test_db, tmp_path):
     """If a single cycle would flag >50% of walked-dir rows as stale
     (e.g. unreadable mount, NFS hiccup), abort stale-removal entirely

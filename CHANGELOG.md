@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.22] — 2026-05-31
+
+### Fixed
+- **Per-subfolder protection against partial-mount stale-row deletion.** v0.7.7 added a global >50% sanity belt that aborts stale-row removal when more than half the library would be flagged stale in one cycle — fixes the unmounted-media_dir case. But that belt misses when a single subfolder under a walked media_dir is the unmounted one: a delayed Synology nested mount under `/media/.../TV1` leaves TV1 empty during the walk, every TV1 row gets flagged stale, and if TV1 is <50% of the library the global belt doesn't trip. v0.7.22 adds a per-subfolder sanity belt: any immediate subdirectory of a walked media_dir losing >50% of its known rows in one cycle is preserved (treated as likely partial-mount). Trigger a manual rescan once the mount is back to refresh those rows.
+
 ## [0.7.21] — 2026-05-31
 
 ### Fixed
