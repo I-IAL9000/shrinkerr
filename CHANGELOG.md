@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.25] — 2026-05-31
+
+### Fixed
+- **Per-subfolder belt was over-protective on small folders.** v0.7.22/23 preserved rows whenever a subfolder lost >50% in one cycle — which correctly caught the 20K-file partial-mount loss, but also caught "deleted a movie folder with 1 file" (100% missing for that subfolder) and refused to clean those rows. v0.7.25 adds a `MIN_BELT_PROTECTED_SIZE` threshold (default 5, env-tunable via `SHRINKERR_BELT_MIN_SIZE`): the belt only fires for subfolders with at least 5 known rows. Below that, recovery is trivial (one rescan, handful of files) and cleanup proceeds normally. Catastrophic-loss protection unchanged for large folders.
+
 ## [0.7.24] — 2026-05-31
 
 ### Fixed

@@ -19,6 +19,24 @@ def _safe_int(s, default):
         return default
 
 
+# v0.7.25: minimum known-row count a subfolder must have for the v0.7.22
+# per-subfolder >50%-stale sanity belt to actually fire. Below this, the
+# belt steps aside and stale rows are cleaned up normally. Rationale:
+# the belt's value is protecting against catastrophic loss (e.g. a 20K-
+# file TV1 mount disappearing); its cost is false-preserving small
+# legitimate deletes (deleting a movie's folder = 1-2 rows = 100%
+# missing for that subfolder). At 5, the cutoff matches normal media
+# folder structure: per-movie folders (1-3 files) clean up normally,
+# season folders (8-22 episodes) stay protected.
+#
+# Tunable via SHRINKERR_BELT_MIN_SIZE env var. Set to 1 to make the
+# belt fire on any-size subfolder (pre-v0.7.25 behavior).
+try:
+    MIN_BELT_PROTECTED_SIZE = max(1, int(os.environ.get("SHRINKERR_BELT_MIN_SIZE", "5")))
+except ValueError:
+    MIN_BELT_PROTECTED_SIZE = 5
+
+
 class FileWatcher:
     def __init__(self, db_path: str, interval_minutes: int = 5):
         self.db_path = db_path
@@ -1273,7 +1291,15 @@ class FileWatcher:
             preserved_subs: set[str] = set()
             for sub, stale_n in stale_by_sub.items():
                 known_n = known_by_sub.get(sub, 0)
-                if known_n > 0 and stale_n > known_n // 2:
+                # v0.7.25: only fire the belt for subfolders meaningful
+                # enough that losing rows by mistake is expensive to
+                # recover. Below MIN_BELT_PROTECTED_SIZE, fall through
+                # to normal cleanup — recovery cost is trivial (one
+                # rescan, handful of files).
+                if (
+                    known_n >= MIN_BELT_PROTECTED_SIZE
+                    and stale_n > known_n // 2
+                ):
                     preserved_subs.add(sub)
                     print(
                         f"[WATCHER] subfolder {sub!r} would lose "

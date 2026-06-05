@@ -665,20 +665,22 @@ async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvol
             "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
             (str(tv2_real), 0, "2026-05-31T00:00:00Z"),
         )
-        # 9 TV2 rows that DO match files (10 total, 1 is real one above).
-        # Seed extras so the global library size is comfortably big.
-        for i in range(9):
+        # 19 more TV2 rows that DO match files (20 total). Seeded big
+        # enough that TV1's missing rows stay under the global 50% belt.
+        for i in range(19):
             f = tv2 / f"show_{i}.mkv"
             f.touch()
             await db.execute(
                 "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
                 (str(f), 0, "2026-05-31T00:00:00Z"),
             )
-        # 3 TV1 rows that DON'T match files (nothing in TV1 on disk).
-        # Pre-v0.7.22 these would all be deleted (3 stale out of 13 total
-        # = ~23% global, doesn't trip the global belt). Per-subfolder
-        # belt should fire — TV1 alone is 100% stale (3/3).
-        for i in range(3):
+        # 8 TV1 rows that DON'T match files (nothing in TV1 on disk).
+        # 8 is ABOVE the v0.7.25 MIN_BELT_PROTECTED_SIZE threshold (5),
+        # so the per-subfolder belt should still fire. Pre-v0.7.22 these
+        # would all be deleted (8 stale out of 28 total = ~29% global,
+        # under the global belt). Per-subfolder belt fires — TV1 alone
+        # is 100% stale (8/8) and over the size threshold.
+        for i in range(8):
             await db.execute(
                 "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
                 (f"{tv1}/missing_{i}.mkv", 0, "2026-05-31T00:00:00Z"),
@@ -702,9 +704,77 @@ async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvol
     finally:
         await db.close()
 
-    assert tv1_remaining == 3, (
-        f"TV1 rows = {tv1_remaining}, expected 3. Per-subfolder belt didn't "
+    assert tv1_remaining == 8, (
+        f"TV1 rows = {tv1_remaining}, expected 8. Per-subfolder belt didn't "
         f"fire — the v0.7.22 partial-mount-protection regression hit."
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_removal_v0725_small_subfolder_below_threshold_cleans_up(test_db, tmp_path):
+    """v0.7.25 size threshold — a tiny subfolder that goes empty (e.g. a
+    movie folder with 1 file or a 2-episode show, all legitimately
+    deleted) should NOT trip the per-subfolder belt. Below the
+    MIN_BELT_PROTECTED_SIZE cutoff (5), recovery is trivial and the
+    bias should be toward cleanup, not preservation.
+    """
+    import aiosqlite
+
+    media_dir = tmp_path / "Library"
+    media_dir.mkdir()
+    # A "Movies" subfolder that's now empty — user deleted the only movie.
+    deleted_movie_dir = media_dir / "Movies"
+    deleted_movie_dir.mkdir()
+    # A "Bigger" subfolder with real files so the global belt doesn't fire.
+    bigger = media_dir / "Bigger"
+    bigger.mkdir()
+    for i in range(20):
+        (bigger / f"f_{i}.mkv").touch()
+
+    media_path = str(media_dir)
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)",
+            (media_path,),
+        )
+        # 2 rows under the now-empty Movies subfolder (under threshold).
+        # This simulates: a 2-episode show or 2 movies, all deleted.
+        for i in range(2):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (f"{deleted_movie_dir}/movie_{i}.mkv", 0, "2026-05-31T00:00:00Z"),
+            )
+        # 20 rows matching the real Bigger files.
+        for i in range(20):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (str(bigger / f"f_{i}.mkv"), 0, "2026-05-31T00:00:00Z"),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await watcher.check_once()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM scan_results WHERE file_path LIKE ?",
+            (f"{deleted_movie_dir}/%",),
+        ) as cur:
+            remaining = (await cur.fetchone())["n"]
+    finally:
+        await db.close()
+
+    assert remaining == 0, (
+        f"Below-threshold subfolder still has {remaining} rows; the v0.7.25 "
+        f"size threshold isn't filtering them through to cleanup. The user-"
+        f"reported scenario (deleted a couple of movies / a 2-episode show "
+        f"that watcher refused to clean) would still recur."
     )
 
 

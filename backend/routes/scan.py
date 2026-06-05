@@ -296,9 +296,17 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             if s:
                                 stale_by_sub[s] += 1
 
+                        # v0.7.25: only fire the belt for subfolders with
+                        # enough known rows to be worth protecting. Below
+                        # MIN_BELT_PROTECTED_SIZE recovery is trivial, so
+                        # fall through to normal cleanup. Mirrors watcher.
+                        from backend.watcher import MIN_BELT_PROTECTED_SIZE
                         for sub, stale_n in stale_by_sub.items():
                             known_n = known_by_sub.get(sub, 0)
-                            if known_n > 0 and stale_n > known_n // 2:
+                            if (
+                                known_n >= MIN_BELT_PROTECTED_SIZE
+                                and stale_n > known_n // 2
+                            ):
                                 preserved_subs.add(sub)
                                 print(
                                     f"[SCANNER] subfolder {sub!r} would lose "
