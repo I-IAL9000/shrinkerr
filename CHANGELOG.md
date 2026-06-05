@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.27] — 2026-05-31
+
+### Added
+- **macOS native install documentation** (`docs/native-install-mac.md`). Docker on Mac runs Linux containers in a VM that can't reach Apple's VideoToolbox encoder — performance is roughly 1 fps for software x265 vs. 30–100 fps native with VideoToolbox. New page covers brew prereqs, Python venv setup, frontend build, a `custom_ffmpeg_flags` recipe to invoke `hevc_videotoolbox` until it's a first-class encoder option, launchd service file, and troubleshooting. README + installation.md + troubleshooting.md updated to point Mac users at the native path.
+
 ## [0.7.26] — 2026-05-31
 
 ### Changed

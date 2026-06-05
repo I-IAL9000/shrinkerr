@@ -10,6 +10,7 @@ other scenario people actually hit.
 - [NVIDIA GPU setup](#nvidia-gpu-setup)
   - [Linux host](#linux-host)
   - [Windows + WSL2](#windows--wsl2)
+- [macOS — native install for VideoToolbox](#macos--native-install-for-videotoolbox)
 - [Reverse proxy setups](#reverse-proxy-setups)
   - [Traefik](#traefik)
   - [Caddy](#caddy)
@@ -268,6 +269,26 @@ is 2.14–2.17. v0.3.88+ images build libva 2.22.0 from source during
 image creation and replace the system `libva.so.2` with it. The
 existing iHD / mesa-va drivers (compiled against the older libva)
 continue working since libva 2.x is ABI-stable. Pull v0.3.88+ to fix.
+
+## macOS — native install for VideoToolbox
+
+Docker on macOS runs Linux containers inside a VM that can't reach
+Apple's hardware video encoder (VideoToolbox). The `:latest` image
+works on Mac but only via software encoding (libx265), which clocks at
+roughly **1 fps** on Apple Silicon — usable for a one-off conversion,
+useless for a library.
+
+Native install (no Docker) gives you direct access to VideoToolbox via
+brew's ffmpeg, reaching ~30–100 fps for h265 encoding. The trade-off:
+slightly more setup than `docker compose up -d`, and VideoToolbox isn't
+yet a first-class encoder option in the Settings UI — you use it via
+the `custom_ffmpeg_flags` setting as a workaround until proper
+integration lands.
+
+Full walkthrough: [Running Shrinkerr natively on macOS](native-install-mac.md).
+Covers brew prereqs, Python venv setup, the frontend build, the
+VideoToolbox `custom_ffmpeg_flags` recipe, launchd service file for
+auto-start, and troubleshooting.
 
 ## Reverse proxy setups
 

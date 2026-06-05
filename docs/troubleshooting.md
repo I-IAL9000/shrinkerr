@@ -99,6 +99,10 @@ local disk. Options:
 - Mount via a faster protocol (SMB3 + multichannel, NFS4)
 - Move the worker to a host with local disk access
 - Accept the speed — a worker at 30 fps is still useful on a long queue
+- **Run the Mac native** (no Docker) so ffmpeg can reach VideoToolbox.
+  See [Running Shrinkerr natively on macOS](native-install-mac.md).
+  Real-world numbers: ~30–100 fps with `hevc_videotoolbox` vs. ~1 fps
+  for `libx265` inside Docker on the same machine.
 
 ### Worker registered but never picks up jobs
 
