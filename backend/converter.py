@@ -847,6 +847,51 @@ def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> 
 rename_x264_to_x265 = rename_source_to_target_codec
 
 
+def rename_resolution_in_filename(filename: str, target_resolution: str | None) -> str:
+    """Rewrite resolution tags in `filename` to match the encoder's
+    target resolution. Used when downscaling (e.g. 2160p → 1080p) so the
+    output file is named after what it actually IS, not what the source
+    was. Pre-v0.7.24 a 2160p→1080p downscale kept "2160p" in the
+    filename — misleading and a UX papercut.
+
+    `target_resolution`: one of `"copy"` / `None` (no change) or
+    `"1080p"`, `"720p"`, `"480p"` (the values in `RESOLUTION_MAP`).
+
+    Tokens rewritten:
+      - Pixel-suffix forms: `2160p` / `1080p` / `720p` / `576p` / `480p`
+        / `360p` / `240p` (case-insensitive)
+      - Colloquial 2160p markers: `4K` / `UHD` (case-insensitive on UHD;
+        4K matched as-is since 4k can collide with real words elsewhere)
+
+    Examples:
+      ("Movie 2160p UHD x265-GRP.mkv", "1080p") → "Movie 1080p x265-GRP.mkv"
+      ("Movie 1080p x264.mkv",         "720p")  → "Movie 720p x264.mkv"
+      ("Movie 1080p x264.mkv",         "copy")  → "Movie 1080p x264.mkv"
+    """
+    if not target_resolution or target_resolution == "copy":
+        return filename
+    result = filename
+    # Pixel-suffix resolution tokens.
+    result = re.sub(
+        r'\b(?:2160|1080|720|576|480|360|240)p\b',
+        target_resolution, result, flags=re.IGNORECASE,
+    )
+    # Colloquial 2160p tags. `4K` is matched as-is (case-sensitive) to
+    # avoid clobbering real words; `UHD` is fine case-insensitive.
+    result = re.sub(r'\b4K\b', target_resolution, result)
+    result = re.sub(r'\bUHD\b', target_resolution, result, flags=re.IGNORECASE)
+    # Collapse repeated target tokens that the rewrite may have produced
+    # (e.g. "2160p UHD" → "1080p 1080p" → "1080p"), regardless of the
+    # separator between them (space, dot, dash, underscore).
+    result = re.sub(
+        rf'\b{re.escape(target_resolution)}\b(?:[\s._\-]+\b{re.escape(target_resolution)}\b)+',
+        target_resolution, result,
+    )
+    # Tidy double-spaces left by adjacent token removal.
+    result = re.sub(r'  +', ' ', result)
+    return result
+
+
 # Map ffprobe codec names to common filename tags
 AUDIO_CODEC_DISPLAY = {
     "eac3": "EAC3",
@@ -1029,6 +1074,7 @@ async def build_disc_output_filename(
     disc_type: str,
     probe_data: dict,
     encoder: str | None = None,
+    target_resolution: str | None = None,
 ) -> str:
     """Construct a scene-style output filename for a converted disc.
 
@@ -1091,18 +1137,25 @@ async def build_disc_output_filename(
         base_name,
     ).strip()
 
-    # Resolution token from probe video height
-    h = int(probe_data.get("video_height") or 0)
-    if h >= 2000:
-        res = "2160p"
-    elif h >= 1000:
-        res = "1080p"
-    elif h >= 700:
-        res = "720p"
-    elif h >= 560:
-        res = "576p"  # PAL DVD typical
+    # Resolution token. v0.7.24: when the encoder is downscaling, prefer
+    # the target resolution over the probe-derived source height — the
+    # output file IS the target resolution, not the source's. `None` /
+    # `"copy"` falls through to the probe height (no scaling = source
+    # label is accurate).
+    if target_resolution and target_resolution != "copy":
+        res = target_resolution
     else:
-        res = "480p"  # NTSC DVD typical
+        h = int(probe_data.get("video_height") or 0)
+        if h >= 2000:
+            res = "2160p"
+        elif h >= 1000:
+            res = "1080p"
+        elif h >= 700:
+            res = "720p"
+        elif h >= 560:
+            res = "576p"  # PAL DVD typical
+        else:
+            res = "480p"  # NTSC DVD typical
 
     source_quality = "Bluray" if disc_type == "bdmv" else "DVDRip"
 
@@ -1133,18 +1186,34 @@ async def build_disc_output_filename(
     return str(output_dir / name)
 
 
-def get_output_path(input_path: str, suffix: str = "", encoder: str | None = None) -> str:
-    """Return the final output path: rename codec tag, add suffix, and change extension to .mkv.
+def get_output_path(
+    input_path: str,
+    suffix: str = "",
+    encoder: str | None = None,
+    target_resolution: str | None = None,
+) -> str:
+    """Return the final output path: rename codec tag, normalise source
+    quality, optionally rewrite the resolution tag, add suffix, and
+    change extension to .mkv.
 
     `encoder` is threaded through so libx265 output gets `x265` and
     NVENC output gets `h265` — the scene convention that distinguishes
     software-encoder tags from codec tags.
+
+    `target_resolution` (v0.7.24+) is the resolution the encoder is
+    actually targeting. When set to `"1080p"` / `"720p"` / `"480p"`,
+    any source resolution token in the filename (`2160p`, `1080p`,
+    `4K`, `UHD`, …) gets rewritten to that target. `None` / `"copy"`
+    leaves the resolution alone (no scaling means the source label
+    is still accurate).
     """
     p = Path(input_path)
     new_stem = rename_source_to_target_codec(p.stem, encoder=encoder)
     # v0.5.18: normalize disc-tier source tags (BR-DISK→Bluray, DVD-R→DVDRip)
     # since the re-encoded file is no longer a disc rip.
     new_stem = rename_source_quality_in_filename(new_stem)
+    # v0.7.24: rewrite the resolution tag when the encoder is downscaling.
+    new_stem = rename_resolution_in_filename(new_stem, target_resolution)
     if suffix:
         new_stem = new_stem + suffix
     return str(p.parent / (new_stem + ".mkv"))
@@ -1921,6 +1990,17 @@ async def convert_file(
             ),
         }
 
+    # v0.7.24: resolve the target resolution BEFORE building the output
+    # filename so a downscale (e.g. 2160p → 1080p) is reflected in the
+    # filename. Pre-v0.7.24 this was computed ~60 lines below the output
+    # filename construction, so the source "2160p" token survived into
+    # the output name. The actual encoder uses the same resolved value.
+    target_resolution = (
+        override_target_resolution
+        if override_target_resolution is not None
+        else live_settings.get("target_resolution", "copy")
+    )
+
     # v0.6.0: compute output + temp paths now that disc_type is known.
     # Regular files: existing get_output_path / get_temp_path behaviour.
     # Disc inputs: filename built from disc-root folder name + probe tokens
@@ -1932,10 +2012,14 @@ async def convert_file(
     if disc_type and probe_data:
         final_path = await build_disc_output_filename(
             input_path, disc_type, probe_data, encoder=encoder,
+            target_resolution=target_resolution,
         )
         temp_path = str(Path(final_path).with_suffix(".converting.mkv"))
     else:
-        final_path = get_output_path(input_path, suffix=filename_suffix, encoder=encoder)
+        final_path = get_output_path(
+            input_path, suffix=filename_suffix, encoder=encoder,
+            target_resolution=target_resolution,
+        )
         temp_path = get_temp_path(input_path)
 
     # Build inline keep-list for audio:
@@ -1996,7 +2080,10 @@ async def convert_file(
         elif not kept:
             print("[CONVERT] Warning: audio_tracks_to_remove would drop ALL tracks — ignoring", flush=True)
 
-    target_resolution = override_target_resolution if override_target_resolution is not None else live_settings.get("target_resolution", "copy")
+    # v0.7.24: target_resolution is now resolved earlier (before
+    # get_output_path / build_disc_output_filename) so the output
+    # filename reflects the downscaled resolution. The same resolved
+    # value flows through to the encoder below.
 
     if encoder == "libx265":
         active_preset, active_quality = libx265_preset, f"crf={crf}"

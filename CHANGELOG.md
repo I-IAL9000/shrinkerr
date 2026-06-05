@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.24] — 2026-05-31
+
+### Fixed
+- **Downscaled output filenames now reflect the new resolution.** A 2160p→1080p conversion produced `…2160p UHD x265…` filenames because `get_output_path` (and the disc-equivalent `build_disc_output_filename`) only rewrote the codec tag — the resolution tag passed through unchanged. v0.7.24 adds `rename_resolution_in_filename` which rewrites `2160p` / `1080p` / `720p` / `576p` / `480p` (any pixel-suffix form) plus colloquial `4K` / `UHD` markers when the encoder is downscaling. `target_resolution` is now threaded through both the regular-file and disc-file output-path builders and matches the value actually fed to the encoder. `target_resolution="copy"` (no scaling) leaves the filename's resolution tag alone.
+
 ## [0.7.23] — 2026-05-31
 
 ### Fixed

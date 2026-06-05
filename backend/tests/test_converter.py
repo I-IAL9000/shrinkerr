@@ -3,6 +3,7 @@ from backend.converter import (
     build_ffmpeg_cmd,
     _build_ffmpeg_cmd_impl,
     rename_x264_to_x265,
+    rename_resolution_in_filename,
     get_output_path,
     get_temp_path,
     parse_ffmpeg_progress,
@@ -151,3 +152,74 @@ def test_parse_ffmpeg_progress_at_end():
     assert result is not None
     assert result["progress"] == 100.0
     assert result["eta_seconds"] == 0
+
+
+# ---------------------------------------------------------------------------
+# v0.7.24: resolution tag rewriting when downscaling.
+# ---------------------------------------------------------------------------
+
+def test_rename_resolution_2160_to_1080():
+    """The classic 2160p → 1080p downscale should rewrite the filename tag."""
+    assert rename_resolution_in_filename(
+        "Movie (2024) 2160p UHD x265-GRP", "1080p"
+    ) == "Movie (2024) 1080p x265-GRP", (
+        "2160p and the redundant UHD marker must both collapse to the target."
+    )
+
+
+def test_rename_resolution_4k_marker_replaced():
+    """Colloquial 4K marker (without a pixel suffix) gets rewritten too."""
+    assert rename_resolution_in_filename(
+        "Movie 4K Bluray x265", "1080p"
+    ) == "Movie 1080p Bluray x265"
+
+
+def test_rename_resolution_copy_leaves_filename_alone():
+    """target_resolution='copy' (no scaling) must NOT touch the resolution."""
+    assert rename_resolution_in_filename(
+        "Movie 2160p UHD x265", "copy"
+    ) == "Movie 2160p UHD x265"
+    # None should also be a no-op.
+    assert rename_resolution_in_filename(
+        "Movie 1080p x264", None
+    ) == "Movie 1080p x264"
+
+
+def test_rename_resolution_dot_separated():
+    """Scene-style dot-separated tokens (`Show.S01E01.2160p.UHD.x264-GRP`)
+    must be rewritten too — `\\b` boundaries handle non-letter separators."""
+    assert rename_resolution_in_filename(
+        "Show.S01E01.2160p.UHD.x264-GRP", "720p"
+    ) == "Show.S01E01.720p.x264-GRP", (
+        "dot-separated 2160p + UHD must collapse to a single 720p token."
+    )
+
+
+def test_rename_resolution_no_token_present():
+    """If the filename has no resolution token, leave it alone."""
+    assert rename_resolution_in_filename(
+        "Movie (2020) Bluray x264.mkv", "1080p"
+    ) == "Movie (2020) Bluray x264.mkv"
+
+
+def test_get_output_path_downscale_renames_resolution_and_codec():
+    """End-to-end: get_output_path should rename both codec AND resolution
+    when downscaling. Pre-v0.7.24 only the codec was renamed."""
+    out = get_output_path(
+        "/media/Movie (2024) 2160p UHD x264-GRP.mkv",
+        encoder="libx265",
+        target_resolution="1080p",
+    )
+    assert out.endswith("Movie (2024) 1080p x265-GRP.mkv"), (
+        f"got {out!r}, expected …Movie (2024) 1080p x265-GRP.mkv"
+    )
+
+
+def test_get_output_path_no_resolution_param_is_back_compat():
+    """Callers that don't pass target_resolution (back-compat) must get
+    pre-v0.7.24 behaviour: codec renamed, resolution untouched."""
+    out = get_output_path(
+        "/media/Movie 2160p x264.mkv",
+        encoder="libx265",
+    )
+    assert out.endswith("Movie 2160p x265.mkv"), f"got {out!r}"
