@@ -628,15 +628,21 @@ async def test_stale_removal_v077_preserves_rows_under_unmounted_dir(test_db, tm
 
 
 @pytest.mark.asyncio
-async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvolume(test_db, tmp_path):
+async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvolume(
+    test_db, tmp_path, monkeypatch,
+):
     """v0.7.22 per-subfolder sanity belt — when a Synology-style nested
     mount under a walked media_dir hasn't come up yet, every row under
     that specific subfolder gets flagged stale (because the walker
-    finds the other subfolders but not this one). The global >50%
-    belt misses this when the unmounted subfolder is <50% of the
-    library. v0.7.22 protects each subfolder individually: any
-    subfolder losing >50% of its known rows in one cycle is preserved.
+    finds the other subfolders but not this one). The belt protects
+    those rows.
+
+    v0.7.26+: the belt now fires on an absolute row-loss threshold
+    (≥ SHRINKERR_BELT_MIN_SIZE rows under one subfolder), not a >50%
+    percentage. This test overrides the threshold to a low value so
+    the fixture can use a manageable number of rows.
     """
+    monkeypatch.setenv("SHRINKERR_BELT_MIN_SIZE", "5")
     import aiosqlite
 
     # Single media_dir with two subfolders. Both are physically present
@@ -707,6 +713,86 @@ async def test_stale_removal_v0722_per_subfolder_belt_preserves_unmounted_subvol
     assert tv1_remaining == 8, (
         f"TV1 rows = {tv1_remaining}, expected 8. Per-subfolder belt didn't "
         f"fire — the v0.7.22 partial-mount-protection regression hit."
+    )
+
+
+@pytest.mark.asyncio
+async def test_stale_removal_v0726_multi_show_delete_cleans_up_under_disaster_threshold(
+    test_db, tmp_path,
+):
+    """v0.7.26 — user reported that deleting "a couple of shows" out of
+    thousands of files should not trip the belt. With the v0.7.22-7.25
+    >50%-percentage trigger, deleting an entire show (100% missing for
+    that subfolder) preserved the rows. v0.7.26 switches to an absolute
+    threshold (default 1000) so multi-show-scale deletes (typically
+    100-500 rows) clean up normally — only mount-loss-scale events
+    (1000+ rows under one subfolder) preserve.
+
+    Fixture seeds 200 stale rows under one "show" subfolder, well under
+    the default 1000 trigger but well over the pre-v0.7.26 >50% trigger.
+    Asserts those rows clean up (the user-reported pattern).
+    """
+    import aiosqlite
+
+    media_dir = tmp_path / "Library"
+    media_dir.mkdir()
+    # A "DeletedShow" subfolder that's been entirely removed.
+    deleted_show = media_dir / "DeletedShow"
+    deleted_show.mkdir()
+    # An "Active" subfolder with real files so the global belt doesn't
+    # fire. Needs enough active rows that 200 stale stays under 50% of
+    # total walked-known (the global belt's threshold). 500 active +
+    # 200 stale = 700 total → 200/700 = 28%, well clear.
+    active = media_dir / "Active"
+    active.mkdir()
+    for i in range(500):
+        (active / f"f_{i}.mkv").touch()
+
+    media_path = str(media_dir)
+    db = await aiosqlite.connect(test_db)
+    try:
+        await db.execute(
+            "INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)",
+            (media_path,),
+        )
+        # 200 rows under DeletedShow — simulates a long-running show
+        # (e.g. 10 seasons × 20 episodes) that the user fully deleted.
+        # 100% of that subfolder is missing; pre-v0.7.26 the >50% belt
+        # fired and refused to clean.
+        for i in range(200):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (f"{deleted_show}/ep_{i}.mkv", 0, "2026-05-31T00:00:00Z"),
+            )
+        # Active rows match files on disk.
+        for i in range(500):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, ?, ?)",
+                (str(active / f"f_{i}.mkv"), 0, "2026-05-31T00:00:00Z"),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    watcher = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await watcher.check_once()
+
+    db = await aiosqlite.connect(test_db)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute(
+            "SELECT COUNT(*) AS n FROM scan_results WHERE file_path LIKE ?",
+            (f"{deleted_show}/%",),
+        ) as cur:
+            remaining = (await cur.fetchone())["n"]
+    finally:
+        await db.close()
+
+    assert remaining == 0, (
+        f"Multi-show delete (200 rows) still preserved: {remaining} rows "
+        f"survived. The v0.7.26 absolute-threshold trigger should let "
+        f"sub-1000-row deletes clean up regardless of percentage."
     )
 
 

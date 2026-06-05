@@ -19,22 +19,28 @@ def _safe_int(s, default):
         return default
 
 
-# v0.7.25: minimum known-row count a subfolder must have for the v0.7.22
-# per-subfolder >50%-stale sanity belt to actually fire. Below this, the
-# belt steps aside and stale rows are cleaned up normally. Rationale:
-# the belt's value is protecting against catastrophic loss (e.g. a 20K-
-# file TV1 mount disappearing); its cost is false-preserving small
-# legitimate deletes (deleting a movie's folder = 1-2 rows = 100%
-# missing for that subfolder). At 5, the cutoff matches normal media
-# folder structure: per-movie folders (1-3 files) clean up normally,
-# season folders (8-22 episodes) stay protected.
+# v0.7.26: the per-subfolder belt now fires on an ABSOLUTE row-loss
+# threshold, not a percentage. Rationale: the belt is meant to catch
+# catastrophic disasters (mount loss, drive unmount) — not normal user
+# actions like deleting a show, even one with hundreds of episodes.
+# The pre-v0.7.26 ">50% of subfolder + ≥5 known rows" trigger fired on
+# any fully-deleted folder regardless of total file count; users with
+# scene-style per-folder layouts hit it on every legit delete.
 #
-# Tunable via SHRINKERR_BELT_MIN_SIZE env var. Set to 1 to make the
-# belt fire on any-size subfolder (pre-v0.7.25 behavior).
-try:
-    MIN_BELT_PROTECTED_SIZE = max(1, int(os.environ.get("SHRINKERR_BELT_MIN_SIZE", "5")))
-except ValueError:
-    MIN_BELT_PROTECTED_SIZE = 5
+# Switching to "≥ MIN_BELT_STALE_TRIGGER rows lost in one cycle for a
+# single subfolder" means a 100-episode show deletion (100 rows) cleans
+# up normally while a 20K-file mount loss is still protected.
+#
+# Tunable via SHRINKERR_BELT_MIN_SIZE env var (name kept for back-compat
+# with v0.7.25 — semantics changed). Lower it for small libraries where
+# 1000 is too high; raise it if even bulk-move false-positives bother you.
+def _belt_stale_trigger() -> int:
+    """Read the belt's stale-row trigger from env at call time.
+    Returns the default (1000) on parse error or unset."""
+    try:
+        return max(1, int(os.environ.get("SHRINKERR_BELT_MIN_SIZE", "1000")))
+    except ValueError:
+        return 1000
 
 
 class FileWatcher:
@@ -1289,21 +1295,20 @@ class FileWatcher:
                     stale_by_sub[sub] += 1
 
             preserved_subs: set[str] = set()
+            belt_trigger = _belt_stale_trigger()
             for sub, stale_n in stale_by_sub.items():
                 known_n = known_by_sub.get(sub, 0)
-                # v0.7.25: only fire the belt for subfolders meaningful
-                # enough that losing rows by mistake is expensive to
-                # recover. Below MIN_BELT_PROTECTED_SIZE, fall through
-                # to normal cleanup — recovery cost is trivial (one
-                # rescan, handful of files).
-                if (
-                    known_n >= MIN_BELT_PROTECTED_SIZE
-                    and stale_n > known_n // 2
-                ):
+                # v0.7.26: belt fires only on absolute row-loss volume.
+                # User actions (even big multi-show deletes) typically
+                # affect <1000 rows; mount-loss disasters affect 1000+
+                # in a single subfolder. Normal deletes flow through to
+                # cleanup unchanged.
+                if stale_n >= belt_trigger:
                     preserved_subs.add(sub)
                     print(
                         f"[WATCHER] subfolder {sub!r} would lose "
-                        f"{stale_n}/{known_n} rows this cycle (>50%); "
+                        f"{stale_n}/{known_n} rows this cycle "
+                        f"(>= {belt_trigger} disaster-trigger); "
                         f"preserving (likely partial mount / unmounted "
                         f"subvolume). Trigger a manual rescan once the "
                         f"mount is back if anything's stale-for-real.",

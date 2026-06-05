@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.26] — 2026-05-31
+
+### Changed
+- **Per-subfolder belt now triggers on absolute row count instead of percentage.** v0.7.22–25's `>50% of subfolder missing` trigger was the wrong signal — it fires on any entirely-deleted folder regardless of size, so deleting a single show (100% of that subfolder gone) still tripped preservation. The belt should only catch **catastrophic loss** (mount unmounted, drive failed) — typically 1000+ files lost from one subfolder. Switching to `≥ SHRINKERR_BELT_MIN_SIZE rows lost in one cycle` (default 1000) lets multi-show deletes, bulk renames, and even full-show wipes (100-500 rows) clean up normally while preserving genuine mount-loss patterns. **Tunable via the existing `SHRINKERR_BELT_MIN_SIZE` env var; semantics changed from "min subfolder size to protect" to "min absolute row-loss to trigger".**
+
 ## [0.7.25] — 2026-05-31
 
 ### Fixed

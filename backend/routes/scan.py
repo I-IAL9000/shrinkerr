@@ -296,21 +296,21 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             if s:
                                 stale_by_sub[s] += 1
 
-                        # v0.7.25: only fire the belt for subfolders with
-                        # enough known rows to be worth protecting. Below
-                        # MIN_BELT_PROTECTED_SIZE recovery is trivial, so
-                        # fall through to normal cleanup. Mirrors watcher.
-                        from backend.watcher import MIN_BELT_PROTECTED_SIZE
+                        # v0.7.26: belt fires only on absolute row-loss
+                        # volume — mirrors the watcher's threshold check.
+                        # User actions (deletes, even multi-show) flow
+                        # through to cleanup; only mount-loss-scale events
+                        # (1000+ rows under one subfolder) preserve.
+                        from backend.watcher import _belt_stale_trigger
+                        belt_trigger = _belt_stale_trigger()
                         for sub, stale_n in stale_by_sub.items():
                             known_n = known_by_sub.get(sub, 0)
-                            if (
-                                known_n >= MIN_BELT_PROTECTED_SIZE
-                                and stale_n > known_n // 2
-                            ):
+                            if stale_n >= belt_trigger:
                                 preserved_subs.add(sub)
                                 print(
                                     f"[SCANNER] subfolder {sub!r} would lose "
-                                    f"{stale_n}/{known_n} rows this scan (>50%); "
+                                    f"{stale_n}/{known_n} rows this scan "
+                                    f"(>= {belt_trigger} disaster-trigger); "
                                     f"preserving (likely partial mount / "
                                     f"unmounted subvolume). For legitimate "
                                     f"bulk moves, clean stale rows from the UI.",
