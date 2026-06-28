@@ -4,7 +4,7 @@ from backend.audio import build_remux_cmd
 
 def test_build_remux_keeps_specified_streams():
     cmd = build_remux_cmd("/media/movie.mkv", "/media/movie.remuxing.mkv", keep_audio_indices=[1, 3])
-    assert "0:v?" in cmd
+    assert "0:v:0?" in cmd
     assert "0:s?" in cmd
     assert "0:t?" in cmd
     assert "0:1" in cmd
@@ -27,10 +27,10 @@ def test_build_remux_single_audio_stream():
 
 def test_build_remux_no_audio_streams():
     cmd = build_remux_cmd("/media/film.mkv", "/media/film.remuxing.mkv", keep_audio_indices=[])
-    assert "0:v?" in cmd
+    assert "0:v:0?" in cmd
     assert "0:s?" in cmd
     # No audio map entries beyond video/subs/attachments
-    audio_maps = [cmd[i + 1] for i, x in enumerate(cmd) if x == "-map" and cmd[i + 1].startswith("0:") and cmd[i + 1] not in ("0:v?", "0:s?", "0:t?")]
+    audio_maps = [cmd[i + 1] for i, x in enumerate(cmd) if x == "-map" and cmd[i + 1].startswith("0:") and cmd[i + 1] not in ("0:v:0?", "0:s?", "0:t?")]
     assert audio_maps == []
 
 
@@ -38,7 +38,7 @@ def test_build_remux_preserves_map_order():
     cmd = build_remux_cmd("/media/movie.mkv", "/media/movie.remuxing.mkv", keep_audio_indices=[1, 2, 5])
     # Find all -map values
     maps = [cmd[i + 1] for i, x in enumerate(cmd) if x == "-map"]
-    assert maps.index("0:v?") < maps.index("0:s?")
+    assert maps.index("0:v:0?") < maps.index("0:s?")
     assert maps.index("0:s?") < maps.index("0:t?")
     # All requested audio indices present
     assert "0:1" in maps
@@ -99,3 +99,25 @@ def test_build_remux_no_codec_info_keeps_legacy_behavior():
     )
     assert "0:s?" in cmd
     assert cmd[cmd.index("-c") + 1] == "copy"
+
+
+# ---------------------------------------------------------------------------
+# v0.7.28: video map must be the FIRST video stream only, not all video
+# streams. `-map 0:v?` pulls in PNG/MJPEG cover-art (attached_pic), and
+# matroska fails the header write with "dimensions not set" → exit 234.
+# ---------------------------------------------------------------------------
+
+def test_build_remux_maps_only_first_video_not_all():
+    """The video map must be `0:v:0?` (first video stream), never `0:v?`
+    (all video, which sweeps in attached-pic cover art and breaks the
+    matroska mux)."""
+    cmd = build_remux_cmd(
+        "/media/movie.mkv", "/media/movie.remuxing.mkv",
+        keep_audio_indices=[1],
+    )
+    maps = [cmd[i + 1] for i, x in enumerate(cmd) if x == "-map"]
+    assert "0:v:0?" in maps, f"first-video map missing: {maps}"
+    assert "0:v?" not in maps, (
+        f"-map 0:v? present — would sweep in cover-art PNG and trip the "
+        f"matroska 'dimensions not set' mux failure (exit 234): {maps}"
+    )

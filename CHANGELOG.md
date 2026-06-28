@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.28] — 2026-06-28
+
+### Fixed
+- **Audio-cleanup remux failed with `dimensions not set` / `Could not write header` (exit 234)** on files with PNG/MJPEG cover art. The remux command mapped video with `-map 0:v?` (all video streams), which sweeps in attached-pic cover-art streams that the matroska muxer can't write a header for. Changed to `-map 0:v:0?` (first real video stream only), matching what the convert path already does. Cover art is dropped from the remux output, same as the convert path's deliberate behavior.
+
 ## [0.7.27] — 2026-05-31
 
 ### Added

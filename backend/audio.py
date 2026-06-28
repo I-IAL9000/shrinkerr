@@ -79,7 +79,17 @@ def build_remux_cmd(
     for es in ext_subs:
         cmd += ["-i", es["path"]]
 
-    cmd += ["-map", "0:v?"]
+    # v0.7.28: map ONLY the first real video stream, not all video
+    # streams. `-map 0:v?` (the pre-v0.7.28 form) maps every video
+    # stream INCLUDING PNG/MJPEG cover-art (attached_pic) streams. The
+    # matroska muxer then fails writing the header for the cover art
+    # with "dimensions not set" → "Could not write header (incorrect
+    # codec parameters?)" → exit 234. The convert path already maps
+    # `0:v:0` for exactly this reason (see converter.py); the remux
+    # path never got the same treatment. `0:v:0?` = first video stream,
+    # `?` so it doesn't error on the rare audio-only input. Cover art is
+    # dropped, matching the convert path's deliberate behavior.
+    cmd += ["-map", "0:v:0?"]
 
     # Subtitles: if indices provided, map selectively; otherwise keep all
     out_sub_idx = 0
