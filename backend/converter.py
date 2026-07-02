@@ -280,6 +280,15 @@ def _build_ffmpeg_cmd_impl(
     # bare .iso path won't match the `concat:` / `bluray:` startswith
     # check below.
     pre_input_args: list[str] | None = None,
+    # v0.7.29: per-audio-stream languages in SOURCE audio order, used to
+    # inject `-metadata:s:a:N language=X` on the output. Only set for disc
+    # conversions (DVD via concat:, BD via bluray:), where the input
+    # protocol strips the per-stream language tags that a normal
+    # container carries — so `-c:a copy` alone produces `und` audio even
+    # though Shrinkerr's own IFO/mpls/libbluray parser detected the real
+    # language at scan time. Regular files pass None and rely on ffmpeg's
+    # tag-copy (the source container still has the tags).
+    disc_audio_languages: list[str] | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -570,6 +579,12 @@ def _build_ffmpeg_cmd_impl(
     #   (a) Explicit keep-list (inline track removal): map each kept audio stream by
     #       source stream_index, and set per-stream codec based on source codec+profile.
     #   (b) Default: map all audio streams, apply global codec logic.
+    # v0.7.29: helper to test whether an ISO-639 code is a real language
+    # worth writing to output metadata (skip empty / und / None).
+    def _real_lang(code) -> str | None:
+        c = (code or "").strip().lower()
+        return c if (c and c != "und") else None
+
     if audio_streams_to_keep is not None:
         # Explicit audio streams — these came from user selection (+ native-first reorder)
         target_lossless_codec = (lossless_conversion or {}).get("codec")
@@ -583,6 +598,14 @@ def _build_ffmpeg_cmd_impl(
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate)
             else:
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate)
+            # v0.7.29: for disc conversions, stamp the detected language on
+            # the output stream (the bluray:/concat: input protocol strips
+            # it). The keep-list track dict carries `language` and is in
+            # OUTPUT order (post-reorder), so use it directly.
+            if disc_audio_languages is not None:
+                lang = _real_lang(track.get("language"))
+                if lang:
+                    cmd += [f"-metadata:s:a:{out_idx}", f"language={lang}"]
     else:
         # Default path: all audio streams
         cmd += ["-map", "0:a"]
@@ -601,6 +624,14 @@ def _build_ffmpeg_cmd_impl(
         else:
             args = _audio_codec_args(audio_codec, audio_bitrate)
             cmd += ["-c:a"] + args
+        # v0.7.29: disc language injection for the map-all path. Output
+        # audio order == source audio order (`-map 0:a` preserves it), so
+        # disc_audio_languages[i] maps to output stream a:i.
+        if disc_audio_languages is not None:
+            for idx, lang_code in enumerate(disc_audio_languages):
+                lang = _real_lang(lang_code)
+                if lang:
+                    cmd += [f"-metadata:s:a:{idx}", f"language={lang}"]
 
     # Map subtitle streams. Matroska accepts many text/image codecs as-is (copy),
     # but some codecs (notably mp4's `mov_text`) need to be transcoded to a
@@ -2080,6 +2111,17 @@ async def convert_file(
         elif not kept:
             print("[CONVERT] Warning: audio_tracks_to_remove would drop ALL tracks — ignoring", flush=True)
 
+    # v0.7.29: for disc conversions, build the per-audio-stream language
+    # list (SOURCE order) to inject onto the output. The bluray:/concat:
+    # input protocol strips per-stream language tags, so `-c:a copy`
+    # alone leaves the output audio tagged `und` — even though the
+    # IFO/mpls/libbluray parser detected the real language at scan time
+    # and stored it in probe_audio_tracks. Only set for discs; regular
+    # files rely on ffmpeg's tag-copy from the source container.
+    disc_audio_languages = None
+    if disc_type and probe_audio_tracks:
+        disc_audio_languages = [t.get("language") for t in probe_audio_tracks]
+
     # v0.7.24: target_resolution is now resolved earlier (before
     # get_output_path / build_disc_output_filename) so the output
     # filename reflects the downscaled resolution. The same resolved
@@ -2386,6 +2428,7 @@ async def convert_file(
             source_codec=_src_codec_lower,
             nvenc_bit_depth=nvenc_effective_bit_depth,
             pre_input_args=ffmpeg_input_args or None,
+            disc_audio_languages=disc_audio_languages,
         )
         # Append custom ffmpeg flags if configured (before the output path).
         cf = live_settings.get("custom_ffmpeg_flags", "")

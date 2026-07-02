@@ -223,3 +223,74 @@ def test_get_output_path_no_resolution_param_is_back_compat():
         encoder="libx265",
     )
     assert out.endswith("Movie 2160p x265.mkv"), f"got {out!r}"
+
+
+# ---------------------------------------------------------------------------
+# v0.7.29: disc audio-language injection. The bluray:/concat: input
+# protocol strips per-stream language tags, so disc conversions must
+# explicitly stamp `-metadata:s:a:N language=X` on the output or the
+# audio track shows as `und`.
+# ---------------------------------------------------------------------------
+
+def _metadata_lang_args(cmd):
+    """Extract [(flag, value), …] for every -metadata:s:a:N in a cmd."""
+    return [
+        (cmd[i], cmd[i + 1])
+        for i, x in enumerate(cmd)
+        if x.startswith("-metadata:s:a:")
+    ]
+
+
+def test_disc_audio_language_injected_default_path():
+    """Disc conversion, map-all-audio path: each detected language is
+    stamped on the matching output audio stream."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "bluray:/media/Movie/disc.iso", "/media/Movie/out.converting.mkv",
+        encoder="nvenc",
+        disc_audio_languages=["fre", "eng"],
+    )
+    args = _metadata_lang_args(cmd)
+    assert ("-metadata:s:a:0", "language=fre") in args, args
+    assert ("-metadata:s:a:1", "language=eng") in args, args
+
+
+def test_disc_audio_language_skips_und_and_empty():
+    """und / empty entries must NOT emit a metadata arg (leave the stream
+    untagged rather than writing a bogus 'und')."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "bluray:/media/Movie/disc.iso", "/media/Movie/out.converting.mkv",
+        encoder="nvenc",
+        disc_audio_languages=["und", "eng", ""],
+    )
+    args = _metadata_lang_args(cmd)
+    # Only the eng track (output index 1) gets a tag.
+    assert args == [("-metadata:s:a:1", "language=eng")], args
+
+
+def test_disc_audio_language_keep_list_uses_track_language():
+    """Keep-list path (track removal / reorder): language comes from each
+    kept track's own `language` field, in output order."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "bluray:/media/Movie/disc.iso", "/media/Movie/out.converting.mkv",
+        encoder="nvenc",
+        audio_streams_to_keep=[
+            {"stream_index": 2, "codec": "eac3", "language": "eng"},
+            {"stream_index": 1, "codec": "dts", "language": "fre"},
+        ],
+        disc_audio_languages=["fre", "eng"],  # source order; keep-list overrides
+    )
+    args = _metadata_lang_args(cmd)
+    # Output order follows the keep-list: a:0=eng, a:1=fre.
+    assert ("-metadata:s:a:0", "language=eng") in args, args
+    assert ("-metadata:s:a:1", "language=fre") in args, args
+
+
+def test_regular_file_no_audio_language_injection():
+    """Non-disc conversion (disc_audio_languages=None) must NOT inject any
+    audio language metadata — ffmpeg's tag-copy handles it, and injecting
+    would risk overwriting correct source tags."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/Movie 1080p x264.mkv", "/media/Movie.converting.mkv",
+        encoder="nvenc",
+    )
+    assert _metadata_lang_args(cmd) == [], _metadata_lang_args(cmd)

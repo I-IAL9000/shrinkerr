@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.29] — 2026-06-28
+
+### Fixed
+- **Disc conversions left audio tracks tagged `und` even when the language was detected.** Shrinkerr's IFO/mpls/libbluray parsers detect disc audio languages at scan time, but the conversion never wrote them to the output — the `bluray:` / `concat:` input protocol strips per-stream language tags, so `-c:a copy` produced `und` audio. The converter now injects `-metadata:s:a:N language=X` from the detected languages for disc conversions (both the map-all path and the track-removal/reorder keep-list path). Regular files are unaffected — they still rely on ffmpeg copying the tag from the source container. und/empty detections are skipped rather than written as bogus tags.
+
 ## [0.7.28] — 2026-06-28
 
 ### Fixed
