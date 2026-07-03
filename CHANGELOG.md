@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.30] — 2026-06-28
+
+### Fixed
+- **Disc conversions left subtitle tracks tagged `und`** — the subtitle half of the v0.7.29 audio fix. The `bluray:` / `concat:` protocol strips embedded-subtitle language tags too, and the detected language was being dropped before it reached the ffmpeg command anyway (`subtitle_streams` was built with only codec + index, no `language`). Now carries the detected language through and stamps `-metadata:s:s:N language=X` on disc-conversion output subtitles. Regular files unaffected (ffmpeg copies the container tag). und/empty skipped.
+
 ## [0.7.29] — 2026-06-28
 
 ### Fixed

@@ -664,6 +664,16 @@ def _build_ffmpeg_cmd_impl(
                 sub_codec_args += [f"-c:s:{out_sub_idx}", "srt"]
             else:
                 sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
+            # v0.7.30: for disc conversions, stamp the detected subtitle
+            # language on the output (bluray:/concat: strips it, same as
+            # audio in v0.7.29). Regular files pass disc_audio_languages
+            # None and rely on ffmpeg copying the container's tag.
+            if disc_audio_languages is not None:
+                sub_lang = _real_lang(sub.get("language"))
+                if sub_lang:
+                    sub_codec_args += [
+                        f"-metadata:s:s:{out_sub_idx}", f"language={sub_lang}"
+                    ]
             mapped_any_sub = True
             out_sub_idx += 1
         if mapped_any_sub:
@@ -1957,7 +1967,18 @@ async def convert_file(
             # Subtitle streams for safe mapping (skip unsupported codecs)
             # Map probe format to what build_ffmpeg_cmd expects
             raw_subs = probe_data.get("subtitle_tracks", [])
-            subtitle_streams = [{"codec_name": s.get("codec", ""), "index": s.get("stream_index")} for s in raw_subs]
+            # v0.7.30: carry `language` through so disc conversions can
+            # stamp it on the output (the bluray:/concat: protocol strips
+            # embedded-sub language tags, same as it does for audio —
+            # v0.7.29 fixed audio, this does subtitles).
+            subtitle_streams = [
+                {
+                    "codec_name": s.get("codec", ""),
+                    "index": s.get("stream_index"),
+                    "language": s.get("language"),
+                }
+                for s in raw_subs
+            ]
 
             probe_audio_tracks = probe_data.get("audio_tracks") or []
             source_video_fps = float(probe_data.get("video_fps") or 0.0)
@@ -2118,8 +2139,14 @@ async def convert_file(
     # IFO/mpls/libbluray parser detected the real language at scan time
     # and stored it in probe_audio_tracks. Only set for discs; regular
     # files rely on ffmpeg's tag-copy from the source container.
+    # Non-None exactly when this is a disc conversion — doubles as the
+    # "inject language metadata" flag for BOTH audio (this list,
+    # positionally) and subtitles (from each sub's own `language`).
+    # Set from disc_type alone (not gated on audio presence) so a disc
+    # with subtitles but no audio still gets its subs tagged; the audio
+    # loop simply no-ops on an empty list.
     disc_audio_languages = None
-    if disc_type and probe_audio_tracks:
+    if disc_type:
         disc_audio_languages = [t.get("language") for t in probe_audio_tracks]
 
     # v0.7.24: target_resolution is now resolved earlier (before
@@ -2231,7 +2258,11 @@ async def convert_file(
             if new_probe:
                 new_subs = new_probe.get("subtitle_tracks") or []
                 subtitle_streams = [
-                    {"codec_name": s.get("codec", ""), "index": s.get("stream_index")}
+                    {
+                        "codec_name": s.get("codec", ""),
+                        "index": s.get("stream_index"),
+                        "language": s.get("language"),
+                    }
                     for s in new_subs
                 ]
                 # Rebuild probe_audio_tracks/audio_stream_codecs from the new

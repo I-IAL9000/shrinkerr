@@ -294,3 +294,62 @@ def test_regular_file_no_audio_language_injection():
         encoder="nvenc",
     )
     assert _metadata_lang_args(cmd) == [], _metadata_lang_args(cmd)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.30: disc SUBTITLE language injection (same root cause as v0.7.29's
+# audio fix — bluray:/concat: strips embedded-sub language tags too).
+# ---------------------------------------------------------------------------
+
+def _metadata_sub_lang_args(cmd):
+    """Extract [(flag, value), …] for every -metadata:s:s:N in a cmd."""
+    return [
+        (cmd[i], cmd[i + 1])
+        for i, x in enumerate(cmd)
+        if x.startswith("-metadata:s:s:")
+    ]
+
+
+def test_disc_subtitle_language_injected():
+    """Disc conversion: each embedded subtitle's detected language is
+    stamped on the matching output subtitle stream."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "bluray:/media/Movie/disc.iso", "/media/Movie/out.converting.mkv",
+        encoder="nvenc",
+        subtitle_streams=[
+            {"codec_name": "hdmv_pgs_subtitle", "index": 3, "language": "fre"},
+            {"codec_name": "hdmv_pgs_subtitle", "index": 4, "language": "eng"},
+        ],
+        disc_audio_languages=[],  # disc marker (no audio, but still a disc)
+    )
+    args = _metadata_sub_lang_args(cmd)
+    assert ("-metadata:s:s:0", "language=fre") in args, args
+    assert ("-metadata:s:s:1", "language=eng") in args, args
+
+
+def test_disc_subtitle_language_skips_und():
+    """und subtitle language must not emit a metadata arg."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "bluray:/media/Movie/disc.iso", "/media/Movie/out.converting.mkv",
+        encoder="nvenc",
+        subtitle_streams=[
+            {"codec_name": "hdmv_pgs_subtitle", "index": 3, "language": "und"},
+            {"codec_name": "hdmv_pgs_subtitle", "index": 4, "language": "spa"},
+        ],
+        disc_audio_languages=[],
+    )
+    args = _metadata_sub_lang_args(cmd)
+    assert args == [("-metadata:s:s:1", "language=spa")], args
+
+
+def test_regular_file_no_subtitle_language_injection():
+    """Non-disc conversion must NOT inject subtitle language metadata for
+    embedded subs — ffmpeg copies the container's tag."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/Movie.mkv", "/media/Movie.converting.mkv",
+        encoder="nvenc",
+        subtitle_streams=[
+            {"codec_name": "subrip", "index": 2, "language": "eng"},
+        ],
+    )
+    assert _metadata_sub_lang_args(cmd) == [], _metadata_sub_lang_args(cmd)
