@@ -607,8 +607,14 @@ def _build_ffmpeg_cmd_impl(
                 if lang:
                     cmd += [f"-metadata:s:a:{out_idx}", f"language={lang}"]
     else:
-        # Default path: all audio streams
-        cmd += ["-map", "0:a"]
+        # Default path: all audio streams. v0.7.31: `0:a?` (trailing `?`)
+        # so a source with NO audio stream — e.g. a video-only Blu-ray
+        # remux, or a sample clip carrying only video + a PGS subtitle —
+        # doesn't hard-fail with "Stream map '0:a' matches no streams"
+        # (ffmpeg exit 234). Without the `?`, ffmpeg treats an
+        # unmatched map as a fatal error. The per-stream `-c:a` codec
+        # args below are harmless no-ops when zero audio streams match.
+        cmd += ["-map", "0:a?"]
         if lossless_conversion and audio_stream_codecs:
             target_codec = lossless_conversion["codec"]
             target_bitrate = lossless_conversion["bitrate"]
@@ -1298,7 +1304,7 @@ async def _prestrip_subtitles(
             if idx is not None:
                 cmd += ["-map", f"0:{idx}"]
     else:
-        cmd += ["-map", "0:a"]
+        cmd += ["-map", "0:a?"]  # v0.7.31: `?` — don't fail on no-audio sources
     # Subtitles: keep only the ones not in the removal set.
     kept_count = 0
     for sub in subtitle_streams:

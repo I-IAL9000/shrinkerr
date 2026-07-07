@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.31] — 2026-07-02
+
+### Fixed
+- **Conversion of a video-only source (no audio stream) failed with exit 234** (`Stream map '0:a' matches no streams`). Files with only video + subtitles — a video-only Blu-ray remux, or a sample clip — hit the default `-map 0:a` which ffmpeg treats as fatal when nothing matches. Changed to `-map 0:a?` (optional map) in both the main convert path and the subtitle-prestrip pass.
+
 ## [0.7.30] — 2026-06-28
 
 ### Fixed

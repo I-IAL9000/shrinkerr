@@ -353,3 +353,24 @@ def test_regular_file_no_subtitle_language_injection():
         ],
     )
     assert _metadata_sub_lang_args(cmd) == [], _metadata_sub_lang_args(cmd)
+
+
+# ---------------------------------------------------------------------------
+# v0.7.31: no-audio sources. `-map 0:a` hard-fails ("Stream map matches no
+# streams", exit 234) on a video-only file; must be `0:a?`.
+# ---------------------------------------------------------------------------
+
+def test_default_audio_map_uses_optional_selector():
+    """The default audio map must be `0:a?` (optional), not `0:a`, so a
+    source with no audio stream (video-only Blu-ray remux, sample clip
+    with only video + PGS subs) doesn't hard-fail."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/Movie.mkv", "/media/Movie.converting.mkv",
+        encoder="nvenc",
+    )
+    maps = [cmd[i + 1] for i, x in enumerate(cmd) if x == "-map"]
+    assert "0:a?" in maps, f"default audio map not optional: {maps}"
+    assert "0:a" not in maps, (
+        f"bare -map 0:a present — hard-fails on no-audio sources "
+        f"(exit 234): {maps}"
+    )
