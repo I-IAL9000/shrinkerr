@@ -142,6 +142,76 @@ _scan_proc = None
 _scan_progress_file = "/tmp/shrinkerr_scan_progress.json"
 _scan_cancel_file = "/tmp/shrinkerr_scan_cancel"
 
+# v0.7.32: if a scan subprocess hangs (e.g. os.walk blocked on a dead /
+# slow network mount), `proc.is_alive()` stays True forever, so the
+# async monitor in _run_scan never returns and _scan_task never
+# completes. Every watcher cycle then logs "Scan in progress, skipping
+# cycle" and no new items get picked up — with no actual scan making
+# progress. This threshold is how long the scan progress file can go
+# without an update before we declare the scan hung and reap it.
+# Generous enough not to trip a legitimately-long scan (the worker
+# rewrites the progress file on every probed file, so even a slow
+# scan updates it every few seconds). Tunable via env.
+try:
+    STALE_SCAN_MINUTES = max(1, int(os.environ.get("SHRINKERR_STALE_SCAN_MINUTES", "15")))
+except ValueError:
+    STALE_SCAN_MINUTES = 15
+
+
+def scan_is_actively_running() -> bool:
+    """True if a scan is genuinely in progress.
+
+    Returns False when no scan is running OR when a scan task exists but
+    has hung (its progress file hasn't been touched in STALE_SCAN_MINUTES
+    minutes). In the hung case, the stuck subprocess is killed and
+    `_scan_task` is cleared as a side effect, so callers (the watcher)
+    can resume normal operation without a container restart.
+
+    v0.7.32: added to break the "Scan in progress, skipping cycle"
+    deadlock that happens when the scan subprocess blocks on a dead
+    filesystem mount.
+    """
+    global _scan_task, _scan_proc
+    if _scan_task is None or _scan_task.done():
+        return False
+
+    # A task exists and isn't done. Decide whether it's live or hung by
+    # the freshness of the progress file (the worker rewrites it per
+    # probed file).
+    import time as _time
+    try:
+        age = _time.time() - os.path.getmtime(_scan_progress_file)
+    except OSError:
+        # No progress file yet — the scan just started (subprocess spins
+        # up before writing the first progress). Treat as live; a real
+        # hang will fail the mtime check on a later cycle once enough
+        # time passes without the file appearing.
+        return True
+
+    if age <= STALE_SCAN_MINUTES * 60:
+        return True  # fresh progress → genuinely running
+
+    # Stale — the scan has made no progress for too long. Reap it.
+    print(
+        f"[SCANNER] Scan progress stale for {age/60:.1f} min "
+        f"(> {STALE_SCAN_MINUTES} min) — treating as hung, reaping the "
+        f"subprocess so the watcher can resume.",
+        flush=True,
+    )
+    try:
+        if _scan_proc is not None and _scan_proc.is_alive():
+            _scan_proc.kill()
+    except Exception as exc:
+        print(f"[SCANNER] Failed to kill hung scan subprocess: {exc}", flush=True)
+    try:
+        if _scan_task is not None and not _scan_task.done():
+            _scan_task.cancel()
+    except Exception:
+        pass
+    _scan_proc = None
+    _scan_task = None
+    return False
+
 
 def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str) -> None:
     """Runs in a separate process — does all ffprobe/DB work without blocking the main event loop."""
@@ -676,7 +746,9 @@ async def _run_scan(paths: list[str]) -> None:
 @router.post("/start")
 async def start_scan(request: ScanRequest):
     global _scan_task
-    if _scan_task and not _scan_task.done():
+    # v0.7.32: scan_is_actively_running() reaps a hung scan, so hitting
+    # "Scan" recovers from the stuck-flag deadlock instead of 409ing.
+    if scan_is_actively_running():
         raise HTTPException(status_code=409, detail="Scan already in progress")
     _scan_task = asyncio.create_task(_run_scan(request.paths))
     return {"status": "started", "paths": request.paths}
@@ -2340,7 +2412,7 @@ async def get_tracks_by_path(file_path: str):
 async def rescan_folder(request: ScanRequest):
     """Rescan a specific folder (e.g. a single movie or TV show directory)."""
     global _scan_task
-    if _scan_task and not _scan_task.done():
+    if scan_is_actively_running():  # v0.7.32: reaps a hung scan
         raise HTTPException(status_code=409, detail="Scan already in progress")
     _scan_task = asyncio.create_task(_run_scan(request.paths))
     return {"status": "started", "paths": request.paths}

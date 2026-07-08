@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.32] — 2026-07-08
+
+### Fixed
+- **Watcher stuck on "Scan in progress, skipping cycle" with no scan actually running.** When a scan subprocess hangs (e.g. `os.walk` blocked on a dead/slow network mount), `proc.is_alive()` stays True forever, the async monitor never returns, and `_scan_task` never completes — so the watcher skips every cycle indefinitely and no new items get picked up. New `scan_is_actively_running()` helper detects a hung scan via a stale progress file (no update in `SHRINKERR_STALE_SCAN_MINUTES`, default 15), kills the stuck subprocess, and clears the task so the watcher resumes — no container restart needed. The manual Scan / Rescan-folder endpoints use the same check, so hitting "Scan" also recovers.
+
 ## [0.7.31] — 2026-07-02
 
 ### Fixed

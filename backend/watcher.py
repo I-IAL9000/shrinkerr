@@ -1432,9 +1432,12 @@ class FileWatcher:
     async def _run_loop(self) -> None:
         await asyncio.sleep(30)
         while self._running:
-            # Skip cycle if a scan is running — avoid competing for ffprobe/DB I/O
-            from backend.routes.scan import _scan_task
-            if _scan_task is not None and not _scan_task.done():
+            # Skip cycle if a scan is running — avoid competing for ffprobe/DB I/O.
+            # v0.7.32: scan_is_actively_running() self-heals a hung scan
+            # (subprocess blocked on a dead mount) by reaping it when its
+            # progress file goes stale, instead of skipping forever.
+            from backend.routes.scan import scan_is_actively_running
+            if scan_is_actively_running():
                 print("[WATCHER] Scan in progress, skipping cycle", flush=True)
             else:
                 try:
