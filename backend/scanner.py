@@ -643,7 +643,19 @@ def detect_external_subtitles(video_path: str) -> list[dict]:
     except OSError:
         return results
 
-    sub_files = [f for f in siblings if f.suffix.lower() in SUBTITLE_EXTENSIONS]
+    # v0.7.33: skip hidden / AppleDouble companion files. macOS-formatted
+    # volumes litter every directory with `._<name>` resource-fork files
+    # that share the real file's extension — so `._Movie.eng.srt` looks
+    # like a subtitle by suffix and (via the S##E## episode-key match
+    # below) gets fed to ffmpeg as `-i`, which fails with "Invalid data
+    # found when processing input" (exit 183) and kills the whole
+    # conversion. The scanner's directory walk already filters
+    # `name.startswith(".")`; mirror that here so external-sub detection
+    # agrees with it.
+    sub_files = [
+        f for f in siblings
+        if f.suffix.lower() in SUBTITLE_EXTENSIONS and not f.name.startswith(".")
+    ]
     if not sub_files:
         return results
 

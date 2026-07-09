@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.33] — 2026-07-08
+
+### Fixed
+- **Conversion failed (exit 183) when a macOS AppleDouble `._*.srt` sat next to the video.** External-subtitle detection matched `._<name>.eng.srt` resource-fork companions (they share the `.srt` extension and carry the episode key), then fed them to ffmpeg as `-i` inputs → `Invalid data found when processing input`, killing the whole conversion. Detection now skips hidden / dotfile subtitle candidates, mirroring the scanner walk's existing `._`/dotfile filter.
+
 ## [0.7.32] — 2026-07-08
 
 ### Fixed
