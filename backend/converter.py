@@ -693,7 +693,12 @@ def _build_ffmpeg_cmd_impl(
     if ext_subs:
         for i, es in enumerate(ext_subs):
             input_idx = i + 1  # input 0 is the video, 1+ are external subs
-            cmd += ["-map", f"{input_idx}:s"]
+            # v0.7.34: `{idx}:s?` (optional) so a sidecar input that
+            # opened but exposes no subtitle stream (corrupt / empty /
+            # misdetected) doesn't hard-fail the whole job with "Stream
+            # map matches no streams" (exit 234). Same defensive form as
+            # the audio map in v0.7.31.
+            cmd += ["-map", f"{input_idx}:s?"]
             codec = (es.get("codec") or "subrip").lower()
             # SRT and ASS/SSA are natively supported by MKV — byte-copy
             # them. v0.4.9+: pre-fix this path used `-c:s srt` for SRT
@@ -2290,6 +2295,7 @@ async def convert_file(
     external_sub_files: list[dict] | None = None
     try:
         from backend.scanner import _is_cleanup_enabled
+        from backend.scanner import is_hidden_sidecar as _is_hidden_sidecar
         # v0.5.21: explicit default=False matches the UI's `?? false`
         # rendering. Pre-v0.5.21 missing-row fallback was True, so
         # external subs got merged even when the UI showed the toggle
@@ -2318,6 +2324,17 @@ async def convert_file(
                              "language": t.get("language", "und"), "forced": t.get("forced", False)}
                             for t in ext_subs_to_merge
                             if os.path.exists(t["external_path"])
+                            # v0.7.34: skip macOS AppleDouble / hidden
+                            # companions (`._<name>.srt`, `.foo.idx`).
+                            # v0.7.33 fixed detect_external_subtitles for
+                            # NEW scans, but external subs are merged from
+                            # STORED scan_results.subtitle_tracks_json —
+                            # rows scanned pre-v0.7.33 still carry the bad
+                            # `._` paths, and feeding one to ffmpeg as -i
+                            # fails the whole conversion (exit 183/234).
+                            # Guarding at the point of use covers every
+                            # stale row without requiring a re-scan.
+                            and not _is_hidden_sidecar(t["external_path"])
                         ]
                         if external_sub_files:
                             print(f"[CONVERT] Will merge {len(external_sub_files)} external subtitle file(s)", flush=True)

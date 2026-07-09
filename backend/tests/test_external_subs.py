@@ -5,7 +5,21 @@ companion files (`._<name>.srt`) that macOS-formatted volumes create.
 They share the real subtitle's extension but are resource-fork junk;
 feeding one to ffmpeg as `-i` fails the whole conversion with exit 183.
 """
-from backend.scanner import detect_external_subtitles
+from backend.scanner import detect_external_subtitles, is_hidden_sidecar
+
+
+def test_is_hidden_sidecar():
+    """The shared hidden-file predicate used by both scan-time detection
+    and the convert-time merge guard."""
+    assert is_hidden_sidecar("/media/Show/._Ep.eng.srt") is True
+    assert is_hidden_sidecar("._Ep.eng.srt") is True
+    assert is_hidden_sidecar("/media/Show/.DS_Store") is True
+    assert is_hidden_sidecar("/media/Show/._Ep.idx") is True
+    # Real files must NOT be flagged.
+    assert is_hidden_sidecar("/media/Show/Ep.eng.srt") is False
+    assert is_hidden_sidecar("Ep.idx") is False
+    # A dot in a parent dir (not the basename) must not trip it.
+    assert is_hidden_sidecar("/media/.hidden_dir/Ep.srt") is False
 
 
 def test_appledouble_srt_is_ignored(tmp_path):

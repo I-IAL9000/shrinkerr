@@ -586,6 +586,20 @@ def languages_match(lang1: str, lang2: str) -> bool:
 
 SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".sub", ".vtt", ".sup", ".idx"}
 
+
+def is_hidden_sidecar(path: str) -> bool:
+    """True if `path`'s basename is a hidden / AppleDouble file (starts
+    with a dot: `._<name>.srt`, `.DS_Store`, `.hidden.idx`, …).
+
+    macOS-formatted volumes create `._<name>` resource-fork companions
+    next to every file; they share the real file's extension but are
+    binary junk. Feeding one to ffmpeg as an input fails the whole
+    conversion. Both the scan-time external-sub detection and the
+    convert-time merge guard use this so they agree. v0.7.34+.
+    """
+    import os as _os
+    return _os.path.basename(path).startswith(".")
+
 # Known ISO 639-1 (2-letter) and 639-2/B (3-letter) codes for validation.
 # We only need enough to distinguish real language tags from random filename parts.
 _KNOWN_LANG_CODES = {
@@ -654,7 +668,7 @@ def detect_external_subtitles(video_path: str) -> list[dict]:
     # agrees with it.
     sub_files = [
         f for f in siblings
-        if f.suffix.lower() in SUBTITLE_EXTENSIONS and not f.name.startswith(".")
+        if f.suffix.lower() in SUBTITLE_EXTENSIONS and not is_hidden_sidecar(f.name)
     ]
     if not sub_files:
         return results
