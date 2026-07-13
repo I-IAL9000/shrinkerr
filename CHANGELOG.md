@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.5] — 2026-07-13
+
+### Fixed
+- **Tooltips on the poster-grid detail icons.** The v0.9.1 tooltip pass only covered the file-tree view; the expanded poster-card panel's converted / ignore / remove-from-list / move-to-trash (and unignore) icons still had none. Added the same hover labels there.
+
 ## [0.9.4] — 2026-07-13
 
 ### Fixed
