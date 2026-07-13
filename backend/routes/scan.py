@@ -61,12 +61,21 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     has_lossless = 1
                     break
 
+            import json as _json_und
+            def _row_has_und(json_str):
+                try:
+                    return any((t.get("language") or "und").lower() == "und"
+                               for t in _json_und.loads(json_str or "[]"))
+                except (ValueError, TypeError, AttributeError):
+                    return False
+            has_und = 1 if (_row_has_und(audio_json) or _row_has_und(sub_json)) else 0
+
             db.execute(
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -94,7 +103,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_lossless_audio_flag=excluded.has_lossless_audio_flag,
                        has_external_subs_flag=excluded.has_external_subs_flag,
                        disc_type=excluded.disc_type,
-                       video_conv_savings_bytes=excluded.video_conv_savings_bytes
+                       video_conv_savings_bytes=excluded.video_conv_savings_bytes,
+                       has_und_tracks_flag=excluded.has_und_tracks_flag
                 """,
                 (
                     scanned.file_path,
@@ -118,6 +128,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     1 if getattr(scanned, 'has_external_subs', False) else 0,
                     getattr(scanned, 'disc_type', None),  # v0.6.0
                     getattr(scanned, 'video_conv_savings_bytes', 0),  # v0.6.7
+                    has_und,  # v0.8.0 language detection
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
