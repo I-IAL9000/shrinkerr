@@ -374,3 +374,38 @@ def test_default_audio_map_uses_optional_selector():
         f"bare -map 0:a present — hard-fails on no-audio sources "
         f"(exit 234): {maps}"
     )
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_patches_und_audio_before_convert(monkeypatch):
+    from backend import converter as conv
+    tracks = [{"stream_index": 1, "language": "und", "codec": "aac"}]
+    async def fake_audio_detect(fp, idx, duration=0.0):
+        return ("swe", 0.88)
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
+    monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "swe"
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_disabled_leaves_und(monkeypatch):
+    from backend import converter as conv
+    tracks = [{"stream_index": 1, "language": "und", "codec": "aac"}]
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: False)
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "und"
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_skips_already_tagged(monkeypatch):
+    from backend import converter as conv
+    called = []
+    async def fake_audio_detect(fp, idx, duration=0.0):
+        called.append(idx); return ("swe", 0.9)
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
+    monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
+    tracks = [{"stream_index": 1, "language": "eng", "codec": "aac"}]
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "eng"
+    assert called == []  # already tagged → no detection call

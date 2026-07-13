@@ -846,6 +846,36 @@ def _hevc_tag_for_encoder(encoder: str | None) -> str:
     return "x265" if (encoder or "").lower() == "libx265" else "h265"
 
 
+def _auto_detect_enabled() -> bool:
+    """Read the auto_detect_languages setting (default True)."""
+    from backend.scanner import _is_cleanup_enabled
+    return _is_cleanup_enabled("auto_detect_languages", default=True)
+
+
+async def _detect_und_track_languages(file_path, audio_tracks, subtitle_tracks, duration):
+    """When auto_detect_languages is on, detect languages for und audio
+    tracks and patch them in place. Returns the (possibly patched)
+    audio_tracks list. Fail-open. Subtitle text detection already ran at
+    scan; audio is detected here because it's too expensive for scan."""
+    if not _auto_detect_enabled():
+        return audio_tracks
+    from backend.language_detection import detect_audio_language
+    for t in audio_tracks:
+        if (t.get("language") or "und").lower() != "und":
+            continue
+        idx = t.get("stream_index")
+        if idx is None:
+            continue
+        try:
+            lang, _conf = await detect_audio_language(file_path, idx, duration=duration)
+        except Exception:
+            lang = None
+        if lang:
+            t["language"] = lang
+            print(f"[CONVERT] Auto-detected audio s{idx} language: {lang}", flush=True)
+    return audio_tracks
+
+
 def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> str:
     """Rewrite source-codec tags in `filename` for the output encoder.
 
@@ -2084,6 +2114,14 @@ async def convert_file(
             target_resolution=target_resolution,
         )
         temp_path = get_temp_path(input_path)
+
+    # v0.8.0: detect languages for und audio tracks before building the
+    # command, so the v0.7.29/30 metadata injection + track keep/reorder
+    # use real languages. Gated on auto_detect_languages (default on).
+    if probe_audio_tracks:
+        probe_audio_tracks = await _detect_und_track_languages(
+            input_path, probe_audio_tracks, [], duration=duration,
+        )
 
     # Build inline keep-list for audio:
     #   - Filter out any tracks in audio_tracks_to_remove
