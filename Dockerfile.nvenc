@@ -52,6 +52,9 @@ RUN set -eux; \
         libarchive-tools \
         libbluray-bin \
         mkvtoolnix \
+        tesseract-ocr \
+        tesseract-ocr-eng tesseract-ocr-chi-sim tesseract-ocr-chi-tra \
+        tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-rus tesseract-ocr-ara \
         libva-drm2 \
         intel-media-va-driver-non-free \
         i965-va-driver \
