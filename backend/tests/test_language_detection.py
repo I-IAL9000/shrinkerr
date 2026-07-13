@@ -38,3 +38,49 @@ def test_empty_or_garbage_text_returns_none():
     assert detect_subtitle_language("   \n\n  ") == (None, 0.0)
     lang, conf = detect_subtitle_language("123 456 --- >>> 00:00:01,000")
     assert lang is None
+
+
+from unittest.mock import patch, MagicMock, AsyncMock
+
+
+def test_audio_clip_ffmpeg_command_is_wellformed():
+    from backend.language_detection import _build_audio_clip_cmd
+    cmd = _build_audio_clip_cmd("/media/movie.mkv", stream_index=1, seek=600.0, out_path="/tmp/clip.wav")
+    assert cmd[0] == "ffmpeg"
+    assert "-ss" in cmd and cmd[cmd.index("-ss") + 1] == "600.0"
+    assert "-t" in cmd and cmd[cmd.index("-t") + 1] == "30"
+    assert "-map" in cmd and cmd[cmd.index("-map") + 1] == "0:1"
+    assert "-ac" in cmd and cmd[cmd.index("-ac") + 1] == "1"
+    assert "-ar" in cmd and cmd[cmd.index("-ar") + 1] == "16000"
+    assert cmd[-1] == "/tmp/clip.wav"
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_language_maps_result_to_iso2():
+    from backend import language_detection as ld
+    with patch.object(ld, "_extract_audio_clip", new=AsyncMock(return_value="/tmp/clip.wav")), \
+         patch.object(ld, "_run_whisper_lang", return_value=("de", 0.92)), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.unlink"):
+        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+    assert lang == "ger", f"got {lang!r}"
+    assert conf == pytest.approx(0.92)
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_language_low_confidence_returns_none():
+    from backend import language_detection as ld
+    with patch.object(ld, "_extract_audio_clip", new=AsyncMock(return_value="/tmp/clip.wav")), \
+         patch.object(ld, "_run_whisper_lang", return_value=("de", 0.30)), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.unlink"):
+        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+    assert lang is None
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_language_failopen_on_extract_error():
+    from backend import language_detection as ld
+    with patch.object(ld, "_extract_audio_clip", new=AsyncMock(side_effect=OSError("ffmpeg gone"))):
+        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+    assert (lang, conf) == (None, 0.0)
