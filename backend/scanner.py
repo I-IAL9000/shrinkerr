@@ -659,13 +659,26 @@ def _clean_srt_bytes(raw: bytes, max_chars: int = 4000) -> str | None:
     if not raw:
         return None
     text = None
-    for enc in ("utf-8", "cp1252"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
+    # Fast path: most modern subs are UTF-8.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        text = None
     if text is None:
+        # v0.8.2: detect the real charset for legacy non-Unicode subs —
+        # GB2312/GBK/Big5 (Chinese), Shift-JIS (Japanese), EUC-KR (Korean),
+        # cp1252/Latin-1 (Western). Blind latin-1 turns CJK double-byte
+        # text into mojibake that langdetect can't identify; charset-
+        # normalizer picks the right codec so detection actually works.
+        try:
+            from charset_normalizer import from_bytes
+            best = from_bytes(raw).best()
+            if best is not None:
+                text = str(best)
+        except Exception:
+            text = None
+    if text is None:
+        # Last resort: latin-1 maps every byte and never raises.
         text = raw.decode("latin-1", errors="replace")
     text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
     text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)

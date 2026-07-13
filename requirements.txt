@@ -15,3 +15,4 @@ bcrypt==4.2.1
 faster-whisper==1.0.3
 langdetect==1.0.9
 requests==2.32.3
+charset-normalizer==3.4.5

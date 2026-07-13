@@ -39,7 +39,12 @@ def detect_subtitle_language(text: str) -> tuple[str | None, float]:
     conf = float(best.prob)
     if conf < _sub_min_confidence():
         return (None, 0.0)
-    iso2 = _ISO639_1_TO_2.get(iso1, "")
+    # v0.8.2: langdetect returns regional codes for some languages
+    # (e.g. "zh-cn"/"zh-tw" for Chinese). Strip the region before the
+    # 639-1→639-2 lookup — both Chinese variants map to "chi" (ISO 639-2
+    # has no simplified/traditional distinction).
+    iso1_base = iso1.split("-")[0]
+    iso2 = _ISO639_1_TO_2.get(iso1_base, "")
     if not iso2:
         return (None, 0.0)
     return (_normalize_iso639_2(iso2), conf)

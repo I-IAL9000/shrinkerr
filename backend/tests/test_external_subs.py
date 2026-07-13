@@ -92,3 +92,39 @@ def test_clean_srt_bytes_empty_returns_none():
     from backend.scanner import _clean_srt_bytes
     assert _clean_srt_bytes(b"") is None
     assert _clean_srt_bytes(b"1\n00:00:01,000 --> 00:00:02,000\n\n") is None
+
+
+# ---------------------------------------------------------------------------
+# v0.8.2: legacy non-Unicode CJK subtitle charsets. Blind latin-1 turns
+# double-byte GB2312/Big5/Shift-JIS text into mojibake langdetect can't
+# read; charset-normalizer decodes them correctly so detection works.
+# ---------------------------------------------------------------------------
+
+def test_clean_srt_bytes_gb2312_chinese():
+    from backend.scanner import _clean_srt_bytes
+    from backend.language_detection import detect_subtitle_language
+    srt = ("1\n00:00:05,000 --> 00:00:08,000\n这从未发生过 从未发生\n\n"
+           "2\n00:00:09,000 --> 00:00:12,000\n这学校这棒 真是他妈的棒 你看到了吗\n\n"
+           "3\n00:00:13,000 --> 00:00:16,000\n这儿真漂亮 你来这儿上学的吗\n")
+    txt = _clean_srt_bytes(srt.encode("gb2312"))
+    assert txt is not None and "这" in txt, "GB2312 must decode to real Chinese, not mojibake"
+    lang, conf = detect_subtitle_language(txt)
+    assert lang == "chi", f"expected chi, got {lang!r} (conf {conf})"
+
+
+def test_clean_srt_bytes_shift_jis_japanese():
+    from backend.scanner import _clean_srt_bytes
+    from backend.language_detection import detect_subtitle_language
+    srt = "1\n00:00:01,000 --> 00:00:04,000\nこれは日本語の字幕です。テストのために書いています。\n"
+    txt = _clean_srt_bytes(srt.encode("shift-jis"))
+    assert txt is not None
+    lang, _ = detect_subtitle_language(txt)
+    assert lang == "jpn", f"expected jpn, got {lang!r}"
+
+
+def test_detect_subtitle_regional_code_normalized():
+    """langdetect returns zh-cn/zh-tw for Chinese — both must map to chi."""
+    from backend.language_detection import detect_subtitle_language
+    zh = "这是一段中文字幕 用来测试语言检测功能 希望能够正确识别为中文"
+    lang, _ = detect_subtitle_language(zh)
+    assert lang == "chi", f"expected chi from zh-xx, got {lang!r}"

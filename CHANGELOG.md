@@ -5,6 +5,15 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-07-13
+
+### Added
+- **Charset detection for legacy non-Unicode subtitles.** Subtitles in GB2312/GBK/Big5 (Chinese), Shift-JIS (Japanese), EUC-KR (Korean), or Windows-1252/Latin-1 were being blind-decoded as Latin-1 — turning CJK double-byte text into mojibake that language detection couldn't read, leaving the track `und`. Now uses charset-normalizer to detect the real encoding before decoding, so these subs detect correctly (e.g. a GB2312 Chinese sub → `chi`). langdetect's regional codes (`zh-cn`/`zh-tw`) are normalized to `chi`.
+
+### Changed
+- **Conversion shows a "Detecting language…" status step** while faster-whisper runs on und audio tracks, instead of a silent pause before the encode.
+- **The "Auto-detect languages" setting now appears in both the audio and subtitle sections** (one shared setting, shown in both places).
+
 ## [0.8.1] — 2026-07-13
 
 ### Fixed

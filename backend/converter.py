@@ -2123,6 +2123,13 @@ async def convert_file(
         t.get("stream_index") for t in (probe_audio_tracks or [])
         if (t.get("language") or "und").lower() == "und"
     }
+    # v0.8.2: surface a status step while faster-whisper runs (it takes a
+    # few seconds per und track), so the UI shows "Detecting language…"
+    # instead of a silent pause before the encode starts.
+    if _pre_und_audio_idx and _auto_detect_enabled() and progress_callback:
+        await progress_callback(
+            progress=0, fps=0, eta_seconds=None, step="Detecting language…",
+        )
     if probe_audio_tracks:
         probe_audio_tracks = await _detect_und_track_languages(
             input_path, probe_audio_tracks, [], duration=duration,
