@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-07-13
+
+### Added
+- **Language detection for image-based subtitles (PGS/VobSub) via OCR.** On-demand "Detect languages" now handles `und` PGS (Blu-ray) and VobSub (DVD) subtitles: the track is extracted with mkvextract and OCR'd with pgsrip (tesseract). Multi-script without a separate detection step — OCR runs first with the Latin (`eng`) model (clean and fast for the common case); if the result can't be identified, it re-OCRs with the CJK/Cyrillic/Arabic packs. The recognized text feeds the existing language detector, and a detected language is written to the file via the v0.8.3 mkvpropedit path, same as text subs. Confidence-gated and fail-open (bad OCR leaves the track `und`, never mistags). **On-demand only** — not at scan, not before conversion (OCR is slow). Adds tesseract-ocr + language packs + pgsrip to the images. Verified end-to-end on a real Blu-ray PGS sub (Italian → `ita`).
+
 ## [0.8.4] — 2026-07-13
 
 ### Changed
