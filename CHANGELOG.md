@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] — 2026-07-13
+
+### Fixed
+- **Converted disc titles no longer show a disc badge or the wrong name.** When a Blu-ray/DVD folder was converted to a single .mkv, the post-conversion handler repointed the disc row at the .mkv but never cleared `disc_type` — so the title kept a "Blu-ray disc folder" badge and displayed the category dir ("Movies2") instead of the movie name. Now cleared on conversion, hardened the display-name logic to only treat real marker files as discs, and added a one-time backfill for already-converted titles.
+
 ## [0.9.3] — 2026-07-13
 
 ### Fixed

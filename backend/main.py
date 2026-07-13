@@ -232,6 +232,13 @@ async def lifespan(app: FastAPI):
             await backfill_und_tracks_flag()
         except Exception as exc:
             print(f"[STARTUP] und-flag backfill skipped: {exc}", flush=True)
+        # v0.9.4: clear stale disc_type left on converted single-file rows
+        # (disc badge + wrong display name on ex-disc titles).
+        try:
+            from backend.database import backfill_stale_disc_type
+            await backfill_stale_disc_type()
+        except Exception as exc:
+            print(f"[STARTUP] stale disc_type backfill skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir

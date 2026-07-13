@@ -1799,6 +1799,13 @@ class QueueWorker:
                             "converted = 1",
                             "is_new = 0",
                             "new_detected_at = NULL",
+                            # The output is always a single file, never a disc.
+                            # This row may have started as a disc-marker row
+                            # (disc_type='bdmv'/'dvd'); clear it so the file
+                            # doesn't keep showing a disc badge and so the
+                            # display-name logic doesn't fall back to the
+                            # category-dir name. v0.9.4.
+                            "disc_type = NULL",
                         ]
                         update_params: list = [current_file_path]
                         if new_size is not None:

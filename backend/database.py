@@ -1027,3 +1027,40 @@ async def backfill_und_tracks_flag() -> int:
         return len(to_flag)
     finally:
         await db.close()
+
+
+async def backfill_stale_disc_type() -> int:
+    """One-time clear of stale disc_type on converted single-file rows.
+
+    The post-conversion handler (queue.py) repointed a disc-marker row at the
+    encoded .mkv without clearing disc_type, so converted Blu-ray/DVD titles
+    kept showing a disc badge and their display name fell back to the
+    category dir (e.g. "Movies2"). A legit disc row's file_path is always a
+    marker (VIDEO_TS/VIDEO_TS.IFO, BDMV/index.bdmv) or a .iso; anything else
+    with a disc_type set is stale. Guarded by a settings sentinel.
+    """
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'stale_disc_type_cleared'"
+        ) as cur:
+            if await cur.fetchone():
+                return 0
+
+        cur = await db.execute(
+            "UPDATE scan_results SET disc_type = NULL "
+            "WHERE disc_type IS NOT NULL "
+            "AND file_path NOT LIKE '%/VIDEO_TS/VIDEO_TS.IFO' "
+            "AND file_path NOT LIKE '%/BDMV/index.bdmv' "
+            "AND file_path NOT LIKE '%.iso'"
+        )
+        cleared = cur.rowcount
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('stale_disc_type_cleared', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        await db.commit()
+        print(f"[DB] stale disc_type backfill: cleared {cleared} rows", flush=True)
+        return cleared
+    finally:
+        await db.close()

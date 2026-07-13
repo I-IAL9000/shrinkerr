@@ -1652,7 +1652,13 @@ def _disc_aware_file_name(fp: str, disc_type: str | None) -> str:
             # /media/Misc/Movies2/Elephant (2003) [tt0363589]/rz0u.iso
             # → "rz0u.iso"
             return parts[-1]
-        if len(parts) >= 3:
+        # Only treat this as a folder-disc when the basename is an actual
+        # disc marker. A stale disc_type left on a converted single-file row
+        # (e.g. a BDMV converted to .mkv, disc_type not cleared) must NOT
+        # take this branch — parts[-3] would be the category dir ("Movies2")
+        # instead of the title. See queue.py post-conversion update + the
+        # stale-disc_type backfill.
+        if parts[-1].lower() in ("video_ts.ifo", "index.bdmv") and len(parts) >= 3:
             # /movies/Some Movie/VIDEO_TS/VIDEO_TS.IFO → "Some Movie"
             return parts[-3]
     return fp.rsplit("/", 1)[-1]
