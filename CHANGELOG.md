@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.6] — 2026-07-13
+
+### Added
+- **Bulk "Detect languages" action on the scanner selection.** Select titles (or Select all under the Unknown-language filter) and detect languages for their und tracks in one go. The old "Detect all unknown" button only worked on already-expanded files, so in the poster grid there was no way to bulk-detect; the new action passes the selection to the backend, which expands folder selections to their und-track files server-side.
+
 ## [0.9.5] — 2026-07-13
 
 ### Fixed

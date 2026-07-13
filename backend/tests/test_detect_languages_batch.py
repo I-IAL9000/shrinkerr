@@ -5,8 +5,10 @@ so a season of episodes fired one refresh per episode. It now suppresses the
 per-file notify and fires a single refresh per unique parent folder.
 """
 import os
+import aiosqlite
 import pytest
 
+import backend.database as database
 import backend.routes.scan as scan_mod
 
 
@@ -41,6 +43,35 @@ async def test_batch_coalesces_plex_refresh_by_folder(monkeypatch):
     assert {os.path.dirname(c) for c in notify_calls} == {"/media/Show/S1", "/media/Movie"}
     assert result["folders_refreshed"] == 2
     assert len(result["results"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_expand_paths_folders_to_und_files_only(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "expand.db")
+    db = await aiosqlite.connect(db_path)
+    await db.execute(
+        "CREATE TABLE scan_results (file_path TEXT, removed_from_list INTEGER DEFAULT 0, "
+        "has_und_tracks_flag INTEGER DEFAULT 0)"
+    )
+    await db.executemany(
+        "INSERT INTO scan_results (file_path, removed_from_list, has_und_tracks_flag) VALUES (?, ?, ?)",
+        [
+            ("/media/Show/S1/e1.mkv", 0, 1),   # und -> included
+            ("/media/Show/S1/e2.mkv", 0, 0),   # no und -> excluded
+            ("/media/Show/S1/e3.mkv", 1, 1),   # removed -> excluded
+            ("/media/Other/m.mkv", 0, 1),      # different folder -> excluded
+        ],
+    )
+    await db.commit()
+    await db.close()
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    # Folder selection expands to only its und, non-removed files; an explicit
+    # file path passes through unchanged even though it's not in the DB.
+    resolved = await scan_mod._expand_paths_for_detection(
+        ["/media/Show/S1/", "/media/explicit/hand-picked.mkv"]
+    )
+    assert set(resolved) == {"/media/Show/S1/e1.mkv", "/media/explicit/hand-picked.mkv"}
 
 
 @pytest.mark.asyncio

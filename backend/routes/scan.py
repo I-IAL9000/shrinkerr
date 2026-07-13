@@ -951,19 +951,59 @@ class DetectLanguagesBatchRequest(BaseModel):
     file_paths: list[str]
 
 
+async def _expand_paths_for_detection(paths: list[str]) -> list[str]:
+    """Expand folder selections to the und-track files inside them.
+
+    v0.9.6: the bulk "Detect languages" action passes the raw scanner
+    selection, which is mostly folder paths (poster cards select a folder,
+    trailing "/"). Fan each folder out to its files that still carry und
+    tracks (has_und_tracks_flag=1) so we don't re-probe files that don't
+    need detection. Explicit file paths pass through unchanged so an
+    intentional single-file selection is always honored.
+    """
+    folders = [p for p in paths if p.endswith("/")]
+    files = [p for p in paths if not p.endswith("/")]
+    resolved: list[str] = list(files)
+    seen: set[str] = set(files)
+    if folders:
+        db = await connect_db()
+        try:
+            for folder in folders:
+                async with db.execute(
+                    "SELECT file_path FROM scan_results "
+                    "WHERE file_path LIKE ? AND removed_from_list = 0 "
+                    "AND COALESCE(has_und_tracks_flag, 0) = 1",
+                    (folder + "%",),
+                ) as cur:
+                    async for row in cur:
+                        fp = row["file_path"]
+                        if fp not in seen:
+                            seen.add(fp)
+                            resolved.append(fp)
+        finally:
+            await db.close()
+    return resolved
+
+
 @router.post("/detect-languages-batch")
 async def detect_languages_batch(req: DetectLanguagesBatchRequest):
     """Run detect-languages over files sequentially (single model instance —
     no parallel inference).
+
+    Accepts folder paths (trailing "/") as well as file paths; folders are
+    expanded server-side to their und-track files (see
+    _expand_paths_for_detection) so the bulk action works on a poster-grid
+    selection without the frontend pre-loading each folder's children.
 
     v0.9.2: Plex refreshes are coalesced. The per-file notify is suppressed
     during the loop; afterward one refresh fires per unique parent folder, so
     a season of episodes triggers a single folder refresh rather than one per
     episode (trigger_plex_scan refreshes the file's parent folder).
     """
+    file_paths = await _expand_paths_for_detection(req.file_paths)
     results = []
     written_folders: dict[str, str] = {}  # folder -> representative file_path
-    for fp in req.file_paths:
+    for fp in file_paths:
         try:
             r = await detect_languages(
                 DetectLanguagesRequest(file_path=fp), notify_plex=False)

@@ -799,6 +799,43 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
+  // v0.9.6: bulk language detection on the current selection. Works in the
+  // poster grid (where files aren't pre-loaded) by passing the raw selection
+  // — the backend expands folder paths to their und-track files.
+  const handleBulkDetectLanguages = async () => {
+    // Mirror the other bulk actions: "Select all" sets selectAllActive and
+    // clears selectedPaths, so fall back to every visible folder in that case.
+    const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
+    if (paths.length === 0) {
+      toast("No files or folders selected");
+      return;
+    }
+    if (!await confirm({
+      message: `Detect languages for the ${paths.length} selected item(s)?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.`,
+      confirmLabel: "Detect languages",
+    })) return;
+    setBulkAction(`Detecting languages for selection...`);
+    try {
+      const res = await detectLanguagesBatch(paths);
+      const total = res.results.length;
+      const changed = res.results.filter(r => r.changed).length;
+      const failed = res.results.filter(r => r.error).length;
+      if (total === 0) {
+        toast("No unknown-language tracks found in the selection");
+      } else {
+        toast(
+          `Language detection: ${changed}/${total} file(s) updated${failed ? `, ${failed} failed` : ""}`,
+          failed && !changed ? "error" : "success",
+        );
+      }
+      loadTree();
+    } catch (exc: any) {
+      toast(`Language detection failed: ${exc?.message || exc}`, "error");
+    } finally {
+      setBulkAction(null);
+    }
+  };
+
   const handleRemoveFile = async (filePath: string) => {
     // Find file in loaded files to get ID
     for (const files of loadedFiles.values()) {
@@ -1446,6 +1483,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   Rescan
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  title="Detect languages for unknown (und) audio/subtitle tracks in the selected items and write the tags back to the files"
+                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  onClick={handleBulkDetectLanguages}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                  </svg>
+                  Detect languages
                 </button>
                 <button
                   className="btn btn-secondary"
