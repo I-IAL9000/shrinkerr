@@ -60,23 +60,52 @@ def main():
     if r.returncode != 0:
         print("  stderr:", r.stderr[-400:])
 
-    print("\n[4] pgsrip end-to-end (mkv -> srt text)?")
+    print("\n[4] pgsrip on the extracted .sup (writable temp, so it can write srt)?")
+    if not os.path.exists(sup):
+        print("  no .sup from step [3]; skipping")
+    else:
+        try:
+            from pgsrip import pgsrip as _pg, Sup, Options
+            from babelfish import Language
+            media = Sup(sup)
+            ret = _pg.rip(media, Options(languages={Language("eng")}, overwrite=True))
+            print("  pgsrip.rip returned:", repr(ret))
+            # List everything pgsrip wrote into the temp dir.
+            print("  temp dir now contains:", os.listdir(tmp))
+            srt = os.path.splitext(sup)[0] + ".srt"
+            if os.path.exists(srt):
+                with open(srt, "rb") as fh:
+                    data = fh.read()
+                print(f"  SRT produced: {os.path.getsize(srt)} bytes")
+                print(f"  first 500 bytes: {data[:500]!r}")
+            else:
+                print(f"  no srt at {srt}")
+        except Exception as e:
+            print("  pgsrip .sup path failed:", repr(e))
+
+    print("\n[5] direct OSD script detection on a rendered frame (fallback path)?")
+    # Validate the manual path too: can tesseract OSD read a PGS frame?
+    # pgsrip's PgsSubtitle can render images; try to get one and OSD it.
     try:
-        from pgsrip import pgsrip as _pg, Mkv, Options
-        from babelfish import Language
-        media = Mkv(fp)
-        ok = _pg.rip(media, Options(languages={Language("eng")}, overwrite=True))
-        print("  pgsrip rip ok:", ok)
-        # If it produced an .srt next to the file, show a sample.
-        base = os.path.splitext(fp)[0]
-        for cand in (base + ".en.srt", base + ".eng.srt", base + ".srt"):
-            if os.path.exists(cand):
-                with open(cand, "rb") as fh:
-                    sample = fh.read(400)
-                print(f"  produced {cand}; sample: {sample!r}")
-                break
+        from pgsrip.pgs import PgsReader
+        import pytesseract
+        from PIL import Image  # noqa: F401
+        with open(sup, "rb") as fh:
+            pgs_bytes = fh.read()
+        ds_list = list(PgsReader.decode(pgs_bytes))
+        print(f"  decoded {len(ds_list)} PGS segments/displaysets")
+        # Find a displayset with an image and OSD it.
+        shown = 0
+        for ds in ds_list:
+            img = getattr(ds, "image", None)
+            if img is not None and shown < 1:
+                osd = pytesseract.image_to_osd(img)
+                print("  OSD on first image:\n   " + osd.replace(chr(10), chr(10) + "   "))
+                shown += 1
+        if shown == 0:
+            print("  (no renderable image found via this API — will adjust)")
     except Exception as e:
-        print("  pgsrip path failed (may need different API/args):", repr(e))
+        print("  manual OSD path probe failed (informational):", repr(e))
 
     print("\nDONE — paste this whole output back.")
     shutil.rmtree(tmp, ignore_errors=True)
