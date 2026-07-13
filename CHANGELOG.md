@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] — 2026-07-13
+
+### Changed
+- **Batch language detection coalesces Plex refreshes by folder.** "Detect all unknown" used to fire one Plex folder refresh per file; it now suppresses the per-file notify and refreshes each unique parent folder once, so a season of episodes triggers a single refresh instead of one per episode.
+
 ## [0.9.1] — 2026-07-13
 
 ### Added

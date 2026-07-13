@@ -804,8 +804,24 @@ class DetectLanguagesRequest(BaseModel):
     file_path: str
 
 
+async def _maybe_notify_plex_lang_change(file_path: str) -> bool:
+    """Refresh the Plex folder for a file whose track languages changed.
+
+    Gated on the default-on plex_notify_on_lang_change setting. Fail-open —
+    a Plex hiccup never fails the detection that called it.
+    """
+    try:
+        from backend.scanner import _is_cleanup_enabled
+        if _is_cleanup_enabled("plex_notify_on_lang_change", default=True):
+            from backend.plex import trigger_plex_scan
+            return bool(await trigger_plex_scan(file_path))
+    except Exception as exc:
+        print(f"[LANG-DETECT] Plex notify failed (non-fatal): {exc}", flush=True)
+    return False
+
+
 @router.post("/detect-languages")
-async def detect_languages(req: DetectLanguagesRequest):
+async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True):
     """Detect languages for a file's und audio + text-subtitle tracks,
     apply above-threshold results, persist re-classified tracks to
     scan_results, return the updated tracks. Fail-open per track."""
@@ -912,20 +928,13 @@ async def detect_languages(req: DetectLanguagesRequest):
     except Exception as exc:
         print(f"[LANG-DETECT] file write failed (DB detection kept): {exc}", flush=True)
 
-    # v0.9.1: notify Plex so it re-reads the now-corrected track languages.
-    # Gated on the default-on plex_notify_on_lang_change setting; only fires
-    # when the file was actually rewritten. Reuses the rename.py rescan path.
-    # Fail-open — a Plex hiccup never fails the detection.
+    # v0.9.1: notify Plex so it re-reads the now-corrected track languages,
+    # only when the file was actually rewritten. v0.9.2: skippable via
+    # notify_plex=False so batch runs can coalesce refreshes by folder
+    # (see detect-languages-batch).
     plex_notified = False
-    if file_written:
-        try:
-            from backend.scanner import _is_cleanup_enabled
-            if _is_cleanup_enabled("plex_notify_on_lang_change", default=True):
-                from backend.plex import trigger_plex_scan
-                section = await trigger_plex_scan(req.file_path)
-                plex_notified = bool(section)
-        except Exception as exc:
-            print(f"[LANG-DETECT] Plex notify failed (non-fatal): {exc}", flush=True)
+    if file_written and notify_plex:
+        plex_notified = await _maybe_notify_plex_lang_change(req.file_path)
 
     return {
         "status": "ok",
@@ -945,15 +954,31 @@ class DetectLanguagesBatchRequest(BaseModel):
 @router.post("/detect-languages-batch")
 async def detect_languages_batch(req: DetectLanguagesBatchRequest):
     """Run detect-languages over files sequentially (single model instance —
-    no parallel inference)."""
+    no parallel inference).
+
+    v0.9.2: Plex refreshes are coalesced. The per-file notify is suppressed
+    during the loop; afterward one refresh fires per unique parent folder, so
+    a season of episodes triggers a single folder refresh rather than one per
+    episode (trigger_plex_scan refreshes the file's parent folder).
+    """
     results = []
+    written_folders: dict[str, str] = {}  # folder -> representative file_path
     for fp in req.file_paths:
         try:
-            r = await detect_languages(DetectLanguagesRequest(file_path=fp))
+            r = await detect_languages(
+                DetectLanguagesRequest(file_path=fp), notify_plex=False)
             results.append({"file_path": fp, "changed": r.get("changed", False)})
+            if r.get("file_written"):
+                written_folders.setdefault(os.path.dirname(fp), fp)
         except Exception as exc:
             results.append({"file_path": fp, "error": str(exc)})
-    return {"status": "ok", "results": results}
+
+    folders_refreshed = 0
+    for rep_fp in written_folders.values():
+        if await _maybe_notify_plex_lang_change(rep_fp):
+            folders_refreshed += 1
+
+    return {"status": "ok", "results": results, "folders_refreshed": folders_refreshed}
 
 
 @router.get("/status")
