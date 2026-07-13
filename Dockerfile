@@ -72,7 +72,8 @@ RUN set -eux; \
     # bumps within the bookworm release line.
     apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends curl xz-utils libarchive-tools libbluray-bin mkvtoolnix \
-        tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-rus tesseract-ocr-ara; \
+        tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-rus tesseract-ocr-ara \
+        libgl1 libglib2.0-0; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
         # All VA-API packages (runtime libs + Intel iHD + AMD radeonsi +
         # diagnostic) only on amd64. arm64 builds keep the minimal
