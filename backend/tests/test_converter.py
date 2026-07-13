@@ -296,6 +296,21 @@ def test_regular_file_no_audio_language_injection():
     assert _metadata_lang_args(cmd) == [], _metadata_lang_args(cmd)
 
 
+def test_regular_file_auto_detected_audio_language_injected():
+    """v0.8.0: a REGULAR (non-disc) input whose und audio was upgraded by
+    auto-detect must still get the detected language stamped. The metadata
+    injection is gated on `disc_audio_languages is not None`, not on a disc
+    URL — so building the list (as convert_file now does when
+    _auto_detected_audio is True) injects the tag on regular files too."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/Movie 1080p x264.mkv", "/media/Movie.converting.mkv",
+        encoder="nvenc",
+        disc_audio_languages=["swe"],
+    )
+    args = _metadata_lang_args(cmd)
+    assert ("-metadata:s:a:0", "language=swe") in args, args
+
+
 # ---------------------------------------------------------------------------
 # v0.7.30: disc SUBTITLE language injection (same root cause as v0.7.29's
 # audio fix — bluray:/concat: strips embedded-sub language tags too).
@@ -374,3 +389,38 @@ def test_default_audio_map_uses_optional_selector():
         f"bare -map 0:a present — hard-fails on no-audio sources "
         f"(exit 234): {maps}"
     )
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_patches_und_audio_before_convert(monkeypatch):
+    from backend import converter as conv
+    tracks = [{"stream_index": 1, "language": "und", "codec": "aac"}]
+    async def fake_audio_detect(fp, idx, duration=0.0):
+        return ("swe", 0.88)
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
+    monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "swe"
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_disabled_leaves_und(monkeypatch):
+    from backend import converter as conv
+    tracks = [{"stream_index": 1, "language": "und", "codec": "aac"}]
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: False)
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "und"
+
+
+@pytest.mark.asyncio
+async def test_auto_detect_skips_already_tagged(monkeypatch):
+    from backend import converter as conv
+    called = []
+    async def fake_audio_detect(fp, idx, duration=0.0):
+        called.append(idx); return ("swe", 0.9)
+    monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
+    monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
+    tracks = [{"stream_index": 1, "language": "eng", "codec": "aac"}]
+    patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
+    assert patched[0]["language"] == "eng"
+    assert called == []  # already tagged → no detection call

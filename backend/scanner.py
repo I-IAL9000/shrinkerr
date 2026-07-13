@@ -302,6 +302,15 @@ async def probe_file(file_path: str) -> Optional[dict]:
             tags = stream.get("tags", {}) or {}
             disposition = stream.get("disposition", {}) or {}
             lang = (tags.get("language") or "und").lower()
+            # v0.8.0: give und TEXT subtitles a real language by detecting
+            # from their extracted text. Image subs pass through (OCR is
+            # v0.8.1). Fail-open: extraction/detection failures leave "und".
+            if lang == "und":
+                from backend.language_detection import maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS
+                _codec_l = (stream.get("codec_name") or "").lower()
+                if _codec_l in _TEXT_SUB_CODECS:
+                    _txt = await _extract_embedded_sub_text(file_path, stream.get("index"))
+                    lang = maybe_detect_subtitle_track_language(lang, _codec_l, _txt)
             subtitle_tracks.append({
                 "stream_index": stream.get("index"),
                 "language": lang,
@@ -634,6 +643,35 @@ _EXT_CODEC_MAP = {
     ".sup": "hdmv_pgs_subtitle",
     ".idx": "dvd_subtitle",
 }
+
+
+async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
+    """Extract up to ~max_chars of text from an embedded text subtitle
+    stream via ffmpeg (srt to stdout). Async so it doesn't block the
+    event loop during concurrent scans. Returns None on failure/empty."""
+    import asyncio
+    import re as _re
+    cmd = ["ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
+           "-t", "600", "-f", "srt", "-"]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except (asyncio.TimeoutError, OSError):
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        return None
+    if not out:
+        return None
+    text = out.decode(errors="replace")
+    text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
+    text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
+    return text[:max_chars].strip() or None
 
 
 def detect_external_subtitles(video_path: str) -> list[dict]:

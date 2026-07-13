@@ -846,6 +846,36 @@ def _hevc_tag_for_encoder(encoder: str | None) -> str:
     return "x265" if (encoder or "").lower() == "libx265" else "h265"
 
 
+def _auto_detect_enabled() -> bool:
+    """Read the auto_detect_languages setting (default True)."""
+    from backend.scanner import _is_cleanup_enabled
+    return _is_cleanup_enabled("auto_detect_languages", default=True)
+
+
+async def _detect_und_track_languages(file_path, audio_tracks, subtitle_tracks, duration):
+    """When auto_detect_languages is on, detect languages for und audio
+    tracks and patch them in place. Returns the (possibly patched)
+    audio_tracks list. Fail-open. Subtitle text detection already ran at
+    scan; audio is detected here because it's too expensive for scan."""
+    if not _auto_detect_enabled():
+        return audio_tracks
+    from backend.language_detection import detect_audio_language
+    for t in audio_tracks:
+        if (t.get("language") or "und").lower() != "und":
+            continue
+        idx = t.get("stream_index")
+        if idx is None:
+            continue
+        try:
+            lang, _conf = await detect_audio_language(file_path, idx, duration=duration)
+        except Exception:
+            lang = None
+        if lang:
+            t["language"] = lang
+            print(f"[CONVERT] Auto-detected audio s{idx} language: {lang}", flush=True)
+    return audio_tracks
+
+
 def rename_source_to_target_codec(filename: str, encoder: str | None = None) -> str:
     """Rewrite source-codec tags in `filename` for the output encoder.
 
@@ -2085,6 +2115,25 @@ async def convert_file(
         )
         temp_path = get_temp_path(input_path)
 
+    # v0.8.0: detect languages for und audio tracks before building the
+    # command, so the v0.7.29/30 metadata injection + track keep/reorder
+    # use real languages. Gated on auto_detect_languages (default on).
+    # snapshot und audio stream indices BEFORE detection
+    _pre_und_audio_idx = {
+        t.get("stream_index") for t in (probe_audio_tracks or [])
+        if (t.get("language") or "und").lower() == "und"
+    }
+    if probe_audio_tracks:
+        probe_audio_tracks = await _detect_und_track_languages(
+            input_path, probe_audio_tracks, [], duration=duration,
+        )
+    # True if detection upgraded any previously-und audio track
+    _auto_detected_audio = any(
+        t.get("stream_index") in _pre_und_audio_idx
+        and (t.get("language") or "und").lower() != "und"
+        for t in (probe_audio_tracks or [])
+    )
+
     # Build inline keep-list for audio:
     #   - Filter out any tracks in audio_tracks_to_remove
     #   - Reorder so native-language tracks come first (default playback track)
@@ -2157,7 +2206,10 @@ async def convert_file(
     # with subtitles but no audio still gets its subs tagged; the audio
     # loop simply no-ops on an empty list.
     disc_audio_languages = None
-    if disc_type:
+    # v0.8.0: build the injection list for discs (protocol strips tags) OR
+    # when auto-detect upgraded a regular file's und audio — otherwise the
+    # detected language never reaches the output (-c:a copy keeps und).
+    if disc_type or _auto_detected_audio:
         disc_audio_languages = [t.get("language") for t in probe_audio_tracks]
 
     # v0.7.24: target_resolution is now resolved earlier (before

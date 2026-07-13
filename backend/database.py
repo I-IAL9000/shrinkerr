@@ -536,6 +536,13 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN video_conv_savings_bytes INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.8.0: flag rows with any und audio/subtitle track so the
+        # audio-cleanup filter can surface titles that need language
+        # detection. Set at write time in routes/scan.py.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN has_und_tracks_flag INTEGER DEFAULT 0")
+        except Exception:
+            pass
         # Migration: per-node configuration (pause, affinity, translation, schedule)
         for col, ctype in [
             ("paused", "INTEGER DEFAULT 0"),                    # 0/1 — per-node pause

@@ -196,6 +196,8 @@ class SettingsUpdate(BaseModel):
     # removed in v0.5.16 — even with this off, tracks remain
     # user-editable. Issue #11 follow-up.
     always_keep_dedup: Optional[bool] = None
+    # v0.8.0: auto-detect languages for und tracks before converting.
+    auto_detect_languages: Optional[bool] = None
     target_codec: Optional[str] = None
     target_resolution: Optional[str] = None
     source_codecs: Optional[list[str]] = None

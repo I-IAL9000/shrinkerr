@@ -1807,6 +1807,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 Tracks tagged as "und" or with no language metadata
               </div>
 
+              {/* v0.8.0: auto-detect languages for und tracks */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.auto_detect_languages !== false}
+                  onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Auto-detect languages for unknown tracks before converting</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                Before converting or cleaning up audio, run language detection on "und"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view.
+              </div>
+
               {/* Audio Conversion */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                 <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>Audio Conversion</h4>

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-07-13
+
+### Added
+- **Language detection for unknown (`und`) tracks.** Text subtitles are detected at scan time via langdetect; audio tracks via a faster-whisper tiny language-ID model — on-demand (a "Detect languages" button per file + a "Detect all unknown" batch action) and automatically before conversion when the new default-on **Auto-detect languages for unknown tracks** setting is enabled. Detected languages are confidence-gated (leave `und` rather than guess wrong), applied with `language_source="detected"`, and written to converted output as `-metadata:s:a/s:N language=` tags for both disc and regular files. Titles with unknown tracks surface in the audio-cleanup filter. faster-whisper's tiny model (~75 MB) downloads on first audio-detection use into the data volume; CUDA-accelerated on NVENC images, CPU elsewhere. Detection is fail-open — a failure never blocks a scan or conversion. **Image-based subtitles (PGS/VobSub) are deferred to v0.8.1** (they need OCR).
+
 ## [0.7.34] — 2026-07-08
 
 ### Fixed

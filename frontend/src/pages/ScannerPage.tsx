@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
-import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk } from "../api";
+import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
@@ -763,6 +763,42 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
+  // v0.8.0: visible files carrying und (unknown-language) audio/subtitle tracks.
+  const undFiles = useMemo(() => {
+    const isUnd = (lang?: string | null) => (lang || "und").toLowerCase() === "und";
+    const paths = new Set<string>();
+    for (const files of loadedFiles.values()) {
+      for (const f of files) {
+        const audioUnd = (f.audio_tracks || []).some(t => isUnd(t.language));
+        const subUnd = (f.subtitle_tracks || []).some(t => isUnd(t.language));
+        if (audioUnd || subUnd) paths.add(f.file_path);
+      }
+    }
+    return Array.from(paths);
+  }, [loadedFiles]);
+
+  const handleDetectAllUnknown = async () => {
+    if (undFiles.length === 0) {
+      toast("No visible files with unknown-language tracks");
+      return;
+    }
+    setBulkAction(`Detecting languages for ${undFiles.length} file(s)...`);
+    try {
+      const res = await detectLanguagesBatch(undFiles);
+      const changed = res.results.filter(r => r.changed).length;
+      const failed = res.results.filter(r => r.error).length;
+      toast(
+        `Language detection: ${changed} file(s) updated${failed ? `, ${failed} failed` : ""}`,
+        failed && !changed ? "error" : "success",
+      );
+      loadTree();
+    } catch (exc: any) {
+      toast(`Language detection failed: ${exc?.message || exc}`, "error");
+    } finally {
+      setBulkAction(null);
+    }
+  };
+
   const handleRemoveFile = async (filePath: string) => {
     // Find file in loaded files to get ID
     for (const files of loadedFiles.values()) {
@@ -1383,6 +1419,19 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
               {selectAllActive || selectedPaths.size > 0 ? "Deselect all" : "Select all"}
             </button>
+            {undFiles.length > 0 && (
+              <button
+                className="btn btn-secondary"
+                title="Run language detection on every visible file with unknown (und) audio/subtitle tracks"
+                style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+                onClick={handleDetectAllUnknown}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                Detect all unknown ({undFiles.length})
+              </button>
+            )}
             {selectedCount > 0 && (() => {
               const selectedFiles = getSelectedFiles();
               const allSelectedIgnored = selectedFiles.length > 0 && selectedFiles.every(f => f.ignored);

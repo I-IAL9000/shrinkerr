@@ -61,12 +61,21 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     has_lossless = 1
                     break
 
+            import json as _json_und
+            def _row_has_und(json_str):
+                try:
+                    return any((t.get("language") or "und").lower() == "und"
+                               for t in _json_und.loads(json_str or "[]"))
+                except (ValueError, TypeError, AttributeError):
+                    return False
+            has_und = 1 if (_row_has_und(audio_json) or _row_has_und(sub_json)) else 0
+
             db.execute(
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -94,7 +103,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_lossless_audio_flag=excluded.has_lossless_audio_flag,
                        has_external_subs_flag=excluded.has_external_subs_flag,
                        disc_type=excluded.disc_type,
-                       video_conv_savings_bytes=excluded.video_conv_savings_bytes
+                       video_conv_savings_bytes=excluded.video_conv_savings_bytes,
+                       has_und_tracks_flag=excluded.has_und_tracks_flag
                 """,
                 (
                     scanned.file_path,
@@ -118,6 +128,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     1 if getattr(scanned, 'has_external_subs', False) else 0,
                     getattr(scanned, 'disc_type', None),  # v0.6.0
                     getattr(scanned, 'video_conv_savings_bytes', 0),  # v0.6.7
+                    has_und,  # v0.8.0 language detection
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
@@ -778,6 +789,115 @@ async def cleanup_temp_scan_results():
         return {"status": "cleaned", "removed": result.rowcount}
     finally:
         await db.close()
+
+
+def _und_flag(audio, subs) -> int:
+    """1 if any classified track is still und, else 0.
+
+    Classified tracks are pydantic models exposing `.language`."""
+    return 1 if any(
+        (t.language or "und").lower() == "und" for t in list(audio) + list(subs)
+    ) else 0
+
+
+class DetectLanguagesRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/detect-languages")
+async def detect_languages(req: DetectLanguagesRequest):
+    """Detect languages for a file's und audio + text-subtitle tracks,
+    apply above-threshold results, persist re-classified tracks to
+    scan_results, return the updated tracks. Fail-open per track."""
+    from backend.scanner import (
+        probe_file, classify_audio_tracks, classify_subtitle_tracks,
+        detect_native_language, _extract_embedded_sub_text,
+    )
+    from backend.language_detection import (
+        detect_audio_language, maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS,
+    )
+    probe = await probe_file(req.file_path)
+    if probe is None:
+        raise HTTPException(404, "Could not probe file")
+    duration = probe.get("duration", 0.0) or 0.0
+    raw_audio = probe.get("audio_tracks", []) or []
+    raw_subs = probe.get("subtitle_tracks", []) or []
+    changed = False
+
+    # Audio: detect und tracks.
+    for t in raw_audio:
+        if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            try:
+                lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
+            except Exception:
+                lang = None
+            if lang:
+                t["language"] = lang
+                changed = True
+
+    # Subtitles: detect und text subs (image subs skipped by the helper).
+    for t in raw_subs:
+        if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            codec_l = (t.get("codec") or "").lower()
+            if codec_l in _TEXT_SUB_CODECS:
+                try:
+                    txt = await _extract_embedded_sub_text(req.file_path, t["stream_index"])
+                    new_lang = maybe_detect_subtitle_track_language("und", codec_l, txt)
+                except Exception:
+                    new_lang = "und"
+                if new_lang != "und":
+                    t["language"] = new_lang
+                    changed = True
+
+    if not changed:
+        return {"status": "ok", "changed": False}
+
+    # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
+    native_lang = detect_native_language(raw_audio)
+    audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
+    subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+    audio_json = json.dumps([t.model_dump() for t in audio_tracks])
+    subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
+    has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+    has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+    db = await connect_db()
+    try:
+        await db.execute(
+            "UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?, "
+            "native_language = ?, language_source = 'detected', "
+            "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+            "has_und_tracks_flag = ? WHERE file_path = ?",
+            (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
+             _und_flag(audio_tracks, subtitle_tracks), req.file_path),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return {
+        "status": "ok",
+        "changed": True,
+        "native_language": native_lang,
+        "audio_tracks": [t.model_dump() for t in audio_tracks],
+        "subtitle_tracks": [t.model_dump() for t in subtitle_tracks],
+    }
+
+
+class DetectLanguagesBatchRequest(BaseModel):
+    file_paths: list[str]
+
+
+@router.post("/detect-languages-batch")
+async def detect_languages_batch(req: DetectLanguagesBatchRequest):
+    """Run detect-languages over files sequentially (single model instance —
+    no parallel inference)."""
+    results = []
+    for fp in req.file_paths:
+        try:
+            r = await detect_languages(DetectLanguagesRequest(file_path=fp))
+            results.append({"file_path": fp, "changed": r.get("changed", False)})
+        except Exception as exc:
+            results.append({"file_path": fp, "error": str(exc)})
+    return {"status": "ok", "results": results}
 
 
 @router.get("/status")
@@ -1525,6 +1645,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(probe_status, 'ok') as probe_status,
     COALESCE(video_height, 0) as video_height,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
+    COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
     COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
     COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
     vmaf_score,
@@ -1568,7 +1689,7 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     if filter_name == "low_bitrate":
         return f["low_bitrate"] and not f["ignored"]
     if filter_name == "audio_cleanup":
-        return f["has_removable_tracks"] and not f["ignored"]
+        return (f["has_removable_tracks"] or f.get("has_und_tracks")) and not f["ignored"]
     if filter_name == "sub_cleanup":
         return f["has_removable_subs"] and not f["ignored"]
     if filter_name == "ignored":
@@ -1755,7 +1876,7 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
     elif f == "lossy_audio":
         sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
     elif f == "audio_cleanup":
-        sql = "AND COALESCE(has_removable_tracks_flag, 0) = 1"
+        sql = "AND (COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"
         needs_python = {f}  # still need to exclude ignored
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
@@ -1889,6 +2010,7 @@ async def get_scan_tree(filter: str = "all"):
         cols = """id, file_path, file_size, file_mtime, video_height, video_codec,
                   needs_conversion, converted, duration,
                   COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
+                  COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
                   COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
                   COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
                   new_detected_at"""
