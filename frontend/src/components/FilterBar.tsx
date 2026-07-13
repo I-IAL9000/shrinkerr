@@ -37,6 +37,7 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   // Audio group
   { key: "_audio", label: "Audio:", group: "divider" },
   { key: "audio_cleanup", label: "Audio cleanup" },
+  { key: "unknown_language", label: "Unknown language" },
   { key: "lossless_audio", label: "Lossless audio" },
   { key: "lossy_audio", label: "Lossy audio" },
   // Plex group

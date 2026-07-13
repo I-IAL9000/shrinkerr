@@ -25,6 +25,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const [researching, setResearching] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [detecting, setDetecting] = useState(false);
+  const [detectStage, setDetectStage] = useState<string | null>(null);
   const [detected, setDetected] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
@@ -81,6 +82,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
 
   const handleDetect = async () => {
     setDetecting(true);
+    setDetectStage(null);
     try {
       const r = await detectLanguages(file.file_path);
       if (r.changed) {
@@ -95,8 +97,28 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       toast(`Language detection error: ${exc?.message || exc}`, "error");
     } finally {
       setDetecting(false);
+      setDetectStage(null);
     }
   };
+
+  // v0.9.1: surface the coarse OCR/detection stages the backend broadcasts
+  // during on-demand language detection (image-sub OCR can take minutes).
+  // useWebSocket re-dispatches every WS message as a `ws-message` window
+  // event (see api.ts), so we subscribe here without prop drilling —
+  // mirrors ScannerPage's scan_results_changed listener. Only react to
+  // progress for THIS file.
+  useEffect(() => {
+    const onWsMessage = (event: Event) => {
+      const me = event as MessageEvent;
+      try {
+        const msg = JSON.parse(me.data);
+        if (msg?.type !== "detect_progress" || msg.file_path !== file.file_path) return;
+        setDetectStage(msg.stage || null);
+      } catch { return; }
+    };
+    window.addEventListener("ws-message", onWsMessage);
+    return () => window.removeEventListener("ws-message", onWsMessage);
+  }, [file.file_path]);
 
   useEffect(() => {
     if (file.audio_tracks?.length) return;
@@ -317,6 +339,12 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               {upgrading ? "Searching…" : "Search for upgrade"}
             </button>
           </div>
+          {detecting && detectStage && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+              <div className="spinner" style={{ width: 12, height: 12 }} />
+              <span>{detectStage}</span>
+            </div>
+          )}
           {isCorrupt && (
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
               ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr.

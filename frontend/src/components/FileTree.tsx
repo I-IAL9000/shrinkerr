@@ -460,7 +460,7 @@ const FileRow = memo(function FileRow({
         </span>
         <span className="tree-name" style={{ cursor: "pointer" }}>{file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
-        <span className={`codec-badge ${codecClass}`}>
+        <span className={`codec-badge ${codecClass}`} title={`Video codec: ${codecLabel}`} aria-label={`Video codec: ${codecLabel}`}>
           {codecLabel}
         </span>
         {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
@@ -496,7 +496,7 @@ const FileRow = memo(function FileRow({
           </span>
         )}
         {file.converted && (
-          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Shrinkerr">&#x2713;</span>
+          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Shrinkerr" aria-label="Converted by Shrinkerr">&#x2713;</span>
         )}
         {file.is_new && (
           <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>NEW</span>
@@ -515,11 +515,11 @@ const FileRow = memo(function FileRow({
           {!file.ignored && onIgnoreFile && (
             <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }}
               style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 14 }}
-              title="Ignore this file">&#x2298;</button>
+              title="Ignore this file" aria-label="Ignore this file">&#x2298;</button>
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }}
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 16 }}
-            title="Remove from list">&times;</button>
+            title="Remove from list" aria-label="Remove from list">&times;</button>
           {onDeleteFile && (
             <button
               onClick={async (e) => {
@@ -532,6 +532,7 @@ const FileRow = memo(function FileRow({
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
               title="Move to trash"
+              aria-label="Move to trash"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
