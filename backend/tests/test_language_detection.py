@@ -84,3 +84,14 @@ async def test_detect_audio_language_failopen_on_extract_error():
     with patch.object(ld, "_extract_audio_clip", new=AsyncMock(side_effect=OSError("ffmpeg gone"))):
         lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
     assert (lang, conf) == (None, 0.0)
+
+
+def test_maybe_detect_sub_language_only_text_codecs():
+    from backend.language_detection import maybe_detect_subtitle_track_language
+    from unittest.mock import patch
+    with patch("backend.language_detection.detect_subtitle_language", return_value=("eng", 0.95)):
+        assert maybe_detect_subtitle_track_language("und", "subrip", "some english text") == "eng"
+    assert maybe_detect_subtitle_track_language("swe", "subrip", "text") == "swe"
+    assert maybe_detect_subtitle_track_language("und", "hdmv_pgs_subtitle", "text") == "und"
+    with patch("backend.language_detection.detect_subtitle_language", return_value=(None, 0.0)):
+        assert maybe_detect_subtitle_track_language("und", "subrip", "garbage") == "und"

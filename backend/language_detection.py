@@ -144,3 +144,23 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
     if not iso2:
         return (None, 0.0)
     return (_normalize_iso639_2(iso2), conf)
+
+
+# Text subtitle codecs whose language we can detect from their text.
+# Image codecs (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle, vobsub) are
+# out of scope for v0.8.0 (OCR is v0.8.1).
+_TEXT_SUB_CODECS = {"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "tx3g"}
+
+
+def maybe_detect_subtitle_track_language(language: str, codec: str, text: str | None) -> str:
+    """Return an upgraded ISO 639-2 language for a subtitle track, or the
+    original `language` unchanged. Only detects for und TEXT subs with
+    extractable text. Image subs and already-tagged tracks pass through."""
+    if (language or "und").lower() != "und":
+        return language
+    if (codec or "").lower() not in _TEXT_SUB_CODECS:
+        return language
+    if not text:
+        return language
+    detected, _conf = detect_subtitle_language(text)
+    return detected if detected else "und"

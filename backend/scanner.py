@@ -302,6 +302,15 @@ async def probe_file(file_path: str) -> Optional[dict]:
             tags = stream.get("tags", {}) or {}
             disposition = stream.get("disposition", {}) or {}
             lang = (tags.get("language") or "und").lower()
+            # v0.8.0: give und TEXT subtitles a real language by detecting
+            # from their extracted text. Image subs pass through (OCR is
+            # v0.8.1). Fail-open: extraction/detection failures leave "und".
+            if lang == "und":
+                from backend.language_detection import maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS
+                _codec_l = (stream.get("codec_name") or "").lower()
+                if _codec_l in _TEXT_SUB_CODECS:
+                    _txt = _extract_embedded_sub_text(file_path, stream.get("index"))
+                    lang = maybe_detect_subtitle_track_language(lang, _codec_l, _txt)
             subtitle_tracks.append({
                 "stream_index": stream.get("index"),
                 "language": lang,
@@ -634,6 +643,24 @@ _EXT_CODEC_MAP = {
     ".sup": "hdmv_pgs_subtitle",
     ".idx": "dvd_subtitle",
 }
+
+
+def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
+    """Extract up to ~max_chars of text from an embedded text subtitle
+    stream via ffmpeg (srt to stdout). Returns None on failure/empty."""
+    import subprocess
+    import re as _re
+    cmd = ["ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}", "-f", "srt", "-"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=60).stdout
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if not out:
+        return None
+    text = out.decode(errors="replace")
+    text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
+    text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
+    return text[:max_chars].strip() or None
 
 
 def detect_external_subtitles(video_path: str) -> list[dict]:
