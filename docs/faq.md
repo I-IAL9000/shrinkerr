@@ -111,6 +111,18 @@ It uses mtime + size to skip unchanged files. If a file's mtime changes,
 it's re-scanned. Forced re-scans via the Scanner "Rescan" button always
 re-check every file under the chosen path.
 
+**Some of my tracks show as "unknown" language. Can Shrinkerr fix that?**
+Yes. Text subtitles are identified automatically during a scan. For `und`
+audio and image (PGS/VobSub) subtitle tracks, use the **Detect languages**
+button on a file — or filter to **Unknown language** and run detect on the
+batch. Detected languages are written back into the file (in place for mkv).
+See [Language detection](language-detection.md).
+
+**Does language detection re-encode my files?**
+No. It only rewrites metadata — instantly and in place for mkv
+(`mkvpropedit`), or a stream-copy remux for other containers. Audio and
+video are never re-encoded.
+
 ## Troubleshooting (brief; see [Troubleshooting](troubleshooting.md) for depth)
 
 **The UI is stuck on a loading spinner.**

@@ -52,6 +52,15 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 - Watch folders — new files appear in the scanner view automatically
 - Poster grid view with TMDB artwork for visual browsing
 
+**Language detection** (for tracks tagged `und` / undetermined)
+- **Text subtitles** — detected automatically at scan time from the subtitle text, with charset detection for legacy non-Unicode encodings (GB2312 / Big5 / Shift-JIS / EUC-KR / Windows-1252)
+- **Audio** — spoken-language ID via a bundled faster-whisper model (samples several points in the track for confidence), on demand and — optionally — automatically before conversion
+- **Image subtitles** — PGS (Blu-ray) and VobSub (DVD) via OCR (tesseract), multi-script (Latin / CJK / Cyrillic / Arabic), on demand
+- Detected languages are **written back to the file** (in place via `mkvpropedit` for mkv, no re-encode) — so the fix is real on disk, not just in Shrinkerr — with an optional Plex refresh afterward
+- Confidence-gated and fail-open: a low-confidence or failed detection leaves the track `und` rather than mistagging it
+- A dedicated **Unknown language** filter surfaces titles that still have `und` tracks
+- See [Language detection](docs/language-detection.md)
+
 **Automation**
 - Queue with drag-and-drop reordering, bulk apply, priority levels, and scheduling
 - Watch folders — auto-queue newly-added files in real time
@@ -349,6 +358,8 @@ NVENC workers need the same GPU passthrough config as the main server (`runtime:
 | `SHRINKERR_MEDIA_ROOT` | `/media` | Container-side root of the media library |
 | `SHRINKERR_MODE` | `server` | Set to `worker` to run as a remote worker node |
 | `NVIDIA_VISIBLE_DEVICES` | unset | Set to `all` on NVENC variants to enable GPU passthrough |
+| `SHRINKERR_LANG_DETECT_AUDIO_MIN` | `0.6` | Min confidence to accept an audio [language detection](docs/language-detection.md) |
+| `SHRINKERR_LANG_DETECT_SUB_MIN` | `0.7` | Min confidence to accept a subtitle language detection |
 
 **Worker-only** (when `SHRINKERR_MODE=worker`):
 

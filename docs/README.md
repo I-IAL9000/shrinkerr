@@ -20,6 +20,10 @@ deeper.
   (conditions, actions, overrides), watch folders, Sonarr / Radarr /
   NZBGet / SABnzbd integration, scheduling (quiet hours, per-node hours),
   Plex / Jellyfin integration, batch rename.
+- [**Language detection**](language-detection.md) — detecting the language
+  of `und` (undetermined) audio and subtitle tracks: text subs at scan,
+  audio via faster-whisper, image subs (PGS/VobSub) via OCR; writing the
+  tags back to the file; the auto-detect and Plex-notify settings.
 - [**Best practices**](best-practices.md) — when to use which encoder,
   preset/CRF recommendations for common sources, how to size a worker
   fleet, backup strategy, what to set before your first batch.
