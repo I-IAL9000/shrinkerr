@@ -1586,6 +1586,10 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "needs_conversion": bool(row.get("needs_conversion")),
         "native_language": row.get("native_language"),
         "has_removable_tracks": bool(row.get("has_removable_tracks")),
+        # v0.9.3: the unknown_language / audio_cleanup matchers read
+        # f["has_und_tracks"]; without it here they never matched, so the
+        # Unknown-language filter returned "No files found" on click.
+        "has_und_tracks": bool(row.get("has_und_tracks")),
         "has_removable_subs": bool(row.get("has_removable_subs")),
         "has_lossless_audio": bool(row.get("has_lossless_audio")),
         "ignored": is_ignored,
@@ -1679,6 +1683,10 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "needs_conversion": bool(row.get("needs_conversion")),
         "native_language": row.get("native_language"),
         "has_removable_tracks": bool(row.get("has_removable_tracks")),
+        # v0.9.3: the unknown_language / audio_cleanup matchers read
+        # f["has_und_tracks"]; without it here they never matched, so the
+        # Unknown-language filter returned "No files found" on click.
+        "has_und_tracks": bool(row.get("has_und_tracks")),
         "has_removable_subs": bool(row.get("has_removable_subs")),
         "has_lossless_audio": bool(row.get("has_lossless_audio")),
         "ignored": is_ignored,
@@ -2164,7 +2172,13 @@ async def get_scan_tree(filter: str = "all"):
                         if not (r.get("needs_conversion") and not is_ignored and bitrate > HIGH_BR):
                             skip = True; break
                     elif pf == "audio_cleanup":
-                        if not (r.get("has_removable_tracks") and not is_ignored):
+                        # Mirror the SQL fragment + _matches_single_filter:
+                        # audio_cleanup also covers und tracks, so an und-only
+                        # file (no removable tracks) must still pass here.
+                        if not ((r.get("has_removable_tracks") or r.get("has_und_tracks")) and not is_ignored):
+                            skip = True; break
+                    elif pf == "unknown_language":
+                        if not (r.get("has_und_tracks") and not is_ignored):
                             skip = True; break
                     elif pf == "sub_cleanup":
                         if not (r.get("has_removable_subs") and not is_ignored):

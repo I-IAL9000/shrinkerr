@@ -970,3 +970,60 @@ async def backfill_daily_stats() -> None:
         print(f"[DB] Backfilled {filled} days of stats", flush=True)
     finally:
         await db.close()
+
+
+async def backfill_und_tracks_flag() -> int:
+    """One-time backfill of has_und_tracks_flag for pre-v0.8.0 scan rows.
+
+    The column was added in v0.8.0 defaulting to 0 and is only ever set at
+    scan time (routes/scan.py), so rows scanned on an earlier version stay 0
+    even when they have und audio/subtitle tracks — which is why the
+    Unknown-language filter showed almost nothing until a full re-scan.
+    Recompute the flag from the stored track JSON, once, guarded by a
+    settings sentinel. Uses the same und test as the scan-time writer.
+    """
+    import json as _json
+    db = await connect_db()
+    try:
+        # Sentinel guard — run only once per database.
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'und_flag_backfilled'"
+        ) as cur:
+            if await cur.fetchone():
+                return 0
+
+        def _has_und(js: str | None) -> bool:
+            try:
+                return any((t.get("language") or "und").lower() == "und"
+                           for t in _json.loads(js or "[]"))
+            except (ValueError, TypeError, AttributeError):
+                return False
+
+        # Only rows currently flagged 0 need checking — the rest are correct.
+        async with db.execute(
+            "SELECT id, audio_tracks_json, subtitle_tracks_json FROM scan_results "
+            "WHERE COALESCE(has_und_tracks_flag, 0) = 0"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        to_flag = [r[0] for r in rows if _has_und(r[1]) or _has_und(r[2])]
+
+        CHUNK = 500
+        for i in range(0, len(to_flag), CHUNK):
+            chunk = to_flag[i:i + CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            await db.execute(
+                f"UPDATE scan_results SET has_und_tracks_flag = 1 WHERE id IN ({placeholders})",
+                chunk,
+            )
+            await db.commit()
+
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('und_flag_backfilled', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        await db.commit()
+        print(f"[DB] und-flag backfill: flagged {len(to_flag)} of {len(rows)} unflagged rows", flush=True)
+        return len(to_flag)
+    finally:
+        await db.close()

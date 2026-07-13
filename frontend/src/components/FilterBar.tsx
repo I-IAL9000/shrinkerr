@@ -12,6 +12,7 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "high_bitrate", label: "High bitrate" },
   { key: "low_bitrate", label: "Low bitrate" },
   { key: "sub_cleanup", label: "Subtitle cleanup" },
+  { key: "unknown_language", label: "Unknown language" },
   { key: "ignored", label: "Ignored" },
   { key: "duplicates", label: "Duplicates" },
   { key: "corrupt", label: "Corrupt" },
@@ -37,7 +38,6 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   // Audio group
   { key: "_audio", label: "Audio:", group: "divider" },
   { key: "audio_cleanup", label: "Audio cleanup" },
-  { key: "unknown_language", label: "Unknown language" },
   { key: "lossless_audio", label: "Lossless audio" },
   { key: "lossy_audio", label: "Lossy audio" },
   // Plex group

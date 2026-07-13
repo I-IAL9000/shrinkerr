@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] — 2026-07-13
+
+### Fixed
+- **Unknown-language filter now covers the whole library.** `has_und_tracks_flag` was only set at scan time, so the filter counted just the handful of re-scanned files (~1 instead of thousands). Added a one-time startup backfill that recomputes the flag from stored track metadata — no full re-scan needed.
+- **Clicking a title in the Unknown-language filter no longer shows "No files found."** The file enricher wasn't populating `has_und_tracks`, so the file-level matcher never matched; the tree view also wrongly dropped und-only files from Audio cleanup. Both fixed.
+- **Moved the "Unknown language" filter chip out of the Audio group** (it covers audio *and* subtitles) to sit beside Subtitle cleanup.
+
 ## [0.9.2] — 2026-07-13
 
 ### Changed
