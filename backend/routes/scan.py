@@ -841,7 +841,9 @@ async def detect_languages(req: DetectLanguagesRequest):
                 audio_write[i] = lang
                 changed = True
 
-    # Subtitles: detect und text subs (image subs skipped by the helper).
+    # Subtitles: detect und text subs (fast, langdetect) and und image
+    # subs (PGS/VobSub via OCR — v0.9.0, on-demand only, slower).
+    _IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "pgs", "vobsub"}
     for j, t in enumerate(raw_subs):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
             codec_l = (t.get("codec") or "").lower()
@@ -854,6 +856,17 @@ async def detect_languages(req: DetectLanguagesRequest):
                 if new_lang != "und":
                     t["language"] = new_lang
                     sub_write[j] = new_lang
+                    changed = True
+            elif codec_l in _IMAGE_SUB_CODECS:
+                try:
+                    from backend.image_sub_ocr import detect_image_sub_language
+                    ocr_lang, _c = await detect_image_sub_language(
+                        req.file_path, t["stream_index"], codec_l)
+                except Exception:
+                    ocr_lang = None
+                if ocr_lang:
+                    t["language"] = ocr_lang
+                    sub_write[j] = ocr_lang
                     changed = True
 
     if not changed:
