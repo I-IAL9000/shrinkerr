@@ -77,10 +77,21 @@ def _build_audio_clip_cmd(input_path: str, stream_index: int, seek: float, out_p
     ]
 
 
-async def _extract_audio_clip(input_path: str, stream_index: int, duration: float) -> str:
-    """Extract a 30s clip from ~33% into the file to a temp WAV. Returns the
-    temp path. Raises on ffmpeg failure (caller fail-opens)."""
-    seek = max(0.0, duration * 0.33) if duration and duration > 90 else 0.0
+def _sample_seeks(duration: float) -> list[float]:
+    """v0.8.4: positions (seconds) to sample for language ID. A single
+    30s window can land on music/action/silence and yield a low-
+    confidence guess (observed: a 5.1 track returning pt@0.40 because
+    the 33% window had little clear speech). Try a few spread-out
+    positions; detect_audio_language stops at the first confident one,
+    so clear tracks still cost a single sample. Short files → just 0."""
+    if not duration or duration <= 90:
+        return [0.0]
+    return [duration * f for f in (0.33, 0.55, 0.15, 0.72)]
+
+
+async def _extract_audio_clip(input_path: str, stream_index: int, seek: float) -> str:
+    """Extract a 30s clip starting at `seek` seconds to a temp WAV.
+    Returns the temp path. Raises on ffmpeg failure (caller fail-opens)."""
     fd, out_path = tempfile.mkstemp(suffix=".wav", prefix="shrinkerr_lang_")
     os.close(fd)
     cmd = _build_audio_clip_cmd(input_path, stream_index, seek, out_path)
@@ -128,27 +139,42 @@ def _run_whisper_lang(clip_path: str) -> tuple[str | None, float]:
 
 
 async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float]:
-    """Detect an audio track's spoken language via a 30s clip + faster-whisper.
-    Returns (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open."""
-    clip_path = None
-    try:
-        clip_path = await _extract_audio_clip(file_path, stream_index, duration)
-        iso1, conf = await asyncio.get_event_loop().run_in_executor(None, _run_whisper_lang, clip_path)
-    except Exception as exc:
-        print(f"[LANG-DETECT] audio detection failed for {file_path} s{stream_index}: {exc}", flush=True)
+    """Detect an audio track's spoken language via faster-whisper on 30s
+    clips. Returns (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
+
+    v0.8.4: samples multiple positions and takes the most confident,
+    short-circuiting as soon as one clears the threshold — so a track
+    whose 33% window is weak-speech (music/action) still gets detected
+    from a better window, while clear tracks stop after one sample."""
+    threshold = _audio_min_confidence()
+    best_iso1: str | None = None
+    best_conf = 0.0
+    for seek in _sample_seeks(duration):
+        clip_path = None
+        try:
+            clip_path = await _extract_audio_clip(file_path, stream_index, seek)
+            iso1, conf = await asyncio.get_event_loop().run_in_executor(
+                None, _run_whisper_lang, clip_path
+            )
+        except Exception as exc:
+            print(f"[LANG-DETECT] audio detection failed for {file_path} s{stream_index} @{seek:.0f}s: {exc}", flush=True)
+            iso1, conf = None, 0.0
+        finally:
+            if clip_path and os.path.exists(clip_path):
+                try:
+                    os.unlink(clip_path)
+                except OSError:
+                    pass
+        if iso1 and conf > best_conf:
+            best_iso1, best_conf = iso1, conf
+        if best_conf >= threshold:
+            break  # confident enough — don't sample further
+    if not best_iso1 or best_conf < threshold:
         return (None, 0.0)
-    finally:
-        if clip_path and os.path.exists(clip_path):
-            try:
-                os.unlink(clip_path)
-            except OSError:
-                pass
-    if not iso1 or conf < _audio_min_confidence():
-        return (None, 0.0)
-    iso2 = _ISO639_1_TO_2.get(iso1.lower(), "")
+    iso2 = _ISO639_1_TO_2.get(best_iso1.lower(), "")
     if not iso2:
         return (None, 0.0)
-    return (_normalize_iso639_2(iso2), conf)
+    return (_normalize_iso639_2(iso2), best_conf)
 
 
 # Text subtitle codecs whose language we can detect from their text.

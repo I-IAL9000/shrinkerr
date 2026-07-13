@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] — 2026-07-13
+
+### Changed
+- **Audio language detection samples multiple positions.** A single 30s window at 33% into a track could land on music/action/silence and yield a low-confidence guess that failed the gate (observed: a 5.1 track returning `pt@0.40`, left `und` even though it has speech elsewhere). Detection now tries several spread-out windows (33%/55%/15%/72%) and takes the most confident, short-circuiting as soon as one clears the threshold — so clear tracks still cost a single sample while weak-first-window tracks get detected from a better window. Applies to on-demand and pre-conversion audio detection.
+
 ## [0.8.3] — 2026-07-13
 
 ### Added

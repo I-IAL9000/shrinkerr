@@ -137,3 +137,58 @@ async def test_apply_track_languages_noop_when_all_none():
     from backend.language_detection import apply_track_languages_to_file
     # No languages to set → returns False without touching anything.
     assert await apply_track_languages_to_file("/m/f.mkv", [None], [None]) is False
+
+
+# ---------------------------------------------------------------------------
+# v0.8.4: multi-position audio sampling. A weak 33% window shouldn't doom
+# detection — later windows are tried, most-confident wins, short-circuit
+# once the threshold is cleared.
+# ---------------------------------------------------------------------------
+
+def test_sample_seeks_positions():
+    from backend.language_detection import _sample_seeks
+    assert _sample_seeks(0) == [0.0]
+    assert _sample_seeks(60) == [0.0]           # short file → single sample
+    seeks = _sample_seeks(1000.0)
+    assert len(seeks) >= 3 and seeks[0] == 330.0  # first sample at 33%
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_recovers_from_weak_first_window(monkeypatch):
+    """First window low-confidence, a later window clears the threshold →
+    detection succeeds with the confident result (the pt@0.40 scenario,
+    where another window would have had clear speech)."""
+    from backend import language_detection as ld
+    calls = {"n": 0}
+    def fake_whisper(clip):
+        calls["n"] += 1
+        # window 1 weak (0.40), window 2 strong (0.88)
+        return ("it", 0.40) if calls["n"] == 1 else ("it", 0.88)
+    monkeypatch.setattr(ld, "_extract_audio_clip",
+                        __import__("unittest").mock.AsyncMock(return_value="/tmp/c.wav"))
+    monkeypatch.setattr(ld, "_run_whisper_lang", fake_whisper)
+    monkeypatch.setattr("os.path.exists", lambda p: True)
+    monkeypatch.setattr("os.unlink", lambda p: None)
+    lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
+    assert lang == "ita", f"got {lang!r}"
+    assert conf == pytest.approx(0.88)
+    assert calls["n"] == 2, "should have short-circuited after the confident window"
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_all_windows_weak_stays_und(monkeypatch):
+    """Every window below threshold → stays und (no wrong guess). Tries
+    all sample positions."""
+    from backend import language_detection as ld
+    calls = {"n": 0}
+    def fake_whisper(clip):
+        calls["n"] += 1
+        return ("pt", 0.40)  # always weak
+    monkeypatch.setattr(ld, "_extract_audio_clip",
+                        __import__("unittest").mock.AsyncMock(return_value="/tmp/c.wav"))
+    monkeypatch.setattr(ld, "_run_whisper_lang", fake_whisper)
+    monkeypatch.setattr("os.path.exists", lambda p: True)
+    monkeypatch.setattr("os.unlink", lambda p: None)
+    lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
+    assert (lang, conf) == (None, 0.0)
+    assert calls["n"] >= 3, "should have tried multiple windows before giving up"
