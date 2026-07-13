@@ -645,33 +645,98 @@ _EXT_CODEC_MAP = {
 }
 
 
-async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
-    """Extract up to ~max_chars of text from an embedded text subtitle
-    stream via ffmpeg (srt to stdout). Async so it doesn't block the
-    event loop during concurrent scans. Returns None on failure/empty."""
-    import asyncio
+def _clean_srt_bytes(raw: bytes, max_chars: int = 4000) -> str | None:
+    """Decode raw subtitle bytes tolerantly and strip srt sequence numbers
+    + timestamp lines, leaving dialogue for language detection.
+
+    v0.8.1: decode is tolerant of non-UTF-8 charsets. Subtitles in the
+    wild are frequently Windows-1252 / ISO-8859-1 (older + non-English
+    releases). Try utf-8, then cp1252, then latin-1 (which maps all 256
+    byte values and never raises). langdetect only needs the letters,
+    which survive a latin-1 decode of cp1252 text even if a few accented
+    punctuation glyphs shift."""
     import re as _re
-    cmd = ["ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
-           "-t", "600", "-f", "srt", "-"]
-    proc = None
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
-    except (asyncio.TimeoutError, OSError):
-        if proc is not None:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+    if not raw:
         return None
-    if not out:
-        return None
-    text = out.decode(errors="replace")
+    text = None
+    for enc in ("utf-8", "cp1252"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = raw.decode("latin-1", errors="replace")
     text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
     text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
     return text[:max_chars].strip() or None
+
+
+async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
+    """Extract up to ~max_chars of text from an embedded text subtitle
+    stream for language detection. Async so it doesn't block the event
+    loop during concurrent scans. Returns None on failure/empty.
+
+    v0.8.1: extract with `-c:s copy` to a temp file (raw bytes, NO decode)
+    rather than `-f srt` (which runs ffmpeg's srt DECODER and rejects
+    non-UTF-8 text with "Invalid UTF-8 in decoded subtitles text",
+    producing zero output — the bug that left legacy-charset subrip
+    tracks stuck at `und`). Python then decodes tolerantly via
+    `_clean_srt_bytes`. Falls back to the decode path (`-f srt` to
+    stdout) for text codecs that can't be copied into an srt container
+    (e.g. ass/ssa), which are usually UTF-8 anyway."""
+    import asyncio
+    import os as _os
+    import tempfile as _tempfile
+
+    async def _run(cmd: list, timeout: int = 15):
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            return out
+        except (asyncio.TimeoutError, OSError):
+            if proc is not None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+            return None
+
+    # Primary: copy the stream (no decode) to a temp .srt, read raw bytes.
+    fd, tmp = _tempfile.mkstemp(suffix=".srt", prefix="shrinkerr_sub_")
+    _os.close(fd)
+    try:
+        await _run([
+            "ffmpeg", "-y", "-v", "quiet", "-i", file_path,
+            "-map", f"0:{stream_index}", "-t", "600", "-c:s", "copy", tmp,
+        ])
+        raw = b""
+        try:
+            with open(tmp, "rb") as fh:
+                raw = fh.read()
+        except OSError:
+            raw = b""
+    finally:
+        try:
+            _os.unlink(tmp)
+        except OSError:
+            pass
+
+    if raw:
+        return _clean_srt_bytes(raw, max_chars)
+
+    # Fallback: decode to srt on stdout (handles ass/ssa copy can't put in .srt).
+    out = await _run([
+        "ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
+        "-t", "600", "-f", "srt", "-",
+    ])
+    if not out:
+        return None
+    return _clean_srt_bytes(out, max_chars)
 
 
 def detect_external_subtitles(video_path: str) -> list[dict]:

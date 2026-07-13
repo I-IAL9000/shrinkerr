@@ -57,3 +57,38 @@ def test_plain_dotfile_srt_ignored(tmp_path):
         not r["external_path"].rsplit("/", 1)[-1].startswith(".")
         for r in results
     )
+
+
+# ---------------------------------------------------------------------------
+# v0.8.1: subtitle text extraction must survive non-UTF-8 charsets.
+# ffmpeg's srt DECODER rejects Windows-1252/Latin-1 subs ("Invalid UTF-8
+# in decoded subtitles text") and yields zero output, leaving the track
+# und. _clean_srt_bytes decodes tolerantly so language detection works.
+# ---------------------------------------------------------------------------
+
+def test_clean_srt_bytes_decodes_non_utf8():
+    from backend.scanner import _clean_srt_bytes
+    # 0xe9 is 'é' in latin-1/cp1252 but an invalid standalone UTF-8 byte —
+    # exactly what broke ffmpeg's decoder.
+    raw = (b"1\r\n00:00:01,000 --> 00:00:04,000\r\n"
+           b"Bonjour, je m\xe9appelle Antoine et voici mon histoire.\r\n\r\n"
+           b"2\r\n00:00:05,000 --> 00:00:08,000\r\n"
+           b"Nous partons demain matin pour la montagne.\r\n")
+    txt = _clean_srt_bytes(raw)
+    assert txt is not None, "non-UTF-8 bytes must still decode (not None)"
+    assert "Antoine" in txt and "montagne" in txt
+    # sequence numbers + timestamp lines stripped
+    assert "00:00:01,000" not in txt
+    assert "\n1\n" not in txt
+
+
+def test_clean_srt_bytes_utf8_still_works():
+    from backend.scanner import _clean_srt_bytes
+    raw = b"1\n00:00:01,000 --> 00:00:04,000\nA straightforward English line.\n"
+    assert _clean_srt_bytes(raw) == "A straightforward English line."
+
+
+def test_clean_srt_bytes_empty_returns_none():
+    from backend.scanner import _clean_srt_bytes
+    assert _clean_srt_bytes(b"") is None
+    assert _clean_srt_bytes(b"1\n00:00:01,000 --> 00:00:02,000\n\n") is None

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-07-13
+
+### Fixed
+- **v0.8.0 language detection didn't work.** Two bugs: (1) `faster-whisper` imports `requests`, which wasn't installed, so the model never loaded and every audio detection returned instantly with nothing found — added `requests` to requirements. (2) Subtitle text extraction used ffmpeg's srt **decoder** (`-f srt`), which rejects non-UTF-8 subtitles (Windows-1252/Latin-1, common in older/non-English releases) with "Invalid UTF-8 in decoded subtitles text" and produced zero output, leaving the track `und`. Now extracts with `-c:s copy` (raw bytes, no decode) and decodes tolerantly in Python (utf-8 → cp1252 → latin-1). **Note:** the faster-whisper tiny model still downloads on first audio-detection use — needs outbound network + a writable `/app/data/models`.
+
 ## [0.8.0] — 2026-07-13
 
 ### Added
