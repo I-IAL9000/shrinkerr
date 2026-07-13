@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getTracksByPath, getFileHistory, researchFile, arrAction, type FileEvent } from "../api";
+import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import EventTimeline from "./EventTimeline";
 import { vmafLabel } from "../utils/vmaf";
@@ -24,6 +24,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const [historyLoading, setHistoryLoading] = useState(false);
   const [researching, setResearching] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detected, setDetected] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -77,6 +79,25 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     }
   };
 
+  const handleDetect = async () => {
+    setDetecting(true);
+    try {
+      const r = await detectLanguages(file.file_path);
+      if (r.changed) {
+        setFetchedAudio(r.audio_tracks || []);
+        setFetchedSubs(r.subtitle_tracks || []);
+        setDetected(true);
+        toast("Languages detected — tracks updated", "success");
+      } else {
+        toast("No new languages detected for unknown tracks", "success");
+      }
+    } catch (exc: any) {
+      toast(`Language detection error: ${exc?.message || exc}`, "error");
+    } finally {
+      setDetecting(false);
+    }
+  };
+
   useEffect(() => {
     if (file.audio_tracks?.length) return;
     setLoading(true);
@@ -96,8 +117,11 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       .finally(() => setHistoryLoading(false));
   }, [tab, file.file_path]);
 
-  const audioTracks = file.audio_tracks?.length ? file.audio_tracks : fetchedAudio;
-  const subtitleTracks = file.subtitle_tracks?.length ? file.subtitle_tracks : fetchedSubs;
+  const audioTracks = detected ? fetchedAudio : (file.audio_tracks?.length ? file.audio_tracks : fetchedAudio);
+  const subtitleTracks = detected ? fetchedSubs : (file.subtitle_tracks?.length ? file.subtitle_tracks : fetchedSubs);
+
+  const isUnd = (lang: string | undefined | null) => (lang || "und").toLowerCase() === "und";
+  const hasUndTracks = audioTracks.some(t => isUnd(t.language)) || subtitleTracks.some(t => isUnd(t.language));
 
   // v0.6.7: was `file.file_size * 0.3` — a stale flat 30% reduction default
   // that disagreed with the queue-estimate modal's CQ-calibrated curve.
@@ -210,6 +234,32 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
 
           {/* *arr actions — Replace (red when corrupt) + Search upgrade (quiet) */}
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {hasUndTracks && (
+              <button
+                type="button"
+                onClick={handleDetect}
+                disabled={detecting}
+                title="Run language detection on this file's unknown (und) audio and text-subtitle tracks"
+                style={{
+                  background: "transparent",
+                  color: "var(--text-muted)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  cursor: detecting ? "wait" : "pointer",
+                  opacity: detecting ? 0.6 : 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+                {detecting ? "Detecting…" : "Detect languages"}
+              </button>
+            )}
             <button
               type="button"
               onClick={handleResearch}
