@@ -791,6 +791,115 @@ async def cleanup_temp_scan_results():
         await db.close()
 
 
+def _und_flag(audio, subs) -> int:
+    """1 if any classified track is still und, else 0.
+
+    Classified tracks are pydantic models exposing `.language`."""
+    return 1 if any(
+        (t.language or "und").lower() == "und" for t in list(audio) + list(subs)
+    ) else 0
+
+
+class DetectLanguagesRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/detect-languages")
+async def detect_languages(req: DetectLanguagesRequest):
+    """Detect languages for a file's und audio + text-subtitle tracks,
+    apply above-threshold results, persist re-classified tracks to
+    scan_results, return the updated tracks. Fail-open per track."""
+    from backend.scanner import (
+        probe_file, classify_audio_tracks, classify_subtitle_tracks,
+        detect_native_language, _extract_embedded_sub_text,
+    )
+    from backend.language_detection import (
+        detect_audio_language, maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS,
+    )
+    probe = await probe_file(req.file_path)
+    if probe is None:
+        raise HTTPException(404, "Could not probe file")
+    duration = probe.get("duration", 0.0) or 0.0
+    raw_audio = probe.get("audio_tracks", []) or []
+    raw_subs = probe.get("subtitle_tracks", []) or []
+    changed = False
+
+    # Audio: detect und tracks.
+    for t in raw_audio:
+        if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            try:
+                lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
+            except Exception:
+                lang = None
+            if lang:
+                t["language"] = lang
+                changed = True
+
+    # Subtitles: detect und text subs (image subs skipped by the helper).
+    for t in raw_subs:
+        if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            codec_l = (t.get("codec") or "").lower()
+            if codec_l in _TEXT_SUB_CODECS:
+                try:
+                    txt = await _extract_embedded_sub_text(req.file_path, t["stream_index"])
+                    new_lang = maybe_detect_subtitle_track_language("und", codec_l, txt)
+                except Exception:
+                    new_lang = "und"
+                if new_lang != "und":
+                    t["language"] = new_lang
+                    changed = True
+
+    if not changed:
+        return {"status": "ok", "changed": False}
+
+    # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
+    native_lang = detect_native_language(raw_audio)
+    audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
+    subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+    audio_json = json.dumps([t.model_dump() for t in audio_tracks])
+    subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
+    has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+    has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+    db = await connect_db()
+    try:
+        await db.execute(
+            "UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?, "
+            "native_language = ?, language_source = 'detected', "
+            "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+            "has_und_tracks_flag = ? WHERE file_path = ?",
+            (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
+             _und_flag(audio_tracks, subtitle_tracks), req.file_path),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    return {
+        "status": "ok",
+        "changed": True,
+        "native_language": native_lang,
+        "audio_tracks": [t.model_dump() for t in audio_tracks],
+        "subtitle_tracks": [t.model_dump() for t in subtitle_tracks],
+    }
+
+
+class DetectLanguagesBatchRequest(BaseModel):
+    file_paths: list[str]
+
+
+@router.post("/detect-languages-batch")
+async def detect_languages_batch(req: DetectLanguagesBatchRequest):
+    """Run detect-languages over files sequentially (single model instance —
+    no parallel inference)."""
+    results = []
+    for fp in req.file_paths:
+        try:
+            r = await detect_languages(DetectLanguagesRequest(file_path=fp))
+            results.append({"file_path": fp, "changed": r.get("changed", False)})
+        except Exception as exc:
+            results.append({"file_path": fp, "error": str(exc)})
+    return {"status": "ok", "results": results}
+
+
 @router.get("/status")
 async def scan_status():
     return {"scanning": _scan_task is not None and not _scan_task.done()}
