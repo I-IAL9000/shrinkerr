@@ -1645,6 +1645,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(probe_status, 'ok') as probe_status,
     COALESCE(video_height, 0) as video_height,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
+    COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
     COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
     COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
     vmaf_score,
@@ -1688,7 +1689,7 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     if filter_name == "low_bitrate":
         return f["low_bitrate"] and not f["ignored"]
     if filter_name == "audio_cleanup":
-        return f["has_removable_tracks"] and not f["ignored"]
+        return (f["has_removable_tracks"] or f.get("has_und_tracks")) and not f["ignored"]
     if filter_name == "sub_cleanup":
         return f["has_removable_subs"] and not f["ignored"]
     if filter_name == "ignored":
@@ -1875,7 +1876,7 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
     elif f == "lossy_audio":
         sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
     elif f == "audio_cleanup":
-        sql = "AND COALESCE(has_removable_tracks_flag, 0) = 1"
+        sql = "AND (COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"
         needs_python = {f}  # still need to exclude ignored
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
@@ -2009,6 +2010,7 @@ async def get_scan_tree(filter: str = "all"):
         cols = """id, file_path, file_size, file_mtime, video_height, video_codec,
                   needs_conversion, converted, duration,
                   COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
+                  COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
                   COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
                   COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
                   new_detected_at"""
