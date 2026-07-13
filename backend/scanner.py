@@ -309,7 +309,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
                 from backend.language_detection import maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS
                 _codec_l = (stream.get("codec_name") or "").lower()
                 if _codec_l in _TEXT_SUB_CODECS:
-                    _txt = _extract_embedded_sub_text(file_path, stream.get("index"))
+                    _txt = await _extract_embedded_sub_text(file_path, stream.get("index"))
                     lang = maybe_detect_subtitle_track_language(lang, _codec_l, _txt)
             subtitle_tracks.append({
                 "stream_index": stream.get("index"),
@@ -645,15 +645,26 @@ _EXT_CODEC_MAP = {
 }
 
 
-def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
+async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_chars: int = 4000) -> str | None:
     """Extract up to ~max_chars of text from an embedded text subtitle
-    stream via ffmpeg (srt to stdout). Returns None on failure/empty."""
-    import subprocess
+    stream via ffmpeg (srt to stdout). Async so it doesn't block the
+    event loop during concurrent scans. Returns None on failure/empty."""
+    import asyncio
     import re as _re
-    cmd = ["ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}", "-f", "srt", "-"]
+    cmd = ["ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
+           "-t", "600", "-f", "srt", "-"]
+    proc = None
     try:
-        out = subprocess.run(cmd, capture_output=True, timeout=60).stdout
-    except (subprocess.SubprocessError, OSError):
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except (asyncio.TimeoutError, OSError):
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
         return None
     if not out:
         return None
