@@ -2118,10 +2118,21 @@ async def convert_file(
     # v0.8.0: detect languages for und audio tracks before building the
     # command, so the v0.7.29/30 metadata injection + track keep/reorder
     # use real languages. Gated on auto_detect_languages (default on).
+    # snapshot und audio stream indices BEFORE detection
+    _pre_und_audio_idx = {
+        t.get("stream_index") for t in (probe_audio_tracks or [])
+        if (t.get("language") or "und").lower() == "und"
+    }
     if probe_audio_tracks:
         probe_audio_tracks = await _detect_und_track_languages(
             input_path, probe_audio_tracks, [], duration=duration,
         )
+    # True if detection upgraded any previously-und audio track
+    _auto_detected_audio = any(
+        t.get("stream_index") in _pre_und_audio_idx
+        and (t.get("language") or "und").lower() != "und"
+        for t in (probe_audio_tracks or [])
+    )
 
     # Build inline keep-list for audio:
     #   - Filter out any tracks in audio_tracks_to_remove
@@ -2195,7 +2206,10 @@ async def convert_file(
     # with subtitles but no audio still gets its subs tagged; the audio
     # loop simply no-ops on an empty list.
     disc_audio_languages = None
-    if disc_type:
+    # v0.8.0: build the injection list for discs (protocol strips tags) OR
+    # when auto-detect upgraded a regular file's und audio — otherwise the
+    # detected language never reaches the output (-c:a copy keeps und).
+    if disc_type or _auto_detected_audio:
         disc_audio_languages = [t.get("language") for t in probe_audio_tracks]
 
     # v0.7.24: target_resolution is now resolved earlier (before

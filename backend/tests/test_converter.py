@@ -296,6 +296,21 @@ def test_regular_file_no_audio_language_injection():
     assert _metadata_lang_args(cmd) == [], _metadata_lang_args(cmd)
 
 
+def test_regular_file_auto_detected_audio_language_injected():
+    """v0.8.0: a REGULAR (non-disc) input whose und audio was upgraded by
+    auto-detect must still get the detected language stamped. The metadata
+    injection is gated on `disc_audio_languages is not None`, not on a disc
+    URL — so building the list (as convert_file now does when
+    _auto_detected_audio is True) injects the tag on regular files too."""
+    cmd = _build_ffmpeg_cmd_impl(
+        "/media/Movie 1080p x264.mkv", "/media/Movie.converting.mkv",
+        encoder="nvenc",
+        disc_audio_languages=["swe"],
+    )
+    args = _metadata_lang_args(cmd)
+    assert ("-metadata:s:a:0", "language=swe") in args, args
+
+
 # ---------------------------------------------------------------------------
 # v0.7.30: disc SUBTITLE language injection (same root cause as v0.7.29's
 # audio fix — bluray:/concat: strips embedded-sub language tags too).
