@@ -820,6 +820,28 @@ async def _maybe_notify_plex_lang_change(file_path: str) -> bool:
     return False
 
 
+def _rename_external_sub_with_lang(path: str, iso639_2: str) -> str | None:
+    """Rename a sidecar sub to embed its detected language before the ext
+    (`Movie.srt` -> `Movie.eng.srt`), the convention media servers and the
+    scanner's own detector read the language from. Returns the new path, or
+    None if it couldn't rename (missing file, name collision, OS error) —
+    caller keeps the original path in that case.
+    """
+    from pathlib import Path as _Path
+    p = _Path(path)
+    if not p.is_file():
+        return None
+    new_path = p.with_name(f"{p.stem}.{iso639_2}{p.suffix}")
+    if new_path.exists():
+        return None  # don't clobber an existing file
+    try:
+        p.rename(new_path)
+        return str(new_path)
+    except OSError as exc:
+        print(f"[LANG-DETECT] external sub rename failed ({exc}); DB detection kept", flush=True)
+        return None
+
+
 @router.post("/detect-languages")
 async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True):
     """Detect languages for a file's und audio + text-subtitle tracks,
@@ -844,6 +866,31 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # the (i+1)-th audio/subtitle track; None = leave that track alone.
     audio_write: list = [None] * len(raw_audio)
     sub_write: list = [None] * len(raw_subs)
+    external_renamed = False
+
+    # v0.9.7: external sidecar subs (.srt/.ass alongside the video) aren't in
+    # probe_file's output — they live in the stored subtitle_tracks_json. Load
+    # the und ones so we can detect them AND preserve every external sub when
+    # we re-persist (rebuilding subtitle_tracks_json from probe alone would
+    # otherwise drop them).
+    stored_external_subs: list[dict] = []
+    _db0 = await connect_db()
+    try:
+        async with _db0.execute(
+            "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+            (req.file_path,),
+        ) as cur:
+            _row0 = await cur.fetchone()
+        if _row0 and _row0["subtitle_tracks_json"]:
+            try:
+                stored_external_subs = [
+                    s for s in json.loads(_row0["subtitle_tracks_json"])
+                    if s.get("external")
+                ]
+            except (ValueError, TypeError):
+                stored_external_subs = []
+    finally:
+        await _db0.close()
 
     # Audio: detect und tracks.
     for i, t in enumerate(raw_audio):
@@ -890,6 +937,33 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     sub_write[j] = ocr_lang
                     changed = True
 
+    # External sidecar subs: read the file text (charset-aware), detect with
+    # the same gated detector as embedded text subs, then rename the file to
+    # embed the ISO-639-2 code so the language persists (the scanner and media
+    # servers both read it from the filename). The DB language is updated even
+    # if the rename fails (fail-open, same as embedded file writes).
+    for es in stored_external_subs:
+        if (es.get("language") or "und").lower() != "und":
+            continue
+        es_path = es.get("external_path") or ""
+        if not es_path or not os.path.isfile(es_path):
+            continue
+        try:
+            from backend.scanner import _clean_srt_bytes
+            with open(es_path, "rb") as _fh:
+                _raw = _fh.read(200_000)
+            _text = _clean_srt_bytes(_raw)
+            new_lang = maybe_detect_subtitle_track_language("und", es.get("codec") or "", _text)
+        except Exception:
+            new_lang = "und"
+        if new_lang != "und":
+            es["language"] = new_lang
+            new_path = _rename_external_sub_with_lang(es_path, new_lang)
+            if new_path:
+                es["external_path"] = new_path
+                external_renamed = True
+            changed = True
+
     if not changed:
         return {"status": "ok", "changed": False}
 
@@ -897,6 +971,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     native_lang = detect_native_language(raw_audio)
     audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
     subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+    # v0.9.7: re-attach external sidecar subs (with any newly-detected
+    # language / renamed path) — they aren't in `raw_subs`, so without this
+    # they'd be dropped from subtitle_tracks_json.
+    from backend.models import SubtitleTrack
+    for es in stored_external_subs:
+        try:
+            subtitle_tracks.append(SubtitleTrack(**es))
+        except Exception:
+            pass
     audio_json = json.dumps([t.model_dump() for t in audio_tracks])
     subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
     has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
@@ -932,14 +1015,17 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # only when the file was actually rewritten. v0.9.2: skippable via
     # notify_plex=False so batch runs can coalesce refreshes by folder
     # (see detect-languages-batch).
+    # v0.9.7: an external-sub rename also changes what Plex reads (subtitle
+    # filename), so notify on that too, not just embedded file writes.
     plex_notified = False
-    if file_written and notify_plex:
+    if (file_written or external_renamed) and notify_plex:
         plex_notified = await _maybe_notify_plex_lang_change(req.file_path)
 
     return {
         "status": "ok",
         "changed": True,
         "file_written": file_written,
+        "external_renamed": external_renamed,
         "plex_notified": plex_notified,
         "native_language": native_lang,
         "audio_tracks": [t.model_dump() for t in audio_tracks],
@@ -1008,7 +1094,7 @@ async def detect_languages_batch(req: DetectLanguagesBatchRequest):
             r = await detect_languages(
                 DetectLanguagesRequest(file_path=fp), notify_plex=False)
             results.append({"file_path": fp, "changed": r.get("changed", False)})
-            if r.get("file_written"):
+            if r.get("file_written") or r.get("external_renamed"):
                 written_folders.setdefault(os.path.dirname(fp), fp)
         except Exception as exc:
             results.append({"file_path": fp, "error": str(exc)})

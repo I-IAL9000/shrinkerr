@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.7] — 2026-07-13
+
+### Added
+- **Language detection for external (sidecar) subtitles.** `und` external `.srt`/`.ass` files are now detected too (they live next to the video, not in the container, so detection never touched them before). The sidecar is renamed to embed the ISO-639-2 code (`Movie.srt` → `Movie.eng.srt`), which is how media servers read the language. Also fixes a latent bug where re-persisting detection results could drop external subs from a file's track list.
+
 ## [0.9.6] — 2026-07-13
 
 ### Added
