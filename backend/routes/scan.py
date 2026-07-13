@@ -860,8 +860,13 @@ async def detect_languages(req: DetectLanguagesRequest):
             elif codec_l in _IMAGE_SUB_CODECS:
                 try:
                     from backend.image_sub_ocr import detect_image_sub_language
+                    # v0.9.1: stream coarse OCR stages to the UI (image-sub
+                    # OCR takes minutes).
+                    async def _ocr_progress(stage, _fp=req.file_path):
+                        await ws_manager.send_detect_progress(_fp, stage)
                     ocr_lang, _c = await detect_image_sub_language(
-                        req.file_path, t["stream_index"], codec_l)
+                        req.file_path, t["stream_index"], codec_l,
+                        progress_cb=_ocr_progress)
                 except Exception:
                     ocr_lang = None
                 if ocr_lang:
@@ -907,10 +912,26 @@ async def detect_languages(req: DetectLanguagesRequest):
     except Exception as exc:
         print(f"[LANG-DETECT] file write failed (DB detection kept): {exc}", flush=True)
 
+    # v0.9.1: notify Plex so it re-reads the now-corrected track languages.
+    # Gated on the default-on plex_notify_on_lang_change setting; only fires
+    # when the file was actually rewritten. Reuses the rename.py rescan path.
+    # Fail-open — a Plex hiccup never fails the detection.
+    plex_notified = False
+    if file_written:
+        try:
+            from backend.scanner import _is_cleanup_enabled
+            if _is_cleanup_enabled("plex_notify_on_lang_change", default=True):
+                from backend.plex import trigger_plex_scan
+                section = await trigger_plex_scan(req.file_path)
+                plex_notified = bool(section)
+        except Exception as exc:
+            print(f"[LANG-DETECT] Plex notify failed (non-fatal): {exc}", flush=True)
+
     return {
         "status": "ok",
         "changed": True,
         "file_written": file_written,
+        "plex_notified": plex_notified,
         "native_language": native_lang,
         "audio_tracks": [t.model_dump() for t in audio_tracks],
         "subtitle_tracks": [t.model_dump() for t in subtitle_tracks],
@@ -979,6 +1000,7 @@ async def get_scan_stats():
                 COUNT(*) as total,
                 SUM(needs_conversion) as needs_conversion_raw,
                 SUM(has_removable_tracks_flag) as audio_cleanup,
+                SUM(COALESCE(has_und_tracks_flag, 0)) as unknown_language,
                 SUM(has_removable_subs_flag) as sub_cleanup,
                 SUM(has_lossless_audio_flag) as lossless_audio,
                 SUM(converted) as converted,
@@ -1245,6 +1267,7 @@ async def get_scan_stats():
                 "res_720p": row["res_720p"] or 0,
                 "res_sd": (row["res_sd_probed"] or 0) + res_sd_fallback,
                 "audio_cleanup": row["audio_cleanup"] or 0,
+                "unknown_language": row["unknown_language"] or 0,
                 "lossless_audio": row["lossless_audio"] or 0,
                 "lossy_audio": total - (row["lossless_audio"] or 0),
                 "plex_watched": watched_count,
@@ -1268,6 +1291,7 @@ async def get_scan_stats():
             "summary": {
                 "files_to_convert": needs_conversion_count,
                 "audio_cleanup": row["audio_cleanup"] or 0,
+                "unknown_language": row["unknown_language"] or 0,
                 "ignored_count": ignored_count,
                 "estimated_savings_bytes": estimated_savings,
                 "total_size": row["total_size"] or 0,
@@ -1725,6 +1749,8 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return f["low_bitrate"] and not f["ignored"]
     if filter_name == "audio_cleanup":
         return (f["has_removable_tracks"] or f.get("has_und_tracks")) and not f["ignored"]
+    if filter_name == "unknown_language":
+        return bool(f.get("has_und_tracks")) and not f["ignored"]
     if filter_name == "sub_cleanup":
         return f["has_removable_subs"] and not f["ignored"]
     if filter_name == "ignored":
@@ -1912,6 +1938,9 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
         sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
     elif f == "audio_cleanup":
         sql = "AND (COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"
+        needs_python = {f}  # still need to exclude ignored
+    elif f == "unknown_language":
+        sql = "AND COALESCE(has_und_tracks_flag, 0) = 1"
         needs_python = {f}  # still need to exclude ignored
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"

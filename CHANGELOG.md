@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-07-13
+
+### Added
+- **Live progress for image-sub OCR detection.** The on-demand "Detect languages" action now streams coarse stages over websocket ("Extracting subtitle track N…", "OCR (Latin)…", "OCR (CJK/Cyrillic/Arabic)…") so the minutes-long PGS/VobSub OCR shows what it's doing instead of a silent wait.
+- **Dedicated "Unknown language" filter** in the scanner, listing titles with any `und` audio or subtitle track (separate from the audio-cleanup filter), with a count.
+- **Plex notified after a track-language change.** When detection writes corrected language tags to a file, Shrinkerr triggers a Plex library refresh for that item so Plex re-reads them. Gated on the default-on `plex_notify_on_lang_change` setting; reuses the existing rename/rescan path; fail-open.
+- **Tooltips on the title-detail icon buttons** (codec badge, converted indicator, ignore, remove-from-list, move-to-trash) — each now explains what it does on hover.
+
 ## [0.9.0] — 2026-07-13
 
 ### Added

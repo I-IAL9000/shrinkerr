@@ -75,6 +75,17 @@ class ConnectionManager:
             "probed": probed,
         })
 
+    async def send_detect_progress(self, file_path: str, stage: str) -> None:
+        """Live status for the on-demand language-detection action. Image-sub
+        OCR can take minutes, so the UI shows coarse stages ('Extracting
+        subtitle…', 'OCR pass 1 (Latin)…', 'OCR pass 2 (CJK/Cyrillic)…',
+        'done'). v0.9.1+."""
+        await self.broadcast({
+            "type": "detect_progress",
+            "file_path": file_path,
+            "stage": stage,
+        })
+
     async def send_scan_results_changed(self, added: int = 0, removed: int = 0) -> None:
         """Lightweight ping that the scan_results table just changed.
 

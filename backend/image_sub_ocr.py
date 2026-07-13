@@ -99,25 +99,40 @@ def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
 
 
 async def detect_image_sub_language(
-    file_path: str, stream_index: int, codec: str
+    file_path: str, stream_index: int, codec: str, progress_cb=None,
 ) -> tuple[str | None, float]:
     """OCR a PGS/VobSub track and detect its language. Returns
-    (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open."""
+    (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
+
+    `progress_cb` (v0.9.1): optional async callable(stage: str) invoked at
+    coarse stages so the UI can show live status through the multi-minute
+    OCR. Called with 'Extracting subtitle…', 'OCR (Latin)…',
+    'OCR (CJK/Cyrillic/Arabic)…'."""
     from backend.language_detection import detect_subtitle_language
+
+    async def _report(stage: str):
+        if progress_cb is not None:
+            try:
+                await progress_cb(stage)
+            except Exception:
+                pass
 
     workdir = tempfile.mkdtemp(prefix="shrinkerr_imgocr_")
     try:
+        await _report(f"Extracting subtitle track {stream_index}…")
         sup = await _extract_sup(file_path, stream_index, workdir)
         if not sup:
             return (None, 0.0)
         loop = asyncio.get_event_loop()
         # Pass 1: Latin (eng).
+        await _report(f"OCR (Latin) on subtitle track {stream_index}…")
         text = await loop.run_in_executor(None, _pgsrip_to_text, sup, _LATIN_LANGS)
         if text:
             lang, conf = detect_subtitle_language(text)
             if lang:
                 return (lang, conf)
         # Pass 2: non-Latin scripts.
+        await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…")
         text = await loop.run_in_executor(None, _pgsrip_to_text, sup, _NON_LATIN_LANGS)
         if text:
             return detect_subtitle_language(text)

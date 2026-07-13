@@ -93,6 +93,7 @@ _ENCODING_DEFAULTS = {
     "always_keep_dedup": "true",
     # v0.8.0: auto-detect languages for und tracks before converting.
     "auto_detect_languages": "true",
+    "plex_notify_on_lang_change": "true",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
@@ -481,6 +482,7 @@ async def get_encoding_settings():
         "reorder_native_audio": merged.get("reorder_native_audio", "true").lower() == "true",
         "always_keep_dedup": merged.get("always_keep_dedup", "true").lower() == "true",
         "auto_detect_languages": merged.get("auto_detect_languages", "true").lower() == "true",
+        "plex_notify_on_lang_change": merged.get("plex_notify_on_lang_change", "true").lower() == "true",
         "target_codec": merged.get("target_codec", "hevc"),
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
@@ -862,6 +864,8 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["always_keep_dedup"] = "true" if update.always_keep_dedup else "false"
         if update.auto_detect_languages is not None:
             updates["auto_detect_languages"] = "true" if update.auto_detect_languages else "false"
+        if update.plex_notify_on_lang_change is not None:
+            updates["plex_notify_on_lang_change"] = "true" if update.plex_notify_on_lang_change else "false"
         if update.target_codec is not None:
             updates["target_codec"] = update.target_codec
         if update.target_resolution is not None:
@@ -1180,7 +1184,7 @@ async def update_encoding_settings(update: SettingsUpdate):
         "keep_native_language", "reorder_native_audio",
         "always_keep_dedup", "keep_native_subs",
         "merge_external_subs", "delete_external_subs_after_merge",
-        "auto_detect_languages",
+        "auto_detect_languages", "plex_notify_on_lang_change",
     }
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache
