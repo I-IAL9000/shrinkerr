@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.8] — 2026-07-13
+
+### Fixed
+- **VobSub (DVD, `dvd_subtitle`) subtitle OCR now actually works.** It was routed through `pgsrip`, which is PGS/Blu-ray-only and rejected VobSub instantly (no OCR ran). VobSub now uses its own pipeline (`mkvextract` → `.idx`/`.sub` → `subtile-ocr`/tesseract, Latin-first then CJK/Cyrillic/Arabic), converging on the same detector + confidence gate as PGS. `subtile-ocr` is bundled in the NVENC images; on the portable/CPU images VobSub falls back to `und` (fail-open). PGS behavior is unchanged.
+
 ## [0.9.7] — 2026-07-13
 
 ### Added

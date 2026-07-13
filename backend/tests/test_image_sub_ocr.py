@@ -74,3 +74,38 @@ async def test_detect_image_sub_failopen_on_exception(monkeypatch):
     monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
     monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
     assert await io.detect_image_sub_language("/m/f.mkv", 3, "hdmv_pgs_subtitle") == (None, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_detect_vobsub_uses_subtile_ocr(monkeypatch):
+    """dvd_subtitle routes to the VobSub pipeline (subtile-ocr), not pgsrip."""
+    from backend import image_sub_ocr as io
+    calls = []
+    def fake_ocr(idx, lang):
+        calls.append(lang)
+        return "Hello, this is an English subtitle with plenty of words to detect."
+    monkeypatch.setattr(io, "_extract_vobsub", AsyncMock(return_value="/tmp/w/sub.idx"))
+    monkeypatch.setattr(io, "_subtile_ocr_to_text", fake_ocr)
+    # pgsrip path must NOT be touched for a VobSub codec.
+    monkeypatch.setattr(io, "_extract_sup", AsyncMock(side_effect=AssertionError("PGS path used for VobSub")))
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    lang, conf = await io.detect_image_sub_language("/m/f.mkv", 3, "dvd_subtitle")
+    assert lang == "eng", f"got {lang!r}"
+    assert calls == [io._VOBSUB_LATIN_LANG], "should detect on the Latin pass"
+
+
+@pytest.mark.asyncio
+async def test_detect_vobsub_failopen_when_extract_fails(monkeypatch):
+    from backend import image_sub_ocr as io
+    monkeypatch.setattr(io, "_extract_vobsub", AsyncMock(return_value=None))
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    assert await io.detect_image_sub_language("/m/f.mkv", 3, "vobsub") == (None, 0.0)
+
+
+def test_subtile_ocr_missing_tool_returns_none(monkeypatch):
+    """Fail-open: no subtile-ocr binary → None, never raises."""
+    from backend import image_sub_ocr as io
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert io._subtile_ocr_to_text("/tmp/sub.idx", "eng") is None

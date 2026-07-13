@@ -145,6 +145,10 @@ The detection tooling is bundled in every image:
 - `faster-whisper` + `pytesseract` + `pgsrip` — audio + image-sub detection.
 - `tesseract-ocr` and the language packs (`eng`, `chi-sim`, `chi-tra`,
   `jpn`, `kor`, `rus`, `ara`) plus `mkvtoolnix` and OpenCV's runtime libs.
+- `pgsrip` handles PGS (Blu-ray). VobSub (DVD) OCR uses `subtile-ocr`, which
+  is bundled in the **NVENC** images; on the portable/CPU images VobSub
+  tracks fall back to `und` (PGS works everywhere). Detection is fail-open,
+  so a missing tool never breaks a scan or conversion.
 
 These add on the order of tens of MB to the image. The faster-whisper
 **tiny** model (~75 MB) is *not* baked in — it downloads on the first audio
@@ -161,7 +165,8 @@ warnings. First use needs network + a writable `/app/data/models`.
 **An image sub stays `und`** — OCR of a heavily-styled or low-resolution
 bitmap sub can come back below the confidence threshold; that's the gate
 working (better `und` than wrong). PGS is well-supported; VobSub is more
-variable.
+variable and its OCR (`subtile-ocr`) is only bundled in the NVENC images —
+on the portable/CPU images VobSub tracks stay `und`.
 
 **A detected language didn't reach the file** — the write is fail-open; if
 `mkvpropedit`/the remux failed, Shrinkerr keeps the DB detection but the
