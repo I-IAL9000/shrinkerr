@@ -2119,6 +2119,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <strong>off</strong> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons.
               </div>
 
+              {/* v0.8.2: same auto-detect-languages toggle as audio section (shared setting) */}
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={encoding.auto_detect_languages !== false}
+                  onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
+                  style={{ flexShrink: 0 }} />
+                <span style={labelStyle}>Auto-detect languages for unknown tracks before converting</span>
+              </label>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
+                Before converting or cleaning up subtitles, run language detection on "und"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view.
+              </div>
+
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start" }}>
                 Save Subtitle Rules
               </button>
