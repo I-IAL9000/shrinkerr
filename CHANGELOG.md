@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] — 2026-07-13
+
+### Added
+- **Detected languages are now written back to the file, not just Shrinkerr's DB.** Clicking "Detect languages" (and the batch action) now also tags the file's tracks so the fix is real on disk without a re-encode — for the "just fix the unknown tracks" case. mkv files are edited in place via `mkvpropedit` (instant, no rewrite, no disk churn even on huge files); other containers fall back to an ffmpeg `-c copy` remux with atomic replace. Only tracks upgraded from `und` are written; already-tagged tracks are left alone. Fail-open — if the file write fails, the original is preserved and the DB detection is retained. Adds `mkvtoolnix` to the images.
+
 ## [0.8.2] — 2026-07-13
 
 ### Added

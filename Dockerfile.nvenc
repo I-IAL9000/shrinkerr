@@ -51,6 +51,7 @@ RUN set -eux; \
         curl xz-utils \
         libarchive-tools \
         libbluray-bin \
+        mkvtoolnix \
         libva-drm2 \
         intel-media-va-driver-non-free \
         i965-va-driver \

@@ -95,3 +95,45 @@ def test_maybe_detect_sub_language_only_text_codecs():
     assert maybe_detect_subtitle_track_language("und", "hdmv_pgs_subtitle", "text") == "und"
     with patch("backend.language_detection.detect_subtitle_language", return_value=(None, 0.0)):
         assert maybe_detect_subtitle_track_language("und", "subrip", "garbage") == "und"
+
+
+# ---------------------------------------------------------------------------
+# v0.8.3: writing detected languages back to the file. The command builders
+# are pure/testable; actual mkvpropedit/ffmpeg execution is integration.
+# ---------------------------------------------------------------------------
+
+def test_build_mkvpropedit_cmd_maps_per_type_ordinals():
+    from backend.language_detection import _build_mkvpropedit_cmd
+    # 2 audio tracks (1st und→swe, 2nd already tagged→None),
+    # 3 sub tracks (only the 2nd detected→chi).
+    cmd = _build_mkvpropedit_cmd("/m/f.mkv", ["swe", None], [None, "chi", None])
+    assert cmd[0] == "mkvpropedit" and cmd[1] == "/m/f.mkv"
+    joined = " ".join(cmd)
+    assert "--edit track:a1 --set language=swe" in joined
+    assert "track:a2" not in joined  # None → not touched
+    assert "--edit track:s2 --set language=chi" in joined
+    assert "track:s1" not in joined and "track:s3" not in joined
+
+
+def test_build_mkvpropedit_cmd_none_when_nothing_to_set():
+    from backend.language_detection import _build_mkvpropedit_cmd
+    assert _build_mkvpropedit_cmd("/m/f.mkv", [None, None], [None]) is None
+    assert _build_mkvpropedit_cmd("/m/f.mkv", [], []) is None
+
+
+def test_build_metadata_remux_cmd_zero_based_output_selectors():
+    from backend.language_detection import _build_metadata_remux_cmd
+    cmd = _build_metadata_remux_cmd("/m/f.mp4", "/m/tmp.mp4", ["swe", None], ["eng"])
+    joined = " ".join(cmd)
+    assert "-map 0" in joined and "-c copy" in joined
+    assert "-metadata:s:a:0 language=swe" in joined
+    assert "s:a:1" not in joined  # 2nd audio was None
+    assert "-metadata:s:s:0 language=eng" in joined
+    assert cmd[-1] == "/m/tmp.mp4"
+
+
+@pytest.mark.asyncio
+async def test_apply_track_languages_noop_when_all_none():
+    from backend.language_detection import apply_track_languages_to_file
+    # No languages to set → returns False without touching anything.
+    assert await apply_track_languages_to_file("/m/f.mkv", [None], [None]) is False

@@ -169,3 +169,139 @@ def maybe_detect_subtitle_track_language(language: str, codec: str, text: str | 
         return language
     detected, _conf = detect_subtitle_language(text)
     return detected if detected else "und"
+
+
+# ── Writing detected languages back to the file (v0.8.3) ────────────────────
+#
+# Detection updates Shrinkerr's DB, but the FILE still carries `und` tracks
+# until it's converted. To "just fix the unknown tracks" without a re-encode,
+# we write the ISO 639-2 language tags into the file:
+#   - mkv  → mkvpropedit: edits the header IN PLACE (instant, no rewrite,
+#            no disk churn even on huge files).
+#   - other → ffmpeg `-c copy` remux to a temp file + atomic replace
+#            (rewrites the container but no re-encode).
+# Fail-open: a write failure never loses the DB-side detection.
+
+
+def _build_mkvpropedit_cmd(
+    file_path: str,
+    audio_langs: list[str | None],
+    sub_langs: list[str | None],
+) -> list[str] | None:
+    """Build an mkvpropedit command that sets languages on the given tracks,
+    or None if there's nothing to set.
+
+    `audio_langs[i]` is the ISO 639-2 code for the (i+1)-th audio track
+    (None = leave alone); `sub_langs[j]` likewise for subtitle tracks.
+    mkvpropedit selectors are 1-based per type: `track:a1`, `track:s2`."""
+    edits: list[str] = []
+    for i, code in enumerate(audio_langs):
+        if code:
+            edits += ["--edit", f"track:a{i + 1}", "--set", f"language={code}"]
+    for j, code in enumerate(sub_langs):
+        if code:
+            edits += ["--edit", f"track:s{j + 1}", "--set", f"language={code}"]
+    if not edits:
+        return None
+    return ["mkvpropedit", file_path] + edits
+
+
+def _build_metadata_remux_cmd(
+    file_path: str,
+    out_path: str,
+    audio_langs: list[str | None],
+    sub_langs: list[str | None],
+) -> list[str]:
+    """Build an ffmpeg `-c copy` command that copies all streams and sets
+    audio/subtitle language metadata. Output-stream metadata selectors are
+    0-based per type: `-metadata:s:a:0`, `-metadata:s:s:1`."""
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+           "-i", file_path, "-map", "0", "-c", "copy"]
+    for i, code in enumerate(audio_langs):
+        if code:
+            cmd += [f"-metadata:s:a:{i}", f"language={code}"]
+    for j, code in enumerate(sub_langs):
+        if code:
+            cmd += [f"-metadata:s:s:{j}", f"language={code}"]
+    cmd += [out_path]
+    return cmd
+
+
+async def apply_track_languages_to_file(
+    file_path: str,
+    audio_langs: list[str | None],
+    sub_langs: list[str | None],
+) -> bool:
+    """Write ISO 639-2 language tags onto the file's audio/subtitle tracks
+    without re-encoding. mkv → mkvpropedit (in place); other → ffmpeg
+    `-c copy` remux + atomic replace. Returns True if the file was
+    updated, False on no-op or failure. Fail-open: never raises, never
+    leaves the original in a worse state."""
+    import asyncio
+    import os
+    import tempfile
+
+    if not any(audio_langs) and not any(sub_langs):
+        return False
+
+    is_mkv = file_path.lower().endswith(".mkv")
+
+    if is_mkv:
+        cmd = _build_mkvpropedit_cmd(file_path, audio_langs, sub_langs)
+        if cmd is None:
+            return False
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except (asyncio.TimeoutError, OSError, FileNotFoundError) as exc:
+            print(f"[LANG-DETECT] mkvpropedit failed for {file_path}: {exc}", flush=True)
+            return False
+        # mkvpropedit: 0 = success, 1 = warnings (still applied), 2 = error.
+        if proc.returncode in (0, 1):
+            print(f"[LANG-DETECT] Wrote language tags in place: {file_path}", flush=True)
+            return True
+        print(
+            f"[LANG-DETECT] mkvpropedit rc={proc.returncode} for {file_path}: "
+            f"{stderr.decode(errors='replace')[-300:]}",
+            flush=True,
+        )
+        return False
+
+    # Non-mkv: ffmpeg -c copy remux to a temp file, then atomic replace.
+    p_dir = os.path.dirname(file_path) or "."
+    fd, tmp = tempfile.mkstemp(
+        suffix=os.path.splitext(file_path)[1] or ".mkv",
+        prefix=".shrinkerr_lang_", dir=p_dir,
+    )
+    os.close(fd)
+    cmd = _build_metadata_remux_cmd(file_path, tmp, audio_langs, sub_langs)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=3600)
+        if proc.returncode != 0:
+            print(
+                f"[LANG-DETECT] metadata remux failed for {file_path}: "
+                f"{stderr.decode(errors='replace')[-300:]}",
+                flush=True,
+            )
+            os.unlink(tmp)
+            return False
+        # Sanity: temp must be a plausible size (container copy ≈ source size).
+        if os.path.getsize(tmp) < os.path.getsize(file_path) * 0.5:
+            print(f"[LANG-DETECT] metadata remux output suspiciously small; discarding: {file_path}", flush=True)
+            os.unlink(tmp)
+            return False
+        os.replace(tmp, file_path)  # atomic on same filesystem
+        print(f"[LANG-DETECT] Wrote language tags via remux: {file_path}", flush=True)
+        return True
+    except Exception as exc:
+        print(f"[LANG-DETECT] metadata remux error for {file_path}: {exc}", flush=True)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False

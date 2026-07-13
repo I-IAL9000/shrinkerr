@@ -823,9 +823,14 @@ async def detect_languages(req: DetectLanguagesRequest):
     raw_audio = probe.get("audio_tracks", []) or []
     raw_subs = probe.get("subtitle_tracks", []) or []
     changed = False
+    # v0.8.3: per-type-ordinal lists of NEWLY-detected languages (only
+    # tracks upgraded from und), for writing back to the file. Index i =
+    # the (i+1)-th audio/subtitle track; None = leave that track alone.
+    audio_write: list = [None] * len(raw_audio)
+    sub_write: list = [None] * len(raw_subs)
 
     # Audio: detect und tracks.
-    for t in raw_audio:
+    for i, t in enumerate(raw_audio):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
             try:
                 lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
@@ -833,10 +838,11 @@ async def detect_languages(req: DetectLanguagesRequest):
                 lang = None
             if lang:
                 t["language"] = lang
+                audio_write[i] = lang
                 changed = True
 
     # Subtitles: detect und text subs (image subs skipped by the helper).
-    for t in raw_subs:
+    for j, t in enumerate(raw_subs):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
             codec_l = (t.get("codec") or "").lower()
             if codec_l in _TEXT_SUB_CODECS:
@@ -847,6 +853,7 @@ async def detect_languages(req: DetectLanguagesRequest):
                     new_lang = "und"
                 if new_lang != "und":
                     t["language"] = new_lang
+                    sub_write[j] = new_lang
                     changed = True
 
     if not changed:
@@ -873,9 +880,24 @@ async def detect_languages(req: DetectLanguagesRequest):
         await db.commit()
     finally:
         await db.close()
+
+    # v0.8.3: write the detected tags into the FILE too (mkvpropedit in
+    # place for mkv, ffmpeg -c copy remux otherwise) so the fix isn't
+    # Shrinkerr-only — "just fix the unknown tracks" without re-encoding.
+    # Fail-open: a file-write failure leaves the DB detection intact.
+    from backend.language_detection import apply_track_languages_to_file
+    file_written = False
+    try:
+        file_written = await apply_track_languages_to_file(
+            req.file_path, audio_write, sub_write,
+        )
+    except Exception as exc:
+        print(f"[LANG-DETECT] file write failed (DB detection kept): {exc}", flush=True)
+
     return {
         "status": "ok",
         "changed": True,
+        "file_written": file_written,
         "native_language": native_lang,
         "audio_tracks": [t.model_dump() for t in audio_tracks],
         "subtitle_tracks": [t.model_dump() for t in subtitle_tracks],
