@@ -20,9 +20,19 @@ This feature detects the actual language of `und` tracks:
 - **Text subtitles** (srt/ass/subrip): read the text, run a language detector.
 - **Audio**: extract a short clip, run spoken-language ID (Whisper-class model).
 
-Out of scope: **image-based subtitles** (PGS / VobSub / dvd_subtitle). Detecting
-those needs OCR, which is slow, error-prone, and adds a heavy dependency
-(tesseract + language data) for diminishing returns. They stay `und`.
+**Deferred to v0.8.1 (fast-follow): image-based subtitles** (PGS / VobSub /
+dvd_subtitle). Detecting those needs OCR (tesseract + per-language packs) and a
+bitmap-extraction pipeline (PGS → PNG frames → OCR → aggregate; VobSub is a
+separate pipeline). It's the heaviest and finickiest of the three track types,
+and its marginal value is lower — an und image-sub almost always sits on a disc
+whose audio + TMDB `original_language` already reveal the languages (both
+covered by v0.8.0). v0.8.1 will add it as an **additive module reusing the exact
+detect→gate→apply→trigger infrastructure built here**: an OCR front-end produces
+noisy text (good enough for langdetect, which tolerates OCR noise given volume),
+then the existing `detect_subtitle_language` + confidence gate + apply path
+handle the rest. Until v0.8.1 ships, image subs stay `und`. Designing v0.8.0's
+subtitle path to be codec-agnostic at the apply layer (it already keys on
+`language_source="detected"`, not codec) means v0.8.1 is purely additive.
 
 ## Approach summary
 
@@ -187,7 +197,8 @@ together. Existing rows backfill the flag on the next scan / watcher cycle.
 5. A low-confidence / garbage detection leaves the track `und` (no wrong guess).
 6. Detection failure (ffmpeg error, offline model download) never fails the
    scan or conversion — track stays `und`, warning logged.
-7. Image-based subtitles (PGS/VobSub) are never touched — stay `und`.
+7. Image-based subtitles (PGS/VobSub) are never touched in v0.8.0 — stay `und`
+   (added in the v0.8.1 fast-follow).
 8. Titles with any `und` track appear in the audio-cleanup filter view.
 
 ## Open questions / deferred
@@ -201,3 +212,7 @@ together. Existing rows backfill the flag on the next scan / watcher cycle.
   could sweep existing und text subs. Deferred — the pre-conversion hook and
   on-demand action cover the immediate need; a backfill can come later if users
   want their whole library re-tagged at once.
+- **Image-sub OCR (v0.8.1)**: see the "Deferred to v0.8.1" note in Background.
+  v0.8.0's apply layer is codec-agnostic (keys on detection result, not track
+  codec) specifically so v0.8.1 is purely additive — an OCR front-end feeding
+  the existing subtitle detection path. Gets its own spec when v0.8.0 lands.
