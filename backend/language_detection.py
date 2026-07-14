@@ -243,7 +243,21 @@ async def _extract_audio_clip(input_path: str, stream_index: int, seek: float) -
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+    except asyncio.TimeoutError:
+        # v0.9.19: kill the ffmpeg process on timeout — it was orphaned before,
+        # left running and burning CPU while detection moved on.
+        try:
+            proc.kill()
+            await proc.wait()
+        except Exception:
+            pass
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+        raise OSError("ffmpeg clip extract timed out (killed)")
     if proc.returncode != 0:
         try:
             os.unlink(out_path)
@@ -271,7 +285,13 @@ def _get_whisper_model():
         from faster_whisper import WhisperModel
         cache_dir = os.environ.get("SHRINKERR_WHISPER_CACHE", "/app/data/models")
         os.makedirs(cache_dir, exist_ok=True)
-        _WHISPER_MODEL = WhisperModel(want, device="auto", compute_type="int8", download_root=cache_dir)
+        # v0.9.19: cap CPU threads. CTranslate2 defaults to ALL cores, so one
+        # detection that wedges (observed on a specific DTS track) pegs every
+        # core and starves the event loop → the whole app goes unresponsive.
+        # Leave a couple of cores for uvicorn. Ignored when running on GPU.
+        _cpu_threads = max(1, (os.cpu_count() or 4) - 2)
+        _WHISPER_MODEL = WhisperModel(want, device="auto", compute_type="int8",
+                                      download_root=cache_dir, cpu_threads=_cpu_threads)
         _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = False
         print(f"[LANG-DETECT] Whisper model '{want}' loaded", flush=True)
@@ -305,13 +325,24 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
     threshold = _audio_min_confidence()
     best_iso1: str | None = None
     best_conf = 0.0
+    timed_out = False
     for seek in _sample_seeks(duration):
         clip_path = None
         try:
             clip_path = await _extract_audio_clip(file_path, stream_index, seek)
-            iso1, conf = await asyncio.get_event_loop().run_in_executor(
-                None, _run_whisper_lang, clip_path
+            # v0.9.19: bound whisper — a wedged transcribe (seen on a specific
+            # DTS track) must not hang the request/library forever. The worker
+            # thread can't be force-killed, but cpu_threads is capped so a
+            # leaked one won't starve the app.
+            iso1, conf = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(None, _run_whisper_lang, clip_path),
+                timeout=120,
             )
+        except asyncio.TimeoutError:
+            # Don't try the remaining windows — they'd wedge too and pile up
+            # leaked threads. Abandon this track (stays und).
+            print(f"[LANG-DETECT] audio s{stream_index}: whisper timed out @{seek:.0f}s — abandoning track", flush=True)
+            iso1, conf, timed_out = None, 0.0, True
         except Exception as exc:
             print(f"[LANG-DETECT] audio detection failed for {file_path} s{stream_index} @{seek:.0f}s: {exc}", flush=True)
             iso1, conf = None, 0.0
@@ -321,6 +352,8 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
                     os.unlink(clip_path)
                 except OSError:
                     pass
+        if timed_out:
+            break
         if iso1 and conf > best_conf:
             best_iso1, best_conf = iso1, conf
         if best_conf >= threshold:

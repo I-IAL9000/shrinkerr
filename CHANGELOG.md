@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.19] — 2026-07-14
+
+### Fixed
+- **Audio detection can no longer hang the whole app.** A specific track wedged whisper's transcribe, which (defaulting to all CPU cores) starved the event loop until a manual restart. Now: whisper's CPU threads are capped (leaving cores for the app), each transcribe is bounded by a timeout that abandons the track instead of retrying more windows, and the clip-extract ffmpeg is killed on timeout instead of orphaned. A pathological track is skipped (stays `und`) and the app stays responsive.
+
 ## [0.9.18] — 2026-07-14
 
 ### Added

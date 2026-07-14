@@ -260,3 +260,34 @@ def test_configured_whisper_model_precedence(monkeypatch):
     monkeypatch.delenv("SHRINKERR_WHISPER_MODEL", raising=False)
     monkeypatch.setattr(ld, "_get_setting", lambda k: None)
     assert ld._configured_whisper_model() == "tiny"     # default
+
+
+@pytest.mark.asyncio
+async def test_extract_audio_clip_kills_ffmpeg_on_timeout(monkeypatch):
+    """Regression (v0.9.19): a hung ffmpeg must be killed on timeout, not
+    orphaned to keep burning CPU."""
+    import asyncio as _asyncio
+    from backend import language_detection as ld
+    state = {"killed": False}
+
+    class _FakeProc:
+        returncode = None
+        def kill(self):
+            state["killed"] = True
+        async def wait(self):
+            return 0
+        async def communicate(self):
+            return (b"", b"")
+
+    async def _fake_exec(*a, **k):
+        return _FakeProc()
+
+    async def _fake_wait_for(coro, timeout):
+        coro.close()  # we're simulating a hang; don't actually await
+        raise _asyncio.TimeoutError()
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr("asyncio.wait_for", _fake_wait_for)
+    with pytest.raises(OSError):
+        await ld._extract_audio_clip("/x.mkv", 1, 0.0)
+    assert state["killed"] is True
