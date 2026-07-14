@@ -241,3 +241,36 @@ async def detect_image_sub_language(
         return (None, 0.0)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+async def detect_external_vobsub_language(idx_path: str) -> tuple[str | None, float]:
+    """OCR an on-disk external VobSub `.idx`/`.sub` pair (subtile-ocr) and
+    detect its language. Same Latin-first → non-Latin fallback as embedded
+    VobSub. Returns (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
+
+    The pair is copied into a tempdir first so nothing is written into the
+    user's media folder (subtile-ocr emits its .srt next to the .idx)."""
+    from backend.language_detection import detect_subtitle_language
+    sub_path = os.path.splitext(idx_path)[0] + ".sub"
+    if not (os.path.isfile(idx_path) and os.path.isfile(sub_path)):
+        return (None, 0.0)
+    workdir = tempfile.mkdtemp(prefix="shrinkerr_extvob_")
+    try:
+        tmp_idx = os.path.join(workdir, "sub.idx")
+        shutil.copyfile(idx_path, tmp_idx)
+        shutil.copyfile(sub_path, os.path.join(workdir, "sub.sub"))
+        loop = asyncio.get_event_loop()
+        text = await loop.run_in_executor(None, _subtile_ocr_to_text, tmp_idx, _VOBSUB_LATIN_LANG)
+        if text:
+            lang, conf = detect_subtitle_language(text)
+            if lang:
+                return (lang, conf)
+        text = await loop.run_in_executor(None, _subtile_ocr_to_text, tmp_idx, _VOBSUB_NON_LATIN_LANG)
+        if text:
+            return detect_subtitle_language(text)
+        return (None, 0.0)
+    except Exception as exc:
+        print(f"[IMG-OCR] external VobSub detection failed for {idx_path}: {exc}", flush=True)
+        return (None, 0.0)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)

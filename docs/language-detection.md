@@ -24,6 +24,7 @@ back into the file.
 |---|---|---|---|
 | **Text subtitles** (SRT/ASS/…) | Text analysis (langdetect) | milliseconds | **Yes, at scan time** |
 | **External subtitles** (sidecar `.srt`/`.ass`) | Text analysis (langdetect) | milliseconds | On demand |
+| **External VobSub** (sidecar `.idx`/`.sub`) | OCR (subtile-ocr) | seconds/track | On demand |
 | **Audio** | Spoken-language ID (faster-whisper) | seconds/track | On demand; optionally before conversion |
 | **Image subtitles** (PGS, VobSub) | OCR (tesseract) | minutes/track | On demand only |
 
@@ -70,8 +71,9 @@ re-encode is involved:
   re-encoded), but it does rewrite the container.
 - **external sidecar subs** — the language lives in the *filename*, so the
   sidecar is renamed to embed the ISO-639-2 code (`Movie.srt` →
-  `Movie.eng.srt`) — the convention Plex/Jellyfin/Bazarr read. If a
-  same-named file already exists, the rename is skipped (no clobber).
+  `Movie.eng.srt`) — the convention Plex/Jellyfin/Bazarr read. For VobSub
+  the `.idx` **and** `.sub` are renamed together so the pair stays matched.
+  If a same-named file already exists, the rename is skipped (no clobber).
 
 Only tracks that were upgraded from `und` are touched; already-tagged tracks
 are left alone. If the write fails for any reason, the original file is kept

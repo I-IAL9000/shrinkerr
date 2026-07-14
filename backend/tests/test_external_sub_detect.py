@@ -34,3 +34,25 @@ def test_rename_refuses_to_clobber_existing(tmp_path):
 
 def test_rename_missing_file_returns_none(tmp_path):
     assert _rename_external_sub_with_lang(str(tmp_path / "nope.srt"), "eng") is None
+
+
+def test_rename_vobsub_renames_idx_and_sub_pair(tmp_path):
+    idx = tmp_path / "Movie.idx"
+    sub = tmp_path / "Movie.sub"
+    idx.write_text("idx data")
+    sub.write_bytes(b"sub bitmap data")
+    new_path = _rename_external_sub_with_lang(str(idx), "eng")
+    assert new_path == str(tmp_path / "Movie.eng.idx")
+    assert (tmp_path / "Movie.eng.idx").exists()
+    assert (tmp_path / "Movie.eng.sub").exists()   # partner renamed too
+    assert not idx.exists() and not sub.exists()
+
+
+def test_rename_vobsub_refuses_if_partner_target_exists(tmp_path):
+    idx = tmp_path / "Movie.idx"
+    sub = tmp_path / "Movie.sub"
+    idx.write_text("a"); sub.write_bytes(b"b")
+    (tmp_path / "Movie.eng.sub").write_bytes(b"existing")   # partner collision
+    assert _rename_external_sub_with_lang(str(idx), "eng") is None
+    # Nothing moved.
+    assert idx.exists() and sub.exists()

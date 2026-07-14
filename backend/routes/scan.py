@@ -834,8 +834,20 @@ def _rename_external_sub_with_lang(path: str, iso639_2: str) -> str | None:
     new_path = p.with_name(f"{p.stem}.{iso639_2}{p.suffix}")
     if new_path.exists():
         return None  # don't clobber an existing file
+    # VobSub is a pair — rename the .sub partner alongside the .idx so they
+    # stay matched (ffmpeg / OCR resolve the .sub from the .idx basename).
+    partner_old = partner_new = None
+    if p.suffix.lower() == ".idx":
+        cand = p.with_suffix(".sub")
+        if cand.is_file():
+            partner_old = cand
+            partner_new = p.with_name(f"{p.stem}.{iso639_2}.sub")
+            if partner_new.exists():
+                return None  # don't clobber the partner
     try:
         p.rename(new_path)
+        if partner_old is not None:
+            partner_old.rename(partner_new)
         return str(new_path)
     except OSError as exc:
         print(f"[LANG-DETECT] external sub rename failed ({exc}); DB detection kept", flush=True)
@@ -962,12 +974,20 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         es_path = es.get("external_path") or ""
         if not es_path or not os.path.isfile(es_path):
             continue
+        codec_l = (es.get("codec") or "").lower()
         try:
-            from backend.scanner import _clean_srt_bytes
-            with open(es_path, "rb") as _fh:
-                _raw = _fh.read(200_000)
-            _text = _clean_srt_bytes(_raw)
-            new_lang = maybe_detect_subtitle_track_language("und", es.get("codec") or "", _text)
+            if codec_l in _IMAGE_SUB_CODECS:
+                # v0.9.11: external VobSub (.idx/.sub) is image data, not text —
+                # OCR it directly with subtile-ocr (it reads an on-disk .idx).
+                from backend.image_sub_ocr import detect_external_vobsub_language
+                _ocr_lang, _c = await detect_external_vobsub_language(es_path)
+                new_lang = _ocr_lang or "und"
+            else:
+                from backend.scanner import _clean_srt_bytes
+                with open(es_path, "rb") as _fh:
+                    _raw = _fh.read(200_000)
+                _text = _clean_srt_bytes(_raw)
+                new_lang = maybe_detect_subtitle_track_language("und", codec_l, _text)
         except Exception:
             new_lang = "und"
         if new_lang != "und":

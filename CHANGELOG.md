@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.11] — 2026-07-14
+
+### Added
+- **Language detection for external VobSub subtitles (`.idx`/`.sub`).** External detection previously only read text sidecars; an external VobSub pair stayed `und`. It's now OCR'd (subtile-ocr) like embedded VobSub, and the detected language is written back by renaming both `.idx` and `.sub` together. (VobSub is a two-file format — the `.idx` correctly represents the pair; the `.sub` is its data partner, not a separate track.)
+
 ## [0.9.10] — 2026-07-14
 
 ### Added
