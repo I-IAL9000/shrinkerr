@@ -140,21 +140,27 @@ RUN set -e; \
 
 # v0.9.8: subtile-ocr for VobSub (DVD, dvd_subtitle) subtitle OCR. pgsrip
 # (already installed via pip) handles PGS/Blu-ray only and can't read VobSub,
-# so DVD image subs get their own tool. Built from crates.io with cargo, then
-# the build toolchain is purged (the binary links only against the tesseract /
-# leptonica RUNTIME libs, which stay via tesseract-ocr). GUARDED with `|| echo`
-# so a build failure here NEVER breaks the image — the runtime code is
-# fail-open and leaves VobSub tracks `und` when the binary is absent.
+# so DVD image subs get their own tool. Built from crates.io — but via a
+# rustup stable toolchain, NOT Ubuntu 24.04's apt cargo (1.75): subtile-ocr's
+# deps use Rust edition 2024, which needs Cargo ≥ 1.85 (v0.9.9). The whole
+# toolchain (rustup + build headers) is installed and purged in this ONE layer,
+# so it doesn't bloat the image — only /usr/local/bin/subtile-ocr and the
+# tesseract/leptonica RUNTIME libs (kept by tesseract-ocr) remain. GUARDED
+# with `|| echo` so a build failure NEVER breaks the image — the runtime code
+# is fail-open and leaves VobSub tracks `und` when the binary is absent.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        cargo clang libclang-dev libtesseract-dev libleptonica-dev pkg-config; \
-    ( cargo install subtile-ocr --root /usr/local \
+        ca-certificates curl gcc libc6-dev \
+        clang libclang-dev libtesseract-dev libleptonica-dev pkg-config; \
+    ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
+        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+        && /opt/cargo/bin/cargo install subtile-ocr --root /usr/local \
         && /usr/local/bin/subtile-ocr --version ) \
         || echo "[BUILD] subtile-ocr install failed — VobSub OCR will be unavailable"; \
-    apt-get purge -y cargo clang libclang-dev libtesseract-dev libleptonica-dev pkg-config; \
+    apt-get purge -y clang libclang-dev libtesseract-dev libleptonica-dev pkg-config gcc libc6-dev; \
     apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/* /root/.cargo /usr/local/registry 2>/dev/null || true
+    rm -rf /var/lib/apt/lists/* /opt/rustup /opt/cargo
 
 # Record the ffmpeg lineage + its NVENC-SDK driver floor so the backend can
 # produce an actionable error message if the runtime NVENC test fails. Read

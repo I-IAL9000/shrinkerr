@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.9] — 2026-07-14
+
+### Fixed
+- **VobSub OCR tool (`subtile-ocr`) now actually builds into the NVENC image.** v0.9.8 built it with Ubuntu 24.04's apt `cargo` (1.75), but the crate's deps need Rust edition 2024 (Cargo ≥ 1.85), so it silently failed the guarded build and VobSub stayed unavailable. Now built via a rustup stable toolchain, installed and purged within the same layer so the image stays lean.
+
 ## [0.9.8] — 2026-07-13
 
 ### Fixed
