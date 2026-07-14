@@ -137,8 +137,14 @@ def _disc_display_name(file_path: Path, disc_type: Optional[str]) -> str:
     return file_path.name
 
 
-async def probe_file(file_path: str) -> Optional[dict]:
+async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
+
+    `detect_und_subs` (v0.9.17): when True (scan/convert), und text subs are
+    detected inline and their language filled in. The on-demand detect
+    endpoint passes False so it sees the RAW und language and does the
+    detection itself — otherwise probe_file's inline result masks the und
+    track and detect_languages skips it (never persisting or writing it).
 
     v0.6.0: when `file_path` points at a disc-marker file
     (VIDEO_TS.IFO inside a VIDEO_TS/ folder, or index.bdmv inside a
@@ -305,7 +311,7 @@ async def probe_file(file_path: str) -> Optional[dict]:
             # v0.8.0: give und TEXT subtitles a real language by detecting
             # from their extracted text. Image subs pass through (OCR is
             # v0.8.1). Fail-open: extraction/detection failures leave "und".
-            if lang == "und":
+            if detect_und_subs and lang == "und":
                 from backend.language_detection import maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS
                 _codec_l = (stream.get("codec_name") or "").lower()
                 if _codec_l in _TEXT_SUB_CODECS:

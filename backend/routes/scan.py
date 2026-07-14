@@ -867,7 +867,11 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         detect_audio_language, maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS,
         detect_language_from_title,
     )
-    probe = await probe_file(req.file_path)
+    # v0.9.17: detect_und_subs=False — we want the RAW und language so we can
+    # detect + PERSIST + write it here. With inline detection on, probe_file
+    # would resolve the sub itself and this endpoint would then skip it as
+    # "not und", never saving or writing the result.
+    probe = await probe_file(req.file_path, detect_und_subs=False)
     if probe is None:
         raise HTTPException(404, "Could not probe file")
     duration = probe.get("duration", 0.0) or 0.0

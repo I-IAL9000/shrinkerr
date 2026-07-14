@@ -94,3 +94,22 @@ async def test_batch_no_writes_no_refresh(monkeypatch):
 
     assert notify_calls == []
     assert result["folders_refreshed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_detect_languages_requests_raw_und_subs(monkeypatch):
+    """Regression: detect_languages must probe with detect_und_subs=False, or
+    probe_file's inline detection masks the und sub and it's skipped (never
+    persisted/written)."""
+    from fastapi import HTTPException
+    import backend.scanner as scanner_mod
+    seen = {}
+
+    async def fake_probe(fp, detect_und_subs=True):
+        seen["detect_und_subs"] = detect_und_subs
+        return None  # force the early 404 after recording the arg
+
+    monkeypatch.setattr(scanner_mod, "probe_file", fake_probe)
+    with pytest.raises(HTTPException):
+        await scan_mod.detect_languages(scan_mod.DetectLanguagesRequest(file_path="/x.mkv"))
+    assert seen["detect_und_subs"] is False

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.17] — 2026-07-14
+
+### Fixed
+- **On-demand detect no longer skips subtitles it can actually detect.** `probe_file` detects `und` text subs inline and fills in the language; `detect_languages` then only acted on tracks still `und` in that result, so any sub `probe_file` resolved was silently skipped — never saved to the DB or written to the file, with no log. Detect now probes with inline detection off (`detect_und_subs=False`) so it detects, persists, and writes the tag itself.
+
 ## [0.9.16] — 2026-07-14
 
 ### Fixed
