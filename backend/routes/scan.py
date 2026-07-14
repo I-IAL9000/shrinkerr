@@ -853,6 +853,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     )
     from backend.language_detection import (
         detect_audio_language, maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS,
+        detect_language_from_title,
     )
     probe = await probe_file(req.file_path)
     if probe is None:
@@ -895,10 +896,14 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # Audio: detect und tracks.
     for i, t in enumerate(raw_audio):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
-            try:
-                lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
-            except Exception:
-                lang = None
+            # v0.9.10: a title that names the language ("English") is cheap and
+            # reliable — try it before the (slow) whisper spoken-language ID.
+            lang = detect_language_from_title(t.get("title"))
+            if not lang:
+                try:
+                    lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
+                except Exception:
+                    lang = None
             if lang:
                 t["language"] = lang
                 audio_write[i] = lang
@@ -909,6 +914,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     _IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "pgs", "vobsub"}
     for j, t in enumerate(raw_subs):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            # v0.9.10: prefer a language named in the title ("Traditional
+            # Chinese", "Romanian") — forced/SDH subs often have too little
+            # text to detect from content but a descriptive title.
+            title_lang = detect_language_from_title(t.get("title"))
+            if title_lang:
+                t["language"] = title_lang
+                sub_write[j] = title_lang
+                changed = True
+                continue
             codec_l = (t.get("codec") or "").lower()
             if codec_l in _TEXT_SUB_CODECS:
                 try:

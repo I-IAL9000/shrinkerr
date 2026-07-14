@@ -124,6 +124,12 @@ results.
   usual sign the sub is non-Latin — it re-OCRs with the CJK / Cyrillic /
   Arabic models.
 
+Before any of the above, if the track's **title** names a language
+("Traditional Chinese", "Romanian", "English SDH"), that's used directly —
+it's free and reliable, and it rescues **forced/SDH** tracks that carry too
+little text for content detection to work. Applies to audio and subtitle
+tracks alike.
+
 In every case the recognized/identified language flows through one shared
 path: confidence gate → apply to the DB → write to the file → optional Plex
 refresh.

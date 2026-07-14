@@ -192,3 +192,22 @@ async def test_detect_audio_all_windows_weak_stays_und(monkeypatch):
     lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
     assert (lang, conf) == (None, 0.0)
     assert calls["n"] >= 3, "should have tried multiple windows before giving up"
+
+
+def test_detect_language_from_title():
+    from backend.language_detection import detect_language_from_title
+    # The reported case: forced subs whose titles name the language.
+    assert detect_language_from_title("English") == "eng"
+    assert detect_language_from_title("Traditional Chinese") == "chi"
+    assert detect_language_from_title("Simplified Chinese") == "chi"
+    assert detect_language_from_title("Romanian") == "rum"
+    assert detect_language_from_title("Greek") == "gre"
+    # Modifiers / suffixes don't matter.
+    assert detect_language_from_title("English SDH") == "eng"
+    assert detect_language_from_title("Brazilian Portuguese") == "por"
+    assert detect_language_from_title("français (forced)") == "fre"
+    # No language named → None (falls through to content detection).
+    assert detect_language_from_title("Forced") is None
+    assert detect_language_from_title("Commentary") is None
+    assert detect_language_from_title("") is None
+    assert detect_language_from_title(None) is None

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import tempfile
 
 from backend.disc_metadata import _ISO639_1_TO_2, _normalize_iso639_2
@@ -19,6 +20,81 @@ def _sub_min_confidence() -> float:
         return float(os.environ.get("SHRINKERR_LANG_DETECT_SUB_MIN", "0.7"))
     except ValueError:
         return 0.7
+
+
+# v0.9.10: language NAME (as authored in a track title) → ISO 639-2/B.
+# Forced/SDH subs frequently carry too little text to detect from content
+# but name the language in the title ("Traditional Chinese", "Romanian"),
+# which is a high-confidence signal. Base names only — modifiers like
+# "Traditional"/"Simplified"/"Brazilian" collapse to the same ISO code.
+_TITLE_LANG_MAP: dict[str, str] = {
+    "english": "eng",
+    "chinese": "chi", "mandarin": "chi", "cantonese": "chi",
+    "portuguese": "por", "brazilian": "por",
+    "spanish": "spa", "castilian": "spa", "espanol": "spa",
+    "french": "fre", "francais": "fre",
+    "german": "ger", "deutsch": "ger",
+    "italian": "ita",
+    "russian": "rus",
+    "japanese": "jpn",
+    "korean": "kor",
+    "arabic": "ara",
+    "dutch": "dut",
+    "swedish": "swe",
+    "norwegian": "nor",
+    "danish": "dan",
+    "finnish": "fin",
+    "polish": "pol",
+    "czech": "cze",
+    "slovak": "slo",
+    "slovenian": "slv", "slovene": "slv",
+    "hungarian": "hun",
+    "romanian": "rum",
+    "bulgarian": "bul",
+    "greek": "gre",
+    "turkish": "tur",
+    "hebrew": "heb",
+    "thai": "tha",
+    "vietnamese": "vie",
+    "indonesian": "ind",
+    "malay": "may",
+    "icelandic": "ice",
+    "croatian": "hrv",
+    "serbian": "srp",
+    "ukrainian": "ukr",
+    "hindi": "hin",
+    "bengali": "ben",
+    "tamil": "tam",
+    "telugu": "tel",
+    "catalan": "cat",
+    "estonian": "est",
+    "latvian": "lav",
+    "lithuanian": "lit",
+    "persian": "per", "farsi": "per",
+    "filipino": "tgl", "tagalog": "tgl",
+}
+_TITLE_LANG_RE = re.compile(
+    r"\b(" + "|".join(re.escape(name) for name in _TITLE_LANG_MAP) + r")\b"
+)
+
+
+def detect_language_from_title(title: str | None) -> str | None:
+    """Map a language named in a track title ('Traditional Chinese',
+    'Romanian') to ISO 639-2/B. A reliable signal for forced/SDH tracks that
+    carry too little text to detect from content. Returns None when the title
+    names no known language."""
+    if not title:
+        return None
+    import unicodedata
+    # Strip diacritics so native names ("français") match ASCII keys.
+    flat = "".join(
+        c for c in unicodedata.normalize("NFKD", title.lower())
+        if not unicodedata.combining(c)
+    )
+    m = _TITLE_LANG_RE.search(flat)
+    if not m:
+        return None
+    return _normalize_iso639_2(_TITLE_LANG_MAP[m.group(1)])
 
 
 def detect_subtitle_language(text: str) -> tuple[str | None, float]:
