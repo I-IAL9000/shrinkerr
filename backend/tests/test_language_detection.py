@@ -234,3 +234,29 @@ def test_detect_language_from_title_extended():
     assert detect_language_from_title("Amharic") == "amh"
     assert detect_language_from_title("Tamil (forced)") == "tam"
     assert detect_language_from_title("Welsh") == "wel"
+
+
+def test_tuned_float_precedence(monkeypatch):
+    from backend import language_detection as ld
+    # env var wins (advanced override)
+    monkeypatch.setenv("SHRINKERR_LANG_DETECT_AUDIO_MIN", "0.42")
+    monkeypatch.setattr(ld, "_get_setting", lambda k: "0.55")
+    assert ld._audio_min_confidence() == 0.42
+    # no env -> Settings value
+    monkeypatch.delenv("SHRINKERR_LANG_DETECT_AUDIO_MIN", raising=False)
+    assert ld._audio_min_confidence() == 0.55
+    # neither -> default
+    monkeypatch.setattr(ld, "_get_setting", lambda k: None)
+    assert ld._audio_min_confidence() == 0.6
+
+
+def test_configured_whisper_model_precedence(monkeypatch):
+    from backend import language_detection as ld
+    monkeypatch.setattr(ld, "_get_setting", lambda k: "small")
+    monkeypatch.delenv("SHRINKERR_WHISPER_MODEL", raising=False)
+    assert ld._configured_whisper_model() == "small"   # Settings value
+    monkeypatch.setenv("SHRINKERR_WHISPER_MODEL", "base")
+    assert ld._configured_whisper_model() == "base"     # env override wins
+    monkeypatch.delenv("SHRINKERR_WHISPER_MODEL", raising=False)
+    monkeypatch.setattr(ld, "_get_setting", lambda k: None)
+    assert ld._configured_whisper_model() == "tiny"     # default

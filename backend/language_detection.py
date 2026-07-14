@@ -15,11 +15,36 @@ import tempfile
 from backend.disc_metadata import _ISO639_1_TO_2, _normalize_iso639_2
 
 
-def _sub_min_confidence() -> float:
+def _get_setting(key: str) -> str | None:
+    """Read one settings-table value (sync, uncached — detection is on-demand,
+    not hot). Returns None on unset/error."""
     try:
-        return float(os.environ.get("SHRINKERR_LANG_DETECT_SUB_MIN", "0.7"))
-    except ValueError:
-        return 0.7
+        import sqlite3
+        from backend.database import DB_PATH
+        con = sqlite3.connect(DB_PATH)
+        try:
+            row = con.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            return row[0] if row and row[0] not in (None, "") else None
+        finally:
+            con.close()
+    except Exception:
+        return None
+
+
+def _tuned_float(env_key: str, setting_key: str, default: float) -> float:
+    """Effective value: env var (advanced override) → Settings-UI value →
+    built-in default."""
+    raw = os.environ.get(env_key)
+    if raw is None:
+        raw = _get_setting(setting_key)
+    try:
+        return float(raw) if raw is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _sub_min_confidence() -> float:
+    return _tuned_float("SHRINKERR_LANG_DETECT_SUB_MIN", "lang_detect_sub_min", 0.7)
 
 
 # v0.9.10: language NAME (as authored in a track title) → ISO 639-2/B.
@@ -166,14 +191,19 @@ def detect_subtitle_language(text: str) -> tuple[str | None, float]:
 
 
 _WHISPER_MODEL = None
+_WHISPER_MODEL_NAME = None
 _WHISPER_LOAD_FAILED = False
 
 
+def _configured_whisper_model() -> str:
+    """Which faster-whisper model to use: env var → Settings-UI value → tiny."""
+    return (os.environ.get("SHRINKERR_WHISPER_MODEL")
+            or _get_setting("lang_detect_whisper_model")
+            or "tiny")
+
+
 def _audio_min_confidence() -> float:
-    try:
-        return float(os.environ.get("SHRINKERR_LANG_DETECT_AUDIO_MIN", "0.6"))
-    except ValueError:
-        return 0.6
+    return _tuned_float("SHRINKERR_LANG_DETECT_AUDIO_MIN", "lang_detect_audio_min", 0.6)
 
 
 def _build_audio_clip_cmd(input_path: str, stream_index: int, seek: float, out_path: str) -> list[str]:
@@ -224,26 +254,32 @@ async def _extract_audio_clip(input_path: str, stream_index: int, seek: float) -
 
 
 def _get_whisper_model():
-    """Load the tiny model once. Returns None if load/download fails
-    (offline first-use) — caller fail-opens."""
-    global _WHISPER_MODEL, _WHISPER_LOAD_FAILED
-    if _WHISPER_MODEL is not None:
-        return _WHISPER_MODEL
-    if _WHISPER_LOAD_FAILED:
-        return None
+    """Load the configured model (cached), reloading if the setting changed.
+    Returns None if load/download fails (offline first-use) — caller
+    fail-opens. `tiny` is under-confident on non-English speech; `base`/`small`
+    push it over the gate at the cost of size/speed (Settings → Video)."""
+    global _WHISPER_MODEL, _WHISPER_MODEL_NAME, _WHISPER_LOAD_FAILED
+    want = _configured_whisper_model()
+    # Live reload: if the user changed the model in Settings, drop the cached
+    # one and load the new model without a restart.
+    if _WHISPER_MODEL_NAME == want:
+        if _WHISPER_MODEL is not None:
+            return _WHISPER_MODEL
+        if _WHISPER_LOAD_FAILED:
+            return None
     try:
         from faster_whisper import WhisperModel
         cache_dir = os.environ.get("SHRINKERR_WHISPER_CACHE", "/app/data/models")
         os.makedirs(cache_dir, exist_ok=True)
-        # v0.9.16: model is configurable. `tiny` is under-confident on
-        # non-English speech (Nordic tracks land ~0.5–0.58, just under the
-        # gate); `base`/`small` push those over it at the cost of size/speed.
-        model_name = os.environ.get("SHRINKERR_WHISPER_MODEL", "tiny")
-        _WHISPER_MODEL = WhisperModel(model_name, device="auto", compute_type="int8", download_root=cache_dir)
-        print(f"[LANG-DETECT] Whisper model '{model_name}' loaded", flush=True)
+        _WHISPER_MODEL = WhisperModel(want, device="auto", compute_type="int8", download_root=cache_dir)
+        _WHISPER_MODEL_NAME = want
+        _WHISPER_LOAD_FAILED = False
+        print(f"[LANG-DETECT] Whisper model '{want}' loaded", flush=True)
         return _WHISPER_MODEL
     except Exception as exc:
-        print(f"[LANG-DETECT] Whisper model load failed, audio detection disabled: {exc}", flush=True)
+        print(f"[LANG-DETECT] Whisper model '{want}' load failed, audio detection disabled: {exc}", flush=True)
+        _WHISPER_MODEL = None
+        _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = True
         return None
 

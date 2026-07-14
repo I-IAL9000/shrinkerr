@@ -93,8 +93,16 @@ Both are in **Settings → Video** (shown in the audio and subtitle sections):
 - **Notify Plex on track-language change** (default **on**) — after tags are
   written to a file, refresh the file's Plex library section. No effect if
   Plex isn't configured.
+- **Audio detection model** (`tiny` / `base` / `small`, default `tiny`) —
+  the faster-whisper model for spoken-language ID. Larger is more accurate on
+  non-English speech at the cost of download size, RAM, and speed. Takes
+  effect on the next detection (no restart).
+- **Audio / Subtitle confidence** (defaults `0.6` / `0.7`) — minimum
+  confidence to accept a detected language. Lower tags more tracks but risks
+  wrong tags.
 
-Advanced tuning via environment variables:
+The env vars below still work and **override** the Settings values (handy for
+headless/compose-only deploys):
 
 | Env var | Default | Meaning |
 |---|---|---|

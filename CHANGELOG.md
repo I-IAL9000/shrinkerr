@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.18] — 2026-07-14
+
+### Added
+- **Language-detection tuning in Settings → Video.** The audio detection model (tiny/base/small) and the audio/subtitle confidence thresholds are now UI settings instead of env-only. Defaults unchanged (tiny / 0.6 / 0.7); the model reloads live on change (no restart). The `SHRINKERR_*` env vars still work and override the UI values.
+
 ## [0.9.17] — 2026-07-14
 
 ### Fixed

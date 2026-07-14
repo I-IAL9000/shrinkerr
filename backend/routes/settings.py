@@ -94,6 +94,10 @@ _ENCODING_DEFAULTS = {
     # v0.8.0: auto-detect languages for und tracks before converting.
     "auto_detect_languages": "true",
     "plex_notify_on_lang_change": "true",
+    # v0.9.18: language-detection tuning, surfaced in Settings → Video.
+    "lang_detect_whisper_model": "tiny",
+    "lang_detect_audio_min": "0.6",
+    "lang_detect_sub_min": "0.7",
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
@@ -483,6 +487,9 @@ async def get_encoding_settings():
         "always_keep_dedup": merged.get("always_keep_dedup", "true").lower() == "true",
         "auto_detect_languages": merged.get("auto_detect_languages", "true").lower() == "true",
         "plex_notify_on_lang_change": merged.get("plex_notify_on_lang_change", "true").lower() == "true",
+        "lang_detect_whisper_model": merged.get("lang_detect_whisper_model", "tiny"),
+        "lang_detect_audio_min": float(merged.get("lang_detect_audio_min", 0.6)),
+        "lang_detect_sub_min": float(merged.get("lang_detect_sub_min", 0.7)),
         "target_codec": merged.get("target_codec", "hevc"),
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
@@ -866,6 +873,12 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["auto_detect_languages"] = "true" if update.auto_detect_languages else "false"
         if update.plex_notify_on_lang_change is not None:
             updates["plex_notify_on_lang_change"] = "true" if update.plex_notify_on_lang_change else "false"
+        if update.lang_detect_whisper_model is not None:
+            updates["lang_detect_whisper_model"] = update.lang_detect_whisper_model
+        if update.lang_detect_audio_min is not None:
+            updates["lang_detect_audio_min"] = str(update.lang_detect_audio_min)
+        if update.lang_detect_sub_min is not None:
+            updates["lang_detect_sub_min"] = str(update.lang_detect_sub_min)
         if update.target_codec is not None:
             updates["target_codec"] = update.target_codec
         if update.target_resolution is not None:

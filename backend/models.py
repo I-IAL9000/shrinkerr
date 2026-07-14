@@ -199,6 +199,9 @@ class SettingsUpdate(BaseModel):
     # v0.8.0: auto-detect languages for und tracks before converting.
     auto_detect_languages: Optional[bool] = None
     plex_notify_on_lang_change: Optional[bool] = None
+    lang_detect_whisper_model: Optional[str] = None
+    lang_detect_audio_min: Optional[float] = None
+    lang_detect_sub_min: Optional[float] = None
     target_codec: Optional[str] = None
     target_resolution: Optional[str] = None
     source_codecs: Optional[list[str]] = None

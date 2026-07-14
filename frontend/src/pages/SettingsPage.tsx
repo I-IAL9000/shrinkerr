@@ -1818,6 +1818,40 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 Before converting or cleaning up audio, run language detection on "und"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view.
               </div>
 
+              {/* v0.9.18: language-detection tuning (model + confidence gates) */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>Audio detection model</div>
+                <select value={encoding.lang_detect_whisper_model || "tiny"}
+                  onChange={(e) => setEncoding({ ...encoding, lang_detect_whisper_model: e.target.value })}
+                  style={{ ...inputStyle, width: "100%" }}>
+                  <option value="tiny">Tiny — fastest, ~75 MB (default)</option>
+                  <option value="base">Base — better accuracy, ~140 MB</option>
+                  <option value="small">Small — best accuracy, ~460 MB, slower</option>
+                </select>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Downloads on first use; takes effect on the next detection (no restart).
+                </div>
+              </div>
+              <div style={{ marginTop: 12, display: "flex", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...labelStyle, marginBottom: 8 }}>Audio confidence</div>
+                  <input type="number" min={0.1} max={0.95} step={0.05}
+                    value={encoding.lang_detect_audio_min ?? 0.6}
+                    onChange={(e) => setEncoding({ ...encoding, lang_detect_audio_min: parseFloat(e.target.value) })}
+                    style={{ ...inputStyle, width: "100%" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...labelStyle, marginBottom: 8 }}>Subtitle confidence</div>
+                  <input type="number" min={0.1} max={0.95} step={0.05}
+                    value={encoding.lang_detect_sub_min ?? 0.7}
+                    onChange={(e) => setEncoding({ ...encoding, lang_detect_sub_min: parseFloat(e.target.value) })}
+                    style={{ ...inputStyle, width: "100%" }} />
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                Minimum confidence (0–1) to accept a detected language — lower tags more tracks but risks wrong tags. Defaults: audio 0.6, subtitle 0.7. (A <code>SHRINKERR_*</code> env var, if set, overrides these.)
+              </div>
+
               {/* Audio Conversion */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                 <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>Audio Conversion</h4>
