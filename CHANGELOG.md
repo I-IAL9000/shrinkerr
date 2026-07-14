@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.16] — 2026-07-14
+
+### Fixed
+- **Text-sub extraction no longer times out on large files.** v0.9.15 dropped the extraction time cap, so ffmpeg demuxed the whole multi-GB file and blew the 15s timeout → empty → `und`. Restored a 30-min cap (covers dialogue start; longer than v0.8.1's 10 min) and raised the timeout to 60s.
+
+### Added
+- **Configurable Whisper model** via `SHRINKERR_WHISPER_MODEL` (default `tiny`). `tiny` is under-confident on non-English speech (Nordic tracks land ~0.5–0.58, just under the 0.6 gate); set `base`/`small` for better accuracy. Threshold remains tunable via `SHRINKERR_LANG_DETECT_AUDIO_MIN`.
+
 ## [0.9.15] — 2026-07-14
 
 ### Fixed

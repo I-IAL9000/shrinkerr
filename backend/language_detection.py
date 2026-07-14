@@ -235,7 +235,12 @@ def _get_whisper_model():
         from faster_whisper import WhisperModel
         cache_dir = os.environ.get("SHRINKERR_WHISPER_CACHE", "/app/data/models")
         os.makedirs(cache_dir, exist_ok=True)
-        _WHISPER_MODEL = WhisperModel("tiny", device="auto", compute_type="int8", download_root=cache_dir)
+        # v0.9.16: model is configurable. `tiny` is under-confident on
+        # non-English speech (Nordic tracks land ~0.5–0.58, just under the
+        # gate); `base`/`small` push those over it at the cost of size/speed.
+        model_name = os.environ.get("SHRINKERR_WHISPER_MODEL", "tiny")
+        _WHISPER_MODEL = WhisperModel(model_name, device="auto", compute_type="int8", download_root=cache_dir)
+        print(f"[LANG-DETECT] Whisper model '{model_name}' loaded", flush=True)
         return _WHISPER_MODEL
     except Exception as exc:
         print(f"[LANG-DETECT] Whisper model load failed, audio detection disabled: {exc}", flush=True)

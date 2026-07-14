@@ -702,7 +702,7 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     import os as _os
     import tempfile as _tempfile
 
-    async def _run(cmd: list, timeout: int = 15):
+    async def _run(cmd: list, timeout: int = 60):
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -723,12 +723,15 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     fd, tmp = _tempfile.mkstemp(suffix=".srt", prefix="shrinkerr_sub_")
     _os.close(fd)
     try:
-        # v0.9.15: no `-t` cap — a forced sub's dialogue can start well past
-        # the 10-min mark, which left it extracting empty and stuck at und.
-        # Text subs are small and _clean_srt_bytes truncates to max_chars.
+        # v0.9.16: bound the read to the first 30 min. A `-t` cap is needed —
+        # without it (v0.9.15) ffmpeg demuxes the WHOLE multi-GB file to
+        # collect sub packets and blows the timeout on large files, extracting
+        # empty. 30 min covers dialogue start for essentially all content
+        # (v0.8.1's 10 min was too short for some forced subs) while stopping
+        # the read early so it stays fast.
         await _run([
             "ffmpeg", "-y", "-v", "quiet", "-i", file_path,
-            "-map", f"0:{stream_index}", "-c:s", "copy", tmp,
+            "-map", f"0:{stream_index}", "-t", "1800", "-c:s", "copy", tmp,
         ])
         raw = b""
         try:
@@ -748,7 +751,7 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     # Fallback: decode to srt on stdout (handles ass/ssa copy can't put in .srt).
     out = await _run([
         "ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
-        "-f", "srt", "-",
+        "-t", "1800", "-f", "srt", "-",
     ])
     if not out:
         print(f"[LANG-DETECT] sub s{stream_index}: no text extracted (copy + srt-decode both empty)", flush=True)
