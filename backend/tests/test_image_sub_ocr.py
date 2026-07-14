@@ -109,3 +109,63 @@ def test_subtile_ocr_missing_tool_returns_none(monkeypatch):
     from backend import image_sub_ocr as io
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert io._subtile_ocr_to_text("/tmp/sub.idx", "eng") is None
+
+
+def test_build_sup_sample_cmd():
+    from backend.image_sub_ocr import _build_sup_sample_cmd
+    cmd = _build_sup_sample_cmd("/m/f.mkv", 2, "/tmp/w/sub.sup", 1200)
+    assert cmd == ["ffmpeg", "-v", "error", "-y", "-i", "/m/f.mkv",
+                   "-map", "0:2", "-c:s", "copy", "-t", "1200", "/tmp/w/sub.sup"]
+
+
+def test_pgs_sample_seconds_env(monkeypatch):
+    from backend import image_sub_ocr as io
+    monkeypatch.delenv("SHRINKERR_PGS_SAMPLE_SECONDS", raising=False)
+    assert io._pgs_sample_seconds() == 1200
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "600")
+    assert io._pgs_sample_seconds() == 600
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "0")   # 0 = disable sampling
+    assert io._pgs_sample_seconds() == 0
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "garbage")
+    assert io._pgs_sample_seconds() == 1200
+
+
+@pytest.mark.asyncio
+async def test_detect_pgs_samples_first(monkeypatch):
+    """Common case: the sample yields text → no full extraction needed."""
+    from backend import image_sub_ocr as io
+    extract_calls = []
+    async def fake_extract(fp, idx, workdir, sample_seconds=None):
+        extract_calls.append(sample_seconds)
+        return "/tmp/w/sub.sup"
+    def fake_ocr(sup, langs):
+        return "Hello there, this is plainly English dialogue with many words."
+    monkeypatch.setattr(io, "_extract_sup", fake_extract)
+    monkeypatch.setattr(io, "_pgsrip_to_text", fake_ocr)
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "1200")
+    lang, _c = await io.detect_image_sub_language("/m/f.mkv", 2, "hdmv_pgs_subtitle")
+    assert lang == "eng", f"got {lang!r}"
+    assert extract_calls == [1200], "should stop after the sample extraction"
+
+
+@pytest.mark.asyncio
+async def test_detect_pgs_falls_back_to_full_when_sample_empty(monkeypatch):
+    """Sparse/forced: sample OCR finds nothing → full track is extracted + OCR'd."""
+    from backend import image_sub_ocr as io
+    extract_calls = []
+    async def fake_extract(fp, idx, workdir, sample_seconds=None):
+        extract_calls.append(sample_seconds)
+        return "/tmp/w/sub.sup"
+    ocr_results = ["", "", "Hello there, this is plainly English dialogue with many words."]
+    def fake_ocr(sup, langs):
+        return ocr_results.pop(0) if ocr_results else ""
+    monkeypatch.setattr(io, "_extract_sup", fake_extract)
+    monkeypatch.setattr(io, "_pgsrip_to_text", fake_ocr)
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "1200")
+    lang, _c = await io.detect_image_sub_language("/m/f.mkv", 2, "hdmv_pgs_subtitle")
+    assert lang == "eng", f"got {lang!r}"
+    assert extract_calls == [1200, None], "sample then full extraction"

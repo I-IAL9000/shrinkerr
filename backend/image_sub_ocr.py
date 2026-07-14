@@ -55,26 +55,57 @@ def _strip_srt(text: str, max_chars: int = 8000) -> str | None:
     return text[:max_chars].strip() or None
 
 
-async def _extract_sup(file_path: str, stream_index: int, workdir: str) -> str | None:
-    """mkvextract the image-sub track to a .sup in `workdir`. Returns the
-    path, or None on failure/empty."""
-    sup = os.path.join(workdir, "sub.sup")
-    cmd = _build_mkvextract_cmd(file_path, stream_index, sup)
+def _pgs_sample_seconds() -> int:
+    """How much of a PGS track to OCR for language detection. Detecting a
+    language needs a few dozen lines, not the whole 2-hour track — pgsrip
+    OCRs every image, so sampling the leading slice is a big speed-up.
+    Tunable; 0 disables sampling (always OCR the full track)."""
+    try:
+        return int(os.environ.get("SHRINKERR_PGS_SAMPLE_SECONDS", "1200"))
+    except ValueError:
+        return 1200
+
+
+def _build_sup_sample_cmd(file_path: str, stream_index: int, out_sup: str, seconds: int) -> list[str]:
+    """ffmpeg command copying the first `seconds` of a PGS track to a .sup."""
+    return ["ffmpeg", "-v", "error", "-y", "-i", file_path,
+            "-map", f"0:{stream_index}", "-c:s", "copy", "-t", str(seconds), out_sup]
+
+
+async def _run_extract(cmd: list[str], out_path: str, timeout: int = 600) -> bool:
+    """Run an extraction subprocess; True if it exits 0 with a non-empty out."""
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
-        await asyncio.wait_for(proc.wait(), timeout=300)
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
     except (asyncio.TimeoutError, OSError):
         try:
             proc.kill()
             await proc.wait()
         except Exception:
             pass
-        return None
-    if proc.returncode != 0 or not os.path.exists(sup) or os.path.getsize(sup) == 0:
-        return None
-    return sup
+        return False
+    return proc.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
+
+
+async def _extract_sup(file_path: str, stream_index: int, workdir: str,
+                       sample_seconds: int | None = None) -> str | None:
+    """Extract the PGS track to a .sup in `workdir`. When `sample_seconds` is
+    set, copy only that leading slice via ffmpeg (fast OCR sample); on ffmpeg
+    failure, fall back to a full mkvextract. Returns the path or None."""
+    sup = os.path.join(workdir, "sub.sup")
+    if sample_seconds:
+        if await _run_extract(_build_sup_sample_cmd(file_path, stream_index, sup, sample_seconds), sup, 300):
+            return sup
+        if os.path.exists(sup):
+            try:
+                os.unlink(sup)
+            except OSError:
+                pass
+    if await _run_extract(_build_mkvextract_cmd(file_path, stream_index, sup), sup, 300):
+        return sup
+    return None
 
 
 def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
@@ -218,24 +249,43 @@ async def detect_image_sub_language(
                 return detect_subtitle_language(text)
             return (None, 0.0)
 
-        # PGS (Blu-ray) → pgsrip.
-        await _report(f"Extracting subtitle track {stream_index}…")
-        sup = await _extract_sup(file_path, stream_index, workdir)
+        # PGS (Blu-ray) → pgsrip. Two OCR passes (Latin, then non-Latin) over
+        # a given .sup.
+        async def _ocr_pgs(sup_path):
+            await _report(f"OCR (Latin) on subtitle track {stream_index}…")
+            text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _LATIN_LANGS)
+            if text:
+                lang, conf = detect_subtitle_language(text)
+                if lang:
+                    return (lang, conf)
+            await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…")
+            text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _NON_LATIN_LANGS)
+            if text:
+                lang, conf = detect_subtitle_language(text)
+                if lang:
+                    return (lang, conf)
+            return None
+
+        # v0.9.13: OCR a leading sample first — pgsrip OCRs every image, so a
+        # full 2-hour track can take 10+ minutes when we only need a few dozen
+        # lines to ID the language.
+        sample = _pgs_sample_seconds()
+        if sample:
+            await _report(f"Extracting subtitle sample (track {stream_index})…")
+            sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=sample)
+            if sup:
+                result = await _ocr_pgs(sup)
+                if result:
+                    return result
+        # Full track — either sampling is disabled, or the sample had no
+        # detectable text (sparse opening / forced sub whose events fall
+        # outside the window).
+        await _report(f"Extracting full subtitle track {stream_index}…")
+        sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=None)
         if not sup:
             return (None, 0.0)
-        # Pass 1: Latin (eng).
-        await _report(f"OCR (Latin) on subtitle track {stream_index}…")
-        text = await loop.run_in_executor(None, _pgsrip_to_text, sup, _LATIN_LANGS)
-        if text:
-            lang, conf = detect_subtitle_language(text)
-            if lang:
-                return (lang, conf)
-        # Pass 2: non-Latin scripts.
-        await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…")
-        text = await loop.run_in_executor(None, _pgsrip_to_text, sup, _NON_LATIN_LANGS)
-        if text:
-            return detect_subtitle_language(text)
-        return (None, 0.0)
+        result = await _ocr_pgs(sup)
+        return result if result else (None, 0.0)
     except Exception as exc:
         print(f"[IMG-OCR] detection failed for {file_path} s{stream_index}: {exc}", flush=True)
         return (None, 0.0)

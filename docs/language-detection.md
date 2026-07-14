@@ -101,6 +101,7 @@ Advanced tuning via environment variables:
 | `SHRINKERR_LANG_DETECT_AUDIO_MIN` | `0.6` | Min confidence to accept an audio detection |
 | `SHRINKERR_LANG_DETECT_SUB_MIN` | `0.7` | Min confidence to accept a subtitle detection |
 | `SHRINKERR_WHISPER_CACHE` | `/app/data/models` | Where the faster-whisper model is cached |
+| `SHRINKERR_PGS_SAMPLE_SECONDS` | `1200` | Seconds of a PGS track to OCR for detection (0 = whole track). OCR of a full movie is slow; a leading sample is enough to ID the language. Falls back to the full track if the sample has no text. |
 
 ## The "Unknown language" filter
 

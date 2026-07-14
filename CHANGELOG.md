@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.13] — 2026-07-14
+
+### Changed
+- **PGS subtitle OCR samples the track instead of OCR'ing the whole movie.** pgsrip OCRs every image, so a full Blu-ray PGS track took 10+ minutes when language detection only needs a few dozen lines. It now OCRs the first 20 minutes (`SHRINKERR_PGS_SAMPLE_SECONDS`, 0 to disable) and falls back to the full track only if the sample has no text (sparse/forced subs). Extraction uses ffmpeg's `sup` muxer with an mkvextract fallback.
+
 ## [0.9.12] — 2026-07-14
 
 ### Fixed
