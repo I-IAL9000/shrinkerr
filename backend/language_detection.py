@@ -106,14 +106,18 @@ def detect_subtitle_language(text: str) -> tuple[str | None, float]:
         from langdetect import detect_langs, DetectorFactory
         DetectorFactory.seed = 0
         results = detect_langs(text)
-    except Exception:
+    except Exception as exc:
+        print(f"[LANG-DETECT] subtitle: langdetect error on {len(text)} chars: {exc}", flush=True)
         return (None, 0.0)
     if not results:
+        print(f"[LANG-DETECT] subtitle: langdetect returned nothing for {len(text)} chars", flush=True)
         return (None, 0.0)
     best = results[0]
     iso1 = best.lang.lower()
     conf = float(best.prob)
-    if conf < _sub_min_confidence():
+    _min = _sub_min_confidence()
+    if conf < _min:
+        print(f"[LANG-DETECT] subtitle: below confidence {iso1}@{conf:.2f} < {_min:.2f} ({len(text)} chars)", flush=True)
         return (None, 0.0)
     # v0.8.2: langdetect returns regional codes for some languages
     # (e.g. "zh-cn"/"zh-tw" for Chinese). Strip the region before the
@@ -122,6 +126,7 @@ def detect_subtitle_language(text: str) -> tuple[str | None, float]:
     iso1_base = iso1.split("-")[0]
     iso2 = _ISO639_1_TO_2.get(iso1_base, "")
     if not iso2:
+        print(f"[LANG-DETECT] subtitle: {iso1} has no ISO-639-2 mapping", flush=True)
         return (None, 0.0)
     return (_normalize_iso639_2(iso2), conf)
 
@@ -246,9 +251,12 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
         if best_conf >= threshold:
             break  # confident enough — don't sample further
     if not best_iso1 or best_conf < threshold:
+        print(f"[LANG-DETECT] audio s{stream_index}: below confidence "
+              f"{best_iso1 or 'no-speech'}@{best_conf:.2f} < {threshold:.2f}", flush=True)
         return (None, 0.0)
     iso2 = _ISO639_1_TO_2.get(best_iso1.lower(), "")
     if not iso2:
+        print(f"[LANG-DETECT] audio s{stream_index}: {best_iso1} has no ISO-639-2 mapping", flush=True)
         return (None, 0.0)
     return (_normalize_iso639_2(iso2), best_conf)
 

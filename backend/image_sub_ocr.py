@@ -73,20 +73,27 @@ def _build_sup_sample_cmd(file_path: str, stream_index: int, out_sup: str, secon
 
 
 async def _run_extract(cmd: list[str], out_path: str, timeout: int = 600) -> bool:
-    """Run an extraction subprocess; True if it exits 0 with a non-empty out."""
+    """Run an extraction subprocess; True if it exits 0 with a non-empty out.
+    Logs rc + stderr tail on failure — extraction failures were silent before,
+    hiding a whole class of 'stayed und'."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
         )
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
-    except (asyncio.TimeoutError, OSError):
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except (asyncio.TimeoutError, OSError) as exc:
         try:
             proc.kill()
             await proc.wait()
         except Exception:
             pass
+        print(f"[IMG-OCR] extract error ({cmd[0]}): {exc}", flush=True)
         return False
-    return proc.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    ok = proc.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0
+    if not ok:
+        tail = (stderr.decode(errors="replace")[-300:] if stderr else "").strip()
+        print(f"[IMG-OCR] extract failed ({cmd[0]} rc={proc.returncode}): {tail}", flush=True)
+    return ok
 
 
 async def _extract_sup(file_path: str, stream_index: int, workdir: str,
@@ -123,6 +130,7 @@ def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
         return None
     srt = os.path.splitext(sup_path)[0] + ".srt"
     if not os.path.exists(srt):
+        print(f"[IMG-OCR] pgsrip produced no text ({','.join(tess_langs)})", flush=True)
         return None
     try:
         with open(srt, "rb") as fh:
@@ -189,6 +197,7 @@ def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
         print(f"[IMG-OCR] subtile-ocr failed ({tess_lang}): {exc}", flush=True)
         return None
     if not os.path.exists(out_srt):
+        print(f"[IMG-OCR] subtile-ocr produced no srt ({tess_lang})", flush=True)
         return None
     try:
         with open(out_srt, "rb") as fh:

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.14] — 2026-07-14
+
+### Changed
+- **Language detection now logs why a track stays `und`.** Detection is fail-open, so failures (below-confidence guess, empty text/OCR extraction, silent `mkvextract`/`ffmpeg` errors) previously left a track `und` with no explanation. Each of those now logs a concise `[LANG-DETECT]`/`[IMG-OCR]` reason (with the confidence value, char/OCR counts, or subprocess stderr). Diagnostic only — no change to detection behavior.
+
 ## [0.9.13] — 2026-07-14
 
 ### Changed

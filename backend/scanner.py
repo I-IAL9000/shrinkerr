@@ -748,6 +748,7 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
         "-t", "600", "-f", "srt", "-",
     ])
     if not out:
+        print(f"[LANG-DETECT] sub s{stream_index}: no text extracted (copy + srt-decode both empty)", flush=True)
         return None
     return _clean_srt_bytes(out, max_chars)
 

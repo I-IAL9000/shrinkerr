@@ -920,6 +920,9 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 t["language"] = lang
                 audio_write[i] = lang
                 changed = True
+            else:
+                print(f"[LANG-DETECT] audio s{t.get('stream_index')} codec={t.get('codec')} "
+                      f"title={t.get('title','')!r}: stayed und", flush=True)
 
     # Subtitles: detect und text subs (fast, langdetect) and und image
     # subs (PGS/VobSub via OCR — v0.9.0, on-demand only, slower).
@@ -962,6 +965,10 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     t["language"] = ocr_lang
                     sub_write[j] = ocr_lang
                     changed = True
+            # Per-track outcome (title path returned earlier via `continue`).
+            if (t.get("language") or "und").lower() == "und":
+                _sup = "text" if codec_l in _TEXT_SUB_CODECS else "image" if codec_l in _IMAGE_SUB_CODECS else "unsupported"
+                print(f"[LANG-DETECT] sub s{t.get('stream_index')} codec={codec_l} ({_sup}): stayed und", flush=True)
 
     # External sidecar subs: read the file text (charset-aware), detect with
     # the same gated detector as embedded text subs, then rename the file to
@@ -973,6 +980,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             continue
         es_path = es.get("external_path") or ""
         if not es_path or not os.path.isfile(es_path):
+            print(f"[LANG-DETECT] external sub missing on disk ({es_path}): stayed und", flush=True)
             continue
         codec_l = (es.get("codec") or "").lower()
         try:
@@ -997,6 +1005,9 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 es["external_path"] = new_path
                 external_renamed = True
             changed = True
+        else:
+            print(f"[LANG-DETECT] external sub codec={codec_l} "
+                  f"({os.path.basename(es_path)}): stayed und", flush=True)
 
     if not changed:
         return {"status": "ok", "changed": False}
