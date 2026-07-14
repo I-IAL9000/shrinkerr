@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.21] — 2026-07-14
+
+### Fixed
+- **Audio detection runs in a killable subprocess so it can't hang the app.** v0.9.19's timeout let a wedged whisper transcribe keep running in an un-cancellable thread; across a batch these piled up, pegged every core, and starved the event loop (the app went fully unresponsive — proven by health-checks that never returned). Detection now runs in a subprocess that's **killed** on timeout, freeing the CPU. **Trade-off:** the model is loaded per detection, so bulk runs with `base`/`small` are slower — use `tiny` for large batches, or accept the cost.
+
 ## [0.9.20] — 2026-07-14
 
 ### Changed

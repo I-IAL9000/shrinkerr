@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import sys
 import tempfile
 
 from backend.disc_metadata import _ISO639_1_TO_2, _normalize_iso639_2
@@ -306,12 +307,50 @@ def _get_whisper_model():
 
 def _run_whisper_lang(clip_path: str) -> tuple[str | None, float]:
     """Run faster-whisper language ID on a clip. Returns (ISO 639-1, prob)
-    or (None, 0.0). Isolated so tests mock this single seam."""
+    or (None, 0.0). Runs inside the killable worker subprocess (see
+    audio_lang_worker) — NOT on the event-loop process."""
     model = _get_whisper_model()
     if model is None:
         return (None, 0.0)
     _segments, info = model.transcribe(clip_path, language=None)
     return (getattr(info, "language", None), float(getattr(info, "language_probability", 0.0)))
+
+
+async def _detect_clip_language(clip_path: str, timeout: int = 120) -> tuple[str | None, float]:
+    """Language-ID a clip in a KILLABLE subprocess. v0.9.21: a wedged whisper
+    transcribe used to leak an un-cancellable executor thread that pegged every
+    core and starved the event loop (the whole app went unresponsive). Running
+    it as a subprocess means a stuck one is KILLED on timeout, freeing the CPU.
+    Raises asyncio.TimeoutError on timeout (caller abandons the track);
+    otherwise returns (ISO 639-1 | None, confidence). Fail-open."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "backend.audio_lang_worker", clip_path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.wait()
+        except Exception:
+            pass
+        print(f"[LANG-DETECT] whisper subprocess killed after {timeout}s: {clip_path}", flush=True)
+        raise
+    if proc.returncode != 0 or not out:
+        return (None, 0.0)
+    # The worker prints a `RESULT\t<lang>\t<conf>` line; ignore any model-load
+    # chatter on stdout by scanning for that marker from the end.
+    for line in reversed(out.decode(errors="replace").splitlines()):
+        if line.startswith("RESULT\t"):
+            parts = line.split("\t")
+            lang = parts[1] if len(parts) > 1 else ""
+            try:
+                conf = float(parts[2]) if len(parts) > 2 and parts[2] else 0.0
+            except ValueError:
+                conf = 0.0
+            return (lang or None, conf)
+    return (None, 0.0)
 
 
 async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float]:
@@ -330,14 +369,10 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
         clip_path = None
         try:
             clip_path = await _extract_audio_clip(file_path, stream_index, seek)
-            # v0.9.19: bound whisper — a wedged transcribe (seen on a specific
-            # DTS track) must not hang the request/library forever. The worker
-            # thread can't be force-killed, but cpu_threads is capped so a
-            # leaked one won't starve the app.
-            iso1, conf = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _run_whisper_lang, clip_path),
-                timeout=120,
-            )
+            # v0.9.21: killable subprocess. A wedged transcribe is KILLED on
+            # timeout (frees CPU) rather than leaking a thread that starves the
+            # event loop and takes the whole app down.
+            iso1, conf = await _detect_clip_language(clip_path, timeout=120)
         except asyncio.TimeoutError:
             # Don't try the remaining windows — they'd wedge too and pile up
             # leaked threads. Abandon this track (stays und).

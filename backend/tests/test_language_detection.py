@@ -59,7 +59,7 @@ def test_audio_clip_ffmpeg_command_is_wellformed():
 async def test_detect_audio_language_maps_result_to_iso2():
     from backend import language_detection as ld
     with patch.object(ld, "_extract_audio_clip", new=AsyncMock(return_value="/tmp/clip.wav")), \
-         patch.object(ld, "_run_whisper_lang", return_value=("de", 0.92)), \
+         patch.object(ld, "_detect_clip_language", new=AsyncMock(return_value=("de", 0.92))), \
          patch("os.path.exists", return_value=True), \
          patch("os.unlink"):
         lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
@@ -71,7 +71,7 @@ async def test_detect_audio_language_maps_result_to_iso2():
 async def test_detect_audio_language_low_confidence_returns_none():
     from backend import language_detection as ld
     with patch.object(ld, "_extract_audio_clip", new=AsyncMock(return_value="/tmp/clip.wav")), \
-         patch.object(ld, "_run_whisper_lang", return_value=("de", 0.30)), \
+         patch.object(ld, "_detect_clip_language", new=AsyncMock(return_value=("de", 0.30))), \
          patch("os.path.exists", return_value=True), \
          patch("os.unlink"):
         lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
@@ -160,13 +160,13 @@ async def test_detect_audio_recovers_from_weak_first_window(monkeypatch):
     where another window would have had clear speech)."""
     from backend import language_detection as ld
     calls = {"n": 0}
-    def fake_whisper(clip):
+    async def fake_detect(clip, timeout=120):
         calls["n"] += 1
         # window 1 weak (0.40), window 2 strong (0.88)
         return ("it", 0.40) if calls["n"] == 1 else ("it", 0.88)
     monkeypatch.setattr(ld, "_extract_audio_clip",
                         __import__("unittest").mock.AsyncMock(return_value="/tmp/c.wav"))
-    monkeypatch.setattr(ld, "_run_whisper_lang", fake_whisper)
+    monkeypatch.setattr(ld, "_detect_clip_language", fake_detect)
     monkeypatch.setattr("os.path.exists", lambda p: True)
     monkeypatch.setattr("os.unlink", lambda p: None)
     lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
@@ -181,12 +181,12 @@ async def test_detect_audio_all_windows_weak_stays_und(monkeypatch):
     all sample positions."""
     from backend import language_detection as ld
     calls = {"n": 0}
-    def fake_whisper(clip):
+    async def fake_detect(clip, timeout=120):
         calls["n"] += 1
         return ("pt", 0.40)  # always weak
     monkeypatch.setattr(ld, "_extract_audio_clip",
                         __import__("unittest").mock.AsyncMock(return_value="/tmp/c.wav"))
-    monkeypatch.setattr(ld, "_run_whisper_lang", fake_whisper)
+    monkeypatch.setattr(ld, "_detect_clip_language", fake_detect)
     monkeypatch.setattr("os.path.exists", lambda p: True)
     monkeypatch.setattr("os.unlink", lambda p: None)
     lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
@@ -291,3 +291,40 @@ async def test_extract_audio_clip_kills_ffmpeg_on_timeout(monkeypatch):
     with pytest.raises(OSError):
         await ld._extract_audio_clip("/x.mkv", 1, 0.0)
     assert state["killed"] is True
+
+
+@pytest.mark.asyncio
+async def test_detect_clip_language_kills_subprocess_on_timeout(monkeypatch):
+    """Regression (v0.9.21): a wedged whisper subprocess is killed on timeout
+    (freeing CPU) and the timeout propagates so the caller abandons the track."""
+    import asyncio as _asyncio
+    from backend import language_detection as ld
+    state = {"killed": False}
+
+    class _FakeProc:
+        returncode = None
+        def kill(self):
+            state["killed"] = True
+        async def wait(self):
+            return 0
+        async def communicate(self):
+            return (b"", b"")
+
+    async def _fake_exec(*a, **k):
+        return _FakeProc()
+
+    async def _fake_wait_for(coro, timeout):
+        coro.close()
+        raise _asyncio.TimeoutError()
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr("asyncio.wait_for", _fake_wait_for)
+    with pytest.raises(_asyncio.TimeoutError):
+        await ld._detect_clip_language("/tmp/clip.wav", timeout=1)
+    assert state["killed"] is True
+
+
+def test_audio_lang_worker_importable():
+    """The killable worker module must import + expose main()."""
+    import backend.audio_lang_worker as w
+    assert callable(w.main)
