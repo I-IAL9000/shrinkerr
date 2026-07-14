@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.20] — 2026-07-14
+
+### Changed
+- **The detect button follows your selection.** It now reads **"Detect selected (N)"** when titles are selected (detecting just those) and **"Detect all unknown (N)"** when nothing is selected. Previously the per-selection detect action was a separate, easy-to-miss button in the bulk toolbar; that's been consolidated into the one prominent button.
+
 ## [0.9.19] — 2026-07-14
 
 ### Fixed

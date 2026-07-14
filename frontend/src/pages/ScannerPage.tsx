@@ -1454,17 +1454,22 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
               {selectAllActive || selectedPaths.size > 0 ? "Deselect all" : "Select all"}
             </button>
-            {filters.includes("unknown_language") && folders.length > 0 && (
+            {/* v0.9.20: one detect button that follows the selection — becomes
+                "Detect selected (N)" when items are picked, else "Detect all
+                unknown" for the whole Unknown-language filter. */}
+            {(selectedCount > 0 || (filters.includes("unknown_language") && folders.length > 0)) && (
               <button
                 className="btn btn-secondary"
-                title="Detect languages for every title in the current Unknown-language filter (und audio + subtitle tracks), writing the tags back to the files"
+                title={selectedCount > 0
+                  ? "Detect languages for the selected items (und audio + subtitle tracks), writing the tags back to the files"
+                  : "Detect languages for every title in the current Unknown-language filter, writing the tags back to the files"}
                 style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                onClick={handleDetectAllUnknown}
+                onClick={selectedCount > 0 ? handleBulkDetectLanguages : handleDetectAllUnknown}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
-                Detect all unknown ({folders.length})
+                {selectedCount > 0 ? `Detect selected (${selectedCount})` : `Detect all unknown (${folders.length})`}
               </button>
             )}
             {selectedCount > 0 && (() => {
@@ -1482,17 +1487,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   Rescan
                 </button>
-                <button
-                  className="btn btn-secondary"
-                  title="Detect languages for unknown (und) audio/subtitle tracks in the selected items and write the tags back to the files"
-                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
-                  onClick={handleBulkDetectLanguages}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-                  </svg>
-                  Detect languages
-                </button>
+                {/* v0.9.20: "Detect selected" is now the adaptive button above,
+                    so the per-selection detect button here is removed. */}
                 <button
                   className="btn btn-secondary"
                   title="Rename selected files using the renaming patterns"
