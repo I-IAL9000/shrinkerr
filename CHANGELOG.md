@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.15] — 2026-07-14
+
+### Fixed
+- **Correctly-detected languages no longer dropped for a missing mapping.** The ISO 639-1→639-2 table only had ~50 common languages, so detections like `nn` (Nynorsk) were discarded. Expanded to faster-whisper's full set, with a babelfish fallback for anything else.
+- **More languages recognized from track titles.** Added ~45 languages (Wolof, Swahili, Tamil, Welsh, …) to title detection — fixes `und` tracks whose title named a language the map didn't cover.
+- **Forced subtitles with late dialogue now detect.** Embedded text-sub extraction no longer caps at the first 10 minutes, so a forced sub whose lines start later isn't extracted empty.
+
 ## [0.9.14] — 2026-07-14
 
 ### Changed

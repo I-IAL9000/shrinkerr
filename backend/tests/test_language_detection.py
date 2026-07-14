@@ -211,3 +211,26 @@ def test_detect_language_from_title():
     assert detect_language_from_title("Commentary") is None
     assert detect_language_from_title("") is None
     assert detect_language_from_title(None) is None
+
+
+def test_iso_to_iso639_2b_covers_whisper_codes():
+    from backend.language_detection import _iso_to_iso639_2b
+    # The reported bug: whisper detected "nn" (Nynorsk) and it was dropped.
+    assert _iso_to_iso639_2b("nn") == "nno"
+    assert _iso_to_iso639_2b("en") == "eng"
+    assert _iso_to_iso639_2b("de") == "ger"        # B-form
+    assert _iso_to_iso639_2b("zh-cn") == "chi"      # region stripped
+    assert _iso_to_iso639_2b("ZH") == "chi"         # case-insensitive
+    assert _iso_to_iso639_2b("ta") == "tam"
+    assert _iso_to_iso639_2b("") is None
+    assert _iso_to_iso639_2b(None) is None
+
+
+def test_detect_language_from_title_extended():
+    from backend.language_detection import detect_language_from_title
+    # The reported bug: a track titled "Wolof" left und.
+    assert detect_language_from_title("Wolof") == "wol"
+    assert detect_language_from_title("Swahili") == "swa"
+    assert detect_language_from_title("Amharic") == "amh"
+    assert detect_language_from_title("Tamil (forced)") == "tam"
+    assert detect_language_from_title("Welsh") == "wel"

@@ -723,9 +723,12 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     fd, tmp = _tempfile.mkstemp(suffix=".srt", prefix="shrinkerr_sub_")
     _os.close(fd)
     try:
+        # v0.9.15: no `-t` cap — a forced sub's dialogue can start well past
+        # the 10-min mark, which left it extracting empty and stuck at und.
+        # Text subs are small and _clean_srt_bytes truncates to max_chars.
         await _run([
             "ffmpeg", "-y", "-v", "quiet", "-i", file_path,
-            "-map", f"0:{stream_index}", "-t", "600", "-c:s", "copy", tmp,
+            "-map", f"0:{stream_index}", "-c:s", "copy", tmp,
         ])
         raw = b""
         try:
@@ -745,7 +748,7 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     # Fallback: decode to srt on stdout (handles ass/ssa copy can't put in .srt).
     out = await _run([
         "ffmpeg", "-v", "quiet", "-i", file_path, "-map", f"0:{stream_index}",
-        "-t", "600", "-f", "srt", "-",
+        "-f", "srt", "-",
     ])
     if not out:
         print(f"[LANG-DETECT] sub s{stream_index}: no text extracted (copy + srt-decode both empty)", flush=True)

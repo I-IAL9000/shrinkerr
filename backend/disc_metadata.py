@@ -33,6 +33,20 @@ _ISO639_1_TO_2: dict[str, str] = {
     "lv": "lav", "et": "est", "id": "ind", "ms": "may", "tl": "tgl",
     "ur": "urd", "fa": "per", "ca": "cat", "ga": "gle", "cy": "wel",
     "mt": "mlt", "eu": "baq", "gl": "glg", "af": "afr", "sw": "swa",
+    # v0.9.15: cover the rest of what faster-whisper / langdetect emit, so a
+    # correctly-detected language is never dropped for lack of a mapping
+    # (observed: "nn" → Nynorsk, thrown away). ISO 639-2/B forms.
+    "nn": "nno", "nb": "nob", "am": "amh", "as": "asm", "az": "aze",
+    "ba": "bak", "be": "bel", "bo": "tib", "br": "bre", "bs": "bos",
+    "gu": "guj", "ha": "hau", "haw": "haw", "hy": "arm", "ht": "hat",
+    "jw": "jav", "jv": "jav", "ka": "geo", "kk": "kaz", "km": "khm",
+    "kn": "kan", "la": "lat", "lb": "ltz", "ln": "lin", "lo": "lao",
+    "mg": "mlg", "mi": "mao", "mk": "mac", "ml": "mal", "mn": "mon",
+    "mr": "mar", "my": "bur", "ne": "nep", "oc": "oci", "pa": "pan",
+    "ps": "pus", "sa": "san", "sd": "snd", "si": "sin", "sn": "sna",
+    "so": "som", "sq": "alb", "su": "sun", "ta": "tam", "te": "tel",
+    "tg": "tgk", "tk": "tuk", "tt": "tat", "uz": "uzb", "yi": "yid",
+    "yo": "yor", "yue": "chi", "wo": "wol", "zu": "zul", "xh": "xho",
 }
 
 

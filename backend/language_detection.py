@@ -72,6 +72,22 @@ _TITLE_LANG_MAP: dict[str, str] = {
     "lithuanian": "lit",
     "persian": "per", "farsi": "per",
     "filipino": "tgl", "tagalog": "tgl",
+    # v0.9.15: broader coverage — titles name plenty of languages beyond the
+    # common European set (observed: an audio track titled "Wolof" that
+    # whisper-tiny can't ID, left und even though the title said it outright).
+    "wolof": "wol", "swahili": "swa", "amharic": "amh", "somali": "som",
+    "yoruba": "yor", "hausa": "hau", "igbo": "ibo", "zulu": "zul",
+    "xhosa": "xho", "afrikaans": "afr", "malagasy": "mlg",
+    "malayalam": "mal", "kannada": "kan", "marathi": "mar", "punjabi": "pan",
+    "gujarati": "guj", "urdu": "urd", "nepali": "nep", "sinhala": "sin",
+    "sinhalese": "sin", "tamil": "tam", "telugu": "tel", "bengali": "ben",
+    "khmer": "khm", "lao": "lao", "burmese": "bur", "mongolian": "mon",
+    "georgian": "geo", "armenian": "arm", "albanian": "alb",
+    "macedonian": "mac", "belarusian": "bel", "kazakh": "kaz",
+    "uzbek": "uzb", "azerbaijani": "aze", "basque": "baq", "welsh": "wel",
+    "irish": "gle", "galician": "glg", "latin": "lat", "maltese": "mlt",
+    "luxembourgish": "ltz", "tibetan": "tib", "sanskrit": "san",
+    "pashto": "pus", "sindhi": "snd", "maori": "mao", "hawaiian": "haw",
 }
 _TITLE_LANG_RE = re.compile(
     r"\b(" + "|".join(re.escape(name) for name in _TITLE_LANG_MAP) + r")\b"
@@ -95,6 +111,25 @@ def detect_language_from_title(title: str | None) -> str | None:
     if not m:
         return None
     return _normalize_iso639_2(_TITLE_LANG_MAP[m.group(1)])
+
+
+def _iso_to_iso639_2b(code: str | None) -> str | None:
+    """ISO 639-1 (or a whisper 3-letter code) → ISO 639-2/B. Strips a region
+    suffix (zh-cn → zh). Curated map first; babelfish covers the long tail
+    when present (it ships with pgsrip). None if unmappable."""
+    if not code:
+        return None
+    code = code.split("-")[0].lower()
+    mapped = _ISO639_1_TO_2.get(code)
+    if mapped:
+        return _normalize_iso639_2(mapped)
+    try:
+        from babelfish import Language
+        lang = Language.fromalpha2(code) if len(code) == 2 else Language(code)
+        b = getattr(lang, "alpha3b", None) or lang.alpha3
+        return _normalize_iso639_2(b) if b else None
+    except Exception:
+        return None
 
 
 def detect_subtitle_language(text: str) -> tuple[str | None, float]:
@@ -123,12 +158,11 @@ def detect_subtitle_language(text: str) -> tuple[str | None, float]:
     # (e.g. "zh-cn"/"zh-tw" for Chinese). Strip the region before the
     # 639-1→639-2 lookup — both Chinese variants map to "chi" (ISO 639-2
     # has no simplified/traditional distinction).
-    iso1_base = iso1.split("-")[0]
-    iso2 = _ISO639_1_TO_2.get(iso1_base, "")
+    iso2 = _iso_to_iso639_2b(iso1)
     if not iso2:
         print(f"[LANG-DETECT] subtitle: {iso1} has no ISO-639-2 mapping", flush=True)
         return (None, 0.0)
-    return (_normalize_iso639_2(iso2), conf)
+    return (iso2, conf)
 
 
 _WHISPER_MODEL = None
@@ -254,11 +288,11 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
         print(f"[LANG-DETECT] audio s{stream_index}: below confidence "
               f"{best_iso1 or 'no-speech'}@{best_conf:.2f} < {threshold:.2f}", flush=True)
         return (None, 0.0)
-    iso2 = _ISO639_1_TO_2.get(best_iso1.lower(), "")
+    iso2 = _iso_to_iso639_2b(best_iso1)
     if not iso2:
         print(f"[LANG-DETECT] audio s{stream_index}: {best_iso1} has no ISO-639-2 mapping", flush=True)
         return (None, 0.0)
-    return (_normalize_iso639_2(iso2), best_conf)
+    return (iso2, best_conf)
 
 
 # Text subtitle codecs whose language we can detect from their text.
