@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.12] — 2026-07-14
+
+### Fixed
+- **"Detect all unknown" now covers the whole filter, not just loaded cards.** The count came from files whose tracks were loaded in the browser (expanded cards), so it showed e.g. `(8)` against a 1,440-item filter. It now runs across every title in the active Unknown-language filter — count and action match what you see — with a confirmation first (a large filter with image subs can take a while).
+
 ## [0.9.11] — 2026-07-14
 
 ### Added

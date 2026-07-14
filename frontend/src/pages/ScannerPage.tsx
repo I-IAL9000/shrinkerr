@@ -763,32 +763,30 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
-  // v0.8.0: visible files carrying und (unknown-language) audio/subtitle tracks.
-  const undFiles = useMemo(() => {
-    const isUnd = (lang?: string | null) => (lang || "und").toLowerCase() === "und";
-    const paths = new Set<string>();
-    for (const files of loadedFiles.values()) {
-      for (const f of files) {
-        const audioUnd = (f.audio_tracks || []).some(t => isUnd(t.language));
-        const subUnd = (f.subtitle_tracks || []).some(t => isUnd(t.language));
-        if (audioUnd || subUnd) paths.add(f.file_path);
-      }
-    }
-    return Array.from(paths);
-  }, [loadedFiles]);
-
+  // v0.9.12: detect languages across EVERY title in the current filter, not
+  // just the handful whose tracks are loaded in the browser. `folders` is the
+  // full server-filtered set; the batch endpoint expands each folder to its
+  // und-track files. Shown only under the Unknown-language filter.
   const handleDetectAllUnknown = async () => {
-    if (undFiles.length === 0) {
-      toast("No visible files with unknown-language tracks");
+    const paths = folders.map(f => f.path + "/");
+    if (paths.length === 0) {
+      toast("No titles in the current filter");
       return;
     }
-    setBulkAction(`Detecting languages for ${undFiles.length} file(s)...`);
+    if (!await confirm({
+      message: `Detect languages across all ${paths.length} title(s) in this filter?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. With image-sub OCR this can take a long time across a large filter.`,
+      confirmLabel: "Detect all",
+    })) return;
+    setBulkAction(`Detecting languages across ${paths.length} title(s)...`);
     try {
-      const res = await detectLanguagesBatch(undFiles);
+      const res = await detectLanguagesBatch(paths);
+      const total = res.results.length;
       const changed = res.results.filter(r => r.changed).length;
       const failed = res.results.filter(r => r.error).length;
       toast(
-        `Language detection: ${changed} file(s) updated${failed ? `, ${failed} failed` : ""}`,
+        total === 0
+          ? "No unknown-language tracks found"
+          : `Language detection: ${changed}/${total} file(s) updated${failed ? `, ${failed} failed` : ""}`,
         failed && !changed ? "error" : "success",
       );
       loadTree();
@@ -1456,17 +1454,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
               {selectAllActive || selectedPaths.size > 0 ? "Deselect all" : "Select all"}
             </button>
-            {undFiles.length > 0 && (
+            {filters.includes("unknown_language") && folders.length > 0 && (
               <button
                 className="btn btn-secondary"
-                title="Run language detection on every visible file with unknown (und) audio/subtitle tracks"
+                title="Detect languages for every title in the current Unknown-language filter (und audio + subtitle tracks), writing the tags back to the files"
                 style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                 onClick={handleDetectAllUnknown}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
-                Detect all unknown ({undFiles.length})
+                Detect all unknown ({folders.length})
               </button>
             )}
             {selectedCount > 0 && (() => {
