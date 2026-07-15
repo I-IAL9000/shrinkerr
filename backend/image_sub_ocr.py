@@ -115,22 +115,60 @@ async def _extract_sup(file_path: str, stream_index: int, workdir: str,
     return None
 
 
+def _patch_pgsrip_from_hex() -> None:
+    """pgsrip 0.1.11 does `int(b.hex(), 16)` (utils.from_hex) with no guard,
+    so an empty byte slice — a truncated/padded trailing segment at the end
+    of a .sup — raises ValueError, which aborts the WHOLE rip and discards the
+    valid subtitles parsed before it. Make from_hex empty-safe (empty → 0) so
+    parsing finishes on the good segments. Patches every already-imported
+    pgsrip module that references the name. Idempotent, fail-open."""
+    try:
+        import sys as _sys
+        from pgsrip import utils as _u
+        if getattr(_u, "_shrinkerr_hexpatch", False):
+            return
+        _orig = _u.from_hex
+
+        def _safe(b):
+            return _orig(b) if b else 0
+
+        _u.from_hex = _safe
+        _u._shrinkerr_hexpatch = True
+        for _name, _mod in list(_sys.modules.items()):
+            if _name.startswith("pgsrip") and getattr(_mod, "from_hex", None) is _orig:
+                _mod.from_hex = _safe
+    except Exception:
+        pass
+
+
 def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
     """Run pgsrip on a .sup with the given tesseract language(s); read the
     produced .srt and return its dialogue text. Sync (pgsrip is blocking);
     the caller runs it in an executor. Returns None on failure/empty."""
+    import io
+    import logging
+    _buf = io.StringIO()
+    _handler = logging.StreamHandler(_buf)
+    _pgs_logger = logging.getLogger("pgsrip")
     try:
         from pgsrip import pgsrip, Sup, Options
         from babelfish import Language
+        _patch_pgsrip_from_hex()  # v0.9.22: survive empty-byte reads
         media = Sup(sup_path)
         langs = {Language(code) for code in tess_langs}
-        pgsrip.rip(media, Options(languages=langs, overwrite=True))
+        _pgs_logger.addHandler(_handler)  # capture pgsrip's swallowed errors
+        try:
+            pgsrip.rip(media, Options(languages=langs, overwrite=True))
+        finally:
+            _pgs_logger.removeHandler(_handler)
     except Exception as exc:
         print(f"[IMG-OCR] pgsrip failed ({','.join(tess_langs)}): {exc}", flush=True)
         return None
     srt = os.path.splitext(sup_path)[0] + ".srt"
     if not os.path.exists(srt):
-        print(f"[IMG-OCR] pgsrip produced no text ({','.join(tess_langs)})", flush=True)
+        _pgs_err = _buf.getvalue().strip().replace("\n", " ")[-300:]
+        _detail = f": {_pgs_err}" if _pgs_err else ""
+        print(f"[IMG-OCR] pgsrip produced no srt ({','.join(tess_langs)}){_detail}", flush=True)
         return None
     try:
         with open(srt, "rb") as fh:

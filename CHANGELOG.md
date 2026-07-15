@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.22] — 2026-07-14
+
+### Fixed
+- **PGS subtitle OCR that pgsrip aborted on now works.** pgsrip 0.1.11 crashes with `int('', 16)` on an empty byte read (a truncated/padded trailing segment in a `.sup`), which aborted the whole rip and discarded the valid subtitles — surfacing only as a misleading "no text." Patched pgsrip's `from_hex` to be empty-safe so parsing finishes on the good segments, and the real pgsrip error is now logged instead of "no text."
+
 ## [0.9.21] — 2026-07-14
 
 ### Fixed
