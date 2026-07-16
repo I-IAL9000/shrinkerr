@@ -1331,7 +1331,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
         {scanning && (scanProgress?.status === "discovering" || !scanProgress) && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Discovering files… (spinning up disks can take a minute)
+            Discovering files{scanProgress?.current_file ? ` in ${scanProgress.current_file.split("/").filter(Boolean).pop()}` : ""}… (spinning up disks can take a minute)
           </span>
         )}
         {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && !scanProgress.status?.startsWith("health_check") && (

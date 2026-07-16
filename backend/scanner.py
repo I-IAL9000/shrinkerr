@@ -1320,6 +1320,16 @@ async def scan_directory(
         pass
     print(f"[SCANNER] Source codecs to convert: {source_codecs} (cq={global_cq})", flush=True)
 
+    # v0.9.28: signal discovery before the (silent, possibly minutes-long on
+    # spun-down disks) walk of this directory, so a multi-path scan shows
+    # "Discovering files…" between directories instead of freezing the UI on
+    # the previous directory's last probed file.
+    if progress_callback:
+        await progress_callback(
+            status="discovering", current_file=str(dir_path),
+            files_found=0, files_probed=0, total_files=0,
+        )
+
     # Collect all candidate files first
     all_files = []
     for root, dirs, files in os.walk(dir_path):
@@ -1725,9 +1735,15 @@ async def scan_directory(
         else:
             results.append(scanned)
 
+    # v0.9.28: emit the directory's final counts as a non-terminal "scanning"
+    # update — NOT "done". This function scans a single directory inside a
+    # multi-directory loop; the terminal "done" is written once by the worker
+    # after every directory and the post-scan phases finish. Emitting "done"
+    # per directory told the UI the whole scan was complete after the first
+    # directory (premature "Scan"/idle flip).
     if progress_callback:
         await progress_callback(
-            status="done",
+            status="scanning",
             current_file="",
             files_found=total,
             files_probed=total,

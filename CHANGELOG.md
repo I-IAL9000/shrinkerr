@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.28] — 2026-07-16
+
+### Fixed
+- **Multi-directory scans no longer look stuck between directories.** Each directory's `os.walk` (disk spin-up + tree walk) emitted no progress, freezing the UI on the previous directory's last file — now it shows "Discovering files in <dir>…" at the start of every directory.
+- **A scan no longer signals completion after each directory.** `scan_directory` emitted a terminal `done` per directory (not just at the end), prematurely flipping the UI to idle mid-scan; it now emits a non-terminal update and the single terminal `done` comes from the worker after all directories finish.
+
 ## [0.9.27] — 2026-07-16
 
 ### Fixed
