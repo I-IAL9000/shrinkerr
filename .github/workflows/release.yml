@@ -73,7 +73,10 @@ jobs:
         # GHCR lowercases the owner; force that here so copy-paste works.
         run: |
           OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          VERSION="${GITHUB_REF#refs/tags/v}"
+          # Keep the full tag (with the leading 'v') — build-images.yml pushes
+          # the versioned tag as :v0.9.30, so the pull instructions must match.
+          # Stripping the 'v' here produced :0.9.30 commands that never resolved.
+          VERSION="${GITHUB_REF#refs/tags/}"
           {
             echo "body<<EOF_IMAGES"
             echo ""
