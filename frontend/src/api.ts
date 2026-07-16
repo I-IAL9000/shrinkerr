@@ -110,8 +110,13 @@ export const rescanFolder = (paths: string[]) =>
   apiFetch("/scan/rescan-folder", { method: "POST", body: JSON.stringify({ paths }) });
 export const detectLanguages = (filePath: string) =>
   apiFetch<{ status: string; changed: boolean; native_language?: string; audio_tracks?: any[]; subtitle_tracks?: any[] }>("/scan/detect-languages", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
+export interface DetectBatchProgress { active: boolean; total: number; done: number; current: string; changed: number; failed: number; cancelled: boolean; }
 export const detectLanguagesBatch = (filePaths: string[]) =>
-  apiFetch<{ status: string; results: { file_path: string; changed?: boolean; error?: string }[] }>("/scan/detect-languages-batch", { method: "POST", body: JSON.stringify({ file_paths: filePaths }) });
+  apiFetch<{ status: string; progress?: DetectBatchProgress }>("/scan/detect-languages-batch", { method: "POST", body: JSON.stringify({ file_paths: filePaths }) });
+export const getDetectBatchStatus = () =>
+  apiFetch<DetectBatchProgress>("/scan/detect-batch-status");
+export const cancelDetectBatch = () =>
+  apiFetch<{ status: string }>("/scan/detect-batch-cancel", { method: "POST" });
 export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>

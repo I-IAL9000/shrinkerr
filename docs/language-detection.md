@@ -50,7 +50,10 @@ line shows the current stage (extracting → OCR passes).
 
 **Batch:** from the scanner list (e.g. filtered to
 [Unknown language](#the-unknown-language-filter)), use **Detect all
-unknown** to run detection across the visible files, one at a time.
+unknown**, or select titles and use **Detect selected (N)**. The batch runs
+server-side with a live **N/total** progress indicator that survives
+navigating away and back, and a **Cancel** button (stops after the current
+file).
 
 **Before conversion (audio):** when the **Auto-detect languages** setting is
 on (default), converting a file with `und` audio detects the language first,

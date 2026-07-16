@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.24] — 2026-07-16
+
+### Added
+- **Bulk language detection now has a persistent progress indicator and a Cancel button.** The batch runs server-side as a background job with live `N/total` progress that survives navigating away and back (previously the spinner vanished on navigation or during large runs), plus a Cancel that stops after the current file.
+
 ## [0.9.23] — 2026-07-16
 
 ### Fixed

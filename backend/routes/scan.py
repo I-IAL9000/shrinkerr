@@ -21,6 +21,15 @@ SCAN_BATCH_SIZE = 25
 _scan_task: asyncio.Task | None = None
 _scan_cancel = asyncio.Event()
 
+# v0.9.24: server-side bulk language-detection progress, so the UI can show a
+# live N/total count that survives navigation and offer a cancel. Singleton —
+# one bulk detect at a time.
+_detect_task: asyncio.Task | None = None
+_detect_progress: dict = {
+    "active": False, "total": 0, "done": 0, "current": "",
+    "changed": 0, "failed": 0, "cancelled": False,
+}
+
 
 def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = False) -> None:
     """Write a batch of ScannedFile results to the database (synchronous, for use in thread executor)."""
@@ -1135,25 +1144,64 @@ async def detect_languages_batch(req: DetectLanguagesBatchRequest):
     a season of episodes triggers a single folder refresh rather than one per
     episode (trigger_plex_scan refreshes the file's parent folder).
     """
-    file_paths = await _expand_paths_for_detection(req.file_paths)
-    results = []
-    written_folders: dict[str, str] = {}  # folder -> representative file_path
-    for fp in file_paths:
-        try:
-            r = await detect_languages(
-                DetectLanguagesRequest(file_path=fp), notify_plex=False)
-            results.append({"file_path": fp, "changed": r.get("changed", False)})
-            if r.get("file_written") or r.get("external_renamed"):
-                written_folders.setdefault(os.path.dirname(fp), fp)
-        except Exception as exc:
-            results.append({"file_path": fp, "error": str(exc)})
+    global _detect_task, _detect_progress
+    if _detect_task is not None and not _detect_task.done():
+        return {"status": "already_running", "progress": dict(_detect_progress)}
+    _detect_progress = {
+        "active": True, "total": 0, "done": 0, "current": "",
+        "changed": 0, "failed": 0, "cancelled": False,
+    }
+    _detect_task = asyncio.create_task(_run_detect_batch(list(req.file_paths)))
+    return {"status": "started"}
 
-    folders_refreshed = 0
-    for rep_fp in written_folders.values():
-        if await _maybe_notify_plex_lang_change(rep_fp):
-            folders_refreshed += 1
 
-    return {"status": "ok", "results": results, "folders_refreshed": folders_refreshed}
+async def _run_detect_batch(paths_in: list[str]) -> None:
+    """Background bulk detect. Updates `_detect_progress` per file so the UI can
+    poll N/total, checks the cancel flag between files, and coalesces Plex
+    refreshes to one per folder at the end (v0.9.2)."""
+    global _detect_progress
+    try:
+        file_paths = await _expand_paths_for_detection(paths_in)
+        _detect_progress["total"] = len(file_paths)
+        written_folders: dict[str, str] = {}  # folder -> representative file_path
+        for fp in file_paths:
+            if _detect_progress["cancelled"]:
+                break
+            _detect_progress["current"] = os.path.basename(fp)
+            try:
+                r = await detect_languages(
+                    DetectLanguagesRequest(file_path=fp), notify_plex=False)
+                if r.get("changed"):
+                    _detect_progress["changed"] += 1
+                if r.get("file_written") or r.get("external_renamed"):
+                    written_folders.setdefault(os.path.dirname(fp), fp)
+            except Exception as exc:
+                _detect_progress["failed"] += 1
+                print(f"[LANG-DETECT] batch error on {fp}: {exc}", flush=True)
+            _detect_progress["done"] += 1
+        for rep_fp in written_folders.values():
+            if _detect_progress["cancelled"]:
+                break
+            await _maybe_notify_plex_lang_change(rep_fp)
+    except Exception as exc:
+        print(f"[LANG-DETECT] batch aborted: {exc}", flush=True)
+    finally:
+        _detect_progress["active"] = False
+        _detect_progress["current"] = ""
+
+
+@router.get("/detect-batch-status")
+async def detect_batch_status():
+    """Current bulk-detect progress. Polled by the UI so the N/total indicator
+    survives navigating away and back."""
+    return dict(_detect_progress)
+
+
+@router.post("/detect-batch-cancel")
+async def detect_batch_cancel():
+    """Ask the running bulk detect to stop after the current file."""
+    _detect_progress["cancelled"] = True
+    return {"status": "cancelling"}
 
 
 @router.get("/status")

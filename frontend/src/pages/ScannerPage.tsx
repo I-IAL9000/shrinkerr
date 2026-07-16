@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
-import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch } from "../api";
+import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
@@ -82,6 +82,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [advSearchResults, setAdvSearchResults] = useState<Set<string> | null>(null);
   const [encodingSettings, setEncodingSettings] = useState<any>(null);
   const [bulkAction, setBulkAction] = useState<string | null>(null);
+  // v0.9.24: server-driven bulk-detect progress (survives navigation).
+  const [detectProgress, setDetectProgress] = useState<DetectBatchProgress | null>(null);
+  const detectPollRef = useRef<number | null>(null);
+  const detectWasActiveRef = useRef(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
   const arrMenuRef = useRef<HTMLDivElement | null>(null);
@@ -767,34 +771,68 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // just the handful whose tracks are loaded in the browser. `folders` is the
   // full server-filtered set; the batch endpoint expands each folder to its
   // und-track files. Shown only under the Unknown-language filter.
-  const handleDetectAllUnknown = async () => {
-    const paths = folders.map(f => f.path + "/");
-    if (paths.length === 0) {
-      toast("No titles in the current filter");
+  // v0.9.24: bulk detect runs server-side as a background job; we poll its
+  // progress so the N/total indicator survives navigating away and back.
+  const stopDetectPoll = () => {
+    if (detectPollRef.current != null) {
+      clearInterval(detectPollRef.current);
+      detectPollRef.current = null;
+    }
+  };
+  const startDetectPoll = useCallback(() => {
+    if (detectPollRef.current != null) return;  // already polling
+    const tick = async () => {
+      let p: DetectBatchProgress;
+      try { p = await getDetectBatchStatus(); } catch { return; }
+      if (p.active) {
+        detectWasActiveRef.current = true;
+        setDetectProgress(p);
+      } else {
+        if (detectWasActiveRef.current) {
+          const msg = p.cancelled
+            ? `Detection cancelled — ${p.changed}/${p.done} updated`
+            : p.total === 0
+              ? "No unknown-language tracks found"
+              : `Language detection: ${p.changed}/${p.total} updated${p.failed ? `, ${p.failed} failed` : ""}`;
+          toast(msg, (p.failed && !p.changed) ? "error" : "success");
+          loadTree();
+        }
+        detectWasActiveRef.current = false;
+        setDetectProgress(null);
+        stopDetectPoll();
+      }
+    };
+    tick();
+    detectPollRef.current = window.setInterval(tick, 1500);
+  }, [loadTree]);
+
+  const startDetectBatch = async (paths: string[]) => {
+    try {
+      const res = await detectLanguagesBatch(paths);
+      if (res.status === "already_running") {
+        toast("A language-detection run is already in progress");
+      }
+    } catch (exc: any) {
+      toast(`Failed to start detection: ${exc?.message || exc}`, "error");
       return;
     }
+    detectWasActiveRef.current = true;
+    startDetectPoll();
+  };
+
+  const handleCancelDetect = async () => {
+    try { await cancelDetectBatch(); toast("Cancelling after the current file…"); }
+    catch (exc: any) { toast(`Cancel failed: ${exc?.message || exc}`, "error"); }
+  };
+
+  const handleDetectAllUnknown = async () => {
+    const paths = folders.map(f => f.path + "/");
+    if (paths.length === 0) { toast("No titles in the current filter"); return; }
     if (!await confirm({
       message: `Detect languages across all ${paths.length} title(s) in this filter?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. With image-sub OCR this can take a long time across a large filter.`,
       confirmLabel: "Detect all",
     })) return;
-    setBulkAction(`Detecting languages across ${paths.length} title(s)...`);
-    try {
-      const res = await detectLanguagesBatch(paths);
-      const total = res.results.length;
-      const changed = res.results.filter(r => r.changed).length;
-      const failed = res.results.filter(r => r.error).length;
-      toast(
-        total === 0
-          ? "No unknown-language tracks found"
-          : `Language detection: ${changed}/${total} file(s) updated${failed ? `, ${failed} failed` : ""}`,
-        failed && !changed ? "error" : "success",
-      );
-      loadTree();
-    } catch (exc: any) {
-      toast(`Language detection failed: ${exc?.message || exc}`, "error");
-    } finally {
-      setBulkAction(null);
-    }
+    await startDetectBatch(paths);
   };
 
   // v0.9.6: bulk language detection on the current selection. Works in the
@@ -804,35 +842,25 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // Mirror the other bulk actions: "Select all" sets selectAllActive and
     // clears selectedPaths, so fall back to every visible folder in that case.
     const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
-    if (paths.length === 0) {
-      toast("No files or folders selected");
-      return;
-    }
+    if (paths.length === 0) { toast("No files or folders selected"); return; }
     if (!await confirm({
       message: `Detect languages for the ${paths.length} selected item(s)?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.`,
       confirmLabel: "Detect languages",
     })) return;
-    setBulkAction(`Detecting languages for selection...`);
-    try {
-      const res = await detectLanguagesBatch(paths);
-      const total = res.results.length;
-      const changed = res.results.filter(r => r.changed).length;
-      const failed = res.results.filter(r => r.error).length;
-      if (total === 0) {
-        toast("No unknown-language tracks found in the selection");
-      } else {
-        toast(
-          `Language detection: ${changed}/${total} file(s) updated${failed ? `, ${failed} failed` : ""}`,
-          failed && !changed ? "error" : "success",
-        );
-      }
-      loadTree();
-    } catch (exc: any) {
-      toast(`Language detection failed: ${exc?.message || exc}`, "error");
-    } finally {
-      setBulkAction(null);
-    }
+    await startDetectBatch(paths);
   };
+
+  // Resume the progress indicator if a bulk detect is already running
+  // server-side — e.g. after navigating away and back.
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await getDetectBatchStatus();
+        if (p.active) { detectWasActiveRef.current = true; setDetectProgress(p); startDetectPoll(); }
+      } catch { /* ignore */ }
+    })();
+    return () => stopDetectPoll();
+  }, [startDetectPoll]);
 
   const handleRemoveFile = async (filePath: string) => {
     // Find file in loaded files to get ID
@@ -1678,6 +1706,25 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             }}>
               <div className="spinner" style={{ width: 18, height: 18 }} />
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{bulkAction}</span>
+            </div>
+          )}
+          {detectProgress && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "10px 16px", marginBottom: 12,
+              background: "var(--bg-card)", borderRadius: 6,
+            }}>
+              <div className="spinner" style={{ width: 18, height: 18 }} />
+              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                Detecting languages… {detectProgress.done}/{detectProgress.total || "?"}
+                {detectProgress.current ? ` — ${detectProgress.current}` : ""}
+                {detectProgress.cancelled ? " (cancelling…)" : ""}
+              </span>
+              <button className="btn btn-secondary"
+                style={{ fontSize: 12, padding: "4px 12px", borderRadius: 14, marginLeft: "auto", whiteSpace: "nowrap" }}
+                onClick={handleCancelDetect} disabled={detectProgress.cancelled}>
+                Cancel
+              </button>
             </div>
           )}
 

@@ -28,21 +28,22 @@ async def test_batch_coalesces_plex_refresh_by_folder(monkeypatch):
 
     monkeypatch.setattr(scan_mod, "detect_languages", fake_detect)
     monkeypatch.setattr(scan_mod, "_maybe_notify_plex_lang_change", fake_notify)
+    scan_mod._detect_progress = {"active": True, "total": 0, "done": 0,
+                                 "current": "", "changed": 0, "failed": 0, "cancelled": False}
 
-    req = scan_mod.DetectLanguagesBatchRequest(file_paths=[
+    await scan_mod._run_detect_batch([
         "/media/Show/S1/e1.mkv",       # same folder as e2 -> one refresh
         "/media/Show/S1/e2.mkv",
         "/media/Movie/m.mkv",          # distinct folder -> its own refresh
         "/media/Show/S1/nowrite.mkv",  # no file write -> no refresh
     ])
-    result = await scan_mod.detect_languages_batch(req)
 
     # Two unique folders had writes -> exactly two refreshes (not 3 writes,
     # not 4 files).
     assert len(notify_calls) == 2
     assert {os.path.dirname(c) for c in notify_calls} == {"/media/Show/S1", "/media/Movie"}
-    assert result["folders_refreshed"] == 2
-    assert len(result["results"]) == 4
+    p = scan_mod._detect_progress
+    assert p["done"] == 4 and p["changed"] == 3 and p["active"] is False
 
 
 @pytest.mark.asyncio
@@ -87,13 +88,37 @@ async def test_batch_no_writes_no_refresh(monkeypatch):
 
     monkeypatch.setattr(scan_mod, "detect_languages", fake_detect)
     monkeypatch.setattr(scan_mod, "_maybe_notify_plex_lang_change", fake_notify)
+    scan_mod._detect_progress = {"active": True, "total": 0, "done": 0,
+                                 "current": "", "changed": 0, "failed": 0, "cancelled": False}
 
-    req = scan_mod.DetectLanguagesBatchRequest(
-        file_paths=["/media/Show/S1/e1.mkv"])
-    result = await scan_mod.detect_languages_batch(req)
+    await scan_mod._run_detect_batch(["/media/Show/S1/e1.mkv"])
 
     assert notify_calls == []
-    assert result["folders_refreshed"] == 0
+    assert scan_mod._detect_progress["changed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_detect_batch_stops_on_cancel(monkeypatch):
+    """Setting cancelled mid-run stops before the next file (no more detects)."""
+    seen = []
+
+    async def fake_detect(req, notify_plex=True):
+        seen.append(req.file_path)
+        scan_mod._detect_progress["cancelled"] = True   # cancel after the first
+        return {"status": "ok", "changed": False}
+
+    async def fake_notify(file_path):
+        return True
+
+    monkeypatch.setattr(scan_mod, "detect_languages", fake_detect)
+    monkeypatch.setattr(scan_mod, "_maybe_notify_plex_lang_change", fake_notify)
+    scan_mod._detect_progress = {"active": True, "total": 0, "done": 0,
+                                 "current": "", "changed": 0, "failed": 0, "cancelled": False}
+
+    await scan_mod._run_detect_batch(["/m/a.mkv", "/m/b.mkv", "/m/c.mkv"])
+
+    assert seen == ["/m/a.mkv"]   # stopped after the first, before b/c
+    assert scan_mod._detect_progress["active"] is False
 
 
 @pytest.mark.asyncio
