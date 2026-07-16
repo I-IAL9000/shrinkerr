@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.29] — 2026-07-16
+
+### Fixed
+- **"Update available" no longer appears when you're running a newer version than the latest published Release.** The check used string inequality, so a lagging or failed Release-notes job (latest < current) prompted a phantom "downgrade"; it now uses a semver comparison and flags an update only when the latest release is genuinely newer.
+
 ## [0.9.28] — 2026-07-16
 
 ### Fixed

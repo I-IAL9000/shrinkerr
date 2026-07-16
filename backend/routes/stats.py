@@ -1052,7 +1052,7 @@ async def refresh_update_check() -> dict:
     return {
         "current": current,
         "latest": latest,
-        "update_available": bool(latest) and latest != current,
+        "update_available": bool(latest) and _version_tuple(latest) > _version_tuple(current),
     }
 
 
@@ -1091,7 +1091,7 @@ async def get_version(response: Response, force: bool = False):
         return {
             "current": current,
             "latest": latest,
-            "update_available": bool(latest) and latest != current,
+            "update_available": bool(latest) and _version_tuple(latest) > _version_tuple(current),
         }
     return await refresh_update_check()
 
