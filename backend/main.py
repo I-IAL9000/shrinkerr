@@ -232,6 +232,14 @@ async def lifespan(app: FastAPI):
             await backfill_und_tracks_flag()
         except Exception as exc:
             print(f"[STARTUP] und-flag backfill skipped: {exc}", flush=True)
+        # v0.9.25: re-sync has_und_tracks_flag to the track JSON — fixes rows
+        # a pre-v0.9.25 conversion left with a stale flag (und tracks hidden
+        # from the Unknown-language filter).
+        try:
+            from backend.database import resync_und_tracks_flag
+            await resync_und_tracks_flag()
+        except Exception as exc:
+            print(f"[STARTUP] und-flag resync skipped: {exc}", flush=True)
         # v0.9.4: clear stale disc_type left on converted single-file rows
         # (disc badge + wrong display name on ex-disc titles).
         try:

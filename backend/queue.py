@@ -1711,6 +1711,7 @@ class QueueWorker:
                 new_has_removable_audio = 0
                 new_has_removable_subs = 0
                 new_lossless = 0
+                new_has_und = None
                 try:
                     from backend.scanner import (
                         classify_audio_tracks, classify_subtitle_tracks,
@@ -1754,6 +1755,14 @@ class QueueWorker:
                         new_lossless = 1 if any(
                             is_lossless_audio(t.codec, getattr(t, "profile", ""))
                             for t in classified_audio
+                        ) else 0
+                        # v0.9.25: keep has_und_tracks_flag in sync with the
+                        # re-probed tracks — otherwise a converted title whose
+                        # output still has und tracks kept a stale flag and
+                        # vanished from the Unknown-language filter.
+                        new_has_und = 1 if any(
+                            (t.language or "und").lower() == "und"
+                            for t in list(classified_audio) + list(classified_subs)
                         ) else 0
                 except Exception as exc:
                     print(f"[WORKER] Re-probe after conversion failed (non-fatal): {exc}", flush=True)
@@ -1823,6 +1832,9 @@ class QueueWorker:
                             update_params.append(new_sub_json)
                             update_cols.append("has_removable_subs_flag = ?")
                             update_params.append(new_has_removable_subs)
+                        if new_has_und is not None:
+                            update_cols.append("has_und_tracks_flag = ?")
+                            update_params.append(new_has_und)
                         update_params.append(file_path)  # WHERE
                         await db_path.execute(
                             f"UPDATE scan_results SET {', '.join(update_cols)} WHERE file_path = ?",

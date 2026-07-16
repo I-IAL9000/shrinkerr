@@ -1029,6 +1029,60 @@ async def backfill_und_tracks_flag() -> int:
         await db.close()
 
 
+async def resync_und_tracks_flag() -> int:
+    """v0.9.25: re-sync has_und_tracks_flag to the CURRENT track JSON for every
+    row, both directions. A pre-v0.9.25 conversion rewrote the track JSON
+    without recomputing this flag, so a converted title whose output still had
+    und tracks kept a stale flag=0 and vanished from the Unknown-language
+    filter (while its stored tracks — and the file — were still und). One-time,
+    sentinel-guarded."""
+    import json as _json
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'und_flag_resynced'"
+        ) as cur:
+            if await cur.fetchone():
+                return 0
+
+        def _has_und(js: str | None) -> bool:
+            try:
+                return any((t.get("language") or "und").lower() == "und"
+                           for t in _json.loads(js or "[]"))
+            except (ValueError, TypeError, AttributeError):
+                return False
+
+        async with db.execute(
+            "SELECT id, audio_tracks_json, subtitle_tracks_json, "
+            "COALESCE(has_und_tracks_flag, 0) FROM scan_results"
+        ) as cur:
+            rows = await cur.fetchall()
+
+        to_one = [r[0] for r in rows if (_has_und(r[1]) or _has_und(r[2])) and r[3] != 1]
+        to_zero = [r[0] for r in rows if not (_has_und(r[1]) or _has_und(r[2])) and r[3] != 0]
+
+        CHUNK = 500
+        for ids, val in ((to_one, 1), (to_zero, 0)):
+            for i in range(0, len(ids), CHUNK):
+                chunk = ids[i:i + CHUNK]
+                placeholders = ",".join("?" * len(chunk))
+                await db.execute(
+                    f"UPDATE scan_results SET has_und_tracks_flag = {val} WHERE id IN ({placeholders})",
+                    chunk,
+                )
+                await db.commit()
+
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('und_flag_resynced', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        await db.commit()
+        print(f"[DB] und-flag resync: {len(to_one)} → 1, {len(to_zero)} → 0", flush=True)
+        return len(to_one) + len(to_zero)
+    finally:
+        await db.close()
+
+
 async def backfill_stale_disc_type() -> int:
     """One-time clear of stale disc_type on converted single-file rows.
 

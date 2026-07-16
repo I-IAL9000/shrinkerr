@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.25] — 2026-07-16
+
+### Fixed
+- **Converted titles with `und` tracks wrongly disappeared from the Unknown-language filter.** The post-conversion update rewrote the track JSON but never recomputed `has_und_tracks_flag`, so a converted file whose output still had `und` tracks kept a stale flag and vanished from the filter (still `und` in the file/Plex). Now recomputed on conversion, plus a one-time startup re-sync that corrects the flag against the stored tracks for every existing row.
+
 ## [0.9.24] — 2026-07-16
 
 ### Added
