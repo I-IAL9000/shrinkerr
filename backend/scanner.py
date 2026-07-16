@@ -1512,6 +1512,20 @@ async def scan_directory(
         # Yield to event loop so other tasks (queue worker, websocket, API) can run
         await asyncio.sleep(0.005)
 
+        # v0.9.30: the parallel ffprobe pre-pass above fills the bar to
+        # total/total, then this serial classify + DB-write pass ran silently —
+        # the UI froze on the last probed file for however long classification
+        # took (minutes on large directories). Emit a throttled "finalizing"
+        # update so the current file and count keep moving.
+        if progress_callback and (idx % 20 == 0 or idx + 1 == total):
+            await progress_callback(
+                status="finalizing",
+                current_file=str(file_path),
+                files_found=total,
+                files_probed=idx + 1,
+                total_files=total,
+            )
+
         # v0.7.9: use the pre-computed probe. Falls back to a fresh probe only
         # if the pre-probe phase was cancelled mid-way and this file's key is
         # missing — keeps behavior correct on cancel paths.

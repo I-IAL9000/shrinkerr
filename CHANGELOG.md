@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.30] — 2026-07-16
+
+### Fixed
+- **Scans no longer look frozen on the last file of each directory.** The parallel ffprobe pre-pass fills the progress bar, then a serial classify + DB-write pass ran with no feedback — freezing the UI on the last probed file for minutes on large directories. That pass now reports a "Reading track metadata: X/Y" phase so the count and current file keep moving.
+
 ## [0.9.29] — 2026-07-16
 
 ### Fixed

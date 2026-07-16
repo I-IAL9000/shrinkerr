@@ -1334,9 +1334,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             Discovering files{scanProgress?.current_file ? ` in ${scanProgress.current_file.split("/").filter(Boolean).pop()}` : ""}… (spinning up disks can take a minute)
           </span>
         )}
-        {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && !scanProgress.status?.startsWith("health_check") && (
+        {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && scanProgress.status !== "finalizing" && !scanProgress.status?.startsWith("health_check") && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
             {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} files probed
+          </span>
+        )}
+        {scanning && scanProgress?.status === "finalizing" && (
+          <span style={{ fontSize: 12, opacity: 0.6 }}>
+            Reading track metadata: {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)}
           </span>
         )}
         {refreshingMetadata && scanProgress && scanProgress.status === "metadata" && (
@@ -1365,7 +1370,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             />
           </div>
           <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
-            Probing: {scanProgress.current_file}
+            {scanProgress.status === "finalizing" ? "Reading metadata" : "Probing"}: {scanProgress.current_file}
           </div>
         </div>
       )}
