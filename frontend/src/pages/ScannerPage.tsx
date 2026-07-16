@@ -70,6 +70,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [selectAllActive, setSelectAllActive] = useState(false);
   const [scanStarted, setScanStarted] = useState(false);
+  const [backendScanning, setBackendScanning] = useState(false);
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -128,8 +129,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const treeRequestGen = useRef(0);
   const treeAbortCtrl = useRef<AbortController | null>(null);
 
-  // Derive scanning state from WebSocket progress
-  const scanning = scanStarted || (scanProgress != null && scanProgress.status !== "done" && scanProgress.status !== "health_check_complete" && scanProgress.status !== "cancelled");
+  // Derive scanning state. `backendScanning` (polled from /scan/status) is the
+  // authoritative signal — a scan emits no progress for minutes while it walks
+  // the disks to build the file list, so the button must not rely on the WS
+  // progress stream (or the transient local `scanStarted`) alone or it flips
+  // back to idle mid-discovery. v0.9.27.
+  const scanning = scanStarted || backendScanning || (scanProgress != null && scanProgress.status !== "done" && scanProgress.status !== "health_check_complete" && scanProgress.status !== "cancelled");
 
   const refreshStats = useCallback(() => {
     if (statsInFlight.current) return;
@@ -258,6 +263,22 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     return () => clearInterval(interval);
   }, [scanning, scanStarted, loadTree]);
 
+  // Authoritative scan-running signal: poll the backend every 5s regardless of
+  // WS progress, so the Scan button reflects a running scan even during the
+  // (minutes-long, progress-silent) disk-discovery phase. v0.9.27.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const s = await getScanStatus();
+        if (alive) setBackendScanning(!!s.scanning);
+      } catch {}
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
   // While idle, poll for updates every 30s
   useEffect(() => {
     if (scanning) return;
@@ -333,6 +354,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleScan = async () => {
     setScanStarted(true);
+    onClearScanProgress?.();  // drop any stale "done" progress so the
+                              // "Discovering…" state shows cleanly until the
+                              // first live event arrives
     // Skip dirs marked auto_scan=false (e.g. NZBGet/SABnzbd landing zones
     // the user wants webhook-eligible but not crawled). v0.3.49+.
     const paths = selectedDir === "all"
@@ -1305,7 +1329,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             </button>
           )
         )}
-        {scanning && scanProgress && scanProgress.status !== "metadata" && !scanProgress.status?.startsWith("health_check") && (
+        {scanning && (scanProgress?.status === "discovering" || !scanProgress) && (
+          <span style={{ fontSize: 12, opacity: 0.6 }}>
+            Discovering files… (spinning up disks can take a minute)
+          </span>
+        )}
+        {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && !scanProgress.status?.startsWith("health_check") && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
             {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} files probed
           </span>
@@ -1323,7 +1352,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
       </div>
 
-      {scanning && scanProgress && (
+      {scanning && scanProgress && scanProgress.status !== "discovering" && (
         <div style={{ marginBottom: 16 }}>
           <div className="progress-bar-track">
             <div

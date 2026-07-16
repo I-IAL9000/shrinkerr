@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.27] — 2026-07-16
+
+### Fixed
+- **The Scan button no longer reverts to "Scan" during the initial file-discovery phase** (a scan walks every configured path before emitting progress — minutes on spun-down disks — so the UI had no signal and looked like it failed, inviting repeat clicks). It now shows "Discovering files…" immediately and derives its state from a polled backend scan status, staying "Scanning…" throughout.
+
 ## [0.9.26] — 2026-07-16
 
 ### Fixed

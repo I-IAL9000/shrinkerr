@@ -579,6 +579,14 @@ async def _run_scan(paths: list[str]) -> None:
     _scan_proc = proc
     print(f"[SCANNER] Started scan subprocess pid={proc.pid}", flush=True)
 
+    # v0.9.27: the worker walks every configured path to build the file list
+    # before it emits any progress — minutes on spun-down disks, during which
+    # the UI had no signal and the Scan button could flip back to idle. Push a
+    # "discovering" event immediately so the button stays active and the user
+    # sees feedback from the first second.
+    await ws_manager.send_scan_progress(
+        status="discovering", current_file="", total=0, probed=0)
+
     # Poll progress file and forward to websocket
     import os
     last_progress = {}
