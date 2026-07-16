@@ -5,6 +5,16 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.26] — 2026-07-16
+
+### Fixed
+- **Detection no longer drops a title from the Unknown-language filter unless the tag actually landed in the file.** It now verifies the language is present on disk before clearing the flag — containers with no per-track language field (AVI, MPG, WMV, …) copy fine but silently drop the tag, so they'd leave the filter while the file and Plex stayed `und`. They now stay flagged (fix them by converting to mkv).
+- **The Unknown-language filter now includes ignored titles** — an ignore rule means "don't convert", not "hide that the audio is untagged"; bulk detection reaches them too.
+
+### Changed
+- **Bulk detection fires one deduped full Plex section refresh per affected library** instead of a folder-scoped scan per file, so freshly-tagged files reliably stop showing `und` in Plex.
+- Skip the (multi-GB) `-c copy` remux for containers that can't store per-track language instead of copying a temp only to discard it.
+
 ## [0.9.25] — 2026-07-16
 
 ### Fixed

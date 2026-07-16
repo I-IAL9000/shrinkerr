@@ -1025,6 +1025,39 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     if not changed:
         return {"status": "ok", "changed": False}
 
+    # v0.9.26: write the detected tags into the FILE first, and only keep an
+    # embedded result if it actually landed. mkv → mkvpropedit in place; other
+    # → ffmpeg -c copy remux. A container that can't store per-track language
+    # (AVI) reports success from ffmpeg but drops the tag, so apply_...()
+    # verifies and returns False. When the write didn't persist we revert the
+    # embedded tracks to und so the DB — and the Unknown-language flag — mirror
+    # what the file (and Plex) actually contain, instead of silently dropping
+    # the title out of the filter while it stays und on disk.
+    from backend.language_detection import apply_track_languages_to_file
+    file_written = False
+    try:
+        file_written = await apply_track_languages_to_file(
+            req.file_path, audio_write, sub_write,
+        )
+    except Exception as exc:
+        print(f"[LANG-DETECT] file write failed (kept und): {exc}", flush=True)
+
+    if not file_written:
+        for i, code in enumerate(audio_write):
+            if code:
+                raw_audio[i]["language"] = "und"
+                audio_write[i] = None
+        for j, code in enumerate(sub_write):
+            if code:
+                raw_subs[j]["language"] = "und"
+                sub_write[j] = None
+
+    # Nothing persisted to disk (embedded write dropped, no external rename) —
+    # leave the row untouched so the title stays in the Unknown-language
+    # filter and can be re-attempted (e.g. after converting AVI → mkv).
+    if not (any(audio_write) or any(sub_write) or external_renamed):
+        return {"status": "ok", "changed": False, "file_written": False}
+
     # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
     native_lang = detect_native_language(raw_audio)
     audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
@@ -1055,19 +1088,6 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         await db.commit()
     finally:
         await db.close()
-
-    # v0.8.3: write the detected tags into the FILE too (mkvpropedit in
-    # place for mkv, ffmpeg -c copy remux otherwise) so the fix isn't
-    # Shrinkerr-only — "just fix the unknown tracks" without re-encoding.
-    # Fail-open: a file-write failure leaves the DB detection intact.
-    from backend.language_detection import apply_track_languages_to_file
-    file_written = False
-    try:
-        file_written = await apply_track_languages_to_file(
-            req.file_path, audio_write, sub_write,
-        )
-    except Exception as exc:
-        print(f"[LANG-DETECT] file write failed (DB detection kept): {exc}", flush=True)
 
     # v0.9.1: notify Plex so it re-reads the now-corrected track languages,
     # only when the file was actually rewritten. v0.9.2: skippable via
@@ -1158,7 +1178,7 @@ async def detect_languages_batch(req: DetectLanguagesBatchRequest):
 async def _run_detect_batch(paths_in: list[str]) -> None:
     """Background bulk detect. Updates `_detect_progress` per file so the UI can
     poll N/total, checks the cancel flag between files, and coalesces Plex
-    refreshes to one per folder at the end (v0.9.2)."""
+    refreshes to one per affected library section at the end (v0.9.26)."""
     global _detect_progress
     try:
         file_paths = await _expand_paths_for_detection(paths_in)
@@ -1179,10 +1199,18 @@ async def _run_detect_batch(paths_in: list[str]) -> None:
                 _detect_progress["failed"] += 1
                 print(f"[LANG-DETECT] batch error on {fp}: {exc}", flush=True)
             _detect_progress["done"] += 1
-        for rep_fp in written_folders.values():
-            if _detect_progress["cancelled"]:
-                break
-            await _maybe_notify_plex_lang_change(rep_fp)
+        # v0.9.26: refresh each affected Plex SECTION once (deduped) rather
+        # than a scoped scan per folder — a full section refresh reliably
+        # re-reads changed files' stream metadata, so files whose tags we just
+        # wrote stop showing und in Plex without a manual library scan.
+        if written_folders and not _detect_progress["cancelled"]:
+            try:
+                from backend.scanner import _is_cleanup_enabled
+                if _is_cleanup_enabled("plex_notify_on_lang_change", default=True):
+                    from backend.plex import refresh_plex_sections_for_files
+                    await refresh_plex_sections_for_files(list(written_folders.values()))
+            except Exception as exc:
+                print(f"[LANG-DETECT] Plex refresh failed (non-fatal): {exc}", flush=True)
     except Exception as exc:
         print(f"[LANG-DETECT] batch aborted: {exc}", flush=True)
     finally:
@@ -2012,7 +2040,9 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     if filter_name == "audio_cleanup":
         return (f["has_removable_tracks"] or f.get("has_und_tracks")) and not f["ignored"]
     if filter_name == "unknown_language":
-        return bool(f.get("has_und_tracks")) and not f["ignored"]
+        # v0.9.26: ignored titles ARE included here — an ignore rule means
+        # "don't convert", not "don't tell me the audio is untagged".
+        return bool(f.get("has_und_tracks"))
     if filter_name == "sub_cleanup":
         return f["has_removable_subs"] and not f["ignored"]
     if filter_name == "ignored":
@@ -2407,7 +2437,8 @@ async def get_scan_tree(filter: str = "all"):
                         if not ((r.get("has_removable_tracks") or r.get("has_und_tracks")) and not is_ignored):
                             skip = True; break
                     elif pf == "unknown_language":
-                        if not (r.get("has_und_tracks") and not is_ignored):
+                        # v0.9.26: ignored titles ARE included (see _matches_single_filter).
+                        if not r.get("has_und_tracks"):
                             skip = True; break
                     elif pf == "sub_cleanup":
                         if not (r.get("has_removable_subs") and not is_ignored):

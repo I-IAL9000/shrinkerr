@@ -139,6 +139,41 @@ async def test_apply_track_languages_noop_when_all_none():
     assert await apply_track_languages_to_file("/m/f.mkv", [None], [None]) is False
 
 
+@pytest.mark.asyncio
+async def test_apply_skips_untaggable_container():
+    """v0.9.26: AVI (and other containers with no per-track language field)
+    return False without attempting a remux — the tag can't persist, so the
+    caller must keep the track flagged rather than claim success."""
+    from backend.language_detection import apply_track_languages_to_file
+    assert await apply_track_languages_to_file("/m/movie.avi", ["eng"], [None]) is False
+    assert await apply_track_languages_to_file("/m/clip.mpg", [None], ["eng"]) is False
+
+
+def test_languages_present_verifies_intended_ordinals():
+    """v0.9.26: only intended (non-None) tags must be present; und/missing on
+    an intended ordinal fails, everything else passes."""
+    from backend.language_detection import _languages_present
+    # AVI outcome: intended eng, but the stream is still und -> not present.
+    assert _languages_present(["und"], ["eng"]) is False
+    # Written correctly.
+    assert _languages_present(["eng"], ["eng"]) is True
+    # Intended ordinal missing entirely (fewer streams than expected).
+    assert _languages_present([], ["eng"]) is False
+    # Nothing intended -> vacuously present regardless of file state.
+    assert _languages_present(["und", "und"], [None, None]) is True
+    # Mixed: only the None slot is und, the intended slot is set.
+    assert _languages_present(["eng", "und"], ["eng", None]) is True
+
+
+def test_unknown_language_filter_includes_ignored():
+    """v0.9.26: the unknown-language filter includes ignored titles — an ignore
+    rule means 'don't convert', not 'hide that the audio is untagged'."""
+    from backend.routes.scan import _matches_single_filter
+    assert _matches_single_filter({"has_und_tracks": True, "ignored": True}, "unknown_language") is True
+    assert _matches_single_filter({"has_und_tracks": True, "ignored": False}, "unknown_language") is True
+    assert _matches_single_filter({"has_und_tracks": False, "ignored": True}, "unknown_language") is False
+
+
 # ---------------------------------------------------------------------------
 # v0.8.4: multi-position audio sampling. A weak 33% window shouldn't doom
 # detection — later windows are tried, most-confident wins, short-circuit

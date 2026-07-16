@@ -436,6 +436,12 @@ def maybe_detect_subtitle_track_language(language: str, codec: str, text: str | 
 # Fail-open: a write failure never loses the DB-side detection.
 
 
+# Containers with no per-track language metadata field. ffmpeg `-c copy`
+# copies the streams fine but silently drops `language=`, so tagging in place
+# is impossible — the only real fix is remuxing to mkv (i.e. conversion).
+_UNTAGGABLE_CONTAINERS = {".avi", ".mpg", ".mpeg", ".flv", ".wmv", ".asf", ".vob"}
+
+
 def _build_mkvpropedit_cmd(
     file_path: str,
     audio_langs: list[str | None],
@@ -480,6 +486,52 @@ def _build_metadata_remux_cmd(
     return cmd
 
 
+async def _probe_track_languages(file_path: str) -> tuple[list[str], list[str]]:
+    """ffprobe the per-type-ordered language tags of a file's audio and
+    subtitle streams. Returns (audio_langs, sub_langs) lowercased, "und" where
+    absent. Empty lists signal a probe failure (caller should not treat that
+    as a verified result)."""
+    import asyncio
+    import json as _json
+    cmd = ["ffprobe", "-v", "error", "-show_entries",
+           "stream=codec_type:stream_tags=language", "-of", "json", file_path]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+        streams = _json.loads(out.decode(errors="replace")).get("streams", [])
+    except Exception:
+        return [], []
+    a, s = [], []
+    for st in streams:
+        lang = ((st.get("tags") or {}).get("language") or "und").lower()
+        if st.get("codec_type") == "audio":
+            a.append(lang)
+        elif st.get("codec_type") == "subtitle":
+            s.append(lang)
+    return a, s
+
+
+def _languages_present(probed: list[str], intended: list[str | None]) -> bool:
+    """True if every intended (non-None) language now shows a real (non-und)
+    tag on the corresponding per-type stream ordinal."""
+    for i, code in enumerate(intended):
+        if code and (i >= len(probed) or probed[i] in ("", "und")):
+            return False
+    return True
+
+
+async def _verify_written(file_path: str, audio_langs, sub_langs) -> bool | None:
+    """Confirm the intended tags are actually present in `file_path`.
+    True = verified present, False = ran but tags absent (container can't
+    store them, e.g. AVI), None = couldn't probe (caller falls back to the
+    process exit code)."""
+    pa, ps = await _probe_track_languages(file_path)
+    if not pa and not ps:
+        return None
+    return _languages_present(pa, audio_langs) and _languages_present(ps, sub_langs)
+
+
 async def apply_track_languages_to_file(
     file_path: str,
     audio_langs: list[str | None],
@@ -487,9 +539,11 @@ async def apply_track_languages_to_file(
 ) -> bool:
     """Write ISO 639-2 language tags onto the file's audio/subtitle tracks
     without re-encoding. mkv → mkvpropedit (in place); other → ffmpeg
-    `-c copy` remux + atomic replace. Returns True if the file was
-    updated, False on no-op or failure. Fail-open: never raises, never
-    leaves the original in a worse state."""
+    `-c copy` remux + atomic replace. Returns True only when the tags are
+    verified present in the file afterward — a container that silently drops
+    per-track language (AVI) returns False so the caller keeps the track
+    flagged. Fail-open: never raises, never leaves the original in a worse
+    state."""
     import asyncio
     import os
     import tempfile
@@ -513,6 +567,10 @@ async def apply_track_languages_to_file(
             return False
         # mkvpropedit: 0 = success, 1 = warnings (still applied), 2 = error.
         if proc.returncode in (0, 1):
+            verified = await _verify_written(file_path, audio_langs, sub_langs)
+            if verified is False:
+                print(f"[LANG-DETECT] mkvpropedit ran but tags not present; kept und: {file_path}", flush=True)
+                return False
             print(f"[LANG-DETECT] Wrote language tags in place: {file_path}", flush=True)
             return True
         print(
@@ -520,6 +578,14 @@ async def apply_track_languages_to_file(
             f"{stderr.decode(errors='replace')[-300:]}",
             flush=True,
         )
+        return False
+
+    # v0.9.26: containers with no per-track language field copy fine but drop
+    # the tag, so an in-place fix is impossible — skip the (multi-GB) remux
+    # entirely and signal that conversion to mkv is the only real fix.
+    if os.path.splitext(file_path)[1].lower() in _UNTAGGABLE_CONTAINERS:
+        print(f"[LANG-DETECT] {os.path.splitext(file_path)[1].lower()} can't store "
+              f"per-track language; convert to mkv to fix: {file_path}", flush=True)
         return False
 
     # Non-mkv: ffmpeg -c copy remux to a temp file, then atomic replace.
@@ -546,6 +612,13 @@ async def apply_track_languages_to_file(
         # Sanity: temp must be a plausible size (container copy ≈ source size).
         if os.path.getsize(tmp) < os.path.getsize(file_path) * 0.5:
             print(f"[LANG-DETECT] metadata remux output suspiciously small; discarding: {file_path}", flush=True)
+            os.unlink(tmp)
+            return False
+        # Verify the tags survived the remux BEFORE replacing the original — a
+        # container with no per-track language field (AVI) copies fine but
+        # drops the metadata, so ffmpeg exits 0 with nothing written.
+        if await _verify_written(tmp, audio_langs, sub_langs) is False:
+            print(f"[LANG-DETECT] container can't store per-track language; kept und: {file_path}", flush=True)
             os.unlink(tmp)
             return False
         os.replace(tmp, file_path)  # atomic on same filesystem

@@ -13,8 +13,13 @@ import backend.routes.scan as scan_mod
 
 
 @pytest.mark.asyncio
-async def test_batch_coalesces_plex_refresh_by_folder(monkeypatch):
-    notify_calls = []
+async def test_batch_coalesces_plex_refresh_by_section(monkeypatch):
+    """v0.9.26: the batch collects the folders it actually wrote to and fires a
+    single deduped section refresh at the end (one call, covering one
+    representative file per written folder) — not one refresh per file."""
+    import backend.plex as plex_mod
+    import backend.scanner as scanner_mod
+    refresh_calls = []
 
     async def fake_detect(req, notify_plex=True):
         # The batch must suppress the per-file notify so it can coalesce.
@@ -22,26 +27,27 @@ async def test_batch_coalesces_plex_refresh_by_folder(monkeypatch):
         written = "nowrite" not in req.file_path
         return {"status": "ok", "changed": written, "file_written": written}
 
-    async def fake_notify(file_path):
-        notify_calls.append(file_path)
-        return True
+    async def fake_refresh(file_paths):
+        refresh_calls.append(list(file_paths))
+        return 1
 
     monkeypatch.setattr(scan_mod, "detect_languages", fake_detect)
-    monkeypatch.setattr(scan_mod, "_maybe_notify_plex_lang_change", fake_notify)
+    monkeypatch.setattr(plex_mod, "refresh_plex_sections_for_files", fake_refresh)
+    monkeypatch.setattr(scanner_mod, "_is_cleanup_enabled", lambda *a, **k: True)
     scan_mod._detect_progress = {"active": True, "total": 0, "done": 0,
                                  "current": "", "changed": 0, "failed": 0, "cancelled": False}
 
     await scan_mod._run_detect_batch([
-        "/media/Show/S1/e1.mkv",       # same folder as e2 -> one refresh
+        "/media/Show/S1/e1.mkv",       # same folder as e2 -> one rep file
         "/media/Show/S1/e2.mkv",
-        "/media/Movie/m.mkv",          # distinct folder -> its own refresh
-        "/media/Show/S1/nowrite.mkv",  # no file write -> no refresh
+        "/media/Movie/m.mkv",          # distinct folder -> its own rep file
+        "/media/Show/S1/nowrite.mkv",  # no file write -> not represented
     ])
 
-    # Two unique folders had writes -> exactly two refreshes (not 3 writes,
-    # not 4 files).
-    assert len(notify_calls) == 2
-    assert {os.path.dirname(c) for c in notify_calls} == {"/media/Show/S1", "/media/Movie"}
+    # One coalesced refresh call, given one representative file per written
+    # folder (dedup down to sections happens inside refresh_plex_sections...).
+    assert len(refresh_calls) == 1
+    assert {os.path.dirname(c) for c in refresh_calls[0]} == {"/media/Show/S1", "/media/Movie"}
     p = scan_mod._detect_progress
     assert p["done"] == 4 and p["changed"] == 3 and p["active"] is False
 

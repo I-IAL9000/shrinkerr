@@ -69,9 +69,14 @@ re-encode is involved:
 
 - **mkv** — edited **in place** with `mkvpropedit`: instant, no rewrite, no
   extra disk space, even on a 50 GB file.
-- **other containers** (mp4, …) — a fast `ffmpeg -c copy` remux to a temp
-  file, then an atomic replace. No quality loss (streams are copied, not
-  re-encoded), but it does rewrite the container.
+- **mp4 / m4v / mov / ts** — a fast `ffmpeg -c copy` remux to a temp file,
+  then an atomic replace. No quality loss (streams are copied, not
+  re-encoded), but it does rewrite the container. The tag is verified present
+  in the output before the replace.
+- **containers with no per-track language field** (avi, mpg, wmv, flv, …) —
+  these *cannot* store a language tag, so the write is skipped and the track
+  stays flagged as unknown. The only real fix is remuxing to mkv (i.e.
+  **convert** the file); detection alone can't help here.
 - **external sidecar subs** — the language lives in the *filename*, so the
   sidecar is renamed to embed the ISO-639-2 code (`Movie.srt` →
   `Movie.eng.srt`) — the convention Plex/Jellyfin/Bazarr read. For VobSub
@@ -79,11 +84,14 @@ re-encode is involved:
   If a same-named file already exists, the rename is skipped (no clobber).
 
 Only tracks that were upgraded from `und` are touched; already-tagged tracks
-are left alone. If the write fails for any reason, the original file is kept
-and the detected language is still recorded in Shrinkerr.
+are left alone. **A track leaves the Unknown-language filter only once the tag
+is verified in the file** — if the write can't persist (unsupported container,
+read-only mount, error), the track stays flagged so you never lose track of it
+while the file and Plex still read `und`.
 
 If Plex is configured, a library refresh is triggered afterward so Plex
-re-reads the corrected languages (see the setting below).
+re-reads the corrected languages. A **batch** run coalesces this into one full
+refresh per affected library section at the end (see the setting below).
 
 ## Settings
 
@@ -120,7 +128,9 @@ headless/compose-only deploys):
 The scanner has a dedicated **Unknown language** filter listing every title
 that still has at least one `und` audio or subtitle track, with a count.
 Use it to find what needs attention, then Detect-all-unknown across the
-results.
+results. **Ignored titles are included** — an ignore rule means "don't
+convert", not "hide that the audio is untagged" — so bulk detection reaches
+them too.
 
 ## How detection works
 

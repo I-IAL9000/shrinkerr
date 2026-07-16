@@ -138,6 +138,42 @@ async def trigger_plex_scan(file_path: str) -> str | None:
         return None
 
 
+async def refresh_plex_sections_for_files(file_paths: list[str]) -> int:
+    """Refresh each unique Plex library section containing any of `file_paths`,
+    once per section. Uses a full section refresh (no path scoping) so Plex
+    reliably re-reads changed files' stream metadata — the folder-scoped
+    trigger_plex_scan can silently miss on path-mapping mismatches. Deduped so
+    a multi-folder batch triggers one refresh per library, not per file.
+    Returns the number of sections refreshed."""
+    url, token, path_mapping = await _get_plex_settings()
+    if not url or not token or not file_paths:
+        return 0
+    try:
+        libraries = await get_plex_libraries(url, token)
+    except Exception as exc:
+        print(f"[PLEX] Failed to fetch libraries: {exc}", flush=True)
+        return 0
+    sections: set[str] = set()
+    for fp in file_paths:
+        match = find_section_for_path(_translate_path(fp, path_mapping), libraries)
+        if match:
+            sections.add(match[0])
+    refreshed = 0
+    for section_id in sections:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{url.rstrip('/')}/library/sections/{section_id}/refresh",
+                    headers={"X-Plex-Token": token},
+                )
+                resp.raise_for_status()
+            print(f"[PLEX] Triggered full refresh for section {section_id}", flush=True)
+            refreshed += 1
+        except Exception as exc:
+            print(f"[PLEX] Section refresh failed for {section_id}: {exc}", flush=True)
+    return refreshed
+
+
 async def empty_plex_trash(section_id: str, *, delay_seconds: int = 0) -> bool:
     """Send 'Empty Trash' to a specific Plex library section.
 
