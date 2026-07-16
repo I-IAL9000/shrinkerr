@@ -169,3 +169,31 @@ async def test_detect_pgs_falls_back_to_full_when_sample_empty(monkeypatch):
     lang, _c = await io.detect_image_sub_language("/m/f.mkv", 2, "hdmv_pgs_subtitle")
     assert lang == "eng", f"got {lang!r}"
     assert extract_calls == [1200, None], "sample then full extraction"
+
+
+def test_normalize_idx_palette_fixes_mkvextract_separators(tmp_path):
+    """mkvextract's bare-comma palette (no space after every 4th colour) is
+    rewritten to uniform ', ' so subtile-ocr's parser accepts it."""
+    from backend.image_sub_ocr import _normalize_idx_palette
+    idx = tmp_path / "sub.idx"
+    idx.write_text(
+        "# VobSub index file, v7\n"
+        "size: 1920x1080\n"
+        "palette: 000000, f0f0f0, cccccc, 999999,3333fa, 1111bb, fa3333, bb1111,33fa33\n"
+        "id: und, index: 0\n"
+        "timestamp: 00:00:27:486, filepos: 000000000\n"
+    )
+    _normalize_idx_palette(str(idx))
+    txt = idx.read_text()
+    pal = [l for l in txt.splitlines() if l.startswith("palette:")][0]
+    assert pal == "palette: 000000, f0f0f0, cccccc, 999999, 3333fa, 1111bb, fa3333, bb1111, 33fa33"
+    assert "size: 1920x1080" in txt and "id: und, index: 0" in txt  # other lines untouched
+
+
+def test_normalize_idx_palette_idempotent(tmp_path):
+    from backend.image_sub_ocr import _normalize_idx_palette
+    idx = tmp_path / "sub.idx"
+    good = "palette: 000000, f0f0f0, cccccc, 999999\n"
+    idx.write_text("size: 720x480\n" + good)
+    _normalize_idx_palette(str(idx))
+    assert good in idx.read_text()

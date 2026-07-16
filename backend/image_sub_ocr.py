@@ -213,6 +213,31 @@ async def _extract_vobsub(file_path: str, stream_index: int, workdir: str) -> st
     return idx
 
 
+def _normalize_idx_palette(idx_path: str) -> None:
+    """mkvextract writes the VobSub `.idx` `palette:` line with inconsistent
+    separators — a bare `,` (no space) after every 4th colour — which
+    subtile-ocr's strict parser rejects ("error during palette parsing"):
+
+        palette: 000000, f0f0f0, cccccc, 999999,3333fa, 1111bb, fa3333, bb1111,33fa33, ...
+
+    Rewrite it with a uniform `, ` between all entries. Idempotent (a native
+    .idx already formatted this way is unchanged). Fail-open."""
+    try:
+        with open(idx_path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        for i, line in enumerate(lines):
+            if line.startswith("palette:"):
+                colors = [c.strip() for c in line[len("palette:"):].split(",") if c.strip()]
+                fixed = "palette: " + ", ".join(colors) + "\n"
+                if fixed != line:
+                    lines[i] = fixed
+                    with open(idx_path, "w", encoding="utf-8") as fh:
+                        fh.writelines(lines)
+                break
+    except Exception:
+        pass
+
+
 def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
     """OCR a VobSub .idx/.sub pair to text with subtile-ocr (tesseract under
     the hood). Sync (blocking); caller runs it in an executor. Fail-open:
@@ -225,12 +250,21 @@ def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
               "(image has PGS support only)", flush=True)
         return None
     out_srt = os.path.splitext(idx_path)[0] + ".srt"
+    # v0.9.23: mkvextract's .idx palette formatting trips subtile-ocr's parser.
+    _normalize_idx_palette(idx_path)
     cmd = [exe, "-l", tess_lang, "-o", out_srt, idx_path]
     try:
+        # v0.9.23: capture stderr so a non-zero exit reports WHY, not just
+        # "exit status 1" (mirrors the pgsrip error-surfacing fix).
         subprocess.run(
-            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             timeout=1800, check=True,
         )
+    except subprocess.CalledProcessError as exc:
+        err = (exc.stderr.decode(errors="replace").strip().replace("\n", " ")[-400:]
+               if exc.stderr else "")
+        print(f"[IMG-OCR] subtile-ocr failed ({tess_lang}) rc={exc.returncode}: {err}", flush=True)
+        return None
     except Exception as exc:
         print(f"[IMG-OCR] subtile-ocr failed ({tess_lang}): {exc}", flush=True)
         return None
