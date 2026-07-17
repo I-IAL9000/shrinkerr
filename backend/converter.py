@@ -3491,13 +3491,13 @@ async def convert_file(
                     raise OSError(
                         f"Refusing to move into backup path — destination is a symlink: {backup_path}"
                     )
-                shutil.move(str(iso_source), str(backup_path))
+                await asyncio.to_thread(shutil.move, str(iso_source), str(backup_path))  # v0.9.32: off-loop (cross-fs copy)
                 result_backup_path = str(backup_path)
                 print(f"[CONVERT] ISO backed up to: {backup_path}", flush=True)
             elif use_trash:
                 try:
                     from send2trash import send2trash
-                    send2trash(str(iso_source))
+                    await asyncio.to_thread(send2trash, str(iso_source))  # v0.9.32: off-loop
                     print(f"[CONVERT] ISO moved to trash: {iso_source.name}", flush=True)
                 except Exception as trash_exc:
                     print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
@@ -3526,19 +3526,19 @@ async def convert_file(
                     raise OSError(
                         f"Refusing to move into backup path — destination is a symlink: {backup_path}"
                     )
-                shutil.move(str(source_to_handle), str(backup_path))
+                await asyncio.to_thread(shutil.move, str(source_to_handle), str(backup_path))  # v0.9.32: off-loop
                 result_backup_path = str(backup_path)
                 print(f"[CONVERT] Disc subdir backed up to: {backup_path}", flush=True)
             elif use_trash:
                 try:
                     from send2trash import send2trash
-                    send2trash(str(source_to_handle))
+                    await asyncio.to_thread(send2trash, str(source_to_handle))  # v0.9.32: off-loop
                     print(f"[CONVERT] Disc subdir moved to trash: {source_to_handle.name}", flush=True)
                 except Exception as trash_exc:
                     print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    shutil.rmtree(source_to_handle)
+                    await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
             else:
-                shutil.rmtree(source_to_handle)
+                await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
                 print(f"[CONVERT] Removed disc subdir: {source_to_handle}", flush=True)
         elif backup_days and backup_days > 0:
             # Move original to backup folder (custom or .shrinkerr_backup in same dir)
@@ -3574,7 +3574,11 @@ async def convert_file(
         elif use_trash:
             try:
                 from send2trash import send2trash
-                send2trash(str(p))
+                # v0.9.32: off the event loop — when the media mount has no
+                # usable .Trash, send2trash copies the (multi-GB) original to
+                # the home trash on another device. Done inline it blocked the
+                # whole event loop for the copy (30-60s of unresponsive UI).
+                await asyncio.to_thread(send2trash, str(p))
                 print(f"[CONVERT] Original moved to trash: {p.name}", flush=True)
             except Exception as trash_exc:
                 print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
