@@ -1144,7 +1144,8 @@ async def _expand_paths_for_detection(paths: list[str]) -> list[str]:
                 async with db.execute(
                     "SELECT file_path FROM scan_results "
                     "WHERE file_path LIKE ? AND removed_from_list = 0 "
-                    "AND COALESCE(has_und_tracks_flag, 0) = 1",
+                    "AND COALESCE(has_und_tracks_flag, 0) = 1 "
+                    "ORDER BY file_path",
                     (folder + "%",),
                 ) as cur:
                     async for row in cur:
@@ -1154,12 +1155,11 @@ async def _expand_paths_for_detection(paths: list[str]) -> list[str]:
                             resolved.append(fp)
         finally:
             await db.close()
-    # v0.9.33: process in a stable alphabetical (by-path) order. The DB queries
-    # return rowid order (scan order), which drifts from alphabetical once the
-    # library is scanned in multiple passes — making the batch look like it
-    # jumps around / does ignored titles last. Sorting groups by library root
-    # then title, matching what the user sees.
-    resolved.sort()
+    # v0.9.34: preserve the CALLER's folder order (the UI sends folders in the
+    # order they're displayed — poster grid / file tree sort), so detection
+    # processes in the order the user sees. Within a folder, files are
+    # ORDER BY file_path (above) for stability. v0.9.33 force-sorted the whole
+    # list alphabetically, which ignored the view's chosen sort/direction.
     return resolved
 
 

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.34] — 2026-07-16
+
+### Fixed
+- **Bulk language detection now processes titles in the on-screen order** — the poster grid / file tree's current sort and direction — instead of scan order. The UI sends folders in display order and the backend preserves it (files within a folder stay alphabetical). Supersedes v0.9.33's plain alphabetical sort, which ignored the view's chosen sort.
+
 ## [0.9.33] — 2026-07-16
 
 ### Fixed

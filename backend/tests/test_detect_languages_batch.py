@@ -105,6 +105,30 @@ async def test_expand_paths_returns_alphabetical_order(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_expand_paths_preserves_caller_folder_order(tmp_path, monkeypatch):
+    """v0.9.34: the caller's folder order (the UI's display sort) is preserved;
+    only files WITHIN a folder are alphabetical. The whole list is NOT globally
+    re-sorted (that would ignore the view's chosen sort/direction)."""
+    db_path = str(tmp_path / "folderorder.db")
+    db = await aiosqlite.connect(db_path)
+    await db.execute(
+        "CREATE TABLE scan_results (file_path TEXT, removed_from_list INTEGER DEFAULT 0, "
+        "has_und_tracks_flag INTEGER DEFAULT 0)"
+    )
+    await db.executemany(
+        "INSERT INTO scan_results (file_path, removed_from_list, has_und_tracks_flag) VALUES (?, 0, 1)",
+        [("/media/Alp/a.mkv",), ("/media/Zoo/z.mkv",)],
+    )
+    await db.commit()
+    await db.close()
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    # Caller sends Zoo before Alp (e.g. a descending display sort).
+    resolved = await scan_mod._expand_paths_for_detection(["/media/Zoo/", "/media/Alp/"])
+    assert resolved == ["/media/Zoo/z.mkv", "/media/Alp/a.mkv"]
+
+
+@pytest.mark.asyncio
 async def test_batch_no_writes_no_refresh(monkeypatch):
     notify_calls = []
 

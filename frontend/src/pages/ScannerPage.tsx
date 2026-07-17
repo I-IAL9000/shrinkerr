@@ -5,7 +5,7 @@ import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import FilterBar, { FILTER_LABELS } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
-import PosterGrid from "../components/PosterGrid";
+import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
 import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
@@ -849,8 +849,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     catch (exc: any) { toast(`Cancel failed: ${exc?.message || exc}`, "error"); }
   };
 
+  // Order the visible folders exactly as the poster grid renders them (group
+  // by title, then sortBy/sortDir), so bulk detection processes titles in the
+  // order the user sees rather than DB/scan order. v0.9.34.
+  const orderedFolderPaths = (): string[] => {
+    const mediaRoots = new Set(dirs.map((d: any) => String(d.path).replace(/\/$/, "")));
+    const groups = sortGroups(groupFolders(displayFolders, mediaRoots), sortBy, sortDir);
+    return groups.flatMap(g => g.folders.map((f: any) => f.path + "/"));
+  };
+
   const handleDetectAllUnknown = async () => {
-    const paths = folders.map(f => f.path + "/");
+    const paths = orderedFolderPaths();
     if (paths.length === 0) { toast("No titles in the current filter"); return; }
     if (!await confirm({
       message: `Detect languages across all ${paths.length} title(s) in this filter?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. With image-sub OCR this can take a long time across a large filter.`,
@@ -865,7 +874,13 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkDetectLanguages = async () => {
     // Mirror the other bulk actions: "Select all" sets selectAllActive and
     // clears selectedPaths, so fall back to every visible folder in that case.
-    const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
+    // Preserve display order for the selection too: ordered visible folders
+    // that are selected, then any other selected paths (explicit files, or
+    // folders not in the current view). v0.9.34.
+    const ordered = orderedFolderPaths();
+    const inOrder = ordered.filter(p => selectedPaths.has(p));
+    const rest = Array.from(selectedPaths).filter(p => !inOrder.includes(p));
+    const paths = selectAllActive ? ordered : [...inOrder, ...rest];
     if (paths.length === 0) { toast("No files or folders selected"); return; }
     if (!await confirm({
       message: `Detect languages for the ${paths.length} selected item(s)?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.`,

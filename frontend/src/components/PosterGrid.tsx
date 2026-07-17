@@ -57,7 +57,7 @@ interface PosterGridProps {
   sortDir?: "asc" | "desc";
 }
 
-function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
+export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
   const groups = new Map<string, TitleGroup>();
   for (const folder of folders) {
     // Skip the aggregated media-root entry — stray files under it are already
@@ -95,7 +95,7 @@ function groupSelectPath(g: TitleGroup): string {
   return g.isFile ? g.key : g.key + "/";
 }
 
-function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string): TitleGroup[] {
+export function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string): TitleGroup[] {
   const sorted = [...groups].sort((a, b) => {
     if (sortBy === "size") return a.totalSize - b.totalSize;
     if (sortBy === "files") return a.fileCount - b.fileCount;
