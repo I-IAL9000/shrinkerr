@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.37] — 2026-07-16
+
+### Added
+- **"Apply detected language" for untaggable files and discs.** Bulk detection now ends with a dialog offering to remux the detected AVIs to mkv (stream copy — applies the language, no re-encode/size increase) in one click; there's a per-title "Remux / Convert to MKV (apply language)" button and a per-track "X detected → convert to MKV to apply" hint. Flat files go through a size-safe remux; discs route to a full conversion (language stamped during the encode).
+
 ## [0.9.36] — 2026-07-16
 
 ### Added

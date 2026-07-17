@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, type FileEvent } from "../api";
+import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, addJobsFromScan, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import EventTimeline from "./EventTimeline";
 import { vmafLabel } from "../utils/vmaf";
@@ -145,6 +145,34 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const isUnd = (lang: string | undefined | null) => (lang || "und").toLowerCase() === "und";
   const hasUndTracks = audioTracks.some(t => isUnd(t.language)) || subtitleTracks.some(t => isUnd(t.language));
 
+  // v0.9.35: a language detected in place couldn't be written to this file's
+  // container. Untaggable flat files (AVI etc.) are fixed by a stream-copy
+  // remux to mkv; disc structures need a full conversion (which detects +
+  // stamps during the encode). Offer the appropriate one.
+  const _ext = file.file_path.slice(file.file_path.lastIndexOf(".")).toLowerCase();
+  const isUntaggableFlat = [".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".asf", ".vob"].includes(_ext);
+  const isDisc = /\/VIDEO_TS\/|\/BDMV\/|VIDEO_TS\.IFO$|index\.bdmv$/i.test(file.file_path);
+  const hasPendingDetected = audioTracks.some(t => (t as any).detected_language && isUnd(t.language))
+    || subtitleTracks.some(t => (t as any).detected_language && isUnd(t.language));
+  const showApplyViaConvert = (isUntaggableFlat && hasPendingDetected) || (isDisc && hasUndTracks);
+
+  const handleApplyLanguage = async () => {
+    const remux = isUntaggableFlat && !isDisc;
+    const ok = await confirm({
+      message: remux
+        ? "Remux this file to MKV to apply the detected language?\n\nFast stream-copy — no re-encode, no quality loss, no size increase. The .avi is replaced by an .mkv."
+        : "Convert this to MKV to apply the language?\n\nThe language is detected and stamped during the conversion.",
+      confirmLabel: remux ? "Remux to MKV" : "Convert to MKV",
+    });
+    if (!ok) return;
+    try {
+      const r = await addJobsFromScan([file.file_path], 0, false, remux ? { language_remux: true } : {});
+      toast(r.added ? `Queued ${remux ? "remux" : "conversion"} to apply language` : "Nothing queued", r.added ? "success" : "error");
+    } catch (exc: any) {
+      toast(`Failed to queue: ${exc?.message || exc}`, "error");
+    }
+  };
+
   // v0.6.7: was `file.file_size * 0.3` — a stale flat 30% reduction default
   // that disagreed with the queue-estimate modal's CQ-calibrated curve.
   // Backend now stores the CQ-derived video-only savings on each scan row.
@@ -280,6 +308,29 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
                 {detecting ? "Detecting…" : "Detect languages"}
+              </button>
+            )}
+            {showApplyViaConvert && (
+              <button
+                type="button"
+                onClick={handleApplyLanguage}
+                title={isUntaggableFlat
+                  ? "Remux to MKV (stream copy, no re-encode) to apply the detected language — this container can't store it in place"
+                  : "Convert this disc to MKV; the language is detected and applied during the conversion"}
+                style={{
+                  background: "transparent",
+                  color: "var(--accent)",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 4,
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {isUntaggableFlat && !isDisc ? "Remux to MKV (apply language)" : "Convert to MKV (apply language)"}
               </button>
             )}
             <button

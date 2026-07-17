@@ -109,6 +109,11 @@ class BulkQueueFromScanRequest(BaseModel):
     # but expressed per-batch from the estimate modal. Wins over
     # force_reencode if both are somehow set. v0.3.80+.
     cleanup_only: bool = False
+    # v0.9.37: "apply detected language" — remux to mkv (stream copy, no
+    # re-encode) to stamp a language detected for an untaggable source (AVI
+    # etc.) that couldn't be written in place. Forces an audio-type (remux)
+    # job even when there's no track-removal work.
+    language_remux: bool = False
 
 
 @router.post("/add-from-scan")
@@ -360,7 +365,13 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             if payload.cleanup_only:
                 needs_conv = False
 
-            if needs_conv and has_audio_work:
+            if payload.language_remux:
+                # v0.9.37: remux-to-mkv to apply a detected language on an
+                # untaggable source — always an audio (stream-copy) job, even
+                # with no track-removal work; the remux itself stamps the tag.
+                needs_conv = False
+                job_type = "audio"
+            elif needs_conv and has_audio_work:
                 job_type = "combined"
             elif needs_conv:
                 job_type = "convert"

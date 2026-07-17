@@ -820,6 +820,20 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               : `Language detection: ${p.changed}/${p.total} updated${p.failed ? `, ${p.failed} failed` : ""}`;
           toast(msg, (p.failed && !p.changed) ? "error" : "success");
           loadTree();
+          // v0.9.37: some titles had a language detected but their container
+          // (AVI etc.) can't store it — offer to remux them to mkv to apply it.
+          if (!p.cancelled && p.pending && p.pending_paths && p.pending_paths.length > 0) {
+            const pendingPaths = p.pending_paths;
+            confirm({
+              message: `${pendingPaths.length} title(s) had a language detected, but their format (e.g. AVI) can't store the tag in place.\n\nRemux them to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.`,
+              confirmLabel: `Remux ${pendingPaths.length} to MKV`,
+            }).then((ok: boolean) => {
+              if (!ok) return;
+              addJobsFromScan(pendingPaths, 0, false, { language_remux: true })
+                .then((r: any) => toast(`Queued ${r.added} remux job(s) to apply detected languages`, "success"))
+                .catch((e: any) => toast(`Failed to queue remux: ${e?.message || e}`, "error"));
+            });
+          }
         }
         detectWasActiveRef.current = false;
         setDetectProgress(null);

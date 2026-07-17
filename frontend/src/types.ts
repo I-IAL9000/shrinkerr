@@ -8,6 +8,7 @@ export interface AudioTrack {
   size_estimate_bytes: number | null;
   keep: boolean;
   locked: boolean;
+  detected_language?: string | null;  // v0.9.35: detected but not writable in place (AVI); applied on convert
 }
 
 export interface SubtitleTrack {
@@ -20,6 +21,7 @@ export interface SubtitleTrack {
   locked: boolean;
   external?: boolean;
   external_path?: string;
+  detected_language?: string | null;  // v0.9.35 (see AudioTrack)
 }
 
 export interface ScannedFile {

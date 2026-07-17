@@ -1207,6 +1207,9 @@ async def detect_languages_batch(req: DetectLanguagesBatchRequest):
     _detect_progress = {
         "active": True, "total": 0, "done": 0, "current": "",
         "changed": 0, "failed": 0, "cancelled": False,
+        # v0.9.37: files whose language was detected but only remembered
+        # (untaggable container, e.g. AVI) — they need a remux-to-mkv to apply.
+        "pending": 0, "pending_paths": [],
     }
     _detect_task = asyncio.create_task(_run_detect_batch(list(req.file_paths)))
     return {"status": "started"}
@@ -1232,6 +1235,9 @@ async def _run_detect_batch(paths_in: list[str]) -> None:
                     _detect_progress["changed"] += 1
                 if r.get("file_written") or r.get("external_renamed"):
                     written_folders.setdefault(os.path.dirname(fp), fp)
+                if r.get("pending_detected"):
+                    _detect_progress["pending"] += 1
+                    _detect_progress["pending_paths"].append(fp)
             except Exception as exc:
                 _detect_progress["failed"] += 1
                 print(f"[LANG-DETECT] batch error on {fp}: {exc}", flush=True)

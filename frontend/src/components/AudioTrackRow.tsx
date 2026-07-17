@@ -33,6 +33,13 @@ export default function AudioTrackRow({ track, onToggle }: AudioTrackRowProps) {
       <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
       {track.title && <span style={{ opacity: 0.5, ...removeStyle }}>&quot;{track.title}&quot;</span>}
       <span className="track-size" style={removeStyle}>{sizeLabel}</span>
+      {/* v0.9.35: a language was detected but the container (AVI etc.) can't
+          store it in place — it applies when the file is converted to mkv. */}
+      {track.detected_language && (track.language || "und").toLowerCase() === "und" && (
+        <span style={{ color: "var(--accent)", fontSize: "0.85em", whiteSpace: "nowrap" }}>
+          {track.detected_language.toUpperCase()} detected → convert to MKV to apply
+        </span>
+      )}
     </div>
   );
 }

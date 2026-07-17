@@ -110,7 +110,7 @@ export const rescanFolder = (paths: string[]) =>
   apiFetch("/scan/rescan-folder", { method: "POST", body: JSON.stringify({ paths }) });
 export const detectLanguages = (filePath: string) =>
   apiFetch<{ status: string; changed: boolean; native_language?: string; audio_tracks?: any[]; subtitle_tracks?: any[] }>("/scan/detect-languages", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
-export interface DetectBatchProgress { active: boolean; total: number; done: number; current: string; changed: number; failed: number; cancelled: boolean; }
+export interface DetectBatchProgress { active: boolean; total: number; done: number; current: string; changed: number; failed: number; cancelled: boolean; pending?: number; pending_paths?: string[]; }
 export const detectLanguagesBatch = (filePaths: string[]) =>
   apiFetch<{ status: string; progress?: DetectBatchProgress }>("/scan/detect-languages-batch", { method: "POST", body: JSON.stringify({ file_paths: filePaths }) });
 export const getDetectBatchStatus = () =>
