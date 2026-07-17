@@ -378,6 +378,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   </span>
                 </>}
 
+                {Array.isArray(logData.encoding_stats.applied_audio_languages) && logData.encoding_stats.applied_audio_languages.length > 0 && <>
+                  <span style={{ color: "var(--text-muted)" }}>Language applied</span>
+                  <span style={{ color: "var(--accent)", gridColumn: "2 / span 2" }}>
+                    audio → {logData.encoding_stats.applied_audio_languages.join(", ")}
+                  </span>
+                </>}
+
                 {logData.vmaf_score != null && <>
                   <span style={{ color: "var(--text-muted)" }}>VMAF</span>
                   <span style={{ color: "var(--text-muted)", opacity: 0.5 }}>100 (ref)</span>

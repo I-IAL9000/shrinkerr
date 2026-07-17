@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.39] — 2026-07-16
+
+### Fixed
+- **After a remux applies a language, the title updates instead of lingering as the original AVI.** The audio/remux job left `scan_results` pointing at the now-deleted `.avi` (still `und`), so the title stayed in the Unknown-language filter and the completed job showed the old name. It now re-points the row to the `.mkv`, re-probes (language applied → flag cleared → leaves the filter), the completed job shows the `.mkv` name, and the report notes the language that was applied.
+
 ## [0.9.38] — 2026-07-16
 
 ### Fixed

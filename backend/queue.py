@@ -2213,6 +2213,58 @@ class QueueWorker:
                     return
                 space_saved += result.get("space_saved", 0)
 
+                # v0.9.39: remux_audio always writes a .mkv and replaces the
+                # original, so on a non-mkv source (AVI) the path changes. Point
+                # the job at the new file and reconcile scan_results — re-probe
+                # the mkv, rewrite tracks (the language is now applied) and
+                # recompute has_und_tracks_flag so the title leaves the
+                # Unknown-language filter. Without this the stale .avi row
+                # lingered (still und, still shown as an AVI).
+                _new_out = result.get("output_path")
+                if _new_out and _new_out != current_file_path:
+                    _old_path = current_file_path
+                    current_file_path = _new_out
+                    try:
+                        import json as _rj
+                        from backend.scanner import (
+                            probe_file as _rpf, classify_audio_tracks as _rca,
+                            classify_subtitle_tracks as _rcs, detect_native_language as _rdnl,
+                        )
+                        _rp = await _rpf(_new_out, detect_und_subs=False)
+                        db_r = await self.queue._connect()
+                        try:
+                            # Drop any pre-existing row at the new path (a prior
+                            # scan may have already indexed the mkv) to avoid the
+                            # UNIQUE(file_path) clash, then move the source row.
+                            await db_r.execute(
+                                "DELETE FROM scan_results WHERE file_path = ? AND file_path != ?",
+                                (_new_out, _old_path),
+                            )
+                            _cols = ["file_path = ?", "converted = 1", "is_new = 0", "new_detected_at = NULL"]
+                            _params: list = [_new_out]
+                            if _rp:
+                                _rnl = _rdnl(_rp.get("audio_tracks", []) or [])
+                                _rat = _rca(_rp.get("audio_tracks", []) or [], _rnl, _rp.get("duration", 0) or 0)
+                                _rst = _rcs(_rp.get("subtitle_tracks", []) or [], _rnl)
+                                _rund = 1 if any((t.language or "und").lower() == "und" for t in list(_rat) + list(_rst)) else 0
+                                _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
+                                          "has_und_tracks_flag = ?", "video_codec = ?", "file_size = ?"]
+                                _params += [
+                                    _rj.dumps([t.model_dump() for t in _rat]),
+                                    _rj.dumps([t.model_dump() for t in _rst]),
+                                    _rund, _rp.get("video_codec", ""), Path(_new_out).stat().st_size,
+                                ]
+                            _params.append(_old_path)
+                            await db_r.execute(
+                                f"UPDATE scan_results SET {', '.join(_cols)} WHERE file_path = ?", _params)
+                            await db_r.execute(
+                                "UPDATE jobs SET file_path = ? WHERE id = ?", (_new_out, job_id))
+                            await db_r.commit()
+                        finally:
+                            await db_r.close()
+                    except Exception as _rexc:
+                        print(f"[WORKER] post-remux scan_results reconcile failed (non-fatal): {_rexc}", flush=True)
+
                 # Persist the remux command/log/stats so the Completed
                 # tab's expanded view has content for audio-only jobs.
                 # Pre-v0.3.117 this only fired on the video-encode path
@@ -2260,6 +2312,10 @@ class QueueWorker:
                         stats["subtitle_tracks_removed"] = len(subtitle_tracks_to_remove or [])
                         stats["removed_audio_languages"] = removed_audio_lang
                         stats["removed_subtitle_languages"] = removed_sub_lang
+                        # v0.9.39: record languages applied to a previously-und
+                        # track (untaggable source, stamped by this remux).
+                        if _remux_audio_langs:
+                            stats["applied_audio_languages"] = sorted(set(_remux_audio_langs.values()))
                         await self.queue.update_conversion_log(
                             job_id,
                             result.get("ffmpeg_command"),
