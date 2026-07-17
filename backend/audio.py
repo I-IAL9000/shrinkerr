@@ -73,7 +73,12 @@ def build_remux_cmd(
     CONVERTIBLE_TEXT_SUBS = {"mov_text", "tx3g"}
 
     cmd = [
-        "ffmpeg", "-y", "-i", input_path,
+        # v0.9.40: +genpts generates presentation timestamps for inputs that
+        # lack them (common in AVIs). matroska requires timestamps, so without
+        # this a stream-copy remux dies with "Can't write packet with unknown
+        # timestamp" → ffmpeg exit 234. Harmless on inputs that already have
+        # them (only missing ones are generated).
+        "ffmpeg", "-y", "-fflags", "+genpts", "-i", input_path,
     ]
     # Add external subtitle files as additional inputs
     ext_subs = external_subtitle_files or []

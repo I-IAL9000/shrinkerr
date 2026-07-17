@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.40] — 2026-07-16
+
+### Fixed
+- **Remux to MKV no longer fails (ffmpeg 234) on AVIs with missing timestamps.** Many AVIs carry packets with no presentation timestamps, which matroska rejects on stream copy ("Can't write packet with unknown timestamp"). The remux now passes `-fflags +genpts` to generate them.
+
 ## [0.9.39] — 2026-07-16
 
 ### Fixed

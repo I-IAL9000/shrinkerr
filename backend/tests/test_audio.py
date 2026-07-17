@@ -142,3 +142,12 @@ def test_build_remux_cmd_no_languages_unchanged():
     from backend.audio import build_remux_cmd
     cmd = build_remux_cmd("/m/in.avi", "/m/out.mkv", [1])
     assert "language=" not in " ".join(cmd)
+
+
+def test_build_remux_cmd_generates_pts():
+    """v0.9.40: +genpts on the input so AVIs without packet timestamps can be
+    stream-copied into mkv (matroska requires timestamps)."""
+    from backend.audio import build_remux_cmd
+    cmd = build_remux_cmd("/m/in.avi", "/m/out.mkv", [1])
+    i = cmd.index("-i")
+    assert "+genpts" in cmd and cmd.index("+genpts") < i  # input flag, before -i
