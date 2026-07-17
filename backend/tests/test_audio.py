@@ -121,3 +121,24 @@ def test_build_remux_maps_only_first_video_not_all():
         f"-map 0:v? present — would sweep in cover-art PNG and trip the "
         f"matroska 'dimensions not set' mux failure (exit 234): {maps}"
     )
+
+
+def test_build_remux_cmd_stamps_detected_audio_language():
+    """v0.9.36: a language detected for an untaggable source (AVI) is stamped
+    onto the mkv output by stream-copy remux, keyed by SOURCE index but written
+    to the OUTPUT audio stream position; und / missing are skipped."""
+    from backend.audio import build_remux_cmd
+    cmd = build_remux_cmd(
+        "/m/in.avi", "/m/out.mkv", [1, 2],
+        audio_languages={1: "eng", 2: "und"},
+    )
+    j = " ".join(cmd)
+    assert "-metadata:s:a:0 language=eng" in j   # kept idx 1 -> output a:0
+    assert "language=und" not in j               # idx 2 was und -> not stamped
+    assert "-c" in cmd and "copy" in cmd         # still a stream copy, no re-encode
+
+
+def test_build_remux_cmd_no_languages_unchanged():
+    from backend.audio import build_remux_cmd
+    cmd = build_remux_cmd("/m/in.avi", "/m/out.mkv", [1])
+    assert "language=" not in " ".join(cmd)

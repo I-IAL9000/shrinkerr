@@ -2187,12 +2187,18 @@ class QueueWorker:
                         total_saved=total_saved,
                     )
 
+                # v0.9.36: apply any language detected for an untaggable source
+                # (AVI etc.) that couldn't be written in place — the remux to
+                # mkv can finally stamp it. Pulled from the stored track JSON.
+                from backend.converter import _load_detected_audio_languages
+                _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
                 result = await remux_audio(
                     input_path=current_file_path,
                     keep_audio_indices=keep_indices,
                     duration=duration,
                     progress_callback=audio_progress_cb,
                     keep_subtitle_indices=keep_sub_indices,
+                    audio_languages=_remux_audio_langs or None,
                 )
                 if not result["success"]:
                     await self.queue.update_status(job_id, "failed", error_log=result["error"])

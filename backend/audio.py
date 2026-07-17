@@ -49,6 +49,7 @@ def build_remux_cmd(
     keep_subtitle_indices: list[int] | None = None,
     external_subtitle_files: list[dict] | None = None,
     subtitle_stream_codecs: dict[int, str] | None = None,
+    audio_languages: dict[int, str] | None = None,
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
@@ -142,8 +143,16 @@ def build_remux_cmd(
         out_sub_idx += 1
 
     cmd += ["-map", "0:t?"]
-    for idx in keep_audio_indices:
+    # v0.9.36: stamp per-audio language onto the mkv output. Used to apply a
+    # language detected for an untaggable source (AVI etc.) that couldn't be
+    # written in place. keep_audio_indices is in output order, so out_a_idx
+    # is the output audio stream index.
+    audio_lang_args: list[str] = []
+    for out_a_idx, idx in enumerate(keep_audio_indices):
         cmd += ["-map", f"0:{idx}"]
+        lang = (audio_languages or {}).get(idx)
+        if lang and str(lang).lower() != "und":
+            audio_lang_args += [f"-metadata:s:a:{out_a_idx}", f"language={lang}"]
 
     if ext_subs or keep_subtitle_indices is not None or subtitle_stream_codecs:
         # Use per-stream codec args + copy for non-sub streams.
@@ -157,6 +166,7 @@ def build_remux_cmd(
     else:
         cmd += ["-c", "copy"]
 
+    cmd += audio_lang_args
     cmd += [output_path]
     return cmd
 
@@ -198,6 +208,7 @@ async def remux_audio(
     duration: float = 0,
     progress_callback: Optional[Callable] = None,
     keep_subtitle_indices: list[int] | None = None,
+    audio_languages: dict[int, str] | None = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -243,6 +254,7 @@ async def remux_audio(
         input_path, temp_path, keep_audio_indices,
         keep_subtitle_indices=keep_subtitle_indices,
         subtitle_stream_codecs=sub_codecs or None,
+        audio_languages=audio_languages,
     )
     # Used by the worker to populate update_conversion_log so the
     # Completed tab's expanded view has something to show on

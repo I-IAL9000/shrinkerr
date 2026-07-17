@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.36] — 2026-07-16
+
+### Added
+- **Remux to MKV now stamps the detected language.** A stream-copy remux (no re-encode) applies a language detected for an untaggable source (AVI etc.) onto the mkv output — the size-safe way to fix these, since re-encoding old SD files often produced a *larger* file that got discarded. (Backend; the per-title remux action + post-detect dialog follow.)
+
 ## [0.9.35] — 2026-07-16
 
 ### Added
