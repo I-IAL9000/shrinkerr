@@ -2046,13 +2046,16 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     if filter_name == "low_bitrate":
         return f["low_bitrate"] and not f["ignored"]
     if filter_name == "audio_cleanup":
-        return (f["has_removable_tracks"] or f.get("has_und_tracks")) and not f["ignored"]
+        # v0.9.31: ignored titles included — ignore means "don't convert", not
+        # "don't tidy tracks". Only the conversion filters hide ignored.
+        return bool(f["has_removable_tracks"] or f.get("has_und_tracks"))
     if filter_name == "unknown_language":
         # v0.9.26: ignored titles ARE included here — an ignore rule means
         # "don't convert", not "don't tell me the audio is untagged".
         return bool(f.get("has_und_tracks"))
     if filter_name == "sub_cleanup":
-        return f["has_removable_subs"] and not f["ignored"]
+        # v0.9.31: ignored titles included (see audio_cleanup).
+        return bool(f["has_removable_subs"])
     if filter_name == "ignored":
         return f["ignored"]
     if filter_name == "converted":
@@ -2238,13 +2241,13 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
         sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
     elif f == "audio_cleanup":
         sql = "AND (COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"
-        needs_python = {f}  # still need to exclude ignored
+        needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31
     elif f == "unknown_language":
         sql = "AND COALESCE(has_und_tracks_flag, 0) = 1"
-        needs_python = {f}  # still need to exclude ignored
+        needs_python = {f}  # ignored NOT excluded — v0.9.26
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
-        needs_python = {f}  # still need to exclude ignored
+        needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31
     elif f == "corrupt":
         sql = "AND (COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt')"
     elif f == "recent":
@@ -2442,14 +2445,16 @@ async def get_scan_tree(filter: str = "all"):
                         # Mirror the SQL fragment + _matches_single_filter:
                         # audio_cleanup also covers und tracks, so an und-only
                         # file (no removable tracks) must still pass here.
-                        if not ((r.get("has_removable_tracks") or r.get("has_und_tracks")) and not is_ignored):
+                        # v0.9.31: ignored titles ARE included (cleanup, not conversion).
+                        if not (r.get("has_removable_tracks") or r.get("has_und_tracks")):
                             skip = True; break
                     elif pf == "unknown_language":
                         # v0.9.26: ignored titles ARE included (see _matches_single_filter).
                         if not r.get("has_und_tracks"):
                             skip = True; break
                     elif pf == "sub_cleanup":
-                        if not (r.get("has_removable_subs") and not is_ignored):
+                        # v0.9.31: ignored titles ARE included (see audio_cleanup).
+                        if not r.get("has_removable_subs"):
                             skip = True; break
                     elif pf == "res_4k":
                         vh = r.get("video_height") or 0
