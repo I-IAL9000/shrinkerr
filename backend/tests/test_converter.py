@@ -424,3 +424,33 @@ async def test_auto_detect_skips_already_tagged(monkeypatch):
     patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
     assert patched[0]["language"] == "eng"
     assert called == []  # already tagged → no detection call
+
+
+@pytest.mark.asyncio
+async def test_load_detected_audio_languages(tmp_path, monkeypatch):
+    """v0.9.35: converting an untaggable source reuses the language stored on
+    the track under `detected_language` (leaving `language` = und), keyed by
+    audio stream index; tracks without a detected value are skipped."""
+    import json
+    import aiosqlite
+    import backend.database as database
+    import backend.converter as converter
+
+    db_path = str(tmp_path / "det.db")
+    db = await aiosqlite.connect(db_path)
+    await db.execute("CREATE TABLE scan_results (file_path TEXT, audio_tracks_json TEXT)")
+    tracks = json.dumps([
+        {"stream_index": 1, "language": "und", "detected_language": "eng"},
+        {"stream_index": 2, "language": "eng"},                       # already tagged, no detected
+        {"stream_index": 3, "language": "und"},                       # not detected -> skipped
+    ])
+    await db.execute(
+        "INSERT INTO scan_results (file_path, audio_tracks_json) VALUES (?, ?)",
+        ("/media/M/movie.avi", tracks),
+    )
+    await db.commit()
+    await db.close()
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    out = await converter._load_detected_audio_languages("/media/M/movie.avi")
+    assert out == {1: "eng"}

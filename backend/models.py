@@ -12,6 +12,11 @@ class AudioTrack(BaseModel):
     size_estimate_bytes: Optional[int] = None
     keep: bool = True
     locked: bool = False
+    # v0.9.35: a language detected for an und track that couldn't be written to
+    # the file because the container can't store per-track language (AVI etc.).
+    # `language` stays "und" (file truth); this is applied to the output when
+    # the file is converted to mkv.
+    detected_language: Optional[str] = None
 
 class SubtitleTrack(BaseModel):
     stream_index: int
@@ -23,6 +28,7 @@ class SubtitleTrack(BaseModel):
     locked: bool = False
     external: bool = False       # True for sidecar .srt/.ass files (not embedded)
     external_path: str = ""      # Absolute path to the external subtitle file
+    detected_language: Optional[str] = None  # v0.9.35 (see AudioTrack)
 
 class ScannedFile(BaseModel):
     id: Optional[int] = None

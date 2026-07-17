@@ -1041,7 +1041,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # embedded tracks to und so the DB — and the Unknown-language flag — mirror
     # what the file (and Plex) actually contain, instead of silently dropping
     # the title out of the filter while it stays und on disk.
-    from backend.language_detection import apply_track_languages_to_file
+    from backend.language_detection import apply_track_languages_to_file, _UNTAGGABLE_CONTAINERS
     file_written = False
     try:
         file_written = await apply_track_languages_to_file(
@@ -1050,26 +1050,46 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     except Exception as exc:
         print(f"[LANG-DETECT] file write failed (kept und): {exc}", flush=True)
 
+    # v0.9.35: when the container can't hold per-track language (AVI etc.),
+    # remember the detected language on the track (keyed by stream index) so a
+    # later mkv conversion can apply it — but leave `language` = und (file
+    # truth) so the title stays in the Unknown-language filter until converted.
+    untaggable = os.path.splitext(req.file_path)[1].lower() in _UNTAGGABLE_CONTAINERS
+    audio_detected: dict[int, str] = {}
+    sub_detected: dict[int, str] = {}
     if not file_written:
         for i, code in enumerate(audio_write):
             if code:
+                si = raw_audio[i].get("stream_index")
+                if untaggable and si is not None:
+                    audio_detected[si] = code
                 raw_audio[i]["language"] = "und"
                 audio_write[i] = None
         for j, code in enumerate(sub_write):
             if code:
+                si = raw_subs[j].get("stream_index")
+                if untaggable and si is not None:
+                    sub_detected[si] = code
                 raw_subs[j]["language"] = "und"
                 sub_write[j] = None
 
-    # Nothing persisted to disk (embedded write dropped, no external rename) —
-    # leave the row untouched so the title stays in the Unknown-language
-    # filter and can be re-attempted (e.g. after converting AVI → mkv).
-    if not (any(audio_write) or any(sub_write) or external_renamed):
+    # Nothing persisted or remembered — leave the row untouched so the title
+    # stays in the Unknown-language filter and can be re-attempted.
+    if not (any(audio_write) or any(sub_write) or external_renamed
+            or audio_detected or sub_detected):
         return {"status": "ok", "changed": False, "file_written": False}
 
     # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
     native_lang = detect_native_language(raw_audio)
     audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
     subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+    # v0.9.35: re-attach detected-but-unwritten languages (untaggable source).
+    for t in audio_tracks:
+        if t.stream_index in audio_detected:
+            t.detected_language = audio_detected[t.stream_index]
+    for t in subtitle_tracks:
+        if t.stream_index in sub_detected:
+            t.detected_language = sub_detected[t.stream_index]
     # v0.9.7: re-attach external sidecar subs (with any newly-detected
     # language / renamed path) — they aren't in `raw_subs`, so without this
     # they'd be dropped from subtitle_tracks_json.
@@ -1112,6 +1132,9 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         "changed": True,
         "file_written": file_written,
         "external_renamed": external_renamed,
+        # v0.9.35: a language was detected but only remembered (untaggable
+        # container) — it applies when the file is converted to mkv.
+        "pending_detected": bool(audio_detected or sub_detected),
         "plex_notified": plex_notified,
         "native_language": native_lang,
         "audio_tracks": [t.model_dump() for t in audio_tracks],

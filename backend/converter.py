@@ -852,6 +852,35 @@ def _auto_detect_enabled() -> bool:
     return _is_cleanup_enabled("auto_detect_languages", default=True)
 
 
+async def _load_detected_audio_languages(file_path: str) -> dict:
+    """v0.9.35: return {audio stream_index: detected_language} persisted for a
+    file whose container couldn't store the tag in place (AVI etc.). Detection
+    stored the language under `detected_language` (leaving `language` = und);
+    converting to mkv reuses it so we don't re-run whisper. Empty on any error."""
+    import json as _json
+    from backend.database import connect_db
+    out: dict = {}
+    try:
+        db = await connect_db()
+        try:
+            async with db.execute(
+                "SELECT audio_tracks_json FROM scan_results WHERE file_path = ?",
+                (file_path,),
+            ) as cur:
+                row = await cur.fetchone()
+        finally:
+            await db.close()
+        if row and row["audio_tracks_json"]:
+            for t in _json.loads(row["audio_tracks_json"]):
+                dl = t.get("detected_language")
+                si = t.get("stream_index")
+                if dl and si is not None:
+                    out[si] = dl
+    except Exception:
+        pass
+    return out
+
+
 async def _detect_und_track_languages(file_path, audio_tracks, subtitle_tracks, duration):
     """When auto_detect_languages is on, detect languages for und audio
     tracks and patch them in place. Returns the (possibly patched)
@@ -2130,6 +2159,18 @@ async def convert_file(
         await progress_callback(
             progress=0, fps=0, eta_seconds=None, step="Detecting language…",
         )
+    # v0.9.35: reuse a language already detected for this file whose container
+    # couldn't store it (AVI etc.) — apply it to the still-und tracks so the
+    # mkv output gets stamped without re-running whisper. Anything without a
+    # persisted result falls through to the (optional) live re-detect below.
+    if probe_audio_tracks:
+        _persisted = await _load_detected_audio_languages(input_path)
+        if _persisted:
+            for t in probe_audio_tracks:
+                si = t.get("stream_index")
+                if (t.get("language") or "und").lower() == "und" and _persisted.get(si):
+                    t["language"] = _persisted[si]
+                    print(f"[CONVERT] Applying detected language {_persisted[si]} to audio stream {si}", flush=True)
     if probe_audio_tracks:
         probe_audio_tracks = await _detect_und_track_languages(
             input_path, probe_audio_tracks, [], duration=duration,

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.35] — 2026-07-16
+
+### Added
+- **Languages detected for untaggable containers (AVI etc.) are now remembered and applied when the file is converted to mkv.** Detection stores the result on the track (leaving it `und` on disk, so the title stays in the Unknown-language filter until converted); converting stamps the stored language onto the output — no re-detection. (Backend; the per-track hint and post-bulk "convert to apply" dialog follow.)
+
 ## [0.9.34] — 2026-07-16
 
 ### Fixed
