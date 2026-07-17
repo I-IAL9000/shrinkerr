@@ -47,7 +47,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
     : job.job_type === "health_check" ? `Health check${job.encoder ? ` (${job.encoder})` : ""}`
     : hasSubRemoval && !hasAudioRemoval ? "Sub cleanup"
     : hasAudioRemoval && !hasSubRemoval ? "Audio cleanup"
-    : "Cleanup";
+    // v0.9.38: an audio job with no track removal is a stream-copy remux
+    // (e.g. apply a detected language to an AVI) — not a "cleanup".
+    : "Remux";
 
   const canExpand = job.status === "failed" || job.status === "completed";
 
@@ -218,12 +220,16 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       {job.status === "pending" && (
         <>
           <span className="job-type-badge" style={{ background: "var(--border)" }}>{typeBadge}</span>
+          {/* v0.9.38: encoder settings are irrelevant for an audio-only
+              stream-copy remux — don't imply a re-encode that isn't happening. */}
+          {job.job_type !== "audio" && (
           <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
             {(job.encoder === "libx265" || (!job.encoder && encodingDefaults?.default_encoder === "libx265"))
               ? `${(job.libx265_preset || encodingDefaults?.libx265_preset || "medium").charAt(0).toUpperCase() + (job.libx265_preset || encodingDefaults?.libx265_preset || "medium").slice(1)} / CRF ${job.libx265_crf ?? encodingDefaults?.libx265_crf ?? 20}`
               : `${(job.nvenc_preset || encodingDefaults?.nvenc_preset || "P6").toUpperCase()} / CQ ${job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}`
             }
           </span>
+          )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
             {onIgnore && (
               <button onClick={() => onIgnore(job.id, job.file_path)}

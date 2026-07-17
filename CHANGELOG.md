@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.38] — 2026-07-16
+
+### Fixed
+- **"Remux to apply language" no longer no-ops on AVIs.** The audio job only remuxed when tracks were being removed, so a pure language-fix (no track change) did nothing and the file stayed und. It now also remuxes when there's a detected language to stamp. The queue badge for these jobs reads **Remux** (no misleading encoder-settings badge) and the progress step shows "applying language."
+
 ## [0.9.37] — 2026-07-16
 
 ### Added

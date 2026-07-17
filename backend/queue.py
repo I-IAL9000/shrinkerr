@@ -2165,7 +2165,17 @@ class QueueWorker:
             all_sub_indices = [t["stream_index"] for t in raw_subs]
             keep_sub_indices = [i for i in all_sub_indices if i not in subtitle_tracks_to_remove] if subtitle_tracks_to_remove else None
 
-            if keep_indices != all_indices or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices):
+            # v0.9.38: a language detected for an untaggable source (AVI) that
+            # couldn't be written in place — the remux-to-mkv applies it. This
+            # is a valid reason to remux even with NO track removal (pre-v0.9.38
+            # the block below only ran on a track change, so a pure
+            # language-fix job no-op'd and the language never landed).
+            from backend.converter import _load_detected_audio_languages
+            _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
+
+            if (keep_indices != all_indices
+                    or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices)
+                    or _remux_audio_langs):
                 # Throttled, awaited DB write — see comment on convert
                 # progress_cb above for why we DON'T use create_task here.
                 _audio_last_db = [0.0]
@@ -2181,17 +2191,14 @@ class QueueWorker:
                         progress=progress,
                         fps=speed,
                         eta=eta_seconds,
-                        step="removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else "reordering audio"),
+                        step="removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else "reordering audio")),
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
                     )
 
                 # v0.9.36: apply any language detected for an untaggable source
-                # (AVI etc.) that couldn't be written in place — the remux to
-                # mkv can finally stamp it. Pulled from the stored track JSON.
-                from backend.converter import _load_detected_audio_languages
-                _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
+                # (AVI etc.) — _remux_audio_langs loaded above.
                 result = await remux_audio(
                     input_path=current_file_path,
                     keep_audio_indices=keep_indices,
