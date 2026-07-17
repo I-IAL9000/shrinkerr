@@ -1154,6 +1154,12 @@ async def _expand_paths_for_detection(paths: list[str]) -> list[str]:
                             resolved.append(fp)
         finally:
             await db.close()
+    # v0.9.33: process in a stable alphabetical (by-path) order. The DB queries
+    # return rowid order (scan order), which drifts from alphabetical once the
+    # library is scanned in multiple passes — making the batch look like it
+    # jumps around / does ignored titles last. Sorting groups by library root
+    # then title, matching what the user sees.
+    resolved.sort()
     return resolved
 
 

@@ -82,6 +82,29 @@ async def test_expand_paths_folders_to_und_files_only(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_expand_paths_returns_alphabetical_order(tmp_path, monkeypatch):
+    """v0.9.33: batch order is alphabetical by path, not DB rowid (scan) order,
+    so detection doesn't appear to jump around / do some titles last."""
+    db_path = str(tmp_path / "order.db")
+    db = await aiosqlite.connect(db_path)
+    await db.execute(
+        "CREATE TABLE scan_results (file_path TEXT, removed_from_list INTEGER DEFAULT 0, "
+        "has_und_tracks_flag INTEGER DEFAULT 0)"
+    )
+    # Inserted in non-alphabetical (rowid) order.
+    await db.executemany(
+        "INSERT INTO scan_results (file_path, removed_from_list, has_und_tracks_flag) VALUES (?, 0, 1)",
+        [("/media/M/Zebra.mkv",), ("/media/M/Apple.mkv",), ("/media/M/Mango.mkv",)],
+    )
+    await db.commit()
+    await db.close()
+    monkeypatch.setattr(database, "DB_PATH", db_path)
+
+    resolved = await scan_mod._expand_paths_for_detection(["/media/M/"])
+    assert resolved == ["/media/M/Apple.mkv", "/media/M/Mango.mkv", "/media/M/Zebra.mkv"]
+
+
+@pytest.mark.asyncio
 async def test_batch_no_writes_no_refresh(monkeypatch):
     notify_calls = []
 
