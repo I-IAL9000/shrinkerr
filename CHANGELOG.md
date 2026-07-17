@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.41] — 2026-07-16
+
+### Fixed
+- **Retrying a failed "apply language" remux no longer turns into a re-encode.** A failed audio job was escalated to a full convert on retry (right for a cleanup follow-up on a source that needs conversion, wrong for a pure remux). Escalation now only applies when the job actually removes tracks; a pure remux retries as a remux.
+
 ## [0.9.40] — 2026-07-16
 
 ### Fixed

@@ -1388,7 +1388,20 @@ async def retry_job(job_id: int):
     # Escalate the job in place. Audio-only retries on already-h265
     # sources stay as-is (legitimate track-cleanup use case).
     escalated = False
-    if row and row["job_type"] == "audio" and row["file_path"]:
+    # v0.9.41: a pure remux (no track removal) — e.g. an "apply detected
+    # language" remux-to-mkv on an AVI — must NOT escalate to a re-encode on
+    # retry. Escalating defeats the point and re-encoding old SD AVIs bloats
+    # them (that's why they landed in remux, not convert). Only a cleanup
+    # audio job (real track removal) escalates.
+    import json as _rjson
+    def _nonempty_json_list(v) -> bool:
+        try:
+            return bool(_rjson.loads(v)) if v else False
+        except Exception:
+            return False
+    _had_removal = (_nonempty_json_list(row["audio_tracks_to_remove"])
+                    or _nonempty_json_list(row["subtitle_tracks_to_remove"])) if row else False
+    if row and row["job_type"] == "audio" and row["file_path"] and _had_removal:
         fp = row["file_path"]
         if _os.path.exists(fp):
             db_check = await connect_db()
