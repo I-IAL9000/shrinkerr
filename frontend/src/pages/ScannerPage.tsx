@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
-import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, type DetectBatchProgress } from "../api";
+import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
@@ -803,6 +803,28 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       detectPollRef.current = null;
     }
   };
+  // v0.9.42: offer to remux the titles whose language was detected but whose
+  // container (AVI etc.) can't store it. Acks the backend first so it's shown
+  // exactly once — even if the user navigated away and returns after the batch
+  // finished (the finished result persists server-side).
+  const offerRemuxIfPending = useCallback(async (p: DetectBatchProgress) => {
+    if (p.cancelled || !p.pending || !p.pending_paths || p.pending_paths.length === 0) return;
+    const pendingPaths = p.pending_paths;
+    try { await ackDetectBatchPending(); } catch { /* ignore */ }
+    const ok = await confirm({
+      message: `${pendingPaths.length} title(s) had a language detected, but their format (e.g. AVI) can't store the tag in place.\n\nRemux them to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.`,
+      confirmLabel: `Remux ${pendingPaths.length} to MKV`,
+    });
+    if (!ok) return;
+    try {
+      const r = await addJobsFromScan(pendingPaths, 0, false, { language_remux: true });
+      toast(`Queued ${r.added} remux job(s) to apply detected languages`, "success");
+    } catch (e: any) {
+      toast(`Failed to queue remux: ${e?.message || e}`, "error");
+    }
+    // toast/confirm are app-level stable refs (same as startDetectPoll's usage).
+  }, []);
+
   const startDetectPoll = useCallback(() => {
     if (detectPollRef.current != null) return;  // already polling
     const tick = async () => {
@@ -820,20 +842,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               : `Language detection: ${p.changed}/${p.total} updated${p.failed ? `, ${p.failed} failed` : ""}`;
           toast(msg, (p.failed && !p.changed) ? "error" : "success");
           loadTree();
-          // v0.9.37: some titles had a language detected but their container
-          // (AVI etc.) can't store it — offer to remux them to mkv to apply it.
-          if (!p.cancelled && p.pending && p.pending_paths && p.pending_paths.length > 0) {
-            const pendingPaths = p.pending_paths;
-            confirm({
-              message: `${pendingPaths.length} title(s) had a language detected, but their format (e.g. AVI) can't store the tag in place.\n\nRemux them to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.`,
-              confirmLabel: `Remux ${pendingPaths.length} to MKV`,
-            }).then((ok: boolean) => {
-              if (!ok) return;
-              addJobsFromScan(pendingPaths, 0, false, { language_remux: true })
-                .then((r: any) => toast(`Queued ${r.added} remux job(s) to apply detected languages`, "success"))
-                .catch((e: any) => toast(`Failed to queue remux: ${e?.message || e}`, "error"));
-            });
-          }
+          offerRemuxIfPending(p);
         }
         detectWasActiveRef.current = false;
         setDetectProgress(null);
@@ -842,7 +851,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     };
     tick();
     detectPollRef.current = window.setInterval(tick, 1500);
-  }, [loadTree]);
+  }, [loadTree, offerRemuxIfPending]);
 
   const startDetectBatch = async (paths: string[]) => {
     try {
@@ -909,11 +918,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     (async () => {
       try {
         const p = await getDetectBatchStatus();
-        if (p.active) { detectWasActiveRef.current = true; setDetectProgress(p); startDetectPoll(); }
+        if (p.active) {
+          detectWasActiveRef.current = true; setDetectProgress(p); startDetectPoll();
+        } else {
+          // v0.9.42: a batch finished while we were away — still offer its
+          // "remux to apply" dialog once (the backend retains the result).
+          offerRemuxIfPending(p);
+        }
       } catch { /* ignore */ }
     })();
     return () => stopDetectPoll();
-  }, [startDetectPoll]);
+  }, [startDetectPoll, offerRemuxIfPending]);
 
   const handleRemoveFile = async (filePath: string) => {
     // Find file in loaded files to get ID

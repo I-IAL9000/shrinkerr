@@ -117,6 +117,8 @@ export const getDetectBatchStatus = () =>
   apiFetch<DetectBatchProgress>("/scan/detect-batch-status");
 export const cancelDetectBatch = () =>
   apiFetch<{ status: string }>("/scan/detect-batch-cancel", { method: "POST" });
+export const ackDetectBatchPending = () =>
+  apiFetch<{ status: string }>("/scan/detect-batch-ack-pending", { method: "POST" });
 export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.42] — 2026-07-16
+
+### Fixed
+- **The post-detection "remux to apply language" dialog is no longer missed when you navigate away during a bulk detect.** The finished batch result is kept server-side, so the dialog is offered once when you return (then acknowledged so it doesn't repeat).
+
 ## [0.9.41] — 2026-07-16
 
 ### Fixed

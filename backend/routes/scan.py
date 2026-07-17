@@ -1275,6 +1275,17 @@ async def detect_batch_cancel():
     return {"status": "cancelling"}
 
 
+@router.post("/detect-batch-ack-pending")
+async def detect_batch_ack_pending():
+    """v0.9.42: clear the finished batch's 'pending remux' list once the UI has
+    shown its "convert to apply" dialog, so it isn't offered again on the next
+    navigation. The batch result persists after completion precisely so a user
+    who navigated away and back still sees the dialog once."""
+    _detect_progress["pending"] = 0
+    _detect_progress["pending_paths"] = []
+    return {"status": "ok"}
+
+
 @router.get("/status")
 async def scan_status():
     return {"scanning": _scan_task is not None and not _scan_task.done()}
