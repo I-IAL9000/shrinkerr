@@ -938,15 +938,17 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             if not lang:
                 try:
                     lang, _c, _note = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
-                except Exception:
+                except Exception as _dexc:
                     lang = None
+                    _note = f"audio detection error: {str(_dexc)[:80]}"
             if lang:
                 t["language"] = lang
                 audio_write[i] = lang
                 changed = True
             else:
-                if _note:
-                    detect_notes[("audio", t["stream_index"])] = _note
+                # v0.9.46: always record a reason so the UI never shows a bare
+                # und with no explanation.
+                detect_notes[("audio", t["stream_index"])] = _note or "could not identify audio language"
                 print(f"[LANG-DETECT] audio s{t.get('stream_index')} codec={t.get('codec')} "
                       f"title={t.get('title','')!r}: stayed und", flush=True)
 
@@ -1003,8 +1005,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             # Per-track outcome (title path returned earlier via `continue`).
             if (t.get("language") or "und").lower() == "und":
                 _sup = "text" if codec_l in _TEXT_SUB_CODECS else "image" if codec_l in _IMAGE_SUB_CODECS else "unsupported"
-                if _sub_note:
-                    detect_notes[("sub", t["stream_index"])] = _sub_note
+                detect_notes[("sub", t["stream_index"])] = _sub_note or "could not identify subtitle language"
                 print(f"[LANG-DETECT] sub s{t.get('stream_index')} codec={codec_l} ({_sup}): stayed und", flush=True)
 
     # External sidecar subs: read the file text (charset-aware), detect with

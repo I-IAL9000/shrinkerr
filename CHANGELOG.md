@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.46] — 2026-07-16
+
+### Fixed
+- **Every track detection can't resolve now gets a reason.** The audio path left the note empty when detection *errored* (vs. low-confidence), so those tracks showed a bare und; errors are now captured ("audio detection error: …") and both audio/subtitle paths fall back to a generic reason. Re-run detection to populate it.
+
 ## [0.9.45] — 2026-07-16
 
 ### Fixed
