@@ -441,10 +441,15 @@ def maybe_detect_subtitle_track_language(language: str, codec: str, text: str | 
 # Fail-open: a write failure never loses the DB-side detection.
 
 
-# Containers with no per-track language metadata field. ffmpeg `-c copy`
-# copies the streams fine but silently drops `language=`, so tagging in place
-# is impossible — the only real fix is remuxing to mkv (i.e. conversion).
-_UNTAGGABLE_CONTAINERS = {".avi", ".mpg", ".mpeg", ".flv", ".wmv", ".asf", ".vob"}
+# Containers we can't reliably tag in place, so the only fix is remuxing to
+# mkv. Two reasons: (1) no per-track language field — ffmpeg `-c copy` copies
+# the streams fine but silently drops `language=` (.avi/.mpg/.wmv/...); and
+# (2) .m4v/.m4a, which ffmpeg muxes with the strict `ipod` muxer that aborts
+# on streams it can't write ("Tag text incompatible with output codec id")
+# even though the in-place write itself never succeeds. Both route to the
+# stream-copy remux-to-mkv, which uses the permissive matroska muxer. v0.9.54.
+_UNTAGGABLE_CONTAINERS = {".avi", ".mpg", ".mpeg", ".flv", ".wmv", ".asf",
+                          ".vob", ".m4v", ".m4a"}
 
 
 def _build_mkvpropedit_cmd(

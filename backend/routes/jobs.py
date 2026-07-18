@@ -307,6 +307,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 
             row = scan_rows.get(fp)
             if not row:
+                if payload.language_remux:
+                    print(f"[QUEUE] language_remux: no scan_results row for {fp}", flush=True)
                 continue
 
             # Check conversion filters (bitrate ceiling, min file size).

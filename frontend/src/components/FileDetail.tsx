@@ -189,7 +189,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   // remux to mkv; disc structures need a full conversion (which detects +
   // stamps during the encode). Offer the appropriate one.
   const _ext = file.file_path.slice(file.file_path.lastIndexOf(".")).toLowerCase();
-  const isUntaggableFlat = [".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".asf", ".vob"].includes(_ext);
+  // v0.9.54: .m4v/.m4a included — ffmpeg's ipod muxer can't write language in
+  // place, so they take the same remux-to-mkv path as AVI (matches backend
+  // _UNTAGGABLE_CONTAINERS).
+  const isUntaggableFlat = [".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".asf", ".vob", ".m4v", ".m4a"].includes(_ext);
   const isDisc = /\/VIDEO_TS\/|\/BDMV\/|VIDEO_TS\.IFO$|index\.bdmv$/i.test(file.file_path);
   const hasPendingDetected = audioTracks.some(t => (t as any).detected_language && isUnd(t.language))
     || subtitleTracks.some(t => (t as any).detected_language && isUnd(t.language));
@@ -199,14 +202,20 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     const remux = isUntaggableFlat && !isDisc;
     const ok = await confirm({
       message: remux
-        ? "Remux this file to MKV to apply the detected language?\n\nFast stream-copy — no re-encode, no quality loss, no size increase. The .avi is replaced by an .mkv."
+        ? `Remux this file to MKV to apply the detected language?\n\nFast stream-copy — no re-encode, no quality loss, no size increase. The ${_ext} is replaced by an .mkv.`
         : "Convert this to MKV to apply the language?\n\nThe language is detected and stamped during the conversion.",
       confirmLabel: remux ? "Remux to MKV" : "Convert to MKV",
     });
     if (!ok) return;
     try {
       const r = await addJobsFromScan([file.file_path], 0, false, remux ? { language_remux: true } : {});
-      toast(r.added ? `Queued ${remux ? "remux" : "conversion"} to apply language` : "Nothing queued", r.added ? "success" : "error");
+      if (r.added) {
+        toast(`Queued ${remux ? "remux" : "conversion"} to apply language`, "success");
+      } else if (r.skipped_existing) {
+        toast("Already in the queue — check the Queue tab", "info");
+      } else {
+        toast("Nothing queued", "error");
+      }
     } catch (exc: any) {
       toast(`Failed to queue: ${exc?.message || exc}`, "error");
     }

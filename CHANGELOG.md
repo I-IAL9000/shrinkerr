@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.54] — 2026-07-18
+
+### Fixed
+- **.m4v/.m4a files now get the "Remux to MKV to apply language" button.** ffmpeg's ipod muxer can't write language tags to them in place, so they now take the same stream-copy remux-to-mkv path as AVI (the detected language is kept pending and applied by the remux) instead of showing a hint with no way to act on it.
+- **"Remux to MKV" for a file already in the queue now says "Already in the queue" instead of "Nothing queued".** A language_remux that resolves the path but adds no job (duplicate already pending/running) is now reported honestly, and a missing scan row is logged.
+
 ## [0.9.53] — 2026-07-18
 
 ### Fixed
