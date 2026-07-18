@@ -86,14 +86,16 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     setDetectStage(null);
     try {
       const r = await detectLanguages(file.file_path);
-      if (r.changed) {
+      // v0.9.45: apply the returned tracks whenever present — a notes-only run
+      // (nothing resolved, just recorded WHY) returns changed=false but still
+      // carries the per-track detect_note we want to show.
+      if (r.audio_tracks || r.subtitle_tracks) {
         setFetchedAudio(r.audio_tracks || []);
         setFetchedSubs(r.subtitle_tracks || []);
         setDetected(true);
-        toast("Languages detected — tracks updated", "success");
-      } else {
-        toast("No new languages detected for unknown tracks", "success");
       }
+      toast(r.changed ? "Languages detected — tracks updated"
+        : "No new languages resolved — see the reason next to each track", "success");
     } catch (exc: any) {
       toast(`Language detection error: ${exc?.message || exc}`, "error");
     } finally {
@@ -140,13 +142,15 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   }, [file.file_path]);
 
   useEffect(() => {
-    if (file.audio_tracks?.length) return;
-    setLoading(true);
+    // v0.9.45: always refetch tracks from the DB (was skipped when the prop
+    // already had tracks) so freshly-written fields — detect_note, a manual
+    // language, detected_language — show without reloading the scanner list.
+    // Only show the spinner when we have nothing to render yet.
+    if (!file.audio_tracks?.length) setLoading(true);
     getTracksByPath(file.file_path).then((data) => {
       setFetchedAudio(data.audio_tracks || []);
       setFetchedSubs(data.subtitle_tracks || []);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [file.file_path]);
 
   useEffect(() => {
@@ -158,8 +162,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       .finally(() => setHistoryLoading(false));
   }, [tab, file.file_path]);
 
-  const audioTracks = detected ? fetchedAudio : (file.audio_tracks?.length ? file.audio_tracks : fetchedAudio);
-  const subtitleTracks = detected ? fetchedSubs : (file.subtitle_tracks?.length ? file.subtitle_tracks : fetchedSubs);
+  // v0.9.45: prefer the freshly-fetched tracks (they carry detect_note /
+  // manual edits); fall back to the prop only until the fetch resolves.
+  const audioTracks = (detected || fetchedAudio.length) ? fetchedAudio : (file.audio_tracks || []);
+  const subtitleTracks = (detected || fetchedSubs.length) ? fetchedSubs : (file.subtitle_tracks || []);
 
   const isUnd = (lang: string | undefined | null) => (lang || "und").toLowerCase() === "und";
   const hasUndTracks = audioTracks.some(t => isUnd(t.language)) || subtitleTracks.some(t => isUnd(t.language));

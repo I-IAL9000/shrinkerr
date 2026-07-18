@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.45] — 2026-07-16
+
+### Fixed
+- **The per-track detection reason now shows in the file detail.** The detail reused the (possibly stale) tracks passed in from the list instead of refetching, and a notes-only detection run (nothing resolved) didn't update the view — so `detect_note` never appeared. It now always refetches fresh tracks and applies detect results even when no language changed.
+
 ## [0.9.44] — 2026-07-16
 
 ### Added
