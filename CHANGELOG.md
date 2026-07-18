@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.51] — 2026-07-18
+
+### Fixed
+- **Detection no longer silently fails on .m4v (and other taggable files whose in-place write fails).** It detected the language but, because .m4v isn't "untaggable", reverted to und with no hint when the ipod-muxer remux failed. Now any failed write keeps the detected language as pending — showing the "detected → convert to MKV to apply" hint and offering it in the post-detect remux dialog.
+
 ## [0.9.50] — 2026-07-18
 
 ### Fixed

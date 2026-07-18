@@ -1071,21 +1071,25 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # remember the detected language on the track (keyed by stream index) so a
     # later mkv conversion can apply it — but leave `language` = und (file
     # truth) so the title stays in the Unknown-language filter until converted.
-    untaggable = os.path.splitext(req.file_path)[1].lower() in _UNTAGGABLE_CONTAINERS
+    # v0.9.51: remember it whenever the write didn't stick — untaggable AVI OR
+    # a taggable container the in-place write failed on (e.g. an .m4v the ipod
+    # muxer rejects). Previously only untaggable stored pending, so a detected
+    # .m4v silently reverted to und with no hint. Now it shows the
+    # "detected → convert to MKV" hint and is offered in the remux dialog.
     audio_detected: dict[int, str] = {}
     sub_detected: dict[int, str] = {}
     if not file_written:
         for i, code in enumerate(audio_write):
             if code:
                 si = raw_audio[i].get("stream_index")
-                if untaggable and si is not None:
+                if si is not None:
                     audio_detected[si] = code
                 raw_audio[i]["language"] = "und"
                 audio_write[i] = None
         for j, code in enumerate(sub_write):
             if code:
                 si = raw_subs[j].get("stream_index")
-                if untaggable and si is not None:
+                if si is not None:
                     sub_detected[si] = code
                 raw_subs[j]["language"] = "und"
                 sub_write[j] = None
