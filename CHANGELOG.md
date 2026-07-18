@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.56] — 2026-07-18
+
+### Fixed
+- **Audio/sub cleanup on an mkv now updates the database.** The post-remux reconcile only ran when the container changed (AVI→mkv); an mkv cleanup writes back to the same path, so it was skipped — leaving the removed und sub tracks in the record and the title stuck in the Unknown-language/cleanup filters. It now re-probes and rewrites tracks + flags in place after any audio remux.
+
 ## [0.9.55] — 2026-07-18
 
 ### Fixed

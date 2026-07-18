@@ -2220,8 +2220,18 @@ class QueueWorker:
                 # recompute has_und_tracks_flag so the title leaves the
                 # Unknown-language filter. Without this the stale .avi row
                 # lingered (still und, still shown as an AVI).
+                # v0.9.56: reconcile scan_results after ANY audio remux, not
+                # only when the path changed. An mkv audio/sub cleanup writes
+                # back to the same .mkv path, so the old path-change-only gate
+                # skipped it entirely — the removed und sub tracks stayed in
+                # subtitle_tracks_json and has_und_tracks_flag/removable flags
+                # went stale, so the title never left the Unknown-language (or
+                # sub-cleanup) filter after cleanup ran. Re-probe and rewrite
+                # the tracks + flags in place. Only a real container change
+                # (AVI→mkv) also moves the row and marks it converted.
                 _new_out = result.get("output_path")
-                if _new_out and _new_out != current_file_path:
+                if _new_out:
+                    _path_changed = _new_out != current_file_path
                     _old_path = current_file_path
                     current_file_path = _new_out
                     try:
@@ -2229,36 +2239,52 @@ class QueueWorker:
                         from backend.scanner import (
                             probe_file as _rpf, classify_audio_tracks as _rca,
                             classify_subtitle_tracks as _rcs, detect_native_language as _rdnl,
+                            _is_cleanup_enabled as _ric, languages_match as _rlm,
                         )
                         _rp = await _rpf(_new_out, detect_und_subs=False)
                         db_r = await self.queue._connect()
                         try:
-                            # Drop any pre-existing row at the new path (a prior
-                            # scan may have already indexed the mkv) to avoid the
-                            # UNIQUE(file_path) clash, then move the source row.
-                            await db_r.execute(
-                                "DELETE FROM scan_results WHERE file_path = ? AND file_path != ?",
-                                (_new_out, _old_path),
-                            )
-                            _cols = ["file_path = ?", "converted = 1", "is_new = 0", "new_detected_at = NULL"]
-                            _params: list = [_new_out]
+                            _cols: list = []
+                            _params: list = []
+                            if _path_changed:
+                                # Container changed (AVI→mkv): move the row to the
+                                # new path and mark it converted. Drop any row a
+                                # prior scan already indexed at the new path to
+                                # avoid the UNIQUE(file_path) clash.
+                                await db_r.execute(
+                                    "DELETE FROM scan_results WHERE file_path = ? AND file_path != ?",
+                                    (_new_out, _old_path),
+                                )
+                                _cols += ["file_path = ?", "converted = 1", "is_new = 0", "new_detected_at = NULL"]
+                                _params += [_new_out]
                             if _rp:
                                 _rnl = _rdnl(_rp.get("audio_tracks", []) or [])
                                 _rat = _rca(_rp.get("audio_tracks", []) or [], _rnl, _rp.get("duration", 0) or 0)
                                 _rst = _rcs(_rp.get("subtitle_tracks", []) or [], _rnl)
                                 _rund = 1 if any((t.language or "und").lower() == "und" for t in list(_rat) + list(_rst)) else 0
+                                _rreorder = False
+                                if _ric("reorder_native_audio") and len(_rat) > 1 and _rnl and _rnl.lower() != "und":
+                                    _rreorder = not _rlm((_rat[0].language or "").lower(), _rnl.lower())
+                                _rrem_a = 1 if (any(not t.keep for t in _rat) or _rreorder) else 0
+                                _rrem_s = 1 if any(not t.keep for t in _rst) else 0
                                 _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
-                                          "has_und_tracks_flag = ?", "video_codec = ?", "file_size = ?"]
+                                          "has_und_tracks_flag = ?", "has_removable_tracks_flag = ?",
+                                          "has_removable_subs_flag = ?", "file_size = ?"]
                                 _params += [
                                     _rj.dumps([t.model_dump() for t in _rat]),
                                     _rj.dumps([t.model_dump() for t in _rst]),
-                                    _rund, _rp.get("video_codec", ""), Path(_new_out).stat().st_size,
+                                    _rund, _rrem_a, _rrem_s, Path(_new_out).stat().st_size,
                                 ]
-                            _params.append(_old_path)
-                            await db_r.execute(
-                                f"UPDATE scan_results SET {', '.join(_cols)} WHERE file_path = ?", _params)
-                            await db_r.execute(
-                                "UPDATE jobs SET file_path = ? WHERE id = ?", (_new_out, job_id))
+                                if _path_changed:
+                                    _cols += ["video_codec = ?"]
+                                    _params += [_rp.get("video_codec", "")]
+                            if _cols:
+                                _params.append(_old_path)
+                                await db_r.execute(
+                                    f"UPDATE scan_results SET {', '.join(_cols)} WHERE file_path = ?", _params)
+                            if _path_changed:
+                                await db_r.execute(
+                                    "UPDATE jobs SET file_path = ? WHERE id = ?", (_new_out, job_id))
                             await db_r.commit()
                         finally:
                             await db_r.close()
