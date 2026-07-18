@@ -518,6 +518,11 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage }: {
       {isExternal && basename && (
         <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.7 }}>{basename}</span>
       )}
+      {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
+        <span style={{ fontSize: 10, color: "var(--warning)", opacity: 0.8 }} title="Why auto-detection didn't set a language">
+          {track.detect_note}
+        </span>
+      )}
       {onSetLanguage && !editing && (
         <button
           type="button"

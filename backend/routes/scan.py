@@ -901,6 +901,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     audio_write: list = [None] * len(raw_audio)
     sub_write: list = [None] * len(raw_subs)
     external_renamed = False
+    # v0.9.44: per-(type, stream_index) reason a track stayed und, for the UI.
+    detect_notes: dict[tuple[str, int], str] = {}
 
     # v0.9.7: external sidecar subs (.srt/.ass alongside the video) aren't in
     # probe_file's output — they live in the stored subtitle_tracks_json. Load
@@ -932,9 +934,10 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             # v0.9.10: a title that names the language ("English") is cheap and
             # reliable — try it before the (slow) whisper spoken-language ID.
             lang = detect_language_from_title(t.get("title"))
+            _note = None
             if not lang:
                 try:
-                    lang, _c = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
+                    lang, _c, _note = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
                 except Exception:
                     lang = None
             if lang:
@@ -942,6 +945,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 audio_write[i] = lang
                 changed = True
             else:
+                if _note:
+                    detect_notes[("audio", t["stream_index"])] = _note
                 print(f"[LANG-DETECT] audio s{t.get('stream_index')} codec={t.get('codec')} "
                       f"title={t.get('title','')!r}: stayed und", flush=True)
 
@@ -960,16 +965,21 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                 changed = True
                 continue
             codec_l = (t.get("codec") or "").lower()
+            _sub_note = None
             if codec_l in _TEXT_SUB_CODECS:
                 try:
                     txt = await _extract_embedded_sub_text(req.file_path, t["stream_index"])
                     new_lang = maybe_detect_subtitle_track_language("und", codec_l, txt)
                 except Exception:
+                    txt = None
                     new_lang = "und"
                 if new_lang != "und":
                     t["language"] = new_lang
                     sub_write[j] = new_lang
                     changed = True
+                else:
+                    _sub_note = ("no text in subtitle" if not (txt and txt.strip())
+                                 else "subtitle text not confidently identified")
             elif codec_l in _IMAGE_SUB_CODECS:
                 try:
                     from backend.image_sub_ocr import detect_image_sub_language
@@ -986,9 +996,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     t["language"] = ocr_lang
                     sub_write[j] = ocr_lang
                     changed = True
+                else:
+                    _sub_note = "image subtitle OCR found no usable text"
+            else:
+                _sub_note = "unsupported subtitle format for detection"
             # Per-track outcome (title path returned earlier via `continue`).
             if (t.get("language") or "und").lower() == "und":
                 _sup = "text" if codec_l in _TEXT_SUB_CODECS else "image" if codec_l in _IMAGE_SUB_CODECS else "unsupported"
+                if _sub_note:
+                    detect_notes[("sub", t["stream_index"])] = _sub_note
                 print(f"[LANG-DETECT] sub s{t.get('stream_index')} codec={codec_l} ({_sup}): stayed und", flush=True)
 
     # External sidecar subs: read the file text (charset-aware), detect with
@@ -1030,7 +1046,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             print(f"[LANG-DETECT] external sub codec={codec_l} "
                   f"({os.path.basename(es_path)}): stayed und", flush=True)
 
-    if not changed:
+    if not changed and not detect_notes:
         return {"status": "ok", "changed": False}
 
     # v0.9.26: write the detected tags into the FILE first, and only keep an
@@ -1076,7 +1092,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # Nothing persisted or remembered — leave the row untouched so the title
     # stays in the Unknown-language filter and can be re-attempted.
     if not (any(audio_write) or any(sub_write) or external_renamed
-            or audio_detected or sub_detected):
+            or audio_detected or sub_detected or detect_notes):
         return {"status": "ok", "changed": False, "file_written": False}
 
     # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
@@ -1099,6 +1115,13 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             subtitle_tracks.append(SubtitleTrack(**es))
         except Exception:
             pass
+    # v0.9.44: attach the "why it stayed und" note to each still-und track.
+    for t in audio_tracks:
+        if ("audio", t.stream_index) in detect_notes:
+            t.detect_note = detect_notes[("audio", t.stream_index)]
+    for t in subtitle_tracks:
+        if ("sub", t.stream_index) in detect_notes:
+            t.detect_note = detect_notes[("sub", t.stream_index)]
     audio_json = json.dumps([t.model_dump() for t in audio_tracks])
     subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
     has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
@@ -1129,7 +1152,11 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
 
     return {
         "status": "ok",
-        "changed": True,
+        # v0.9.44: a notes-only run (everything stayed und, we just recorded
+        # why) persists but isn't a real language change — keep the batch
+        # "updated" counter honest.
+        "changed": bool(any(audio_write) or any(sub_write) or external_renamed
+                        or audio_detected or sub_detected),
         "file_written": file_written,
         "external_renamed": external_renamed,
         # v0.9.35: a language was detected but only remembered (untaggable

@@ -17,6 +17,9 @@ class AudioTrack(BaseModel):
     # `language` stays "und" (file truth); this is applied to the output when
     # the file is converted to mkv.
     detected_language: Optional[str] = None
+    # v0.9.44: why detection left this track und (e.g. "eng 49% — below 0.60
+    # threshold", "no text in subtitle"), for display next to the track.
+    detect_note: Optional[str] = None
 
 class SubtitleTrack(BaseModel):
     stream_index: int
@@ -29,6 +32,7 @@ class SubtitleTrack(BaseModel):
     external: bool = False       # True for sidecar .srt/.ass files (not embedded)
     external_path: str = ""      # Absolute path to the external subtitle file
     detected_language: Optional[str] = None  # v0.9.35 (see AudioTrack)
+    detect_note: Optional[str] = None         # v0.9.44 (see AudioTrack)
 
 class ScannedFile(BaseModel):
     id: Optional[int] = None

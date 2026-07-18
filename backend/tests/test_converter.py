@@ -396,7 +396,7 @@ async def test_auto_detect_patches_und_audio_before_convert(monkeypatch):
     from backend import converter as conv
     tracks = [{"stream_index": 1, "language": "und", "codec": "aac"}]
     async def fake_audio_detect(fp, idx, duration=0.0):
-        return ("swe", 0.88)
+        return ("swe", 0.88, None)
     monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
     monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
     patched = await conv._detect_und_track_languages("/media/movie.mkv", tracks, [], duration=1800.0)
@@ -417,7 +417,7 @@ async def test_auto_detect_skips_already_tagged(monkeypatch):
     from backend import converter as conv
     called = []
     async def fake_audio_detect(fp, idx, duration=0.0):
-        called.append(idx); return ("swe", 0.9)
+        called.append(idx); return ("swe", 0.9, None)
     monkeypatch.setattr(conv, "_auto_detect_enabled", lambda: True)
     monkeypatch.setattr("backend.language_detection.detect_audio_language", fake_audio_detect)
     tracks = [{"stream_index": 1, "language": "eng", "codec": "aac"}]

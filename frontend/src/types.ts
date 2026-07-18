@@ -9,6 +9,7 @@ export interface AudioTrack {
   keep: boolean;
   locked: boolean;
   detected_language?: string | null;  // v0.9.35: detected but not writable in place (AVI); applied on convert
+  detect_note?: string | null;         // v0.9.44: why detection left it und
 }
 
 export interface SubtitleTrack {
@@ -22,6 +23,7 @@ export interface SubtitleTrack {
   external?: boolean;
   external_path?: string;
   detected_language?: string | null;  // v0.9.35 (see AudioTrack)
+  detect_note?: string | null;         // v0.9.44: why detection left it und
 }
 
 export interface ScannedFile {

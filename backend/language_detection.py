@@ -353,9 +353,10 @@ async def _detect_clip_language(clip_path: str, timeout: int = 120) -> tuple[str
     return (None, 0.0)
 
 
-async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float]:
+async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float, str | None]:
     """Detect an audio track's spoken language via faster-whisper on 30s
-    clips. Returns (ISO 639-2 B-form, confidence) or (None, 0.0). Fail-open.
+    clips. Returns (ISO 639-2 B-form, confidence, note). On success note is
+    None; on failure lang is None and note explains why (v0.9.44). Fail-open.
 
     v0.8.4: samples multiple positions and takes the most confident,
     short-circuiting as soon as one clears the threshold — so a track
@@ -393,15 +394,19 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
             best_iso1, best_conf = iso1, conf
         if best_conf >= threshold:
             break  # confident enough — don't sample further
+    if timed_out:
+        return (None, 0.0, "audio detection timed out")
     if not best_iso1 or best_conf < threshold:
         print(f"[LANG-DETECT] audio s{stream_index}: below confidence "
               f"{best_iso1 or 'no-speech'}@{best_conf:.2f} < {threshold:.2f}", flush=True)
-        return (None, 0.0)
+        note = (f"{best_iso1} {round(best_conf * 100)}% — below {round(threshold * 100)}% threshold"
+                if best_iso1 else "no speech detected")
+        return (None, 0.0, note)
     iso2 = _iso_to_iso639_2b(best_iso1)
     if not iso2:
         print(f"[LANG-DETECT] audio s{stream_index}: {best_iso1} has no ISO-639-2 mapping", flush=True)
-        return (None, 0.0)
-    return (iso2, best_conf)
+        return (None, 0.0, f'detected "{best_iso1}" — no ISO-639-2 code')
+    return (iso2, best_conf, None)
 
 
 # Text subtitle codecs whose language we can detect from their text.

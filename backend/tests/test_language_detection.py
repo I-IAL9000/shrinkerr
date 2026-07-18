@@ -62,7 +62,7 @@ async def test_detect_audio_language_maps_result_to_iso2():
          patch.object(ld, "_detect_clip_language", new=AsyncMock(return_value=("de", 0.92))), \
          patch("os.path.exists", return_value=True), \
          patch("os.unlink"):
-        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+        lang, conf, _note = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
     assert lang == "ger", f"got {lang!r}"
     assert conf == pytest.approx(0.92)
 
@@ -74,7 +74,7 @@ async def test_detect_audio_language_low_confidence_returns_none():
          patch.object(ld, "_detect_clip_language", new=AsyncMock(return_value=("de", 0.30))), \
          patch("os.path.exists", return_value=True), \
          patch("os.unlink"):
-        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+        lang, conf, _note = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
     assert lang is None
 
 
@@ -82,7 +82,7 @@ async def test_detect_audio_language_low_confidence_returns_none():
 async def test_detect_audio_language_failopen_on_extract_error():
     from backend import language_detection as ld
     with patch.object(ld, "_extract_audio_clip", new=AsyncMock(side_effect=OSError("ffmpeg gone"))):
-        lang, conf = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
+        lang, conf, _note = await ld.detect_audio_language("/media/movie.mkv", 1, duration=1800.0)
     assert (lang, conf) == (None, 0.0)
 
 
@@ -204,7 +204,7 @@ async def test_detect_audio_recovers_from_weak_first_window(monkeypatch):
     monkeypatch.setattr(ld, "_detect_clip_language", fake_detect)
     monkeypatch.setattr("os.path.exists", lambda p: True)
     monkeypatch.setattr("os.unlink", lambda p: None)
-    lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
+    lang, conf, _note = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
     assert lang == "ita", f"got {lang!r}"
     assert conf == pytest.approx(0.88)
     assert calls["n"] == 2, "should have short-circuited after the confident window"
@@ -224,7 +224,7 @@ async def test_detect_audio_all_windows_weak_stays_und(monkeypatch):
     monkeypatch.setattr(ld, "_detect_clip_language", fake_detect)
     monkeypatch.setattr("os.path.exists", lambda p: True)
     monkeypatch.setattr("os.unlink", lambda p: None)
-    lang, conf = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
+    lang, conf, _note = await ld.detect_audio_language("/m/f.mkv", 2, duration=1000.0)
     assert (lang, conf) == (None, 0.0)
     assert calls["n"] >= 3, "should have tried multiple windows before giving up"
 
@@ -363,3 +363,15 @@ def test_audio_lang_worker_importable():
     """The killable worker module must import + expose main()."""
     import backend.audio_lang_worker as w
     assert callable(w.main)
+
+
+@pytest.mark.asyncio
+async def test_detect_audio_language_returns_below_threshold_note():
+    """v0.9.44: a below-threshold result returns a human note (guess + %)."""
+    from backend import language_detection as ld
+    with patch.object(ld, "_extract_audio_clip", new=AsyncMock(return_value="/tmp/clip.wav")), \
+         patch.object(ld, "_detect_clip_language", new=AsyncMock(return_value=("en", 0.30))), \
+         patch("os.path.exists", return_value=True), patch("os.unlink"):
+        lang, conf, note = await ld.detect_audio_language("/m/f.mkv", 1, duration=1800.0)
+    assert lang is None
+    assert note and "below" in note and "en" in note.lower()

@@ -896,7 +896,7 @@ async def _detect_und_track_languages(file_path, audio_tracks, subtitle_tracks, 
         if idx is None:
             continue
         try:
-            lang, _conf = await detect_audio_language(file_path, idx, duration=duration)
+            lang, _conf, _note = await detect_audio_language(file_path, idx, duration=duration)
         except Exception:
             lang = None
         if lang:

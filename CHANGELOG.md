@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.44] — 2026-07-16
+
+### Added
+- **Tracks that detection couldn't resolve now show why**, next to the und track — e.g. `eng 49% — below 0.60 threshold`, `no text in subtitle`, `detected "nn" — no ISO-639-2 code`, `audio detection timed out`. Pairs with the manual override (pencil) so you can see the reason and set the language yourself.
+
 ## [0.9.43] — 2026-07-16
 
 ### Added

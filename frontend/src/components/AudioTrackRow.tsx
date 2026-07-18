@@ -44,6 +44,12 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage }: AudioT
           {track.detected_language.toUpperCase()} detected → convert to MKV to apply
         </span>
       )}
+      {/* v0.9.44: why detection couldn't resolve this track. */}
+      {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
+        <span style={{ color: "var(--warning)", fontSize: "0.85em", opacity: 0.8 }} title="Why auto-detection didn't set a language">
+          {track.detect_note}
+        </span>
+      )}
       {/* v0.9.43: manual language override — for tracks detection can't
           resolve. Pencil toggles an inline picker; choosing a language saves. */}
       {onSetLanguage && !editing && (
