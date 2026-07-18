@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.52] — 2026-07-18
+
+### Fixed
+- **AVI "Remux to MKV to apply language" no longer says "Nothing queued".** The remux was being run through the video-conversion filters (min file size, min/max bitrate) and skip rules, which dropped files that fell outside those bounds. A stream-copy tag fix has no conversion cost, so those gates no longer apply to it.
+
 ## [0.9.51] — 2026-07-18
 
 ### Fixed

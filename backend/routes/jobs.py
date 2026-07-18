@@ -292,8 +292,11 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
         for fp in file_paths:
             rule = rule_results.get(fp)
 
-            # "skip" = do nothing at all, skip entirely
-            if rule and rule["action"] == "skip":
+            # "skip" = do nothing at all, skip entirely.
+            # language_remux is an explicit per-file request to stamp a
+            # detected language via stream-copy — honour it over a skip rule
+            # (the rule governs video conversion, not metadata fixes). v0.9.52.
+            if rule and rule["action"] == "skip" and not payload.language_remux:
                 ignored_by_rule += 1
                 continue
 
@@ -306,8 +309,11 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             if not row:
                 continue
 
-            # Check conversion filters (bitrate ceiling, min file size)
-            if not payload.override_rules:
+            # Check conversion filters (bitrate ceiling, min file size).
+            # Skip them for a language_remux: a stream-copy tag fix has no
+            # video-conversion cost, so size/bitrate gates don't apply and
+            # would otherwise drop the file with a "Nothing queued". v0.9.52.
+            if not payload.override_rules and not payload.language_remux:
                 file_size = row["file_size"] or 0
                 duration = row["duration"] or 0
 
