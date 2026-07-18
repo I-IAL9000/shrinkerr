@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.48] — 2026-07-16
+
+### Fixed
+- **Setting a language on some mkv files silently didn't stick.** mkvpropedit set the legacy `language` element, but those files carry a `language-ietf` (BCP-47) element that overrides it, so ffprobe/players still read und (mkvpropedit reported success; the tag verify caught it). The write now also deletes `language-ietf`, making the language authoritative — fixes both manual override and auto-detection on affected files.
+
 ## [0.9.47] — 2026-07-16
 
 ### Fixed

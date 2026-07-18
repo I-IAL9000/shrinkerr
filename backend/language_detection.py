@@ -457,14 +457,20 @@ def _build_mkvpropedit_cmd(
 
     `audio_langs[i]` is the ISO 639-2 code for the (i+1)-th audio track
     (None = leave alone); `sub_langs[j]` likewise for subtitle tracks.
-    mkvpropedit selectors are 1-based per type: `track:a1`, `track:s2`."""
+    mkvpropedit selectors are 1-based per type: `track:a1`, `track:s2`.
+
+    v0.9.48: each edit also deletes the track's `language-ietf` (BCP-47)
+    element. When present it takes precedence over the legacy `language`, so
+    setting only `language` left players/ffprobe reading the old value
+    (observed: mkvpropedit reports success but the tag verify still sees und).
+    Deleting it makes the legacy `language` we just set authoritative."""
     edits: list[str] = []
     for i, code in enumerate(audio_langs):
         if code:
-            edits += ["--edit", f"track:a{i + 1}", "--set", f"language={code}"]
+            edits += ["--edit", f"track:a{i + 1}", "--set", f"language={code}", "--delete", "language-ietf"]
     for j, code in enumerate(sub_langs):
         if code:
-            edits += ["--edit", f"track:s{j + 1}", "--set", f"language={code}"]
+            edits += ["--edit", f"track:s{j + 1}", "--set", f"language={code}", "--delete", "language-ietf"]
     if not edits:
         return None
     return ["mkvpropedit", file_path] + edits

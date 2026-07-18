@@ -375,3 +375,14 @@ async def test_detect_audio_language_returns_below_threshold_note():
         lang, conf, note = await ld.detect_audio_language("/m/f.mkv", 1, duration=1800.0)
     assert lang is None
     assert note and "below" in note and "en" in note.lower()
+
+
+def test_mkvpropedit_deletes_language_ietf():
+    """v0.9.48: also delete the BCP-47 language-ietf element, which otherwise
+    overrides the legacy `language` we set (mkvpropedit succeeds but the tag
+    verify still reads und)."""
+    from backend.language_detection import _build_mkvpropedit_cmd
+    cmd = _build_mkvpropedit_cmd("/m/f.mkv", ["eng"], [None])
+    joined = " ".join(cmd)
+    assert "--set language=eng" in joined
+    assert "--delete language-ietf" in joined
