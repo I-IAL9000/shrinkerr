@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.57] — 2026-07-18
+
+### Fixed
+- **Scheduled backups no longer fail with "cannot VACUUM - SQL statements in progress."** Backups used `VACUUM INTO`, which aborts whenever the database has active statements — under normal load (conversions + scans + a large queue) that is almost always, so every scheduled backup failed. Switched to SQLite's online backup API, which is built to copy a live, concurrently-written database.
+
 ## [0.9.56] — 2026-07-18
 
 ### Fixed

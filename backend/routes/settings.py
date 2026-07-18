@@ -1705,11 +1705,22 @@ async def _do_create_backup() -> dict:
     # Safe copy of SQLite DB (handles WAL mode correctly)
     tmp_db = BACKUP_DIR / f"_tmp_backup_{ts}.db"
     try:
-        db = await aiosqlite.connect(DB_PATH)
+        # v0.9.57: use SQLite's online backup API instead of `VACUUM INTO`.
+        # VACUUM aborts with "cannot VACUUM - SQL statements in progress"
+        # whenever the database has active statements, and under normal load
+        # (conversions + scans + a large job queue all reading/writing) that
+        # is essentially always true, so scheduled backups failed every time.
+        # The backup API is designed for a live database: it copies in chunks
+        # and keeps up with concurrent writers instead of failing. Chunked
+        # with a short sleep so writers get windows between steps.
+        src = await aiosqlite.connect(DB_PATH)
+        dst = await aiosqlite.connect(str(tmp_db))
         try:
-            await db.execute(f"VACUUM INTO '{tmp_db}'")
+            await src.execute("PRAGMA busy_timeout=30000")
+            await src.backup(dst, pages=2048, sleep=0.05)
         finally:
-            await db.close()
+            await dst.close()
+            await src.close()
 
         # Build settings JSON
         db = await aiosqlite.connect(str(tmp_db))
