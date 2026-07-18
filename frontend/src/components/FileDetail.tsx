@@ -104,6 +104,19 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     }
   };
 
+  // v0.9.50: the detail now renders the freshly-fetched tracks (fetchedAudio/
+  // Subs), so a keep-toggle must flip them locally too — the parent handler
+  // only updates the scanner cache, which this view no longer reads. Without
+  // this the checkbox looked frozen.
+  const handleToggleAudioLocal = (idx: number) => {
+    setFetchedAudio(prev => prev.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t));
+    onToggleTrack?.(file.file_path, idx);
+  };
+  const handleToggleSubLocal = (fp: string, idx: number) => {
+    setFetchedSubs(prev => prev.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t));
+    onToggleSubTrack?.(fp, idx);
+  };
+
   // v0.9.43: manual language override for a track detection can't resolve.
   const handleSetTrackLanguage = async (trackType: "audio" | "subtitle", streamIndex: number, language: string) => {
     try {
@@ -259,7 +272,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                       <AudioTrackRow
                         key={track.stream_index}
                         track={track}
-                        onToggle={(idx) => onToggleTrack(file.file_path, idx)}
+                        onToggle={(idx) => handleToggleAudioLocal(idx)}
                         onSetLanguage={(idx, lang) => handleSetTrackLanguage("audio", idx, lang)}
                       />
                     ))}
@@ -278,7 +291,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         <div style={{ marginTop: 8, marginBottom: 2 }}>Subtitle tracks:</div>
                         <div style={{ paddingLeft: 12 }}>
                           {[...embedded].sort((a, b) => a.stream_index - b.stream_index).map((track) => (
-                            <SubTrackRow key={track.stream_index} track={track} filePath={file.file_path} onToggle={onToggleSubTrack} onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
+                            <SubTrackRow key={track.stream_index} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
                           ))}
                         </div>
                       </>
@@ -295,7 +308,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         </div>
                         <div style={{ paddingLeft: 12 }}>
                           {external.map((track) => (
-                            <SubTrackRow key={`ext-${track.stream_index}`} track={track} filePath={file.file_path} onToggle={onToggleSubTrack} isExternal onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
+                            <SubTrackRow key={`ext-${track.stream_index}`} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} isExternal onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
                           ))}
                         </div>
                       </>

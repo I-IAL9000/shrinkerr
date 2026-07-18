@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.50] — 2026-07-18
+
+### Fixed
+- **Track keep/remove checkboxes in the file detail work again.** v0.9.45 made the detail render freshly-fetched tracks, but the checkbox toggle only updated the scanner cache the view no longer reads — so it looked frozen. The toggle now flips the displayed tracks too (and still persists).
+
 ## [0.9.49] — 2026-07-16
 
 ### Fixed
