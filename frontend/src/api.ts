@@ -156,7 +156,7 @@ export const addJob = (job: {
 export const addBulkJobs = (jobs: any[]) =>
   apiFetch("/jobs/add-bulk", { method: "POST", body: JSON.stringify({ jobs }) });
 export const addJobsFromScan = (filePaths: string[], priority: number = 0, overrideRules: boolean = false, extra?: Record<string, any>) =>
-  apiFetch<{ job_ids: number[]; added: number }>("/jobs/add-from-scan", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority, override_rules: overrideRules, ...extra }) });
+  apiFetch<{ job_ids: number[]; added: number; skipped_existing?: number; ignored_by_rule?: number }>("/jobs/add-from-scan", { method: "POST", body: JSON.stringify({ file_paths: filePaths, priority, override_rules: overrideRules, ...extra }) });
 export const addAllFromScan = (filter: string, priority: number = 0, overrideRules: boolean = false) =>
   apiFetch<{ job_ids: number[]; added: number }>("/jobs/add-from-scan", { method: "POST", body: JSON.stringify({ select_all: true, filter, priority, override_rules: overrideRules }) });
 export interface FileEvent {
