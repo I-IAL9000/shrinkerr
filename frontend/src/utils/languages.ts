@@ -1,7 +1,8 @@
 // ISO 639-2/B codes + English names for the manual track-language picker
 // (v0.9.43). Curated common set — enough to cover typical libraries without a
 // 500-entry dropdown. Codes match what mkvpropedit / ffmpeg write.
-export const LANGUAGES: { code: string; name: string }[] = [
+// v0.9.47: exported sorted alphabetically by name (see bottom).
+const _LANGUAGES: { code: string; name: string }[] = [
   { code: "eng", name: "English" },
   { code: "spa", name: "Spanish" },
   { code: "fre", name: "French" },
@@ -53,3 +54,5 @@ export const LANGUAGES: { code: string; name: string }[] = [
   { code: "mul", name: "Multiple languages" },
   { code: "und", name: "Undetermined" },
 ];
+
+export const LANGUAGES = [..._LANGUAGES].sort((a, b) => a.name.localeCompare(b.name));

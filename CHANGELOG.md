@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.47] — 2026-07-16
+
+### Fixed
+- **A manual language set is never silently lost.** If the in-place write didn't stick (untaggable AVI, an mp4 the muxer won't tag, an mkvpropedit hiccup), the choice is now remembered and applied via the Remux/Convert-to-MKV flow instead of reverting to und while claiming "Language set". The toast now reflects the real outcome.
+- Manual language picker is sorted alphabetically.
+
 ## [0.9.46] — 2026-07-16
 
 ### Fixed

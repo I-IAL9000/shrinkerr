@@ -1244,9 +1244,8 @@ async def set_track_language(req: SetTrackLanguageRequest):
     if not matched:
         raise HTTPException(404, "Track not found")
 
-    # Write to the file (taggable) or remember it (untaggable → remux applies
-    # it later), mirroring detect_languages.
-    untaggable = os.path.splitext(req.file_path)[1].lower() in _UNTAGGABLE_CONTAINERS
+    # Write to the file if possible; anything that doesn't stick is remembered
+    # as pending below (applied via Remux/Convert-to-MKV).
     file_written = False
     if any(audio_write) or any(sub_write):
         try:
@@ -1257,16 +1256,21 @@ async def set_track_language(req: SetTrackLanguageRequest):
     audio_detected: dict[int, str] = {}
     sub_detected: dict[int, str] = {}
     if (any(audio_write) or any(sub_write)) and not file_written:
+        # v0.9.47: a MANUAL choice must never be silently lost. If the in-place
+        # write didn't stick (untaggable AVI, an mp4 the muxer won't tag, a
+        # mkvpropedit hiccup) remember it as pending — regardless of container —
+        # so it applies via the Remux/Convert-to-MKV flow instead of reverting
+        # to und with a misleading "Language set".
         for i, code in enumerate(audio_write):
             if code:
                 si = raw_audio[i].get("stream_index")
-                if untaggable and si is not None:
+                if si is not None:
                     audio_detected[si] = code
                 raw_audio[i]["language"] = "und"; audio_write[i] = None
         for j, code in enumerate(sub_write):
             if code:
                 si = raw_subs[j].get("stream_index")
-                if untaggable and si is not None:
+                if si is not None:
                     sub_detected[si] = code
                 raw_subs[j]["language"] = "und"; sub_write[j] = None
 

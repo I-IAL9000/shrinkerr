@@ -111,12 +111,13 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       setFetchedAudio(r.audio_tracks || []);
       setFetchedSubs(r.subtitle_tracks || []);
       setDetected(true);
-      toast(
-        r.file_written ? "Language set"
-          : r.pending_detected ? "Language set — remux/convert to MKV to apply"
-          : "Language set",
-        "success",
-      );
+      if (r.file_written) {
+        toast("Language set", "success");
+      } else if (r.pending_detected) {
+        toast("Saved — remux/convert to MKV to apply it (this container can't be tagged in place)", "success");
+      } else {
+        toast("Couldn't set the language for this track", "error");
+      }
     } catch (exc: any) {
       toast(`Failed to set language: ${exc?.message || exc}`, "error");
     }
