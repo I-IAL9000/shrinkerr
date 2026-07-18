@@ -1,11 +1,15 @@
+import { useState } from "react";
 import type { AudioTrack } from "../types";
+import { LANGUAGES } from "../utils/languages";
 
 interface AudioTrackRowProps {
   track: AudioTrack;
   onToggle: (streamIndex: number) => void;
+  onSetLanguage?: (streamIndex: number, language: string) => void;
 }
 
-export default function AudioTrackRow({ track, onToggle }: AudioTrackRowProps) {
+export default function AudioTrackRow({ track, onToggle, onSetLanguage }: AudioTrackRowProps) {
+  const [editing, setEditing] = useState(false);
   const sizeLabel = track.size_estimate_bytes
     ? `(~${(track.size_estimate_bytes / (1024 * 1024)).toFixed(0)} MB)`
     : "";
@@ -39,6 +43,32 @@ export default function AudioTrackRow({ track, onToggle }: AudioTrackRowProps) {
         <span style={{ color: "var(--accent)", fontSize: "0.85em", whiteSpace: "nowrap" }}>
           {track.detected_language.toUpperCase()} detected → convert to MKV to apply
         </span>
+      )}
+      {/* v0.9.43: manual language override — for tracks detection can't
+          resolve. Pencil toggles an inline picker; choosing a language saves. */}
+      {onSetLanguage && !editing && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          title="Set language manually"
+          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 12, display: "inline-flex", alignItems: "center" }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+        </button>
+      )}
+      {onSetLanguage && editing && (
+        <select
+          autoFocus
+          defaultValue={(track.language || "und").toLowerCase()}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => { const v = e.target.value; setEditing(false); if (v && v !== (track.language || "und").toLowerCase()) onSetLanguage(track.stream_index, v); }}
+          onBlur={() => setEditing(false)}
+          style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--accent)", borderRadius: 4, fontSize: 11, padding: "1px 4px" }}
+        >
+          {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
+        </select>
       )}
     </div>
   );

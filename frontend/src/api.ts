@@ -119,6 +119,10 @@ export const cancelDetectBatch = () =>
   apiFetch<{ status: string }>("/scan/detect-batch-cancel", { method: "POST" });
 export const ackDetectBatchPending = () =>
   apiFetch<{ status: string }>("/scan/detect-batch-ack-pending", { method: "POST" });
+export const setTrackLanguage = (filePath: string, trackType: "audio" | "subtitle", streamIndex: number, language: string) =>
+  apiFetch<{ status: string; file_written: boolean; pending_detected: boolean; audio_tracks: any[]; subtitle_tracks: any[] }>(
+    "/scan/set-track-language",
+    { method: "POST", body: JSON.stringify({ file_path: filePath, track_type: trackType, stream_index: streamIndex, language }) });
 export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>

@@ -1142,6 +1142,151 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     }
 
 
+class SetTrackLanguageRequest(BaseModel):
+    file_path: str
+    track_type: str  # "audio" | "subtitle"
+    stream_index: int
+    language: str     # ISO 639-2/B code
+
+
+@router.post("/set-track-language")
+async def set_track_language(req: SetTrackLanguageRequest):
+    """v0.9.43: manually set a track's language (for tracks detection can't
+    resolve). Taggable containers (mkv/mp4) are written in place; untaggable
+    ones (AVI etc.) store it as detected_language pending a remux-to-mkv, the
+    same path auto-detection uses. External sidecar subs are renamed."""
+    from backend.scanner import (
+        probe_file, classify_audio_tracks, classify_subtitle_tracks,
+        detect_native_language,
+    )
+    from backend.language_detection import apply_track_languages_to_file, _UNTAGGABLE_CONTAINERS
+    from backend.models import SubtitleTrack
+
+    lang = (req.language or "").strip().lower()
+    if not lang or lang == "und":
+        raise HTTPException(400, "A language must be provided")
+
+    probe = await probe_file(req.file_path, detect_und_subs=False)
+    if probe is None:
+        raise HTTPException(404, "Could not probe file")
+    duration = probe.get("duration", 0.0) or 0.0
+    raw_audio = probe.get("audio_tracks", []) or []
+    raw_subs = probe.get("subtitle_tracks", []) or []
+
+    # Load stored external subs (not in probe output) so we can set their
+    # language and preserve them when re-persisting.
+    stored_external_subs: list[dict] = []
+    _db0 = await connect_db()
+    try:
+        async with _db0.execute(
+            "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+            (req.file_path,),
+        ) as cur:
+            _r = await cur.fetchone()
+        if _r and _r["subtitle_tracks_json"]:
+            try:
+                stored_external_subs = [s for s in json.loads(_r["subtitle_tracks_json"]) if s.get("external")]
+            except (ValueError, TypeError):
+                pass
+    finally:
+        await _db0.close()
+
+    audio_write: list = [None] * len(raw_audio)
+    sub_write: list = [None] * len(raw_subs)
+    external_renamed = False
+    matched = False
+
+    if req.track_type == "audio":
+        for i, t in enumerate(raw_audio):
+            if t.get("stream_index") == req.stream_index:
+                t["language"] = lang; audio_write[i] = lang; matched = True; break
+    else:
+        for j, t in enumerate(raw_subs):
+            if t.get("stream_index") == req.stream_index:
+                t["language"] = lang; sub_write[j] = lang; matched = True; break
+        if not matched:
+            for es in stored_external_subs:
+                if es.get("stream_index") == req.stream_index:
+                    es["language"] = lang
+                    new_path = _rename_external_sub_with_lang(es.get("external_path") or "", lang)
+                    if new_path:
+                        es["external_path"] = new_path; external_renamed = True
+                    matched = True; break
+
+    if not matched:
+        raise HTTPException(404, "Track not found")
+
+    # Write to the file (taggable) or remember it (untaggable → remux applies
+    # it later), mirroring detect_languages.
+    untaggable = os.path.splitext(req.file_path)[1].lower() in _UNTAGGABLE_CONTAINERS
+    file_written = False
+    if any(audio_write) or any(sub_write):
+        try:
+            file_written = await apply_track_languages_to_file(req.file_path, audio_write, sub_write)
+        except Exception as exc:
+            print(f"[SET-LANG] file write failed: {exc}", flush=True)
+
+    audio_detected: dict[int, str] = {}
+    sub_detected: dict[int, str] = {}
+    if (any(audio_write) or any(sub_write)) and not file_written:
+        for i, code in enumerate(audio_write):
+            if code:
+                si = raw_audio[i].get("stream_index")
+                if untaggable and si is not None:
+                    audio_detected[si] = code
+                raw_audio[i]["language"] = "und"; audio_write[i] = None
+        for j, code in enumerate(sub_write):
+            if code:
+                si = raw_subs[j].get("stream_index")
+                if untaggable and si is not None:
+                    sub_detected[si] = code
+                raw_subs[j]["language"] = "und"; sub_write[j] = None
+
+    native_lang = detect_native_language(raw_audio)
+    audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
+    subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+    for es in stored_external_subs:
+        try:
+            subtitle_tracks.append(SubtitleTrack(**es))
+        except Exception:
+            pass
+    for t in audio_tracks:
+        if t.stream_index in audio_detected:
+            t.detected_language = audio_detected[t.stream_index]
+    for t in subtitle_tracks:
+        if t.stream_index in sub_detected:
+            t.detected_language = sub_detected[t.stream_index]
+
+    audio_json = json.dumps([t.model_dump() for t in audio_tracks])
+    subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
+    has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+    has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+    db = await connect_db()
+    try:
+        await db.execute(
+            "UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?, "
+            "native_language = ?, language_source = 'manual', "
+            "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
+            "has_und_tracks_flag = ? WHERE file_path = ?",
+            (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
+             _und_flag(audio_tracks, subtitle_tracks), req.file_path),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    if file_written or external_renamed:
+        await _maybe_notify_plex_lang_change(req.file_path)
+
+    return {
+        "status": "ok",
+        "file_written": file_written,
+        "pending_detected": bool(audio_detected or sub_detected),
+        "audio_tracks": [t.model_dump() for t in audio_tracks],
+        "subtitle_tracks": [t.model_dump() for t in subtitle_tracks],
+    }
+
+
 class DetectLanguagesBatchRequest(BaseModel):
     file_paths: list[str]
 
