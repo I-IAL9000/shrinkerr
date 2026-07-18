@@ -171,6 +171,31 @@ async def test_detect_pgs_falls_back_to_full_when_sample_empty(monkeypatch):
     assert extract_calls == [1200, None], "sample then full extraction"
 
 
+@pytest.mark.asyncio
+async def test_detect_pgs_rip_error_is_terminal(monkeypatch):
+    """A hard pgsrip decode failure on the first pass must not trigger the
+    non-Latin pass or the full-track re-extraction — those fail identically
+    and waste minutes. Only one OCR call, one (sample) extraction. v0.9.53."""
+    from backend import image_sub_ocr as io
+    extract_calls = []
+    ocr_calls = []
+    async def fake_extract(fp, idx, workdir, sample_seconds=None):
+        extract_calls.append(sample_seconds)
+        return "/tmp/w/sub.sup"
+    def fake_ocr(sup, langs):
+        ocr_calls.append(langs)
+        raise io._PgsRipError(",".join(langs))
+    monkeypatch.setattr(io, "_extract_sup", fake_extract)
+    monkeypatch.setattr(io, "_pgsrip_to_text", fake_ocr)
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    monkeypatch.setenv("SHRINKERR_PGS_SAMPLE_SECONDS", "1200")
+    result = await io.detect_image_sub_language("/m/f.mkv", 2, "hdmv_pgs_subtitle")
+    assert result == (None, 0.0)
+    assert ocr_calls == [io._LATIN_LANGS], "must stop after the first failed pass"
+    assert extract_calls == [1200], "must NOT re-extract the full track"
+
+
 def test_normalize_idx_palette_fixes_mkvextract_separators(tmp_path):
     """mkvextract's bare-comma palette (no space after every 4th colour) is
     rewritten to uniform ', ' so subtile-ocr's parser accepts it."""

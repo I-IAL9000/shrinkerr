@@ -141,10 +141,18 @@ def _patch_pgsrip_from_hex() -> None:
         pass
 
 
+class _PgsRipError(Exception):
+    """pgsrip hit a hard decode failure on this .sup (it logs 'Error while
+    trying to rip'). Retrying with other tesseract languages or on the full
+    track fails identically, so treat it as terminal for this track and stop
+    burning minutes re-extracting. v0.9.53."""
+
+
 def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
     """Run pgsrip on a .sup with the given tesseract language(s); read the
     produced .srt and return its dialogue text. Sync (pgsrip is blocking);
-    the caller runs it in an executor. Returns None on failure/empty."""
+    the caller runs it in an executor. Returns None on empty output; raises
+    _PgsRipError when pgsrip cannot decode the .sup at all."""
     import io
     import logging
     _buf = io.StringIO()
@@ -169,6 +177,11 @@ def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
         _pgs_err = _buf.getvalue().strip().replace("\n", " ")[-300:]
         _detail = f": {_pgs_err}" if _pgs_err else ""
         print(f"[IMG-OCR] pgsrip produced no srt ({','.join(tess_langs)}){_detail}", flush=True)
+        # "Error while trying to rip" = pgsrip couldn't decode this .sup (not
+        # merely blank OCR). Surface it so the caller skips the other language
+        # pass and the full-track retry, which fail identically. v0.9.53.
+        if "error while trying to rip" in _pgs_err.lower():
+            raise _PgsRipError(",".join(tess_langs))
         return None
     try:
         with open(srt, "rb") as fh:
@@ -367,6 +380,12 @@ async def detect_image_sub_language(
             return (None, 0.0)
         result = await _ocr_pgs(sup)
         return result if result else (None, 0.0)
+    except _PgsRipError as exc:
+        # Hard decode failure — propagated from the first pgsrip pass so we
+        # skip the remaining passes and the full-track re-extraction. v0.9.53.
+        print(f"[IMG-OCR] pgsrip cannot decode s{stream_index} ({exc}); "
+              f"skipping remaining OCR passes", flush=True)
+        return (None, 0.0)
     except Exception as exc:
         print(f"[IMG-OCR] detection failed for {file_path} s{stream_index}: {exc}", flush=True)
         return (None, 0.0)

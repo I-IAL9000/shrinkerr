@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.53] — 2026-07-18
+
+### Fixed
+- **Image-subtitle detection no longer wastes minutes retrying a PGS track pgsrip can't decode.** When pgsrip reports "Error while trying to rip" (a hard decode failure), the second language pass and the full-track re-extraction fail identically — so detection now stops after the first failure instead of running all four passes.
+
 ## [0.9.52] — 2026-07-18
 
 ### Fixed
