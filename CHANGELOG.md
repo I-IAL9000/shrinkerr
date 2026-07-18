@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.49] — 2026-07-16
+
+### Fixed
+- **Setting/detecting a language on mkvs with a `LANGUAGE` SimpleTag now sticks.** mkvpropedit edits the track-header language, but some files carry a track `LANGUAGE` SimpleTag that overrides it for ffmpeg/Plex — so the change didn't show (and detection reverted to und with no reason). When the in-place edit doesn't verify, it now falls back to an ffmpeg `-c copy` remux whose `-metadata` rewrites the effective language. Re-run detection to fix affected files.
+
 ## [0.9.48] — 2026-07-16
 
 ### Fixed

@@ -579,17 +579,23 @@ async def apply_track_languages_to_file(
         # mkvpropedit: 0 = success, 1 = warnings (still applied), 2 = error.
         if proc.returncode in (0, 1):
             verified = await _verify_written(file_path, audio_langs, sub_langs)
-            if verified is False:
-                print(f"[LANG-DETECT] mkvpropedit ran but tags not present; kept und: {file_path}", flush=True)
-                return False
-            print(f"[LANG-DETECT] Wrote language tags in place: {file_path}", flush=True)
-            return True
-        print(
-            f"[LANG-DETECT] mkvpropedit rc={proc.returncode} for {file_path}: "
-            f"{stderr.decode(errors='replace')[-300:]}",
-            flush=True,
-        )
-        return False
+            if verified is not False:  # True (present) or None (couldn't probe)
+                print(f"[LANG-DETECT] Wrote language tags in place: {file_path}", flush=True)
+                return True
+            # v0.9.49: mkvpropedit set the track-header Language, but a track
+            # `LANGUAGE` SimpleTag overrides it for ffmpeg/Plex (the header edit
+            # doesn't show). Fall through to the ffmpeg -c copy remux below,
+            # whose -metadata:s:a:N language collapses both into one key and
+            # rewrites it — overriding the SimpleTag.
+            print(f"[LANG-DETECT] mkvpropedit didn't stick (LANGUAGE SimpleTag override?); "
+                  f"trying remux: {file_path}", flush=True)
+        else:
+            print(
+                f"[LANG-DETECT] mkvpropedit rc={proc.returncode} for {file_path}: "
+                f"{stderr.decode(errors='replace')[-300:]}",
+                flush=True,
+            )
+            return False
 
     # v0.9.26: containers with no per-track language field copy fine but drop
     # the tag, so an in-place fix is impossible — skip the (multi-GB) remux
