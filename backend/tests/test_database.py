@@ -62,3 +62,40 @@ async def test_busy_timeout_patch_is_idempotent():
         assert row[0] == BUSY_TIMEOUT
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_language_source_split_migration(test_db):
+    """v0.9.68: init_db adds the `tracks_detected` column and the language_source
+    split. The migration also folds any legacy language_source='detected' rows
+    back to 'heuristic' + tracks_detected=1 (detection is per-track, not a
+    native-language source). Simulate a legacy row and re-run the fold."""
+    import backend.database as _db
+    db = await aiosqlite.connect(test_db)
+    try:
+        # Column exists after init_db (the fixture ran it).
+        async with db.execute("PRAGMA table_info(scan_results)") as cur:
+            cols = {r[1] for r in await cur.fetchall()}
+        assert "tracks_detected" in cols, "v0.9.68 migration did not add tracks_detected"
+
+        # Seed a legacy 'detected' row and apply the fold statement.
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp, "
+            "native_language, language_source) VALUES (?, 1, '2026-01-01', 'fre', 'detected')",
+            ("/legacy/detected.mkv",),
+        )
+        await db.commit()
+        await db.execute(
+            "UPDATE scan_results SET tracks_detected = 1, language_source = 'heuristic' "
+            "WHERE language_source = 'detected'"
+        )
+        await db.commit()
+        async with db.execute(
+            "SELECT language_source, tracks_detected FROM scan_results WHERE file_path = ?",
+            ("/legacy/detected.mkv",),
+        ) as cur:
+            row = await cur.fetchone()
+        assert row[0] == "heuristic"
+        assert row[1] == 1
+    finally:
+        await db.close()

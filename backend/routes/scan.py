@@ -1191,13 +1191,26 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
     db = await connect_db()
     try:
+        # v0.9.68: record that detection ran via `tracks_detected`, and DON'T
+        # overwrite language_source with 'detected' — detection determines
+        # per-track languages, not the show's native language, so it must not
+        # masquerade as a native-language source (that both hid the real
+        # heuristic provenance and excluded the title from the heuristic→API
+        # refresh). Refresh the native language + mark it 'heuristic' only when
+        # the current source isn't authoritative (api / manual / tmdb-manual) —
+        # never downgrade a TMDB- or user-set native to a heuristic guess.
         await db.execute(
             "UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?, "
-            "native_language = ?, language_source = 'detected', "
+            "tracks_detected = 1, "
             "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
-            "has_und_tracks_flag = ? WHERE file_path = ?",
-            (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
-             _und_flag(audio_tracks, subtitle_tracks), req.file_path),
+            "has_und_tracks_flag = ?, "
+            "native_language = CASE WHEN language_source IN ('api','manual','tmdb-manual') "
+            "                       THEN native_language ELSE ? END, "
+            "language_source = CASE WHEN language_source IN ('api','manual','tmdb-manual') "
+            "                       THEN language_source ELSE 'heuristic' END "
+            "WHERE file_path = ?",
+            (audio_json, subtitle_json, has_removable, has_removable_subs,
+             _und_flag(audio_tracks, subtitle_tracks), native_lang, req.file_path),
         )
         await db.commit()
     finally:
@@ -3004,18 +3017,16 @@ async def _run_metadata_refresh() -> None:
             await db.commit()
             print("[METADATA] Cleared stale NULL cache entries for retry", flush=True)
 
-            # v0.9.65: include 'detected' rows, not just 'heuristic'. Running
-            # language detection on a title sets language_source='detected',
-            # but the NATIVE language it stores is still a heuristic guess
-            # (detection determines per-track languages, not the show's native
-            # language) — and the UI renders anything != 'api' as "heuristic".
-            # So detected titles have a heuristic native language yet were
-            # excluded here, which is why the refresh "only fixed unmatched
-            # titles" and never touched the TV shows the user had detected.
-            # 'manual' is still excluded (explicit user choice, don't override).
+            # v0.9.68: with language_source split (detection now sets
+            # tracks_detected instead of overwriting the source with
+            # 'detected'), a detected title keeps its true 'heuristic' native
+            # source — so plain 'heuristic' selection covers it again. The
+            # v0.9.68 migration folds any legacy 'detected' rows back to
+            # 'heuristic'. 'api'/'manual'/'tmdb-manual' stay excluded
+            # (authoritative — don't override).
             async with db.execute(
                 "SELECT id, file_path, native_language FROM scan_results "
-                "WHERE language_source IN ('heuristic', 'detected') "
+                "WHERE language_source = 'heuristic' "
                 "AND removed_from_list = 0 ORDER BY id ASC"
             ) as cur:
                 rows = await cur.fetchall()

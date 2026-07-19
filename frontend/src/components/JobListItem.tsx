@@ -45,8 +45,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
     ? `Convert${hasAudioRemoval ? " + Audio" : ""}${hasSubRemoval ? " + Subs" : ""}${!hasAudioRemoval && !hasSubRemoval ? " + Cleanup" : ""}`
     : job.job_type === "convert" ? "Convert"
     : job.job_type === "health_check" ? `Health check${job.encoder ? ` (${job.encoder})` : ""}`
-    : hasSubRemoval && !hasAudioRemoval ? "Sub cleanup"
-    : hasAudioRemoval && !hasSubRemoval ? "Audio cleanup"
+    // v0.9.68: handle the both-removals case explicitly — it previously fell
+    // through to "Remux", mislabelling an audio+sub cleanup as a plain remux.
+    : hasAudioRemoval && hasSubRemoval ? "Audio + Sub cleanup"
+    : hasSubRemoval ? "Sub cleanup"
+    : hasAudioRemoval ? "Audio cleanup"
     // v0.9.38: an audio job with no track removal is a stream-copy remux
     // (e.g. apply a detected language to an AVI) — not a "cleanup".
     : "Remux";

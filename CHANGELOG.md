@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.68] — 2026-07-19
+
+### Changed
+- **Language detection no longer masquerades as a native-language source.** It set `language_source='detected'`, conflating "detection ran" with the native language's provenance — which hid that the native was still a heuristic guess and excluded the title from the heuristic→API refresh. Split into a separate `tracks_detected` flag; `language_source` now means only native provenance (api/heuristic/manual). Detection also no longer downgrades a TMDB- or user-set native to a heuristic guess. Existing `detected` rows migrate to `heuristic` + `tracks_detected=1`.
+
+### Fixed
+- **A cleanup job that removes both audio and subtitle tracks is now labelled "Audio + Sub cleanup" instead of "Remux."** The both-removals case fell through to the remux label.
+
 ## [0.9.67] — 2026-07-19
 
 ### Changed

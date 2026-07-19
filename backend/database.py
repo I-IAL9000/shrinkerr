@@ -426,6 +426,26 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN language_source TEXT DEFAULT 'heuristic'")
         except Exception:
             pass
+        # Migration (v0.9.68): split "was track-detection run" out of
+        # language_source. language_source now means ONLY the native-language
+        # provenance (api/heuristic/manual/tmdb-manual); `tracks_detected`
+        # records whether language detection was run on the tracks. Detection
+        # used to overwrite language_source with 'detected', which masked the
+        # native language's real (heuristic) provenance and excluded the title
+        # from the heuristic→API refresh. Add the flag and fold existing
+        # 'detected' rows back to 'heuristic' (their native was always a
+        # heuristic guess), marking them tracks_detected=1.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN tracks_detected INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute(
+                "UPDATE scan_results SET tracks_detected = 1, language_source = 'heuristic' "
+                "WHERE language_source = 'detected'"
+            )
+        except Exception:
+            pass
         # Migration: add health-check columns to scan_results
         for col, ctype in [
             ("health_status", "TEXT DEFAULT NULL"),          # NULL=unchecked, 'healthy'|'corrupt'|'warnings'
