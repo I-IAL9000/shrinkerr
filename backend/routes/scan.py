@@ -446,16 +446,22 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                 print(f"[SCANNER] Orphan cleanup failed: {exc}", flush=True)
                 import traceback; traceback.print_exc()
 
-        # Restore converted flags
-        if not is_cancelled():
+        # Restore converted flags — scoped to the walked paths. For a full
+        # scan completed_paths is every media dir (≡ global); for a single-
+        # folder rescan this shrinks a full-table UPDATE to the one folder so
+        # it no longer holds the write lock across the whole library while
+        # conversions are running. v0.9.59.
+        if not is_cancelled() and completed_paths:
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
                 db.execute("PRAGMA busy_timeout=60000")
                 try:
+                    _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
+                    _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
                     cur = db.execute(
-                        """UPDATE scan_results SET converted = 1
-                           WHERE converted = 0 AND (
+                        f"""UPDATE scan_results SET converted = 1
+                           WHERE converted = 0 AND ({_scope}) AND (
                                file_path IN (
                                    SELECT file_path FROM jobs
                                    WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
@@ -465,7 +471,8 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                                    WHERE status = 'completed' AND job_type IN ('convert', 'combined')
                                    AND original_file_path IS NOT NULL AND space_saved > 0
                                )
-                           )"""
+                           )""",
+                        _scope_params,
                     )
                     if cur.rowcount > 0:
                         db.commit()
@@ -475,23 +482,34 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             except Exception as exc:
                 print(f"[SCANNER] Failed to restore converted flags: {exc}", flush=True)
 
-        # Detect duplicates — multiple files in the same folder (e.g. 4K + 1080p of same movie)
-        if not is_cancelled():
+        # Detect duplicates — multiple files in the same folder (e.g. 4K + 1080p of same movie).
+        # Scoped to the walked paths (≡ global for a full scan, one folder for
+        # a rescan) so a folder rescan no longer resets + reloads the entire
+        # scan_results table under the write lock. v0.9.59.
+        if not is_cancelled() and completed_paths:
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
                 db.execute("PRAGMA busy_timeout=60000")
                 try:
-                    # Reset all dup counts
-                    db.execute("UPDATE scan_results SET dup_count = 0, dup_group = NULL WHERE removed_from_list = 0")
+                    _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
+                    _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
+                    # Reset dup counts within the walked paths
+                    db.execute(
+                        f"UPDATE scan_results SET dup_count = 0, dup_group = NULL "
+                        f"WHERE removed_from_list = 0 AND ({_scope})",
+                        _scope_params,
+                    )
 
                     # Find folders with multiple files (potential duplicates)
                     # Group by parent folder — if a movie folder has 2+ video files, they're duplicates
                     rows = db.execute(
-                        """SELECT file_path FROM scan_results
+                        f"""SELECT file_path FROM scan_results
                            WHERE removed_from_list = 0
                              AND file_path NOT LIKE '%.converting.%'
-                             AND file_path NOT LIKE '%.remuxing.%'"""
+                             AND file_path NOT LIKE '%.remuxing.%'
+                             AND ({_scope})""",
+                        _scope_params,
                     ).fetchall()
 
                     from collections import defaultdict

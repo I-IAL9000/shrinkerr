@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.59] — 2026-07-19
+
+### Fixed
+- **A conversion that fails on a transient "database is locked" now requeues instead of dying.** Under heavy concurrency (a rescan holding the write lock past the 60s timeout while conversions run), jobs were permanently failed; they now go back to pending and retry (bounded), so a lock storm no longer discards a running encode.
+- **A single-folder rescan no longer runs full-library write sweeps.** The "restore converted flags" and duplicate-detection passes reset/reloaded the entire scan_results table under the write lock on every scan; they're now scoped to the walked paths (unchanged for a full scan), which stops a folder rescan from locking out running conversions.
+
 ## [0.9.58] — 2026-07-18
 
 ### Changed

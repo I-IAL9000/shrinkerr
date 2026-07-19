@@ -102,3 +102,46 @@ async def test_queue_stats(test_db):
     assert stats["completed"] == 1
     assert stats["failed"] == 1
     assert stats["total_space_saved"] == 1024 * 1024 * 100
+
+
+@pytest.mark.asyncio
+async def test_transient_db_lock_requeues_then_fails(test_db):
+    """A transient 'database is locked' failure requeues the job (bounded);
+    after the cap it fails. Non-lock errors fail immediately. v0.9.59."""
+    from backend.queue import QueueWorker
+    w = QueueWorker(test_db)
+    q = w.queue
+    job_id = await q.add_job("/media/x.mkv", "convert", encoder="nvenc")
+
+    # transient lock → back to pending, error cleared
+    await w._fail_or_requeue(job_id, "sqlite3.OperationalError: database is locked")
+    row = (await q.get_jobs_by_status("pending"))
+    assert any(j["id"] == job_id for j in row), "should be requeued to pending"
+
+    # exhaust the cap: it already used 1, do 4 more (total 5), 6th fails
+    for _ in range(4):
+        await w._fail_or_requeue(job_id, "database is locked")
+    assert w._lock_requeues[job_id] == 5
+    await w._fail_or_requeue(job_id, "database is locked")  # 6th → over cap
+    failed = await q.get_jobs_by_status("failed")
+    assert any(j["id"] == job_id for j in failed), "should fail after cap"
+
+
+@pytest.mark.asyncio
+async def test_non_lock_error_fails_immediately(test_db):
+    from backend.queue import QueueWorker
+    w = QueueWorker(test_db)
+    q = w.queue
+    job_id = await q.add_job("/media/y.mkv", "convert", encoder="nvenc")
+    await w._fail_or_requeue(job_id, "ffmpeg exited with code 1")
+    failed = await q.get_jobs_by_status("failed")
+    assert any(j["id"] == job_id for j in failed)
+    assert job_id not in w._lock_requeues
+
+
+def test_is_transient_db_lock():
+    from backend.queue import QueueWorker
+    assert QueueWorker._is_transient_db_lock("database is locked")
+    assert QueueWorker._is_transient_db_lock("sqlite3.OperationalError: database is busy")
+    assert not QueueWorker._is_transient_db_lock("ffmpeg exited with code 234")
+    assert not QueueWorker._is_transient_db_lock(None)

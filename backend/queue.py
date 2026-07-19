@@ -793,6 +793,37 @@ class QueueWorker:
         # Set is kept across loop iterations so we don't double-stop or
         # double-cont. Cleared on resume. v0.4.5+.
         self._stream_paused_jobs: set[int] = set()
+        # v0.9.59: bounded requeue count per job for transient DB-lock
+        # failures — a lock storm (e.g. a rescan holding the write path under
+        # storage stall) shouldn't permanently discard a running encode.
+        self._lock_requeues: dict[int, int] = {}
+
+    _MAX_LOCK_REQUEUES = 5
+
+    @staticmethod
+    def _is_transient_db_lock(error_log) -> bool:
+        msg = str(error_log or "").lower()
+        return "database is locked" in msg or "database is busy" in msg
+
+    async def _fail_or_requeue(self, job_id: int, error_log) -> None:
+        """Mark a job failed — but if it failed on a *transient* DB lock, put
+        it back to pending (bounded) so it re-runs when the lock clears rather
+        than throwing away the work. v0.9.59."""
+        if self._is_transient_db_lock(error_log):
+            n = self._lock_requeues.get(job_id, 0) + 1
+            if n <= self._MAX_LOCK_REQUEUES:
+                self._lock_requeues[job_id] = n
+                try:
+                    await self.queue.update_status(job_id, "pending", error_log=None)
+                    print(f"[WORKER] Job {job_id} hit a transient DB lock — "
+                          f"requeued ({n}/{self._MAX_LOCK_REQUEUES})", flush=True)
+                    return
+                except Exception as exc:
+                    print(f"[WORKER] Requeue of job {job_id} failed, marking failed: {exc}", flush=True)
+            else:
+                print(f"[WORKER] Job {job_id} exceeded DB-lock requeue limit — failing", flush=True)
+        self._lock_requeues.pop(job_id, None)
+        await self.queue.update_status(job_id, "failed", error_log=error_log)
 
     async def _db(self) -> aiosqlite.Connection:
         """Open a DB connection with WAL mode and busy timeout for parallel safety."""
@@ -1264,6 +1295,7 @@ class QueueWorker:
         job_id = job["id"]
         try:
             await self._process_job(job)
+            self._lock_requeues.pop(job_id, None)  # v0.9.59: ran clean, reset counter
             if job_id in self._cancel_flags:
                 print(f"[WORKER] Job {job_id} was cancelled", flush=True)
             else:
@@ -1271,15 +1303,18 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Job {job_id} FAILED: {exc}", flush=True)
             import traceback; traceback.print_exc()
+            requeued = self._is_transient_db_lock(exc) and \
+                self._lock_requeues.get(job_id, 0) < self._MAX_LOCK_REQUEUES
             try:
-                await self.queue.update_status(job_id, "failed", error_log=str(exc))
+                await self._fail_or_requeue(job_id, str(exc))
             except Exception:
                 pass
-            try:
-                from backend.file_events import log_event, EVENT_FAILED
-                await log_event(job.get("file_path", ""), EVENT_FAILED, f"Failed: {str(exc)[:120]}", {"job_id": job_id})
-            except Exception:
-                pass
+            if not requeued:
+                try:
+                    from backend.file_events import log_event, EVENT_FAILED
+                    await log_event(job.get("file_path", ""), EVENT_FAILED, f"Failed: {str(exc)[:120]}", {"job_id": job_id})
+                except Exception:
+                    pass
         finally:
             # Record this job against the built-in "local" node so the
             # Nodes page shows accurate Completed / Saved stats for the
