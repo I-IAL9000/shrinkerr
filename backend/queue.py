@@ -11,6 +11,28 @@ import aiosqlite
 
 logger = logging.getLogger("shrinkerr.queue")
 
+
+# v0.9.62: media files can live on slow/network mounts (CIFS/SMB, NFS). A
+# blocking stat/getsize/exists on such a mount can hang for many seconds when
+# the share is saturated — and if it runs on the asyncio event loop it freezes
+# the ENTIRE app (requests stop, scan results won't load, conversions' DB
+# writes back up into "database is locked"). These helpers run the syscall on a
+# worker thread so a stalled mount parks one thread instead of the whole loop.
+async def _async_getsize(path) -> "int | None":
+    import os as _os
+    try:
+        return await asyncio.to_thread(_os.path.getsize, str(path))
+    except OSError:
+        return None
+
+
+async def _async_exists(path) -> bool:
+    import os as _os
+    try:
+        return await asyncio.to_thread(_os.path.exists, str(path))
+    except OSError:
+        return False
+
 # Minimum wall-clock interval between persisted progress writes for a
 # single job. ffmpeg emits ~2 progress lines/sec/job, but the queue page
 # only consults `jobs.progress` on a manual reload — live UI gets values
@@ -1380,7 +1402,7 @@ class QueueWorker:
         if mode not in ("quick", "thorough"):
             mode = "quick"
 
-        if not os.path.exists(file_path):
+        if not await _async_exists(file_path):
             await self.queue.update_status(job_id, "failed", error_log="File not found")
             return
 
@@ -1545,7 +1567,7 @@ class QueueWorker:
         # conversion. The old code reported both cases as a cryptic
         # "Failed to probe file"; the missing-source case now gets a clear,
         # actionable message instead.
-        if not os.path.exists(file_path):
+        if not await _async_exists(file_path):
             print(f"[WORKER] Job {job_id}: source no longer exists: {file_path}", flush=True)
             await self.queue.update_status(
                 job_id, "failed",
@@ -1730,12 +1752,8 @@ class QueueWorker:
             # until a manual rescan, and any failed post-conversion step would
             # leave the row in an inconsistent half-updated state.
             if current_file_path != file_path:
-                import os as _os
                 import json as _json
-                try:
-                    new_size = _os.path.getsize(current_file_path)
-                except OSError:
-                    new_size = None
+                new_size = await _async_getsize(current_file_path)
 
                 # Re-probe the converted file to get fresh audio / subtitle track info.
                 # Stream indices, track counts, and codecs have changed. We also
@@ -2305,10 +2323,11 @@ class QueueWorker:
                                 _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
                                           "has_und_tracks_flag = ?", "has_removable_tracks_flag = ?",
                                           "has_removable_subs_flag = ?", "file_size = ?"]
+                                _new_sz = await _async_getsize(_new_out)
                                 _params += [
                                     _rj.dumps([t.model_dump() for t in _rat]),
                                     _rj.dumps([t.model_dump() for t in _rst]),
-                                    _rund, _rrem_a, _rrem_s, Path(_new_out).stat().st_size,
+                                    _rund, _rrem_a, _rrem_s, _new_sz,
                                 ]
                                 if _path_changed:
                                     _cols += ["video_codec = ?"]
@@ -2442,7 +2461,7 @@ class QueueWorker:
             finally:
                 await db.close()
 
-            if hc_mode_post != "off" and os.path.exists(current_file_path):
+            if hc_mode_post != "off" and await _async_exists(current_file_path):
                 from backend.health_check import run_check
                 step_label = f"health check ({hc_mode_post})"
                 print(f"[WORKER] Running inline {hc_mode_post} health check on {current_file_path}", flush=True)
@@ -2622,11 +2641,8 @@ class QueueWorker:
                         existing is not None and not original_still_present
                     )
                     if not already_correct:
-                        # Get new file size
-                        try:
-                            new_size = Path(current_file_path).stat().st_size
-                        except OSError:
-                            new_size = None
+                        # Get new file size (off-loop — media may be on CIFS)
+                        new_size = await _async_getsize(current_file_path)
                         # Same watcher-race guard as the early-update site
                         # above. Wipe any pre-existing scan_results row at
                         # current_file_path before renaming the original
@@ -2664,13 +2680,13 @@ class QueueWorker:
             try:
                 db = await self._db()
                 try:
-                    try:
-                        new_size = Path(file_path).stat().st_size
+                    new_size = await _async_getsize(file_path)
+                    if new_size is not None:
                         await db.execute(
                             "UPDATE scan_results SET file_size = ?, needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (new_size, file_path),
                         )
-                    except OSError:
+                    else:
                         await db.execute(
                             "UPDATE scan_results SET needs_conversion = 0, converted = 1, is_new = 0, new_detected_at = NULL WHERE file_path = ?",
                             (file_path,),

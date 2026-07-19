@@ -145,3 +145,17 @@ def test_is_transient_db_lock():
     assert QueueWorker._is_transient_db_lock("sqlite3.OperationalError: database is busy")
     assert not QueueWorker._is_transient_db_lock("ffmpeg exited with code 234")
     assert not QueueWorker._is_transient_db_lock(None)
+
+
+@pytest.mark.asyncio
+async def test_async_fs_helpers(tmp_path):
+    """v0.9.62: off-loop stat/exists helpers return correct values and
+    swallow errors (return None/False) instead of raising."""
+    from backend.queue import _async_getsize, _async_exists
+    f = tmp_path / "x.bin"
+    f.write_bytes(b"abcde")
+    assert await _async_getsize(str(f)) == 5
+    assert await _async_exists(str(f)) is True
+    missing = tmp_path / "nope.bin"
+    assert await _async_getsize(str(missing)) is None
+    assert await _async_exists(str(missing)) is False

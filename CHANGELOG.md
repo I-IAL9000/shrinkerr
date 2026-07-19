@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.62] — 2026-07-19
+
+### Fixed
+- **A stalled media mount can no longer freeze the whole app.** The conversion worker made synchronous `stat`/`getsize`/`exists` calls on media files directly on the asyncio event loop; when media lives on a slow/saturated network mount (CIFS/SMB/NFS), any one of those blocked the entire event loop for the duration of the stall — making the UI unresponsive, scan results fail to load, and conversions' DB writes back up into "database is locked". All media file I/O in the worker now runs off the event loop.
+
 ## [0.9.61] — 2026-07-19
 
 ### Fixed
