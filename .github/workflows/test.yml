@@ -1,0 +1,43 @@
+# Run the Python test suite on every push / PR so stale or broken tests are
+# caught immediately (previously there was no test gate, so several unit tests
+# silently drifted out of sync with the code). Independent of the image build.
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+
+# Node.js 20 is deprecated on GitHub runners — opt JS actions into Node 24
+# (same as build-images.yml).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        # Matches the NVENC runtime image (cpython-3.12). av / ctranslate2 /
+        # faster-whisper ship manylinux wheels for 3.12, so no source builds.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: System deps
+        # A few tests shell out to ffmpeg / mkvtoolnix; install the binaries so
+        # they run rather than skip/error.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        run: python -m pytest backend/tests -q

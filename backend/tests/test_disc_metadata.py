@@ -949,18 +949,22 @@ class TestDiscHealthStatusReset:
         import aiosqlite
         db_path = str(tmp_path / "test.db")
         db = await aiosqlite.connect(db_path)
-        # Minimal schema matching scan_results subset we touch
+        # Minimal schema matching the scan_results subset the reset helper
+        # touches — v0.7.8 extended it to also clear probe_status +
+        # health_errors_json, so the table needs those columns too.
         await db.execute("""CREATE TABLE scan_results (
             file_path TEXT PRIMARY KEY,
             disc_type TEXT,
-            health_status TEXT
+            health_status TEXT,
+            probe_status TEXT,
+            health_errors_json TEXT
         )""")
         await db.execute(
-            "INSERT INTO scan_results VALUES(?, ?, ?)",
+            "INSERT INTO scan_results (file_path, disc_type, health_status) VALUES(?, ?, ?)",
             ("/test/disc/VIDEO_TS/VIDEO_TS.IFO", "dvd", "corrupt"),
         )
         await db.execute(
-            "INSERT INTO scan_results VALUES(?, ?, ?)",
+            "INSERT INTO scan_results (file_path, disc_type, health_status) VALUES(?, ?, ?)",
             ("/test/file.mkv", None, "corrupt"),
         )
         await db.commit()
@@ -1028,7 +1032,8 @@ class TestDiscDisplayName:
 
     Folder disc:  marker path is .../<MovieFolder>/VIDEO_TS/VIDEO_TS.IFO
                   or .../<MovieFolder>/BDMV/index.bdmv → MovieFolder.
-    ISO disc:     file_path IS the .iso → use the .iso's parent (movie folder).
+    ISO disc:     file_path IS the .iso → use the .iso's own filename
+                  (v0.7.10+; v0.7.2-7.9 used the parent movie folder).
     Non-disc:     file's own name.
     """
 
@@ -1044,20 +1049,20 @@ class TestDiscDisplayName:
         marker.write_bytes(b"x")
         assert _disc_display_name(marker, "bdmv") == "Elephant (2003) [tt0363589]"
 
-    def test_iso_disc_uses_parent(self, tmp_path):
-        # ISO inside a movie folder — display name is the movie folder, not
-        # the media_dir one level up.
+    def test_iso_uses_filename(self, tmp_path):
+        # v0.7.10+: an ISO disc's display name is the .iso's own filename —
+        # the disc-image handle — not the parent movie folder (which is often
+        # duplicated elsewhere in the UI).
         iso = tmp_path / "Movies2" / "Elephant (2003) [tt0363589]" / "rz0u.iso"
         iso.parent.mkdir(parents=True)
         iso.write_bytes(b"x")
-        # If we used parent.parent we'd get "Movies2" — the v0.7.2 bug.
-        assert _disc_display_name(iso, "bdmv") == "Elephant (2003) [tt0363589]"
+        assert _disc_display_name(iso, "bdmv") == "rz0u.iso"
 
-    def test_iso_dvd_uses_parent(self, tmp_path):
+    def test_iso_dvd_uses_filename(self, tmp_path):
         iso = tmp_path / "Movies2" / "The Skin I Live In (2011) [tt1189073]" / "skin.iso"
         iso.parent.mkdir(parents=True)
         iso.write_bytes(b"x")
-        assert _disc_display_name(iso, "dvd") == "The Skin I Live In (2011) [tt1189073]"
+        assert _disc_display_name(iso, "dvd") == "skin.iso"
 
     def test_non_disc_file_uses_filename(self, tmp_path):
         f = tmp_path / "Movies" / "Some Movie (2020).mkv"
@@ -1066,11 +1071,11 @@ class TestDiscDisplayName:
         assert _disc_display_name(f, None) == "Some Movie (2020).mkv"
 
     def test_iso_case_insensitive_suffix(self, tmp_path):
-        # Uppercase .ISO suffix should also trigger the ISO branch
+        # Uppercase .ISO suffix still triggers the ISO branch → filename.
         iso = tmp_path / "Movies" / "MovieFolder" / "disc.ISO"
         iso.parent.mkdir(parents=True)
         iso.write_bytes(b"x")
-        assert _disc_display_name(iso, "bdmv") == "MovieFolder"
+        assert _disc_display_name(iso, "bdmv") == "disc.ISO"
 
     def test_disc_type_set_but_path_is_missing_iso(self, tmp_path):
         # Defensive: file_path doesn't exist on disk yet but suffix is .iso
