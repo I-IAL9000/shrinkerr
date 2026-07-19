@@ -808,7 +808,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // exactly once — even if the user navigated away and returns after the batch
   // finished (the finished result persists server-side).
   const offerRemuxIfPending = useCallback(async (p: DetectBatchProgress) => {
-    if (p.cancelled || !p.pending || !p.pending_paths || p.pending_paths.length === 0) return;
+    // v0.9.61: offer the remux even when the batch was cancelled. Titles
+    // detected *before* the cancel still have a pending language that needs a
+    // remux to apply, and the backend preserves their pending_paths on cancel
+    // — suppressing the prompt on cancel silently stranded that work.
+    if (!p.pending || !p.pending_paths || p.pending_paths.length === 0) return;
     const pendingPaths = p.pending_paths;
     try { await ackDetectBatchPending(); } catch { /* ignore */ }
     const ok = await confirm({

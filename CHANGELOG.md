@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.61] — 2026-07-19
+
+### Fixed
+- **Cancelling a bulk detection now still offers to remux the AVIs detected before the cancel.** The post-detect "remux to MKV to apply language" prompt was suppressed on cancel, silently stranding the titles whose language was already detected; it now appears whenever there are pending titles, cancelled or not.
+
 ## [0.9.60] — 2026-07-19
 
 ### Fixed
