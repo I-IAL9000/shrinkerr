@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.66] — 2026-07-19
+
+### Fixed
+- **A scan no longer sits at "Scanning… 100%" for minutes after probing finishes.** The post-scan Plex watch-status sync and poster prefetch ran inline before the scan task returned — so on a large Plex library the UI stayed "scanning" (with no feedback) for minutes while a full network sync ran, even for a small folder rescan with no jobs running. Those best-effort steps now run detached, so the scan reports done as soon as the files are probed.
+
 ## [0.9.65] — 2026-07-19
 
 ### Fixed

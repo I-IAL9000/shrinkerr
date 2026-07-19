@@ -21,6 +21,18 @@ SCAN_BATCH_SIZE = 25
 _scan_task: asyncio.Task | None = None
 _scan_cancel = asyncio.Event()
 
+# v0.9.66: detached best-effort tasks (post-scan Plex sync / poster prefetch).
+# Held in a set so the event loop doesn't garbage-collect them mid-flight.
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro) -> None:
+    """Run a coroutine detached from the caller so it can't keep the scan task
+    alive (and pin the UI at "Scanning…") while it works."""
+    t = asyncio.create_task(coro)
+    _bg_tasks.add(t)
+    t.add_done_callback(_bg_tasks.discard)
+
 # v0.9.24: server-side bulk language-detection progress, so the UI can show a
 # live N/total count that survives navigation and offer a cancel. Singleton —
 # one bulk detect at a time.
@@ -663,22 +675,26 @@ async def _run_scan(paths: list[str]) -> None:
         except Exception:
             await ws_manager.send_scan_progress(status="done", current_file="", total=0, probed=0)
 
-        # Auto-sync Plex watch status after scan completes
-        try:
-            from backend.plex import sync_plex_metadata_cache
-            result = await sync_plex_metadata_cache()
-            if result.get("watched") or result.get("unwatched"):
-                print(f"[SCANNER] Plex watch status synced: {result.get('watched', 0)} watched, {result.get('unwatched', 0)} unwatched", flush=True)
-        except Exception as exc:
-            print(f"[SCANNER] Plex watch status sync skipped: {exc}", flush=True)
-
-        # Auto-start poster prefetch after scan
-        try:
-            from backend.routes.posters import start_prefetch
-            await start_prefetch()
-            print(f"[SCANNER] Poster prefetch started", flush=True)
-        except Exception as exc:
-            print(f"[SCANNER] Poster prefetch skipped: {exc}", flush=True)
+        # Post-scan enrichment: Plex watch-status sync + poster prefetch. These
+        # are best-effort and can take MINUTES on a large Plex library over the
+        # network — run them DETACHED so they don't keep _scan_task alive and
+        # pin the UI at "Scanning… 100%" with no feedback long after the files
+        # were actually probed. v0.9.66.
+        async def _post_scan_enrichment():
+            try:
+                from backend.plex import sync_plex_metadata_cache
+                result = await sync_plex_metadata_cache()
+                if result.get("watched") or result.get("unwatched"):
+                    print(f"[SCANNER] Plex watch status synced: {result.get('watched', 0)} watched, {result.get('unwatched', 0)} unwatched", flush=True)
+            except Exception as exc:
+                print(f"[SCANNER] Plex watch status sync skipped: {exc}", flush=True)
+            try:
+                from backend.routes.posters import start_prefetch
+                await start_prefetch()
+                print(f"[SCANNER] Poster prefetch started", flush=True)
+            except Exception as exc:
+                print(f"[SCANNER] Poster prefetch skipped: {exc}", flush=True)
+        _fire_and_forget(_post_scan_enrichment())
 
         # Auto health-check newly-scanned files inline (NOT via the conversion queue)
         try:
