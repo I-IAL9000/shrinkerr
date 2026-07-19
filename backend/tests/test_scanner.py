@@ -122,19 +122,25 @@ def test_classify_audio_tracks_keeps_eng_isl():
             "disposition": {"original": 0},
         },
     ]
-    # Native language detected as "isl" (disposition.original=1)
+    # Native language detected as "isl" (disposition.original=1).
+    # always_keep_languages is a DB-backed setting (_load_audio_keep_languages);
+    # provide it via patch so the unit test has the eng+isl keep-list it asserts
+    # — in production this comes from Settings → Audio cleanup.
     native = detect_native_language(tracks)
-    result = classify_audio_tracks(tracks, native)
+    with patch("backend.scanner._load_audio_keep_languages", return_value={"eng", "isl"}), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        result = classify_audio_tracks(tracks, native)
 
     by_lang = {t.language: t for t in result}
 
-    # eng: always keep, locked
+    # eng: always-keep language → kept. `locked` is deprecated to always-False
+    # since v0.5.16 (the UI dropped lock rendering); keep is what matters.
     assert by_lang["eng"].keep is True
-    assert by_lang["eng"].locked is True
+    assert by_lang["eng"].locked is False
 
-    # isl: always keep, locked (also native, but always_keep takes priority)
+    # isl: always-keep language → kept (also native).
     assert by_lang["isl"].keep is True
-    assert by_lang["isl"].locked is True
+    assert by_lang["isl"].locked is False
 
     # chi: suggested for removal
     assert by_lang["chi"].keep is False
@@ -168,13 +174,15 @@ def test_classify_audio_tracks_ignores_unknown():
         },
     ]
     native = detect_native_language(tracks)
-    result = classify_audio_tracks(tracks, native)
+    with patch("backend.scanner._load_audio_keep_languages", return_value={"eng"}), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        result = classify_audio_tracks(tracks, native)
 
     by_lang = {t.language: t for t in result}
 
-    # eng: always keep, locked
+    # eng: always-keep language → kept (locked deprecated to False, v0.5.16).
     assert by_lang["eng"].keep is True
-    assert by_lang["eng"].locked is True
+    assert by_lang["eng"].locked is False
 
     # und: kept (not suggested for removal), not locked
     assert by_lang["und"].keep is True
