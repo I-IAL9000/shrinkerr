@@ -386,3 +386,51 @@ def test_mkvpropedit_deletes_language_ietf():
     joined = " ".join(cmd)
     assert "--set language=eng" in joined
     assert "--delete language-ietf" in joined
+
+
+# --- v0.9.60: _verify_written must not report success it can't confirm ------
+import asyncio as _asyncio_vw
+from backend import language_detection as _ld_vw
+
+
+@pytest.mark.asyncio
+async def test_verify_written_confirmed_present(monkeypatch):
+    async def fake_probe(fp):
+        return (["eng"], ["eng"])
+    monkeypatch.setattr(_ld_vw, "_probe_track_languages", fake_probe)
+    assert await _ld_vw._verify_written("/f.mkv", ["eng"], ["eng"]) is True
+
+
+@pytest.mark.asyncio
+async def test_verify_written_absent_is_false(monkeypatch):
+    async def fake_probe(fp):
+        return (["und"], ["und"])
+    monkeypatch.setattr(_ld_vw, "_probe_track_languages", fake_probe)
+    assert await _ld_vw._verify_written("/f.mkv", ["eng"], [None]) is False
+
+
+@pytest.mark.asyncio
+async def test_verify_written_probe_failure_returns_none_after_retries(monkeypatch):
+    calls = []
+    async def fake_probe(fp):
+        calls.append(1)
+        return ([], [])  # probe failed / no streams
+    async def no_sleep(_):
+        return None
+    monkeypatch.setattr(_ld_vw, "_probe_track_languages", fake_probe)
+    monkeypatch.setattr(_asyncio_vw, "sleep", no_sleep)
+    # None (not False, not True) => caller must treat as unconfirmed
+    assert await _ld_vw._verify_written("/f.mkv", ["eng"], [None], retries=3) is None
+    assert len(calls) == 3, "should retry the probe"
+
+
+@pytest.mark.asyncio
+async def test_verify_written_transient_probe_then_recovers(monkeypatch):
+    seq = [([], []), (["eng"], [])]
+    async def fake_probe(fp):
+        return seq.pop(0)
+    async def no_sleep(_):
+        return None
+    monkeypatch.setattr(_ld_vw, "_probe_track_languages", fake_probe)
+    monkeypatch.setattr(_asyncio_vw, "sleep", no_sleep)
+    assert await _ld_vw._verify_written("/f.mkv", ["eng"], [None], retries=3) is True

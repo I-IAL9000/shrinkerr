@@ -537,12 +537,24 @@ def _languages_present(probed: list[str], intended: list[str | None]) -> bool:
     return True
 
 
-async def _verify_written(file_path: str, audio_langs, sub_langs) -> bool | None:
+async def _verify_written(file_path: str, audio_langs, sub_langs, *, retries: int = 3) -> bool | None:
     """Confirm the intended tags are actually present in `file_path`.
     True = verified present, False = ran but tags absent (container can't
-    store them, e.g. AVI), None = couldn't probe (caller falls back to the
-    process exit code)."""
-    pa, ps = await _probe_track_languages(file_path)
+    store them, e.g. AVI), None = couldn't probe after retries.
+
+    v0.9.60: retry the probe — a probe that fails transiently (e.g. ffprobe
+    stalling on a busy storage mount) must NOT be mistaken for a confirmed
+    write. Callers treat None as "unconfirmed → do not claim success", so a
+    persistent probe failure keeps the track und/pending instead of recording
+    a language the file may not actually carry."""
+    import asyncio
+    pa, ps = [], []
+    for attempt in range(retries):
+        pa, ps = await _probe_track_languages(file_path)
+        if pa or ps:
+            break
+        if attempt < retries - 1:
+            await asyncio.sleep(1.0 * (attempt + 1))
     if not pa and not ps:
         return None
     return _languages_present(pa, audio_langs) and _languages_present(ps, sub_langs)
@@ -584,14 +596,23 @@ async def apply_track_languages_to_file(
         # mkvpropedit: 0 = success, 1 = warnings (still applied), 2 = error.
         if proc.returncode in (0, 1):
             verified = await _verify_written(file_path, audio_langs, sub_langs)
-            if verified is not False:  # True (present) or None (couldn't probe)
+            if verified is True:  # confirmed present in the file
                 print(f"[LANG-DETECT] Wrote language tags in place: {file_path}", flush=True)
                 return True
-            # v0.9.49: mkvpropedit set the track-header Language, but a track
-            # `LANGUAGE` SimpleTag overrides it for ffmpeg/Plex (the header edit
-            # doesn't show). Fall through to the ffmpeg -c copy remux below,
-            # whose -metadata:s:a:N language collapses both into one key and
-            # rewrites it — overriding the SimpleTag.
+            if verified is None:
+                # v0.9.60: couldn't confirm the tag actually landed (probe
+                # failed even after retries — e.g. storage stall). Do NOT claim
+                # success: that records a language the file may not carry (the
+                # bug behind "left the Unknown filter but the file is still
+                # und"). Keep it und/pending so it stays in the filter and
+                # gets retried when the mount is healthy.
+                print(f"[LANG-DETECT] could not verify tag write (kept und): {file_path}", flush=True)
+                return False
+            # v0.9.49: verified is False — mkvpropedit set the track-header
+            # Language, but a track `LANGUAGE` SimpleTag overrides it for
+            # ffmpeg/Plex (the header edit doesn't show). Fall through to the
+            # ffmpeg -c copy remux below, whose -metadata:s:a:N language
+            # collapses both into one key and rewrites it — overriding the tag.
             print(f"[LANG-DETECT] mkvpropedit didn't stick (LANGUAGE SimpleTag override?); "
                   f"trying remux: {file_path}", flush=True)
         else:
@@ -639,8 +660,12 @@ async def apply_track_languages_to_file(
         # Verify the tags survived the remux BEFORE replacing the original — a
         # container with no per-track language field (AVI) copies fine but
         # drops the metadata, so ffmpeg exits 0 with nothing written.
-        if await _verify_written(tmp, audio_langs, sub_langs) is False:
-            print(f"[LANG-DETECT] container can't store per-track language; kept und: {file_path}", flush=True)
+        # v0.9.60: require a CONFIRMED present result (not just "not False").
+        # If we can't verify (probe failed), don't replace the original and
+        # claim success — keep it und/pending so we never record an unverified
+        # language.
+        if await _verify_written(tmp, audio_langs, sub_langs) is not True:
+            print(f"[LANG-DETECT] remux tags not confirmed present; kept und: {file_path}", flush=True)
             os.unlink(tmp)
             return False
         os.replace(tmp, file_path)  # atomic on same filesystem
