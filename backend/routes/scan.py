@@ -596,8 +596,15 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
     _asyncio.run(_do_scan())
 
 
-async def _run_scan(paths: list[str]) -> None:
-    """Launch scan in a subprocess and poll progress for websocket updates."""
+async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
+    """Launch scan in a subprocess and poll progress for websocket updates.
+
+    `is_folder_rescan` (v0.9.67): a targeted single-folder rescan skips the
+    post-scan library-wide Plex metadata sync + poster prefetch — those are
+    full-scan concerns (they refresh rule-referenced labels/collections/watch
+    status and posters across the whole library), redundant and wasteful to
+    re-run for one folder. The periodic full scan and the watcher keep that
+    cache fresh."""
     global _scan_proc
     import multiprocessing
     import os
@@ -694,7 +701,12 @@ async def _run_scan(paths: list[str]) -> None:
                 print(f"[SCANNER] Poster prefetch started", flush=True)
             except Exception as exc:
                 print(f"[SCANNER] Poster prefetch skipped: {exc}", flush=True)
-        _fire_and_forget(_post_scan_enrichment())
+        # v0.9.67: skip the full-library enrichment for a targeted folder
+        # rescan — it's redundant to re-sync the whole library for one folder.
+        if not is_folder_rescan:
+            _fire_and_forget(_post_scan_enrichment())
+        else:
+            print("[SCANNER] Folder rescan — skipping library-wide Plex sync/prefetch", flush=True)
 
         # Auto health-check newly-scanned files inline (NOT via the conversion queue)
         try:
@@ -3211,7 +3223,7 @@ async def rescan_folder(request: ScanRequest):
     global _scan_task
     if scan_is_actively_running():  # v0.7.32: reaps a hung scan
         raise HTTPException(status_code=409, detail="Scan already in progress")
-    _scan_task = asyncio.create_task(_run_scan(request.paths))
+    _scan_task = asyncio.create_task(_run_scan(request.paths, is_folder_rescan=True))
     return {"status": "started", "paths": request.paths}
 
 

@@ -118,11 +118,15 @@ def test_parse_ffmpeg_progress_basic():
     assert result["eta_seconds"] is None
 
 
-def test_parse_ffmpeg_progress_with_start_time():
-    import time
+def test_parse_ffmpeg_progress_with_start_time(monkeypatch):
+    # Pin the monotonic clock so wall-elapsed is deterministic. Deriving
+    # start_time from the real time.monotonic() made the test depend on the
+    # host's monotonic epoch — in a fresh CI container that's only tens of
+    # seconds, so `monotonic() - 30` could go negative and eta became None.
+    monkeypatch.setattr("time.monotonic", lambda: 10_000.0)
     line = "frame= 1234 fps= 45 q=28.0 size=   10240kB time=00:01:30.50 bitrate=..."
     # Simulate encoding started 30s ago (real-time), 30% through a 300s video
-    start_time = time.monotonic() - 30.0
+    start_time = 10_000.0 - 30.0
     result = parse_ffmpeg_progress(line, duration=300.0, start_time=start_time)
     assert result is not None
     assert abs(result["progress"] - 30.17) < 0.1
@@ -144,10 +148,13 @@ def test_parse_ffmpeg_progress_zero_duration():
     assert result["progress"] == 0.0
 
 
-def test_parse_ffmpeg_progress_at_end():
-    import time
+def test_parse_ffmpeg_progress_at_end(monkeypatch):
+    # Pin the clock (see test_parse_ffmpeg_progress_with_start_time) — a fresh
+    # container's small monotonic() made `monotonic() - 120` negative, which
+    # skipped the eta branch and returned None instead of 0.
+    monkeypatch.setattr("time.monotonic", lambda: 10_000.0)
     line = "frame= 9000 fps= 30 time=00:05:00.00 bitrate=..."
-    start_time = time.monotonic() - 120.0  # 2min wall-clock for 5min video
+    start_time = 10_000.0 - 120.0  # 2min wall-clock for 5min video
     result = parse_ffmpeg_progress(line, duration=300.0, start_time=start_time)
     assert result is not None
     assert result["progress"] == 100.0

@@ -5,6 +5,14 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.67] — 2026-07-19
+
+### Changed
+- **A single-folder rescan no longer triggers the full-library Plex sync + poster prefetch.** Those are full-scan concerns (rule-referenced labels/collections/watch-status across the whole library); re-running them for one folder was redundant. Full scans are unchanged.
+
+### Fixed
+- Made two ffmpeg-progress unit tests deterministic (they derived a start time from `time.monotonic()`, which is small in a fresh CI container and made the tests flaky).
+
 ## [0.9.66] — 2026-07-19
 
 ### Fixed
