@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.58] — 2026-07-18
+
+### Changed
+- **Guaranteed (with tests) that force-re-encoding an already-h265 file queues as a Convert job, not a no-op "Remux."** Extracted the add-from-scan job-type decision into a pure, unit-tested function; behaviour is unchanged, but the forced-x265→convert case is now locked in against regression.
+
 ## [0.9.57] — 2026-07-18
 
 ### Fixed

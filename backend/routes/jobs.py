@@ -116,6 +116,45 @@ class BulkQueueFromScanRequest(BaseModel):
     language_remux: bool = False
 
 
+def _classify_job_type(
+    *,
+    needs_conversion: bool,
+    force_reencode: bool,
+    cleanup_only: bool,
+    language_remux: bool,
+    has_audio_work: bool,
+    skip_conversion: bool,
+) -> str | None:
+    """Decide a queued file's job_type, or None if it should be skipped.
+
+    Pure function so the add-from-scan classification can be unit-tested.
+    Precedence: language_remux (stream-copy audio) → force_reencode forces a
+    video convert even for a source that doesn't otherwise need it (e.g. an
+    already-h265 file — it must NOT fall through to a no-op "audio"/remux job)
+    → cleanup_only and an ignore rule suppress the video convert. Returns None
+    only when there is genuinely nothing to do AND the file was explicitly
+    exempted from conversion (ignore rule / cleanup-only) — the caller skips
+    those with a log line.
+    """
+    needs_conv = bool(needs_conversion) or force_reencode
+    if skip_conversion and not force_reencode:
+        needs_conv = False
+    if cleanup_only:
+        needs_conv = False
+
+    if language_remux:
+        return "audio"
+    if needs_conv and has_audio_work:
+        return "combined"
+    if needs_conv:
+        return "convert"
+    if has_audio_work:
+        return "audio"
+    if skip_conversion or cleanup_only:
+        return None
+    return "audio"
+
+
 @router.post("/add-from-scan")
 async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     """Create jobs from scan results — resolves track data from DB automatically."""
@@ -363,37 +402,26 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 except Exception:
                     pass
 
-            # force_reencode overrides both needs_conversion AND skip rules.
-            # cleanup_only (per-batch user choice) wins over both — the user
-            # explicitly asked for "no video conversion", so honour that
-            # regardless of any rule or force flag. v0.3.80+.
-            needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
-            if skip_conversion and not payload.force_reencode:
-                needs_conv = False
-            if payload.cleanup_only:
-                needs_conv = False
-
-            if payload.language_remux:
-                # v0.9.37: remux-to-mkv to apply a detected language on an
-                # untaggable source — always an audio (stream-copy) job, even
-                # with no track-removal work; the remux itself stamps the tag.
-                needs_conv = False
-                job_type = "audio"
-            elif needs_conv and has_audio_work:
-                job_type = "combined"
-            elif needs_conv:
-                job_type = "convert"
-            elif has_audio_work:
-                job_type = "audio"
-            else:
-                # Nothing to do — neither video nor audio/sub work.
+            # force_reencode overrides both needs_conversion AND skip rules;
+            # cleanup_only (per-batch user choice) wins over force_reencode.
+            # A forced re-encode of an already-h265 file must classify as
+            # "convert" (not a no-op "audio"/remux job). See _classify_job_type.
+            job_type = _classify_job_type(
+                needs_conversion=bool(row["needs_conversion"]),
+                force_reencode=payload.force_reencode,
+                cleanup_only=payload.cleanup_only,
+                language_remux=payload.language_remux,
+                has_audio_work=has_audio_work,
+                skip_conversion=skip_conversion,
+            )
+            if job_type is None:
+                # Nothing to do and the file was explicitly exempted from
+                # conversion (ignore rule / cleanup-only) — skip with a note.
                 if skip_conversion:
                     print(f"[QUEUE] Skipped {fp} (ignore rule: {rule['rule_name']}), no audio/sub work", flush=True)
-                    continue
-                if payload.cleanup_only:
+                elif payload.cleanup_only:
                     print(f"[QUEUE] Skipped {fp} (cleanup_only: no audio/sub work to do)", flush=True)
-                    continue
-                job_type = "audio"
+                continue
 
             # Apply encoding rule overrides (if any)
             encoder = (rule.get("encoder") if rule else None) or default_encoder
