@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.64] — 2026-07-19
+
+### Fixed
+- **A folder rescan no longer appears to hang for minutes under write contention.** The scan's best-effort end-of-scan maintenance sweeps (orphan cleanup, duplicate detection, converted-flag restore) waited up to 60s each on a contended write lock — ~3 minutes stuck at "100%" while conversions ran. They now fail fast (10s) and are redone by the next full scan; the file re-probe/upsert (which carries the language fix) still uses the full timeout, so the rescan's actual work is unaffected.
+
 ## [0.9.63] — 2026-07-19
 
 ### Fixed

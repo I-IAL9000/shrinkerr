@@ -325,7 +325,11 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
-                db.execute("PRAGMA busy_timeout=60000")
+                # v0.9.64: best-effort maintenance sweep — fail fast (10s) under
+                # write contention instead of blocking a folder rescan ~60s per
+                # sweep. The file upsert already landed with a full timeout; a
+                # skipped sweep is redone by the next full scan.
+                db.execute("PRAGMA busy_timeout=10000")
                 try:
                     db.execute("DROP TABLE IF EXISTS _seen_paths")
                     db.execute("CREATE TEMP TABLE _seen_paths (file_path TEXT PRIMARY KEY)")
@@ -455,7 +459,11 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
-                db.execute("PRAGMA busy_timeout=60000")
+                # v0.9.64: best-effort maintenance sweep — fail fast (10s) under
+                # write contention instead of blocking a folder rescan ~60s per
+                # sweep. The file upsert already landed with a full timeout; a
+                # skipped sweep is redone by the next full scan.
+                db.execute("PRAGMA busy_timeout=10000")
                 try:
                     _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
                     _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
@@ -490,7 +498,11 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
             try:
                 db = sqlite3.connect(db_path)
                 db.execute("PRAGMA journal_mode=WAL")
-                db.execute("PRAGMA busy_timeout=60000")
+                # v0.9.64: best-effort maintenance sweep — fail fast (10s) under
+                # write contention instead of blocking a folder rescan ~60s per
+                # sweep. The file upsert already landed with a full timeout; a
+                # skipped sweep is redone by the next full scan.
+                db.execute("PRAGMA busy_timeout=10000")
                 try:
                     _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
                     _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
