@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.65] — 2026-07-19
+
+### Fixed
+- **"Refresh metadata" now also upgrades titles you'd run language detection on.** It only re-checked `heuristic` rows, but running detection flips a title to `detected` (its native language is still a heuristic guess, and the UI shows both as "heuristic") — so detected TV shows were silently skipped and only a rescan fixed them. The refresh now includes `detected` rows too (`manual` overrides are still left alone).
+
 ## [0.9.64] — 2026-07-19
 
 ### Fixed

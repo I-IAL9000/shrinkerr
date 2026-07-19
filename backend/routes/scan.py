@@ -2976,9 +2976,19 @@ async def _run_metadata_refresh() -> None:
             await db.commit()
             print("[METADATA] Cleared stale NULL cache entries for retry", flush=True)
 
+            # v0.9.65: include 'detected' rows, not just 'heuristic'. Running
+            # language detection on a title sets language_source='detected',
+            # but the NATIVE language it stores is still a heuristic guess
+            # (detection determines per-track languages, not the show's native
+            # language) — and the UI renders anything != 'api' as "heuristic".
+            # So detected titles have a heuristic native language yet were
+            # excluded here, which is why the refresh "only fixed unmatched
+            # titles" and never touched the TV shows the user had detected.
+            # 'manual' is still excluded (explicit user choice, don't override).
             async with db.execute(
                 "SELECT id, file_path, native_language FROM scan_results "
-                "WHERE language_source = 'heuristic' AND removed_from_list = 0 ORDER BY id ASC"
+                "WHERE language_source IN ('heuristic', 'detected') "
+                "AND removed_from_list = 0 ORDER BY id ASC"
             ) as cur:
                 rows = await cur.fetchall()
         finally:
