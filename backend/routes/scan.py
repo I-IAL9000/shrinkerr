@@ -2916,6 +2916,40 @@ _metadata_task: asyncio.Task | None = None
 _metadata_cancel = asyncio.Event()
 
 
+async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
+    """Write a batch of (lang, row_id) language updates, retrying on a
+    transient DB lock. v0.9.63: previously an inline batch write with no local
+    error handling — under write contention (conversions + a scan) one
+    "database is locked" propagated out and aborted the ENTIRE metadata
+    refresh, so most heuristic rows (much of the TV library) were never
+    upgraded to 'api'. Now a lock retries, and a persistent failure defers
+    only THIS batch (rows stay heuristic, picked up next refresh) instead of
+    killing the whole run."""
+    if not pending:
+        return True
+    for attempt in range(retries):
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute("PRAGMA busy_timeout=60000")
+            for lang, rid in pending:
+                await db.execute(
+                    "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
+                    (lang, rid),
+                )
+            await db.commit()
+            return True
+        except Exception as exc:
+            if "locked" in str(exc).lower() and attempt < retries - 1:
+                print(f"[METADATA] batch write locked (attempt {attempt+1}/{retries}), retrying…", flush=True)
+                await asyncio.sleep(2 * (attempt + 1))
+                continue
+            print(f"[METADATA] batch write failed, {len(pending)} update(s) deferred to next refresh: {exc}", flush=True)
+            return False
+        finally:
+            await db.close()
+    return False
+
+
 async def _run_metadata_refresh() -> None:
     """Background task: refresh API metadata for files with heuristic language detection."""
     _metadata_cancel.clear()
@@ -2976,19 +3010,10 @@ async def _run_metadata_refresh() -> None:
                 pending_updates.append((api_lang, row["id"]))
                 updated += 1
 
-            # Batch-write updates every 25 files (short DB connection)
+            # Batch-write updates every 25 files (resilient to transient locks
+            # so contention doesn't abort the whole refresh — v0.9.63).
             if len(pending_updates) >= 25:
-                db2 = await aiosqlite.connect(DB_PATH)
-                try:
-                    await db2.execute("PRAGMA busy_timeout=60000")
-                    for lang, rid in pending_updates:
-                        await db2.execute(
-                            "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
-                            (lang, rid),
-                        )
-                    await db2.commit()
-                finally:
-                    await db2.close()
+                await _write_lang_batch(pending_updates)
                 pending_updates.clear()
                 print(f"[METADATA] Progress: {idx+1}/{total} checked, {updated} updated", flush=True)
 
@@ -3004,19 +3029,10 @@ async def _run_metadata_refresh() -> None:
             # Yield to event loop
             await asyncio.sleep(0.05)
 
-        # Flush remaining updates
+        # Flush remaining updates (resilient — see _write_lang_batch)
         if pending_updates:
-            db3 = await aiosqlite.connect(DB_PATH)
-            try:
-                await db3.execute("PRAGMA busy_timeout=60000")
-                for lang, rid in pending_updates:
-                    await db3.execute(
-                        "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
-                        (lang, rid),
-                    )
-                await db3.commit()
-            finally:
-                await db3.close()
+            await _write_lang_batch(pending_updates)
+            pending_updates.clear()
 
         print(f"[METADATA] Refresh complete: {updated} updated, {skipped} no API data, {total} total", flush=True)
         await ws_manager.send_scan_progress(status="done", current_file="", total=total, probed=total)

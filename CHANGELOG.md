@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.63] — 2026-07-19
+
+### Fixed
+- **"Refresh metadata" (heuristic → API) no longer aborts on the first DB-lock and now completes.** A batch write that hit "database is locked" under write contention (conversions + a scan) propagated out and killed the entire refresh, leaving most heuristic rows — much of the TV library — never upgraded to API-sourced language. Batch writes now retry on a transient lock and defer only the failed batch instead of aborting the whole run.
+
 ## [0.9.62] — 2026-07-19
 
 ### Fixed
