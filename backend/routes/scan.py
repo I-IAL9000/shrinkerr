@@ -2969,26 +2969,97 @@ _metadata_task: asyncio.Task | None = None
 _metadata_cancel = asyncio.Event()
 
 
+def _reclassify_keep_flags(audio_json_str, sub_json_str, native, duration):
+    """Recompute audio/subtitle keep+locked flags for a corrected native
+    language, mapping them back onto the STORED track dicts by stream_index so
+    every other field (detected_language, detect_note, external_path, order)
+    is preserved. v0.9.69: the metadata refresh used to change only
+    native_language, leaving the keep/remove decisions computed against the old
+    (wrong) native — e.g. a TV show heuristically matched as Portuguese kept
+    its Portuguese track and marked the real Korean (native) one for removal
+    even after the refresh corrected the native to Korean.
+
+    Returns (audio_json, sub_json, has_removable_audio, has_removable_subs,
+    has_und) or None if the JSON couldn't be parsed."""
+    import json as _j
+    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks
+    try:
+        raw_audio = _j.loads(audio_json_str) if audio_json_str else []
+        raw_subs = _j.loads(sub_json_str) if sub_json_str else []
+    except (ValueError, TypeError):
+        return None
+    dur = duration or 0
+    a_flags = {t.stream_index: (t.keep, t.locked)
+               for t in classify_audio_tracks(list(raw_audio), native, dur)}
+    s_flags = {t.stream_index: (t.keep, t.locked)
+               for t in classify_subtitle_tracks(list(raw_subs), native)}
+    for t in raw_audio:
+        f = a_flags.get(t.get("stream_index"))
+        if f:
+            t["keep"], t["locked"] = f
+    for t in raw_subs:
+        f = s_flags.get(t.get("stream_index"))
+        if f:
+            t["keep"], t["locked"] = f
+    has_rem_a = 1 if any(not t.get("keep", True) for t in raw_audio) else 0
+    has_rem_s = 1 if any(not t.get("keep", True) for t in raw_subs) else 0
+    und = 1 if any((t.get("language") or "und").lower() == "und"
+                   for t in list(raw_audio) + list(raw_subs)) else 0
+    return _j.dumps(raw_audio), _j.dumps(raw_subs), has_rem_a, has_rem_s, und
+
+
+def _reclass_item(row, native):
+    """Re-classify a scan_results row's tracks against `native`; return a
+    _write_lang_batch item (dict) ONLY if the keep/remove classification
+    actually changed, else None — so correctly-classified rows aren't
+    needlessly rewritten. v0.9.70."""
+    reclass = _reclassify_keep_flags(
+        row["audio_tracks_json"], row["subtitle_tracks_json"], native, row["duration"])
+    if not reclass:
+        return None
+    a_json, s_json, rem_a, rem_s, und = reclass
+    if a_json == (row["audio_tracks_json"] or "[]") and \
+            s_json == (row["subtitle_tracks_json"] or "[]"):
+        return None  # unchanged — no write needed
+    return {"rid": row["id"], "a_json": a_json, "s_json": s_json,
+            "rem_a": rem_a, "rem_s": rem_s, "und": und}
+
+
 async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
-    """Write a batch of (lang, row_id) language updates, retrying on a
-    transient DB lock. v0.9.63: previously an inline batch write with no local
-    error handling — under write contention (conversions + a scan) one
-    "database is locked" propagated out and aborted the ENTIRE metadata
-    refresh, so most heuristic rows (much of the TV library) were never
-    upgraded to 'api'. Now a lock retries, and a persistent failure defers
-    only THIS batch (rows stay heuristic, picked up next refresh) instead of
-    killing the whole run."""
+    """Write a batch of language-refresh updates, retrying on a transient DB
+    lock. Each item is a dict with 'rid' plus any of:
+      - 'native'          → set native_language + language_source='api'
+      - 'a_json'/'s_json'/'rem_a'/'rem_s'/'und' → rewrite the re-classified
+        track JSON + keep/remove flags
+    so a corrected native both flips the label AND fixes which tracks are kept
+    (v0.9.69), and an already-'api' title whose classification drifted can be
+    healed by rewriting tracks alone without touching the native (v0.9.70).
+
+    v0.9.63: resilient — a persistent "database is locked" defers only THIS
+    batch (rows retried next refresh) instead of aborting the whole run."""
     if not pending:
         return True
     for attempt in range(retries):
         db = await aiosqlite.connect(DB_PATH)
         try:
             await db.execute("PRAGMA busy_timeout=60000")
-            for lang, rid in pending:
+            for item in pending:
+                sets: list[str] = []
+                params: list = []
+                if item.get("native") is not None:
+                    sets += ["native_language = ?", "language_source = 'api'"]
+                    params.append(item["native"])
+                if item.get("a_json") is not None:
+                    sets += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
+                             "has_removable_tracks_flag = ?", "has_removable_subs_flag = ?",
+                             "has_und_tracks_flag = ?"]
+                    params += [item["a_json"], item["s_json"], item["rem_a"],
+                               item["rem_s"], item["und"]]
+                if not sets:
+                    continue
+                params.append(item["rid"])
                 await db.execute(
-                    "UPDATE scan_results SET native_language = ?, language_source = 'api' WHERE id = ?",
-                    (lang, rid),
-                )
+                    f"UPDATE scan_results SET {', '.join(sets)} WHERE id = ?", params)
             await db.commit()
             return True
         except Exception as exc:
@@ -3017,16 +3088,16 @@ async def _run_metadata_refresh() -> None:
             await db.commit()
             print("[METADATA] Cleared stale NULL cache entries for retry", flush=True)
 
-            # v0.9.68: with language_source split (detection now sets
-            # tracks_detected instead of overwriting the source with
-            # 'detected'), a detected title keeps its true 'heuristic' native
-            # source — so plain 'heuristic' selection covers it again. The
-            # v0.9.68 migration folds any legacy 'detected' rows back to
-            # 'heuristic'. 'api'/'manual'/'tmdb-manual' stay excluded
-            # (authoritative — don't override).
+            # 'heuristic' titles get a fresh API lookup (→ 'api' when resolved);
+            # 'api' titles get their tracks re-classified against the stored
+            # (correct) native and rewritten only if the classification drifted
+            # — this heals titles whose native was corrected by an earlier
+            # refresh before track re-classification existed (v0.9.70). 'manual'
+            # / 'tmdb-manual' stay excluded (authoritative — don't override).
             async with db.execute(
-                "SELECT id, file_path, native_language FROM scan_results "
-                "WHERE language_source = 'heuristic' "
+                "SELECT id, file_path, native_language, language_source, "
+                "audio_tracks_json, subtitle_tracks_json, duration FROM scan_results "
+                "WHERE language_source IN ('heuristic', 'api') "
                 "AND removed_from_list = 0 ORDER BY id ASC"
             ) as cur:
                 rows = await cur.fetchall()
@@ -3057,19 +3128,37 @@ async def _run_metadata_refresh() -> None:
             except Exception:
                 pass
 
-            try:
-                api_lang = await asyncio.wait_for(
-                    lookup_original_language(file_path),
-                    timeout=10,
-                )
-            except (asyncio.TimeoutError, Exception):
-                api_lang = None
+            is_heuristic = (row["language_source"] or "") == "heuristic"
 
-            if not api_lang:
-                skipped += 1
+            if is_heuristic:
+                try:
+                    api_lang = await asyncio.wait_for(
+                        lookup_original_language(file_path),
+                        timeout=10,
+                    )
+                except (asyncio.TimeoutError, Exception):
+                    api_lang = None
+                if api_lang:
+                    # Resolved → flip to api + re-classify against the new native.
+                    item = _reclass_item(row, api_lang) or {"rid": row["id"]}
+                    item["native"] = api_lang
+                    pending_updates.append(item)
+                    updated += 1
+                else:
+                    # Unresolved: heal any drifted flags vs the current native.
+                    item = _reclass_item(row, row["native_language"])
+                    if item:
+                        pending_updates.append(item)
+                    skipped += 1
             else:
-                pending_updates.append((api_lang, row["id"]))
-                updated += 1
+                # Already 'api' — no lookup; heal drifted track classification
+                # against the stored (correct) native, writing only if changed.
+                item = _reclass_item(row, row["native_language"])
+                if item:
+                    pending_updates.append(item)
+                    updated += 1
+                else:
+                    skipped += 1
 
             # Batch-write updates every 25 files (resilient to transient locks
             # so contention doesn't abort the whole refresh — v0.9.63).

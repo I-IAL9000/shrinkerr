@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.70] — 2026-07-19
+
+### Fixed
+- **Metadata refresh now updates which tracks are kept when it corrects a native language.** It only changed the language label, leaving the keep/remove flags computed against the old (wrong) native — e.g. a show heuristically matched as Portuguese kept its Portuguese track and marked the real Korean one for removal even after the refresh set the native to Korean. The refresh now re-classifies the tracks against the corrected native, and also heals already-API titles whose classification had drifted (rewriting only when it actually changed).
+
 ## [0.9.68] — 2026-07-19
 
 ### Changed

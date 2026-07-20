@@ -187,3 +187,61 @@ def test_classify_audio_tracks_ignores_unknown():
     # und: kept (not suggested for removal), not locked
     assert by_lang["und"].keep is True
     assert by_lang["und"].locked is False
+
+
+def test_metadata_refresh_reclassifies_on_native_change(monkeypatch):
+    """v0.9.69: correcting a title's native language during metadata refresh
+    must recompute which tracks are kept — and preserve per-track extras."""
+    import json
+    from backend.routes.scan import _reclassify_keep_flags
+    # Deterministic classify: cleanup on, keep native, no always-keep list.
+    monkeypatch.setattr(
+        "backend.scanner._is_cleanup_enabled",
+        lambda k, default=True: {"audio_cleanup_enabled": True, "keep_native_language": True}.get(k, default),
+    )
+    monkeypatch.setattr("backend.scanner._load_audio_keep_languages", lambda: set())
+    monkeypatch.setattr("backend.scanner._load_sub_settings", lambda: (set(), False))
+    # Stale state: classified under the wrong native 'por' (por kept, kor removed).
+    audio = json.dumps([
+        {"stream_index": 1, "language": "por", "codec": "eac3", "channels": 6, "keep": True, "locked": False},
+        {"stream_index": 2, "language": "kor", "codec": "eac3", "channels": 6, "keep": False, "locked": False, "detected_language": "kor", "detect_note": "x"},
+    ])
+    a_json, s_json, rem_a, rem_s, und = _reclassify_keep_flags(audio, "[]", "kor", 0)
+    by = {t["language"]: t for t in json.loads(a_json)}
+    assert by["kor"]["keep"] is True, "native track must be kept after native correction"
+    assert by["por"]["keep"] is False, "non-native track marked for removal"
+    assert by["kor"]["detected_language"] == "kor", "per-track extras preserved"
+    assert by["kor"]["detect_note"] == "x"
+    assert rem_a == 1
+
+
+def test_reclass_item_heals_stale_api_and_skips_correct(monkeypatch):
+    """v0.9.70: the refresh re-classifies already-'api' titles against their
+    stored native, rewriting only when the classification drifted (heals a
+    title whose native was corrected before track re-classification existed),
+    and returns None for correctly-classified rows (no needless write)."""
+    import json
+    from backend.routes import scan as _scan
+    monkeypatch.setattr(
+        "backend.scanner._is_cleanup_enabled",
+        lambda k, default=True: {"audio_cleanup_enabled": True, "keep_native_language": True}.get(k, default),
+    )
+    monkeypatch.setattr("backend.scanner._load_audio_keep_languages", lambda: set())
+    monkeypatch.setattr("backend.scanner._load_sub_settings", lambda: (set(), False))
+
+    def audio(por_keep, kor_keep):
+        return json.dumps([
+            {"stream_index": 1, "language": "por", "codec": "eac3", "channels": 6, "keep": por_keep, "locked": False},
+            {"stream_index": 2, "language": "kor", "codec": "eac3", "channels": 6, "keep": kor_keep, "locked": False},
+        ])
+
+    # Stale: native is kor but por is kept / kor removed → heal.
+    stale = {"id": 1, "audio_tracks_json": audio(True, False), "subtitle_tracks_json": "[]", "duration": 0}
+    item = _scan._reclass_item(stale, "kor")
+    assert item is not None
+    by = {t["language"]: t for t in json.loads(item["a_json"])}
+    assert by["kor"]["keep"] is True and by["por"]["keep"] is False
+
+    # Already correct → no write.
+    good = {"id": 2, "audio_tracks_json": audio(False, True), "subtitle_tracks_json": "[]", "duration": 0}
+    assert _scan._reclass_item(good, "kor") is None
