@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.75] — 2026-07-21
+
+### Fixed
+- **A detected subtitle language can now be written to an MP4-that's-named-.mkv.** Such files carry `mov_text` subs, which mkvpropedit rejects ("not a Matroska file") and the matroska remux can't copy ("Subtitle codec … is not supported") — so detection succeeded but the write silently failed. The remux now transcodes `mov_text`/`tx3g` subs to srt, setting the language and normalizing the file into a real mkv.
+
 ## [0.9.74] — 2026-07-21
 
 ### Fixed

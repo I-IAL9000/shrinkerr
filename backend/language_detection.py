@@ -517,17 +517,32 @@ def _build_mkvpropedit_cmd(
     return ["mkvpropedit", file_path] + edits
 
 
+# Subtitle codecs matroska can't carry via `-c copy` — must be transcoded to
+# srt. mov_text/tx3g are MP4/QuickTime timed-text (common in files that are
+# really MP4 but carry a .mkv extension). v0.9.75.
+_MKV_INCOMPATIBLE_SUBS = {"mov_text", "tx3g"}
+
+
 def _build_metadata_remux_cmd(
     file_path: str,
     out_path: str,
     audio_langs: list[str | None],
     sub_langs: list[str | None],
+    sub_codecs: "list[str] | None" = None,
 ) -> list[str]:
-    """Build an ffmpeg `-c copy` command that copies all streams and sets
+    """Build an ffmpeg `-c copy` remux that copies all streams and sets
     audio/subtitle language metadata. Output-stream metadata selectors are
-    0-based per type: `-metadata:s:a:0`, `-metadata:s:s:1`."""
+    0-based per type: `-metadata:s:a:0`, `-metadata:s:s:1`.
+
+    v0.9.75: the output is matroska (.mkv), which can't mux mov_text/tx3g —
+    a plain `-c copy` of such a sub aborts with "Subtitle codec … is not
+    supported" (seen on an MP4-that's-named-.mkv). Transcode those specific
+    subtitle streams to srt (`-c:s:N srt`); everything else still copies."""
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
            "-i", file_path, "-map", "0", "-c", "copy"]
+    for j, cc in enumerate(sub_codecs or []):
+        if (cc or "").lower() in _MKV_INCOMPATIBLE_SUBS:
+            cmd += [f"-c:s:{j}", "srt"]
     for i, code in enumerate(audio_langs):
         if code:
             cmd += [f"-metadata:s:a:{i}", f"language={code}"]
@@ -562,6 +577,24 @@ async def _probe_track_languages(file_path: str) -> tuple[list[str], list[str]]:
         elif st.get("codec_type") == "subtitle":
             s.append(lang)
     return a, s
+
+
+async def _probe_sub_codecs(file_path: str) -> list[str]:
+    """Per-type-ordered subtitle codec names (lowercased); [] on probe failure.
+    Used so the remux can transcode matroska-incompatible subs (mov_text/tx3g)
+    to srt rather than aborting the whole write. v0.9.75."""
+    import asyncio
+    import json as _json
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "s",
+           "-show_entries", "stream=codec_name", "-of", "json", file_path]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+        streams = _json.loads(out.decode(errors="replace")).get("streams", [])
+    except Exception:
+        return []
+    return [(st.get("codec_name") or "").lower() for st in streams]
 
 
 def _languages_present(probed: list[str], intended: list[str | None]) -> bool:
@@ -680,7 +713,10 @@ async def apply_track_languages_to_file(
         prefix=".shrinkerr_lang_", dir=p_dir,
     )
     os.close(fd)
-    cmd = _build_metadata_remux_cmd(file_path, tmp, audio_langs, sub_langs)
+    # Probe sub codecs so the remux can transcode matroska-incompatible subs
+    # (mov_text/tx3g) to srt instead of aborting. v0.9.75.
+    _sub_codecs = await _probe_sub_codecs(file_path) if any(sub_langs) else []
+    cmd = _build_metadata_remux_cmd(file_path, tmp, audio_langs, sub_langs, _sub_codecs)
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,

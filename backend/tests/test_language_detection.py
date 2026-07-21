@@ -458,3 +458,26 @@ def test_subtitle_indonesian_not_mistagged_malay():
 
 def test_looks_malay_needs_enough_text():
     assert _looks_malay("tak nak awak") is False  # < 20 words → don't trust it
+
+
+# --- v0.9.75: remux transcodes mov_text/tx3g subs (matroska can't copy them) -
+from backend.language_detection import _build_metadata_remux_cmd as _remux_cmd
+
+
+def test_remux_transcodes_mov_text_sub():
+    cmd = _remux_cmd("/f.mkv", "/tmp/o.mkv", [None], ["eng"], sub_codecs=["mov_text"])
+    assert "-c:s:0" in cmd and cmd[cmd.index("-c:s:0") + 1] == "srt"
+    assert "-metadata:s:s:0" in cmd and cmd[cmd.index("-metadata:s:s:0") + 1] == "language=eng"
+
+
+def test_remux_copies_matroska_compatible_sub():
+    cmd = _remux_cmd("/f.mkv", "/tmp/o.mkv", [None], ["eng"], sub_codecs=["subrip"])
+    assert "-c:s:0" not in cmd  # srt/subrip copies fine — no transcode
+
+
+def test_remux_transcodes_only_the_mov_text_stream():
+    # sub 0 = image (copy), sub 1 = mov_text (transcode)
+    cmd = _remux_cmd("/f.mkv", "/tmp/o.mkv", [None], [None, "eng"],
+                     sub_codecs=["hdmv_pgs_subtitle", "mov_text"])
+    assert "-c:s:1" in cmd and cmd[cmd.index("-c:s:1") + 1] == "srt"
+    assert "-c:s:0" not in cmd
