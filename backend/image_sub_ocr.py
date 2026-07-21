@@ -229,7 +229,23 @@ def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
         text = raw.decode("utf-8")
     except UnicodeDecodeError:
         text = raw.decode("latin-1", errors="replace")
-    return _strip_srt(text)
+    stripped = _strip_srt(text)
+    # v0.9.77: subtile-ocr can exit 0 and write an .srt containing only
+    # sequence numbers + timestamps when tesseract recognised nothing in the
+    # rendered bitmaps (e.g. an unusual VobSub palette — black text — that
+    # binarises with too little contrast). That was the one silent path: no
+    # [IMG-OCR] line, the track just went to und. Log the OCR yield so the
+    # failure mode is visible (empty-but-present srt vs. clean text that the
+    # language detector then rejects).
+    if not stripped:
+        print(f"[IMG-OCR] subtile-ocr ({tess_lang}): srt written but no readable "
+              f"text ({len(raw)} raw bytes) — tesseract recognised nothing in the "
+              f"bitmaps", flush=True)
+    else:
+        _sample = " ".join(stripped.split())[:80]
+        print(f"[IMG-OCR] subtile-ocr ({tess_lang}): OCR'd {len(stripped)} chars, "
+              f"sample={_sample!r}", flush=True)
+    return stripped
 
 
 async def _extract_vobsub(file_path: str, stream_index: int, workdir: str) -> str | None:

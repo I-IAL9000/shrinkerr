@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.77] — 2026-07-21
+
+### Fixed
+- **VobSub (dvd_subtitle) tracks that OCR to nothing now say why.** subtile-ocr can exit cleanly yet write an srt of only timestamps when tesseract recognises no characters in the rendered bitmaps (e.g. an unusual palette — black text — that binarises with too little contrast); that was the one silent path to `und` with no `[IMG-OCR]` line. It now logs the OCR yield (char count + sample, or "no readable text").
+
 ## [0.9.76] — 2026-07-21
 
 ### Fixed
