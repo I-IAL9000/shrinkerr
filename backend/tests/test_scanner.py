@@ -245,3 +245,22 @@ def test_reclass_item_heals_stale_api_and_skips_correct(monkeypatch):
     # Already correct → no write.
     good = {"id": 2, "audio_tracks_json": audio(False, True), "subtitle_tracks_json": "[]", "duration": 0}
     assert _scan._reclass_item(good, "kor") is None
+
+
+def test_clean_srt_bytes_strips_ass_structure():
+    """v0.9.71: raw ASS must be reduced to dialogue text only — the English
+    script structure ([Script Info], Format:/Style:, 'Dialogue:' prefixes,
+    {\\...} tags) otherwise makes langdetect read the track as English."""
+    from backend.scanner import _clean_srt_bytes
+    ass = (
+        "[Script Info]\nScriptType: v4.00+\n[V4+ Styles]\n"
+        "Format: Name, Fontname\nStyle: Default,Arial\n[Events]\n"
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        "Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\\an8}Perkara yang saya nak cakap.\n"
+        "Dialogue: 0,0:00:05.00,0:00:08.00,Default,,0,0,0,,Apa pendapat awak?\n"
+    )
+    out = _clean_srt_bytes(ass.encode("utf-8"))
+    assert "Script Info" not in out and "Dialogue:" not in out and "Format:" not in out
+    assert "an8" not in out  # override tag stripped
+    assert "Perkara yang saya nak cakap." in out
+    assert "Apa pendapat awak?" in out

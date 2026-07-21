@@ -686,8 +686,27 @@ def _clean_srt_bytes(raw: bytes, max_chars: int = 4000) -> str | None:
     if text is None:
         # Last resort: latin-1 maps every byte and never raises.
         text = raw.decode("latin-1", errors="replace")
-    text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
-    text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
+    # v0.9.71: if the bytes are raw ASS/SSA (the `-c:s copy` extraction path
+    # yields the whole script, not decoded dialogue), pull out ONLY the
+    # dialogue text. Otherwise the English structure ([Script Info],
+    # Format:/Style: with font names, "Dialogue:" prefixes) dominates and
+    # langdetect mis-reads the track as English (observed: a Malay ass sub
+    # detected en@0.57 → stayed und).
+    if "[Events]" in text or "[Script Info]" in text or "\nDialogue:" in text or text.startswith("Dialogue:"):
+        dlg = []
+        for line in text.splitlines():
+            if line.startswith("Dialogue:"):
+                parts = line.split(",", 9)  # 9 fields precede the Text field
+                if len(parts) == 10:
+                    body = _re.sub(r"\{[^}]*\}", "", parts[9])  # drop {\...} tags
+                    body = body.replace("\\N", " ").replace("\\n", " ").replace("\\h", " ")
+                    body = body.strip()
+                    if body:
+                        dlg.append(body)
+        text = "\n".join(dlg)
+    else:
+        text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
+        text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
     return text[:max_chars].strip() or None
 
 

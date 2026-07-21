@@ -434,3 +434,27 @@ async def test_verify_written_transient_probe_then_recovers(monkeypatch):
     monkeypatch.setattr(_ld_vw, "_probe_track_languages", fake_probe)
     monkeypatch.setattr(_asyncio_vw, "sleep", no_sleep)
     assert await _ld_vw._verify_written("/f.mkv", ["eng"], [None], retries=3) is True
+
+
+# --- v0.9.71: Malay subtitle detection (langdetect has no Malay model) ------
+from backend.language_detection import detect_subtitle_language as _det_sub, _looks_malay
+
+
+def test_subtitle_detects_malay():
+    text = ("Perkara yang saya nak cakap akan jadi sukar untuk difahami. "
+            "Apa pendapat awak sebagai wanita? Orang takkan tahu jika kita "
+            "tak luahkan perasaan. Macam mana nak buat sekejap? ") * 3
+    assert _looks_malay(text) is True
+    assert _det_sub(text) == ("may", 0.99)
+
+
+def test_subtitle_indonesian_not_mistagged_malay():
+    text = ("Aku tidak tahu apa yang kamu mau bicarakan. Ini sangat sulit "
+            "dimengerti. Kayak gitu banget sih. Aku udah bilang jangan begitu.") * 3
+    assert _looks_malay(text) is False
+    lang, _ = _det_sub(text)
+    assert lang == "ind"
+
+
+def test_looks_malay_needs_enough_text():
+    assert _looks_malay("tak nak awak") is False  # < 20 words → don't trust it

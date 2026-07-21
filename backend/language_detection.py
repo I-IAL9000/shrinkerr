@@ -158,11 +158,47 @@ def _iso_to_iso639_2b(code: str | None) -> str | None:
         return None
 
 
+# v0.9.71: langdetect has NO Malay model — Malay (~80% shared vocabulary with
+# Indonesian) reads as 'id' (Indonesian) or, on mixed input, something else
+# entirely. These high-frequency function words are Malay-distinctive (the
+# Indonesian equivalents differ: tak→nggak/gak, nak→mau, awak→kamu,
+# cakap→bicara, macam→kayak, sukar→sulit, faham→paham, sikit→sedikit), used to
+# disambiguate. A clear net-Malay signal is required so genuine Indonesian
+# isn't mis-tagged.
+_MALAY_MARKERS = {
+    "tak", "nak", "awak", "cakap", "macam", "korang", "jom", "kot",
+    "sukar", "faham", "difahami", "sikit", "camni", "boleh", "tengok",
+    "kejap", "sekejap", "sangat", "buat",
+}
+_INDONESIAN_MARKERS = {
+    "nggak", "gak", "kamu", "mau", "bisa", "bicara", "sulit", "banget",
+    "aja", "udah", "gue", "gw", "lu", "dong", "kok", "nih", "sih",
+    "kayak", "sedikit", "paham",
+}
+
+
+def _looks_malay(text: str) -> bool:
+    """Heuristic Malay-vs-Indonesian discriminator (langdetect can't). True
+    only on a clear net-Malay signal: ≥3 distinct Malay markers outnumbering
+    Indonesian ones, on enough text to trust it."""
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    if len(words) < 20:
+        return False
+    wset = set(words)
+    m = len(_MALAY_MARKERS & wset)
+    i = len(_INDONESIAN_MARKERS & wset)
+    return m >= 3 and m > i
+
+
 def detect_subtitle_language(text: str) -> tuple[str | None, float]:
     """Detect language of subtitle text. langdetect yields ISO 639-1 +
     probability; map to 639-2 B-form to match the codebase."""
     if not text or not text.strip():
         return (None, 0.0)
+    # Malay first — langdetect has no Malay profile, so without this a Malay
+    # sub is read as Indonesian or falls under the confidence floor as und.
+    if _looks_malay(text):
+        return ("may", 0.99)
     try:
         from langdetect import detect_langs, DetectorFactory
         DetectorFactory.seed = 0

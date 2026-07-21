@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.71] — 2026-07-21
+
+### Fixed
+- **Language detection on `.ass` subtitles no longer mis-reads them as English.** The extractor returned the raw ASS script (the English `[Script Info]`/`Style:`/`Dialogue:` structure), so langdetect saw mostly English and left the track und; it now strips ASS structure to dialogue-only text.
+- **Malay subtitles are now detected as Malay (`may`).** langdetect has no Malay model and read Malay as Indonesian or und; a Malay-vs-Indonesian discriminator now tags clear Malay, without mis-tagging genuine Indonesian.
+
 ## [0.9.70] — 2026-07-19
 
 ### Fixed
