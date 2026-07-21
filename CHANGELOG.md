@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.76] — 2026-07-21
+
+### Fixed
+- **More `.ass` subtitles now detect correctly (e.g. Tagalog).** ffmpeg's ass→srt fallback wraps each line in `<font size="…" color="…">` tags (from the ASS style) and leaves `{\an…}` overrides; over a full episode the repeated "font size color" tokens skewed langdetect to English (en@0.57) so the track stayed und. Subtitle cleaning now strips HTML-like tags and residual override tags before detection.
+
 ## [0.9.75] — 2026-07-21
 
 ### Fixed

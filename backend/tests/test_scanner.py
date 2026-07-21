@@ -264,3 +264,21 @@ def test_clean_srt_bytes_strips_ass_structure():
     assert "an8" not in out  # override tag stripped
     assert "Perkara yang saya nak cakap." in out
     assert "Apa pendapat awak?" in out
+
+
+def test_clean_srt_bytes_strips_font_and_override_tags():
+    """v0.9.76: ffmpeg's ass->srt fallback wraps lines in <font …> tags and
+    leaves {\\an} overrides — over many lines the repeated 'font size color'
+    tokens skewed langdetect to English. They must be stripped."""
+    from backend.scanner import _clean_srt_bytes
+    srt = (
+        '1\n00:00:01,000 --> 00:00:03,000\n'
+        '<font size="48" color="#000000">{\\an8}Isang serye mula sa Netflix.</font>\n\n'
+        '2\n00:00:04,000 --> 00:00:06,000\n'
+        '<font size="48" color="#000000"><i>Ang mga bata ay naglalaro.</i></font>\n'
+    )
+    out = _clean_srt_bytes(srt.encode("utf-8"))
+    assert "<font" not in out and "</font>" not in out and "<i>" not in out
+    assert "{" not in out and "an8" not in out
+    assert "Isang serye mula sa Netflix." in out
+    assert "Ang mga bata ay naglalaro." in out

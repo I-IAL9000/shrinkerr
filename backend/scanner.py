@@ -707,6 +707,14 @@ def _clean_srt_bytes(raw: bytes, max_chars: int = 4000) -> str | None:
     else:
         text = _re.sub(r"^\d+\s*$", "", text, flags=_re.MULTILINE)
         text = _re.sub(r"\d{2}:\d{2}:\d{2},\d{3} --> .*$", "", text, flags=_re.MULTILINE)
+    # v0.9.76: strip markup that skews language detection. ffmpeg's ass→srt
+    # decode wraps every line in <font size=".." color="..">…</font> (from the
+    # ASS style) and leaves {\an8}-style override tags — over a full episode
+    # the repeated "font size color" English tokens tipped langdetect to
+    # en@0.57 and the track stayed und (e.g. a Tagalog .ass). Drop HTML-like
+    # tags and any residual {\...} overrides so only dialogue text remains.
+    text = _re.sub(r"<[^>]+>", "", text)
+    text = _re.sub(r"\{[^}]*\}", "", text)
     return text[:max_chars].strip() or None
 
 
