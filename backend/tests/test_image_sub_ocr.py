@@ -222,3 +222,74 @@ def test_normalize_idx_palette_idempotent(tmp_path):
     idx.write_text("size: 720x480\n" + good)
     _normalize_idx_palette(str(idx))
     assert good in idx.read_text()
+
+
+def test_subtile_ocr_reads_srt_and_returns_text(monkeypatch, tmp_path):
+    """Real body: subtile-ocr writes an .srt → we read + strip it and the
+    OCR-yield log runs with the real `tess_lang`. Guards the v0.9.77-class
+    bug where a wrong variable name NameErrors only on a produced srt (which
+    the mocked tests never exercise)."""
+    from backend import image_sub_ocr as io
+    idx = tmp_path / "sub.idx"
+    idx.write_text("palette: 000000, ffffff\n")
+    out_srt = tmp_path / "sub.srt"
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/subtile-ocr")
+
+    def fake_run(cmd, **kw):
+        out_srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nRight. Okay.\n")
+        class _R:
+            returncode = 0
+        return _R()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    out = io._subtile_ocr_to_text(str(idx), "eng")
+    assert out is not None and "Right. Okay." in out
+
+
+def test_subtile_ocr_empty_srt_returns_none(monkeypatch, tmp_path):
+    """srt with only timestamps (tesseract recognised nothing) → None, and the
+    'no readable text' log branch runs cleanly."""
+    from backend import image_sub_ocr as io
+    idx = tmp_path / "sub.idx"
+    idx.write_text("palette: 000000, ffffff\n")
+    out_srt = tmp_path / "sub.srt"
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/subtile-ocr")
+
+    def fake_run(cmd, **kw):
+        out_srt.write_text("1\n00:00:01,000 --> 00:00:02,000\n\n")
+        class _R:
+            returncode = 0
+        return _R()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    assert io._subtile_ocr_to_text(str(idx), "eng") is None
+
+
+def test_pgsrip_reads_srt_and_returns_text(monkeypatch, tmp_path):
+    """Real body: pgsrip writes an .srt → we read + strip it and the OCR-yield
+    log runs with `tess_langs`. Regression guard for the v0.9.77 wrong-variable
+    (tess_lang vs tess_langs) NameError that only fires on a produced srt."""
+    import sys
+    import types
+    from backend import image_sub_ocr as io
+    sup = tmp_path / "sub.sup"
+    sup.write_bytes(b"\x00")
+    srt = tmp_path / "sub.srt"
+    monkeypatch.setattr(io, "_patch_pgsrip_from_hex", lambda: None)
+
+    fake_pgsrip = types.ModuleType("pgsrip")
+
+    class _Rip:
+        def rip(self, media, opts):
+            srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello there.\n")
+
+    fake_pgsrip.pgsrip = _Rip()
+    fake_pgsrip.Sup = lambda p: p
+    fake_pgsrip.Options = lambda **kw: kw
+    fake_babel = types.ModuleType("babelfish")
+    fake_babel.Language = lambda code: code
+    monkeypatch.setitem(sys.modules, "pgsrip", fake_pgsrip)
+    monkeypatch.setitem(sys.modules, "babelfish", fake_babel)
+
+    out = io._pgsrip_to_text(str(sup), ("eng",))
+    assert out is not None and "Hello there." in out

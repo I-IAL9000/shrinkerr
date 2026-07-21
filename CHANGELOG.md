@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.79] — 2026-07-21
+
+### Fixed
+- **VobSub OCR-yield logging now actually covers VobSub, and PGS OCR is no longer broken.** v0.9.77 added the "srt written but nothing recognised" diagnostic to the wrong helper — it landed in the PGS path (with a `tess_lang`/`tess_langs` name mismatch that raised on every successful PGS OCR) while the VobSub path stayed silent. The diagnostic is now in the VobSub helper, and PGS OCR works again; both paths log their OCR yield.
+
 ## [0.9.78] — 2026-07-21
 
 ### Fixed
