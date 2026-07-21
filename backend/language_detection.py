@@ -622,10 +622,13 @@ async def apply_track_languages_to_file(
         if cmd is None:
             return False
         try:
+            # v0.9.73: capture stdout too — mkvtoolnix writes error messages to
+            # STDOUT, so the old stderr-only capture logged an empty reason on
+            # rc=2. Merge stderr into stdout.
             proc = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
+                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
             )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
         except (asyncio.TimeoutError, OSError, FileNotFoundError) as exc:
             print(f"[LANG-DETECT] mkvpropedit failed for {file_path}: {exc}", flush=True)
             return False
@@ -652,12 +655,15 @@ async def apply_track_languages_to_file(
             print(f"[LANG-DETECT] mkvpropedit didn't stick (LANGUAGE SimpleTag override?); "
                   f"trying remux: {file_path}", flush=True)
         else:
+            # v0.9.73: mkvpropedit errored (rc=2). Don't give up — fall through
+            # to the ffmpeg -c copy remux below, which can set the language
+            # where mkvpropedit couldn't and rewrites a clean mkv. The captured
+            # output tells us WHY it errored (mkvtoolnix logs to stdout).
             print(
                 f"[LANG-DETECT] mkvpropedit rc={proc.returncode} for {file_path}: "
-                f"{stderr.decode(errors='replace')[-300:]}",
+                f"{(out or b'').decode(errors='replace')[-300:]!r}; trying remux",
                 flush=True,
             )
-            return False
 
     # v0.9.26: containers with no per-track language field copy fine but drop
     # the tag, so an in-place fix is impossible — skip the (multi-GB) remux

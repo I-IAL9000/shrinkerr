@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.73] — 2026-07-21
+
+### Fixed
+- **A subtitle language write that mkvpropedit rejects (rc=2) now falls back to the ffmpeg remux instead of silently giving up**, and mkvpropedit's error reason is now logged (mkvtoolnix writes it to stdout, which the previous stderr-only capture missed — the log showed a blank reason).
+
 ## [0.9.72] — 2026-07-21
 
 ### Fixed
