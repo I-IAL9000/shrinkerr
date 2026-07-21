@@ -139,6 +139,37 @@ def _patch_pgsrip_from_hex() -> None:
                 _mod.from_hex = _safe
     except Exception:
         pass
+    _patch_pgsrip_to_time()
+
+
+def _patch_pgsrip_to_time() -> None:
+    """pgsrip 0.1.11 `utils.to_time` is `SubRipTime.from_ordinal(value) if
+    value else None` — so a cue whose timestamp ordinal is 0 (a subtitle at
+    00:00:00, or a zero-value PGS segment) yields None instead of 00:00:00.
+    ripper then builds `SubRipItem(0, None, ...)` and pysrt dies with
+    "SubRipTime() argument after * must be an iterable, not NoneType",
+    aborting the whole rip → the track stays und (the SubRipTime crash the
+    v0.9.53 fail-fast merely stopped retrying). Treat 0 as a real time
+    (`value is not None`). Patches every pgsrip module that imported the
+    name. Idempotent, fail-open. v0.9.72."""
+    try:
+        import sys as _sys
+        from pgsrip import utils as _u
+        from pysrt import SubRipTime as _SRT
+        if getattr(_u, "_shrinkerr_timepatch", False):
+            return
+        _orig = _u.to_time
+
+        def _safe_time(value):
+            return _SRT.from_ordinal(value) if value is not None else None
+
+        _u.to_time = _safe_time
+        _u._shrinkerr_timepatch = True
+        for _name, _mod in list(_sys.modules.items()):
+            if _name.startswith("pgsrip") and getattr(_mod, "to_time", None) is _orig:
+                _mod.to_time = _safe_time
+    except Exception:
+        pass
 
 
 class _PgsRipError(Exception):

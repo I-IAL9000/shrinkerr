@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.72] — 2026-07-21
+
+### Fixed
+- **PGS subtitles that start at 00:00:00 no longer fail to OCR.** pgsrip's `to_time` treated a zero timestamp as "no time" and returned None, so it built a subtitle with a null start and crashed (`SubRipTime() argument after * must be an iterable`), aborting the whole rip — the track stayed und. Patched to treat 0 as a valid time.
+
 ## [0.9.71] — 2026-07-21
 
 ### Fixed
