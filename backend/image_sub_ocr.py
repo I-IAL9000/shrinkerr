@@ -239,20 +239,27 @@ async def _extract_vobsub(file_path: str, stream_index: int, workdir: str) -> st
     idx = os.path.join(workdir, "sub.idx")
     sub = os.path.join(workdir, "sub.sub")
     cmd = ["mkvextract", "tracks", file_path, f"{stream_index}:{idx}"]
+    # v0.9.74: capture output (mkvtoolnix logs to stdout) and log WHY extraction
+    # failed — previously it was discarded, so a VobSub that couldn't be pulled
+    # just went silently to und with no [IMG-OCR] line at all.
     try:
         proc = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
-        await asyncio.wait_for(proc.wait(), timeout=300)
-    except (asyncio.TimeoutError, OSError):
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
+    except (asyncio.TimeoutError, OSError) as exc:
         try:
             proc.kill()
             await proc.wait()
         except Exception:
             pass
+        print(f"[IMG-OCR] mkvextract VobSub s{stream_index} timed out/errored: {exc}", flush=True)
         return None
-    if (proc.returncode != 0 or not os.path.exists(idx)
-            or not os.path.exists(sub) or os.path.getsize(sub) == 0):
+    sub_sz = os.path.getsize(sub) if os.path.exists(sub) else 0
+    if proc.returncode != 0 or not os.path.exists(idx) or sub_sz == 0:
+        print(f"[IMG-OCR] mkvextract VobSub s{stream_index} produced nothing usable "
+              f"(rc={proc.returncode}, idx_exists={os.path.exists(idx)}, sub_bytes={sub_sz}): "
+              f"{(out or b'').decode(errors='replace')[-300:]!r}", flush=True)
         return None
     return idx
 

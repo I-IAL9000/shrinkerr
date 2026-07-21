@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.74] — 2026-07-21
+
+### Fixed
+- **VobSub (dvd_subtitle) subtitles that fail to extract no longer go silently to und.** `_extract_vobsub` ran mkvextract with its output discarded and returned nothing on failure with no log; it now logs the reason (exit code, whether the .idx/.sub were produced, and mkvextract's message) so extraction failures are diagnosable.
+
 ## [0.9.73] — 2026-07-21
 
 ### Fixed
