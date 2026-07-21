@@ -1050,7 +1050,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     ocr_lang, _c = await detect_image_sub_language(
                         req.file_path, t["stream_index"], codec_l,
                         progress_cb=_ocr_progress)
-                except Exception:
+                except Exception as exc:
+                    # v0.9.78: surface the reason. A raise here (setup failure
+                    # before the OCR helpers' own [IMG-OCR] logging kicks in —
+                    # e.g. an import or tempdir error) previously went to und
+                    # with no log line at all, making it undiagnosable.
+                    import traceback as _tb
+                    print(f"[IMG-OCR] image-sub detection raised for "
+                          f"s{t.get('stream_index')} ({codec_l}): {exc!r}\n"
+                          f"{_tb.format_exc()}", flush=True)
                     ocr_lang = None
                 if ocr_lang:
                     t["language"] = ocr_lang

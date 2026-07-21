@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.78] — 2026-07-21
+
+### Fixed
+- **Image-subtitle detection no longer fails silently.** A raise inside the OCR call (setup error before the OCR helpers' own logging) was swallowed with no log, leaving the track at `und` with nothing to diagnose; the exception and traceback are now logged as an `[IMG-OCR]` line.
+
 ## [0.9.77] — 2026-07-21
 
 ### Fixed
