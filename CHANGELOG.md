@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.82] — 2026-07-22
+
+### Fixed
+- **The Whisper device line ("loaded on cuda"/"cpu") now shows in the in-app log.** It was written to the detached worker's stderr, which bypasses the log interceptor and only reached `docker logs`; the worker now sends diagnostics back through the parent so GPU use is verifiable in the UI.
+
 ## [0.9.81] — 2026-07-21
 
 ### Added

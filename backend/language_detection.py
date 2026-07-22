@@ -331,12 +331,12 @@ def _get_whisper_model():
                                       download_root=cache_dir, cpu_threads=_cpu_threads)
         _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = False
-        print(f"[LANG-DETECT] Whisper model '{want}' loaded on {_model_device(_WHISPER_MODEL)}",
-              file=sys.stderr, flush=True)
+        print(f"LOG\t[LANG-DETECT] Whisper model '{want}' loaded on {_model_device(_WHISPER_MODEL)}",
+              flush=True)
         return _WHISPER_MODEL
     except Exception as exc:
-        print(f"[LANG-DETECT] Whisper model '{want}' load failed, audio detection disabled: {exc}",
-              file=sys.stderr, flush=True)
+        print(f"LOG\t[LANG-DETECT] Whisper model '{want}' load failed, audio detection disabled: {exc}",
+              flush=True)
         _WHISPER_MODEL = None
         _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = True
@@ -443,6 +443,11 @@ class _WhisperWorker:
             s = raw.decode(errors="replace")
             if s.startswith("RESULT\t"):
                 return s
+            if s.startswith("LOG\t"):
+                # Worker diagnostics (e.g. "model loaded on cuda") — re-emit via
+                # the parent's stdout so they reach the captured in-UI log
+                # (the worker's own stdout/stderr bypass the log interceptor).
+                print(s[4:].rstrip("\n"), flush=True)
 
     async def _ensure_started(self) -> None:
         want = _configured_whisper_model()

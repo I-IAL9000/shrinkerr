@@ -525,6 +525,26 @@ async def test_worker_skips_non_result_lines():
         await w.shutdown()
 
 
+_LOGGER = ("import sys\n"
+           "for l in sys.stdin:\n"
+           "    if l.strip():\n"
+           "        sys.stdout.write('LOG\\t[LANG-DETECT] Whisper model loaded on cuda\\n'); sys.stdout.flush()\n"
+           "        sys.stdout.write('RESULT\\tde\\t0.9\\n'); sys.stdout.flush()\n")
+
+
+@pytest.mark.asyncio
+async def test_worker_reemits_log_lines(capsys):
+    """Worker LOG lines (e.g. the 'loaded on cuda' device report) are re-emitted
+    via the parent's stdout so they reach the captured in-UI log."""
+    from backend.language_detection import _WhisperWorker
+    w = _WhisperWorker(cmd=_fake_worker(_LOGGER))
+    try:
+        assert await w.detect("/tmp/a.wav") == ("de", 0.9)
+        assert "loaded on cuda" in capsys.readouterr().out
+    finally:
+        await w.shutdown()
+
+
 @pytest.mark.asyncio
 async def test_worker_timeout_kills_and_raises():
     import asyncio
