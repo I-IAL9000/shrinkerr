@@ -40,6 +40,10 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "audio_cleanup", label: "Audio cleanup" },
   { key: "lossless_audio", label: "Lossless audio" },
   { key: "lossy_audio", label: "Lossy audio" },
+  // Language group
+  { key: "_lang", label: "Language:", group: "divider" },
+  { key: "dubbed", label: "Dubbed" },
+  { key: "not_api_matched", label: "Not API-matched" },
   // Plex group
   { key: "_plex", label: "Plex:", group: "divider" },
   { key: "plex_watched", label: "Watched" },
