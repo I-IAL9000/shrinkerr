@@ -310,3 +310,18 @@ async def test_recompute_needs_conversion_works_without_row_factory(tmp_path):
         assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0}
     finally:
         await db.close()
+
+
+def test_is_dubbed_core():
+    from backend.scanner import _is_dubbed
+    assert _is_dubbed(["eng"], "kor", "api") == 1
+    assert _is_dubbed(["kor", "eng"], "kor", "api") == 0
+    assert _is_dubbed(["cmn"], "zho", "api") == 0
+    assert _is_dubbed(["eng"], "kor", "manual") == 1
+    assert _is_dubbed(["eng"], "kor", "tmdb-manual") == 1
+    assert _is_dubbed(["eng"], "kor", "heuristic") == 0
+    assert _is_dubbed(["eng"], "und", "api") == 0
+    assert _is_dubbed(["eng"], "", "api") == 0
+    assert _is_dubbed(["eng", "und"], "kor", "api") == 0
+    assert _is_dubbed([], "kor", "api") == 0
+    assert _is_dubbed(["ENG"], "KOR", "api") == 1

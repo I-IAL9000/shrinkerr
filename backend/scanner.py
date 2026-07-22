@@ -591,6 +591,31 @@ LANGUAGE_EQUIVALENTS = {
 }
 
 
+_DUBBED_NATIVE_SOURCES = ("api", "tmdb-manual", "manual")
+
+
+def _is_dubbed(audio_langs: list[str], native_language: str, language_source: str) -> int:
+    """1 if this item is dubbed: its native (original) language is known from a
+    source independent of the audio present, it has audio, every audio track
+    has a known language, and none match native (using LANGUAGE_EQUIVALENTS).
+    0 otherwise (incl. when the status is uncertain). See the design spec."""
+    if (language_source or "") not in _DUBBED_NATIVE_SOURCES:
+        return 0
+    native = (native_language or "").lower()
+    if not native or native == "und":
+        return 0
+    langs = [(l or "und").lower() for l in audio_langs]
+    if not langs:
+        return 0
+    if any(l == "und" for l in langs):
+        return 0
+    native_equiv = LANGUAGE_EQUIVALENTS.get(native, {native})
+    for l in langs:
+        if l in native_equiv or native in LANGUAGE_EQUIVALENTS.get(l, {l}):
+            return 0
+    return 1
+
+
 def languages_match(lang1: str, lang2: str) -> bool:
     """Check if two language codes represent the same language, accounting for variants."""
     l1 = lang1.lower()
