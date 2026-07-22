@@ -331,14 +331,26 @@ def _get_whisper_model():
                                       download_root=cache_dir, cpu_threads=_cpu_threads)
         _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = False
-        print(f"[LANG-DETECT] Whisper model '{want}' loaded", flush=True)
+        print(f"[LANG-DETECT] Whisper model '{want}' loaded on {_model_device(_WHISPER_MODEL)}",
+              file=sys.stderr, flush=True)
         return _WHISPER_MODEL
     except Exception as exc:
-        print(f"[LANG-DETECT] Whisper model '{want}' load failed, audio detection disabled: {exc}", flush=True)
+        print(f"[LANG-DETECT] Whisper model '{want}' load failed, audio detection disabled: {exc}",
+              file=sys.stderr, flush=True)
         _WHISPER_MODEL = None
         _WHISPER_MODEL_NAME = want
         _WHISPER_LOAD_FAILED = True
         return None
+
+
+def _model_device(model) -> str:
+    """Best-effort read of the device a loaded faster-whisper model runs on
+    ('cuda' / 'cpu'), for a startup log line so GPU use is verifiable. Returns
+    'unknown' if the attribute isn't present."""
+    try:
+        return getattr(getattr(model, "model", None), "device", None) or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _run_whisper_lang(clip_path: str) -> tuple[str | None, float]:
@@ -352,41 +364,140 @@ def _run_whisper_lang(clip_path: str) -> tuple[str | None, float]:
     return (getattr(info, "language", None), float(getattr(info, "language_probability", 0.0)))
 
 
-async def _detect_clip_language(clip_path: str, timeout: int = 120) -> tuple[str | None, float]:
-    """Language-ID a clip in a KILLABLE subprocess. v0.9.21: a wedged whisper
-    transcribe used to leak an un-cancellable executor thread that pegged every
-    core and starved the event loop (the whole app went unresponsive). Running
-    it as a subprocess means a stuck one is KILLED on timeout, freeing the CPU.
-    Raises asyncio.TimeoutError on timeout (caller abandons the track);
-    otherwise returns (ISO 639-1 | None, confidence). Fail-open."""
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "backend.audio_lang_worker", clip_path,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
+def _parse_whisper_result(line: str) -> tuple[str | None, float]:
+    """Parse a worker `RESULT\t<lang>\t<conf>` line. Non-RESULT lines (stray
+    model-load / library chatter that slipped onto stdout) parse to (None, 0.0)
+    so the caller skips them."""
+    if not line.startswith("RESULT\t"):
+        return (None, 0.0)
+    parts = line.rstrip("\n").split("\t")
+    lang = parts[1] if len(parts) > 1 else ""
     try:
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+        conf = float(parts[2]) if len(parts) > 2 and parts[2] else 0.0
+    except ValueError:
+        conf = 0.0
+    return (lang or None, conf)
+
+
+def _idle_seconds() -> float:
+    """How long the persistent whisper worker may sit idle before it's shut
+    down to free RAM/VRAM (the P2200 is shared with Plex transcoding). Env-
+    tunable; default 300s. Stays hot during an active scan (each clip resets
+    the timer)."""
+    try:
+        return float(os.environ.get("SHRINKERR_WHISPER_IDLE_SECONDS", "300"))
+    except ValueError:
+        return 300.0
+
+
+class _WhisperWorker:
+    """Supervises a single persistent, killable whisper worker subprocess.
+
+    Access is serialized (detection is single-instance — no parallel
+    inference). The per-request timeout still KILLS a wedged worker to free the
+    CPU/GPU (v0.9.21); the worker is lazily respawned on the next request. The
+    worker is released after an idle period to free RAM/VRAM, and respawned
+    when the configured model changes."""
+
+    def __init__(self, cmd: list[str] | None = None):
+        self._cmd = cmd or [sys.executable, "-m", "backend.audio_lang_worker"]
+        self._proc: asyncio.subprocess.Process | None = None
+        self._started_model: str | None = None
+        self._lock = asyncio.Lock()
+        self._idle_task: asyncio.Task | None = None
+
+    async def detect(self, clip_path: str, timeout: int = 120) -> tuple[str | None, float]:
+        async with self._lock:
+            try:
+                return await self._request(clip_path, timeout)
+            except asyncio.TimeoutError:
+                print(f"[LANG-DETECT] whisper worker killed after {timeout}s: {clip_path}", flush=True)
+                await self._kill()
+                raise
+            finally:
+                self._reset_idle()
+
+    async def _request(self, clip_path: str, timeout: int) -> tuple[str | None, float]:
+        for _attempt in (1, 2):
+            await self._ensure_started()
+            try:
+                self._proc.stdin.write((clip_path + "\n").encode())
+                await self._proc.stdin.drain()
+                line = await asyncio.wait_for(self._read_result(), timeout=timeout)
+            except asyncio.TimeoutError:
+                raise
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                await self._kill()
+                continue
+            if line is None:
+                await self._kill()
+                continue
+            return _parse_whisper_result(line)
+        return (None, 0.0)
+
+    async def _read_result(self) -> str | None:
+        while True:
+            raw = await self._proc.stdout.readline()
+            if not raw:
+                return None
+            s = raw.decode(errors="replace")
+            if s.startswith("RESULT\t"):
+                return s
+
+    async def _ensure_started(self) -> None:
+        want = _configured_whisper_model()
+        if self._proc is not None and self._proc.returncode is None:
+            if self._started_model == want:
+                return
+            await self._kill()
+        self._proc = await asyncio.create_subprocess_exec(
+            *self._cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=None,
+        )
+        self._started_model = want
+
+    async def _kill(self) -> None:
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
         try:
-            proc.kill()
-            await proc.wait()
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
         except Exception:
             pass
-        print(f"[LANG-DETECT] whisper subprocess killed after {timeout}s: {clip_path}", flush=True)
-        raise
-    if proc.returncode != 0 or not out:
-        return (None, 0.0)
-    # The worker prints a `RESULT\t<lang>\t<conf>` line; ignore any model-load
-    # chatter on stdout by scanning for that marker from the end.
-    for line in reversed(out.decode(errors="replace").splitlines()):
-        if line.startswith("RESULT\t"):
-            parts = line.split("\t")
-            lang = parts[1] if len(parts) > 1 else ""
-            try:
-                conf = float(parts[2]) if len(parts) > 2 and parts[2] else 0.0
-            except ValueError:
-                conf = 0.0
-            return (lang or None, conf)
-    return (None, 0.0)
+
+    def _reset_idle(self) -> None:
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+        self._idle_task = asyncio.create_task(self._idle_shutdown())
+
+    async def _idle_shutdown(self) -> None:
+        try:
+            await asyncio.sleep(_idle_seconds())
+            async with self._lock:
+                await self._kill()
+        except asyncio.CancelledError:
+            return
+
+    async def shutdown(self) -> None:
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+            self._idle_task = None
+        await self._kill()
+
+
+_whisper_worker = _WhisperWorker()
+
+
+async def _detect_clip_language(clip_path: str, timeout: int = 120) -> tuple[str | None, float]:
+    """Language-ID a clip via the persistent, killable whisper worker
+    (v0.9.80+: model loaded once, not per clip). Raises asyncio.TimeoutError on
+    a wedged transcribe (the worker is killed; caller abandons the track);
+    otherwise returns (ISO 639-1 | None, confidence). Fail-open."""
+    return await _whisper_worker.detect(clip_path, timeout=timeout)
 
 
 async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float, str | None]:

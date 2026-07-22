@@ -328,37 +328,6 @@ async def test_extract_audio_clip_kills_ffmpeg_on_timeout(monkeypatch):
     assert state["killed"] is True
 
 
-@pytest.mark.asyncio
-async def test_detect_clip_language_kills_subprocess_on_timeout(monkeypatch):
-    """Regression (v0.9.21): a wedged whisper subprocess is killed on timeout
-    (freeing CPU) and the timeout propagates so the caller abandons the track."""
-    import asyncio as _asyncio
-    from backend import language_detection as ld
-    state = {"killed": False}
-
-    class _FakeProc:
-        returncode = None
-        def kill(self):
-            state["killed"] = True
-        async def wait(self):
-            return 0
-        async def communicate(self):
-            return (b"", b"")
-
-    async def _fake_exec(*a, **k):
-        return _FakeProc()
-
-    async def _fake_wait_for(coro, timeout):
-        coro.close()
-        raise _asyncio.TimeoutError()
-
-    monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_exec)
-    monkeypatch.setattr("asyncio.wait_for", _fake_wait_for)
-    with pytest.raises(_asyncio.TimeoutError):
-        await ld._detect_clip_language("/tmp/clip.wav", timeout=1)
-    assert state["killed"] is True
-
-
 def test_audio_lang_worker_importable():
     """The killable worker module must import + expose main()."""
     import backend.audio_lang_worker as w
@@ -481,3 +450,130 @@ def test_remux_transcodes_only_the_mov_text_stream():
                      sub_codecs=["hdmv_pgs_subtitle", "mov_text"])
     assert "-c:s:1" in cmd and cmd[cmd.index("-c:s:1") + 1] == "srt"
     assert "-c:s:0" not in cmd
+
+
+def test_parse_whisper_result_valid():
+    from backend.language_detection import _parse_whisper_result
+    assert _parse_whisper_result("RESULT\tde\t0.92\n") == ("de", 0.92)
+
+
+def test_parse_whisper_result_empty_lang_and_bad_conf():
+    from backend.language_detection import _parse_whisper_result
+    assert _parse_whisper_result("RESULT\t\t\n") == (None, 0.0)
+    assert _parse_whisper_result("RESULT\ten\tNaNlike\n") == ("en", 0.0)
+
+
+def test_parse_whisper_result_non_result_line():
+    from backend.language_detection import _parse_whisper_result
+    assert _parse_whisper_result("[LANG-DETECT] model loaded\n") == (None, 0.0)
+
+
+def test_model_device_reads_ct2_device():
+    from backend.language_detection import _model_device
+    class _M:
+        class model:
+            device = "cuda"
+    assert _model_device(_M()) == "cuda"
+
+    class _Bare:
+        pass
+    assert _model_device(_Bare()) == "unknown"
+
+
+import sys as _sys
+
+def _fake_worker(body: str) -> list[str]:
+    """A `python -c` command acting as a whisper worker for tests."""
+    return [_sys.executable, "-c", body]
+
+_ECHO = ("import sys\n"
+         "for l in sys.stdin:\n"
+         "    if l.strip():\n"
+         "        sys.stdout.write('RESULT\\tde\\t0.9\\n'); sys.stdout.flush()\n")
+
+_NOISY = ("import sys\n"
+          "for l in sys.stdin:\n"
+          "    if l.strip():\n"
+          "        sys.stdout.write('loading model...\\n'); sys.stdout.flush()\n"
+          "        sys.stdout.write('RESULT\\tis\\t0.8\\n'); sys.stdout.flush()\n")
+
+_HANG = "import time\ntime.sleep(999)\n"
+
+_DIE_ONCE = ("import sys\n"
+             "sys.stdin.readline()\n")
+
+
+@pytest.mark.asyncio
+async def test_worker_echo_roundtrip():
+    from backend.language_detection import _WhisperWorker
+    w = _WhisperWorker(cmd=_fake_worker(_ECHO))
+    try:
+        assert await w.detect("/tmp/a.wav") == ("de", 0.9)
+        assert await w.detect("/tmp/b.wav") == ("de", 0.9)
+        assert w._proc is not None
+    finally:
+        await w.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_worker_skips_non_result_lines():
+    from backend.language_detection import _WhisperWorker
+    w = _WhisperWorker(cmd=_fake_worker(_NOISY))
+    try:
+        assert await w.detect("/tmp/a.wav") == ("is", 0.8)
+    finally:
+        await w.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_worker_timeout_kills_and_raises():
+    import asyncio
+    from backend.language_detection import _WhisperWorker
+    w = _WhisperWorker(cmd=_fake_worker(_HANG))
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await w.detect("/tmp/a.wav", timeout=0.5)
+        assert w._proc is None
+    finally:
+        await w.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_worker_respawns_after_crash_then_fails_open():
+    from backend.language_detection import _WhisperWorker
+    w = _WhisperWorker(cmd=_fake_worker(_DIE_ONCE))
+    try:
+        assert await w.detect("/tmp/a.wav", timeout=2) == (None, 0.0)
+    finally:
+        await w.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_worker_respawns_on_model_change(monkeypatch):
+    from backend import language_detection as ld
+    w = ld._WhisperWorker(cmd=_fake_worker(_ECHO))
+    try:
+        monkeypatch.setattr(ld, "_configured_whisper_model", lambda: "tiny")
+        await w.detect("/tmp/a.wav")
+        pid1 = w._proc.pid
+        monkeypatch.setattr(ld, "_configured_whisper_model", lambda: "large-v3")
+        await w.detect("/tmp/b.wav")
+        pid2 = w._proc.pid
+        assert pid1 != pid2
+    finally:
+        await w.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_worker_idle_shutdown(monkeypatch):
+    import asyncio
+    from backend import language_detection as ld
+    monkeypatch.setenv("SHRINKERR_WHISPER_IDLE_SECONDS", "0.2")
+    w = ld._WhisperWorker(cmd=_fake_worker(_ECHO))
+    try:
+        await w.detect("/tmp/a.wav")
+        assert w._proc is not None
+        await asyncio.sleep(0.5)
+        assert w._proc is None
+    finally:
+        await w.shutdown()
