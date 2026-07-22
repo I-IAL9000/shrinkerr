@@ -337,6 +337,15 @@ async def init_db():
                 await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {coltype}")
             except Exception:
                 pass
+        # Migration: dubbed filter + incremental-refresh mark-and-skip (v0.9.85)
+        for col, coltype in [
+            ("is_dubbed_flag", "INTEGER DEFAULT 0"),
+            ("tmdb_unresolved", "INTEGER DEFAULT 0"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass  # column already exists
         # Migration: add video_height column to scan_results
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN video_height INTEGER DEFAULT 0")
