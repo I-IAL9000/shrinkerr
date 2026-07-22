@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.81] — 2026-07-21
+
+### Added
+- **GPU-accelerated audio detection on the :nvenc image, plus medium/large-v3 models.** The nvenc image now ships cuDNN so faster-whisper runs on the GPU (`device="auto"`, falls back to CPU), and the Settings dropdown exposes medium and large-v3 — making reliable detection of low-resource languages (e.g. Icelandic) practical. Default model unchanged (tiny).
+
 ## [0.9.80] — 2026-07-21
 
 ### Changed
