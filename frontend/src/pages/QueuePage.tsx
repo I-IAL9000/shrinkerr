@@ -262,35 +262,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     }
   }, [running.map(j => j.file_path).join(",")]);
 
-  if (initialLoading) {
-    return (
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>Queue</h2>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
-          <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>Loading queue...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Stream-aware pause banner. v0.4.6+. When a Plex/Jellyfin/Emby user
-  // is streaming and we've SIGSTOPped active ffmpeg jobs, surface that
-  // explicitly so the user understands why the progress bars are frozen.
-  const streamPause = stats?.stream_pause;
-  const streamPauseActive = !!streamPause?.active;
-  const streamPauseServers: string[] = streamPause?.servers || [];
-  const streamPauseFrozen: number = streamPause?.frozen_jobs || 0;
-
   // The row lists are memoized so they aren't rebuilt on every job_progress
   // WebSocket tick (which re-renders this component via the jobProgressMap
   // prop). Without this, a large pending/completed list — e.g. ~1K fast
   // audio/sub cleanup jobs firing rapid progress — re-creates every row
   // element many times/second and pegs the main thread for the whole batch,
   // freezing the queue page. Deps deliberately exclude jobProgressMap; the
-  // handlers close only over state that IS a dep (tab-stable load, etc.). v0.9.88.
+  // handlers close only over state that IS a dep (tab-stable load, etc.).
+  // MUST stay above the early return below — these are hooks. v0.9.88/v0.9.90.
   const pendingRowEls = useMemo(() => (
     tab !== "pending" ? null : tabJobs.map((job, i) => (
       <div
@@ -346,6 +325,28 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       />
     ))
   ), [tab, tabJobs]);
+
+  if (initialLoading) {
+    return (
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>Queue</h2>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
+          <div className="spinner" />
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>Loading queue...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Stream-aware pause banner. v0.4.6+. When a Plex/Jellyfin/Emby user
+  // is streaming and we've SIGSTOPped active ffmpeg jobs, surface that
+  // explicitly so the user understands why the progress bars are frozen.
+  const streamPause = stats?.stream_pause;
+  const streamPauseActive = !!streamPause?.active;
+  const streamPauseServers: string[] = streamPause?.servers || [];
+  const streamPauseFrozen: number = streamPause?.frozen_jobs || 0;
 
   return (
     <div>

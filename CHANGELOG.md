@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.90] — 2026-07-22
+
+### Fixed
+- **Queue page loaded empty (regression from v0.9.88).** The memoized row lists were placed after the `if (initialLoading)` early return, so their hooks were skipped on the first render and then run on the next — a React hook-order violation (error #310) that crashed the page to blank. Moved them above the early return.
+
 ## [0.9.89] — 2026-07-22
 
 ### Fixed
