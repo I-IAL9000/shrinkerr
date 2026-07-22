@@ -28,6 +28,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const [detecting, setDetecting] = useState(false);
   const [detectStage, setDetectStage] = useState<string | null>(null);
   const [detected, setDetected] = useState(false);
+  // v0.9.86: writing a language to an mp4 remuxes the whole file (mkvpropedit
+  // can't tag mp4), which can take a while — show a spinner and lock the track
+  // controls so users know it's working and don't retry.
+  const [settingLang, setSettingLang] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -119,6 +123,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
 
   // v0.9.43: manual language override for a track detection can't resolve.
   const handleSetTrackLanguage = async (trackType: "audio" | "subtitle", streamIndex: number, language: string) => {
+    if (settingLang) return;  // ignore re-fires while a write is in flight
+    setSettingLang(true);
     try {
       const r = await setTrackLanguage(file.file_path, trackType, streamIndex, language);
       setFetchedAudio(r.audio_tracks || []);
@@ -133,6 +139,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       }
     } catch (exc: any) {
       toast(`Failed to set language: ${exc?.message || exc}`, "error");
+    } finally {
+      setSettingLang(false);
     }
   };
 
@@ -283,6 +291,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         track={track}
                         onToggle={(idx) => handleToggleAudioLocal(idx)}
                         onSetLanguage={(idx, lang) => handleSetTrackLanguage("audio", idx, lang)}
+                        busy={settingLang}
                       />
                     ))}
                   </div>
@@ -300,7 +309,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         <div style={{ marginTop: 8, marginBottom: 2 }}>Subtitle tracks:</div>
                         <div style={{ paddingLeft: 12 }}>
                           {[...embedded].sort((a, b) => a.stream_index - b.stream_index).map((track) => (
-                            <SubTrackRow key={track.stream_index} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
+                            <SubTrackRow key={track.stream_index} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} busy={settingLang} />
                           ))}
                         </div>
                       </>
@@ -317,7 +326,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         </div>
                         <div style={{ paddingLeft: 12 }}>
                           {external.map((track) => (
-                            <SubTrackRow key={`ext-${track.stream_index}`} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} isExternal onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} />
+                            <SubTrackRow key={`ext-${track.stream_index}`} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} isExternal onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} busy={settingLang} />
                           ))}
                         </div>
                       </>
@@ -445,6 +454,12 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               <span>{detectStage}</span>
             </div>
           )}
+          {settingLang && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
+              <div className="spinner" style={{ width: 12, height: 12 }} />
+              <span>Setting track language… (mp4 files are remuxed, this can take a moment)</span>
+            </div>
+          )}
           {isCorrupt && (
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
               ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr.
@@ -514,12 +529,13 @@ function mergeVmafIntoEvents(events: FileEvent[], file: ScannedFile): FileEvent[
 }
 
 
-function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage }: {
+function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, busy }: {
   track: SubtitleTrack;
   filePath: string;
   onToggle?: (filePath: string, streamIndex: number) => void;
   isExternal?: boolean;
   onSetLanguage?: (streamIndex: number, language: string) => void;
+  busy?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const basename = isExternal && track.external_path
@@ -556,8 +572,9 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage }: {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+          disabled={busy}
           title="Set language manually"
-          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center" }}
+          style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: busy ? "wait" : "pointer", padding: 0, display: "inline-flex", alignItems: "center", opacity: busy ? 0.5 : 1 }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>

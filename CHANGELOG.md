@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.86] — 2026-07-22
+
+### Added
+- **Loading spinner while manually setting a track language.** Writing a language to an mp4 remuxes the whole file and can take a moment; the file detail view now shows a "Setting track language…" spinner and disables the track's language controls until it finishes, so it's clear it's working and users don't retry.
+
 ## [0.9.85] — 2026-07-22
 
 ### Added
