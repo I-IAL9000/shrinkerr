@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.91] — 2026-07-22
+
+### Fixed
+- **Metadata refresh retries unmatched items again instead of skipping them forever.** v0.9.85 permanently marked failed lookups so refresh converged, but that also stranded items a later lookup improvement could resolve (e.g. v0.9.89's TMDB-id support) — so refresh became an instant no-op and TMDB-tagged items stayed unmatched. Refresh now re-tries all still-heuristic items each run; the metadata cache throttles real API load (cached results instant, failed lookups re-hit TMDB only after 24h), and no-id items return instantly. Speed still comes from keeping the api-row re-classification behind `deep`.
+
 ## [0.9.90] — 2026-07-22
 
 ### Fixed

@@ -3171,8 +3171,16 @@ async def _run_metadata_refresh(deep: bool = False) -> None:
             if deep:
                 where = "WHERE language_source IN ('heuristic','api') AND removed_from_list = 0"
             else:
+                # v0.9.91: retry ALL still-heuristic items every run (no
+                # permanent tmdb_unresolved skip). The metadata_cache already
+                # throttles real API load — cached results are instant and
+                # failed lookups only re-hit TMDB after 24h — and no-id items
+                # return instantly without an API call. The old permanent skip
+                # also stranded items that a later lookup improvement (e.g.
+                # v0.9.89's TMDB-id support) could now resolve. Speed still
+                # comes from keeping the api-row re-classification deep-only.
                 where = ("WHERE language_source = 'heuristic' "
-                         "AND COALESCE(tmdb_unresolved,0) = 0 AND removed_from_list = 0")
+                         "AND removed_from_list = 0")
             async with db.execute(
                 "SELECT id, file_path, native_language, language_source, "
                 "audio_tracks_json, subtitle_tracks_json, duration FROM scan_results "

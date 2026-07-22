@@ -35,25 +35,28 @@ def test_matches_single_filter_dubbed_and_unmatched():
 
 
 @pytest.mark.asyncio
-async def test_refresh_default_selects_only_untried_heuristic(tmp_path):
+async def test_refresh_default_selects_all_heuristic(tmp_path):
+    """v0.9.91: the default refresh retries ALL still-heuristic rows each run
+    (no permanent tmdb_unresolved skip) — the metadata_cache throttles real API
+    load. Deep also re-processes api rows."""
     import aiosqlite
     db = await aiosqlite.connect(str(tmp_path / "t.db"))
     try:
         await db.execute("CREATE TABLE scan_results (id INTEGER PRIMARY KEY, language_source TEXT, tmdb_unresolved INTEGER DEFAULT 0, removed_from_list INTEGER DEFAULT 0)")
         await db.executemany("INSERT INTO scan_results (language_source, tmdb_unresolved, removed_from_list) VALUES (?,?,?)", [
-            ("heuristic",0,0),  # 1 selected default
-            ("heuristic",1,0),  # 2 tried -> skipped default
+            ("heuristic",0,0),  # 1 untried heuristic -> selected default
+            ("heuristic",1,0),  # 2 previously-failed heuristic -> NOW retried
             ("api",0,0),        # 3 skipped default, selected deep
             ("heuristic",0,1),  # 4 removed -> never
         ])
         await db.commit()
-        default_where = "WHERE language_source = 'heuristic' AND COALESCE(tmdb_unresolved,0) = 0 AND removed_from_list = 0"
+        default_where = "WHERE language_source = 'heuristic' AND removed_from_list = 0"
         deep_where = "WHERE language_source IN ('heuristic','api') AND removed_from_list = 0"
         async def ids(where):
             async with db.execute(f"SELECT id FROM scan_results {where} ORDER BY id") as c:
                 return [r[0] for r in await c.fetchall()]
-        assert await ids(default_where) == [1]
-        assert await ids(deep_where) == [1,2,3]
+        assert await ids(default_where) == [1, 2]   # both heuristic, tmdb_unresolved ignored
+        assert await ids(deep_where) == [1, 2, 3]
     finally:
         await db.close()
 
