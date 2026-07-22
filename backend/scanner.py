@@ -506,13 +506,20 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
         "WHERE converted = 0"
     ) as cur:
         rows = await cur.fetchall()
+    # Index by position, not column name: callers pass their own connection and
+    # not all set `row_factory = aiosqlite.Row` (the settings-update handler
+    # doesn't), so named access raised "tuple indices must be integers or
+    # slices, not str" and the recompute silently no-op'd on every save. The
+    # SELECT fixes the column order, so positional access is unambiguous and
+    # works under any row_factory.
     for row in rows:
-        vc = (row["video_codec"] or "").lower()
+        file_path, video_codec, needs_conversion = row[0], row[1], row[2]
+        vc = (video_codec or "").lower()
         should_convert = 1 if vc in codec_names else 0
-        if int(row["needs_conversion"] or 0) != should_convert:
+        if int(needs_conversion or 0) != should_convert:
             await db.execute(
                 "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
-                (should_convert, row["file_path"]),
+                (should_convert, file_path),
             )
             flipped += 1
     return flipped

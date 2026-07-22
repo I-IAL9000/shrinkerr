@@ -282,3 +282,31 @@ def test_clean_srt_bytes_strips_font_and_override_tags():
     assert "{" not in out and "an8" not in out
     assert "Isang serye mula sa Netflix." in out
     assert "Ang mga bata ay naglalaro." in out
+
+
+@pytest.mark.asyncio
+async def test_recompute_needs_conversion_works_without_row_factory(tmp_path):
+    """Regression: recompute must work on a plain-tuple connection. The
+    settings-update handler opens its db without `aiosqlite.Row`, so named
+    row access raised 'tuple indices must be integers or slices, not str' and
+    the source_codecs recompute silently no-op'd on every save."""
+    import aiosqlite
+    from backend.scanner import recompute_needs_conversion
+    db = await aiosqlite.connect(str(tmp_path / "t.db"))
+    # Intentionally NO db.row_factory = aiosqlite.Row — reproduces the caller.
+    try:
+        await db.execute(
+            "CREATE TABLE scan_results (file_path TEXT, video_codec TEXT, "
+            "needs_conversion INTEGER, converted INTEGER)"
+        )
+        await db.execute("INSERT INTO scan_results VALUES ('/a.mkv','h264',0,0)")
+        await db.execute("INSERT INTO scan_results VALUES ('/b.mkv','hevc',0,0)")
+        await db.execute("INSERT INTO scan_results VALUES ('/c.mkv','h264',0,1)")  # converted → skipped
+        await db.commit()
+        flipped = await recompute_needs_conversion(db, ["h264"])
+        assert flipped == 1
+        async with db.execute("SELECT file_path, needs_conversion FROM scan_results ORDER BY file_path") as cur:
+            got = {r[0]: r[1] for r in await cur.fetchall()}
+        assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0}
+    finally:
+        await db.close()

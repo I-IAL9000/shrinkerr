@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.83] — 2026-07-22
+
+### Fixed
+- **source_codecs changes now actually recompute needs_conversion.** The recompute read rows by column name, but the settings-update handler's DB connection returns plain tuples, so it raised a TypeError and silently no-op'd on every settings save (since v0.5.4) — leaving needs_conversion stale after widening/narrowing "Convert From". Recompute now reads rows positionally, so it works regardless of the caller's row factory.
+
 ## [0.9.82] — 2026-07-22
 
 ### Fixed
