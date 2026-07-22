@@ -3119,6 +3119,9 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
                 if item.get("dubbed") is not None:
                     sets.append("is_dubbed_flag = ?")
                     params.append(item["dubbed"])
+                if item.get("tmdb_unresolved") is not None:
+                    sets.append("tmdb_unresolved = ?")
+                    params.append(item["tmdb_unresolved"])
                 if not sets:
                     continue
                 params.append(item["rid"])
@@ -3138,7 +3141,7 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
     return False
 
 
-async def _run_metadata_refresh() -> None:
+async def _run_metadata_refresh(deep: bool = False) -> None:
     """Background task: refresh API metadata for files with heuristic language detection."""
     from backend.scanner import _is_dubbed
     _metadata_cancel.clear()
@@ -3159,11 +3162,15 @@ async def _run_metadata_refresh() -> None:
             # — this heals titles whose native was corrected by an earlier
             # refresh before track re-classification existed (v0.9.70). 'manual'
             # / 'tmdb-manual' stay excluded (authoritative — don't override).
+            if deep:
+                where = "WHERE language_source IN ('heuristic','api') AND removed_from_list = 0"
+            else:
+                where = ("WHERE language_source = 'heuristic' "
+                         "AND COALESCE(tmdb_unresolved,0) = 0 AND removed_from_list = 0")
             async with db.execute(
                 "SELECT id, file_path, native_language, language_source, "
                 "audio_tracks_json, subtitle_tracks_json, duration FROM scan_results "
-                "WHERE language_source IN ('heuristic', 'api') "
-                "AND removed_from_list = 0 ORDER BY id ASC"
+                f"{where} ORDER BY id ASC"
             ) as cur:
                 rows = await cur.fetchall()
         finally:
@@ -3188,6 +3195,7 @@ async def _run_metadata_refresh() -> None:
             # spurious. v0.3.33+.
             try:
                 if await is_other_typed_dir(file_path):
+                    pending_updates.append({"rid": row["id"], "tmdb_unresolved": 1})
                     skipped += 1
                     continue
             except Exception:
@@ -3214,10 +3222,11 @@ async def _run_metadata_refresh() -> None:
                     pending_updates.append(item)
                     updated += 1
                 else:
-                    # Unresolved: heal any drifted flags vs the current native.
-                    item = _reclass_item(row, row["native_language"])
-                    if item:
-                        pending_updates.append(item)
+                    # Unresolved: heal any drifted flags vs the current native
+                    # and mark the row so future (non-deep) runs skip it.
+                    item = _reclass_item(row, row["native_language"]) or {"rid": row["id"]}
+                    item["tmdb_unresolved"] = 1
+                    pending_updates.append(item)
                     skipped += 1
             else:
                 # Already 'api' — no lookup; heal drifted track classification
@@ -3266,11 +3275,11 @@ async def _run_metadata_refresh() -> None:
 
 
 @router.post("/refresh-metadata")
-async def refresh_metadata():
+async def refresh_metadata(deep: bool = False):
     global _metadata_task
     if _metadata_task and not _metadata_task.done():
         raise HTTPException(status_code=409, detail="Metadata refresh already in progress")
-    _metadata_task = asyncio.create_task(_run_metadata_refresh())
+    _metadata_task = asyncio.create_task(_run_metadata_refresh(deep=deep))
     return {"status": "started"}
 
 

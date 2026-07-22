@@ -32,3 +32,27 @@ def test_matches_single_filter_dubbed_and_unmatched():
     assert _matches_single_filter({"language_source": "heuristic"}, "not_api_matched") is True
     assert _matches_single_filter({"language_source": "api"}, "not_api_matched") is False
     assert _matches_single_filter({"language_source": "manual"}, "not_api_matched") is False
+
+
+@pytest.mark.asyncio
+async def test_refresh_default_selects_only_untried_heuristic(tmp_path):
+    import aiosqlite
+    db = await aiosqlite.connect(str(tmp_path / "t.db"))
+    try:
+        await db.execute("CREATE TABLE scan_results (id INTEGER PRIMARY KEY, language_source TEXT, tmdb_unresolved INTEGER DEFAULT 0, removed_from_list INTEGER DEFAULT 0)")
+        await db.executemany("INSERT INTO scan_results (language_source, tmdb_unresolved, removed_from_list) VALUES (?,?,?)", [
+            ("heuristic",0,0),  # 1 selected default
+            ("heuristic",1,0),  # 2 tried -> skipped default
+            ("api",0,0),        # 3 skipped default, selected deep
+            ("heuristic",0,1),  # 4 removed -> never
+        ])
+        await db.commit()
+        default_where = "WHERE language_source = 'heuristic' AND COALESCE(tmdb_unresolved,0) = 0 AND removed_from_list = 0"
+        deep_where = "WHERE language_source IN ('heuristic','api') AND removed_from_list = 0"
+        async def ids(where):
+            async with db.execute(f"SELECT id FROM scan_results {where} ORDER BY id") as c:
+                return [r[0] for r in await c.fetchall()]
+        assert await ids(default_where) == [1]
+        assert await ids(deep_where) == [1,2,3]
+    finally:
+        await db.close()
