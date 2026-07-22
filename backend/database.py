@@ -893,6 +893,38 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.5.4 heal skipped: {exc}", flush=True)
 
+        # v0.9.85 backfill: compute is_dubbed_flag for rows whose native is from
+        # an audio-independent source (api/manual/tmdb-manual). Heuristic rows
+        # stay 0. Future transitions are maintained by refresh/detect/set-language.
+        try:
+            flag = "_v0_9_85_backfill_is_dubbed"
+            async with db.execute("SELECT value FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                from backend.scanner import _is_dubbed
+                import json as _json
+                async with db.execute(
+                    "SELECT id, audio_tracks_json, native_language, language_source "
+                    "FROM scan_results WHERE language_source IN ('api','manual','tmdb-manual')"
+                ) as cur:
+                    rows = await cur.fetchall()
+                n = 0
+                for r in rows:
+                    try:
+                        audio = _json.loads(r[1]) if r[1] else []
+                    except (ValueError, TypeError):
+                        audio = []
+                    langs = [(t.get("language") or "und") for t in audio]
+                    val = _is_dubbed(langs, r[2], r[3])
+                    n += 1 if val else 0
+                    await db.execute(
+                        "UPDATE scan_results SET is_dubbed_flag = ? WHERE id = ?", (val, r[0]))
+                await db.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                print(f"[DB] v0.9.85 backfill: flagged {n} dubbed item(s)", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.9.85 backfill skipped: {exc}", flush=True)
+
         await db.commit()
     finally:
         await db.close()

@@ -95,8 +95,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -125,7 +125,9 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_external_subs_flag=excluded.has_external_subs_flag,
                        disc_type=excluded.disc_type,
                        video_conv_savings_bytes=excluded.video_conv_savings_bytes,
-                       has_und_tracks_flag=excluded.has_und_tracks_flag
+                       has_und_tracks_flag=excluded.has_und_tracks_flag,
+                       -- is_dubbed_flag: scan native is always heuristic -> 0; recomputed by refresh/set-language
+                       is_dubbed_flag=0
                 """,
                 (
                     scanned.file_path,
@@ -875,6 +877,30 @@ def _und_flag(audio, subs) -> int:
     ) else 0
 
 
+async def recompute_is_dubbed_flag(db, file_path: str) -> None:
+    """Recompute is_dubbed_flag for one row from its CURRENT persisted state
+    (audio_tracks_json, native_language, language_source). Used by the per-file
+    write paths (detect, set-language) so we read the real stored result rather
+    than mirroring the SQL CASE that preserves authoritative native/source."""
+    from backend.scanner import _is_dubbed
+    async with db.execute(
+        "SELECT audio_tracks_json, native_language, language_source "
+        "FROM scan_results WHERE file_path = ?", (file_path,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return
+    try:
+        audio = json.loads(row[0]) if row[0] else []
+    except (ValueError, TypeError):
+        audio = []
+    langs = [(t.get("language") or "und") for t in audio]
+    flag = _is_dubbed(langs, row[1], row[2])
+    await db.execute(
+        "UPDATE scan_results SET is_dubbed_flag = ? WHERE file_path = ?",
+        (flag, file_path))
+
+
 class DetectLanguagesRequest(BaseModel):
     file_path: str
 
@@ -1221,6 +1247,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
              _und_flag(audio_tracks, subtitle_tracks), native_lang, req.file_path),
         )
         await db.commit()
+        await recompute_is_dubbed_flag(db, req.file_path)
+        await db.commit()
     finally:
         await db.close()
 
@@ -1390,6 +1418,8 @@ async def set_track_language(req: SetTrackLanguageRequest):
             (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
              _und_flag(audio_tracks, subtitle_tracks), req.file_path),
         )
+        await db.commit()
+        await recompute_is_dubbed_flag(db, req.file_path)
         await db.commit()
     finally:
         await db.close()
@@ -3033,8 +3063,11 @@ def _reclass_item(row, native):
     if a_json == (row["audio_tracks_json"] or "[]") and \
             s_json == (row["subtitle_tracks_json"] or "[]"):
         return None  # unchanged — no write needed
+    from backend.scanner import _is_dubbed
+    audio_langs = [(t.get("language") or "und") for t in json.loads(a_json or "[]")]
     return {"rid": row["id"], "a_json": a_json, "s_json": s_json,
-            "rem_a": rem_a, "rem_s": rem_s, "und": und}
+            "rem_a": rem_a, "rem_s": rem_s, "und": und,
+            "dubbed": _is_dubbed(audio_langs, native, "api")}
 
 
 async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
@@ -3067,6 +3100,9 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
                              "has_und_tracks_flag = ?"]
                     params += [item["a_json"], item["s_json"], item["rem_a"],
                                item["rem_s"], item["und"]]
+                if item.get("dubbed") is not None:
+                    sets.append("is_dubbed_flag = ?")
+                    params.append(item["dubbed"])
                 if not sets:
                     continue
                 params.append(item["rid"])
@@ -3088,6 +3124,7 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
 
 async def _run_metadata_refresh() -> None:
     """Background task: refresh API metadata for files with heuristic language detection."""
+    from backend.scanner import _is_dubbed
     _metadata_cancel.clear()
 
     try:
@@ -3154,6 +3191,10 @@ async def _run_metadata_refresh() -> None:
                     # Resolved → flip to api + re-classify against the new native.
                     item = _reclass_item(row, api_lang) or {"rid": row["id"]}
                     item["native"] = api_lang
+                    _aj = item.get("a_json") or row["audio_tracks_json"] or "[]"
+                    item["dubbed"] = _is_dubbed(
+                        [(t.get("language") or "und") for t in json.loads(_aj)],
+                        api_lang, "api")
                     pending_updates.append(item)
                     updated += 1
                 else:
