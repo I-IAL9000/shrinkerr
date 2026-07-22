@@ -1827,9 +1827,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <option value="tiny">Tiny — fastest, ~75 MB (default)</option>
                   <option value="base">Base — better accuracy, ~140 MB</option>
                   <option value="small">Small — best accuracy, ~460 MB, slower</option>
+                  <option value="medium">Medium — higher accuracy, ~1.5 GB, GPU recommended</option>
+                  <option value="large-v3">Large-v3 — best accuracy (incl. low-resource langs), ~3 GB, GPU strongly recommended</option>
                 </select>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Downloads on first use; takes effect on the next detection (no restart).
+                  faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Medium/Large-v3 are practical only with an NVIDIA GPU (the :nvenc image). Downloads on first use; takes effect on the next detection (no restart).
                 </div>
               </div>
               <div style={{ marginTop: 12, display: "flex", gap: 16 }}>
