@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.80] — 2026-07-21
+
+### Changed
+- **Audio language detection loads the Whisper model once instead of per clip.** A single persistent, killable worker now serves all clips (released after idle, respawned on timeout/crash/model change), so detection is much faster over large libraries and larger models become practical. Killability (v0.9.21) is unchanged.
+
 ## [0.9.79] — 2026-07-21
 
 ### Fixed
