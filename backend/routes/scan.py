@@ -1625,6 +1625,9 @@ async def get_scan_stats():
                 SUM(needs_conversion) as needs_conversion_raw,
                 SUM(has_removable_tracks_flag) as audio_cleanup,
                 SUM(COALESCE(has_und_tracks_flag, 0)) as unknown_language,
+                SUM(COALESCE(is_dubbed_flag, 0)) as dubbed,
+                SUM(CASE WHEN language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual') THEN 1 ELSE 0 END) as not_api_matched,
+                SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual')) AND COALESCE(tmdb_unresolved,0) = 1 THEN 1 ELSE 0 END) as not_api_matched_no_tmdb,
                 SUM(has_removable_subs_flag) as sub_cleanup,
                 SUM(has_lossless_audio_flag) as lossless_audio,
                 SUM(converted) as converted,
@@ -1892,6 +1895,9 @@ async def get_scan_stats():
                 "res_sd": (row["res_sd_probed"] or 0) + res_sd_fallback,
                 "audio_cleanup": row["audio_cleanup"] or 0,
                 "unknown_language": row["unknown_language"] or 0,
+                "dubbed": row["dubbed"] or 0,
+                "not_api_matched": row["not_api_matched"] or 0,
+                "not_api_matched_no_tmdb": row["not_api_matched_no_tmdb"] or 0,
                 "lossless_audio": row["lossless_audio"] or 0,
                 "lossy_audio": total - (row["lossless_audio"] or 0),
                 "plex_watched": watched_count,
@@ -2313,6 +2319,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "audio_tracks": json.loads(row.get("audio_tracks_json") or "[]"),
         "subtitle_tracks": json.loads(row.get("subtitle_tracks_json") or "[]"),
         "language_source": row.get("language_source", "heuristic"),
+        "is_dubbed_flag": row.get("is_dubbed_flag", 0),
         # Health-check status. Without these fields, the "corrupt" filter
         # in _matches_single_filter (which looks at health_status == 'corrupt')
         # silently missed every file flagged corrupt by a health check rather
@@ -2350,6 +2357,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(dup_count, 0) as duplicate_count,
     dup_group as duplicate_group,
     disc_type,
+    COALESCE(is_dubbed_flag, 0) as is_dubbed_flag,
     COALESCE(video_conv_savings_bytes, 0) as video_conv_savings_bytes"""
 
 _SCAN_WHERE = """removed_from_list = 0
@@ -2393,6 +2401,10 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         # v0.9.26: ignored titles ARE included here — an ignore rule means
         # "don't convert", not "don't tell me the audio is untagged".
         return bool(f.get("has_und_tracks"))
+    if filter_name == "dubbed":
+        return bool(enriched.get("is_dubbed_flag"))
+    if filter_name == "not_api_matched":
+        return (enriched.get("language_source") or "") not in ("api", "manual", "tmdb-manual")
     if filter_name == "sub_cleanup":
         # v0.9.31: ignored titles included (see audio_cleanup).
         return bool(f["has_removable_subs"])
@@ -2585,6 +2597,10 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
     elif f == "unknown_language":
         sql = "AND COALESCE(has_und_tracks_flag, 0) = 1"
         needs_python = {f}  # ignored NOT excluded — v0.9.26
+    elif f == "dubbed":
+        sql = "AND COALESCE(is_dubbed_flag, 0) = 1"
+    elif f == "not_api_matched":
+        sql = "AND (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))"
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
         needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31
