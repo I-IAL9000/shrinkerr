@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.84] — 2026-07-22
+
+### Fixed
+- **You can now reset a track's language back to "und" to re-detect it.** Setting a track to Undetermined was rejected ("A language must be provided"), so a track the old model mis-detected couldn't be cleared and re-run — detection only touches und tracks. Setting und now writes und to the file (and verifies it) so the next detection picks the track up again.
+
 ## [0.9.83] — 2026-07-22
 
 ### Fixed

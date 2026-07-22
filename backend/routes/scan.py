@@ -1274,8 +1274,12 @@ async def set_track_language(req: SetTrackLanguageRequest):
     from backend.models import SubtitleTrack
 
     lang = (req.language or "").strip().lower()
-    if not lang or lang == "und":
+    if not lang:
         raise HTTPException(400, "A language must be provided")
+    # "und" is allowed on purpose: it resets a track (e.g. one the old model
+    # mis-detected) back to undetermined so language detection will re-run on
+    # it. Detection re-probes the file, so the und must be written to the file,
+    # not just the DB — the write path below handles that.
 
     probe = await probe_file(req.file_path, detect_und_subs=False)
     if probe is None:

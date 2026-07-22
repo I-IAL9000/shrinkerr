@@ -714,10 +714,18 @@ async def _probe_sub_codecs(file_path: str) -> list[str]:
 
 
 def _languages_present(probed: list[str], intended: list[str | None]) -> bool:
-    """True if every intended (non-None) language now shows a real (non-und)
-    tag on the corresponding per-type stream ordinal."""
+    """True if every intended (non-None) language now shows the intended tag on
+    the corresponding per-type stream ordinal. For a real language that means a
+    matching non-und tag; for an intended "und" (a deliberate reset back to
+    undetermined) it means the tag now reads und/empty."""
     for i, code in enumerate(intended):
-        if code and (i >= len(probed) or probed[i] in ("", "und")):
+        if not code:
+            continue
+        got = probed[i] if i < len(probed) else ""
+        if code == "und":
+            if got not in ("", "und"):
+                return False
+        elif got in ("", "und"):
             return False
     return True
 

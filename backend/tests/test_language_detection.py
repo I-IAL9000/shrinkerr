@@ -165,6 +165,20 @@ def test_languages_present_verifies_intended_ordinals():
     assert _languages_present(["eng", "und"], ["eng", None]) is True
 
 
+def test_languages_present_verifies_und_reset():
+    """v0.9.84: an intended 'und' (deliberate reset) verifies as present only
+    when the tag now reads und/empty — the inverse of a real-language write."""
+    from backend.language_detection import _languages_present
+    # Reset succeeded: track now reads und.
+    assert _languages_present(["und"], ["und"]) is True
+    assert _languages_present([""], ["und"]) is True
+    # Reset hasn't stuck: track still shows the old real language.
+    assert _languages_present(["fao"], ["und"]) is False
+    # Mixed: reset one audio track to und while leaving another eng.
+    assert _languages_present(["und", "eng"], ["und", "eng"]) is True
+    assert _languages_present(["fao", "eng"], ["und", "eng"]) is False
+
+
 def test_unknown_language_filter_includes_ignored():
     """v0.9.26: the unknown-language filter includes ignored titles — an ignore
     rule means 'don't convert', not 'hide that the audio is untagged'."""
