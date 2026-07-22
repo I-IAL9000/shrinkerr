@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.88] — 2026-07-22
+
+### Fixed
+- **Queue page no longer freezes with a large queue of fast jobs.** Every job-progress WebSocket tick re-rendered the whole page, rebuilding all ~1K pending/completed row elements each time; with many fast audio/sub cleanup jobs firing rapid progress this pegged the browser main thread for minutes. The row lists are now memoized so progress ticks only re-render the active job cards, not the full list.
+
 ## [0.9.87] — 2026-07-22
 
 ### Added

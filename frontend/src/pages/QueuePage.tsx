@@ -110,7 +110,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   }, [queueStarting, running, jobProgressMap]);
 
   // Tab data is already filtered by status from the API
-  const tabJobs = jobs.filter((j) => j.status === tab);
+  // Memoized so its reference is stable across the frequent job_progress
+  // re-renders (jobProgressMap changes every WS tick). `jobs` only changes on
+  // an actual load, so tabJobs — and the row lists derived from it below —
+  // don't get rebuilt on every progress tick. v0.9.88.
+  const tabJobs = useMemo(() => jobs.filter((j) => j.status === tab), [jobs, tab]);
   // Use stats for counts (always accurate), not the filtered array
   const pendingCount = stats?.pending ?? 0;
   const completedCount = stats?.completed ?? 0;
@@ -279,6 +283,69 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const streamPauseActive = !!streamPause?.active;
   const streamPauseServers: string[] = streamPause?.servers || [];
   const streamPauseFrozen: number = streamPause?.frozen_jobs || 0;
+
+  // The row lists are memoized so they aren't rebuilt on every job_progress
+  // WebSocket tick (which re-renders this component via the jobProgressMap
+  // prop). Without this, a large pending/completed list — e.g. ~1K fast
+  // audio/sub cleanup jobs firing rapid progress — re-creates every row
+  // element many times/second and pegs the main thread for the whole batch,
+  // freezing the queue page. Deps deliberately exclude jobProgressMap; the
+  // handlers close only over state that IS a dep (tab-stable load, etc.). v0.9.88.
+  const pendingRowEls = useMemo(() => (
+    tab !== "pending" ? null : tabJobs.map((job, i) => (
+      <div
+        key={job.id}
+        draggable
+        onDragStart={() => handleDragStart(i)}
+        onDragOver={(e) => handleDragOver(e, i)}
+        onDrop={() => handleDrop(i)}
+        onDragEnd={handleDragEnd}
+        style={{
+          borderTop: dropIdx === i && dragIdx !== null && dragIdx !== i ? "2px solid var(--accent)" : "2px solid transparent",
+          opacity: dragIdx === i ? 0.4 : 1,
+          cursor: "grab",
+        }}
+      >
+        <JobListItem job={job}
+          checked={selectedJobIds.has(job.id)}
+          onCheck={(e) => handleJobClick(i, job.id, e)}
+          onCancel={(id) => { cancelJob(id).then(load); }}
+          onRemove={(id) => { removeJob(id).then(load); }}
+          onIgnore={async (id, filePath) => {
+            await ignoreFile(filePath);
+            await removeJob(id);
+            load();
+            toast("File ignored and removed from queue");
+          }}
+          encodingDefaults={encodingDefaults}
+        />
+      </div>
+    ))
+  ), [tab, tabJobs, selectedJobIds, dragIdx, dropIdx, encodingDefaults]);
+
+  const completedRowEls = useMemo(() => (
+    tab !== "completed" ? null : tabJobs.map((job) => (
+      <JobListItem key={job.id} job={job}
+        onCancel={() => {}}
+        onRemove={(id) => { removeJob(id).then(load); }}
+      />
+    ))
+  ), [tab, tabJobs]);
+
+  const failedRowEls = useMemo(() => (
+    tab !== "failed" ? null : tabJobs.map((job) => (
+      <JobListItem key={job.id} job={job}
+        onCancel={(id) => { cancelJob(id).then(load); }}
+        onRetry={(id) => {
+          retryJob(id).then(res => {
+            load();
+            if (res.message) toast(res.message, "success");
+          });
+        }}
+        onRemove={(id) => { removeJob(id).then(load); }}
+      />
+    ))
+  ), [tab, tabJobs]);
 
   return (
     <div>
@@ -492,35 +559,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                 </button>
               </div>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {tabJobs.map((job, i) => (
-                  <div
-                    key={job.id}
-                    draggable
-                    onDragStart={() => handleDragStart(i)}
-                    onDragOver={(e) => handleDragOver(e, i)}
-                    onDrop={() => handleDrop(i)}
-                    onDragEnd={handleDragEnd}
-                    style={{
-                      borderTop: dropIdx === i && dragIdx !== null && dragIdx !== i ? "2px solid var(--accent)" : "2px solid transparent",
-                      opacity: dragIdx === i ? 0.4 : 1,
-                      cursor: "grab",
-                    }}
-                  >
-                    <JobListItem job={job}
-                      checked={selectedJobIds.has(job.id)}
-                      onCheck={(e) => handleJobClick(i, job.id, e)}
-                      onCancel={(id) => { cancelJob(id).then(load); }}
-                      onRemove={(id) => { removeJob(id).then(load); }}
-                      onIgnore={async (id, filePath) => {
-                        await ignoreFile(filePath);
-                        await removeJob(id);
-                        load();
-                        toast("File ignored and removed from queue");
-                      }}
-                      encodingDefaults={encodingDefaults}
-                    />
-                  </div>
-                ))}
+                {pendingRowEls}
               </div>
             </>
           )}
@@ -549,12 +588,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                 </button>
               </div>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {tabJobs.map((job) => (
-                  <JobListItem key={job.id} job={job}
-                    onCancel={() => {}}
-                    onRemove={(id) => { removeJob(id).then(load); }}
-                  />
-                ))}
+                {completedRowEls}
               </div>
             </>
           )}
@@ -621,18 +655,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               </button>
             </div>
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-              {tabJobs.map((job) => (
-                <JobListItem key={job.id} job={job}
-                  onCancel={(id) => { cancelJob(id).then(load); }}
-                  onRetry={(id) => {
-                    retryJob(id).then(res => {
-                      load();
-                      if (res.message) toast(res.message, "success");
-                    });
-                  }}
-                  onRemove={(id) => { removeJob(id).then(load); }}
-                />
-              ))}
+              {failedRowEls}
             </div>
             </>
           )}
