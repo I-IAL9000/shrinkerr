@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.85] — 2026-07-22
+
+### Added
+- **"Dubbed" and "Not API-matched" filters, and incremental metadata refresh.** Dubbed flags items whose TMDB/manual original language has no matching audio track (heuristic-native items excluded — their native is derived from the audio); Not-API-matched shows items still awaiting a TMDB match, split into not-yet-tried vs tried-no-match. Refresh now processes only untried unmatched items and marks TMDB no-matches so it converges instead of reprocessing the whole library; a `deep` option restores the full re-heal.
+
 ## [0.9.84] — 2026-07-22
 
 ### Fixed
