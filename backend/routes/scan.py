@@ -1628,6 +1628,7 @@ async def get_scan_stats():
                 SUM(COALESCE(is_dubbed_flag, 0)) as dubbed,
                 SUM(CASE WHEN language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual') THEN 1 ELSE 0 END) as not_api_matched,
                 SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual')) AND COALESCE(tmdb_unresolved,0) = 1 THEN 1 ELSE 0 END) as not_api_matched_no_tmdb,
+                SUM(CASE WHEN disc_type IS NOT NULL THEN 1 ELSE 0 END) as disc_iso,
                 SUM(has_removable_subs_flag) as sub_cleanup,
                 SUM(has_lossless_audio_flag) as lossless_audio,
                 SUM(converted) as converted,
@@ -1898,6 +1899,7 @@ async def get_scan_stats():
                 "dubbed": row["dubbed"] or 0,
                 "not_api_matched": row["not_api_matched"] or 0,
                 "not_api_matched_no_tmdb": row["not_api_matched_no_tmdb"] or 0,
+                "disc_iso": row["disc_iso"] or 0,
                 "lossless_audio": row["lossless_audio"] or 0,
                 "lossy_audio": total - (row["lossless_audio"] or 0),
                 "plex_watched": watched_count,
@@ -2405,6 +2407,8 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
         return bool(enriched.get("is_dubbed_flag"))
     if filter_name == "not_api_matched":
         return (enriched.get("language_source") or "") not in ("api", "manual", "tmdb-manual")
+    if filter_name == "disc_iso":
+        return bool(enriched.get("disc_type"))
     if filter_name == "sub_cleanup":
         # v0.9.31: ignored titles included (see audio_cleanup).
         return bool(f["has_removable_subs"])
@@ -2601,6 +2605,8 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
         sql = "AND COALESCE(is_dubbed_flag, 0) = 1"
     elif f == "not_api_matched":
         sql = "AND (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))"
+    elif f == "disc_iso":
+        sql = "AND disc_type IS NOT NULL"
     elif f == "sub_cleanup":
         sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
         needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31

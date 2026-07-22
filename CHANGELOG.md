@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.87] — 2026-07-22
+
+### Added
+- **"Disc / ISO" filter.** Shows disc-image content (DVD + Blu-ray, both `.iso` images and BDMV/VIDEO_TS folders) — items Plex can't play directly and that need converting.
+
 ## [0.9.86] — 2026-07-22
 
 ### Added

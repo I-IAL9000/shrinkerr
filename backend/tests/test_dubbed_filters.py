@@ -56,3 +56,31 @@ async def test_refresh_default_selects_only_untried_heuristic(tmp_path):
         assert await ids(deep_where) == [1,2,3]
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_disc_iso_predicate(tmp_path):
+    """disc_iso selects any row with disc_type set (dvd/bdmv, iso or folder)."""
+    import aiosqlite
+    db = await aiosqlite.connect(str(tmp_path / "t.db"))
+    try:
+        await db.execute("CREATE TABLE scan_results (file_path TEXT, disc_type TEXT)")
+        await db.executemany(
+            "INSERT INTO scan_results (file_path, disc_type) VALUES (?,?)",
+            [("/a.iso", "bdmv"), ("/b.iso", "dvd"), ("/c.mkv", None), ("/d/VIDEO_TS", "dvd")])
+        await db.commit()
+        async with db.execute(
+            "SELECT file_path FROM scan_results WHERE 1=1 AND disc_type IS NOT NULL ORDER BY file_path"
+        ) as c:
+            got = [r[0] for r in await c.fetchall()]
+        assert got == ["/a.iso", "/b.iso", "/d/VIDEO_TS"]
+    finally:
+        await db.close()
+
+
+def test_matches_single_filter_disc_iso():
+    from backend.routes.scan import _matches_single_filter
+    assert _matches_single_filter({"disc_type": "bdmv"}, "disc_iso") is True
+    assert _matches_single_filter({"disc_type": "dvd"}, "disc_iso") is True
+    assert _matches_single_filter({"disc_type": None}, "disc_iso") is False
+    assert _matches_single_filter({}, "disc_iso") is False

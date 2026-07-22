@@ -9,6 +9,7 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "all", label: "All" },
   { key: "new", label: "New" },
   { key: "needs_conversion", label: "Needs conversion" },
+  { key: "disc_iso", label: "Disc / ISO" },
   { key: "high_bitrate", label: "High bitrate" },
   { key: "low_bitrate", label: "Low bitrate" },
   { key: "sub_cleanup", label: "Subtitle cleanup" },
