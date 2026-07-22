@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.92] — 2026-07-22
+
+### Changed
+- **Metadata lookups now log why they return no data** (HTTP status, empty results, or request error), capped per run. Previously IMDb/TVDB `/find` failures were swallowed silently and surfaced only as "no API data", making them undiagnosable.
+
 ## [0.9.91] — 2026-07-22
 
 ### Fixed

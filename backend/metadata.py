@@ -114,17 +114,37 @@ def map_language_code(code: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+_lookup_debug_budget = 25
+
+
+def _lookup_debug(msg: str) -> None:
+    """v0.9.92: log up to N lookup-failure diagnostics per process — enough to
+    see why a lookup returns None (HTTP status, empty results, exception)
+    without flooding a 600+ item refresh. Silent-fail paths hid a whole class
+    of 'no API data'."""
+    global _lookup_debug_budget
+    if _lookup_debug_budget > 0:
+        _lookup_debug_budget -= 1
+        print(f"[METADATA] {msg}", flush=True)
+
+
 async def _lookup_tmdb(
     imdb_id: str, api_key: str, client: httpx.AsyncClient
 ) -> str | None:
     """Look up original language on TMDB via IMDb ID."""
     # params= instead of URL-interpolated `?api_key=…` so httpx exception
     # messages don't carry the raw key if something upstream logs them.
-    resp = await client.get(
-        f"https://api.themoviedb.org/3/find/{imdb_id}",
-        params={"external_source": "imdb_id", "api_key": api_key},
-    )
-    resp.raise_for_status()
+    try:
+        resp = await client.get(
+            f"https://api.themoviedb.org/3/find/{imdb_id}",
+            params={"external_source": "imdb_id", "api_key": api_key},
+        )
+    except Exception as exc:
+        _lookup_debug(f"imdb /find {imdb_id}: request error {exc!r}")
+        return None
+    if resp.status_code != 200:
+        _lookup_debug(f"imdb /find {imdb_id}: HTTP {resp.status_code} {resp.text[:120]!r}")
+        return None
     data = resp.json()
 
     for bucket in ("movie_results", "tv_results"):
@@ -133,6 +153,8 @@ async def _lookup_tmdb(
             lang = items[0].get("original_language")
             if lang:
                 return lang
+    _lookup_debug(f"imdb /find {imdb_id}: no lang "
+                  f"(movie={len(data.get('movie_results', []))}, tv={len(data.get('tv_results', []))})")
     return None
 
 
@@ -149,11 +171,14 @@ async def _lookup_tmdb_by_tmdb_id(
             )
             if resp.status_code == 404:
                 continue
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                _lookup_debug(f"tmdb /{kind}/{tmdb_id}: HTTP {resp.status_code} {resp.text[:120]!r}")
+                continue
             lang = resp.json().get("original_language")
             if lang:
                 return lang
-        except Exception:
+        except Exception as exc:
+            _lookup_debug(f"tmdb /{kind}/{tmdb_id}: request error {exc!r}")
             continue
     return None
 
@@ -228,16 +253,21 @@ async def lookup_original_language(file_path: str) -> str | None:
                         f"https://api.themoviedb.org/3/find/{media_id}",
                         params={"external_source": "tvdb_id", "api_key": tmdb_key},
                     )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    for bucket in ("tv_results", "movie_results"):
-                        items = data.get(bucket, [])
-                        if items:
-                            raw_lang = items[0].get("original_language")
-                            if raw_lang:
-                                break
-                except Exception:
-                    pass
+                    if resp.status_code != 200:
+                        _lookup_debug(f"tvdb /find {media_id}: HTTP {resp.status_code} {resp.text[:120]!r}")
+                    else:
+                        data = resp.json()
+                        for bucket in ("tv_results", "movie_results"):
+                            items = data.get(bucket, [])
+                            if items:
+                                raw_lang = items[0].get("original_language")
+                                if raw_lang:
+                                    break
+                        if not raw_lang:
+                            _lookup_debug(f"tvdb /find {media_id}: no lang "
+                                          f"(tv={len(data.get('tv_results', []))}, movie={len(data.get('movie_results', []))})")
+                except Exception as exc:
+                    _lookup_debug(f"tvdb /find {media_id}: request error {exc!r}")
 
         mapped = map_language_code(raw_lang) if raw_lang else None
         now = datetime.now(timezone.utc).isoformat()
