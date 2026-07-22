@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.89] — 2026-07-22
+
+### Fixed
+- **Original-language lookup now resolves TMDB-tagged items (fewer stuck in "Not API-matched").** The language lookup only recognised `[tt…]`/`[tvdb-…]` ids, while the poster system also reads TMDB ids and `{…}`/`tmdbid-`/bare forms — so items tagged with a TMDB id got a poster but never resolved a language and stayed heuristic. Lookup now uses the same id extraction as posters and supports TMDB-id lookups, so a metadata refresh auto-matches them. (Items with no id in their path still need manual matching.)
+
 ## [0.9.88] — 2026-07-22
 
 ### Fixed

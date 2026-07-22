@@ -52,21 +52,27 @@ def resolve_tmdb_key_sync(user_key: str | None) -> str:
 # a) ID parsing
 # ---------------------------------------------------------------------------
 
-_IMDB_RE = re.compile(r"\[(tt\d+)\]")
-_TVDB_RE = re.compile(r"\[tvdb-(\d+)\]")
-
-
 def parse_media_id(file_path: str) -> tuple[str, str] | None:
-    """Walk up to 4 parent directories looking for [tt\\d+] or [tvdb-\\d+]."""
+    """Walk the filename + up to 4 parent directories for an IMDb / TVDB /
+    TMDB id, in any of the formats the poster system recognises.
+
+    v0.9.89: reuses posters._extract_ids so language resolution stays ALIGNED
+    with poster resolution — if an item gets a poster from an embedded id, its
+    original language resolves from that same id. Previously this only matched
+    `[tt…]` / `[tvdb-…]`, so files tagged with a TMDB id (or `{…}` / `tmdbid-`
+    / bare forms) got a poster but never resolved a language, leaving them
+    stuck as `heuristic` in the Not-API-matched filter."""
+    from backend.routes.posters import _extract_ids  # lazy: avoids import cycle
     p = Path(file_path)
     parts = [p.name] + [parent.name for parent in list(p.parents)[:4]]
     for part in parts:
-        m = _IMDB_RE.search(part)
-        if m:
-            return ("imdb", m.group(1))
-        m = _TVDB_RE.search(part)
-        if m:
-            return ("tvdb", m.group(1))
+        imdb, tvdb, tmdb = _extract_ids(part)
+        if imdb:
+            return ("imdb", imdb)
+        if tvdb:
+            return ("tvdb", tvdb)
+        if tmdb:
+            return ("tmdb", tmdb)
     return None
 
 
@@ -130,6 +136,28 @@ async def _lookup_tmdb(
     return None
 
 
+async def _lookup_tmdb_by_tmdb_id(
+    tmdb_id: str, api_key: str, client: httpx.AsyncClient
+) -> str | None:
+    """Look up original language directly by a TMDB id (v0.9.89). A TMDB id
+    doesn't encode whether it's a movie or a show, so try /movie then /tv."""
+    for kind in ("movie", "tv"):
+        try:
+            resp = await client.get(
+                f"https://api.themoviedb.org/3/{kind}/{tmdb_id}",
+                params={"api_key": api_key},
+            )
+            if resp.status_code == 404:
+                continue
+            resp.raise_for_status()
+            lang = resp.json().get("original_language")
+            if lang:
+                return lang
+        except Exception:
+            continue
+    return None
+
+
 # ---------------------------------------------------------------------------
 # d) Main orchestrator
 # ---------------------------------------------------------------------------
@@ -188,6 +216,8 @@ async def lookup_original_language(file_path: str) -> str | None:
         async with httpx.AsyncClient(timeout=10) as client:
             if id_type == "imdb":
                 raw_lang = await _lookup_tmdb(media_id, tmdb_key, client)
+            elif id_type == "tmdb":
+                raw_lang = await _lookup_tmdb_by_tmdb_id(media_id, tmdb_key, client)
             elif id_type == "tvdb":
                 # TMDB's find endpoint supports tvdb_id as external source.
                 # Pass the key as params= rather than interpolating it into
@@ -214,8 +244,7 @@ async def lookup_original_language(file_path: str) -> str | None:
 
         if raw_lang:
             print(
-                f"[METADATA] {'TMDB' if id_type == 'imdb' else 'TVDB'} lookup "
-                f"for {media_id}: {raw_lang} -> {mapped}",
+                f"[METADATA] {id_type} lookup for {media_id}: {raw_lang} -> {mapped}",
                 flush=True,
             )
 
