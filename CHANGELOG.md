@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.93] — 2026-07-23
+
+### Fixed
+- **Original-language lookup falls back to a title/year search when the ID doesn't resolve.** TMDB's `/find` often has no IMDb/TVDB external-ID link for newer titles even though the title exists, so ID-tagged items came back "no API data" and stayed unmatched. When an ID lookup is empty, Shrinkerr now searches TMDB by the parsed title + year (year-gated to avoid wrong matches, the same path manual matching uses), resolving the vast majority of these.
+
 ## [0.9.92] — 2026-07-22
 
 ### Changed

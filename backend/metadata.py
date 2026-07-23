@@ -158,6 +158,47 @@ async def _lookup_tmdb(
     return None
 
 
+async def _lookup_tmdb_by_title(
+    title: str, year: "int | str | None", api_key: str, client: httpx.AsyncClient,
+    *, prefer_tv: bool = False,
+) -> str | None:
+    """v0.9.93: fallback when an id lookup comes up empty — TMDB frequently
+    lacks the imdb/tvdb external-id link for newer titles even though the title
+    itself exists. Search by title (+year) and take the top result's original
+    language, the same path manual matching uses. Year-gated (±1) when a year
+    is known so we don't grab a wrong same-named title."""
+    order = (("tv", "first_air_date"), ("movie", "release_date")) if prefer_tv \
+        else (("movie", "release_date"), ("tv", "first_air_date"))
+    for kind, date_field in order:
+        try:
+            params = {"api_key": api_key, "query": title}
+            if year:
+                params["first_air_date_year" if kind == "tv" else "year"] = str(year)
+            resp = await client.get(
+                f"https://api.themoviedb.org/3/search/{kind}", params=params)
+            if resp.status_code != 200:
+                _lookup_debug(f"title search {kind} {title!r}: HTTP {resp.status_code}")
+                continue
+            results = resp.json().get("results", [])
+            if not results:
+                continue
+            top = results[0]
+            if year:
+                ry = (top.get(date_field) or "")[:4]
+                if ry.isdigit() and abs(int(ry) - int(year)) > 1:
+                    _lookup_debug(f"title search {kind} {title!r} ({year}): "
+                                  f"top result year {ry} mismatch — skip")
+                    continue
+            lang = top.get("original_language")
+            if lang:
+                _lookup_debug(f"title search {kind} {title!r} ({year}): matched -> {lang}")
+                return lang
+        except Exception as exc:
+            _lookup_debug(f"title search {kind} {title!r}: error {exc!r}")
+            continue
+    return None
+
+
 async def _lookup_tmdb_by_tmdb_id(
     tmdb_id: str, api_key: str, client: httpx.AsyncClient
 ) -> str | None:
@@ -268,6 +309,22 @@ async def lookup_original_language(file_path: str) -> str | None:
                                           f"(tv={len(data.get('tv_results', []))}, movie={len(data.get('movie_results', []))})")
                 except Exception as exc:
                     _lookup_debug(f"tvdb /find {media_id}: request error {exc!r}")
+
+            # v0.9.93: id lookup came up empty (TMDB often lacks the external-id
+            # link for newer titles) — fall back to a title/year search, the
+            # same thing manual matching does.
+            if not raw_lang:
+                try:
+                    from backend.routes.posters import parse_folder_name
+                    meta = parse_folder_name(str(Path(file_path).parent), walk_files=False)
+                    title = meta.get("title")
+                    if title:
+                        raw_lang = await _lookup_tmdb_by_title(
+                            title, meta.get("year"), tmdb_key, client,
+                            prefer_tv=(id_type == "tvdb"),
+                        )
+                except Exception as exc:
+                    _lookup_debug(f"title fallback for {media_id}: error {exc!r}")
 
         mapped = map_language_code(raw_lang) if raw_lang else None
         now = datetime.now(timezone.utc).isoformat()
