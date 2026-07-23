@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.95] — 2026-07-23
+
+### Fixed
+- **Metadata refresh now matches items that have no ID in their path**, via the title/year search (previously the lookup returned early when there was no IMDb/TVDB/TMDB id, so id-less items never got searched).
+- **Manual matching now sticks.** A manual (poster) match always marks the item `tmdb-manual` — even when TMDB has no original_language for the pick — and it now also matches a loose single file (the grid passes the file's own path, whose `<file>/%` prefix matched nothing), so re-matching no longer leaves items on `heuristic`.
+
 ## [0.9.94] — 2026-07-23
 
 ### Fixed

@@ -1698,17 +1698,21 @@ async def override_poster(req: OverrideRequest):
              rating, genre_names or None, country_names or None, req.media_type,
              datetime.now(timezone.utc).isoformat()),
         )
-        if original_lang:
-            # Match every file under this folder. The folder_path stored
-            # in poster_cache is the parent dir without trailing slash;
-            # scan_results.file_path includes the full file path. Use
-            # LIKE with a `<folder>/%` pattern to catch them all.
-            folder_prefix = req.folder_path.rstrip("/") + "/"
-            await db.execute(
-                "UPDATE scan_results SET native_language = ?, language_source = 'tmdb-manual' "
-                "WHERE file_path LIKE ?",
-                (original_lang, folder_prefix + "%"),
-            )
+        # v0.9.95: a manual match is authoritative — ALWAYS mark the row(s)
+        # 'tmdb-manual', even if TMDB has no original_language for the pick
+        # (keep the existing native then). Match both files UNDER the folder
+        # (`<folder>/%`) AND the exact path itself, since the poster grid
+        # passes a loose single file's own path as `folder_path` (its
+        # `<file>/%` prefix would otherwise match nothing → update skipped →
+        # the item stayed 'heuristic' after matching).
+        folder = req.folder_path.rstrip("/")
+        await db.execute(
+            "UPDATE scan_results SET "
+            "native_language = COALESCE(?, native_language), "
+            "language_source = 'tmdb-manual' "
+            "WHERE file_path = ? OR file_path LIKE ?",
+            (original_lang, folder, folder + "/%"),
+        )
         await db.commit()
     finally:
         await db.close()

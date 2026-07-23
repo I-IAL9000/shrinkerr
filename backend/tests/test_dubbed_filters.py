@@ -134,3 +134,40 @@ async def test_rescan_preserves_authoritative_language_source(tmp_path):
         assert await row("/c.mkv") == ("jpn", "heuristic")    # refreshed
     finally:
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_override_poster_marks_tmdb_manual_incl_loose_file(tmp_path):
+    """v0.9.95: a manual match marks tmdb-manual for both files under a folder
+    AND a loose single file passed as the folder_path itself; and it marks the
+    source even when TMDB has no original_language (keeps existing native)."""
+    import aiosqlite
+    db = await aiosqlite.connect(str(tmp_path / "t.db"))
+    try:
+        await db.execute(
+            "CREATE TABLE scan_results (file_path TEXT PRIMARY KEY, native_language TEXT, language_source TEXT)")
+        await db.executemany(
+            "INSERT INTO scan_results (file_path, native_language, language_source) VALUES (?,?,?)",
+            [("/m/Movie (2022)/Movie.mkv", "eng", "heuristic"),   # in a folder
+             ("/m/Loose (2021).mkv", "eng", "heuristic")])         # loose file
+        await db.commit()
+
+        async def override(folder_path, original_lang):
+            folder = folder_path.rstrip("/")
+            await db.execute(
+                "UPDATE scan_results SET native_language = COALESCE(?, native_language), "
+                "language_source = 'tmdb-manual' WHERE file_path = ? OR file_path LIKE ?",
+                (original_lang, folder, folder + "/%"))
+            await db.commit()
+
+        await override("/m/Movie (2022)", "kor")          # folder match, with lang
+        await override("/m/Loose (2021).mkv", None)        # loose-file match, no lang
+
+        async def row(fp):
+            async with db.execute(
+                "SELECT native_language, language_source FROM scan_results WHERE file_path=?", (fp,)) as c:
+                return tuple(await c.fetchone())
+        assert await row("/m/Movie (2022)/Movie.mkv") == ("kor", "tmdb-manual")   # under folder, native updated
+        assert await row("/m/Loose (2021).mkv") == ("eng", "tmdb-manual")         # loose file marked, native kept
+    finally:
+        await db.close()

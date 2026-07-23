@@ -235,10 +235,22 @@ async def lookup_original_language(file_path: str) -> str | None:
     Returns a 3-letter ISO 639-2/B code, or None if lookup fails / no ID found.
     """
     parsed = parse_media_id(file_path)
-    if parsed is None:
-        return None
-
-    id_type, media_id = parsed
+    # v0.9.95: resolve by title/year even when there's no id in the path. TMDB
+    # matches by name, so id-less items (Plex/manually-organised libraries) can
+    # still be looked up — the id-less title search is cached under a title key.
+    title = year = None
+    if parsed:
+        id_type, media_id = parsed
+    else:
+        try:
+            from backend.routes.posters import parse_folder_name
+            _meta = parse_folder_name(str(Path(file_path).parent), walk_files=False)
+            title, year = _meta.get("title"), _meta.get("year")
+        except Exception:
+            title = year = None
+        if not title:
+            return None
+        id_type, media_id = "title", f"{title.lower()}:{year or ''}"
 
     # Read API keys from settings table
     db = await aiosqlite.connect(DB_PATH)
@@ -315,12 +327,13 @@ async def lookup_original_language(file_path: str) -> str | None:
             # same thing manual matching does.
             if not raw_lang:
                 try:
-                    from backend.routes.posters import parse_folder_name
-                    meta = parse_folder_name(str(Path(file_path).parent), walk_files=False)
-                    title = meta.get("title")
+                    if title is None:  # id-having path — parse title/year now
+                        from backend.routes.posters import parse_folder_name
+                        _m = parse_folder_name(str(Path(file_path).parent), walk_files=False)
+                        title, year = _m.get("title"), _m.get("year")
                     if title:
                         raw_lang = await _lookup_tmdb_by_title(
-                            title, meta.get("year"), tmdb_key, client,
+                            title, year, tmdb_key, client,
                             prefer_tv=(id_type == "tvdb"),
                         )
                 except Exception as exc:
