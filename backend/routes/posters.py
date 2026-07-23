@@ -1685,7 +1685,13 @@ async def override_poster(req: OverrideRequest):
     # written earlier, so audio-cleanup rules (which key off
     # native_language) kept treating the wrongly-matched film's
     # language as canonical. Now writing both at the same time.
-    original_lang = (data.get("original_language") or "").strip().lower() or None
+    # v0.9.96: map TMDB's 2-letter code (es/de) to the 3-letter ISO 639-2/B
+    # (spa/ger) the rest of the app uses — the auto/api path already does this
+    # via map_language_code; without it, manual matches stored a 2-letter
+    # native that broke keep-language matching and displayed wrong.
+    from backend.metadata import map_language_code
+    _raw_lang = (data.get("original_language") or "").strip().lower() or None
+    original_lang = map_language_code(_raw_lang) if _raw_lang else None
 
     # Upsert into poster_cache + propagate native_language to scan_results.
     db = await aiosqlite.connect(DB_PATH)

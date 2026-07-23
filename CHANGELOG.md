@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.96] — 2026-07-23
+
+### Fixed
+- **Manually-matched items no longer show as "heuristic".** The file detail labeled any source other than `api` as "heuristic", so `manual`/`tmdb-manual` matches looked unmatched even though they were correctly recorded. It now shows "manual match" (and treats all three as authoritative). This is why re-matching seemed not to "stick" — the match was registering, just mislabeled.
+- **Manual match now stores the native language in the right format.** `override_poster` saved TMDB's 2-letter code (e.g. `es`/`de`) instead of the 3-letter ISO 639-2/B (`spa`/`ger`) the rest of the app uses, which broke keep-language matching; it now maps it like the API path does. (Re-match affected items once to correct their stored native.)
+
 ## [0.9.95] — 2026-07-23
 
 ### Fixed

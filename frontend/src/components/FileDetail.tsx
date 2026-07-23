@@ -257,18 +257,29 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
 
       {tab === "tracks" && (
         <>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-            Native language: <strong style={{ color: file.language_source === "api" ? "var(--success)" : "var(--text-secondary)" }}>
-              {file.native_language.toUpperCase()}
-            </strong>
-            <span style={{
-              fontSize: 9, marginLeft: 4, padding: "1px 4px", borderRadius: 3,
-              background: file.language_source === "api" ? "rgba(0,200,100,0.15)" : "var(--border)",
-              color: file.language_source === "api" ? "var(--success)" : "var(--text-muted)",
-            }}>
-              {file.language_source === "api" ? "from API" : "heuristic"}
-            </span>
-          </div>
+          {(() => {
+            // v0.9.96: api AND manual/tmdb-manual are all authoritative matches
+            // (not heuristic guesses). Only 'heuristic'/unset is a guess.
+            const src = file.language_source || "heuristic";
+            const matched = src === "api" || src === "manual" || src === "tmdb-manual";
+            const label = src === "api" ? "from API"
+              : (src === "manual" || src === "tmdb-manual") ? "manual match"
+              : "heuristic";
+            return (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
+                Native language: <strong style={{ color: matched ? "var(--success)" : "var(--text-secondary)" }}>
+                  {file.native_language.toUpperCase()}
+                </strong>
+                <span style={{
+                  fontSize: 9, marginLeft: 4, padding: "1px 4px", borderRadius: 3,
+                  background: matched ? "rgba(0,200,100,0.15)" : "var(--border)",
+                  color: matched ? "var(--success)" : "var(--text-muted)",
+                }}>
+                  {label}
+                </span>
+              </div>
+            );
+          })()}
           {file.needs_conversion && (
             <div style={{ color: "var(--success)", marginBottom: 6 }}>
               Convert to x265 10-bit (est. save ~{(convSavings / (1024**3)).toFixed(1)} GB)
