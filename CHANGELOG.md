@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.97] — 2026-07-23
+
+### Fixed
+- **Subtitle language detection no longer times out on large files over a network mount.** Extracting text from a big Blu-ray subtitle track reads ~GBs cold over CIFS/SMB, which blew the 60s extraction timeout (killed → empty → stuck `und`, though a warm retry worked). Raised the timeout to 180s so cold networked reads finish.
+
 ## [0.9.96] — 2026-07-23
 
 ### Fixed

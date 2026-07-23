@@ -767,7 +767,7 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     import os as _os
     import tempfile as _tempfile
 
-    async def _run(cmd: list, timeout: int = 60):
+    async def _run(cmd: list, timeout: int = 180):
         proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -792,8 +792,11 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
         # without it (v0.9.15) ffmpeg demuxes the WHOLE multi-GB file to
         # collect sub packets and blows the timeout on large files, extracting
         # empty. 30 min covers dialogue start for essentially all content
-        # (v0.8.1's 10 min was too short for some forced subs) while stopping
-        # the read early so it stays fast.
+        # (v0.8.1's 10 min was too short for some forced subs).
+        # v0.9.97: even 30 min of a large Bluray is ~GBs; reading it COLD over a
+        # CIFS/SMB mount exceeded the old 60s timeout (killed → empty → stuck
+        # und). The `_run` timeout above is now 180s so cold networked reads
+        # finish (a warm re-read is a few seconds).
         await _run([
             "ffmpeg", "-y", "-v", "quiet", "-i", file_path,
             "-map", f"0:{stream_index}", "-t", "1800", "-c:s", "copy", tmp,
