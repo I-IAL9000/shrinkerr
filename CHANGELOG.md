@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.94] — 2026-07-23
+
+### Fixed
+- **Re-scanning no longer wipes API/manual language matches back to "heuristic".** The scan upsert overwrote native_language + language_source with the freshly-scanned (heuristic) values, so a folder rescan or the watcher re-seeing a file downgraded every TMDB (api) or manual/tmdb-manual match to heuristic. The upsert now preserves an authoritative source/native and only refreshes heuristic/unset rows.
+
 ## [0.9.93] — 2026-07-23
 
 ### Fixed

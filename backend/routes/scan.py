@@ -103,8 +103,18 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        needs_conversion=excluded.needs_conversion,
                        audio_tracks_json=excluded.audio_tracks_json,
                        subtitle_tracks_json=excluded.subtitle_tracks_json,
-                       native_language=excluded.native_language,
-                       language_source=excluded.language_source,
+                       -- v0.9.94: never let a re-scan downgrade an authoritative
+                       -- native/source (TMDB api, or a user's manual/tmdb-manual
+                       -- match) back to the fresh heuristic guess. A re-scan
+                       -- re-derives native from the audio tracks (heuristic), so
+                       -- without this a folder rescan or the watcher re-seeing a
+                       -- file wiped every API/manual match to 'heuristic'.
+                       native_language = CASE
+                           WHEN scan_results.language_source IN ('api','manual','tmdb-manual')
+                           THEN scan_results.native_language ELSE excluded.native_language END,
+                       language_source = CASE
+                           WHEN scan_results.language_source IN ('api','manual','tmdb-manual')
+                           THEN scan_results.language_source ELSE excluded.language_source END,
                        scan_timestamp=excluded.scan_timestamp,
                        removed_from_list=0,
                        file_mtime=excluded.file_mtime,

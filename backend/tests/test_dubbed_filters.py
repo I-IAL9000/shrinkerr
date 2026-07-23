@@ -87,3 +87,50 @@ def test_matches_single_filter_disc_iso():
     assert _matches_single_filter({"disc_type": "dvd"}, "disc_iso") is True
     assert _matches_single_filter({"disc_type": None}, "disc_iso") is False
     assert _matches_single_filter({}, "disc_iso") is False
+
+
+@pytest.mark.asyncio
+async def test_rescan_preserves_authoritative_language_source(tmp_path):
+    """v0.9.94: a re-scan upsert must NOT downgrade an authoritative
+    native/source (api/manual/tmdb-manual) back to the fresh heuristic guess,
+    but SHOULD refresh a heuristic/null row."""
+    import aiosqlite
+    db = await aiosqlite.connect(str(tmp_path / "t.db"))
+    try:
+        await db.execute(
+            "CREATE TABLE scan_results (file_path TEXT PRIMARY KEY, "
+            "native_language TEXT, language_source TEXT)")
+        await db.executemany(
+            "INSERT INTO scan_results (file_path, native_language, language_source) VALUES (?,?,?)",
+            [("/a.mkv", "kor", "api"),
+             ("/b.mkv", "eng", "tmdb-manual"),
+             ("/c.mkv", "eng", "heuristic")])
+        await db.commit()
+
+        # Mirror the persist upsert's CASE for native/source.
+        async def rescan(fp, native, source):
+            await db.execute(
+                "INSERT INTO scan_results (file_path, native_language, language_source) "
+                "VALUES (?, ?, ?) ON CONFLICT(file_path) DO UPDATE SET "
+                "native_language = CASE WHEN scan_results.language_source IN ('api','manual','tmdb-manual') "
+                "                       THEN scan_results.native_language ELSE excluded.native_language END, "
+                "language_source = CASE WHEN scan_results.language_source IN ('api','manual','tmdb-manual') "
+                "                       THEN scan_results.language_source ELSE excluded.language_source END",
+                (fp, native, source))
+            await db.commit()
+
+        # Re-scan re-derives native from audio (heuristic) — must be ignored for
+        # authoritative rows, applied for the heuristic one.
+        await rescan("/a.mkv", "eng", "heuristic")
+        await rescan("/b.mkv", "fra", "heuristic")
+        await rescan("/c.mkv", "jpn", "heuristic")
+
+        async def row(fp):
+            async with db.execute(
+                "SELECT native_language, language_source FROM scan_results WHERE file_path=?", (fp,)) as c:
+                return tuple(await c.fetchone())
+        assert await row("/a.mkv") == ("kor", "api")          # preserved
+        assert await row("/b.mkv") == ("eng", "tmdb-manual")  # preserved
+        assert await row("/c.mkv") == ("jpn", "heuristic")    # refreshed
+    finally:
+        await db.close()
