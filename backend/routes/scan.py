@@ -1022,9 +1022,21 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     finally:
         await _db0.close()
 
+    # v0.9.98: raw disc-stream containers (.m2ts/.mts/.ts) are Blu-ray/transport
+    # streams meant to be converted first (see the Disc/ISO filter). Detecting
+    # on them is unreliable AND their PGS subtitles route through pgsrip OCR run
+    # in an executor thread that async cancellation can't kill — a full-movie
+    # OCR over a network mount hung unkillably for 15+ min. Skip detection for
+    # them and record a clear note instead of attempting (and hanging on) it.
+    is_stream = req.file_path.lower().endswith((".m2ts", ".mts", ".ts"))
+    _STREAM_NOTE = "detection not supported for m2ts/transport-stream — convert to MKV first"
+
     # Audio: detect und tracks.
     for i, t in enumerate(raw_audio):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            if is_stream:
+                detect_notes[("audio", t["stream_index"])] = _STREAM_NOTE
+                continue
             # v0.9.10: a title that names the language ("English") is cheap and
             # reliable — try it before the (slow) whisper spoken-language ID.
             lang = detect_language_from_title(t.get("title"))
@@ -1051,6 +1063,9 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     _IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "pgs", "vobsub"}
     for j, t in enumerate(raw_subs):
         if (t.get("language") or "und").lower() == "und" and t.get("stream_index") is not None:
+            if is_stream:
+                detect_notes[("sub", t["stream_index"])] = _STREAM_NOTE
+                continue
             # v0.9.10: prefer a language named in the title ("Traditional
             # Chinese", "Romanian") — forced/SDH subs often have too little
             # text to detect from content but a descriptive title.

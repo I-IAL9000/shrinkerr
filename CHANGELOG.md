@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.98] — 2026-07-23
+
+### Fixed
+- **Language detection no longer hangs on m2ts/transport-stream files.** Detecting on a raw Blu-ray `.m2ts`/`.mts`/`.ts` routed its PGS subtitles through a full-movie OCR run in a thread that cancellation couldn't kill (a 15-min unkillable hang over a network mount). Detection is now skipped for these convert-first stream containers, with a clear per-track note instead.
+
 ## [0.9.97] — 2026-07-23
 
 ### Fixed
