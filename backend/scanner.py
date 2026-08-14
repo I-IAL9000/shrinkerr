@@ -226,8 +226,16 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        # v0.9.100: disc probes read ~200MB via concat:/bluray: over the media
+        # mount (analyzeduration/probesize 200M above). A cold CIFS/SMB read
+        # blows the default 30s ffprobe_timeout under load, so the disc returns
+        # None and never registers. Give disc inputs the same 180s allowance the
+        # subtitle-extraction path uses for cold networked reads.
+        _probe_timeout = settings.ffprobe_timeout
+        if disc_type:
+            _probe_timeout = max(settings.ffprobe_timeout, 180)
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=settings.ffprobe_timeout
+            proc.communicate(), timeout=_probe_timeout
         )
         if proc.returncode != 0:
             return None

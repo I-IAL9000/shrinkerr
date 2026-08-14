@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.100] — 2026-08-14
+
+### Fixed
+- **DVD (VIDEO_TS) folders no longer stay invisible after one slow probe.** A probe failure was blocklisted in memory until the app restarted, so a disc `concat:` probe that blew the 30s ffprobe limit under load (200MB read over CIFS) hid the DVD permanently — how a whole library ended up with zero DVDs. Probe failures now retry after a 30-minute cooldown, and disc probes get a 180s timeout (matching the subtitle-extraction allowance for cold networked reads).
+
 ## [0.9.99] — 2026-08-14
 
 ### Fixed

@@ -11,6 +11,14 @@ from backend.config import settings
 from backend.database import DB_PATH
 from backend.scanner import _classify_disc, _disc_marker_path
 
+# v0.9.100: a probe failure is retried after this many seconds instead of
+# blocklisting the file until the process restarts. A transient timeout / lock
+# / mid-copy then self-heals on a later cycle. (Previously permanent: disc
+# `concat:` probes over CIFS occasionally blew the 30s ffprobe limit and the
+# disc stayed invisible until an app restart — which is how the whole library
+# accumulated 0 DVDs.)
+_PROBE_RETRY_COOLDOWN_S = 1800
+
 
 def _safe_int(s, default):
     try:
@@ -50,12 +58,24 @@ class FileWatcher:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self.new_files_count = 0  # Tracks unseen new files since last scanner page visit
-        self._probe_failures: set[str] = set()  # Files that failed ffprobe — skip on future cycles
+        # path → monotonic time of last ffprobe failure. Retried after
+        # _PROBE_RETRY_COOLDOWN_S (was a permanent set that hid a title until
+        # the process restarted). See _active_probe_failures().
+        self._probe_failures: dict[str, float] = {}
         self._last_disk_alert: float = 0  # Cooldown for disk space alerts
         # Last (ignored, probe_failures, to_process) tuple we logged for the
         # "Pre-filtered" line. Used to deduplicate identical states cycle to
         # cycle so a stable backlog doesn't spam the log every 5 minutes.
         self._last_pre_filtered_log: Optional[tuple[int, int, int]] = None
+
+    def _active_probe_failures(self) -> set[str]:
+        """Paths whose last probe failure is still within the retry cooldown.
+        Older entries fall out so a transient timeout / lock / mid-copy is
+        retried on a later cycle instead of being blocklisted until restart."""
+        import time
+        now = time.monotonic()
+        return {p for p, t in self._probe_failures.items()
+                if now - t < _PROBE_RETRY_COOLDOWN_S}
 
     def start(self) -> None:
         if self._running and self._task and not self._task.done():
@@ -266,12 +286,13 @@ class FileWatcher:
         skipped_probe = 0
         skipped_av1 = 0
         skipped_age = 0
+        _active_failures = self._active_probe_failures()
         for file_path in new_files:
             if file_path in ignored_paths:
                 skipped_ignored += 1
                 continue
 
-            if file_path in self._probe_failures:
+            if file_path in _active_failures:
                 skipped_probe += 1
                 continue
 
@@ -291,7 +312,7 @@ class FileWatcher:
                 # v0.6.2: disc probes can fail silently. Surface them.
                 if "/VIDEO_TS/VIDEO_TS.IFO" in file_path or "/BDMV/index.bdmv" in file_path.lower():
                     print(f"[WATCHER] !!! Disc probe FAILED: {file_path}", flush=True)
-                self._probe_failures.add(file_path)
+                self._probe_failures[file_path] = _time.monotonic()
                 skipped_probe += 1
                 continue
 
@@ -1339,10 +1360,11 @@ class FileWatcher:
         finally:
             await db.close()
 
-        exclude = ignored_paths | self._probe_failures
+        _active_failures = self._active_probe_failures()
+        exclude = ignored_paths | _active_failures
         new_files = [f for f in new_files_all if f not in exclude]
         skipped_ignored_total = len([f for f in new_files_all if f in ignored_paths])
-        skipped_probe_total = len([f for f in new_files_all if f in self._probe_failures])
+        skipped_probe_total = len([f for f in new_files_all if f in _active_failures])
         # Deduplicate the log line: only emit when at least one of the three
         # numbers changed since last cycle. A stable backlog (e.g. 600
         # always-failing companion files plus zero new content) used to spam

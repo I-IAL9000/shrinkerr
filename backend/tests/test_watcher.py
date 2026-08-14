@@ -1070,3 +1070,22 @@ async def test_clear_stale_disc_helper_v078_clears_all_three_flags(test_db):
     assert row["health_errors_json"] is None
 
 
+
+
+def test_probe_failure_blocklist_expires_after_cooldown():
+    """v0.9.100: a probe failure is retried after the cooldown, so a transient
+    timeout / lock / mid-copy self-heals instead of hiding a title until the
+    process restarts. Prevents the 'library shows 0 DVDs' failure mode where a
+    slow disc probe blocklisted the disc permanently."""
+    import time
+    from backend.watcher import _PROBE_RETRY_COOLDOWN_S
+
+    w = FileWatcher(":memory:", interval_minutes=5)
+    now = time.monotonic()
+    w._probe_failures = {
+        "/media/recent/VIDEO_TS/VIDEO_TS.IFO": now,                       # just failed
+        "/media/old/VIDEO_TS/VIDEO_TS.IFO": now - _PROBE_RETRY_COOLDOWN_S - 10,  # cooled down
+    }
+    active = w._active_probe_failures()
+    assert "/media/recent/VIDEO_TS/VIDEO_TS.IFO" in active      # still skipped
+    assert "/media/old/VIDEO_TS/VIDEO_TS.IFO" not in active     # eligible for retry
