@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.99] — 2026-08-14
+
+### Fixed
+- **Empty "NO SUBS" placeholder subtitles can now be cleaned up.** A forced or unknown-language subtitle with ≤1 cue (the junk placeholder some releases ship) is now flagged removable on scan, so an audio/sub cleanup strips it across a whole season instead of always keeping it as a forced track.
+- **Unchecking a locked (forced / keep-language) subtitle in the detail panel is now honored.** Cleanup derived removals as "not-kept AND not-locked", which silently discarded an explicit untick of a locked track; it now removes any track you've unchecked.
+
 ## [0.9.98] — 2026-07-23
 
 ### Fixed

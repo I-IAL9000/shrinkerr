@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.scanner import (
     classify_audio_tracks,
+    classify_subtitle_tracks,
     detect_native_language,
     probe_file,
 )
@@ -187,6 +188,53 @@ def test_classify_audio_tracks_ignores_unknown():
     # und: kept (not suggested for removal), not locked
     assert by_lang["und"].keep is True
     assert by_lang["und"].locked is False
+
+
+def test_classify_subtitle_removes_empty_forced_und():
+    """v0.9.99: a 'NO SUBS' placeholder (forced, und, <=1 cue) is marked
+    removable even though sub_keep_unknown=True would keep a normal und sub."""
+    tracks = [
+        {"stream_index": 2, "language": None, "codec": "subrip",
+         "title": "NO SUBS", "forced": True, "num_frames": 1},
+        {"stream_index": 3, "language": "eng", "codec": "subrip",
+         "title": "English", "forced": False, "num_frames": 992},
+    ]
+    with patch("backend.scanner._load_sub_settings", return_value=({"eng"}, True)), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        result = classify_subtitle_tracks(tracks, "eng")
+    by_idx = {t.stream_index: t for t in result}
+    # placeholder → suggested for removal, and NOT locked (so cleanup honours it)
+    assert by_idx[2].keep is False
+    assert by_idx[2].locked is False
+    # the real English sub is untouched
+    assert by_idx[3].keep is True
+
+
+def test_classify_subtitle_empty_rule_spares_named_language():
+    """The <=1-cue rule is gated to forced/und — a sparse *named*-language
+    sub (a 1-cue English 'signs' track) is left to the normal keep rules."""
+    tracks = [
+        {"stream_index": 2, "language": "eng", "codec": "subrip",
+         "title": "Signs", "forced": False, "num_frames": 1},
+    ]
+    with patch("backend.scanner._load_sub_settings", return_value=({"eng"}, True)), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        result = classify_subtitle_tracks(tracks, "eng")
+    # eng is a keep-language → kept, not swept by the empty rule
+    assert result[0].keep is True
+
+
+def test_classify_subtitle_empty_rule_needs_known_cue_count():
+    """When NUMBER_OF_FRAMES is absent (num_frames=None) the empty rule can't
+    fire — a forced und track keeps its legacy always-keep-forced default."""
+    tracks = [
+        {"stream_index": 2, "language": None, "codec": "subrip",
+         "title": "Forced", "forced": True, "num_frames": None},
+    ]
+    with patch("backend.scanner._load_sub_settings", return_value=({"eng"}, True)), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        result = classify_subtitle_tracks(tracks, "eng")
+    assert result[0].keep is True
 
 
 def test_metadata_refresh_reclassifies_on_native_change(monkeypatch):

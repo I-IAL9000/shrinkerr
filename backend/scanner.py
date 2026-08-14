@@ -317,12 +317,24 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
                 if _codec_l in _TEXT_SUB_CODECS:
                     _txt = await _extract_embedded_sub_text(file_path, stream.get("index"))
                     lang = maybe_detect_subtitle_track_language(lang, _codec_l, _txt)
+            # v0.9.99: mkvmerge writes per-stream NUMBER_OF_FRAMES (and a
+            # language-suffixed variant) as statistics tags — a free cue count
+            # already in the probe. Used to flag empty placeholder subs.
+            num_frames = None
+            for _k, _v in tags.items():
+                if _k.upper().startswith("NUMBER_OF_FRAMES"):
+                    try:
+                        num_frames = int(_v)
+                        break
+                    except (ValueError, TypeError):
+                        pass
             subtitle_tracks.append({
                 "stream_index": stream.get("index"),
                 "language": lang,
                 "codec": stream.get("codec_name", ""),
                 "title": tags.get("title", ""),
                 "forced": bool(disposition.get("forced", 0)),
+                "num_frames": num_frames,
             })
 
     try:
@@ -1258,6 +1270,7 @@ def classify_subtitle_tracks(
                 codec=t.get("codec", ""),
                 title=t.get("title", ""),
                 forced=t.get("forced", False),
+                num_frames=t.get("num_frames"),
                 keep=True, locked=True,
             ) for t in tracks
         ]
@@ -1276,6 +1289,27 @@ def classify_subtitle_tracks(
     for track in tracks:
         lang = (track.get("language") or "und").lower()
         forced = track.get("forced", False)
+
+        # v0.9.99: an empty placeholder subtitle (a "NO SUBS" forced/und track
+        # with a single dummy cue, or none) is junk regardless of the
+        # forced/keep-language rules below. Drop it when the cue count is known
+        # (<= 1) AND the track is forced or unknown-language — the narrow gate
+        # that avoids touching a genuine sparse named-language "signs" sub.
+        num_frames = track.get("num_frames")
+        if num_frames is not None and num_frames <= 1 and (forced or lang == "und"):
+            result.append(
+                SubtitleTrack(
+                    stream_index=track.get("stream_index", 0),
+                    language=lang,
+                    codec=track.get("codec", ""),
+                    title=track.get("title", ""),
+                    forced=forced,
+                    num_frames=num_frames,
+                    keep=False,
+                    locked=False,
+                )
+            )
+            continue
 
         # Forced subs only kept if they match native language or user's keep languages
         if forced:
@@ -1304,6 +1338,7 @@ def classify_subtitle_tracks(
                 codec=track.get("codec", ""),
                 title=track.get("title", ""),
                 forced=forced,
+                num_frames=num_frames,
                 keep=keep,
                 locked=locked,
             )

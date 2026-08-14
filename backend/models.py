@@ -29,6 +29,10 @@ class SubtitleTrack(BaseModel):
     forced: bool = False
     keep: bool = True
     locked: bool = False
+    # v0.9.99: cue count from the container's NUMBER_OF_FRAMES stream tag
+    # (None when the muxer didn't write it). Used to spot empty placeholder
+    # tracks ("NO SUBS" etc.) that should be removable despite forced/und.
+    num_frames: Optional[int] = None
     external: bool = False       # True for sidecar .srt/.ass files (not embedded)
     external_path: str = ""      # Absolute path to the external subtitle file
     detected_language: Optional[str] = None  # v0.9.35 (see AudioTrack)

@@ -369,18 +369,24 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                     if bitrate < min_bitrate_bps:
                         continue  # Below minimum — savings too small
 
-            # Determine tracks to remove from stored classifications
+            # Determine tracks to remove from stored classifications.
+            # v0.9.99: gate on keep alone, NOT `keep and not locked`.
+            # Classification never emits keep=False together with locked=True —
+            # that pair only arises when a user deliberately unticks a locked
+            # (forced / keep-language) track in the detail panel. The old
+            # `and not locked` guard silently discarded exactly that override,
+            # so an explicitly-unticked forced sub was never removed.
             audio_remove = []
             sub_remove = []
             try:
                 for t in json.loads(row["audio_tracks_json"] or "[]"):
-                    if not t.get("keep", True) and not t.get("locked", False):
+                    if not t.get("keep", True):
                         audio_remove.append(t["stream_index"])
             except (json.JSONDecodeError, ValueError):
                 pass
             try:
                 for t in json.loads(row["subtitle_tracks_json"] or "[]"):
-                    if not t.get("keep", True) and not t.get("locked", False):
+                    if not t.get("keep", True):
                         sub_remove.append(t["stream_index"])
             except (json.JSONDecodeError, ValueError):
                 pass
