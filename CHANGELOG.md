@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.101] — 2026-08-14
+
+### Fixed
+- **Files with a future-dated timestamp are no longer skipped by the watcher forever.** The "skip files newer than N minutes" guard computed a negative age for a bogus future mtime (common on DVD/ISO rips — a `VIDEO_TS.IFO` dated 2036), which counts as "still being written," so the disc/file was skipped on every cycle and never registered. Future/negative ages are now excluded from the skip.
+
 ## [0.9.100] — 2026-08-14
 
 ### Fixed

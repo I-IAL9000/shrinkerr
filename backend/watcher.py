@@ -20,6 +20,20 @@ from backend.scanner import _classify_disc, _disc_marker_path
 _PROBE_RETRY_COOLDOWN_S = 1800
 
 
+def _file_too_recent(mtime: float, now: float, skip_age_minutes: int) -> bool:
+    """True if a file was modified within the last `skip_age_minutes` and is
+    thus likely still being written/copied — so the watcher should defer it.
+
+    v0.9.101: a NEGATIVE age (future mtime) is a bogus timestamp, common on
+    DVD/ISO rips (a VIDEO_TS.IFO dated years ahead). It must NOT count as
+    "recent" — otherwise the disc is skipped as too-new on every cycle forever
+    and never gets probed or registered."""
+    if skip_age_minutes <= 0:
+        return False
+    age_min = (now - mtime) / 60
+    return 0 <= age_min < skip_age_minutes
+
+
 def _safe_int(s, default):
     try:
         return int(s)
@@ -296,12 +310,11 @@ class FileWatcher:
                 skipped_probe += 1
                 continue
 
-            # Skip recently modified files
+            # Skip recently modified files (still being written/copied)
             if skip_age_minutes > 0:
                 try:
-                    mtime = os.path.getmtime(file_path)
-                    age_min = (_time.time() - mtime) / 60
-                    if age_min < skip_age_minutes:
+                    if _file_too_recent(os.path.getmtime(file_path),
+                                        _time.time(), skip_age_minutes):
                         skipped_age += 1
                         continue
                 except OSError:

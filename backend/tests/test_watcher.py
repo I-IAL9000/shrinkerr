@@ -1089,3 +1089,20 @@ def test_probe_failure_blocklist_expires_after_cooldown():
     active = w._active_probe_failures()
     assert "/media/recent/VIDEO_TS/VIDEO_TS.IFO" in active      # still skipped
     assert "/media/old/VIDEO_TS/VIDEO_TS.IFO" not in active     # eligible for retry
+
+
+def test_file_too_recent_bounds():
+    """v0.9.101: the skip-age guard defers genuinely-recent files but must NOT
+    skip a file with a bogus FUTURE mtime (common on DVD/ISO rips) — otherwise
+    the disc is skipped as 'too new' every cycle and never registers."""
+    from backend.watcher import _file_too_recent
+    now = 1_000_000.0
+    skip = 10  # minutes
+    # Modified 2 min ago → still settling → skip.
+    assert _file_too_recent(now - 2 * 60, now, skip) is True
+    # Modified 30 min ago → old enough → don't skip.
+    assert _file_too_recent(now - 30 * 60, now, skip) is False
+    # Future mtime (10 years ahead, e.g. a 2036-dated VIDEO_TS.IFO) → NOT recent.
+    assert _file_too_recent(now + 10 * 365 * 86400, now, skip) is False
+    # Feature disabled → never skip.
+    assert _file_too_recent(now, now, 0) is False
