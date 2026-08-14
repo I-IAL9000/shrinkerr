@@ -1179,3 +1179,28 @@ async def backfill_stale_disc_type() -> int:
         return cleared
     finally:
         await db.close()
+
+
+async def backfill_future_mtimes() -> int:
+    """Clamp bogus FUTURE file_mtimes on existing rows to now.
+
+    Ripped media often carries a modification time years ahead (a VIDEO_TS.IFO
+    or mkv dated 2036), which pins the title to the top of the "Newest" sort
+    forever. New scans clamp on write (scanner.clamp_future_mtime); this fixes
+    rows already stored. Idempotent — after clamping, no future rows remain, so
+    re-runs are no-ops. v0.9.102.
+    """
+    db = await connect_db()
+    try:
+        cur = await db.execute(
+            "UPDATE scan_results SET file_mtime = CAST(strftime('%s','now') AS REAL) "
+            "WHERE file_mtime IS NOT NULL "
+            "AND file_mtime > CAST(strftime('%s','now') AS REAL)"
+        )
+        n = cur.rowcount
+        await db.commit()
+        if n:
+            print(f"[DB] clamped {n} future file_mtime(s) to now", flush=True)
+        return n
+    finally:
+        await db.close()

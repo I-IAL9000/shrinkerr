@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.102] — 2026-08-14
+
+### Fixed
+- **Titles with a bogus future timestamp no longer pin the top of the "Newest" sort.** Ripped media dated years ahead (a `VIDEO_TS.IFO` or mkv stamped 2036) sorted above every genuinely-new addition. Future mtimes are now clamped to "now" on scan, and a one-time startup backfill fixes rows already stored. A subsequent full re-scan re-stamps them at scan time.
+
 ## [0.9.101] — 2026-08-14
 
 ### Fixed

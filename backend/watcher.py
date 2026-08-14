@@ -9,7 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path
+from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -416,6 +416,9 @@ class FileWatcher:
                     file_mtime = os.path.getmtime(file_path)
             except OSError:
                 file_mtime = None
+            # v0.9.102: clamp a bogus future mtime (ripped media dated 2036)
+            # so it doesn't pin the title to the top of the "Newest" sort.
+            file_mtime = clamp_future_mtime(file_mtime, _time.time())
 
             scanned = ScannedFile(
                 file_path=file_path,

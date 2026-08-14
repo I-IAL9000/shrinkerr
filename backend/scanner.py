@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -19,6 +20,18 @@ try:
     SCAN_CONCURRENCY = max(1, int(os.environ.get("SHRINKERR_SCAN_CONCURRENCY", "4")))
 except ValueError:
     SCAN_CONCURRENCY = 4
+
+
+def clamp_future_mtime(mtime: Optional[float], now: float) -> Optional[float]:
+    """Clamp a future modification time to `now`.
+
+    Ripped media commonly carries a bogus mtime years in the future (a
+    VIDEO_TS.IFO dated 2036, an mkv stamped ahead of the clock). Left as-is it
+    pins the title to the top of the "Newest" sort permanently. Returns the
+    value unchanged when it's None or already in the past. v0.9.102."""
+    if mtime is not None and mtime > now:
+        return now
+    return mtime
 
 
 def _classify_disc(folder: Path) -> Optional[str]:
@@ -1813,6 +1826,9 @@ async def scan_directory(
                 file_mtime = os.path.getmtime(str(file_path))
         except OSError:
             file_mtime = None
+        # v0.9.102: a bogus future mtime (ripped media dated 2036) otherwise
+        # pins the title to the top of the "Newest" sort forever.
+        file_mtime = clamp_future_mtime(file_mtime, time.time())
 
         scanned = ScannedFile(
             file_path=str(file_path),

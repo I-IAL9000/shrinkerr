@@ -247,6 +247,13 @@ async def lifespan(app: FastAPI):
             await backfill_stale_disc_type()
         except Exception as exc:
             print(f"[STARTUP] stale disc_type backfill skipped: {exc}", flush=True)
+        # v0.9.102: clamp bogus future file_mtimes (ripped media dated 2036)
+        # that permanently pin titles to the top of the "Newest" sort.
+        try:
+            from backend.database import backfill_future_mtimes
+            await backfill_future_mtimes()
+        except Exception as exc:
+            print(f"[STARTUP] future-mtime backfill skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from backend.scanner import (
     classify_audio_tracks,
     classify_subtitle_tracks,
+    clamp_future_mtime,
     detect_native_language,
     probe_file,
 )
@@ -373,3 +374,14 @@ def test_is_dubbed_core():
     assert _is_dubbed(["eng", "und"], "kor", "api") == 0
     assert _is_dubbed([], "kor", "api") == 0
     assert _is_dubbed(["ENG"], "KOR", "api") == 1
+
+
+def test_clamp_future_mtime():
+    """v0.9.102: a bogus future mtime (ripped media dated 2036) is clamped to
+    now so it can't pin the title to the top of the 'Newest' sort; past and
+    None values pass through unchanged."""
+    now = 1_000_000.0
+    assert clamp_future_mtime(now - 500, now) == now - 500   # past → unchanged
+    assert clamp_future_mtime(now + 10**9, now) == now       # future → clamped
+    assert clamp_future_mtime(now, now) == now               # exactly now → unchanged
+    assert clamp_future_mtime(None, now) is None             # missing → passes through
