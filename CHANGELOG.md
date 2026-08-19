@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.106] — 2026-08-19
+
+### Fixed
+- **A folder rescan no longer health-checks the whole library.** The post-scan inline health-check (when `health_check_on_scan` is on) selected every recently-detected unchecked file across the library, so rescanning one folder swept hundreds of unrelated files. It's now scoped to the folders the scan actually covered.
+
 ## [0.9.105] — 2026-08-19
 
 ### Fixed

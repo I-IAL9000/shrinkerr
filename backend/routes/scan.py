@@ -608,6 +608,22 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
     _asyncio.run(_do_scan())
 
 
+def _path_scope_clause(paths: list[str]) -> tuple[str, list[str]]:
+    """Build an SQL `(file_path LIKE ? OR ...)` fragment + params that scopes a
+    query to files under the given folder paths (recursively). Empty paths →
+    ('0', []) which matches nothing.
+
+    v0.9.106: used to scope the post-scan inline health-check to the folders the
+    scan actually covered. Without it a targeted folder rescan swept the whole
+    library's recently-detected backlog (rescanning one folder health-checked
+    hundreds of unrelated files)."""
+    if not paths:
+        return "0", []
+    frag = "(" + " OR ".join("file_path LIKE ?" for _ in paths) + ")"
+    params = [p.rstrip("/") + "/%" for p in paths]
+    return frag, params
+
+
 async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
     """Launch scan in a subprocess and poll progress for websocket updates.
 
@@ -733,17 +749,22 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
                     if hc_mode not in ("quick", "thorough"):
                         hc_mode = "off"
                 unchecked: list[str] = []
-                if hc_mode != "off":
-                    # Only check files DETECTED in the last 24h, capped for safety.
+                if hc_mode != "off" and paths:
+                    # Files DETECTED in the last 24h, capped for safety, AND
+                    # scoped to the paths this scan actually covered (v0.9.106).
+                    # Without the path scope a one-folder rescan swept every
+                    # recently-detected unchecked file in the whole library.
                     HC_BATCH_CAP = 2000
+                    _scope_frag, _scope_params = _path_scope_clause(paths)
                     async with db_hc.execute(
                         "SELECT file_path FROM scan_results "
                         "WHERE removed_from_list = 0 AND health_status IS NULL "
                         "AND COALESCE(probe_status, 'ok') = 'ok' "
                         "AND new_detected_at IS NOT NULL "
                         "AND new_detected_at > datetime('now', '-1 day') "
+                        f"AND {_scope_frag} "
                         "ORDER BY new_detected_at DESC LIMIT ?",
-                        (HC_BATCH_CAP,),
+                        (*_scope_params, HC_BATCH_CAP),
                     ) as cur:
                         unchecked = [r["file_path"] for r in await cur.fetchall()]
             finally:

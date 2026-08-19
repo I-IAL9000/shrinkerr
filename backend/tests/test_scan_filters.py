@@ -35,3 +35,33 @@ def test_conversion_filters_still_exclude_ignored():
     assert _matches_single_filter(_row(needs_conversion=True, ignored=False), "needs_conversion") is True
     assert _matches_single_filter(_row(low_bitrate=True, ignored=True), "low_bitrate") is False
     assert _matches_single_filter(_row(low_bitrate=True, ignored=False), "low_bitrate") is True
+
+
+def test_path_scope_clause_builds_fragment():
+    """v0.9.106: the health-check scope fragment matches files under each given
+    folder path; empty paths match nothing."""
+    from backend.routes.scan import _path_scope_clause
+    frag, params = _path_scope_clause(["/media/Movies/HD 2020", "/media/TV1/TV1/"])
+    assert frag == "(file_path LIKE ? OR file_path LIKE ?)"
+    assert params == ["/media/Movies/HD 2020/%", "/media/TV1/TV1/%"]
+    assert _path_scope_clause([]) == ("0", [])
+
+
+def test_path_scope_clause_filters_rows():
+    """The scope fragment, run against SQLite, returns only files under the
+    scanned folder — a one-folder rescan won't sweep other folders."""
+    import sqlite3
+    from backend.routes.scan import _path_scope_clause
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE scan_results (file_path TEXT)")
+    rows = [
+        "/media/Misc/Movies2/Rear Window (1998) [tt0166322]/VIDEO_TS/VIDEO_TS.IFO",
+        "/media/Misc/Movies2/Rear Window (1998) [tt0166322]/extra.mkv",
+        "/media/M2T2/TV4/Jane the Virgin/s.mkv",   # unrelated folder
+    ]
+    db.executemany("INSERT INTO scan_results VALUES (?)", [(r,) for r in rows])
+    frag, params = _path_scope_clause(["/media/Misc/Movies2/Rear Window (1998) [tt0166322]"])
+    got = [r[0] for r in db.execute(
+        f"SELECT file_path FROM scan_results WHERE {frag}", params).fetchall()]
+    assert got == rows[:2]           # only the Rear Window folder's files
+    assert "/media/M2T2/TV4/Jane the Virgin/s.mkv" not in got
