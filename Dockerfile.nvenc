@@ -137,8 +137,11 @@ RUN set -e; \
         *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
     esac; \
     echo "Installing ffmpeg build: ${FFMPEG_BUILD} from ${FF_URL}"; \
-    curl -fsSL "${FF_URL}" \
-        | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    # v0.9.105: download to a file with retries, THEN extract (piping curl into
+    # tar can't retry a mid-stream cut). See Dockerfile for the full rationale.
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    rm -f /tmp/ffmpeg.tar.xz; \
     chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
     echo "ffmpeg installed:"; ffmpeg -version 2>&1 | head -1; \
     echo "VMAF filter:"; (ffmpeg -filters 2>&1 | grep libvmaf || echo "NOT FOUND")

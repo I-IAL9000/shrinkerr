@@ -14,9 +14,20 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+# v0.9.105: dedup redundant runs. A release pushes the commit to main AND a
+# tag pointing at it — two push events, same SHA — which used to run the
+# identical suite twice (and one copy could hang indefinitely). Group by SHA
+# (or PR number) and cancel the superseded run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    # Bound the job so a hung test can't sit "in progress" for hours
+    # (a duplicate run stuck 47 min with no timeout is what prompted this).
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4

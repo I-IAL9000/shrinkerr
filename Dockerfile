@@ -201,8 +201,12 @@ RUN set -e; \
         *)      echo "Unknown FFMPEG_BUILD: ${FFMPEG_BUILD} (expected 'master' or 'nX.Y')" >&2; exit 2 ;; \
     esac; \
     echo "Installing ffmpeg ${FFMPEG_BUILD} for ${TARGETARCH}: ${FF_URL}"; \
-    curl -fsSL "${FF_URL}" \
-        | tar -xJ --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    # v0.9.105: download to a file with retries, THEN extract. Piping curl
+    # straight into tar can't retry a mid-stream cut (tar has already consumed
+    # a partial stream) — that flaked the arm64 leg under slow QEMU emulation.
+    curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors "${FF_URL}" -o /tmp/ffmpeg.tar.xz; \
+    tar -xJf /tmp/ffmpeg.tar.xz --strip-components=2 -C /usr/local/bin/ --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'; \
+    rm -f /tmp/ffmpeg.tar.xz; \
     chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe; \
     apt-get purge -y curl xz-utils && apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*; \

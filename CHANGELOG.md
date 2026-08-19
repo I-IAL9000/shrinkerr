@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.105] — 2026-08-19
+
+### Fixed
+- **CI: fewer, more reliable builds.** Duplicate test runs from a release's paired main+tag push now auto-cancel (concurrency group), both workflows gained job timeouts so a stuck run can't hang for hours, and the ffmpeg download in both Dockerfiles retries and writes to a file before extracting — fixing the transient arm64 build failures under QEMU emulation.
+
 ## [0.9.104] — 2026-08-19
 
 ### Fixed

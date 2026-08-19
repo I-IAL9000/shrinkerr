@@ -56,9 +56,20 @@ env:
   # configured — Docker Hub mirroring stays off in that case.
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
+# v0.9.105: cancel a superseded run for the SAME ref (e.g. two quick pushes to
+# main). Grouped by ref, NOT sha — a release's main push and tag push have
+# different refs and must BOTH run (the tag build adds the versioned image
+# tags), so this never cancels the versioned publish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Bound the job so a stuck build (or a wedged QEMU arm64 emulation step)
+    # can't hang for hours instead of failing.
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
