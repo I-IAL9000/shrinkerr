@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.104] — 2026-08-19
+
+### Fixed
+- **NVENC image builds again.** BtbN pruned the `n7.1` ffmpeg build from its rolling `latest` release (the pinned download 404'd, failing the tagged nvenc image). Bumped the pinned ffmpeg to `n8.1`. **The nvenc image now requires NVIDIA driver 570+** (n8.1's NVENC SDK); driver 525-era users should stay on an older nvenc tag or update. Carries the v0.9.103 fix.
+
 ## [0.9.103] — 2026-08-14
 
 ### Fixed

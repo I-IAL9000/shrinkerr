@@ -15,11 +15,11 @@
 # Four image variants are built in parallel. Two lineages × two ffmpeg builds:
 #
 #   Lineage 1 — portable, multi-arch (linux/amd64 + linux/arm64), CPU-only:
-#     :latest        Dockerfile,        ffmpeg n7.1    — safe default, runs everywhere
+#     :latest        Dockerfile,        ffmpeg n8.1    — safe default, runs everywhere
 #     :edge          Dockerfile,        ffmpeg master  — bleeding-edge ffmpeg
 #
 #   Lineage 2 — CUDA + NVENC, amd64 only:
-#     :nvenc         Dockerfile.nvenc,  ffmpeg n7.1    — GPU users, driver 525.60.13+
+#     :nvenc         Dockerfile.nvenc,  ffmpeg n8.1    — GPU users, driver 570+
 #     :edge-nvenc    Dockerfile.nvenc,  ffmpeg master  — GPU users on driver 570+
 #
 # Users pick via their compose `image:` line. Most should use :latest. Only
@@ -75,7 +75,7 @@ jobs:
           # ── Portable lineage (multi-arch, CPU-only) ──────────────────────
           - suffix: latest
             dockerfile: Dockerfile
-            ffmpeg_build: n7.1
+            ffmpeg_build: n8.1
             platforms: linux/amd64,linux/arm64
             cache_scope: shrinkerr-cpu
           - suffix: edge
@@ -86,7 +86,7 @@ jobs:
           # ── NVENC lineage (amd64 only, CUDA base) ────────────────────────
           - suffix: nvenc
             dockerfile: Dockerfile.nvenc
-            ffmpeg_build: n7.1
+            ffmpeg_build: n8.1
             platforms: linux/amd64
             cache_scope: shrinkerr-nvenc
           - suffix: edge-nvenc
