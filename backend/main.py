@@ -254,6 +254,13 @@ async def lifespan(app: FastAPI):
             await backfill_future_mtimes()
         except Exception as exc:
             print(f"[STARTUP] future-mtime backfill skipped: {exc}", flush=True)
+        # v0.9.103: clear corrupt marks from the old size-only undersized-output
+        # guard (false-flagged efficient MPEG-2->HEVC re-encodes) for re-try.
+        try:
+            from backend.database import backfill_clear_size_check_corrupt
+            await backfill_clear_size_check_corrupt()
+        except Exception as exc:
+            print(f"[STARTUP] size-check corrupt clear skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir

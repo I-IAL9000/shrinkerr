@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.103] — 2026-08-14
+
+### Fixed
+- **Efficient re-encodes are no longer misflagged as "corrupt source."** The undersized-output guard declared any output <5% of the source corrupt — false-flagging a legitimate MPEG-2 DVD/Blu-ray that shrinks >95% into HEVC while keeping its full runtime. It now checks the output's DURATION and only flags a genuinely truncated encode. A startup backfill clears marks the old size-only check set so those titles can be retried.
+
 ## [0.9.102] — 2026-08-14
 
 ### Fixed

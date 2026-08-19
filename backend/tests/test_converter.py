@@ -461,3 +461,18 @@ async def test_load_detected_audio_languages(tmp_path, monkeypatch):
 
     out = await converter._load_detected_audio_languages("/media/M/movie.avi")
     assert out == {1: "eng"}
+
+
+def test_output_is_full_length():
+    """v0.9.103: the undersized-output guard keeps a tiny-but-full-length
+    re-encode (efficient MPEG-2->HEVC) and only flags a truncated one.
+    A 33GB MPEG-2 Blu-ray -> ~1.5GB HEVC that still runs the full 110 min
+    must NOT be treated as corrupt."""
+    from backend.converter import _output_is_full_length
+    src = 6627.0  # ~110 min source (the Bulldozer BD)
+    assert _output_is_full_length(src, 6627.0) is True   # full runtime -> keep
+    assert _output_is_full_length(src, 6600.0) is True    # within 2% tolerance
+    assert _output_is_full_length(src, 1800.0) is False   # truncated to 30 min -> corrupt
+    assert _output_is_full_length(src, None) is False      # unreadable output -> corrupt
+    assert _output_is_full_length(0, 6627.0) is False      # unknown source dur -> can't confirm
+    assert _output_is_full_length(None, 6627.0) is False

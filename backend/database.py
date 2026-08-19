@@ -1204,3 +1204,29 @@ async def backfill_future_mtimes() -> int:
         return n
     finally:
         await db.close()
+
+
+async def backfill_clear_size_check_corrupt() -> int:
+    """Clear 'corrupt' marks left by the old size-only undersized-output guard.
+
+    Pre-v0.9.103 the guard declared any output < 5% of the source corrupt, which
+    false-flagged legitimate efficient re-encodes (an inefficient MPEG-2 DVD/
+    Blu-ray shrinking >95% into HEVC). The guard now checks output DURATION, so
+    these rows deserve re-adjudication — clear the mark so the user can retry.
+    Only touches marks this heuristic set (health_errors_json source tag).
+    Idempotent: a re-run matches nothing once cleared. v0.9.103.
+    """
+    db = await connect_db()
+    try:
+        cur = await db.execute(
+            "UPDATE scan_results SET health_status = NULL, probe_status = 'ok', "
+            "health_errors_json = NULL "
+            "WHERE health_errors_json LIKE '%conversion_size_check%'"
+        )
+        n = cur.rowcount
+        await db.commit()
+        if n:
+            print(f"[DB] cleared {n} size-check corrupt mark(s) for re-adjudication", flush=True)
+        return n
+    finally:
+        await db.close()

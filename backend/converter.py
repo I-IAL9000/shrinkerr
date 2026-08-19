@@ -1924,6 +1924,39 @@ async def remeasure_vmaf(
     }
 
 
+def _output_is_full_length(source_duration: Optional[float],
+                           output_duration: Optional[float],
+                           tol: float = 0.98) -> bool:
+    """True when a re-encode kept (essentially) the full source runtime.
+
+    Used to clear a false 'corrupt' verdict on a legitimately-tiny output: an
+    inefficient MPEG-2 DVD/Blu-ray source can shrink >95% into HEVC yet still
+    run the whole movie. A truncated/corrupt encode stops early, so its
+    duration falls short. Requires both durations known. v0.9.103."""
+    return bool(source_duration and source_duration > 0
+                and output_duration and output_duration >= source_duration * tol)
+
+
+async def _probe_output_duration(path: str) -> Optional[float]:
+    """Container duration (seconds) of a finished output file, or None.
+
+    Used by the undersized-output guard to tell a legitimately-tiny re-encode
+    (an inefficient MPEG-2 DVD/Blu-ray source shrinking >95% into HEVC keeps
+    its full runtime) from a truncated/corrupt one (stops early). Lightweight —
+    reads the format duration only, no stream decode. v0.9.103."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=nokey=1:noprint_wrappers=1", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        return float(out.decode().strip())
+    except Exception:
+        return None
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -2912,9 +2945,26 @@ async def convert_file(
     output_size = temp.stat().st_size
     space_saved = original_size - output_size
 
-    # Sanity check: output suspiciously small (< 5% of original) = likely corrupt
+    # Sanity check: output suspiciously small (< 5% of original).
     min_expected = int(original_size * 0.05)
-    if output_size < min_expected and original_size > 10 * 1024 * 1024:  # Only for files > 10MB
+    _suspicious = output_size < min_expected and original_size > 10 * 1024 * 1024  # Only for files > 10MB
+    if _suspicious:
+        # v0.9.103: a tiny output is NOT proof of corruption — a very
+        # inefficient source (MPEG-2 DVD/Blu-ray) legitimately shrinks >95%
+        # into HEVC. Tell a real truncation/corruption (encode stops early)
+        # from a legit huge reduction by DURATION: a good re-encode keeps the
+        # full runtime. Keep the output when it's full-length vs the source.
+        _out_dur = await _probe_output_duration(temp_path)
+        if _output_is_full_length(duration, _out_dur):
+            print(
+                f"[CONVERT] Output small ({output_size // (1024 * 1024)} MB, "
+                f"{output_size / original_size * 100:.1f}% of source) but full-length "
+                f"({_out_dur:.0f}s vs source {duration:.0f}s) — keeping; efficient "
+                f"re-encode of an inefficient source, not corruption.",
+                flush=True,
+            )
+            _suspicious = False
+    if _suspicious:
         # v0.7.17: human-readable diagnosis. Lead with "Original file
         # likely corrupt" (which is what's actually going on) instead of
         # "Output file suspiciously small" (which made the OUTPUT sound
