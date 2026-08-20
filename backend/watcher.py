@@ -9,7 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime
+from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime, SUBTITLE_EXTENSIONS
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -1182,6 +1182,85 @@ class FileWatcher:
         finally:
             await db.close()
 
+    async def _reconcile_external_subs(self, sub_folder_files: dict, known_paths: set) -> int:
+        """Update already-known videos whose sidecar subtitles changed on disk.
+
+        Adding an external sub next to an existing video used to require a manual
+        folder rescan (the sub isn't a new video, and the video is already
+        known). Scoped to folders that actually contain sidecar subs, and writes
+        only when a video's external-sub set actually changed. Restart-safe:
+        reconciles disk against each row's stored subs, so subs added while the
+        app was down are picked up on the next cycle too. v0.9.107.
+        """
+        import json as _json
+        if not sub_folder_files:
+            return 0
+        from backend.scanner import detect_external_subtitles, merge_external_subs
+
+        # Known videos that live in a sub-containing folder.
+        sub_folders = set(sub_folder_files.keys())
+        by_folder: dict[str, list[str]] = {}
+        for vp in known_paths:
+            folder = os.path.dirname(vp)
+            if folder in sub_folders:
+                by_folder.setdefault(folder, []).append(vp)
+        if not by_folder:
+            return 0
+
+        all_videos = [v for vs in by_folder.values() for v in vs]
+        stored: dict[str, tuple] = {}
+        db = await aiosqlite.connect(self.db_path)
+        db.row_factory = aiosqlite.Row
+        try:
+            for i in range(0, len(all_videos), 500):
+                chunk = all_videos[i:i + 500]
+                ph = ",".join("?" for _ in chunk)
+                async with db.execute(
+                    f"SELECT file_path, native_language, subtitle_tracks_json "
+                    f"FROM scan_results WHERE file_path IN ({ph})",
+                    chunk,
+                ) as cur:
+                    for r in await cur.fetchall():
+                        stored[r["file_path"]] = (r["native_language"], r["subtitle_tracks_json"])
+
+            updated = 0
+            for folder, videos in by_folder.items():
+                sibs = sub_folder_files.get(folder) or []
+                for vp in videos:
+                    if vp not in stored:
+                        continue
+                    native, subs_json = stored[vp]
+                    try:
+                        cur_subs = _json.loads(subs_json or "[]")
+                    except (ValueError, TypeError):
+                        continue
+                    try:
+                        cur_ext = detect_external_subtitles(vp, siblings=sibs)
+                    except Exception:
+                        continue
+                    changed, new_subs, has_ext, has_rem = merge_external_subs(
+                        cur_subs, native or "und", cur_ext)
+                    if not changed:
+                        continue
+                    await db.execute(
+                        "UPDATE scan_results SET subtitle_tracks_json = ?, "
+                        "has_external_subs_flag = ?, has_removable_subs_flag = ? "
+                        "WHERE file_path = ?",
+                        (_json.dumps(new_subs), 1 if has_ext else 0, 1 if has_rem else 0, vp),
+                    )
+                    updated += 1
+                    try:
+                        from backend.file_events import log_event, EVENT_RESCANNED
+                        await log_event(vp, EVENT_RESCANNED, "External subtitles updated (auto-detected)")
+                    except Exception:
+                        pass
+            if updated:
+                await db.commit()
+                print(f"[WATCHER] External subs updated for {updated} title(s)", flush=True)
+            return updated
+        finally:
+            await db.close()
+
     async def check_once(self) -> dict:
         """Run a single check cycle. Only monitors directories that have been scanned."""
         # v0.6.5: one-shot re-probe of existing disc rows so they pick up
@@ -1212,6 +1291,10 @@ class FileWatcher:
 
         def _walk_dirs():
             result: set[str] = set()
+            # v0.9.107: folders holding sidecar subtitle files, mapped to their
+            # full file list (Paths). Lets _reconcile_external_subs pick up subs
+            # added next to an already-known video with no extra directory read.
+            sub_folder_files: dict[str, list] = {}
             for dir_path in scanned_dirs:
                 dir_p = Path(dir_path)
                 if not dir_p.exists():
@@ -1232,6 +1315,8 @@ class FileWatcher:
                         dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
                         continue
 
+                    folder_files: list = []
+                    folder_has_sub = False
                     for name in files:
                         # Skip temp files from active conversions/remuxing
                         if ".converting." in name or ".remuxing." in name:
@@ -1246,11 +1331,18 @@ class FileWatcher:
                         # watcher and the initial scan agree on visibility.
                         if name.startswith("."):
                             continue
-                        if Path(name).suffix.lower() in extensions:
-                            result.add(str(Path(root) / name))
-            return result
+                        p = Path(root) / name
+                        folder_files.append(p)
+                        suffix = Path(name).suffix.lower()
+                        if suffix in extensions:
+                            result.add(str(p))
+                        elif suffix in SUBTITLE_EXTENSIONS:
+                            folder_has_sub = True
+                    if folder_has_sub:
+                        sub_folder_files[root] = folder_files
+            return result, sub_folder_files
 
-        disk_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
+        disk_files, sub_folder_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
 
         new_files_all = disk_files - known_paths
 
@@ -1420,6 +1512,19 @@ class FileWatcher:
         if added > 0:
             new_paths = new_files[:added]  # The files we just added
             await self._refresh_metadata_for_files(new_paths)
+
+        # v0.9.107: auto-detect sidecar subs added next to already-known videos
+        # (no manual folder rescan needed). Scoped to folders that gained subs.
+        try:
+            sub_updated = await self._reconcile_external_subs(sub_folder_files, known_paths)
+            if sub_updated:
+                try:
+                    from backend.websocket import ws_manager
+                    await ws_manager.send_scan_results_changed(added=0, removed=0)
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"[WATCHER] External-sub reconcile skipped: {exc}", flush=True)
 
         # Check disk space and notify if low
         await self._check_disk_space(scanned_dirs)

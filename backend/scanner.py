@@ -860,26 +860,66 @@ async def _extract_embedded_sub_text(file_path: str, stream_index: int, max_char
     return _clean_srt_bytes(out, max_chars)
 
 
-def detect_external_subtitles(video_path: str) -> list[dict]:
+def merge_external_subs(
+    stored_subs: list[dict], native_language: str, external_subs_raw: list[dict]
+) -> tuple[bool, list[dict], bool, bool]:
+    """Reconcile a video's external (sidecar) subtitles against what's on disk.
+
+    `stored_subs` is the parsed `subtitle_tracks_json` (embedded + previously
+    detected external). `external_subs_raw` is fresh `detect_external_subtitles`
+    output. Returns `(changed, new_subs, has_external, has_removable_subs)`;
+    `changed` is False (and `new_subs is stored_subs`) when the external-sub set
+    is unchanged, so the caller can skip the DB write. v0.9.107.
+    """
+    stored_ext_paths = {t.get("external_path") for t in stored_subs if t.get("external")}
+    cur_ext_paths = {es.get("external_path") for es in external_subs_raw}
+    if stored_ext_paths == cur_ext_paths:
+        has_external = bool(cur_ext_paths)
+        has_removable = any(not t.get("keep", True) for t in stored_subs)
+        return False, stored_subs, has_external, has_removable
+
+    # Rebuild: keep the embedded tracks, replace the external ones with a fresh
+    # classification of what's now on disk. Mirrors _scan_new_files.
+    embedded = [t for t in stored_subs if not t.get("external")]
+    new_external: list[dict] = []
+    if external_subs_raw:
+        raw = [dict(es) for es in external_subs_raw]
+        for i, es in enumerate(raw):
+            es["stream_index"] = -(i + 1)
+        classified = classify_subtitle_tracks(raw, native_language or "und")
+        for cls, es in zip(classified, raw):
+            cls = cls.model_copy(update={"external": True, "external_path": es.get("external_path")})
+            new_external.append(cls.model_dump())
+    new_subs = embedded + new_external
+    has_external = len(new_external) > 0
+    has_removable = any(not t.get("keep", True) for t in new_subs)
+    return True, new_subs, has_external, has_removable
+
+
+def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) -> list[dict]:
     """Detect external subtitle files alongside a video file.
 
     Matching strategies (in order):
       1. Sub filename starts with the full video stem (strictest)
       2. Sub filename shares the same S##E## pattern as the video (TV)
       3. If only one video file in the folder, all sub files belong to it
+
+    `siblings` (v0.9.107): optional pre-listed folder contents (Paths). When
+    given, skips the directory read — lets the watcher reuse the file list it
+    already gathered during its walk instead of re-listing over CIFS.
     """
     video = Path(video_path)
     video_stem = video.stem
     parent = video.parent
     results: list[dict] = []
 
-    if not parent.exists():
-        return results
-
-    try:
-        siblings = list(parent.iterdir())
-    except OSError:
-        return results
+    if siblings is None:
+        if not parent.exists():
+            return results
+        try:
+            siblings = list(parent.iterdir())
+        except OSError:
+            return results
 
     # v0.7.33: skip hidden / AppleDouble companion files. macOS-formatted
     # volumes litter every directory with `._<name>` resource-fork files

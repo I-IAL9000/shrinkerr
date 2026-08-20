@@ -128,3 +128,57 @@ def test_detect_subtitle_regional_code_normalized():
     zh = "这是一段中文字幕 用来测试语言检测功能 希望能够正确识别为中文"
     lang, _ = detect_subtitle_language(zh)
     assert lang == "chi", f"expected chi from zh-xx, got {lang!r}"
+
+
+def test_detect_external_subtitles_uses_provided_siblings(tmp_path):
+    """v0.9.107: when a sibling list is passed, detection matches against it
+    (no directory read) — lets the watcher reuse its walk's file listing."""
+    (tmp_path / "Movie.mkv").write_text("")
+    (tmp_path / "Movie.eng.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHi\n")
+    res = detect_external_subtitles(str(tmp_path / "Movie.mkv"), siblings=list(tmp_path.iterdir()))
+    assert any(r["external_path"].endswith("Movie.eng.srt") for r in res)
+
+
+def test_merge_external_subs_no_change_skips_write():
+    """Identical external-sub set → changed=False so the watcher won't write."""
+    from backend.scanner import merge_external_subs
+    stored = [
+        {"stream_index": 0, "language": "eng", "codec": "subrip", "external": False, "keep": True},
+        {"stream_index": -1, "language": "eng", "codec": "subrip", "external": True,
+         "external_path": "/m/Ep.eng.srt", "keep": True},
+    ]
+    cur_ext = [{"language": "eng", "codec": "subrip", "external_path": "/m/Ep.eng.srt", "forced": False}]
+    changed, new_subs, has_ext, has_rem = merge_external_subs(stored, "eng", cur_ext)
+    assert changed is False
+    assert new_subs is stored
+    assert has_ext is True
+
+
+def test_merge_external_subs_adds_sub():
+    """A new sidecar sub is classified and merged; embedded tracks preserved."""
+    from unittest.mock import patch
+    from backend.scanner import merge_external_subs
+    stored = [{"stream_index": 0, "language": "eng", "codec": "subrip", "external": False, "keep": True}]
+    cur_ext = [{"language": "eng", "codec": "subrip", "title": "", "forced": False,
+                "external_path": "/m/Ep.eng.srt"}]
+    with patch("backend.scanner._load_sub_settings", return_value=({"eng"}, True)), \
+         patch("backend.scanner._is_cleanup_enabled", return_value=True):
+        changed, new_subs, has_ext, has_rem = merge_external_subs(stored, "eng", cur_ext)
+    assert changed is True and has_ext is True
+    assert len(new_subs) == 2                                   # embedded + new external
+    ext = [t for t in new_subs if t.get("external")]
+    assert len(ext) == 1 and ext[0]["external_path"] == "/m/Ep.eng.srt"
+    assert ext[0]["stream_index"] == -1
+
+
+def test_merge_external_subs_removes_sub():
+    """A deleted sidecar sub is dropped and has_external clears; embedded kept."""
+    from backend.scanner import merge_external_subs
+    stored = [
+        {"stream_index": 0, "language": "eng", "codec": "subrip", "external": False, "keep": True},
+        {"stream_index": -1, "language": "eng", "codec": "subrip", "external": True,
+         "external_path": "/m/Ep.eng.srt", "keep": True},
+    ]
+    changed, new_subs, has_ext, has_rem = merge_external_subs(stored, "eng", [])
+    assert changed is True and has_ext is False
+    assert len(new_subs) == 1 and all(not t.get("external") for t in new_subs)
