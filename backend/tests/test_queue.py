@@ -159,3 +159,41 @@ async def test_async_fs_helpers(tmp_path):
     missing = tmp_path / "nope.bin"
     assert await _async_getsize(str(missing)) is None
     assert await _async_exists(str(missing)) is False
+
+
+@pytest.mark.asyncio
+async def test_reap_orphaned_running(test_db):
+    """v0.9.108: a 'running' row with no live worker task (past the grace
+    window) is returned to 'pending'; a row with a live task, and a just-started
+    row, are both spared."""
+    import sqlite3, asyncio
+    from datetime import datetime, timezone, timedelta
+    from backend.queue import QueueWorker
+    w = QueueWorker(test_db)
+    q = w.queue
+    orphan_id = await q.add_job("/media/orphan.mkv", "convert", encoder="nvenc")
+    live_id = await q.add_job("/media/live.mkv", "convert", encoder="nvenc")
+    fresh_id = await q.add_job("/media/fresh.mkv", "convert", encoder="nvenc")
+
+    old_iso = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    fresh_iso = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(test_db)
+    conn.execute("UPDATE jobs SET status='running', assigned_node_id='local', started_at=? "
+                 "WHERE id IN (?,?)", (old_iso, orphan_id, live_id))
+    conn.execute("UPDATE jobs SET status='running', assigned_node_id='local', started_at=? "
+                 "WHERE id=?", (fresh_iso, fresh_id))
+    conn.commit(); conn.close()
+
+    task = asyncio.ensure_future(asyncio.sleep(3600))  # a live worker task
+    w._active_tasks[live_id] = task
+    try:
+        reaped = await w._reap_orphaned_running()
+    finally:
+        task.cancel()
+
+    assert reaped == 1
+    pending = {j["id"] for j in await q.get_jobs_by_status("pending")}
+    running = {j["id"] for j in await q.get_jobs_by_status("running")}
+    assert orphan_id in pending    # orphaned running row → requeued
+    assert live_id in running       # spared: a live task owns it
+    assert fresh_id in running      # spared: within the grace window

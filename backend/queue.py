@@ -819,8 +819,12 @@ class QueueWorker:
         # failures — a lock storm (e.g. a rescan holding the write path under
         # storage stall) shouldn't permanently discard a running encode.
         self._lock_requeues: dict[int, int] = {}
+        # v0.9.108: throttle for the orphaned-running reaper (monotonic secs).
+        self._last_orphan_reap: float = 0.0
 
     _MAX_LOCK_REQUEUES = 5
+    # v0.9.108: how often the loop reaps orphaned 'running' rows (seconds).
+    _ORPHAN_REAP_INTERVAL = 60
 
     @staticmethod
     def _is_transient_db_lock(error_log) -> bool:
@@ -891,6 +895,65 @@ class QueueWorker:
 
     def resume(self) -> None:
         self._paused = False
+
+    async def _reap_orphaned_running(self) -> int:
+        """Return stale 'running' rows that no live worker task owns to 'pending'.
+
+        If a worker task ends without writing a terminal status (an edge exit
+        path, a cancelled/killed task), the slot frees and the worker moves on,
+        but the DB row sits at 'running' forever — a stuck spinner, and the
+        visible "running" count drifts above the parallel limit. Any LOCAL
+        'running' job that (a) isn't in self._active_tasks and (b) has been
+        running longer than a short grace (so a just-claimed job is never
+        touched) is orphaned — requeue it so it re-runs cleanly. v0.9.108.
+        """
+        from datetime import datetime, timezone
+        GRACE_S = 120
+        db = await self.queue._connect()
+        try:
+            async with db.execute(
+                "SELECT id, started_at FROM jobs WHERE status = 'running' "
+                "AND (assigned_node_id IS NULL OR assigned_node_id = '' "
+                "OR assigned_node_id = 'local')"
+            ) as cur:
+                rows = [(r[0], r[1]) for r in await cur.fetchall()]
+
+            now = datetime.now(timezone.utc)
+            active_ids = set(self._active_tasks.keys())  # captured just before deciding
+            orphans: list[int] = []
+            for jid, started in rows:
+                if jid in active_ids:
+                    continue
+                # Respect the grace window for anything with a recent start.
+                if started:
+                    try:
+                        age = (now - datetime.fromisoformat(started)).total_seconds()
+                        if age < GRACE_S:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                orphans.append(jid)
+            if not orphans:
+                return 0
+            ph = ",".join("?" for _ in orphans)
+            await db.execute(
+                f"UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
+                f"eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                f"assigned_node_id = NULL, assigned_at = NULL WHERE id IN ({ph})",
+                orphans,
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        print(f"[WORKER] Reaped {len(orphans)} orphaned running job(s) → pending: {orphans}", flush=True)
+        try:
+            from backend.websocket import ws_manager
+            for jid in orphans:
+                ws_manager.release_job_throttle(jid)
+            await ws_manager.send_scan_results_changed(added=0, removed=0)
+        except Exception:
+            pass
+        return len(orphans)
 
     def _freeze_active_procs(self, server_label: str) -> int:
         """Send SIGSTOP to every active ffmpeg subprocess, freezing them
@@ -1186,6 +1249,17 @@ class QueueWorker:
             if self._paused:
                 await asyncio.sleep(1)
                 continue
+
+            # v0.9.108: periodically reap orphaned 'running' rows — stale rows
+            # whose worker task ended without a terminal status (freeing the
+            # slot) leave a stuck spinner and inflate the visible running count.
+            _now_mono = time.monotonic()
+            if _now_mono - self._last_orphan_reap >= self._ORPHAN_REAP_INTERVAL:
+                self._last_orphan_reap = _now_mono
+                try:
+                    await self._reap_orphaned_running()
+                except Exception as exc:
+                    print(f"[WORKER] Orphan reap failed (non-fatal): {exc}", flush=True)
 
             # Per-node settings for 'local' — check pause, schedule, parallel_jobs, affinity
             local_settings = await self._get_local_node_settings()

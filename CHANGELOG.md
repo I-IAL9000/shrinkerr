@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.108] — 2026-08-20
+
+### Fixed
+- **Jobs stuck "running" with a spinner are now self-healed.** A worker task that ended without writing a terminal status left a stale `running` row — a permanent spinner, and the visible running count drifted above the parallel limit. The worker now reaps orphaned `running` rows (local jobs with no live task, past a short grace window) back to `pending` every 60s so they re-run cleanly.
+
 ## [0.9.107] — 2026-08-19
 
 ### Added
