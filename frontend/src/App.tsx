@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { useCallback, useState, useEffect } from "react";
-import { useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats } from "./api";
+import { useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 import DashboardPage from "./pages/DashboardPage";
 import ScannerPage from "./pages/ScannerPage";
@@ -379,6 +379,7 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [jobProgressMap, setJobProgressMap] = useState<Map<number, JobProgress>>(new Map());
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
+  const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
   const { toasts, addToast } = useToastState();
   // Read new key first, fall back to the legacy squeezarr_theme for users
   // upgrading from the old app name so they don't lose their theme pick.
@@ -467,6 +468,12 @@ export default function App() {
       setAuthChecked(true);
     }).catch(() => { setAuthenticated(true); setAuthChecked(true); });
   }, []);
+
+  // v0.9.110: check whether a TMDB key is available (drives the banner below).
+  useEffect(() => {
+    if (!authenticated) return;
+    getTmdbStatus().then(s => setTmdbConfigured(s.configured)).catch(() => {});
+  }, [authenticated]);
 
   if (!authChecked) {
     return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-primary)" }}>
@@ -561,6 +568,27 @@ export default function App() {
                   background: "var(--accent)",
                   transition: "width 0.3s",
                 }} />
+              </div>
+            </div>
+          )}
+          {/* v0.9.110: surface a missing TMDB key so self-built images (which
+              ship without the bundled key) make it obvious why nothing matches. */}
+          {!tmdbConfigured && (
+            <div style={{
+              background: "var(--bg-card)",
+              border: "1px solid var(--warning)",
+              borderRadius: 6,
+              padding: "10px 14px",
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontSize: 12,
+            }}>
+              <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>⚠</span>
+              <div style={{ flex: 1, minWidth: 0, color: "var(--text-secondary)" }}>
+                <strong>No TMDB API key configured</strong> — titles can't be matched to metadata (native language, posters).{" "}
+                <NavLink to="/settings" style={{ color: "var(--accent)" }}>Add a free key in Settings → Metadata</NavLink>.
               </div>
             </div>
           )}

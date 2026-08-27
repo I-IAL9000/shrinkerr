@@ -269,6 +269,24 @@ async def lifespan(app: FastAPI):
             await backfill_reclassify_authoritative_native()
         except Exception as exc:
             print(f"[STARTUP] authoritative-native reclassify skipped: {exc}", flush=True)
+        # v0.9.110: warn loudly when no TMDB key is available — a self-built
+        # image ships without the bundled key, so metadata silently never
+        # matches. Make the reason obvious in the logs (and the UI banner).
+        try:
+            from backend.metadata import resolve_tmdb_key
+            from backend.database import connect_db as _cdb
+            _tdb = await _cdb()
+            try:
+                _tkey = await resolve_tmdb_key(_tdb)
+            finally:
+                await _tdb.close()
+            if not _tkey:
+                print("[STARTUP] WARNING: No TMDB API key available (no bundled key in "
+                      "this build and none saved in Settings) — media will NOT be "
+                      "matched. Add a free TMDB API key in Settings → Metadata.",
+                      flush=True)
+        except Exception as exc:
+            print(f"[STARTUP] TMDB key check skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir

@@ -384,6 +384,31 @@ async def delete_media_dir(dir_id: int):
     return {"status": "deleted", "id": dir_id}
 
 
+@router.get("/tmdb-status")
+async def tmdb_status():
+    """Whether a TMDB API key is effectively available, and from where.
+
+    Drives the app-level "no TMDB key" banner. Lightweight (the full settings
+    GET already computes this, but the banner shouldn't pull the whole blob).
+    Never returns the key itself — only a boolean and its source. v0.9.110.
+    """
+    from backend.metadata import _env_tmdb_key
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'tmdb_api_key'"
+        ) as cur:
+            row = await cur.fetchone()
+        user_key = ((row["value"] if row else "") or "").strip()
+    finally:
+        await db.close()
+    if user_key:
+        return {"configured": True, "source": "user"}
+    if _env_tmdb_key():
+        return {"configured": True, "source": "bundled"}
+    return {"configured": False, "source": "none"}
+
+
 @router.get("/api-key")
 async def get_api_key():
     """Return the full (unmasked) Shrinkerr API key.

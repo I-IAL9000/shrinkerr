@@ -127,6 +127,8 @@ export const deleteFileFromDisk = (filePath: string) =>
   apiFetch<{ status: string; file_deleted: boolean }>("/scan/delete-file", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const importSettings = (data: any) =>
   apiFetch<any>("/settings/import", { method: "POST", body: JSON.stringify(data) });
+export const getTmdbStatus = () =>
+  apiFetch<{ configured: boolean; source: "user" | "bundled" | "none" }>("/settings/tmdb-status");
 export const getBackups = () =>
   apiFetch<{ backups: any[]; total_size: number; total_count: number }>("/settings/backups");
 export const deleteBackups = (paths?: string[], olderThanDays?: number) =>

@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.110] — 2026-08-20
+
+### Added
+- **A missing TMDB API key is now surfaced instead of failing silently.** Self-built images ship without the bundled key (it's injected from the maintainer's CI secret), so metadata never matched with no hint why. When no key is available (neither a saved key nor the bundled one), a startup log warning and an app-wide banner ("No TMDB API key configured") now point users to Settings → Metadata.
+
 ## [0.9.109] — 2026-08-20
 
 ### Fixed
