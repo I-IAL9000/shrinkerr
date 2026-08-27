@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.109] — 2026-08-20
+
+### Fixed
+- **Non-native audio tracks are no longer wrongly kept on API-matched titles.** A title whose native was resolved by the API after an older scan classified its tracks against the heuristic native (the first audio track's language) kept that track — e.g. a Chinese dub on an English show stayed marked-keep. A one-time startup heal re-derives audio/subtitle keep-flags for `api`/`manual`/`tmdb-manual` rows against their stored native (only rewriting rows that actually change). **Note:** on a healed row this recomputes keep/remove, so a manual per-track keep you set on such a title may be reset.
+
 ## [0.9.108] — 2026-08-20
 
 ### Fixed

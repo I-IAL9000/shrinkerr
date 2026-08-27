@@ -261,6 +261,14 @@ async def lifespan(app: FastAPI):
             await backfill_clear_size_check_corrupt()
         except Exception as exc:
             print(f"[STARTUP] size-check corrupt clear skipped: {exc}", flush=True)
+        # v0.9.109: heal api/manual rows whose audio/sub keep-flags were
+        # classified against a stale heuristic native (e.g. a Chinese dub kept
+        # on an English show because chi was the first audio track).
+        try:
+            from backend.routes.scan import backfill_reclassify_authoritative_native
+            await backfill_reclassify_authoritative_native()
+        except Exception as exc:
+            print(f"[STARTUP] authoritative-native reclassify skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir

@@ -3193,6 +3193,69 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
     return False
 
 
+async def backfill_reclassify_authoritative_native() -> int:
+    """One-time heal: rows with an authoritative native (api/manual/tmdb-manual)
+    whose audio/subtitle keep-flags were computed against a stale HEURISTIC
+    native get their flags re-derived against the STORED native.
+
+    Fixes legacy titles where a non-native track — e.g. a Chinese dub, when the
+    first audio track is Chinese so the heuristic guessed native=chi — stayed
+    marked-keep even though the API set native to English. The current scan and
+    the heuristic→api resolve path both classify against the resolved native, so
+    this only repairs rows an older scanner left drifted; the DEFAULT metadata
+    refresh skips already-'api' rows. Only rows that actually change are written.
+    Chunked by id to bound memory; guarded by a settings sentinel. v0.9.109.
+    """
+    from backend.database import connect_db
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'reclass_authoritative_native_done'"
+        ) as cur:
+            if await cur.fetchone():
+                return 0
+    finally:
+        await db.close()
+
+    healed = 0
+    last_id = 0
+    while True:
+        db = await connect_db()
+        try:
+            async with db.execute(
+                "SELECT id, audio_tracks_json, subtitle_tracks_json, native_language, duration "
+                "FROM scan_results "
+                "WHERE language_source IN ('api','manual','tmdb-manual') "
+                "AND removed_from_list = 0 AND id > ? ORDER BY id LIMIT 2000",
+                (last_id,),
+            ) as cur:
+                rows = await cur.fetchall()
+        finally:
+            await db.close()
+        if not rows:
+            break
+        last_id = rows[-1]["id"]
+        pending = [it for it in (_reclass_item(r, r["native_language"]) for r in rows) if it]
+        if pending:
+            await _write_lang_batch(pending)
+            healed += len(pending)
+
+    db = await connect_db()
+    try:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES "
+            "('reclass_authoritative_native_done', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        await db.commit()
+    finally:
+        await db.close()
+    if healed:
+        print(f"[METADATA] Reclassified {healed} api/manual row(s) against their "
+              f"authoritative native (fixed stale keep-flags)", flush=True)
+    return healed
+
+
 async def _run_metadata_refresh(deep: bool = False) -> None:
     """Background task: refresh API metadata for files with heuristic language detection."""
     from backend.scanner import _is_dubbed
