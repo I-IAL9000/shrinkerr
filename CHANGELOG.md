@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.111] — 2026-08-20
+
+### Fixed
+- **NVDEC decode failures now fall back to software decode instead of failing the job.** Some interlaced/DVD-rip MPEG-2 streams make the GPU's NVDEC decoder error on every frame ("hardware accelerator failed to decode" / cuvidDecodePicture), which aborted the whole conversion. Those signatures now trigger the existing software-decode retry (NVENC still does the encode).
+
 ## [0.9.110] — 2026-08-20
 
 ### Added

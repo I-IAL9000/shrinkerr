@@ -2583,10 +2583,19 @@ async def convert_file(
     # software decode — the software decoders handle every mid-stream
     # change consistently, and NVENC still does the encode.
     _used_nvdec_native = bool(_hw_use and _hw_on_device and _hw_backend == "cuda")
-    _RECONFIG_SIGNATURES = (
+    # ffmpeg-log signatures that mean the NVDEC hardware decoder failed and the
+    # encode should be retried with software decode. Covers the mid-stream
+    # hwaccel-reconfig crash (v0.7.14) AND a decode failure from the start —
+    # NVDEC's MPEG-2 decoder chokes on some interlaced/DVD-rip streams with
+    # "hardware accelerator failed to decode" / cuvidDecodePicture errors
+    # (v0.9.111). Gated on _used_nvdec_native, so these only trigger a fallback
+    # when NVDEC was actually in use.
+    _NVDEC_RETRY_SIGNATURES = (
         "Error reinitializing filters",
         "auto_scale_0",
         "hwaccel changed",
+        "hardware accelerator failed to decode",
+        "cuvidDecodePicture",
     )
 
     def _assemble_cmd(use_hw: bool) -> list:
@@ -2797,8 +2806,12 @@ async def convert_file(
                 }
                 # v0.7.14: classify the failure. The NVDEC mid-stream
                 # reconfig crash is retryable with software decode.
-                haystack = "\n".join(local_all_lines[-80:])
-                if any(sig in haystack for sig in _RECONFIG_SIGNATURES):
+                # Include the sticky error_lines: a decode-failure flood can be
+                # followed by the (long) output-format listing, pushing the
+                # cuvid/hwaccel error lines past the last-80 window. error_lines
+                # captures them (they match "failed"), so search both.
+                haystack = "\n".join(local_all_lines[-80:] + error_lines)
+                if any(sig in haystack for sig in _NVDEC_RETRY_SIGNATURES):
                     return {"outcome": "retry", "result": fail_dict}
                 return {"outcome": "fail", "result": fail_dict}
 
@@ -2852,9 +2865,8 @@ async def convert_file(
             and not _software_retry
         ):
             print(
-                "[CONVERT] NVDEC native decode failed mid-stream "
-                "(hwaccel reconfig); falling back to software decode + "
-                f"{encoder} encode",
+                "[CONVERT] NVDEC hardware decode failed; falling back to "
+                f"software decode + {encoder} encode",
                 flush=True,
             )
             _software_retry = True
