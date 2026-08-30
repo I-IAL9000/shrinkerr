@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.112] — 2026-08-20
+
+### Fixed
+- **A re-scan whose TMDB lookup fails no longer re-drifts an API-matched title's tracks (or wipes manual edits).** When the fresh lookup times out, the scan classifies against the heuristic native (the first audio track) while the upsert preserves the stored authoritative native — so a Chinese dub got re-kept on an English show and manual track edits were lost. The persist path now keeps the stored tracks when the stream layout is unchanged, and the one-time authoritative-native heal re-runs once to fix already-drifted rows.
+
 ## [0.9.111] — 2026-08-20
 
 ### Fixed

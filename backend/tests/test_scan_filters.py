@@ -65,3 +65,40 @@ def test_path_scope_clause_filters_rows():
         f"SELECT file_path FROM scan_results WHERE {frag}", params).fetchall()]
     assert got == rows[:2]           # only the Rear Window folder's files
     assert "/media/M2T2/TV4/Jane the Virgin/s.mkv" not in got
+
+
+def test_preserve_authoritative_tracks_same_layout():
+    """v0.9.112: a heuristic re-scan of an authoritative row with unchanged
+    stream layout keeps the STORED tracks (no chi drift, manual edits kept)."""
+    from backend.routes.scan import _maybe_preserve_authoritative_tracks
+    fresh = '[{"stream_index":1,"language":"chi","keep":true},{"stream_index":5,"language":"eng","keep":true}]'
+    stored = '[{"stream_index":1,"language":"chi","keep":false},{"stream_index":5,"language":"eng","keep":true}]'
+    a, s = _maybe_preserve_authoritative_tracks("heuristic", "api", fresh, None, stored, None)
+    assert a == stored and s is None       # preserved: chi stays removed
+
+
+def test_preserve_authoritative_tracks_layout_changed_uses_fresh():
+    """If the stream layout changed, re-classify (use the fresh tracks)."""
+    from backend.routes.scan import _maybe_preserve_authoritative_tracks
+    fresh = '[{"stream_index":1,"language":"chi","keep":true},{"stream_index":9,"language":"jpn","keep":true}]'
+    stored = '[{"stream_index":1,"language":"chi","keep":false},{"stream_index":5,"language":"eng","keep":true}]'
+    a, _ = _maybe_preserve_authoritative_tracks("heuristic", "api", fresh, None, stored, None)
+    assert a == fresh
+
+
+def test_preserve_authoritative_tracks_api_scan_uses_fresh():
+    """When the scan itself resolved an authoritative native, use its fresh tracks."""
+    from backend.routes.scan import _maybe_preserve_authoritative_tracks
+    fresh = '[{"stream_index":1,"language":"chi","keep":false}]'
+    stored = '[{"stream_index":1,"language":"chi","keep":true}]'
+    a, _ = _maybe_preserve_authoritative_tracks("api", "api", fresh, None, stored, None)
+    assert a == fresh
+
+
+def test_preserve_authoritative_tracks_nonauth_existing_uses_fresh():
+    """A heuristic existing row isn't authoritative — nothing to preserve."""
+    from backend.routes.scan import _maybe_preserve_authoritative_tracks
+    fresh = '[{"stream_index":1,"language":"chi","keep":true}]'
+    stored = '[{"stream_index":1,"language":"chi","keep":false}]'
+    a, _ = _maybe_preserve_authoritative_tracks("heuristic", "heuristic", fresh, None, stored, None)
+    assert a == fresh

@@ -43,6 +43,37 @@ _detect_progress: dict = {
 }
 
 
+def _maybe_preserve_authoritative_tracks(
+    scanned_source, existing_source,
+    fresh_audio_json, fresh_sub_json, stored_audio_json, stored_sub_json,
+):
+    """Decide which track JSON to persist for a re-scanned row.
+
+    v0.9.112: when this scan's fresh TMDB lookup FAILED (so its classification
+    is 'heuristic') but the STORED row already has an authoritative native
+    (api/manual/tmdb-manual), the upsert preserves that native — but a
+    heuristic re-classification of the tracks drifts against it (e.g. re-keeps a
+    Chinese dub on an English show because chi is the first audio track) AND
+    wipes manual per-track edits. So keep the stored track JSON when the stream
+    layout is unchanged. Returns the (audio_json, sub_json) to write.
+    """
+    _AUTH = ("api", "manual", "tmdb-manual")
+    if scanned_source in _AUTH or existing_source not in _AUTH:
+        return fresh_audio_json, fresh_sub_json
+
+    def _layout(js):
+        try:
+            return sorted((t.get("stream_index"), (t.get("language") or "und").lower())
+                          for t in json.loads(js or "[]"))
+        except (ValueError, TypeError):
+            return None
+
+    if (_layout(fresh_audio_json) == _layout(stored_audio_json)
+            and _layout(fresh_sub_json) == _layout(stored_sub_json)):
+        return stored_audio_json, (stored_sub_json if stored_sub_json else None)
+    return fresh_audio_json, fresh_sub_json
+
+
 def _write_batch_sync(db_path: str, batch: list, now: str, mark_new: bool = False) -> None:
     """Write a batch of ScannedFile results to the database (synchronous, for use in thread executor)."""
     import sqlite3
@@ -72,9 +103,33 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
             audio_json = json.dumps([t.model_dump() for t in scanned.audio_tracks])
             sub_json = json.dumps([t.model_dump() for t in scanned.subtitle_tracks]) if scanned.subtitle_tracks else None
 
-            # Pre-compute flags at scan time (avoids 226K JSON parses per page load)
-            has_removable = 1 if any(not t.keep for t in scanned.audio_tracks) else 0
-            has_removable_subs = 1 if any(not t.keep for t in (scanned.subtitle_tracks or [])) else 0
+            # v0.9.112: don't let a re-scan whose fresh TMDB lookup failed
+            # (source='heuristic') overwrite an authoritative row's tracks with a
+            # heuristic re-classification — it drifts against the preserved
+            # native and wipes manual edits. Preserve the stored tracks when the
+            # stream layout is unchanged.
+            if getattr(scanned, "language_source", "heuristic") == "heuristic":
+                try:
+                    _ex = db.execute(
+                        "SELECT language_source, audio_tracks_json, subtitle_tracks_json "
+                        "FROM scan_results WHERE file_path = ?", (scanned.file_path,)
+                    ).fetchone()
+                except Exception:
+                    _ex = None
+                if _ex:
+                    audio_json, sub_json = _maybe_preserve_authoritative_tracks(
+                        getattr(scanned, "language_source", "heuristic"),
+                        _ex[0], audio_json, sub_json, _ex[1], _ex[2])
+
+            # Pre-compute flags at scan time (avoids 226K JSON parses per page
+            # load) from the FINAL json — which may be the preserved stored one.
+            def _has_removable(js):
+                try:
+                    return 1 if any(not t.get("keep", True) for t in json.loads(js or "[]")) else 0
+                except (ValueError, TypeError):
+                    return 0
+            has_removable = _has_removable(audio_json)
+            has_removable_subs = _has_removable(sub_json)
             has_lossless = 0
             for t in scanned.audio_tracks:
                 c = (t.codec or "").lower()
@@ -3210,7 +3265,7 @@ async def backfill_reclassify_authoritative_native() -> int:
     db = await connect_db()
     try:
         async with db.execute(
-            "SELECT value FROM settings WHERE key = 'reclass_authoritative_native_done'"
+            "SELECT value FROM settings WHERE key = 'reclass_authoritative_native_done_v2'"
         ) as cur:
             if await cur.fetchone():
                 return 0
@@ -3244,7 +3299,7 @@ async def backfill_reclassify_authoritative_native() -> int:
     try:
         await db.execute(
             "INSERT INTO settings (key, value) VALUES "
-            "('reclass_authoritative_native_done', '1') "
+            "('reclass_authoritative_native_done_v2', '1') "
             "ON CONFLICT(key) DO UPDATE SET value = '1'"
         )
         await db.commit()
