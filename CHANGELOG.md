@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.113] — 2026-08-31
+
+### Fixed
+- **External-sub auto-detection no longer fails running conversions with "database is locked".** The v0.9.107 watcher reconcile held a write transaction open across its entire pass (UPDATE in the loop, commit only at the end), blocking the encoders' progress writes. It now reads, computes in memory, then writes the few changed rows in a short committed transaction with a busy_timeout.
+
 ## [0.9.112] — 2026-08-20
 
 ### Fixed

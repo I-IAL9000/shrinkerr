@@ -1208,6 +1208,9 @@ class FileWatcher:
             return 0
 
         all_videos = [v for vs in by_folder.values() for v in vs]
+
+        # Phase 1 — READ stored subs (WAL readers don't block writers); close
+        # the connection before computing.
         stored: dict[str, tuple] = {}
         db = await aiosqlite.connect(self.db_path)
         db.row_factory = aiosqlite.Row
@@ -1222,44 +1225,61 @@ class FileWatcher:
                 ) as cur:
                     for r in await cur.fetchall():
                         stored[r["file_path"]] = (r["native_language"], r["subtitle_tracks_json"])
-
-            updated = 0
-            for folder, videos in by_folder.items():
-                sibs = sub_folder_files.get(folder) or []
-                for vp in videos:
-                    if vp not in stored:
-                        continue
-                    native, subs_json = stored[vp]
-                    try:
-                        cur_subs = _json.loads(subs_json or "[]")
-                    except (ValueError, TypeError):
-                        continue
-                    try:
-                        cur_ext = detect_external_subtitles(vp, siblings=sibs)
-                    except Exception:
-                        continue
-                    changed, new_subs, has_ext, has_rem = merge_external_subs(
-                        cur_subs, native or "und", cur_ext)
-                    if not changed:
-                        continue
-                    await db.execute(
-                        "UPDATE scan_results SET subtitle_tracks_json = ?, "
-                        "has_external_subs_flag = ?, has_removable_subs_flag = ? "
-                        "WHERE file_path = ?",
-                        (_json.dumps(new_subs), 1 if has_ext else 0, 1 if has_rem else 0, vp),
-                    )
-                    updated += 1
-                    try:
-                        from backend.file_events import log_event, EVENT_RESCANNED
-                        await log_event(vp, EVENT_RESCANNED, "External subtitles updated (auto-detected)")
-                    except Exception:
-                        pass
-            if updated:
-                await db.commit()
-                print(f"[WATCHER] External subs updated for {updated} title(s)", flush=True)
-            return updated
         finally:
             await db.close()
+
+        # Phase 2 — COMPUTE changes in memory, holding NO DB connection.
+        # v0.9.113: the previous version held a write transaction open across
+        # this whole pass (UPDATE in the loop, commit only at the end) which
+        # blocked running conversions' progress writes → "database is locked".
+        changes: list[tuple] = []  # (file_path, subtitle_tracks_json, has_ext, has_rem)
+        for folder, videos in by_folder.items():
+            sibs = sub_folder_files.get(folder) or []
+            for vp in videos:
+                if vp not in stored:
+                    continue
+                native, subs_json = stored[vp]
+                try:
+                    cur_subs = _json.loads(subs_json or "[]")
+                except (ValueError, TypeError):
+                    continue
+                try:
+                    cur_ext = detect_external_subtitles(vp, siblings=sibs)
+                except Exception:
+                    continue
+                changed, new_subs, has_ext, has_rem = merge_external_subs(
+                    cur_subs, native or "und", cur_ext)
+                if changed:
+                    changes.append((vp, _json.dumps(new_subs),
+                                    1 if has_ext else 0, 1 if has_rem else 0))
+
+        if not changes:
+            return 0
+
+        # Phase 3 — WRITE the (few) changes in a SHORT transaction with a
+        # busy_timeout, then commit promptly, so the write lock isn't held long
+        # enough to fail a concurrent conversion.
+        db = await aiosqlite.connect(self.db_path)
+        try:
+            await db.execute("PRAGMA busy_timeout=60000")
+            for vp, sj, he, hr in changes:
+                await db.execute(
+                    "UPDATE scan_results SET subtitle_tracks_json = ?, "
+                    "has_external_subs_flag = ?, has_removable_subs_flag = ? "
+                    "WHERE file_path = ?", (sj, he, hr, vp))
+            await db.commit()
+        finally:
+            await db.close()
+
+        # Activity-feed events AFTER the write commits (own connections).
+        try:
+            from backend.file_events import log_event, EVENT_RESCANNED
+            for vp, *_ in changes:
+                await log_event(vp, EVENT_RESCANNED, "External subtitles updated (auto-detected)")
+        except Exception:
+            pass
+        print(f"[WATCHER] External subs updated for {len(changes)} title(s)", flush=True)
+        return len(changes)
 
     async def check_once(self) -> dict:
         """Run a single check cycle. Only monitors directories that have been scanned."""
