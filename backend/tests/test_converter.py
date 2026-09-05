@@ -476,3 +476,43 @@ def test_output_is_full_length():
     assert _output_is_full_length(src, None) is False      # unreadable output -> corrupt
     assert _output_is_full_length(0, 6627.0) is False      # unknown source dur -> can't confirm
     assert _output_is_full_length(None, 6627.0) is False
+
+
+def test_muxed_video_kib_parses_summary():
+    """v0.9.115: pull the encoded video-stream size from ffmpeg's
+    end-of-run muxing summary line."""
+    from backend.converter import _muxed_video_kib
+    lines = [
+        "Stream #0:0(eng): Video: hevc (Main), cuda(tv, progressive), 1920x816",
+        "[out#0/matroska @ 0x563c89586e00] video:11797KiB audio:565055KiB "
+        "subtitle:33KiB other streams:0KiB global headers:0KiB muxing overhead: 0.460890%",
+    ]
+    assert _muxed_video_kib(lines) == 11797
+    assert _muxed_video_kib(["no summary here"]) is None
+
+
+def test_looks_like_blank_video_green_screen():
+    """v0.9.115: the Blue Velvet green-screen signature — 11.8 MB of video
+    over a 2h runtime (~13 kbps) — is flagged as a silent decode failure."""
+    from backend.converter import _looks_like_blank_video
+    green = [
+        "[out#0/matroska @ 0x0] video:11797KiB audio:565055KiB subtitle:33KiB "
+        "other streams:0KiB global headers:0KiB muxing overhead: 0.46%",
+    ]
+    assert _looks_like_blank_video(green, 7232.7) is True
+
+
+def test_looks_like_blank_video_real_encode_kept():
+    """A normal HEVC encode (hundreds of MB of video) is NOT flagged, and
+    neither are short clips or logs missing the summary."""
+    from backend.converter import _looks_like_blank_video
+    # ~1.2 GB video over 2h ≈ 1500 kbps — a real re-encode.
+    real = ["[out#0/matroska @ 0x0] video:1258000KiB audio:80000KiB "
+            "subtitle:0KiB other streams:0KiB muxing overhead: 0.1%"]
+    assert _looks_like_blank_video(real, 7232.7) is False
+    # Even a tiny video stream on a short clip must not trip (min-runtime guard).
+    tiny_short = ["[out#0/matroska @ 0x0] video:80KiB audio:400KiB "
+                  "subtitle:0KiB other streams:0KiB muxing overhead: 0.1%"]
+    assert _looks_like_blank_video(tiny_short, 30.0) is False
+    # No muxing summary in the log -> can't tell -> not flagged.
+    assert _looks_like_blank_video(["frame= 100 fps=25"], 7232.7) is False

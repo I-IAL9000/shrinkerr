@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.115] — 2026-09-05
+
+### Fixed
+- **A silent NVDEC green-screen decode failure no longer produces a kept-but-garbage output.** NVDEC can choke on certain x264 Blu-ray streams and emit green/blank frames with no ffmpeg error (exit 0), which NVENC compressed to a near-empty video track that the full-length duration guard then rescued. The encode now detects an implausibly-tiny video stream (<50 kbps over a feature-length runtime) and retries once with software decode; genuinely static sources stay tiny on CPU decode too and are still kept.
+
 ## [0.9.114] — 2026-09-05
 
 ### Fixed

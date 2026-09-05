@@ -1957,6 +1957,42 @@ async def _probe_output_duration(path: str) -> Optional[float]:
         return None
 
 
+_VIDEO_MUX_SIZE_RE = re.compile(r"video:(\d+)KiB")
+
+
+def _muxed_video_kib(log_lines: list[str]) -> Optional[int]:
+    """Parse the encoded video-stream size (KiB) from ffmpeg's end-of-run
+    muxing summary — `[out#0/...] video:NNNNKiB audio:...`. Returns None
+    if the line isn't present. v0.9.115."""
+    for line in reversed(log_lines):
+        m = _VIDEO_MUX_SIZE_RE.search(line)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def _looks_like_blank_video(log_lines: list[str], duration_s: float) -> bool:
+    """True when the encoded video stream is implausibly tiny for its runtime.
+
+    That's the signature of a *silent* NVDEC decode failure: the hardware
+    decoder chokes on certain x264 Blu-ray streams and emits green/blank
+    frames without any error — ffmpeg exits 0 and NVENC compresses the flat
+    frames to near-nothing (e.g. Blue Velvet: 11.8 MB of video over 2h ≈
+    13 kbps, the rest of the output was AC3 audio copied through). Real
+    feature-length HEVC video never averages below ~50 kbps. A minimum
+    runtime keeps short clips / near-static test patterns from tripping it;
+    the caller re-encodes with software decode and only trusts THAT result,
+    so genuinely static content (which stays tiny on CPU decode too) is
+    still kept. v0.9.115."""
+    if duration_s < 120:
+        return False
+    kib = _muxed_video_kib(log_lines)
+    if kib is None:
+        return False
+    video_kbps = (kib * 8.0) / duration_s
+    return video_kbps < 50.0
+
+
 async def _external_sub_is_readable(path: str) -> bool:
     """True if ffmpeg can open `path` as a subtitle input.
 
@@ -2899,6 +2935,33 @@ async def convert_file(
             print(f"[CONVERT] ffmpeg cmd: {' '.join(cmd[:6])} ...", flush=True)
         _enc = await _run_encode(cmd)
         if _enc["outcome"] == "ok":
+            # v0.9.115: silent NVDEC green-screen guard. NVDEC can fail to
+            # decode certain x264 Blu-ray streams and emit green/blank
+            # frames with NO error signature — ffmpeg exits 0 and NVENC
+            # dutifully compresses the flat frames to a near-empty video
+            # stream (the undersized-output guard misses it because the
+            # container is still full-length). Detect the implausibly-tiny
+            # video track and retry once with software decode before
+            # trusting the output; a genuinely static source stays tiny on
+            # CPU decode too and is kept by the size/duration guards below.
+            if (
+                _used_nvdec_native
+                and not _software_retry
+                and _looks_like_blank_video(all_lines, duration)
+            ):
+                print(
+                    "[CONVERT] NVDEC produced a near-empty video stream "
+                    f"({_muxed_video_kib(all_lines)} KiB over {duration:.0f}s) — "
+                    "suspected silent green-screen decode failure; retrying "
+                    "with software decode",
+                    flush=True,
+                )
+                try:
+                    Path(temp_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
+                _software_retry = True
+                continue
             break
         if (
             _enc["outcome"] == "retry"
