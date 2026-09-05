@@ -1957,6 +1957,35 @@ async def _probe_output_duration(path: str) -> Optional[float]:
         return None
 
 
+async def _external_sub_is_readable(path: str) -> bool:
+    """True if ffmpeg can open `path` as a subtitle input.
+
+    A sidecar can pass the existence/name guards but still be unreadable —
+    empty, mis-encoded (e.g. bad UTF-16/Latin-1 bytes), or not actually a
+    subtitle. Feeding one as `-i` aborts the whole conversion with
+    exit 183 "Invalid data found when processing input". We probe it first
+    and require at least one subtitle stream so a single bad .srt can't
+    fail an otherwise-good encode. Fail-open on our own errors (timeout,
+    missing ffprobe): don't let a diagnostic drop a valid sub. v0.9.114."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", "-select_streams", "s",
+            "-show_entries", "stream=codec_type",
+            "-of", "default=nokey=1:noprint_wrappers=1", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except FileNotFoundError:
+        # ffprobe not on PATH — can't validate, assume readable.
+        return True
+    except Exception:
+        # Timeout or spawn failure: fail open so we don't drop a good sub.
+        return True
+    if proc.returncode != 0:
+        return False
+    return b"subtitle" in out
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -2452,7 +2481,7 @@ async def convert_file(
                         if t.get("external") and t.get("keep", True) and t.get("external_path")
                     ]
                     if ext_subs_to_merge:
-                        external_sub_files = [
+                        _sub_candidates = [
                             {"path": t["external_path"], "codec": t.get("codec", "subrip"),
                              "language": t.get("language", "und"), "forced": t.get("forced", False)}
                             for t in ext_subs_to_merge
@@ -2469,6 +2498,18 @@ async def convert_file(
                             # stale row without requiring a re-scan.
                             and not _is_hidden_sidecar(t["external_path"])
                         ]
+                        # v0.9.114: a real-looking sidecar (e.g. `.eng.srt`)
+                        # can pass the name/existence guards but still be
+                        # unreadable by ffmpeg (empty / mis-encoded / not a
+                        # subtitle) — as -i it aborts the encode with exit
+                        # 183 "Invalid data found". Probe each and drop the
+                        # bad ones so one corrupt .srt can't fail the job.
+                        external_sub_files = []
+                        for _sc in _sub_candidates:
+                            if await _external_sub_is_readable(_sc["path"]):
+                                external_sub_files.append(_sc)
+                            else:
+                                print(f"[CONVERT] Skipping unreadable external subtitle: {_sc['path']}", flush=True)
                         if external_sub_files:
                             print(f"[CONVERT] Will merge {len(external_sub_files)} external subtitle file(s)", flush=True)
             finally:

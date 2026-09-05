@@ -182,3 +182,33 @@ def test_merge_external_subs_removes_sub():
     changed, new_subs, has_ext, has_rem = merge_external_subs(stored, "eng", [])
     assert changed is True and has_ext is False
     assert len(new_subs) == 1 and all(not t.get("external") for t in new_subs)
+
+
+# --- v0.9.114: convert-time readability guard -----------------------------
+import asyncio
+
+
+def test_external_sub_is_readable_valid_srt(tmp_path):
+    """A well-formed .srt probes as a subtitle stream → readable."""
+    from backend.converter import _external_sub_is_readable
+    srt = tmp_path / "Movie.eng.srt"
+    srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n\n"
+                   "2\n00:00:03,000 --> 00:00:04,000\nworld\n")
+    assert asyncio.run(_external_sub_is_readable(str(srt))) is True
+
+
+def test_external_sub_is_readable_empty_file(tmp_path):
+    """An empty sidecar (0 bytes) is unreadable → dropped, not merged.
+    This is the class of file that aborted the encode with exit 183."""
+    from backend.converter import _external_sub_is_readable
+    srt = tmp_path / "Movie.eng.srt"
+    srt.write_bytes(b"")
+    assert asyncio.run(_external_sub_is_readable(str(srt))) is False
+
+
+def test_external_sub_is_readable_garbage(tmp_path):
+    """A binary-garbage file with a .srt name is unreadable → dropped."""
+    from backend.converter import _external_sub_is_readable
+    srt = tmp_path / "Movie.eng.srt"
+    srt.write_bytes(bytes(range(256)) * 8)
+    assert asyncio.run(_external_sub_is_readable(str(srt))) is False

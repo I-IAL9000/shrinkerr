@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.114] — 2026-09-05
+
+### Fixed
+- **A corrupt or empty external subtitle (e.g. a 0-byte `.eng.srt`) no longer fails the whole conversion with exit 183 "Invalid data found".** Each sidecar is now probed before being fed to ffmpeg as an input; unreadable ones are skipped and logged instead of aborting the encode.
+
 ## [0.9.113] — 2026-08-31
 
 ### Fixed
