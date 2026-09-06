@@ -1735,8 +1735,8 @@ async def get_scan_stats():
                 SUM(converted) as converted,
                 SUM(CASE WHEN dup_count > 1 THEN 1 ELSE 0 END) as duplicates,
                 SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt' THEN 1 ELSE 0 END) as corrupt,
-                SUM(CASE WHEN video_height >= 2000 THEN 1 ELSE 0 END) as res_4k,
-                SUM(CASE WHEN video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
+                SUM(CASE WHEN video_height >= 1900 OR LOWER(file_path) LIKE '%%2160p%%' OR LOWER(file_path) LIKE '%%uhd%%' OR LOWER(file_path) LIKE '%%4k%%' THEN 1 ELSE 0 END) as res_4k,
+                SUM(CASE WHEN NOT (video_height >= 1900 OR LOWER(file_path) LIKE '%%2160p%%' OR LOWER(file_path) LIKE '%%uhd%%' OR LOWER(file_path) LIKE '%%4k%%') AND video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
                 SUM(CASE WHEN video_height >= 600 AND video_height < 900 THEN 1 ELSE 0 END) as res_720p,
                 SUM(CASE WHEN video_height > 0 AND video_height < 600 THEN 1 ELSE 0 END) as res_sd_probed,
                 SUM(CASE WHEN video_codec LIKE '%264%' OR video_codec LIKE '%avc%' THEN 1 ELSE 0 END) as x264,
@@ -2479,6 +2479,21 @@ def _matches_filter(enriched: dict, filter_name: str) -> bool:
     return _matches_single_filter(enriched, filter_name)
 
 
+# Canonical 4K/UHD test (v0.9.116). 4K can't be identified by height alone:
+# it runs from 2160 (16:9) down to ~1392 (2.76:1 scope) as the frame widens,
+# overlapping 1440p/1080p heights — so exact-2160 (or >=2000) matching missed
+# every scope-ratio 4K title. Height >= 1900 (safely above 1440p QHD) OR a
+# 2160p/UHD/4K tag anywhere in the path. Width would be exact but isn't stored.
+_RES_4K_PATH_TOKENS = ("2160p", "uhd", "4k")
+
+
+def _is_4k(video_height, file_path) -> bool:
+    if (video_height or 0) >= 1900:
+        return True
+    p = (file_path or "").lower()
+    return any(t in p for t in _RES_4K_PATH_TOKENS)
+
+
 def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
     """Check if an enriched file matches a single filter."""
     if filter_name == "all":
@@ -2544,18 +2559,15 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
             return (time.time() - mt) < 86400
         return False
     if filter_name == "res_4k":
-        if vh >= 1400:
-            return True
-        if vh == 0:
-            fn = f.get("file_path", "").lower()
-            return "2160p" in fn or "4k" in fn or "uhd" in fn
-        return False
+        return _is_4k(vh, f.get("file_path", ""))
     if filter_name == "res_1080p":
-        if 900 <= vh < 1400:
+        if _is_4k(vh, f.get("file_path", "")):
+            return False  # scope 4K (tagged, vh<1900) belongs in res_4k, not here
+        if 900 <= vh < 1900:
             return True
         # 2.40:1 BluRays stored as 1920x800 have vh < 900 but filename says "1080p"
         fn = f.get("file_path", "").lower()
-        return "1080p" in fn and vh < 1400
+        return "1080p" in fn and vh < 1900
     if filter_name == "res_720p":
         if not (600 <= vh < 900):
             return False
@@ -2652,16 +2664,23 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
                "AND LOWER(video_codec) NOT LIKE '%hevc%' "
                "AND LOWER(video_codec) NOT LIKE '%av1%'")
     elif f == "res_4k":
-        # SQL handles >= 1400; fall back to filename heuristic in Python for vh=0 rows
-        sql = "AND (video_height >= 1400 OR video_height IS NULL OR video_height = 0)"
-        needs_python = {f}  # still refine in Python for vh=0 heuristic
+        # v0.9.116: 4K by height alone missed scope-ratio 4K (3840x1600 etc.).
+        # height >= 1900 OR a 2160p/UHD/4K path tag — fully expressed in SQL.
+        sql = ("AND (video_height >= 1900 "
+               "OR LOWER(file_path) LIKE '%2160p%' "
+               "OR LOWER(file_path) LIKE '%uhd%' "
+               "OR LOWER(file_path) LIKE '%4k%')")
     elif f == "res_1080p":
-        # A file is "1080p" if either:
-        #   - video_height is in the 1080p range (900–1399), OR
-        #   - the filename says "1080p" and height is below 4K
+        # A file is "1080p" if it's NOT 4K (tagged scope 4K excluded) AND either:
+        #   - video_height is in the 1080p range (900–1899), OR
+        #   - the filename says "1080p" and height is below 4K.
         # This catches 2.40:1 BluRays stored as 1920x800.
-        sql = ("AND (video_height BETWEEN 900 AND 1399 "
-               "OR (LOWER(file_path) LIKE '%1080p%' AND (video_height IS NULL OR video_height < 1400)))")
+        sql = ("AND NOT (video_height >= 1900 "
+               "OR LOWER(file_path) LIKE '%2160p%' "
+               "OR LOWER(file_path) LIKE '%uhd%' "
+               "OR LOWER(file_path) LIKE '%4k%') "
+               "AND (video_height BETWEEN 900 AND 1899 "
+               "OR (LOWER(file_path) LIKE '%1080p%' AND (video_height IS NULL OR video_height < 1900)))")
     elif f == "res_720p":
         # 720p range, but EXCLUDE files whose filename clearly says 1080p/2160p/4K
         # (these are shorter-aspect HD films stored with height <900)
@@ -2920,11 +2939,9 @@ async def get_scan_tree(filter: str = "all"):
                         if not r.get("has_removable_subs"):
                             skip = True; break
                     elif pf == "res_4k":
-                        vh = r.get("video_height") or 0
-                        if vh >= 1400:
-                            continue
-                        fn = fp.lower()
-                        if not ("2160p" in fn or "4k" in fn or "uhd" in fn):
+                        # v0.9.116: res_4k is now fully expressed in SQL (see
+                        # _build_tree_sql_filter); kept in sync for safety.
+                        if not _is_4k(r.get("video_height"), fp):
                             skip = True; break
                     elif pf in ("plex_watched", "plex_unwatched", "plex_watchlist"):
                         want = pf.split("_", 1)[1]

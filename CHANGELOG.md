@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.116] — 2026-09-06
+
+### Fixed
+- **The 4K filter now counts scope-ratio 4K titles instead of only 16:9 ones.** 4K was detected by video height (the chip count required ≥2000), so letterboxed 4K (3840×1600, ×1634, …) was miscounted as 1080p — showing ~210 of 800+. 4K is now `height ≥ 1900 OR a 2160p/UHD/4K tag in the path`, applied consistently to the chip count and the list filters.
+
 ## [0.9.115] — 2026-09-05
 
 ### Fixed

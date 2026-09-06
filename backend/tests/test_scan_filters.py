@@ -4,7 +4,42 @@ Cleanup and language filters include ignored titles — an ignore rule means
 "don't convert", not "don't tidy tracks / don't tell me the audio is untagged".
 Only the conversion-oriented filters keep excluding ignored.
 """
-from backend.routes.scan import _matches_single_filter
+from backend.routes.scan import _matches_single_filter, _is_4k
+
+
+def test_is_4k_by_height_and_tag():
+    """v0.9.116: 4K can't be judged by height alone. Height >= 1900 OR a
+    2160p/UHD/4K path tag; QHD/1080p are excluded."""
+    # 16:9 and flat 4K caught by height.
+    assert _is_4k(2160, "/m/Movie.mkv") is True
+    assert _is_4k(1920, "/m/Movie 2.00to1.mkv") is True          # 2.00:1 4K
+    # Scope 4K (height < 1900) rescued by the filename/path tag — the whole bug.
+    assert _is_4k(1600, "/m/Movie 2160p BluRay REMUX.mkv") is True  # 2.40:1
+    assert _is_4k(1634, "/m/Movie.UHD.mkv") is True
+    assert _is_4k(0, "/media/4K/Movie.mkv") is True                 # unprobed, folder tag
+    # Not 4K: QHD and 1080p without any 4K tag.
+    assert _is_4k(1440, "/m/Show QHD 1440p.mkv") is False
+    assert _is_4k(1080, "/m/Movie 1080p BluRay.mkv") is False
+    assert _is_4k(800, "/m/Scope 1080p 1920x800.mkv") is False
+
+
+def test_res_4k_filter_includes_scope_4k():
+    """The res_4k filter matches a tagged scope-4K title (vh 1600), which the
+    old height>=2000/height>=1400 rules under- or mis-counted."""
+    assert _matches_single_filter(
+        {"video_height": 1600, "file_path": "/m/Dune 2160p UHD BluRay.mkv"}, "res_4k") is True
+    assert _matches_single_filter(
+        {"video_height": 2160, "file_path": "/m/x.mkv"}, "res_4k") is True
+    assert _matches_single_filter(
+        {"video_height": 1440, "file_path": "/m/QHD 1440p.mkv"}, "res_4k") is False
+
+
+def test_res_1080p_excludes_tagged_4k():
+    """A tagged scope-4K row (vh 1600) must NOT also count as 1080p."""
+    assert _matches_single_filter(
+        {"video_height": 1600, "file_path": "/m/Dune 2160p UHD.mkv"}, "res_1080p") is False
+    assert _matches_single_filter(
+        {"video_height": 1080, "file_path": "/m/Movie 1080p.mkv"}, "res_1080p") is True
 
 
 def _row(**kw):
