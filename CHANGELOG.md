@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.117] — 2026-09-06
+
+### Fixed
+- **1080p titles under a "4K"-named folder (or with a UHD edition tag) no longer count as 4K.** The v0.9.116 4K rule matched a 2160p/UHD/4K token anywhere in the path; now an explicit sub-4K tag (1080p/720p/…) in the path overrides a stray 4K token. The count and list filters share one generated predicate so they stay in lockstep.
+
 ## [0.9.116] — 2026-09-06
 
 ### Fixed

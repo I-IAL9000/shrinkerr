@@ -4,7 +4,8 @@ Cleanup and language filters include ignored titles — an ignore rule means
 "don't convert", not "don't tidy tracks / don't tell me the audio is untagged".
 Only the conversion-oriented filters keep excluding ignored.
 """
-from backend.routes.scan import _matches_single_filter, _is_4k
+import sqlite3
+from backend.routes.scan import _matches_single_filter, _is_4k, _sql_is_4k
 
 
 def test_is_4k_by_height_and_tag():
@@ -21,6 +22,39 @@ def test_is_4k_by_height_and_tag():
     assert _is_4k(1440, "/m/Show QHD 1440p.mkv") is False
     assert _is_4k(1080, "/m/Movie 1080p BluRay.mkv") is False
     assert _is_4k(800, "/m/Scope 1080p 1920x800.mkv") is False
+
+
+def test_is_4k_sub4k_tag_wins_over_stray_4k_token():
+    """v0.9.117: an explicit sub-4K tag in the path beats a stray 4K/UHD
+    token elsewhere — a 1080p title under a /4K/ folder (or a UHD-edition
+    tag on a 1080p rip) must NOT count as 4K."""
+    assert _is_4k(1080, "/media/4K/Dune (2021)/Dune 1080p BluRay.mkv") is False
+    assert _is_4k(1080, "/media/UHD Remux/Movie 1080p edition.mkv") is False
+    assert _is_4k(720, "/media/Movies/Old 4K restoration 720p.mkv") is False
+    # A real scope-4K release (2160p, no sub-4K tag) is still caught.
+    assert _is_4k(1600, "/media/4K/Dune (2021)/Dune 2160p UHD.mkv") is True
+
+
+def test_is_4k_python_matches_sql():
+    """The generated SQL predicate must agree with the Python _is_4k for every
+    row — they drove the original count-vs-list mismatch, so keep them locked."""
+    frag = _sql_is_4k("%")
+    c = sqlite3.connect(":memory:")
+    c.execute("CREATE TABLE t(file_path TEXT, video_height INT)")
+    rows = [
+        ("/media/4K/Dune 1080p.mkv", 1080), ("/m/Dune 2160p UHD.mkv", 1600),
+        ("/m/Flat 2160p.mkv", 2160), ("/m/Regular 1080p.mkv", 1080),
+        ("/m/QHD 1440p.mkv", 1440), ("/media/UHD/Movie 1080p.mkv", 1080),
+        ("/m/no tags.mkv", 1080), ("/m/Old 4K 720p.mkv", 720),
+        ("/m/scope untagged.mkv", 1600), ("/media/4k/unprobed.mkv", 0),
+    ]
+    c.executemany("INSERT INTO t VALUES(?,?)", rows)
+    for p, h in rows:
+        py = _is_4k(h, p)
+        sql = bool(c.execute(
+            "SELECT 1 FROM t WHERE file_path=? AND video_height=? AND " + frag, (p, h)
+        ).fetchone())
+        assert py == sql, f"drift on {p!r} h={h}: py={py} sql={sql}"
 
 
 def test_res_4k_filter_includes_scope_4k():

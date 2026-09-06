@@ -1719,9 +1719,13 @@ async def get_scan_stats():
     try:
         LOW_BR = 3_000_000
 
-        # Main counts via SQL (pre-computed flags avoid JSON parsing)
+        # Main counts via SQL (pre-computed flags avoid JSON parsing).
+        # _is4k_sql is generated from the same tokens as _is_4k so the chip
+        # count and the list filters stay in lockstep (the query is
+        # parameterized, not %-formatted, so a single-% LIKE is literal).
+        _is4k_sql = _sql_is_4k("%")
         async with db.execute(
-            """SELECT
+            f"""SELECT
                 COUNT(*) as total,
                 SUM(needs_conversion) as needs_conversion_raw,
                 SUM(has_removable_tracks_flag) as audio_cleanup,
@@ -1735,8 +1739,8 @@ async def get_scan_stats():
                 SUM(converted) as converted,
                 SUM(CASE WHEN dup_count > 1 THEN 1 ELSE 0 END) as duplicates,
                 SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt' THEN 1 ELSE 0 END) as corrupt,
-                SUM(CASE WHEN video_height >= 1900 OR LOWER(file_path) LIKE '%%2160p%%' OR LOWER(file_path) LIKE '%%uhd%%' OR LOWER(file_path) LIKE '%%4k%%' THEN 1 ELSE 0 END) as res_4k,
-                SUM(CASE WHEN NOT (video_height >= 1900 OR LOWER(file_path) LIKE '%%2160p%%' OR LOWER(file_path) LIKE '%%uhd%%' OR LOWER(file_path) LIKE '%%4k%%') AND video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
+                SUM(CASE WHEN {_is4k_sql} THEN 1 ELSE 0 END) as res_4k,
+                SUM(CASE WHEN NOT {_is4k_sql} AND video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
                 SUM(CASE WHEN video_height >= 600 AND video_height < 900 THEN 1 ELSE 0 END) as res_720p,
                 SUM(CASE WHEN video_height > 0 AND video_height < 600 THEN 1 ELSE 0 END) as res_sd_probed,
                 SUM(CASE WHEN video_codec LIKE '%264%' OR video_codec LIKE '%avc%' THEN 1 ELSE 0 END) as x264,
@@ -2482,16 +2486,33 @@ def _matches_filter(enriched: dict, filter_name: str) -> bool:
 # Canonical 4K/UHD test (v0.9.116). 4K can't be identified by height alone:
 # it runs from 2160 (16:9) down to ~1392 (2.76:1 scope) as the frame widens,
 # overlapping 1440p/1080p heights — so exact-2160 (or >=2000) matching missed
-# every scope-ratio 4K title. Height >= 1900 (safely above 1440p QHD) OR a
-# 2160p/UHD/4K tag anywhere in the path. Width would be exact but isn't stored.
+# every scope-ratio 4K title. Rule: height >= 1900 (safely above 1440p QHD) OR
+# a 2160p/UHD/4K tag in the path. Width would be exact but isn't stored.
 _RES_4K_PATH_TOKENS = ("2160p", "uhd", "4k")
+# v0.9.117: an explicit sub-4K resolution tag in the path wins over a stray
+# 4K/UHD token elsewhere in it (e.g. a "1080p" file living under a "/4K/"
+# library folder, or a UHD edition tag on a 1080p rip) — otherwise those got
+# miscounted as 4K.
+_SUB_4K_PATH_TOKENS = ("1080p", "1080i", "720p", "576p", "480p")
 
 
 def _is_4k(video_height, file_path) -> bool:
     if (video_height or 0) >= 1900:
         return True
     p = (file_path or "").lower()
+    if any(t in p for t in _SUB_4K_PATH_TOKENS):
+        return False
     return any(t in p for t in _RES_4K_PATH_TOKENS)
+
+
+def _sql_is_4k(pct: str) -> str:
+    """SQL predicate mirroring _is_4k, generated from the same token tuples so
+    the counts and the list filters can't drift. `pct` is the LIKE wildcard —
+    '%' for parameterized-but-not-%-formatted queries, '%%' for the stats
+    aggregate literal that follows the file's %%-escaping convention."""
+    yes = " OR ".join(f"LOWER(file_path) LIKE '{pct}{t}{pct}'" for t in _RES_4K_PATH_TOKENS)
+    no = "".join(f" AND LOWER(file_path) NOT LIKE '{pct}{t}{pct}'" for t in _SUB_4K_PATH_TOKENS)
+    return f"(video_height >= 1900 OR (({yes}){no}))"
 
 
 def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
@@ -2665,20 +2686,15 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
                "AND LOWER(video_codec) NOT LIKE '%av1%'")
     elif f == "res_4k":
         # v0.9.116: 4K by height alone missed scope-ratio 4K (3840x1600 etc.).
-        # height >= 1900 OR a 2160p/UHD/4K path tag — fully expressed in SQL.
-        sql = ("AND (video_height >= 1900 "
-               "OR LOWER(file_path) LIKE '%2160p%' "
-               "OR LOWER(file_path) LIKE '%uhd%' "
-               "OR LOWER(file_path) LIKE '%4k%')")
+        # Canonical _sql_is_4k: height >= 1900 OR a 2160p/UHD/4K path tag (unless
+        # an explicit sub-4K tag is present) — fully expressed in SQL.
+        sql = "AND " + _sql_is_4k("%")
     elif f == "res_1080p":
         # A file is "1080p" if it's NOT 4K (tagged scope 4K excluded) AND either:
         #   - video_height is in the 1080p range (900–1899), OR
         #   - the filename says "1080p" and height is below 4K.
         # This catches 2.40:1 BluRays stored as 1920x800.
-        sql = ("AND NOT (video_height >= 1900 "
-               "OR LOWER(file_path) LIKE '%2160p%' "
-               "OR LOWER(file_path) LIKE '%uhd%' "
-               "OR LOWER(file_path) LIKE '%4k%') "
+        sql = ("AND NOT " + _sql_is_4k("%") + " "
                "AND (video_height BETWEEN 900 AND 1899 "
                "OR (LOWER(file_path) LIKE '%1080p%' AND (video_height IS NULL OR video_height < 1900)))")
     elif f == "res_720p":
