@@ -369,13 +369,47 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleToggleSelect = (path: string, shiftKey?: boolean) => {
     if (selectAllActive) {
+      // Convert the virtual "everything" selection into an explicit set that
+      // still covers folders the user never expanded. The old code materialised
+      // only loadedFiles (expanded folders) minus one, so a single deselect
+      // wiped every unloaded item — looking like "deselect all". Instead start
+      // from the complete known set and subtract just the one item. v0.9.118.
       setSelectAllActive(false);
-      const allPaths = new Set<string>();
-      for (const files of loadedFiles.values()) {
-        for (const f of files) allPaths.add(f.file_path);
+      const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
+      const next = new Set<string>();
+      if (hasAdv) {
+        // Advanced search: the full matched set is known client-side — use it.
+        for (const fp of advSearchResults!) if (fp !== path) next.add(fp);
+      } else if (path.endsWith("/")) {
+        // Deselecting a whole folder: keep every other folder prefix.
+        for (const f of folders) {
+          const pre = f.path + "/";
+          if (pre !== path && !pre.startsWith(path)) next.add(pre);
+        }
+      } else {
+        // Deselecting a single file: select every folder (the server resolves
+        // folder prefixes to their files), then replace the file's own folder
+        // with its individual files minus the deselected one so the rest stay.
+        for (const f of folders) next.add(f.path + "/");
+        let folderKey: string | null = null;
+        for (const [key, files] of loadedFiles) {
+          if (files.some(f => f.file_path === path)) { folderKey = key; break; }
+        }
+        if (folderKey !== null) {
+          next.delete(folderKey + "/");
+          for (const f of loadedFiles.get(folderKey)!) {
+            if (f.file_path !== path) next.add(f.file_path);
+          }
+        } else {
+          // Folder not loaded — can't exclude one file from a prefix, so drop
+          // the covering prefix (deselects that folder). Rare: the file must be
+          // visible to deselect it, which means its folder is expanded/loaded.
+          for (const pre of Array.from(next)) {
+            if (path.startsWith(pre)) next.delete(pre);
+          }
+        }
       }
-      allPaths.delete(path);
-      setSelectedPaths(allPaths);
+      setSelectedPaths(next);
       lastClickedPathRef.current = path;
       return;
     }
