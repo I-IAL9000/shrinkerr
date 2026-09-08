@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.119] — 2026-09-06
+
+### Fixed
+- **Audio/sub cleanup no longer fails with "source file no longer exists" when an encode is discarded as larger.** When a convert/combined encode grows the file but cleanup is still pending, the cleanup now runs inline in the same job instead of as a deferred follow-up that raced nzbget/Sonarr/Radarr moving the download out from under it.
+
 ## [0.9.118] — 2026-09-06
 
 ### Fixed

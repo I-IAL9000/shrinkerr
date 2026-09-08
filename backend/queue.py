@@ -1670,6 +1670,14 @@ class QueueWorker:
 
         space_saved = 0
         current_file_path = file_path
+        # v0.9.119: when a convert/combined encode is discarded for being larger
+        # but the job still has audio/sub cleanup to do, run that cleanup inline
+        # in THIS job (via the remux block below) instead of enqueuing a separate
+        # follow-up. The follow-up used to race external movers — nzbget /
+        # Sonarr / Radarr import the download moments after we return, so by the
+        # time the follow-up ran the source was gone ("source file no longer
+        # exists") and the cleanup was silently lost.
+        _inline_cleanup = False
 
         if job_type in ("convert", "combined"):
             # Decouple WS-broadcast frequency from DB-write frequency. ffmpeg
@@ -2163,47 +2171,29 @@ class QueueWorker:
                     or job_type == "combined"  # native-reorder / codec transcode case
                 )
                 if should_followup:
+                    # v0.9.119: run the cleanup inline in THIS job (the remux
+                    # block below now also fires when _inline_cleanup is set)
+                    # rather than enqueuing a separate audio job. The source is
+                    # still present here; a deferred follow-up raced external
+                    # movers (nzbget/Sonarr/Radarr importing the download) and
+                    # failed with "source file no longer exists", losing the
+                    # cleanup entirely. Doing it now closes that window.
+                    _inline_cleanup = True
+                    print(
+                        f"[WORKER] Encode larger; running audio/sub cleanup inline for "
+                        f"{file_path} (was an audio-only follow-up pre-v0.9.119)",
+                        flush=True,
+                    )
                     try:
-                        followup_id = await self.queue.add_job(
-                            file_path=file_path,
-                            job_type="audio",
-                            encoder=encoder,
-                            audio_tracks_to_remove=audio_tracks_to_remove,
-                            subtitle_tracks_to_remove=subtitle_tracks_to_remove,
-                            original_size=file_size,
-                            # Run immediately rather than at the back of the
-                            # queue — the user expects the cleanup to land
-                            # promptly, not after every other pending encode.
-                            insert_next=True,
-                            priority=job.get("priority") or 0,
-                            # CRITICAL: the current job is still status='running'
-                            # at this point (the finaliser hasn't run yet).
-                            # Without the exclusion, add_job's de-dup check
-                            # would silently return the current job's id and
-                            # the follow-up would never be created. This was
-                            # the root cause of "combined jobs that get
-                            # discarded for negative savings lose their audio/
-                            # sub cleanup work entirely". v0.3.115+.
-                            exclude_job_id=job_id,
+                        from backend.file_events import log_event, EVENT_QUEUED
+                        await log_event(
+                            file_path,
+                            EVENT_QUEUED,
+                            "Running audio/sub cleanup inline (encode was larger)",
+                            {"job_id": job_id, "job_type": "audio", "inline": True},
                         )
-                        if followup_id:
-                            print(
-                                f"[WORKER] Queued audio-only follow-up job {followup_id} for "
-                                f"{file_path} (encode was larger, cleanup work pending)",
-                                flush=True,
-                            )
-                            try:
-                                from backend.file_events import log_event, EVENT_QUEUED
-                                await log_event(
-                                    file_path,
-                                    EVENT_QUEUED,
-                                    "Queued audio/sub cleanup as follow-up (encode was larger)",
-                                    {"job_id": followup_id, "job_type": "audio", "follow_up_for": job_id},
-                                )
-                            except Exception:
-                                pass
-                    except Exception as exc:
-                        print(f"[WORKER] Audio-only follow-up queue failed: {exc}", flush=True)
+                    except Exception:
+                        pass
 
             if result.get("vmaf_rejected"):
                 # Encode completed cleanly but didn't meet the VMAF threshold.
@@ -2244,8 +2234,11 @@ class QueueWorker:
                 print(f"[WORKER] {reason}", flush=True)
 
         # For "combined" jobs, track removal is now handled inline during conversion
-        # (no separate remux pass). Skip the remux block unless this is an "audio"-only job.
-        if job_type == "audio":
+        # (no separate remux pass). Run the remux block for a dedicated "audio"
+        # job, OR when a convert/combined encode was discarded as larger but
+        # still had cleanup to do (_inline_cleanup, v0.9.119) — that cleanup now
+        # happens here in the same job instead of a race-prone follow-up.
+        if job_type == "audio" or _inline_cleanup:
             # Determine keep indices from probe
             raw_tracks = probe.get("audio_tracks", [])
             all_indices = [t["stream_index"] for t in raw_tracks]
