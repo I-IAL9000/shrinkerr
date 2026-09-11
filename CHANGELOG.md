@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.121] — 2026-09-11
+
+### Fixed
+- **A disc row now shows as a conversion in Add-to-Queue immediately, without a re-scan.** v0.9.120 fixed the scan-time flag, but the queue estimate and add-from-scan classifier still read the stored `needs_conversion` column (stale on rows scanned earlier); both now force conversion from the stored `disc_type`.
+
 ## [0.9.120] — 2026-09-11
 
 ### Fixed

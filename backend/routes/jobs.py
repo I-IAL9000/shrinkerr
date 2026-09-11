@@ -319,7 +319,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             placeholders = ",".join("?" * len(chunk))
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
-                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height "
+                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height, disc_type "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
             ) as cur:
@@ -412,8 +412,12 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             # cleanup_only (per-batch user choice) wins over force_reencode.
             # A forced re-encode of an already-h265 file must classify as
             # "convert" (not a no-op "audio"/remux job). See _classify_job_type.
+            # v0.9.120: a disc row always needs conversion — an audio-only remux
+            # can't open a disc image (exit 183). Force it here from the stored
+            # disc_type so it applies immediately, without waiting for a re-scan
+            # to refresh the needs_conversion column.
             job_type = _classify_job_type(
-                needs_conversion=bool(row["needs_conversion"]),
+                needs_conversion=bool(row["needs_conversion"]) or bool(row.get("disc_type")),
                 force_reencode=payload.force_reencode,
                 cleanup_only=payload.cleanup_only,
                 language_remux=payload.language_remux,
@@ -1882,7 +1886,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 async with db.execute(
                     f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
-                    f"COALESCE(duration, 0) as duration, native_language "
+                    f"COALESCE(duration, 0) as duration, native_language, disc_type "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -1918,8 +1922,12 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             except Exception:
                 pass
 
-            # force_reencode overrides both needs_conversion AND skip rules
-            needs_conv = bool(row["needs_conversion"]) or payload.force_reencode
+            # force_reencode overrides both needs_conversion AND skip rules.
+            # v0.9.120: a disc (disc_type set) always needs conversion — force it
+            # from the stored disc_type so the estimate is right immediately,
+            # without a re-scan to refresh needs_conversion. An ignore rule still
+            # wins (a disc under skip stays skipped, like the base column does).
+            needs_conv = bool(row["needs_conversion"]) or bool(row.get("disc_type")) or payload.force_reencode
             if skip_conv and not payload.force_reencode:
                 needs_conv = False
             has_work = has_audio or has_subs
