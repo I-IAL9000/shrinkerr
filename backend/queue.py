@@ -1664,6 +1664,22 @@ class QueueWorker:
         if file_size > 0:
             await self.queue.update_original_size(job_id, file_size)
 
+        # v0.9.120: an audio-only cleanup can't run on a disc image — the remux
+        # feeds the raw path to `ffmpeg -i` and dies with exit 183 "Invalid data
+        # found" (a disc opens only via the bluray:/dvdvideo convert path). Discs
+        # now classify as needs_conversion=True so this shouldn't recur, but any
+        # legacy/queued audio job on a disc fails here with an actionable message
+        # instead of the cryptic ffmpeg error.
+        if job_type == "audio" and probe.get("disc_type"):
+            msg = (
+                "Audio/sub cleanup can't run on a disc image (ISO/VIDEO_TS/BDMV) — "
+                "a disc must be fully converted, not stream-copied. Rescan and "
+                "queue a conversion for this title to apply the cleanup."
+            )
+            print(f"[WORKER] Job {job_id}: {msg} ({file_path})", flush=True)
+            await self.queue.update_status(job_id, "failed", error_log=msg)
+            return
+
         jobs_total = stats["total_jobs"]
         jobs_completed = stats["completed"]
         total_saved = stats["total_space_saved"]

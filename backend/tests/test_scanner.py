@@ -346,17 +346,20 @@ async def test_recompute_needs_conversion_works_without_row_factory(tmp_path):
     try:
         await db.execute(
             "CREATE TABLE scan_results (file_path TEXT, video_codec TEXT, "
-            "needs_conversion INTEGER, converted INTEGER)"
+            "needs_conversion INTEGER, converted INTEGER, disc_type TEXT)"
         )
-        await db.execute("INSERT INTO scan_results VALUES ('/a.mkv','h264',0,0)")
-        await db.execute("INSERT INTO scan_results VALUES ('/b.mkv','hevc',0,0)")
-        await db.execute("INSERT INTO scan_results VALUES ('/c.mkv','h264',0,1)")  # converted → skipped
+        await db.execute("INSERT INTO scan_results VALUES ('/a.mkv','h264',0,0,NULL)")
+        await db.execute("INSERT INTO scan_results VALUES ('/b.mkv','hevc',0,0,NULL)")
+        await db.execute("INSERT INTO scan_results VALUES ('/c.mkv','h264',0,1,NULL)")  # converted → skipped
+        # v0.9.120: a disc (bdmv) always needs conversion even though its probed
+        # codec ('hevc' here) isn't in source_codecs — must NOT stay cleanup-only.
+        await db.execute("INSERT INTO scan_results VALUES ('/d.iso','hevc',0,0,'bdmv')")
         await db.commit()
         flipped = await recompute_needs_conversion(db, ["h264"])
-        assert flipped == 1
+        assert flipped == 2  # /a.mkv (codec) and /d.iso (disc)
         async with db.execute("SELECT file_path, needs_conversion FROM scan_results ORDER BY file_path") as cur:
             got = {r[0]: r[1] for r in await cur.fetchall()}
-        assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0}
+        assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0, "/d.iso": 1}
     finally:
         await db.close()
 

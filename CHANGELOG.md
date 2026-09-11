@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.120] — 2026-09-11
+
+### Fixed
+- **Disc images (ISO/VIDEO_TS/BDMV) now always need conversion instead of offering only audio cleanup.** `needs_conversion` was codec-only, and the codec probed through the bluray:/dvdvideo demuxer is often blank/unmatched, so a raw 56 GB Blu-ray was flagged cleanup-only and required ticking force-encode. Discs are forced to convert at scan time and in the bulk recompute.
+- **An audio-only cleanup job on a disc now fails with a clear message instead of ffmpeg exit 183** — a disc can't be stream-copy remuxed, so it says to queue a conversion.
+
 ## [0.9.119] — 2026-09-06
 
 ### Fixed

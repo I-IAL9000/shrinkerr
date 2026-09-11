@@ -535,7 +535,7 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
     # actually flip — cheaper than blanket UPDATE.
     flipped = 0
     async with db.execute(
-        "SELECT file_path, video_codec, needs_conversion FROM scan_results "
+        "SELECT file_path, video_codec, needs_conversion, disc_type FROM scan_results "
         "WHERE converted = 0"
     ) as cur:
         rows = await cur.fetchall()
@@ -546,9 +546,12 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
     # SELECT fixes the column order, so positional access is unambiguous and
     # works under any row_factory.
     for row in rows:
-        file_path, video_codec, needs_conversion = row[0], row[1], row[2]
+        file_path, video_codec, needs_conversion, disc_type = row[0], row[1], row[2], row[3]
         vc = (video_codec or "").lower()
-        should_convert = 1 if vc in codec_names else 0
+        # v0.9.120: discs always need conversion regardless of the (often blank)
+        # probed codec — mirror the scan-time rule so a settings recompute
+        # doesn't flip them back to cleanup-only.
+        should_convert = 1 if (disc_type or vc in codec_names) else 0
         if int(needs_conversion or 0) != should_convert:
             await db.execute(
                 "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
@@ -1807,6 +1810,15 @@ async def scan_directory(
         language_source = "api" if api_lang else "heuristic"
 
         needs_conversion = codec_matches_source(video_codec, source_codecs)
+        # v0.9.120: a disc image (ISO / VIDEO_TS / BDMV) is always a large,
+        # disc-bitrate source that warrants conversion — that's the core use
+        # case. Codec-matching alone marked it needs_conversion=False (the codec
+        # probed through the bluray:/dvdvideo demuxer is often blank/unmatched),
+        # so add-to-queue offered only audio cleanup and the user had to tick
+        # force-encode. An audio-only remux can't even open a disc, so a disc
+        # must go through the convert path. Force it.
+        if probe.get("disc_type"):
+            needs_conversion = True
         audio_tracks = classify_audio_tracks(raw_tracks, native_lang, duration)
         raw_subs = probe.get("subtitle_tracks", [])
         subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
