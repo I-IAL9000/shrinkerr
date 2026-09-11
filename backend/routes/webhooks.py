@@ -128,6 +128,11 @@ async def webhook_queue(request: WebhookQueueRequest):
 
         video_codec = (probe.get("video_codec") or "").lower()
         needs_conversion = codec_matches_source(video_codec, source_codecs)
+        # v0.9.122: a disc image always needs conversion regardless of codec
+        # (an HEVC Blu-ray disc is still a 30-56GB raw disc to transcode; an
+        # audio-only remux can't even open it). Mirror the scanner rule.
+        if probe.get("disc_type"):
+            needs_conversion = True
         if request.force_reencode:
             needs_conversion = True
 

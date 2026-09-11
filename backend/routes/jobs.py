@@ -1008,6 +1008,9 @@ async def add_jobs_by_path(payload: AddByPathRequest):
 
         video_codec = (probe.get("video_codec") or "").lower()
         needs_conversion = codec_matches_source(video_codec, source_codecs)
+        # v0.9.122: discs always need conversion regardless of codec (see scanner).
+        if probe.get("disc_type"):
+            needs_conversion = True
         if payload.force_reencode:
             needs_conversion = True
 

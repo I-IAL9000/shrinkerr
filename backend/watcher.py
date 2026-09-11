@@ -362,6 +362,11 @@ class FileWatcher:
             # silently classified MPEG-2 / MPEG-4 / VC-1 as "no
             # conversion needed" regardless of source_codecs.
             needs_conversion = codec_matches_source(video_codec, source_codecs)
+            # v0.9.122: a disc image always needs conversion regardless of codec
+            # (mirror the scanner) so a newly-discovered HEVC disc auto-queues as
+            # a convert, not a no-op audio cleanup.
+            if probe.get("disc_type"):
+                needs_conversion = True
             audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
             raw_subs = probe.get("subtitle_tracks", [])
             subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)

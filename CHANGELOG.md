@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.122] — 2026-09-11
+
+### Fixed
+- **Disc images always need conversion regardless of codec, across every job-creation path.** v0.9.120/121 forced it at scan time and in Add-to-Queue; the webhook (nzbget/SABnzbd), add-by-path, and watcher auto-queue paths still codec-gated discs, so an HEVC/x265 Blu-ray was flagged cleanup-only. All now force conversion when `disc_type` is set.
+
 ## [0.9.121] — 2026-09-11
 
 ### Fixed
