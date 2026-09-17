@@ -29,7 +29,7 @@ const PRESET_INFO: Record<string, { label: string; desc: string }> = {
   p4: { label: "Medium", desc: "Balanced quality and speed. Good default for general use." },
   p5: { label: "Slow", desc: "Better compression efficiency. Noticeably slower." },
   p6: { label: "Very Slow", desc: "High quality with good compression. Recommended for storage." },
-  p7: { label: "Slowest", desc: "Best quality NVENC offers. Maximum compression, slowest speed." },
+  p7: { label: "Slowest", desc: "Best compression NVENC offers (best quality-per-bit → smaller files at the same CQ). Slowest speed." },
 };
 
 const TARGET_CODECS = [
@@ -1071,7 +1071,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <option value="medium">Medium (default)</option>
                       <option value="slow">Slow</option>
                       <option value="slower">Slower</option>
-                      <option value="veryslow">Very Slow (Best quality)</option>
+                      <option value="veryslow">Very Slow (Best compression)</option>
                     </select>
                     <div style={helpStyle}>
                       Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality.
@@ -1191,7 +1191,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <option value="medium">Medium (recommended)</option>
                       <option value="slow">Slow</option>
                       <option value="slower">Slower</option>
-                      <option value="veryslow">Very Slow (Best quality)</option>
+                      <option value="veryslow">Very Slow (Best compression)</option>
                     </select>
                     <div style={helpStyle}>
                       Encoder analysis depth. <strong>Note:</strong> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <strong>medium</strong> is fine for most hardware.

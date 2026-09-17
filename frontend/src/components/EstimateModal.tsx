@@ -45,7 +45,7 @@ const CPU_PRESETS = [
   { value: "medium", label: "Medium (default)" },
   { value: "slow", label: "Slow" },
   { value: "slower", label: "Slower" },
-  { value: "veryslow", label: "Very Slow (Best quality)" },
+  { value: "veryslow", label: "Very Slow (Best compression)" },
 ];
 
 interface EstimateModalProps {
@@ -412,7 +412,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           <option value="p4">P4 — Medium</option>
                           <option value="p5">P5 — Slow</option>
                           <option value="p6">P6 — Very Slow</option>
-                          <option value="p7">P7 — Slowest (Best quality)</option>
+                          <option value="p7">P7 — Slowest (Best compression)</option>
                         </>
                       )}
                     </select>

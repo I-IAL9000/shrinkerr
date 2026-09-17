@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.124] — 2026-09-17
+
+### Changed
+- **Relabel the slowest NVENC/libx265 presets "(Best compression)" instead of "(Best quality)".** In Shrinkerr's constant-quality (CQ/CRF) workflow the quality is pinned by CQ, so a slower preset yields a smaller file at the same quality, not a better-looking one — "best quality" was misleading and inconsistent with the p7 speed table.
+
 ## [0.9.123] — 2026-09-17
 
 ### Changed
