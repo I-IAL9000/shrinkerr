@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.125] — 2026-09-17
+
+### Fixed
+- **The per-rule CQ field now allows up to 40, matching the global CQ slider.** v0.9.123 raised the global/estimate CQ caps but missed the rules form, so a per-directory rule still couldn't set CQ above 30. Its cap is now encoder-aware (40 for NVENC CQ, 28 for libx265 CRF, same as the main sliders).
+
 ## [0.9.124] — 2026-09-17
 
 ### Changed

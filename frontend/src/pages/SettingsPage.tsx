@@ -3649,7 +3649,7 @@ volumes:
                         <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
                         <input type="number" style={{ ...inputStyle, width: "100%" }}
                           value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
-                          placeholder="Default" min={15} max={30}
+                          placeholder="Default" min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
                           onChange={e => {
                             if (ruleForm.encoder === "libx265") {
                               setRuleForm({ ...ruleForm, libx265_crf: e.target.value });
