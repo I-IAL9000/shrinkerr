@@ -376,7 +376,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality ({isCpu ? "CRF" : "CQ"})</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-                      <input type="range" min={15} max={30} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
+                      <input type="range" min={15} max={40} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
                         onChange={e => setCqSlider(Number(e.target.value))}
                         onMouseUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
                         onTouchEnd={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}

@@ -963,7 +963,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <span style={labelStyle}>NVENC Constant Quality (CQ)</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
                     </div>
-                    <input type="range" min={15} max={30} value={encoding.nvenc_cq}
+                    <input type="range" min={15} max={40} value={encoding.nvenc_cq}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1010,7 +1010,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         <input
                           type="number"
                           min={15}
-                          max={30}
+                          max={40}
                           placeholder="auto"
                           value={encoding.nvenc_cpu_fallback_crf ?? ""}
                           onChange={(e) => {
@@ -1130,7 +1130,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         <input
                           type="number"
                           min={15}
-                          max={30}
+                          max={40}
                           placeholder="auto"
                           value={encoding.libx265_gpu_fallback_cq ?? ""}
                           onChange={(e) => {
@@ -1476,7 +1476,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     ] as const).map(([label, key, def]) => (
                       <>
                         <span key={`l-${key}`} style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-                        <input key={`r-${key}`} type="range" min={15} max={30}
+                        <input key={`r-${key}`} type="range" min={15} max={40}
                           value={encoding[key] ?? def}
                           onChange={(e) => setEncoding({ ...encoding, [key]: parseInt(e.target.value) })}
                           style={{ width: "100%", accentColor: "var(--accent)" }} />

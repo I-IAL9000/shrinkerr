@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.123] — 2026-09-17
+
+### Changed
+- **Quality sliders (NVENC CQ, libx265 CRF, resolution-aware CQ, per-job override) now go up to 40 instead of 30** so you can push more aggressive compression on tolerant content (e.g. reality TV). The encoder always accepted higher; only the UI capped it.
+
 ## [0.9.122] — 2026-09-11
 
 ### Fixed
