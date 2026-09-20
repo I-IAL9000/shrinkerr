@@ -3673,16 +3673,65 @@ async def convert_file(
             },
         }
 
-    # Handle original file: backup, trash, or delete
+    # Place the converted output, THEN dispose of the original. Order matters:
+    # the output must be safely at final_path before the original is trashed or
+    # deleted. The old order (dispose original → rename temp) meant a failed
+    # placement — e.g. an EACCES rename on a CIFS/SMB mount — left the original
+    # gone and the output stranded as *.converting.mkv. v0.9.126: put the output
+    # in place first (moving the original aside when it occupies the target
+    # name) and only then dispose the original; roll back on a placement failure.
     try:
         backup_days = live_settings.get("backup_original_days", 0)
         use_trash = live_settings.get("trash_original_after_conversion", False)
-
         result_backup_path = None
+
+        # Refuse to follow a planted symlink at the final output path.
+        if Path(final_path).is_symlink():
+            raise OSError(
+                f"Refusing to overwrite symlink at final output path: {final_path}"
+            )
+
+        async def _dispose_original_file(src: Path, backup_name: str) -> None:
+            """Backup / trash / delete a regular-file original that the placed
+            output has already superseded. `src` is where the original now lives
+            (possibly a sidecar); `backup_name` is the name to preserve in the
+            backup folder. Mirrors the pre-v0.9.126 modes incl. trash→delete
+            fallback. Runs only after the output is safely in place."""
+            nonlocal result_backup_path
+            if backup_days and backup_days > 0:
+                custom_backup = live_settings.get("backup_folder", "")
+                if custom_backup:
+                    backup_dir = Path(custom_backup) / p.parent.name
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                else:
+                    legacy = p.parent / ".squeezarr_backup"
+                    backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
+                    backup_dir.mkdir(exist_ok=True)
+                backup_path = backup_dir / backup_name
+                if backup_path.is_symlink():
+                    raise OSError(
+                        f"Refusing to rename into backup path — destination is a symlink: {backup_path}"
+                    )
+                await asyncio.to_thread(shutil.move, str(src), str(backup_path))  # v0.9.32: off-loop
+                result_backup_path = str(backup_path)
+                print(f"[CONVERT] Original backed up to: {backup_path}", flush=True)
+            elif use_trash:
+                try:
+                    from send2trash import send2trash
+                    await asyncio.to_thread(send2trash, str(src))  # v0.9.32: off-loop
+                    print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
+                except Exception as trash_exc:
+                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+                    src.unlink()
+            else:
+                src.unlink()
+
         if disc_type and Path(input_path).is_file() and Path(input_path).suffix.lower() == ".iso":
             # v0.7.0: ISO source — single file ops (unlink / trash / move).
             # Same three modes (backup / trash / delete) as folder discs
-            # but operating on the .iso file directly.
+            # but operating on the .iso file directly. The .iso is never at
+            # final_path, so place the output first, then dispose it.
+            temp.rename(final_path)
             iso_source = Path(input_path)
             if backup_days and backup_days > 0:
                 custom_backup = live_settings.get("backup_folder", "")
@@ -3716,7 +3765,9 @@ async def convert_file(
             # v0.6.0: for disc inputs the "source" is the disc subdir
             # (VIDEO_TS/ or BDMV/), not the marker file inside it. Same
             # three modes (backup / trash / delete) but operating on the
-            # whole folder.
+            # whole folder. The subdir is never at final_path, so place the
+            # output first, then dispose it.
+            temp.rename(final_path)
             source_to_handle = Path(input_path).parent
             if backup_days and backup_days > 0:
                 custom_backup = live_settings.get("backup_folder", "")
@@ -3747,61 +3798,37 @@ async def convert_file(
             else:
                 await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
                 print(f"[CONVERT] Removed disc subdir: {source_to_handle}", flush=True)
-        elif backup_days and backup_days > 0:
-            # Move original to backup folder (custom or .shrinkerr_backup in same dir)
-            custom_backup = live_settings.get("backup_folder", "")
-            if custom_backup:
-                # Centralized backup: preserve relative path structure
-                backup_dir = Path(custom_backup)
-                # Create a subdirectory mirroring the parent folder name
-                backup_dir = backup_dir / p.parent.name
-                backup_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                # New per-directory backup folder. If the user already has an
-                # old .squeezarr_backup folder from a previous install, keep
-                # writing to that one so their existing backups stay in a
-                # single location until they move/clean it up themselves.
-                legacy = p.parent / ".squeezarr_backup"
-                backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
-                backup_dir.mkdir(exist_ok=True)
-            backup_path = backup_dir / p.name
-            # Refuse if the target path is a symlink — an attacker who can
-            # place a symlink in the backup folder named like the source
-            # file could otherwise redirect the rename to anywhere the
-            # container user can write (e.g. /etc/cron.d/root). Explicit
-            # check before rename closes the gap since Path.rename happily
-            # follows a pre-existing symlink on Linux.
-            if backup_path.is_symlink():
-                raise OSError(
-                    f"Refusing to rename into backup path — destination is a symlink: {backup_path}"
-                )
-            p.rename(backup_path)
-            result_backup_path = str(backup_path)
-            print(f"[CONVERT] Original backed up to: {backup_path}", flush=True)
-        elif use_trash:
-            try:
-                from send2trash import send2trash
-                # v0.9.32: off the event loop — when the media mount has no
-                # usable .Trash, send2trash copies the (multi-GB) original to
-                # the home trash on another device. Done inline it blocked the
-                # whole event loop for the copy (30-60s of unresponsive UI).
-                await asyncio.to_thread(send2trash, str(p))
-                print(f"[CONVERT] Original moved to trash: {p.name}", flush=True)
-            except Exception as trash_exc:
-                print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                p.unlink()
         else:
-            p.unlink()
-        # Same symlink check for the final output rename. The common case
-        # is benign (final_path doesn't exist at all) but defense-in-depth
-        # catches the case where an attacker placed a symlink that the
-        # converter would follow.
-        _final = Path(final_path)
-        if _final.is_symlink():
-            raise OSError(
-                f"Refusing to overwrite symlink at final output path: {final_path}"
-            )
-        temp.rename(final_path)
+            # Regular file. final_path may equal input_path (unchanged codec
+            # tag), so the original occupies the target name. Move it aside
+            # first, place the output, then dispose the moved-aside original —
+            # rolling back if placement fails so the original is never lost.
+            # The backup-folder symlink guard lives inside _dispose_original_file.
+            if os.path.abspath(final_path) == os.path.abspath(input_path):
+                # Same name: the original is at the target. Move it to a hidden
+                # sidecar (same-dir, atomic), place the output, then dispose the
+                # sidecar. On a placement failure, restore the original.
+                sidecar = p.with_name("." + p.name + ".replacing")
+                try:
+                    if sidecar.exists() or sidecar.is_symlink():
+                        sidecar.unlink()
+                except OSError:
+                    pass
+                p.rename(sidecar)
+                try:
+                    temp.rename(final_path)
+                except OSError:
+                    try:
+                        sidecar.rename(p)
+                    except OSError:
+                        print(f"[CONVERT] CRITICAL: could not restore original from {sidecar}", flush=True)
+                    raise
+                await _dispose_original_file(sidecar, p.name)
+            else:
+                # Different target name — the original isn't in the way. Place
+                # the output first, then dispose the original.
+                temp.rename(final_path)
+                await _dispose_original_file(p, p.name)
     except OSError as exc:
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 

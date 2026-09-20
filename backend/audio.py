@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import shutil
 import time
@@ -415,7 +416,6 @@ async def remux_audio(
         # Check if we should trash or permanently delete the original
         use_trash = False
         try:
-            import aiosqlite
             from backend.database import DB_PATH
             import sqlite3
             db = sqlite3.connect(DB_PATH)
@@ -425,29 +425,49 @@ async def remux_audio(
         except Exception:
             pass
 
-        if use_trash:
+        def _dispose(src: Path) -> None:
+            if use_trash:
+                try:
+                    from send2trash import send2trash
+                    send2trash(str(src))
+                except Exception:
+                    src.unlink()
+            else:
+                src.unlink()
+
+        # Place the output BEFORE disposing the original. Order matters: the old
+        # order (delete/trash original → rename temp) meant a failed rename —
+        # e.g. an EACCES on a CIFS/SMB mount — left the original gone and the
+        # output stranded as *.remuxing.mkv. v0.9.126: put the output in place
+        # first (moving the original aside when it occupies the target name),
+        # then dispose the original; roll back on a placement failure.
+        if os.path.abspath(final_path) == os.path.abspath(str(p)):
+            # Same name (mkv source): move original aside, place output, dispose
+            # sidecar; restore the original if placement fails.
+            sidecar = p.with_name("." + p.name + ".replacing")
             try:
-                from send2trash import send2trash
-                send2trash(str(p))
-            except Exception:
-                p.unlink()
+                if sidecar.exists() or sidecar.is_symlink():
+                    sidecar.unlink()
+            except OSError:
+                pass
+            p.rename(sidecar)
+            try:
+                temp.rename(final_path)
+            except OSError:
+                try:
+                    sidecar.rename(p)
+                except OSError:
+                    print(f"[REMUX] CRITICAL: could not restore original from {sidecar}", flush=True)
+                raise
+            _dispose(sidecar)
         else:
-            p.unlink()
-        temp.rename(final_path)
-    except OSError as exc:
-        import os
-        print(f"[REMUX] Permission error: {exc}", flush=True)
-        print(f"  Original: {p} (exists={p.exists()})", flush=True)
-        print(f"  Temp: {temp} (exists={temp.exists()})", flush=True)
-        print(f"  Running as uid={os.getuid()}, gid={os.getgid()}", flush=True)
-        # Retry: delete original then rename
-        try:
-            if p.exists():
-                p.unlink()
+            # Different target name (e.g. .avi→.mkv) — original isn't in the way.
             temp.rename(final_path)
-            print(f"[REMUX] Retry succeeded", flush=True)
-        except OSError as exc2:
-            return {"success": False, "output_path": None, "space_saved": 0, "error": f"{exc} (retry: {exc2})"}
+            _dispose(p)
+    except OSError as exc:
+        print(f"[REMUX] Placement failed, original preserved: {exc}", flush=True)
+        print(f"  Original: {p} (exists={p.exists()})  Temp: {temp} (exists={temp.exists()})", flush=True)
+        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc), "source_intact": p.exists()}
 
     elapsed = time.monotonic() - remux_start
     print(f"[REMUX] Done: saved {space_saved} bytes", flush=True)

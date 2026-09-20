@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.126] — 2026-09-20
+
+### Fixed
+- **A failed output rename no longer trashes the original and strands the output as `.converting`/`.remuxing`.** The finalizer disposed the original before renaming the temp into place, so an EACCES rename (seen on some CIFS/SMB mounts) lost the original. It now places the output first — moving the original aside when it occupies the target name — and only then trashes/deletes it, rolling back so the original is never lost. Applies to both the convert and audio-remux paths.
+
 ## [0.9.125] — 2026-09-17
 
 ### Fixed
