@@ -442,24 +442,33 @@ async def remux_audio(
         # first (moving the original aside when it occupies the target name),
         # then dispose the original; roll back on a placement failure.
         if os.path.abspath(final_path) == os.path.abspath(str(p)):
-            # Same name (mkv source): move original aside, place output, dispose
-            # sidecar; restore the original if placement fails.
-            sidecar = p.with_name("." + p.name + ".replacing")
+            # Same name (mkv source): move the original into a hidden staging
+            # subdir KEEPING ITS REAL NAME, place output, dispose the staged
+            # original; restore it if placement fails. Staging in a subdir (not
+            # a ".replacing" sidecar) keeps the real filename in trash/backup.
+            # v0.9.127.
+            stage_dir = p.parent / ".shrinkerr-replacing"
+            stage_dir.mkdir(exist_ok=True)
+            staged = stage_dir / p.name
             try:
-                if sidecar.exists() or sidecar.is_symlink():
-                    sidecar.unlink()
+                if staged.exists() or staged.is_symlink():
+                    staged.unlink()
             except OSError:
                 pass
-            p.rename(sidecar)
+            p.rename(staged)
             try:
                 temp.rename(final_path)
             except OSError:
                 try:
-                    sidecar.rename(p)
+                    staged.rename(p)
                 except OSError:
-                    print(f"[REMUX] CRITICAL: could not restore original from {sidecar}", flush=True)
+                    print(f"[REMUX] CRITICAL: could not restore original from {staged}", flush=True)
                 raise
-            _dispose(sidecar)
+            _dispose(staged)
+            try:
+                stage_dir.rmdir()  # remove if now empty
+            except OSError:
+                pass
         else:
             # Different target name (e.g. .avi→.mkv) — original isn't in the way.
             temp.rename(final_path)

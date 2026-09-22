@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.127] — 2026-09-22
+
+### Fixed
+- **Trashed originals keep their real filename instead of a `.<name>.replacing` suffix.** v0.9.126 moved the original to a same-dir sidecar before placing the output, so the trashed copy carried the ugly suffix and had to be renamed by hand to restore. It now stages the original in a hidden subdir keeping its real name, so trash/backup preserve the filename; rollback-on-failure is unchanged.
+
 ## [0.9.126] — 2026-09-20
 
 ### Fixed

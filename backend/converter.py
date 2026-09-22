@@ -3805,25 +3805,34 @@ async def convert_file(
             # rolling back if placement fails so the original is never lost.
             # The backup-folder symlink guard lives inside _dispose_original_file.
             if os.path.abspath(final_path) == os.path.abspath(input_path):
-                # Same name: the original is at the target. Move it to a hidden
-                # sidecar (same-dir, atomic), place the output, then dispose the
-                # sidecar. On a placement failure, restore the original.
-                sidecar = p.with_name("." + p.name + ".replacing")
+                # Same name: the original is at the target. Move it into a hidden
+                # staging subdir KEEPING ITS REAL NAME (same filesystem → atomic
+                # rename), place the output, then dispose the staged original. On
+                # a placement failure, restore it. Staging in a subdir (not a
+                # same-dir ".replacing" sidecar) means trash/backup keep the real
+                # filename instead of the ugly suffix. v0.9.127.
+                stage_dir = p.parent / ".shrinkerr-replacing"
+                stage_dir.mkdir(exist_ok=True)
+                staged = stage_dir / p.name
                 try:
-                    if sidecar.exists() or sidecar.is_symlink():
-                        sidecar.unlink()
+                    if staged.exists() or staged.is_symlink():
+                        staged.unlink()
                 except OSError:
                     pass
-                p.rename(sidecar)
+                p.rename(staged)
                 try:
                     temp.rename(final_path)
                 except OSError:
                     try:
-                        sidecar.rename(p)
+                        staged.rename(p)
                     except OSError:
-                        print(f"[CONVERT] CRITICAL: could not restore original from {sidecar}", flush=True)
+                        print(f"[CONVERT] CRITICAL: could not restore original from {staged}", flush=True)
                     raise
-                await _dispose_original_file(sidecar, p.name)
+                await _dispose_original_file(staged, p.name)
+                try:
+                    stage_dir.rmdir()  # remove if now empty (ignore if a concurrent job shares it)
+                except OSError:
+                    pass
             else:
                 # Different target name — the original isn't in the way. Place
                 # the output first, then dispose the original.
