@@ -277,11 +277,12 @@ export const rotateNodeToken = (nodeId: string) =>
 import type { NodeSettings } from "./types";
 export const updateNodeSettings = (nodeId: string, settings: NodeSettings) =>
   apiFetch(`/nodes/${nodeId}/settings`, { method: "PATCH", body: JSON.stringify(settings) });
-export const getJobs = (status?: string, limit?: number, offset?: number) => {
+export const getJobs = (status?: string, limit?: number, offset?: number, search?: string) => {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
   if (limit) params.set("limit", String(limit));
   if (offset) params.set("offset", String(offset));
+  if (search) params.set("search", search);
   const qs = params.toString();
   return apiFetch<any[]>(`/jobs/${qs ? `?${qs}` : ""}`);
 };

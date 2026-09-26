@@ -54,28 +54,36 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
   const loadingRef = useRef(false);
   const loadGen = useRef(0);
-  // Completed/failed histories can be enormous (tens of thousands of rows on a
-  // large library). Fetching them all made the tab hang for seconds and choked
-  // the render — show the most recent N; the tab COUNTS still come from stats.
-  const HISTORY_LIMIT = 200;
+  const PAGE_SIZE = 100; // infinite-scroll batch for completed/failed history
+
+  // Filename search (server-side, so it covers the FULL history, not just the
+  // loaded page). Applies to every tab. Debounced into appliedSearch. v0.9.130.
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  // Infinite-scroll paging for the completed/failed history tabs.
+  const [tabOffset, setTabOffset] = useState(0);
+  const [tabHasMore, setTabHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const load = async (force = false) => {
-    // A poll already in flight must not block a tab switch. The old guard made
-    // a tab change skip its fetch, so the new tab sat on its empty state until
-    // the next poll (up to 10s later). Tab changes pass force=true; a generation
-    // counter drops any stale in-flight result so a slow poll can't clobber the
-    // newer tab's data. v0.9.129.
+    // A poll already in flight must not block a tab switch. Tab changes pass
+    // force=true; a generation counter drops any stale in-flight result so a
+    // slow poll can't clobber the newer tab's data. v0.9.129.
     if (loadingRef.current && !force) return;
     loadingRef.current = true;
     const myGen = ++loadGen.current;
     const tabAtStart = tab;
+    const searchAtStart = appliedSearch;
     try {
       setTabLoading(true);
-      const historyLimit = tabAtStart === "pending" ? 0 : HISTORY_LIMIT;
+      // Pending is the live queue (drag-reorderable) so it loads in full;
+      // completed/failed load a page at a time and grow via infinite scroll.
+      const pageLimit = tabAtStart === "pending" ? 0 : PAGE_SIZE;
       const [s, runningData, tabData] = await Promise.all([
         getJobStats(),
         getJobs("running"),
-        getJobs(tabAtStart, historyLimit),
+        getJobs(tabAtStart, pageLimit, 0, searchAtStart),
       ]);
       if (myGen !== loadGen.current) return; // superseded by a newer load
       setStats(s);
@@ -89,6 +97,8 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       }
       if (myGen !== loadGen.current) return;
       setJobs(allJobs);
+      setTabOffset(tabData.length);
+      setTabHasMore(tabAtStart !== "pending" && tabData.length === PAGE_SIZE);
       setInitialLoading(false);
       setTabLoading(false);
     } finally {
@@ -96,14 +106,63 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     }
   };
 
-  // Load on mount and tab change. A tab change forces past the poll guard so the
-  // new tab fetches (and shows its spinner) immediately.
-  useEffect(() => { load(true); }, [tab]);
+  // Append the next page of completed/failed history (infinite scroll).
+  const loadMore = async () => {
+    if (loadingMore || !tabHasMore || tab === "pending") return;
+    setLoadingMore(true);
+    const tabAtStart = tab;
+    const searchAtStart = appliedSearch;
+    const offset = tabOffset;
+    try {
+      const more = parseJobs(await getJobs(tabAtStart, PAGE_SIZE, offset, searchAtStart));
+      if (tabAtStart !== tab || searchAtStart !== appliedSearch) return; // switched mid-fetch
+      setJobs(prev => {
+        const have = new Set(prev.map(j => j.id));
+        return [...prev, ...more.filter(j => !have.has(j.id))];
+      });
+      setTabOffset(offset + more.length);
+      setTabHasMore(more.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // Poll refresh: keep running + stats live. Pending (the live queue) refreshes
+  // in full; completed/failed leave their loaded pages intact so a 10s poll
+  // doesn't reset the infinite-scroll position. v0.9.130.
+  const pollRefresh = async () => {
+    if (tab === "pending") { load(); return; }
+    try {
+      const [s, runningData] = await Promise.all([getJobStats(), getJobs("running")]);
+      setStats(s);
+      setJobs(prev => [...parseJobs(runningData), ...prev.filter(j => j.status !== "running")]);
+    } catch {}
+  };
+
+  // Debounce the search box.
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Load on mount, tab change, and applied-search change (reset to first page).
+  useEffect(() => { load(true); }, [tab, appliedSearch]);
+
+  // Infinite scroll: fetch the next page when the bottom sentinel scrolls into
+  // view. Re-created when the paging state changes so it closes over fresh values.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !tabHasMore) return;
+    const obs = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    }, { rootMargin: "300px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [tab, appliedSearch, tabHasMore, tabOffset, loadingMore]);
 
   // Poll every 10 seconds normally, every 2s while waiting for jobs to start.
-  // Uses a visibility-aware interval so we don't burn CPU while the tab is
-  // backgrounded (Chrome was flagging Shrinkerr as a heavy resource user).
-  useVisibleInterval(load, queueStarting ? 2000 : 10000);
+  // Visibility-aware so we don't burn CPU while the tab is backgrounded.
+  useVisibleInterval(pollRefresh, queueStarting ? 2000 : 10000);
 
   const running = jobs.filter((j) => j.status === "running");
 
@@ -543,6 +602,31 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         )}
       </div>
 
+      {/* Filename search — server-side, covers the full history on every tab */}
+      <div style={{ marginBottom: 12, position: "relative" }}>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Search ${tab} by filename…`}
+          style={{
+            width: "100%", padding: "8px 32px 8px 12px", fontSize: 13, boxSizing: "border-box",
+            background: "var(--bg-primary)", border: "1px solid var(--border)",
+            borderRadius: 6, color: "var(--text-primary)",
+          }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16,
+            }}
+          >&times;</button>
+        )}
+      </div>
+
       {/* Pending tab */}
       {tab === "pending" && (
         <>
@@ -587,7 +671,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                   <div className="spinner" style={{ width: 18, height: 18 }} />
                   <span>Loading queue...</span>
                 </div>
-              ) : "No pending jobs."}
+              ) : (appliedSearch ? `No pending jobs match “${appliedSearch}”.` : "No pending jobs.")}
             </div>
           )}
         </>
@@ -607,6 +691,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
                 {completedRowEls}
               </div>
+              {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+              {loadingMore && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
+                  <div className="spinner" style={{ width: 16, height: 16 }} /> <span>Loading more…</span>
+                </div>
+              )}
             </>
           )}
           {tabJobs.length === 0 && (
@@ -616,7 +706,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                   <div className="spinner" style={{ width: 18, height: 18 }} />
                   <span>Loading completed jobs...</span>
                 </div>
-              ) : "No completed jobs yet."}
+              ) : (appliedSearch ? `No completed jobs match “${appliedSearch}”.` : "No completed jobs yet.")}
             </div>
           )}
         </>
@@ -674,6 +764,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
               {failedRowEls}
             </div>
+            {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+            {loadingMore && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
+                <div className="spinner" style={{ width: 16, height: 16 }} /> <span>Loading more…</span>
+              </div>
+            )}
             </>
           )}
           {tabJobs.length === 0 && (
@@ -683,7 +779,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                   <div className="spinner" style={{ width: 18, height: 18 }} />
                   <span>Loading failed jobs...</span>
                 </div>
-              ) : "No failed jobs."}
+              ) : (appliedSearch ? `No failed jobs match “${appliedSearch}”.` : "No failed jobs.")}
             </div>
           )}
         </>

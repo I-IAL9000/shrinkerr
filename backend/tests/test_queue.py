@@ -22,6 +22,32 @@ async def test_get_pending_jobs(test_db):
 
 
 @pytest.mark.asyncio
+async def test_get_jobs_by_status_search_and_paginate(test_db):
+    """v0.9.130: filename search (case-insensitive substring, %/_ escaped) and
+    limit/offset paging for the queue-page tabs."""
+    q = JobQueue(test_db)
+    await q.add_job("/tv/Breaking Bad S01E01.mkv", "convert", encoder="nvenc")
+    await q.add_job("/tv/Breaking Bad S02E05.mkv", "convert", encoder="nvenc")
+    await q.add_job("/tv/Better Call Saul S01E01.mkv", "convert", encoder="nvenc")
+    await q.add_job("/tv/100%_special.mkv", "convert", encoder="nvenc")
+
+    # Case-insensitive substring search.
+    hits = await q.get_jobs_by_status("pending", search="breaking")
+    assert {j["file_path"] for j in hits} == {
+        "/tv/Breaking Bad S01E01.mkv", "/tv/Breaking Bad S02E05.mkv"}
+
+    # '%' is treated literally, not as a wildcard.
+    pct = await q.get_jobs_by_status("pending", search="100%")
+    assert [j["file_path"] for j in pct] == ["/tv/100%_special.mkv"]
+
+    # Pagination returns disjoint pages.
+    page1 = await q.get_jobs_by_status("pending", limit=2, offset=0)
+    page2 = await q.get_jobs_by_status("pending", limit=2, offset=2)
+    assert len(page1) == 2 and len(page2) == 2
+    assert not ({j["id"] for j in page1} & {j["id"] for j in page2})
+
+
+@pytest.mark.asyncio
 async def test_next_job_returns_oldest_pending(test_db):
     q = JobQueue(test_db)
     id1 = await q.add_job("/media/first.mkv", "convert", encoder="nvenc")

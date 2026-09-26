@@ -481,13 +481,19 @@ class JobQueue:
         finally:
             await db.close()
 
-    async def get_jobs_by_status(self, status: str, limit: int = 0, offset: int = 0) -> list[dict]:
+    async def get_jobs_by_status(self, status: str, limit: int = 0, offset: int = 0, search: str = "") -> list[dict]:
         db = await self._connect()
         try:
             cols = await _list_select_cols(db)
             order = "completed_at DESC" if status == "completed" else "priority DESC, queue_order ASC"
-            sql = f"SELECT {cols} FROM jobs WHERE status = ? ORDER BY {order}"
+            sql = f"SELECT {cols} FROM jobs WHERE status = ?"
             params: list = [status]
+            if search:
+                # Case-insensitive filename substring match. LIKE '%x%' can't use
+                # an index, but the status index narrows the scan first.
+                sql += " AND file_path LIKE ? ESCAPE '\\'"
+                params.append("%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+            sql += f" ORDER BY {order}"
             if limit > 0:
                 sql += " LIMIT ? OFFSET ?"
                 params += [limit, offset]

@@ -508,11 +508,11 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 
 
 @router.get("/")
-async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 0):
+async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 0, search: str = ""):
     if _queue is None:
         raise HTTPException(status_code=503, detail="Queue not initialized")
     if status:
-        return await _queue.get_jobs_by_status(status, limit=limit, offset=offset)
+        return await _queue.get_jobs_by_status(status, limit=limit, offset=offset, search=search)
     return await _queue.get_all_jobs(limit=limit, offset=offset)
 
 

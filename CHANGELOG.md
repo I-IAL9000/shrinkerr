@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.130] — 2026-09-26
+
+### Added
+- **Filename search and infinite scroll on the queue tabs.** A search box (server-side, so it covers the full history) filters Pending/Completed/Failed by filename, and Completed/Failed now load more as you scroll instead of being capped — so you can find and page through any past conversion.
+
 ## [0.9.129] — 2026-09-26
 
 ### Fixed
