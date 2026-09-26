@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.128] — 2026-09-26
+
+### Fixed
+- **Shift-selecting episodes across seasons no longer selects the whole show (10+ season shows).** The range used a plain lexicographic sort, so "Season 2" sorted after "Season 10"…"Season 19" and a Season 1 → Season 2 pick spanned every season between them. It now sorts numerically (matching the display) and scopes the range to the clicked episodes' common folder.
+
 ## [0.9.127] — 2026-09-22
 
 ### Fixed

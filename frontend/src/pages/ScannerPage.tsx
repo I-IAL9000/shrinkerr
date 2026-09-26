@@ -425,16 +425,32 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
 
         if (isFileSelect) {
-          // Range-select files — limit to advanced-search matches when active
+          // Range-select files. Two fixes vs the old global lexicographic sort
+          // (v0.9.128):
+          //  1. Scope to the two clicked files' common directory (the show for a
+          //     cross-season pick, the season for a same-season pick) so the
+          //     range can't bleed into other titles.
+          //  2. Order with a numeric-aware compare so "Season 2" sorts before
+          //     "Season 10". A plain sort scrambled ≥10-season shows, so a
+          //     Season 1 → Season 2 pick spanned every season that sorts between
+          //     them lexicographically (10..19) — i.e. almost the whole show.
+          const anchor = lastClickedPathRef.current;
+          const commonPrefix = anchor.slice(0, (() => {
+            let i = 0; const m = Math.min(anchor.length, path.length);
+            while (i < m && anchor[i] === path[i]) i++;
+            return i;
+          })());
+          const commonDir = commonPrefix.slice(0, commonPrefix.lastIndexOf("/") + 1);
           const allFiles: string[] = [];
           for (const files of loadedFiles.values()) {
             for (const f of files) {
               if (hasAdv && !advSearchResults!.has(f.file_path)) continue;
+              if (!f.file_path.startsWith(commonDir)) continue;
               allFiles.push(f.file_path);
             }
           }
-          allFiles.sort();
-          const lastIdx = allFiles.indexOf(lastClickedPathRef.current);
+          allFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+          const lastIdx = allFiles.indexOf(anchor);
           const curIdx = allFiles.indexOf(path);
           if (lastIdx !== -1 && curIdx !== -1) {
             const start = Math.min(lastIdx, curIdx);
