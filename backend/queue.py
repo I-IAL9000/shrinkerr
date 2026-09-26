@@ -460,6 +460,7 @@ class JobQueue:
         exclude_ids: list[int] | None = None,
         affinity: str = "any",
         capabilities: list[str] | None = None,
+        translate: bool = True,
     ) -> Optional[dict]:
         db = await self._connect()
         try:
@@ -484,6 +485,20 @@ class JobQueue:
                 affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'vaapi')"
             if "videotoolbox" not in caps:
                 affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'videotoolbox')"
+            # Translation off (v0.9.134): only take jobs this node can run
+            # as tagged — others stay pending for a capable node. Mirrors
+            # routes/nodes.py's remote-worker filter. Values are fixed
+            # capability names, so inlining them is safe.
+            if not translate and caps:
+                native = [e for e, cap in (
+                    ("nvenc", "nvenc"), ("hevc_nvenc", "nvenc"),
+                    ("libx265", "libx265"), ("x265", "libx265"), ("cpu", "libx265"),
+                    ("qsv", "qsv"), ("vaapi", "vaapi"), ("videotoolbox", "videotoolbox"),
+                ) if cap in caps]
+                affinity_sql += (
+                    " AND (encoder IS NULL OR encoder = '' OR LOWER(encoder) IN ("
+                    + ",".join(f"'{e}'" for e in native) + "))"
+                )
 
             if exclude_ids:
                 placeholders = ",".join("?" * len(exclude_ids))
@@ -1408,6 +1423,7 @@ class QueueWorker:
                     exclude_ids=running_ids,
                     affinity=local_settings.get("job_affinity", "any"),
                     capabilities=local_settings.get("capabilities", []),
+                    translate=local_settings.get("translate_encoder", True),
                 )
             except Exception as exc:
                 print(f"[WORKER] Failed to get next job (DB may be busy): {exc}", flush=True)
@@ -1635,7 +1651,39 @@ class QueueWorker:
         job_id = job["id"]
         file_path = job["file_path"]
         job_type = job["job_type"]
-        encoder = job.get("encoder") or "nvenc"
+        # v0.9.134: swap the job's encoder for one this host can run (e.g. an
+        # NVENC-tagged job on a Mac → VideoToolbox), like remote workers do.
+        # Pre-v0.9.134 it ran verbatim and failed with ffmpeg exit 8.
+        from backend.encoder_caps import resolve_node_encoder
+        _local = await self._get_local_node_settings()
+        encoder = resolve_node_encoder(
+            job.get("encoder"), _local.get("capabilities"),
+            translate=_local.get("translate_encoder", True),
+        ) or (job.get("encoder") or "nvenc")
+        libx265_preset = job.get("libx265_preset")
+        libx265_crf = job.get("libx265_crf")
+        if job.get("encoder") and encoder != job["encoder"].lower():
+            print(f"[WORKER] Job {job['id']} requests '{job['encoder']}' but this "
+                  f"host can't run it — using '{encoder}'", flush=True)
+            # NVENC → libx265: honour the Settings → Video "CPU fallback"
+            # pair when set, exactly as a remote CPU worker does.
+            if encoder == "libx265" and not libx265_preset:
+                try:
+                    _db = await self._db()
+                    try:
+                        async with _db.execute(
+                            "SELECT key, value FROM settings WHERE key IN "
+                            "('nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf')"
+                        ) as cur:
+                            _fb = {r["key"]: (r["value"] or "").strip() for r in await cur.fetchall()}
+                    finally:
+                        await _db.close()
+                    if _fb.get("nvenc_cpu_fallback_preset"):
+                        libx265_preset = _fb["nvenc_cpu_fallback_preset"]
+                        if _fb.get("nvenc_cpu_fallback_crf", "").isdigit():
+                            libx265_crf = int(_fb["nvenc_cpu_fallback_crf"])
+                except Exception as exc:
+                    print(f"[WORKER] CPU fallback settings unreadable ({exc}); using libx265 defaults", flush=True)
 
         audio_tracks_to_remove_raw = job.get("audio_tracks_to_remove") or "[]"
         if isinstance(audio_tracks_to_remove_raw, str):
@@ -1833,8 +1881,8 @@ class QueueWorker:
                 override_cq=job.get("nvenc_cq"),
                 override_audio_codec=job.get("audio_codec"),
                 override_audio_bitrate=job.get("audio_bitrate"),
-                override_crf=job.get("libx265_crf"),
-                override_libx265_preset=job.get("libx265_preset"),
+                override_crf=libx265_crf,
+                override_libx265_preset=libx265_preset,
                 override_target_resolution=job.get("target_resolution"),
                 nice=use_nice,
                 audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,

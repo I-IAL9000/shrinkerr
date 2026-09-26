@@ -201,15 +201,18 @@ Troubleshooting for "Mac worker is slow".
 ## Capability-based job routing
 
 Each node advertises what it can do. Job assignment considers:
-- Job's requested encoder (`nvenc` / `libx265`)
+- Job's requested encoder (`nvenc` / `libx265` / `qsv` / `vaapi` / `videotoolbox`)
 - Node's capabilities
 - Node's `translate_encoder` setting (Nodes → [node] → Settings)
 - Node's `job_affinity` setting
 
-If `translate_encoder` is on (default), a CPU-only node will accept NVENC
-jobs and run them as libx265 (translating preset + CQ → preset + CRF, see
-next section). With it off, incompatible jobs are rejected and stay in
-the queue for another node.
+If `translate_encoder` is on (default), a node that can't run a job's
+encoder swaps it for the best one it has — hardware first (NVENC →
+VideoToolbox → QSV → VAAPI), libx265 last. So a Mac takes NVENC jobs on
+VideoToolbox, and a CPU-only node runs them as libx265 (translating
+preset + CQ → preset + CRF, see next section). This applies to the
+server's own Local node too (v0.9.134+). With it off, incompatible jobs
+stay in the queue for another node.
 
 If `job_affinity` is `nvenc_only`, the node only pulls jobs whose
 requested encoder is nvenc. Useful for dedicating your GPU host to

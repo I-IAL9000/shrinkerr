@@ -290,3 +290,35 @@ async def videotoolbox_encode_works() -> bool:
         return proc.returncode == 0
     except Exception:
         return False
+
+
+# Job-encoder aliases older rows / API callers may carry.
+_ENCODER_ALIASES = {"hevc_nvenc": "nvenc", "x265": "libx265", "cpu": "libx265"}
+# When a node can't run a job's encoder, the first of these it has wins —
+# hardware before CPU. libx265 last: always available, but ~10x slower.
+_TRANSLATE_PREFERENCE = ("nvenc", "videotoolbox", "qsv", "vaapi", "libx265")
+
+
+def resolve_node_encoder(job_encoder: str | None, capabilities: list[str] | None,
+                         translate: bool = True) -> str | None:
+    """The encoder a node should run a job with, or None if it can't.
+
+    Shared by the local node (queue.py) and remote workers (worker_mode.py)
+    so both swap encoders the same way (v0.9.134):
+      * the job's own encoder when the node has it;
+      * an untagged job → the node's best encoder;
+      * otherwise, if translation is allowed, the node's best encoder;
+        if not, None (the job should stay with a node that can run it).
+    Unknown capabilities (empty list) trust the job as tagged rather than
+    silently dropping a GPU box to CPU encoding.
+    """
+    want = (job_encoder or "").lower()
+    want = _ENCODER_ALIASES.get(want, want)
+    caps = set(capabilities or [])
+    if not caps:
+        return want or "nvenc"
+    if want in caps:
+        return want
+    if want and not translate:
+        return None
+    return next((e for e in _TRANSLATE_PREFERENCE if e in caps), "libx265")

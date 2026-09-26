@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.134] — 2026-09-26
+
+### Fixed
+- **The server's own Local node now swaps encoders like remote workers do.** A job tagged for an encoder the host can't run (e.g. NVENC on a Mac or CPU-only box) is encoded with the best available one instead of failing with ffmpeg exit 8; turn off *translate encoder* on the node to leave such jobs for a capable node.
+
 ## [0.9.133] — 2026-09-26
 
 ### Added

@@ -405,20 +405,9 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             job_encoder = (job.get("encoder") or "").lower()
             translate_allowed = job.get("translate_encoder", True)
 
-            if job_encoder in ("nvenc", "hevc_nvenc") and "nvenc" in worker_capabilities:
-                encoder = "nvenc"
-            elif job_encoder in ("libx265", "x265", "cpu") and "libx265" in worker_capabilities:
-                encoder = "libx265"
-            elif job_encoder == "videotoolbox" and "videotoolbox" in worker_capabilities:
-                encoder = "videotoolbox"
-            elif translate_allowed:
-                # Prefer a hardware encoder: a Mac worker takes NVENC jobs on
-                # VideoToolbox (~10x libx265's speed on Apple Silicon).
-                encoder = next(
-                    (e for e in ("nvenc", "videotoolbox") if e in worker_capabilities),
-                    "libx265",
-                )
-            else:
+            from backend.encoder_caps import resolve_node_encoder
+            encoder = resolve_node_encoder(job_encoder, worker_capabilities, translate_allowed)
+            if encoder is None:
                 print(f"[WORKER] Refusing job {job_id}: encoder '{job_encoder}' incompatible and translation disabled", flush=True)
                 await client.report_complete(
                     node_id, job_id, False,
