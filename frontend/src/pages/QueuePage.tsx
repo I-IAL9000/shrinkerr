@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { mergeHead } from "../utils/mergeHead";
 import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
@@ -18,6 +19,9 @@ interface QueuePageProps {
 export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const { t } = useTranslation(["queue", "common"]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  // Latest rendered jobs, for the poll's post-await merge (its closure is stale).
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
   const [stats, setStats] = useState<any>(null);
   const [tab, setTab] = useState<"pending" | "completed" | "failed">("pending");
   const toast = useToast();
@@ -67,6 +71,10 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const [tabHasMore, setTabHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // Last seen server count for the history tab, so a poll can tell when new
+  // completions/failures arrived and merge them in. v0.9.136.
+  const tabCountRef = useRef<number | null>(null);
+  const loadingMoreRef = useRef(false);
 
   const load = async (force = false) => {
     // A poll already in flight must not block a tab switch. Tab changes pass
@@ -99,6 +107,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       }
       if (myGen !== loadGen.current) return;
       setJobs(allJobs);
+      tabCountRef.current = tabAtStart === "pending" ? null : (s as any)[tabAtStart] ?? null;
       setTabOffset(tabData.length);
       setTabHasMore(tabAtStart !== "pending" && tabData.length === PAGE_SIZE);
       setInitialLoading(false);
@@ -112,6 +121,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const loadMore = async () => {
     if (loadingMore || !tabHasMore || tab === "pending") return;
     setLoadingMore(true);
+    loadingMoreRef.current = true;
     const tabAtStart = tab;
     const searchAtStart = appliedSearch;
     const offset = tabOffset;
@@ -126,18 +136,43 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       setTabHasMore(more.length === PAGE_SIZE);
     } finally {
       setLoadingMore(false);
+      loadingMoreRef.current = false;
     }
   };
 
   // Poll refresh: keep running + stats live. Pending (the live queue) refreshes
-  // in full; completed/failed leave their loaded pages intact so a 10s poll
-  // doesn't reset the infinite-scroll position. v0.9.130.
+  // in full. Completed/failed keep their loaded pages (so a 10s poll doesn't
+  // reset the infinite-scroll position) but, when the tab's count changed,
+  // re-fetch the newest page and splice it over the top — pre-v0.9.136 new
+  // completions never appeared until a manual reload.
   const pollRefresh = async () => {
     if (tab === "pending") { load(); return; }
+    const tabAtStart = tab;
+    const searchAtStart = appliedSearch;
+    const genAtStart = loadGen.current;
     try {
       const [s, runningData] = await Promise.all([getJobStats(), getJobs("running")]);
+      const count = (s as any)[tabAtStart] ?? null;
+      const head = count !== tabCountRef.current
+        ? parseJobs(await getJobs(tabAtStart, PAGE_SIZE, 0, searchAtStart))
+        : null;
+      // A tab/search switch (load() bumps the generation) happened mid-poll —
+      // its data wins.
+      if (genAtStart !== loadGen.current) return;
       setStats(s);
-      setJobs(prev => [...parseJobs(runningData), ...prev.filter(j => j.status !== "running")]);
+      const running = parseJobs(runningData);
+      // A page being appended by infinite scroll: merge on the next poll
+      // instead (tabCountRef stays stale, so it will re-fetch the head).
+      if (!head || loadingMoreRef.current) {
+        setJobs(prev => [...running, ...prev.filter(j => j.status !== "running")]);
+        return;
+      }
+      tabCountRef.current = count;
+      const current = jobsRef.current;
+      const next = mergeHead(current.filter(j => j.status === tabAtStart), head);
+      setJobs([...running, ...current.filter(j => j.status !== "running" && j.status !== tabAtStart), ...next.rows]);
+      setTabOffset(next.rows.length);
+      if (next.reset) setTabHasMore(head.length === PAGE_SIZE);
     } catch {}
   };
 
