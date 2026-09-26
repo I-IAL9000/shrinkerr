@@ -890,11 +890,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           {t("settingsMedia:video.nvdec.notDetected")}
                         </span>
                       )}
-                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.nvenc_hw_decode ?? true) && (
-                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          {t("settingsMedia:video.vmafDecoderWarning")}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1011,11 +1006,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           {t("settingsMedia:video.nvdec.notDetected")}
                         </span>
                       )}
-                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && encoding?.libx265_use_nvdec && (
-                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          {t("settingsMedia:video.vmafDecoderWarning")}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1126,11 +1116,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           {t("settingsMedia:video.qsvDecode.notDetected")}
                         </span>
                       )}
-                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.qsv_hw_decode ?? true) && (
-                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          {t("settingsMedia:video.vmafDecoderWarning")}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1216,11 +1201,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           {t("settingsMedia:video.vaapiDecode.notDetected")}
                         </span>
                       )}
-                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.vaapi_hw_decode ?? true) && (
-                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          {t("settingsMedia:video.vmafDecoderWarning")}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1280,11 +1260,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           {t("settingsMedia:video.videotoolboxDecode.notDetected")}
                         </span>
                       )}
-                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.videotoolbox_hw_decode ?? true) && (
-                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          {t("settingsMedia:video.vmafDecoderWarning")}
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -1330,36 +1305,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     style={{ accentColor: "var(--accent)" }} />
                   <span style={labelStyle}>{t("settingsMedia:video.smart.vmaf")}</span>
                 </label>
-                {/* v0.5.7: HW decode / VMAF incompatibility surface.
-                    Renders only when VMAF is enabled AND at least one HW decode
-                    toggle is currently on. Dynamically counts active decoders so
-                    users see the immediate impact. Mirror messaging in each
-                    encoder card's HW decode toggle help text. */}
-                {(() => {
-                  const vmafOn = encoding.vmaf_analysis_enabled === true ||
-                                 encoding.vmaf_analysis_enabled === "true" ||
-                                 encoding.vmaf_analysis_enabled == null;
-                  if (!vmafOn) return null;
-                  const activeDecoders: string[] = [];
-                  if (encoding?.nvenc_hw_decode ?? true) activeDecoders.push("NVENC+NVDEC");
-                  if (encoding?.qsv_hw_decode ?? true) activeDecoders.push("QSV");
-                  if (encoding?.vaapi_hw_decode ?? true) activeDecoders.push("VAAPI");
-                  if (encoding?.videotoolbox_hw_decode ?? true) activeDecoders.push("VideoToolbox");
-                  if (encoding?.libx265_use_nvdec) activeDecoders.push("libx265+NVDEC");
-                  if (activeDecoders.length === 0) return null;
-                  return (
-                    <div style={{
-                      marginTop: 8, marginBottom: 12, padding: "10px 12px",
-                      backgroundColor: "rgba(255, 200, 80, 0.10)",
-                      border: "1px solid rgba(255, 200, 80, 0.45)",
-                      borderRadius: 4, fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5,
-                    }}>
-                      <Trans i18nKey="settingsMedia:video.smart.hwWarning" count={activeDecoders.length}
-                        values={{ decoders: activeDecoders.join(", ") }}
-                        components={{ b: <strong style={{ color: "var(--warning)" }} />, b2: <strong /> }} />
-                    </div>
-                  );
-                })()}
                 <div style={helpStyle}>
                   <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
                 </div>

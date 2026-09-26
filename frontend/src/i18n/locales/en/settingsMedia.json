@@ -57,7 +57,6 @@
     "convertFrom": "Convert From (source codecs)",
     "always": "(always)",
     "convertFromHelp": "Select which source codecs should be converted to the target codec.",
-    "vmafDecoderWarning": "⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.",
     "scale": {
       "highestQuality": "{{value}} (Highest quality)",
       "smallestFile": "{{value}} (Smallest file)",
@@ -149,8 +148,6 @@
       "contentType": "Content type detection",
       "contentTypeHelp": "Automatically detects content type from filenames (anime, grain, animation, remux) and applies optimized CQ values. Anime compresses well (CQ 22), grain needs conservative settings (CQ 24). Applied when no encoding rule sets a CQ value.",
       "vmaf": "VMAF quality analysis",
-      "hwWarning_one": "<b>⚠ VMAF will not run on hardware-decoded jobs.</b> VMAF compares the encoded output to software-decoded source frames. With <b2>{{count}}</b2> hardware decode toggle currently on ({{decoders}}), jobs that use those encoders will skip VMAF — no score is computed and the quality threshold won't be applied. To enforce VMAF on every job, disable the hardware decode toggles in the encoder section above.",
-      "hwWarning_other": "<b>⚠ VMAF will not run on hardware-decoded jobs.</b> VMAF compares the encoded output to software-decoded source frames. With <b2>{{count}}</b2> hardware decode toggles currently on ({{decoders}}), jobs that use those encoders will skip VMAF — no score is computed and the quality threshold won't be applied. To enforce VMAF on every job, disable the hardware decode toggles in the encoder section above.",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix. It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality. When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion. Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.",
       "score": "Score",
       "quality": "Quality",

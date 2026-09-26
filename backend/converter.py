@@ -2670,8 +2670,6 @@ async def convert_file(
         _hw_on_device = True  # filter chain skips hwupload; HW path is fully off via _hw_use=False
         print("[CONVERT] HW decode bypassed for disc input (ffmpeg protocol demux is software-only)", flush=True)
 
-    hw_decode_active = _hw_use
-
     # v0.5.9: resolve effective NVENC bit depth per job. The setting is
     # one of "10bit" / "8bit" / "auto":
     #   - "10bit": always main10 / p010le (pre-v0.5.9 hardcoded behaviour)
@@ -3294,19 +3292,11 @@ async def convert_file(
     # "measurement-suspect" glyph so a user staring at a "Poor" tier on a
     # visually-fine encode knows they shouldn't trust it. v0.3.32+.
     vmaf_uncertain = False
-    # v0.5.7: VMAF skipped when HW decode is active for this job.
-    # VMAF needs software-decoded source frames; running a second
-    # software-decode pass purely for VMAF reference would double
-    # source-file I/O. Skip silently here; the existing decision log
-    # below still prints, and this extra line makes the situation
-    # explicit in the worker log.
-    if vmaf_enabled and hw_decode_active:
-        print(
-            f"[CONVERT] VMAF skipped — hardware decode is active for this job "
-            f"(backend={_hw_backend}, on_device={_hw_on_device})",
-            flush=True,
-        )
-        vmaf_enabled = False
+    # v0.9.135: VMAF runs regardless of how the encode decoded its input.
+    # The VMAF pass is its own ffmpeg run that software-decodes a short
+    # window of both files from disk, so hardware decode (NVDEC / QSV /
+    # VAAPI / VideoToolbox) never affected it. v0.5.7–v0.9.134 skipped
+    # VMAF on every hardware-decoded job.
     # Always log the decision — previously a false `vmaf_enabled` silently skipped
     # the whole block, making "why didn't VMAF run?" impossible to answer without
     # re-reading settings and re-running.

@@ -143,14 +143,10 @@ for that specific job and logs the fallback in the worker output:
 
 No job failure, no UI noise — exotic codecs just take the slower path.
 
-**VMAF interaction.** VMAF compares software-decoded source frames to
-the encoded output. With hardware decode on, source frames live on the
-GPU and VMAF can't read them — re-decoding the source in software for
-VMAF alone would double source I/O. Shrinkerr skips VMAF on those jobs
-and logs the skip; the VMAF settings section shows a yellow warning chip
-listing which decoders are currently on. If you rely on
-`vmaf_min_score` as an auto-reject gate, disable the relevant hardware
-decode toggles to make VMAF run again.
+**VMAF interaction.** None (v0.9.135+). VMAF is measured in its own
+ffmpeg pass that software-decodes a 30-second window of the original and
+the encoded file, so it runs the same whether the encode used hardware
+decode or not. (v0.5.7–v0.9.134 skipped VMAF on hardware-decoded jobs.)
 
 **Distributed mode.** Hardware decode settings propagate from the server
 to remote workers automatically — see

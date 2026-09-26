@@ -39,8 +39,6 @@ Running natively gives you:
 
 - **NVENC / QSV / VAAPI are Linux-only.** On a Mac the choices are
   VideoToolbox (hardware) and libx265 (software).
-- **VMAF** needs an ffmpeg built with libvmaf, which Homebrew's isn't.
-  VMAF is also skipped for hardware-decoded jobs on every encoder.
 - **Disc-folder + ISO conversion** still works on Mac (uses libdvdread
   / libbluray bundled with brew's ffmpeg).
 
@@ -56,6 +54,10 @@ brew install python@3.11 ffmpeg node
 # Confirm ffmpeg has VideoToolbox compiled in (brew's default does)
 ffmpeg -encoders 2>/dev/null | grep -i videotoolbox
 # Expected: hevc_videotoolbox, h264_videotoolbox listed
+
+# Confirm ffmpeg has libvmaf, for VMAF quality scores (brew's ffmpeg 9+
+# does — on an older install, run `brew upgrade ffmpeg`)
+ffmpeg -filters 2>/dev/null | grep -w libvmaf
 ```
 
 If you don't see videotoolbox in the encoder list, brew's ffmpeg has
