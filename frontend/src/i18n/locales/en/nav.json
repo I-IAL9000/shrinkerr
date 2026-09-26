@@ -1,0 +1,56 @@
+{
+  "sidebar": {
+    "sections": {
+      "encode": "ENCODE",
+      "system": "SYSTEM",
+      "config": "CONFIG"
+    },
+    "dashboard": "Dashboard",
+    "scanner": "Scanner",
+    "queue": "Queue",
+    "nodes": "Nodes",
+    "monitor": "Monitor",
+    "activity": "Activity",
+    "logs": "Logs",
+    "schedule": "Schedule",
+    "settings": "Settings",
+    "newFiles_one": "{{count}} new",
+    "newFiles_other": "{{count}} new",
+    "menu": "Menu"
+  },
+  "settingsSections": {
+    "directories": "Directories",
+    "video": "Video",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "connections": "Connections",
+    "rules": "Rules",
+    "renaming": "Renaming",
+    "automation": "Automation",
+    "system": "System",
+    "updates": "Updates",
+    "support": "Support"
+  },
+  "version": {
+    "updateAvailable": "Update available",
+    "updateTooltip": "A newer version is available: v{{latest}} (you're on v{{current}})"
+  },
+  "login": {
+    "subtitle": "Sign in to continue",
+    "username": "Username",
+    "password": "Password",
+    "invalidCredentials": "Invalid credentials",
+    "connectionFailed": "Connection failed",
+    "signingIn": "Signing in...",
+    "signIn": "Sign In"
+  },
+  "toast": {
+    "queuePaused": "Queue paused",
+    "queueStarted": "Queue started"
+  },
+  "banner": {
+    "vmafRemeasuring": "Re-measuring VMAF — {{done}} of {{total}}",
+    "vmafStarting": "starting…",
+    "tmdbMissing": "<b>No TMDB API key configured</b> — titles can't be matched to metadata (native language, posters). <link>Add a free key in Settings → Metadata</link>."
+  }
+}

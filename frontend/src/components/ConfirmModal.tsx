@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, createContext, useContext } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ConfirmOptions {
   message: string;
@@ -25,6 +26,7 @@ export function useConfirm(): (options: ConfirmOptions | string) => Promise<bool
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation(["nav", "common"]);
   const [state, setState] = useState<(ConfirmOptions & { resolve: (v: boolean) => void }) | null>(null);
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
 
@@ -78,7 +80,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 className="btn btn-secondary"
                 style={{ fontSize: 13, padding: "6px 16px" }}
               >
-                {state.cancelLabel || "Cancel"}
+                {state.cancelLabel || t("common:actions.cancel")}
               </button>
               <button
                 onClick={handleConfirm}
@@ -88,7 +90,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   ...(state.danger ? { background: "#e94560", borderColor: "#e94560" } : {}),
                 }}
               >
-                {state.confirmLabel || "Confirm"}
+                {state.confirmLabel || t("common:actions.confirm")}
               </button>
             </div>
           </div>

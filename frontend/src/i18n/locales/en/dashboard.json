@@ -1,0 +1,162 @@
+{
+  "title": "Dashboard",
+  "loading": "Loading dashboard...",
+  "exportCsv": "Export CSV",
+  "exportJson": "Export JSON",
+  "live": {
+    "idle": "Idle",
+    "converting": "Converting",
+    "noActiveJobs": "No active jobs",
+    "fpsCombined": "{{fps}} fps combined"
+  },
+  "setup": {
+    "welcome": "Welcome to Shrinkerr",
+    "intro": "Convert your media library to x265 and reduce file size by 50-65% with no visible quality loss. Save space, bandwidth & money while retaining quality. Follow these steps to get started.",
+    "optional": "optional",
+    "goToDashboard": "Go to Dashboard",
+    "skip": "Skip setup — I know what I'm doing",
+    "dirs": {
+      "title": "Add media directories",
+      "description": "Tell Shrinkerr where your media files are stored so it can scan them.",
+      "action": "Go to Settings"
+    },
+    "scan": {
+      "title": "Scan your library",
+      "descriptionDone_one": "{{num}} file scanned. Run another scan to find new files.",
+      "descriptionDone_other": "{{num}} files scanned. Run another scan to find new files.",
+      "description": "Scan your media directories to find files that can be optimized. Posters and metadata are auto-fetched using the bundled TMDB key.",
+      "actionOpen": "Open Scanner",
+      "actionStart": "Start Scanning"
+    },
+    "customize": {
+      "title": "Customize your setup",
+      "description": "Optional polish: link Plex / Jellyfin / Sonarr / Radarr for label-based rules and library sync, fine-tune encoder presets, or add your own TMDB key for a dedicated rate-limit quota.",
+      "action": "Open Settings"
+    },
+    "queue": {
+      "title": "Start converting",
+      "description": "Add files to the queue and start converting to save disk space.",
+      "action": "Open Queue"
+    }
+  },
+  "cards": {
+    "pendingInQueue": "Pending in queue",
+    "failed_one": "{{num}} failed",
+    "failed_other": "{{num}} failed",
+    "completed_one": "{{num}} completed",
+    "completed_other": "{{num}} completed",
+    "totalSpaceSaved": "Total space saved",
+    "smallerFiles": "{{pct}}% smaller files",
+    "totalFreeDisk": "Total free disk space"
+  },
+  "today": {
+    "label": "Today",
+    "jobs": "jobs",
+    "saved": "saved",
+    "avgFpsPerJob": "avg fps/job",
+    "combinedFps": "combined fps",
+    "avgReduction": "avg reduction"
+  },
+  "empty": {
+    "title": "No conversion data yet",
+    "hint": "Start scanning and converting files to see statistics here."
+  },
+  "results": {
+    "title": "Processing Results",
+    "savedSpace": "Saved space",
+    "ignoredNoSavings": "Ignored (no savings)"
+  },
+  "summary": {
+    "title": "Summary",
+    "filesWithSavings": "Files with savings",
+    "filesIgnored": "Files ignored",
+    "avgTimePerFile": "Avg time per file",
+    "estRemaining": "Est. time remaining",
+    "days": "{{value}} days",
+    "totalSaved": "Total saved"
+  },
+  "projection": {
+    "projectedSavings": "projected savings",
+    "sentence": "At your current rate of <accent>{{rate}}/day</accent> ({{jobsPerDay}} jobs/day), converting the remaining <b>{{files}}</b> files ({{size}}) will take approximately <success>{{duration}}</success>.",
+    "years": "{{value}} years",
+    "months": "{{value}} months",
+    "days": "{{value}} days"
+  },
+  "conversion": {
+    "title": "Conversion Status",
+    "needsConverting": "Needs converting",
+    "converted": "Converted by Shrinkerr"
+  },
+  "audioCleanup": {
+    "title": "Audio Cleanup Status",
+    "needsCleanup": "Needs cleanup",
+    "cleaned": "Cleaned by Shrinkerr"
+  },
+  "library": {
+    "videoCodecs": "Video Codecs (All Scanned)",
+    "avgReductionBySource": "Avg Reduction by Source",
+    "sourceTypes": "Source Types",
+    "resolution": "Resolution"
+  },
+  "vmaf": {
+    "scores": "VMAF Scores",
+    "details": "VMAF Details",
+    "totalScored": "Total scored",
+    "average": "Average VMAF"
+  },
+  "trends": {
+    "title": "Trends",
+    "cumulativeSaved": "Cumulative Space Saved",
+    "tbSaved": "TB Saved",
+    "avgFpsPerJob": "Avg FPS per Job",
+    "avgFpsJobSeries": "Avg FPS/Job",
+    "fpsValue": "{{value}} fps",
+    "dailySaved": "Daily Space Saved",
+    "gbSaved": "GB Saved",
+    "dailyConversions": "Daily Conversions",
+    "jobs": "Jobs"
+  },
+  "deepDive": {
+    "sizeDistribution": "File Size Distribution",
+    "savedByLibrary": "Saved by Library",
+    "topSavings": "Top 10 Biggest Savings"
+  },
+  "bandwidth": {
+    "avgReduction": "avg reduction",
+    "description": "Converted files use {{pct}}% less streaming bandwidth per viewer. For remote Plex streaming this means fewer buffering issues and lower upload usage."
+  },
+  "languages": {
+    "native": "Native Languages (Scanned Titles)",
+    "audioTracks": "Audio Track Languages (All Scanned)",
+    "tracksAcrossFiles": "{{tracks}} total audio tracks across {{files}} files"
+  },
+  "audioRemoval": {
+    "title": "Audio Track Removal",
+    "removedCompleted": "Tracks removed (completed)",
+    "markedForRemoval": "Tracks marked for removal",
+    "totalScanned": "Total tracks scanned",
+    "avgPerFile": "Avg tracks per file",
+    "byLanguage": "Tracks Marked for Removal by Language"
+  },
+  "cloud": {
+    "title": "Cloud Storage Savings",
+    "description": "If your library were in the cloud, you'd save this much per month by reclaiming {{tb}} TB:",
+    "perMonth": "${{amount}}/mo"
+  },
+  "drives": {
+    "title": "Drives Saved",
+    "description": "You've reclaimed <strong>{{amount}}</strong> — that's fewer drives you need:",
+    "drivesSaved_one": "{{count}} drive saved",
+    "drivesSaved_other": "{{count}} drives saved",
+    "pctOfDrive": "{{pct}}% of a drive",
+    "moneySaved": "${{amount}} saved"
+  },
+  "efficiency": {
+    "title": "Encoding Efficiency by Source",
+    "description": "Which source types compress best? Higher % = more efficient. Focus encoding efforts on the best performers.",
+    "files_one": "{{num}} file",
+    "files_other": "{{num}} files",
+    "saved": "{{size}} saved",
+    "originalToEncoded": "{{original}} original → {{encoded}} encoded"
+  }
+}

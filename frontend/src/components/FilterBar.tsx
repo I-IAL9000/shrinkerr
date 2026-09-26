@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface FilterBarProps {
   activeFilters: string[];
   onFilterToggle: (filter: string) => void;
@@ -5,57 +7,59 @@ interface FilterBarProps {
   counts?: Record<string, number>;
 }
 
-const FILTERS: { key: string; label: string; group?: string }[] = [
-  { key: "all", label: "All" },
-  { key: "new", label: "New" },
-  { key: "needs_conversion", label: "Needs conversion" },
-  { key: "disc_iso", label: "Disc / ISO" },
-  { key: "high_bitrate", label: "High bitrate" },
-  { key: "low_bitrate", label: "Low bitrate" },
-  { key: "sub_cleanup", label: "Subtitle cleanup" },
-  { key: "unknown_language", label: "Unknown language" },
-  { key: "ignored", label: "Ignored" },
-  { key: "duplicates", label: "Duplicates" },
-  { key: "corrupt", label: "Corrupt" },
-  { key: "converted", label: "Converted" },
-  { key: "queued", label: "Queued" },
+// `labelKey` is a translation key resolved at render time; `label` is a
+// literal kept for pure tech tokens (codecs, resolutions, source tags).
+const FILTERS: { key: string; label?: string; labelKey?: string; group?: string }[] = [
+  { key: "all", labelKey: "scanner:filters.all" },
+  { key: "new", labelKey: "scanner:filters.new" },
+  { key: "needs_conversion", labelKey: "scanner:filters.needsConversion" },
+  { key: "disc_iso", labelKey: "scanner:filters.discIso" },
+  { key: "high_bitrate", labelKey: "scanner:filters.highBitrate" },
+  { key: "low_bitrate", labelKey: "scanner:filters.lowBitrate" },
+  { key: "sub_cleanup", labelKey: "scanner:filters.subCleanup" },
+  { key: "unknown_language", labelKey: "scanner:filters.unknownLanguage" },
+  { key: "ignored", labelKey: "scanner:filters.ignored" },
+  { key: "duplicates", labelKey: "scanner:filters.duplicates" },
+  { key: "corrupt", labelKey: "scanner:filters.corrupt" },
+  { key: "converted", labelKey: "scanner:filters.converted" },
+  { key: "queued", labelKey: "scanner:filters.queued" },
   // Video group
-  { key: "_video", label: "Video:", group: "divider" },
+  { key: "_video", labelKey: "scanner:filters.groups.video", group: "divider" },
   { key: "x264", label: "x264" },
   { key: "x265", label: "x265" },
   { key: "av1", label: "AV1" },
-  { key: "misc_codec", label: "Other codecs" },
+  { key: "misc_codec", labelKey: "scanner:filters.otherCodecs" },
   // Resolution group
-  { key: "_res", label: "Res:", group: "divider" },
+  { key: "_res", labelKey: "scanner:filters.groups.resolution", group: "divider" },
   { key: "res_4k", label: "4K" },
   { key: "res_1080p", label: "1080p" },
   { key: "res_720p", label: "720p" },
   { key: "res_sd", label: "SD" },
   // Size group
-  { key: "_size", label: "Size:", group: "divider" },
-  { key: "size_small", label: "Small (<5 GB)" },
-  { key: "size_medium", label: "Medium (5-10 GB)" },
-  { key: "size_large", label: "Large (>10 GB)" },
+  { key: "_size", labelKey: "scanner:filters.groups.size", group: "divider" },
+  { key: "size_small", labelKey: "scanner:filters.sizeSmall" },
+  { key: "size_medium", labelKey: "scanner:filters.sizeMedium" },
+  { key: "size_large", labelKey: "scanner:filters.sizeLarge" },
   // Audio group
-  { key: "_audio", label: "Audio:", group: "divider" },
-  { key: "audio_cleanup", label: "Audio cleanup" },
-  { key: "lossless_audio", label: "Lossless audio" },
-  { key: "lossy_audio", label: "Lossy audio" },
+  { key: "_audio", labelKey: "scanner:filters.groups.audio", group: "divider" },
+  { key: "audio_cleanup", labelKey: "scanner:filters.audioCleanup" },
+  { key: "lossless_audio", labelKey: "scanner:filters.losslessAudio" },
+  { key: "lossy_audio", labelKey: "scanner:filters.lossyAudio" },
   // Language group
-  { key: "_lang", label: "Language:", group: "divider" },
-  { key: "dubbed", label: "Dubbed" },
-  { key: "not_api_matched", label: "Not API-matched" },
+  { key: "_lang", labelKey: "scanner:filters.groups.language", group: "divider" },
+  { key: "dubbed", labelKey: "scanner:filters.dubbed" },
+  { key: "not_api_matched", labelKey: "scanner:filters.notApiMatched" },
   // Plex group
   { key: "_plex", label: "Plex:", group: "divider" },
-  { key: "plex_watched", label: "Watched" },
-  { key: "plex_unwatched", label: "Unwatched" },
+  { key: "plex_watched", labelKey: "scanner:filters.watched" },
+  { key: "plex_unwatched", labelKey: "scanner:filters.unwatched" },
   // Type group
-  { key: "_type", label: "Type:", group: "divider" },
-  { key: "type_movie", label: "Movies" },
-  { key: "type_tv", label: "TV Shows" },
-  { key: "type_other", label: "Other" },
+  { key: "_type", labelKey: "scanner:filters.groups.type", group: "divider" },
+  { key: "type_movie", labelKey: "scanner:filters.movies" },
+  { key: "type_tv", labelKey: "scanner:filters.tvShows" },
+  { key: "type_other", labelKey: "scanner:filters.other" },
   // Source group
-  { key: "_source", label: "Source:", group: "divider" },
+  { key: "_source", labelKey: "scanner:filters.groups.source", group: "divider" },
   { key: "src_remux", label: "Remux" },
   { key: "src_bluray", label: "Blu-ray" },
   { key: "src_webdl", label: "WEB-DL" },
@@ -63,17 +67,26 @@ const FILTERS: { key: string; label: string; group?: string }[] = [
   { key: "src_dvd", label: "DVD" },
   // VMAF group
   { key: "_vmaf", label: "VMAF:", group: "divider" },
-  { key: "vmaf_excellent", label: "Excellent (93+)" },
-  { key: "vmaf_good", label: "Good (87-93)" },
-  { key: "vmaf_poor", label: "Poor (<87)" },
+  { key: "vmaf_excellent", labelKey: "scanner:filters.vmafExcellent" },
+  { key: "vmaf_good", labelKey: "scanner:filters.vmafGood" },
+  { key: "vmaf_poor", labelKey: "scanner:filters.vmafPoor" },
 ];
 
-export const FILTER_LABELS: Record<string, string> = {};
+// Maps filter key → translation key (or literal tech-token label). Resolve
+// with `filterLabel(key, t)` at render time.
+const FILTER_LABELS: Record<string, { label?: string; labelKey?: string }> = {};
 for (const f of FILTERS) {
-  if (!f.group) FILTER_LABELS[f.key] = f.label;
+  if (!f.group) FILTER_LABELS[f.key] = f;
+}
+
+export function filterLabel(key: string, t: (k: string) => string): string | undefined {
+  const f = FILTER_LABELS[key];
+  if (!f) return undefined;
+  return f.labelKey ? t(f.labelKey) : f.label;
 }
 
 export default function FilterBar({ activeFilters, onFilterToggle, newCount, counts }: FilterBarProps) {
+  const { t } = useTranslation(["scanner", "common"]);
   const isAll = activeFilters.length === 0 || (activeFilters.length === 1 && activeFilters[0] === "all");
 
   return (
@@ -84,7 +97,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           return (
             <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
               <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-              <span style={{ opacity: 0.4, fontSize: 12 }}>{f.label}</span>
+              <span style={{ opacity: 0.4, fontSize: 12 }}>{f.labelKey ? t(f.labelKey) : f.label}</span>
             </span>
           );
         }
@@ -97,7 +110,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
             onClick={() => onFilterToggle(f.key)}
             style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
           >
-            {f.label}
+            {f.labelKey ? t(f.labelKey) : f.label}
             {count != null && count > 0 && (
               <span style={{
                 background: f.key === "new" ? "var(--accent)" : "rgba(104,96,254,0.3)",

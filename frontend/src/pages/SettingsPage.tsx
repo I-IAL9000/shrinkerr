@@ -21,6 +21,8 @@ import {
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
 import { useToast } from "../useToast";
+import { useTranslation } from "react-i18next";
+import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
 
 const PRESET_INFO: Record<string, { label: string; desc: string }> = {
   p1: { label: "Fastest", desc: "Lowest quality, highest speed. Good for quick tests." },
@@ -262,6 +264,7 @@ function VmafRemeasureRow() {
 
 export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
   const toast = useToast();
+  const { t, i18n } = useTranslation(["settings", "common"]);
   const pageRef = useRef<HTMLDivElement>(null);
   // Paint slider fills inside this page only. See useRangeFill.ts for why
   // this replaced the old document-body MutationObserver.
@@ -4577,12 +4580,30 @@ volumes:
 
           {/* User Interface */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>User Interface</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settings:ui.title")}</h3>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("common:language.label")}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, maxWidth: 480 }}>
+                  {t("common:language.help")}
+                </div>
+              </div>
+              <select
+                value={(LANGUAGES.find((l) => i18n.language?.startsWith(l.code))?.code) ?? "en"}
+                onChange={(e) => setLanguage(e.target.value as LanguageCode)}
+                aria-label={t("common:language.label")}
+                style={{ ...inputStyle, width: "auto", minWidth: 140 }}
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+            </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>Theme</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settings:ui.theme")}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  Switch between dark and light mode
+                  {t("settings:ui.themeHelp")}
                 </div>
               </div>
               <button
@@ -4595,7 +4616,7 @@ volumes:
                 ) : (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                 )}
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                {theme === "dark" ? t("settings:ui.lightMode") : t("settings:ui.darkMode")}
               </button>
             </div>
           </div>

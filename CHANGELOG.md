@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.131] — 2026-09-26
+
+### Added
+- **Interface localization, with Spanish as the first translation.** Pick a language under Settings → System → User Interface (English stays the default). The navigation, Dashboard, Queue, and Scanner toolbar/filters are translated; remaining screens and server-generated messages are still English and will follow.
+
 ## [0.9.130] — 2026-09-26
 
 ### Added

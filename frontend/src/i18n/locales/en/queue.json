@@ -1,0 +1,207 @@
+{
+  "title": "Queue",
+  "loadingQueue": "Loading queue...",
+  "starting": "Starting...",
+  "tabs": {
+    "pendingRemaining_one": "Pending ({{formatted}} remaining)",
+    "pendingRemaining_other": "Pending ({{formatted}} remaining)",
+    "completedSaved": "Completed ({{formatted}} · saved {{saved}})",
+    "failedCount": "Failed ({{formatted}})"
+  },
+  "search": {
+    "placeholder": "Search {{tab}} by filename…"
+  },
+  "empty": {
+    "pending": "No pending jobs.",
+    "pendingSearch": "No pending jobs match “{{search}}”.",
+    "loadingCompleted": "Loading completed jobs...",
+    "completed": "No completed jobs yet.",
+    "completedSearch": "No completed jobs match “{{search}}”.",
+    "loadingFailed": "Loading failed jobs...",
+    "failed": "No failed jobs.",
+    "failedSearch": "No failed jobs match “{{search}}”."
+  },
+  "actions": {
+    "clearDone": "Clear done",
+    "retryAll": "Retry all",
+    "rerequestAll": "Re-request all (Sonarr/Radarr)"
+  },
+  "streamPause": {
+    "title": "Encoding paused",
+    "activeStreams_one": "— active stream on {{servers}}",
+    "activeStreams_other": "— active streams on {{servers}}",
+    "frozen_one": "({{count}} job frozen, will resume when stream ends)",
+    "frozen_other": "({{count}} jobs frozen, will resume when stream ends)"
+  },
+  "positions": {
+    "top": "to the top",
+    "bottom": "to the bottom",
+    "up": "up",
+    "down": "down"
+  },
+  "priority": {
+    "normal": "Normal",
+    "high": "High",
+    "highest": "Highest"
+  },
+  "toasts": {
+    "queuePaused": "Queue paused",
+    "queueStarted": "Queue started",
+    "conversionCancelled": "Conversion cancelled",
+    "fileIgnored": "File ignored and removed from queue",
+    "moving_one": "Moving {{count}} job {{position}}",
+    "moving_other": "Moving {{count}} jobs {{position}}",
+    "videoPresetApplied_one": "Video preset applied to {{count}} job",
+    "videoPresetApplied_other": "Video preset applied to {{count}} jobs",
+    "audioPresetApplied_one": "Audio preset applied to {{count}} job",
+    "audioPresetApplied_other": "Audio preset applied to {{count}} jobs",
+    "ignored_one": "{{count}} job ignored",
+    "ignored_other": "{{count}} jobs ignored",
+    "removed_one": "{{count}} job removed",
+    "removed_other": "{{count}} jobs removed",
+    "prioritySet": "Priority set to {{priority}}",
+    "retrying_one": "Retrying {{count}} failed job",
+    "retrying_other": "Retrying {{count}} failed jobs",
+    "noFilePaths": "No file paths on these jobs",
+    "rerequested_one": "Re-requested {{count}} file from Sonarr/Radarr",
+    "rerequested_other": "Re-requested {{count}} files from Sonarr/Radarr",
+    "rerequestPartial": "{{succeeded}} re-requested, {{failed}} failed (check logs)",
+    "clearedFailed_one": "Cleared {{count}} failed job",
+    "clearedFailed_other": "Cleared {{count}} failed jobs"
+  },
+  "confirm": {
+    "ignoreSelected_one": "Ignore {{count}} selected job?",
+    "ignoreSelected_other": "Ignore {{count}} selected jobs?",
+    "removeSelected_one": "Remove {{count}} selected job from queue?",
+    "removeSelected_other": "Remove {{count}} selected jobs from queue?",
+    "clearPending_one": "Clear all {{count}} pending item?",
+    "clearPending_other": "Clear all {{count}} pending items?",
+    "rerequest_one": "Re-request {{count}} file from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.",
+    "rerequest_other": "Re-request {{count}} files from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.",
+    "rerequestLabel": "Re-request {{count}}",
+    "clearFailed_one": "Clear all {{count}} failed job?",
+    "clearFailed_other": "Clear all {{count}} failed jobs?"
+  },
+  "card": {
+    "now": "Now {{step}}",
+    "processing": "Processing",
+    "jobOf": "Job {{current}} of {{total}}",
+    "cancelConfirm": "Cancel the current conversion? The temp file will be deleted and the original kept.",
+    "cancelConversion": "Cancel conversion",
+    "cancelTitle": "Cancel current conversion",
+    "analyzingQuality": "Analyzing quality...",
+    "audio": "Audio: {{codec}} / {{bitrate}}k",
+    "lossless": "Lossless → {{codec}} / {{bitrate}}k",
+    "removingAudio_one": "Removing {{count}} audio track",
+    "removingAudio_other": "Removing {{count}} audio tracks",
+    "streams": "streams: {{list}}",
+    "removingSubs_one": "Removing {{count}} subtitle",
+    "removingSubs_other": "Removing {{count}} subtitles",
+    "eta": "ETA: {{eta}}",
+    "onNode": "on {{node}}"
+  },
+  "item": {
+    "type": {
+      "convert": "Convert",
+      "audio": "Audio",
+      "subs": "Subs",
+      "cleanup": "Cleanup",
+      "healthCheck": "Health check",
+      "audioSubCleanup": "Audio + Sub cleanup",
+      "subCleanup": "Sub cleanup",
+      "audioCleanup": "Audio cleanup",
+      "remux": "Remux"
+    },
+    "healthWarnTitle": "Health check surfaced warnings (file is playable)",
+    "noSavingsTitle": "No space savings — file was auto-ignored after conversion",
+    "corruptTitle": "Health check flagged this file as corrupt",
+    "badgeHighest": "HIGHEST",
+    "badgeHigh": "HIGH",
+    "corrupt": "Corrupt",
+    "healthy": "Healthy",
+    "saved": "saved {{size}}",
+    "vmafRejected": "VMAF rejected",
+    "ignored": "Ignored",
+    "restoreOriginal": "Restore original",
+    "ignoreFile": "Ignore this file",
+    "removeFromQueue": "Remove from queue",
+    "loadingDetails": "Loading conversion details...",
+    "noDetails": "No conversion details available",
+    "noErrorDetails": "No error details available",
+    "loadingLog": "Loading log…",
+    "stats": {
+      "original": "Original",
+      "cleaned": "Cleaned",
+      "encoded": "Encoded",
+      "size": "Size",
+      "largerDiscarded": "({{pct}}% larger — discarded)",
+      "savedPct": "({{pct}}% saved)",
+      "bitrate": "Bitrate",
+      "codec": "Codec",
+      "audio": "Audio",
+      "audioRemoved": "Audio removed",
+      "subsRemoved": "Subs removed",
+      "tracks_one": "{{count}} track",
+      "tracks_other": "{{count}} tracks",
+      "languageApplied": "Language applied",
+      "audioArrow": "audio → {{langs}}",
+      "vmafRef": "100 (ref)",
+      "vmafUncertain": "VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Encoding → VMAF."
+    },
+    "vmafBanner": {
+      "title": "Encode rejected by VMAF threshold",
+      "body": "The original file was kept. Retry with a lower CQ/CRF or a slower preset to get a better score, or lower the threshold in Settings → Video."
+    },
+    "details": {
+      "encoder": "Encoder:",
+      "preset": "Preset:",
+      "encodeTime": "Encode time:",
+      "type": "Type:",
+      "total": "Total:",
+      "started": "Started:",
+      "failed": "Failed:",
+      "size": "Size:"
+    },
+    "health": {
+      "label": "Health check",
+      "more": "...and {{count}} more"
+    },
+    "log": {
+      "ffmpegCommand": "ffmpeg command",
+      "copyCommand": "Copy command",
+      "showOutput_one": "Show ffmpeg output ({{count}} line)",
+      "showOutput_other": "Show ffmpeg output ({{count}} lines)",
+      "hideOutput_one": "Hide ffmpeg output ({{count}} line)",
+      "hideOutput_other": "Hide ffmpeg output ({{count}} lines)",
+      "ffmpegLog": "ffmpeg log",
+      "lastLines_one": "(last {{count}} line)",
+      "lastLines_other": "(last {{count}} lines)"
+    }
+  },
+  "panel": {
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected",
+    "deselect": "Deselect",
+    "moveTop": "Move to top",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveBottom": "Move to bottom",
+    "videoPresetPlaceholder": "Video preset...",
+    "audioPresetPlaceholder": "Audio preset...",
+    "priorityPlaceholder": "Priority...",
+    "videoPresets": {
+      "maxQuality": "Max quality",
+      "qualityFirst": "Quality first",
+      "balanced": "Balanced",
+      "spaceSaver": "Space saver",
+      "maxCompression": "Max compression",
+      "potato": "Potato mode 🥔"
+    },
+    "audioPresets": {
+      "copy": "Copy (no conversion)",
+      "bluray": "Blu-ray quality",
+      "streaming": "streaming",
+      "compact": "compact"
+    }
+  }
+}

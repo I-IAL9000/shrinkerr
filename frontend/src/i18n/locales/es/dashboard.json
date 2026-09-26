@@ -1,0 +1,167 @@
+{
+  "title": "Panel",
+  "loading": "Cargando panel...",
+  "exportCsv": "Exportar CSV",
+  "exportJson": "Exportar JSON",
+  "live": {
+    "idle": "Inactivo",
+    "converting": "Convirtiendo",
+    "noActiveJobs": "Sin trabajos activos",
+    "fpsCombined": "{{fps}} fps combinados"
+  },
+  "setup": {
+    "welcome": "Bienvenido a Shrinkerr",
+    "intro": "Convierte tu biblioteca multimedia a x265 y reduce el tamaño de los archivos entre un 50 y un 65 % sin pérdida de calidad visible. Ahorra espacio, ancho de banda y dinero sin sacrificar calidad. Sigue estos pasos para empezar.",
+    "optional": "opcional",
+    "goToDashboard": "Ir al panel",
+    "skip": "Omitir configuración — sé lo que hago",
+    "dirs": {
+      "title": "Añadir directorios multimedia",
+      "description": "Indica a Shrinkerr dónde están tus archivos multimedia para que pueda escanearlos.",
+      "action": "Ir a Ajustes"
+    },
+    "scan": {
+      "title": "Escanear tu biblioteca",
+      "descriptionDone_one": "{{num}} archivo escaneado. Ejecuta otro escaneo para encontrar archivos nuevos.",
+      "descriptionDone_many": "{{num}} archivos escaneados. Ejecuta otro escaneo para encontrar archivos nuevos.",
+      "descriptionDone_other": "{{num}} archivos escaneados. Ejecuta otro escaneo para encontrar archivos nuevos.",
+      "description": "Escanea tus directorios multimedia para encontrar archivos que se pueden optimizar. Los pósteres y metadatos se obtienen automáticamente con la clave de TMDB incluida.",
+      "actionOpen": "Abrir escáner",
+      "actionStart": "Empezar a escanear"
+    },
+    "customize": {
+      "title": "Personalizar la configuración",
+      "description": "Ajustes opcionales: conecta Plex / Jellyfin / Sonarr / Radarr para reglas basadas en etiquetas y sincronización de biblioteca, ajusta los preajustes del codificador o añade tu propia clave de TMDB para disponer de una cuota de peticiones dedicada.",
+      "action": "Abrir Ajustes"
+    },
+    "queue": {
+      "title": "Empezar a convertir",
+      "description": "Añade archivos a la cola y empieza a convertir para ahorrar espacio en disco.",
+      "action": "Abrir cola"
+    }
+  },
+  "cards": {
+    "pendingInQueue": "Pendientes en cola",
+    "failed_one": "{{num}} fallido",
+    "failed_many": "{{num}} fallidos",
+    "failed_other": "{{num}} fallidos",
+    "completed_one": "{{num}} completado",
+    "completed_many": "{{num}} completados",
+    "completed_other": "{{num}} completados",
+    "totalSpaceSaved": "Espacio total ahorrado",
+    "smallerFiles": "Archivos un {{pct}} % más pequeños",
+    "totalFreeDisk": "Espacio libre total en disco"
+  },
+  "today": {
+    "label": "Hoy",
+    "jobs": "trabajos",
+    "saved": "ahorrado",
+    "avgFpsPerJob": "fps medios/trabajo",
+    "combinedFps": "fps combinados",
+    "avgReduction": "reducción media"
+  },
+  "empty": {
+    "title": "Aún no hay datos de conversión",
+    "hint": "Empieza a escanear y convertir archivos para ver estadísticas aquí."
+  },
+  "results": {
+    "title": "Resultados del procesamiento",
+    "savedSpace": "Espacio ahorrado",
+    "ignoredNoSavings": "Ignorados (sin ahorro)"
+  },
+  "summary": {
+    "title": "Resumen",
+    "filesWithSavings": "Archivos con ahorro",
+    "filesIgnored": "Archivos ignorados",
+    "avgTimePerFile": "Tiempo medio por archivo",
+    "estRemaining": "Tiempo restante estimado",
+    "days": "{{value}} días",
+    "totalSaved": "Total ahorrado"
+  },
+  "projection": {
+    "projectedSavings": "ahorro previsto",
+    "sentence": "Al ritmo actual de <accent>{{rate}}/día</accent> ({{jobsPerDay}} trabajos/día), convertir los <b>{{files}}</b> archivos restantes ({{size}}) llevará aproximadamente <success>{{duration}}</success>.",
+    "years": "{{value}} años",
+    "months": "{{value}} meses",
+    "days": "{{value}} días"
+  },
+  "conversion": {
+    "title": "Estado de conversión",
+    "needsConverting": "Requiere conversión",
+    "converted": "Convertido por Shrinkerr"
+  },
+  "audioCleanup": {
+    "title": "Estado de limpieza de audio",
+    "needsCleanup": "Requiere limpieza",
+    "cleaned": "Limpiado por Shrinkerr"
+  },
+  "library": {
+    "videoCodecs": "Códecs de vídeo (todo lo escaneado)",
+    "avgReductionBySource": "Reducción media por origen",
+    "sourceTypes": "Tipos de origen",
+    "resolution": "Resolución"
+  },
+  "vmaf": {
+    "scores": "Puntuaciones VMAF",
+    "details": "Detalles de VMAF",
+    "totalScored": "Total puntuados",
+    "average": "VMAF medio"
+  },
+  "trends": {
+    "title": "Tendencias",
+    "cumulativeSaved": "Espacio ahorrado acumulado",
+    "tbSaved": "TB ahorrados",
+    "avgFpsPerJob": "FPS medios por trabajo",
+    "avgFpsJobSeries": "FPS medios/trabajo",
+    "fpsValue": "{{value}} fps",
+    "dailySaved": "Espacio ahorrado diario",
+    "gbSaved": "GB ahorrados",
+    "dailyConversions": "Conversiones diarias",
+    "jobs": "Trabajos"
+  },
+  "deepDive": {
+    "sizeDistribution": "Distribución de tamaño de archivo",
+    "savedByLibrary": "Ahorro por biblioteca",
+    "topSavings": "Los 10 mayores ahorros"
+  },
+  "bandwidth": {
+    "avgReduction": "reducción media",
+    "description": "Los archivos convertidos usan un {{pct}} % menos de ancho de banda de streaming por espectador. En el streaming remoto de Plex esto significa menos problemas de búfer y menor uso de subida."
+  },
+  "languages": {
+    "native": "Idiomas originales (títulos escaneados)",
+    "audioTracks": "Idiomas de pistas de audio (todo lo escaneado)",
+    "tracksAcrossFiles": "{{tracks}} pistas de audio en total en {{files}} archivos"
+  },
+  "audioRemoval": {
+    "title": "Eliminación de pistas de audio",
+    "removedCompleted": "Pistas eliminadas (completado)",
+    "markedForRemoval": "Pistas marcadas para eliminar",
+    "totalScanned": "Total de pistas escaneadas",
+    "avgPerFile": "Media de pistas por archivo",
+    "byLanguage": "Pistas marcadas para eliminar por idioma"
+  },
+  "cloud": {
+    "title": "Ahorro en almacenamiento en la nube",
+    "description": "Si tu biblioteca estuviera en la nube, ahorrarías esto al mes al recuperar {{tb}} TB:",
+    "perMonth": "${{amount}}/mes"
+  },
+  "drives": {
+    "title": "Discos ahorrados",
+    "description": "Has recuperado <strong>{{amount}}</strong>, es decir, necesitas menos discos:",
+    "drivesSaved_one": "{{count}} disco ahorrado",
+    "drivesSaved_many": "{{count}} discos ahorrados",
+    "drivesSaved_other": "{{count}} discos ahorrados",
+    "pctOfDrive": "{{pct}} % de un disco",
+    "moneySaved": "${{amount}} ahorrados"
+  },
+  "efficiency": {
+    "title": "Eficiencia de codificación por origen",
+    "description": "¿Qué tipos de origen se comprimen mejor? Mayor % = más eficiente. Centra la codificación en los que mejor rinden.",
+    "files_one": "{{num}} archivo",
+    "files_many": "{{num}} archivos",
+    "files_other": "{{num}} archivos",
+    "saved": "{{size}} ahorrados",
+    "originalToEncoded": "{{original}} original → {{encoded}} codificado"
+  }
+}

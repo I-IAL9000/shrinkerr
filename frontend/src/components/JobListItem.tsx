@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
 import { getJobLog } from "../api";
 import { vmafColor, vmafLabel } from "../utils/vmaf";
@@ -34,6 +35,7 @@ const iconBtnStyle: React.CSSProperties = {
 };
 
 function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults }: JobListItemProps) {
+  const { t } = useTranslation(["queue", "common"]);
   const [expanded, setExpanded] = useState(false);
   const [logData, setLogData] = useState<any>(null);
   const [logLoading, setLogLoading] = useState(false);
@@ -42,17 +44,17 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
   const hasAudioRemoval = job.audio_tracks_to_remove && job.audio_tracks_to_remove.length > 0;
   const hasSubRemoval = job.subtitle_tracks_to_remove && job.subtitle_tracks_to_remove.length > 0;
   const typeBadge = job.job_type === "combined"
-    ? `Convert${hasAudioRemoval ? " + Audio" : ""}${hasSubRemoval ? " + Subs" : ""}${!hasAudioRemoval && !hasSubRemoval ? " + Cleanup" : ""}`
-    : job.job_type === "convert" ? "Convert"
-    : job.job_type === "health_check" ? `Health check${job.encoder ? ` (${job.encoder})` : ""}`
+    ? `${t("queue:item.type.convert")}${hasAudioRemoval ? ` + ${t("queue:item.type.audio")}` : ""}${hasSubRemoval ? ` + ${t("queue:item.type.subs")}` : ""}${!hasAudioRemoval && !hasSubRemoval ? ` + ${t("queue:item.type.cleanup")}` : ""}`
+    : job.job_type === "convert" ? t("queue:item.type.convert")
+    : job.job_type === "health_check" ? `${t("queue:item.type.healthCheck")}${job.encoder ? ` (${job.encoder})` : ""}`
     // v0.9.68: handle the both-removals case explicitly — it previously fell
     // through to "Remux", mislabelling an audio+sub cleanup as a plain remux.
-    : hasAudioRemoval && hasSubRemoval ? "Audio + Sub cleanup"
-    : hasSubRemoval ? "Sub cleanup"
-    : hasAudioRemoval ? "Audio cleanup"
+    : hasAudioRemoval && hasSubRemoval ? t("queue:item.type.audioSubCleanup")
+    : hasSubRemoval ? t("queue:item.type.subCleanup")
+    : hasAudioRemoval ? t("queue:item.type.audioCleanup")
     // v0.9.38: an audio job with no track removal is a stream-copy remux
     // (e.g. apply a detected language to an AVI) — not a "cleanup".
-    : "Remux";
+    : t("queue:item.type.remux");
 
   const canExpand = job.status === "failed" || job.status === "completed";
 
@@ -90,13 +92,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                                   : false;
         const showAmber = isHealthWarn || (!isHealthCorrupt && noSavings);
         const amberTitle = isHealthWarn
-          ? "Health check surfaced warnings (file is playable)"
-          : "No space savings — file was auto-ignored after conversion";
+          ? t("queue:item.healthWarnTitle")
+          : t("queue:item.noSavingsTitle");
         return (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: 34, flexShrink: 0 }}>
             {isHealthCorrupt ? (
               <span
-                title={job.error_log || "Health check flagged this file as corrupt"}
+                title={job.error_log || t("queue:item.corruptTitle")}
                 style={{ color: "var(--danger, #e94560)", fontSize: 14, display: "inline-flex", alignItems: "center" }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -151,7 +153,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             background: (job as any).priority >= 2 ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
             color: (job as any).priority >= 2 ? "#e94560" : "#ffa94d",
           }}>
-            {(job as any).priority >= 2 ? "HIGHEST" : "HIGH"}
+            {(job as any).priority >= 2 ? t("queue:item.badgeHighest") : t("queue:item.badgeHigh")}
           </span>
         )}
       </span>
@@ -162,16 +164,16 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               <span
                 title={job.error_log}
                 style={{ fontSize: 11, color: "#ffffff", background: "var(--danger)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
-              >Corrupt</span>
+              >{t("queue:item.corrupt")}</span>
             ) : (
               <span
                 style={{ fontSize: 11, color: "#ffffff", background: "var(--success)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
-              >Healthy</span>
+              >{t("queue:item.healthy")}</span>
             )
           ) : (
             <>
               {job.space_saved > 0 && (
-                <span style={{ color: "var(--success)", fontSize: 11 }}>saved {formatBytes(job.space_saved)}</span>
+                <span style={{ color: "var(--success)", fontSize: 11 }}>{t("queue:item.saved", { size: formatBytes(job.space_saved) })}</span>
               )}
               {job.space_saved <= 0 && job.error_log?.startsWith("VMAF ") ? (
                 // VMAF-rejected encodes get a distinct amber badge so the
@@ -182,10 +184,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   title={job.error_log}
                   style={{ fontSize: 11, color: "#ffa94d", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
                 >
-                  VMAF rejected
+                  {t("queue:item.vmafRejected")}
                 </span>
               ) : job.space_saved <= 0 ? (
-                <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>Ignored</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>{t("queue:item.ignored")}</span>
               ) : null}
             </>
           )}
@@ -193,7 +195,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             <button
               onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}
               style={{ ...iconBtnStyle, color: "var(--accent)", marginLeft: 4, fontSize: 14 }}
-              title="Restore original"
+              title={t("queue:item.restoreOriginal")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
@@ -202,7 +204,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
             style={{ ...iconBtnStyle, color: "var(--text-muted)", marginLeft: 4 }}
-            title="Remove">
+            title={t("common:actions.remove")}>
             &times;
           </button>
         </>
@@ -211,11 +213,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         <>
           {onRetry && (
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "2px 8px" }}
-              onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>Retry</button>
+              onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>{t("common:actions.retry")}</button>
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
             style={{ ...iconBtnStyle, color: "#e94560", marginLeft: 8 }}
-            title="Remove">
+            title={t("common:actions.remove")}>
             &times;
           </button>
         </>
@@ -237,13 +239,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {onIgnore && (
               <button onClick={() => onIgnore(job.id, job.file_path)}
                 style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
-                title="Ignore this file">
+                title={t("queue:item.ignoreFile")}>
                 &#x2298;
               </button>
             )}
             <button onClick={() => onCancel(job.id)}
               style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
-              title="Remove from queue">
+              title={t("queue:item.removeFromQueue")}>
               &times;
             </button>
           </div>
@@ -260,7 +262,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         {logLoading ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div className="spinner" style={{ width: 14, height: 14 }} />
-            <span style={{ color: "var(--text-muted)" }}>Loading conversion details...</span>
+            <span style={{ color: "var(--text-muted)" }}>{t("queue:item.loadingDetails")}</span>
           </div>
         ) : logData ? (
           <>
@@ -272,13 +274,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {logData.encoding_stats && (
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1fr", gap: "4px 16px", marginBottom: 12, fontSize: 11 }}>
                 <span style={{ color: "var(--text-muted)", fontWeight: 600 }}></span>
-                <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>Original</span>
+                <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>{t("queue:item.stats.original")}</span>
                 <span style={{ color: "var(--text-muted)", fontWeight: 600, fontSize: 10, textTransform: "uppercase" }}>
-                  {job.job_type === "audio" ? "Cleaned" : "Encoded"}
+                  {job.job_type === "audio" ? t("queue:item.stats.cleaned") : t("queue:item.stats.encoded")}
                 </span>
 
                 {logData.encoding_stats.input_size > 0 && <>
-                  <span style={{ color: "var(--text-muted)" }}>Size</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.size")}</span>
                   <span style={{ color: "var(--text-secondary)" }}>{formatBytes(logData.encoding_stats.input_size)}</span>
                   {/* Negative ratio = skipped_larger (encode grew the file
                       and the original was kept). Render in a warning
@@ -288,19 +290,19 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                     <span style={{ color: "#ffa94d" }}>
                       {formatBytes(logData.encoding_stats.output_size)}{" "}
                       <span style={{ opacity: 0.7 }}>
-                        ({Math.abs(logData.encoding_stats.ratio)}% larger — discarded)
+                        {t("queue:item.stats.largerDiscarded", { pct: Math.abs(logData.encoding_stats.ratio) })}
                       </span>
                     </span>
                   ) : (
                     <span style={{ color: "var(--success)" }}>
                       {formatBytes(logData.encoding_stats.output_size)}{" "}
-                      <span style={{ opacity: 0.6 }}>({logData.encoding_stats.ratio}% saved)</span>
+                      <span style={{ opacity: 0.6 }}>{t("queue:item.stats.savedPct", { pct: logData.encoding_stats.ratio })}</span>
                     </span>
                   )}
                 </>}
 
                 {logData.encoding_stats.input_bitrate != null && <>
-                  <span style={{ color: "var(--text-muted)" }}>Bitrate</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.bitrate")}</span>
                   <span style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.input_bitrate} Mbps</span>
                   <span style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.output_bitrate} Mbps</span>
                 </>}
@@ -308,7 +310,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 {/* Codec row — video conversion path only. Audio-only
                     jobs don't change the video codec. */}
                 {job.job_type !== "audio" && <>
-                  <span style={{ color: "var(--text-muted)" }}>Codec</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.codec")}</span>
                   <span style={{ color: "var(--text-secondary)" }}>x264</span>
                   {/* Match the v0.3.30 rename rule: libx265 → "x265" (the
                       specific encoder), hardware encoders → "h265" (the
@@ -348,7 +350,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                       : targetCodec;
                     return (
                       <>
-                        <span style={{ color: "var(--text-muted)" }}>Audio</span>
+                        <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.audio")}</span>
                         <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
                           {sources.join(" + ")} <span style={{ opacity: 0.6 }}>→</span> {targetLabel}
                         </span>
@@ -363,18 +365,18 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                     presence-of-field check makes this future-proof: any
                     job that did track removal can surface it here. */}
                 {(logData.encoding_stats.audio_tracks_removed > 0) && <>
-                  <span style={{ color: "var(--text-muted)" }}>Audio removed</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.audioRemoved")}</span>
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
-                    {logData.encoding_stats.audio_tracks_removed} track{logData.encoding_stats.audio_tracks_removed !== 1 ? "s" : ""}
+                    {t("queue:item.stats.tracks", { count: logData.encoding_stats.audio_tracks_removed })}
                     {Array.isArray(logData.encoding_stats.removed_audio_languages) && logData.encoding_stats.removed_audio_languages.length > 0 && (
                       <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_audio_languages.join(", ")})</span>
                     )}
                   </span>
                 </>}
                 {(logData.encoding_stats.subtitle_tracks_removed > 0) && <>
-                  <span style={{ color: "var(--text-muted)" }}>Subs removed</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.subsRemoved")}</span>
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
-                    {logData.encoding_stats.subtitle_tracks_removed} track{logData.encoding_stats.subtitle_tracks_removed !== 1 ? "s" : ""}
+                    {t("queue:item.stats.tracks", { count: logData.encoding_stats.subtitle_tracks_removed })}
                     {Array.isArray(logData.encoding_stats.removed_subtitle_languages) && logData.encoding_stats.removed_subtitle_languages.length > 0 && (
                       <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_subtitle_languages.join(", ")})</span>
                     )}
@@ -382,15 +384,15 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 </>}
 
                 {Array.isArray(logData.encoding_stats.applied_audio_languages) && logData.encoding_stats.applied_audio_languages.length > 0 && <>
-                  <span style={{ color: "var(--text-muted)" }}>Language applied</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.languageApplied")}</span>
                   <span style={{ color: "var(--accent)", gridColumn: "2 / span 2" }}>
-                    audio → {logData.encoding_stats.applied_audio_languages.join(", ")}
+                    {t("queue:item.stats.audioArrow", { langs: logData.encoding_stats.applied_audio_languages.join(", ") })}
                   </span>
                 </>}
 
                 {logData.vmaf_score != null && <>
                   <span style={{ color: "var(--text-muted)" }}>VMAF</span>
-                  <span style={{ color: "var(--text-muted)", opacity: 0.5 }}>100 (ref)</span>
+                  <span style={{ color: "var(--text-muted)", opacity: 0.5 }}>{t("queue:item.stats.vmafRef")}</span>
                   <span style={{
                     color: vmafColor(logData.vmaf_score),
                     fontWeight: 600,
@@ -410,7 +412,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                         "96.9 (Excellent)0" trailing the score. v0.3.54. */}
                     {!!job.vmaf_uncertain && (
                       <span
-                        title="VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Encoding → VMAF."
+                        title={t("queue:item.stats.vmafUncertain")}
                         style={{ marginLeft: 4, color: "var(--warning)", cursor: "help" }}
                       >&#9888;</span>
                     )}
@@ -435,10 +437,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   <line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ffa94d" }}>Encode rejected by VMAF threshold</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ffa94d" }}>{t("queue:item.vmafBanner.title")}</div>
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                    {job.error_log} The original file was kept. Retry with a lower CQ/CRF or a slower preset
-                    to get a better score, or lower the threshold in Settings → Video.
+                    {job.error_log} {t("queue:item.vmafBanner.body")}
                   </div>
                 </div>
               </div>
@@ -447,10 +448,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {/* Encoding settings + timing */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginBottom: 10, fontSize: 11 }}>
               {logData.encoding_stats?.encoder && (
-                <span style={{ color: "var(--text-muted)" }}>Encoder: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.encoder}</strong></span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encoder")} <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.encoder}</strong></span>
               )}
               {logData.encoding_stats?.preset && (
-                <span style={{ color: "var(--text-muted)" }}>Preset: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.preset.toUpperCase()}</strong></span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.preset")} <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.preset.toUpperCase()}</strong></span>
               )}
               {logData.encoding_stats?.cq != null && (
                 <span style={{ color: "var(--text-muted)" }}>CQ: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.cq}</strong></span>
@@ -459,25 +460,25 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 <span style={{ color: "var(--text-muted)" }}>CRF: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.crf}</strong></span>
               )}
               {logData.encoding_stats?.encode_seconds > 0 && (
-                <span style={{ color: "var(--text-muted)" }}>Encode time: <strong style={{ color: "var(--text-secondary)" }}>{formatDuration("2000-01-01T00:00:00", new Date(new Date("2000-01-01T00:00:00").getTime() + logData.encoding_stats.encode_seconds * 1000).toISOString())}</strong></span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encodeTime")} <strong style={{ color: "var(--text-secondary)" }}>{formatDuration("2000-01-01T00:00:00", new Date(new Date("2000-01-01T00:00:00").getTime() + logData.encoding_stats.encode_seconds * 1000).toISOString())}</strong></span>
               )}
-              <span style={{ color: "var(--text-muted)" }}>Type: {job.job_type}</span>
+              <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.type")} {job.job_type}</span>
               {logData.started_at && logData.completed_at && (
-                <span style={{ color: "var(--text-muted)" }}>Total: {formatDuration(logData.started_at, logData.completed_at)}</span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.total")} {formatDuration(logData.started_at, logData.completed_at)}</span>
               )}
-              {logData.started_at && <span style={{ color: "var(--text-muted)" }}>Started: {new Date(logData.started_at).toLocaleString()}</span>}
+              {logData.started_at && <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.started")} {new Date(logData.started_at).toLocaleString()}</span>}
             </div>
 
             {/* Health check result (inline post-conversion OR standalone health_check job) */}
             {job.health_status && (
               <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 4, background: "var(--bg-primary)", border: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: job.health_status === "corrupt" && job.health_errors_json ? 6 : 0 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>Health check</span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>{t("queue:item.health.label")}</span>
                   <span style={{
                     fontSize: 11, fontWeight: 600, padding: "1px 6px", borderRadius: 3, color: "#ffffff",
                     background: job.health_status === "corrupt" ? "var(--danger)" : "var(--success)",
                   }}>
-                    {job.health_status === "corrupt" ? "Corrupt" : "Healthy"}
+                    {job.health_status === "corrupt" ? t("queue:item.corrupt") : t("queue:item.healthy")}
                   </span>
                   {job.health_check_type && (
                     <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({job.health_check_type})</span>
@@ -493,7 +494,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   return (
                     <ul style={{ margin: 0, padding: "4px 0 0 18px", color: "#e94560", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
                       {errs.slice(0, 8).map((e, i) => <li key={i} style={{ wordBreak: "break-word" }}>{e}</li>)}
-                      {errs.length > 8 && <li style={{ opacity: 0.6 }}>...and {errs.length - 8} more</li>}
+                      {errs.length > 8 && <li style={{ opacity: 0.6 }}>{t("queue:item.health.more", { count: errs.length - 8 })}</li>}
                     </ul>
                   );
                 })()}
@@ -504,11 +505,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {logData.ffmpeg_command && (
               <div style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>ffmpeg command</span>
+                  <span>{t("queue:item.log.ffmpegCommand")}</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(logData.ffmpeg_command); }}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "inline-flex", opacity: 0.6 }}
-                    title="Copy command"
+                    title={t("queue:item.log.copyCommand")}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
@@ -532,7 +533,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   onClick={(e) => { e.stopPropagation(); setShowFullLog(!showFullLog); }}
                   style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: 0 }}
                 >
-                  {showFullLog ? "Hide" : "Show"} ffmpeg output ({logData.ffmpeg_log.split("\n").length} lines)
+                  {t(showFullLog ? "queue:item.log.hideOutput" : "queue:item.log.showOutput", { count: logData.ffmpeg_log.split("\n").length })}
                 </button>
                 {showFullLog && (
                   <div style={{
@@ -552,7 +553,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             </div>
           </>
         ) : (
-          <div style={{ color: "var(--text-muted)" }}>No conversion details available</div>
+          <div style={{ color: "var(--text-muted)" }}>{t("queue:item.noDetails")}</div>
         )}
       </div>
     )}
@@ -571,14 +572,14 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {job.error_log}
           </div>
         ) : (
-          <div style={{ color: "var(--text-muted)" }}>No error details available</div>
+          <div style={{ color: "var(--text-muted)" }}>{t("queue:item.noErrorDetails")}</div>
         )}
         <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
-          <span>Type: {job.job_type}</span>
-          {job.encoder && <span>Encoder: {job.encoder}</span>}
-          {(job as any).original_size > 0 && <span>Size: {formatBytes((job as any).original_size)}</span>}
-          {job.started_at && <span>Started: {new Date(job.started_at).toLocaleString()}</span>}
-          {job.completed_at && <span>Failed: {new Date(job.completed_at).toLocaleString()}</span>}
+          <span>{t("queue:item.details.type")} {job.job_type}</span>
+          {job.encoder && <span>{t("queue:item.details.encoder")} {job.encoder}</span>}
+          {(job as any).original_size > 0 && <span>{t("queue:item.details.size")} {formatBytes((job as any).original_size)}</span>}
+          {job.started_at && <span>{t("queue:item.details.started")} {new Date(job.started_at).toLocaleString()}</span>}
+          {job.completed_at && <span>{t("queue:item.details.failed")} {new Date(job.completed_at).toLocaleString()}</span>}
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, opacity: 0.6, wordBreak: "break-all" }}>
           {job.file_path}
@@ -590,13 +591,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             inspect the broader ffmpeg output. Required for diagnosing
             anything more complex than "file not found". */}
         {logLoading && (
-          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>Loading log…</div>
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-muted)" }}>{t("queue:item.loadingLog")}</div>
         )}
         {logData && (logData.ffmpeg_command || logData.ffmpeg_log) && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
             {logData.ffmpeg_command && (
               <details style={{ background: "var(--bg-card)", borderRadius: 4, padding: "6px 10px", fontSize: 11 }}>
-                <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>ffmpeg command</summary>
+                <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>{t("queue:item.log.ffmpegCommand")}</summary>
                 <pre style={{
                   marginTop: 6, marginBottom: 0, fontSize: 10, lineHeight: 1.45,
                   fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-all",
@@ -607,7 +608,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {logData.ffmpeg_log && (
               <details style={{ background: "var(--bg-card)", borderRadius: 4, padding: "6px 10px", fontSize: 11 }}>
                 <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>
-                  ffmpeg log <span style={{ opacity: 0.5 }}>(last {logData.ffmpeg_log.split("\n").length} line{logData.ffmpeg_log.split("\n").length === 1 ? "" : "s"})</span>
+                  {t("queue:item.log.ffmpegLog")} <span style={{ opacity: 0.5 }}>{t("queue:item.log.lastLines", { count: logData.ffmpeg_log.split("\n").length })}</span>
                 </summary>
                 <pre style={{
                   marginTop: 6, marginBottom: 0, fontSize: 10, lineHeight: 1.45,

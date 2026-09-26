@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { JobProgress } from "../types";
 import ProgressBar from "./ProgressBar";
 import { useConfirm } from "./ConfirmModal";
@@ -39,19 +40,20 @@ interface JobCardProps {
 }
 
 function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encoder, libx265Preset, libx265Crf, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
+  const { t } = useTranslation(["queue", "common"]);
   const confirm = useConfirm();
   return (
     <div className="job-active">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ color: "white", fontWeight: "bold" }}>Now {progress.step || "Processing"}</span>
+        <span style={{ color: "white", fontWeight: "bold" }}>{t("queue:card.now", { step: progress.step || t("queue:card.processing") })}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ color: "var(--accent)" }}>
-            Job {fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1)} of {fmtNum(progress.jobs_total)}
+            {t("queue:card.jobOf", { current: fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1), total: fmtNum(progress.jobs_total) })}
           </span>
           {onCancel && (
             <button
               onClick={async () => {
-                const ok = await confirm({ message: "Cancel the current conversion? The temp file will be deleted and the original kept.", confirmLabel: "Cancel conversion", danger: true });
+                const ok = await confirm({ message: t("queue:card.cancelConfirm"), confirmLabel: t("queue:card.cancelConversion"), danger: true });
                 if (ok) onCancel();
               }}
               style={{
@@ -59,9 +61,9 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
                 color: "#e94560", cursor: "pointer", borderRadius: 4,
                 padding: "2px 8px", fontSize: 11,
               }}
-              title="Cancel current conversion"
+              title={t("queue:card.cancelTitle")}
             >
-              Cancel
+              {t("common:actions.cancel")}
             </button>
           )}
         </div>
@@ -79,7 +81,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
         </span>
       </div>
       <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6, flexWrap: "wrap" }}>
-        <span>{progress.step === "vmaf analysis" ? "Analyzing quality..." : progress.step}</span>
+        <span>{progress.step === "vmaf analysis" ? t("queue:card.analyzingQuality") : progress.step}</span>
         {(jobType === "convert" || jobType === "combined") && (
           encoder === "libx265" ? (
             <span>{libx265Preset || "medium"} / CRF {libx265Crf ?? 20}</span>
@@ -88,28 +90,28 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
           ) : null
         )}
         {audioCodec && audioCodec !== "copy" && (jobType === "audio" || jobType === "combined") && (
-          <span>Audio: {audioCodec.toUpperCase()} / {audioBitrate}k</span>
+          <span>{t("queue:card.audio", { codec: audioCodec.toUpperCase(), bitrate: audioBitrate })}</span>
         )}
         {losslessCodec && losslessCodec !== "copy" && (
-          <span>Lossless → {losslessCodec.toUpperCase()} / {losslessBitrate}k</span>
+          <span>{t("queue:card.lossless", { codec: losslessCodec.toUpperCase(), bitrate: losslessBitrate })}</span>
         )}
         {audioTracksToRemove && audioTracksToRemove.length > 0 && (
           <span style={{ color: "#ff6b9d" }}>
-            Removing {audioTracksToRemove.length} audio track{audioTracksToRemove.length !== 1 ? "s" : ""}
+            {t("queue:card.removingAudio", { count: audioTracksToRemove.length })}
             {removedTrackLangs && removedTrackLangs.length > 0
               ? ` (${removedTrackLangs.join(", ")})`
-              : ` (streams: ${audioTracksToRemove.join(", ")})`}
+              : ` (${t("queue:card.streams", { list: audioTracksToRemove.join(", ") })})`}
           </span>
         )}
         {subtitleTracksToRemove && subtitleTracksToRemove.length > 0 && (
           <span style={{ color: "#ffa94d" }}>
-            Removing {subtitleTracksToRemove.length} subtitle{subtitleTracksToRemove.length !== 1 ? "s" : ""}
+            {t("queue:card.removingSubs", { count: subtitleTracksToRemove.length })}
           </span>
         )}
         {progress.fps && <span>{progress.fps.toFixed(0)} fps</span>}
-        {progress.eta && <span>ETA: {formatEta(progress.eta)}</span>}
+        {progress.eta && <span>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span>}
         {progress.node_name && (
-          <span style={{ color: "var(--text-muted)" }}>on {progress.node_name}</span>
+          <span style={{ color: "var(--text-muted)" }}>{t("queue:card.onNode", { node: progress.node_name })}</span>
         )}
       </div>
     </div>

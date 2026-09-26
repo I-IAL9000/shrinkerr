@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface QueueControlPanelProps {
   selectedCount: number;
@@ -17,34 +18,37 @@ interface QueueControlPanelProps {
 }
 
 const PRIORITIES = [
-  { label: "Normal", value: 0 },
-  { label: "High", value: 1 },
-  { label: "Highest", value: 2 },
+  { labelKey: "normal", value: 0 },
+  { labelKey: "high", value: 1 },
+  { labelKey: "highest", value: 2 },
 ];
 
+// nameKey → queue:panel.videoPresets.*; detail is technical and not translated.
 const NVENC_VIDEO_PRESETS = [
-  { label: "Max quality — p7 / CQ 20", preset: "p7", cq: 20 },
-  { label: "Quality first — p6 / CQ 21", preset: "p6", cq: 21 },
-  { label: "Balanced — p5 / CQ 23", preset: "p5", cq: 23 },
-  { label: "Space saver — p4 / CQ 25", preset: "p4", cq: 25 },
-  { label: "Max compression — p3 / CQ 27", preset: "p3", cq: 27 },
-  { label: "Potato mode 🥔 — p1 / CQ 30", preset: "p1", cq: 30 },
+  { nameKey: "maxQuality", detail: "p7 / CQ 20", preset: "p7", cq: 20 },
+  { nameKey: "qualityFirst", detail: "p6 / CQ 21", preset: "p6", cq: 21 },
+  { nameKey: "balanced", detail: "p5 / CQ 23", preset: "p5", cq: 23 },
+  { nameKey: "spaceSaver", detail: "p4 / CQ 25", preset: "p4", cq: 25 },
+  { nameKey: "maxCompression", detail: "p3 / CQ 27", preset: "p3", cq: 27 },
+  { nameKey: "potato", detail: "p1 / CQ 30", preset: "p1", cq: 30 },
 ];
 
 const LIBX265_VIDEO_PRESETS = [
-  { label: "Max quality — veryslow / CRF 20", preset: "veryslow", cq: 20 },
-  { label: "Quality first — slower / CRF 21", preset: "slower", cq: 21 },
-  { label: "Balanced — medium / CRF 23", preset: "medium", cq: 23 },
-  { label: "Space saver — fast / CRF 25", preset: "fast", cq: 25 },
-  { label: "Max compression — veryfast / CRF 27", preset: "veryfast", cq: 27 },
-  { label: "Potato mode 🥔 — ultrafast / CRF 30", preset: "ultrafast", cq: 30 },
+  { nameKey: "maxQuality", detail: "veryslow / CRF 20", preset: "veryslow", cq: 20 },
+  { nameKey: "qualityFirst", detail: "slower / CRF 21", preset: "slower", cq: 21 },
+  { nameKey: "balanced", detail: "medium / CRF 23", preset: "medium", cq: 23 },
+  { nameKey: "spaceSaver", detail: "fast / CRF 25", preset: "fast", cq: 25 },
+  { nameKey: "maxCompression", detail: "veryfast / CRF 27", preset: "veryfast", cq: 27 },
+  { nameKey: "potato", detail: "ultrafast / CRF 30", preset: "ultrafast", cq: 30 },
 ];
 
+// labelKey (whole label) / noteKey (parenthetical) → queue:panel.audioPresets.*;
+// plain `label` is technical and not translated.
 const AUDIO_PRESETS = [
-  { label: "Copy (no conversion)", codec: "copy", bitrate: 0 },
-  { label: "EAC3 640k (Blu-ray quality)", codec: "eac3", bitrate: 640 },
-  { label: "EAC3 448k (streaming)", codec: "eac3", bitrate: 448 },
-  { label: "EAC3 256k (compact)", codec: "eac3", bitrate: 256 },
+  { labelKey: "copy", codec: "copy", bitrate: 0 },
+  { label: "EAC3 640k", noteKey: "bluray", codec: "eac3", bitrate: 640 },
+  { label: "EAC3 448k", noteKey: "streaming", codec: "eac3", bitrate: 448 },
+  { label: "EAC3 256k", noteKey: "compact", codec: "eac3", bitrate: 256 },
   { label: "AC3 640k", codec: "ac3", bitrate: 640 },
   { label: "AC3 448k", codec: "ac3", bitrate: 448 },
   { label: "AAC 256k", codec: "aac", bitrate: 256 },
@@ -103,6 +107,7 @@ export default function QueueControlPanel({
   onDeselectAll,
   defaultEncoder = "nvenc",
 }: QueueControlPanelProps) {
+  const { t } = useTranslation(["queue", "common"]);
   const [videoValue, setVideoValue] = useState("");
   const [audioValue, setAudioValue] = useState("");
   const VIDEO_PRESETS = defaultEncoder === "libx265" ? LIBX265_VIDEO_PRESETS : NVENC_VIDEO_PRESETS;
@@ -129,7 +134,7 @@ export default function QueueControlPanel({
     >
       {/* Selection count */}
       <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: "bold", whiteSpace: "nowrap" }}>
-        {selectedCount} selected
+        {t("queue:panel.selected", { count: selectedCount })}
       </span>
       <button
         onClick={onSelectAll}
@@ -143,7 +148,7 @@ export default function QueueControlPanel({
           padding: 0,
         }}
       >
-        Select all
+        {t("common:actions.selectAll")}
       </button>
       <button
         onClick={onDeselectAll}
@@ -157,7 +162,7 @@ export default function QueueControlPanel({
           padding: 0,
         }}
       >
-        Deselect
+        {t("queue:panel.deselect")}
       </button>
 
       {/* Divider */}
@@ -165,22 +170,22 @@ export default function QueueControlPanel({
 
       {/* Move buttons */}
       <div style={{ display: "flex", gap: 2, alignItems: "center", background: "var(--bg-primary)", borderRadius: 6, padding: 2 }}>
-        <button onClick={onMoveTop} style={{ ...moveBtnStyle }} title="Move to top">
+        <button onClick={onMoveTop} style={{ ...moveBtnStyle }} title={t("queue:panel.moveTop")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="4" x2="20" y2="4"/><polyline points="12 10 6 16"/><polyline points="12 10 18 16"/><line x1="12" y1="10" x2="12" y2="20"/>
           </svg>
         </button>
-        <button onClick={onMoveUp} style={{ ...moveBtnStyle }} title="Move up">
+        <button onClick={onMoveUp} style={{ ...moveBtnStyle }} title={t("queue:panel.moveUp")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/>
           </svg>
         </button>
-        <button onClick={onMoveDown} style={{ ...moveBtnStyle }} title="Move down">
+        <button onClick={onMoveDown} style={{ ...moveBtnStyle }} title={t("queue:panel.moveDown")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/>
           </svg>
         </button>
-        <button onClick={onMoveBottom} style={{ ...moveBtnStyle }} title="Move to bottom">
+        <button onClick={onMoveBottom} style={{ ...moveBtnStyle }} title={t("queue:panel.moveBottom")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="20" x2="20" y2="20"/><polyline points="12 14 6 8"/><polyline points="12 14 18 8"/><line x1="12" y1="14" x2="12" y2="4"/>
           </svg>
@@ -202,10 +207,10 @@ export default function QueueControlPanel({
         }}
         style={selectStyle}
       >
-        <option value="">Video preset...</option>
+        <option value="">{t("queue:panel.videoPresetPlaceholder")}</option>
         {VIDEO_PRESETS.map((p, i) => (
           <option key={i} value={i}>
-            {p.label}
+            {`${t(`queue:panel.videoPresets.${p.nameKey}`)} — ${p.detail}`}
           </option>
         ))}
       </select>
@@ -222,10 +227,11 @@ export default function QueueControlPanel({
         }}
         style={selectStyle}
       >
-        <option value="">Audio preset...</option>
+        <option value="">{t("queue:panel.audioPresetPlaceholder")}</option>
         {AUDIO_PRESETS.map((p, i) => (
           <option key={i} value={i}>
-            {p.label}
+            {(p.labelKey ? t(`queue:panel.audioPresets.${p.labelKey}`) : p.label)
+              + (p.noteKey ? ` (${t(`queue:panel.audioPresets.${p.noteKey}`)})` : "")}
           </option>
         ))}
       </select>
@@ -240,9 +246,9 @@ export default function QueueControlPanel({
         defaultValue=""
         style={selectStyle}
       >
-        <option value="">Priority...</option>
+        <option value="">{t("queue:panel.priorityPlaceholder")}</option>
         {PRIORITIES.map(p => (
-          <option key={p.value} value={p.value}>{p.label}</option>
+          <option key={p.value} value={p.value}>{t(`queue:priority.${p.labelKey}`)}</option>
         ))}
       </select>
 
@@ -259,7 +265,7 @@ export default function QueueControlPanel({
           fontSize: 11,
         }}
       >
-        &#x2298; Ignore
+        &#x2298; {t("common:actions.ignore")}
       </button>
 
       {/* Remove */}
@@ -272,7 +278,7 @@ export default function QueueControlPanel({
           fontSize: 11,
         }}
       >
-        &times; Remove
+        &times; {t("common:actions.remove")}
       </button>
     </div>
   );

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Trans, useTranslation } from "react-i18next";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
 import { fmtNum } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
@@ -113,6 +114,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
   activeJobs: any[];
   jobProgressMap: Map<number, JobProgress>;
 }) {
+  const { t } = useTranslation(["dashboard", "common"]);
   const liveJobs = activeJobs.map((j: any) => {
     const ws = jobProgressMap.get(j.id);
     return { ...j, progress: ws?.progress ?? j.progress, fps: ws?.fps ?? j.fps };
@@ -123,14 +125,14 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: liveJobs.length > 0 ? 10 : 0 }}>
         <div>
           <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent)" : "var(--text-muted)" }}>
-            {liveJobs.length > 0 ? liveJobs.length : "Idle"}
+            {liveJobs.length > 0 ? liveJobs.length : t("dashboard:live.idle")}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
-            {liveJobs.length > 0 ? "Converting" : "No active jobs"}
+            {liveJobs.length > 0 ? t("dashboard:live.converting") : t("dashboard:live.noActiveJobs")}
           </span>
         </div>
         {combinedFps > 0 && (
-          <span style={{ fontSize: 13, color: "#40ceff", fontWeight: 600 }}>{combinedFps.toFixed(0)} fps combined</span>
+          <span style={{ fontSize: 13, color: "#40ceff", fontWeight: 600 }}>{t("dashboard:live.fpsCombined", { fps: combinedFps.toFixed(0) })}</span>
         )}
       </div>
       {liveJobs.length > 0 && (
@@ -159,14 +161,15 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
 
 function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }) {
   const navigate = useNavigate();
+  const { t } = useTranslation(["dashboard", "common"]);
   const steps = [
     {
       key: "dirs",
-      title: "Add media directories",
-      description: "Tell Shrinkerr where your media files are stored so it can scan them.",
+      title: t("dashboard:setup.dirs.title"),
+      description: t("dashboard:setup.dirs.description"),
       done: setup.has_dirs,
       action: () => navigate("/settings"),
-      actionLabel: "Go to Settings",
+      actionLabel: t("dashboard:setup.dirs.action"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
@@ -175,13 +178,13 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
     },
     {
       key: "scan",
-      title: "Scan your library",
+      title: t("dashboard:setup.scan.title"),
       description: setup.scan_count > 0
-        ? `${setup.scan_count.toLocaleString()} files scanned. Run another scan to find new files.`
-        : "Scan your media directories to find files that can be optimized. Posters and metadata are auto-fetched using the bundled TMDB key.",
+        ? t("dashboard:setup.scan.descriptionDone", { count: setup.scan_count, num: setup.scan_count.toLocaleString() })
+        : t("dashboard:setup.scan.description"),
       done: setup.scan_count > 0,
       action: () => navigate("/scanner"),
-      actionLabel: setup.scan_count > 0 ? "Open Scanner" : "Start Scanning",
+      actionLabel: setup.scan_count > 0 ? t("dashboard:setup.scan.actionOpen") : t("dashboard:setup.scan.actionStart"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -190,11 +193,11 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
     },
     {
       key: "customize",
-      title: "Customize your setup",
-      description: "Optional polish: link Plex / Jellyfin / Sonarr / Radarr for label-based rules and library sync, fine-tune encoder presets, or add your own TMDB key for a dedicated rate-limit quota.",
+      title: t("dashboard:setup.customize.title"),
+      description: t("dashboard:setup.customize.description"),
       done: setup.has_plex,
       action: () => navigate("/settings#connections"),
-      actionLabel: "Open Settings",
+      actionLabel: t("dashboard:setup.customize.action"),
       optional: true,
       icon: (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -204,11 +207,11 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
     },
     {
       key: "queue",
-      title: "Start converting",
-      description: "Add files to the queue and start converting to save disk space.",
+      title: t("dashboard:setup.queue.title"),
+      description: t("dashboard:setup.queue.description"),
       done: setup.has_jobs,
       action: () => navigate("/queue"),
-      actionLabel: "Open Queue",
+      actionLabel: t("dashboard:setup.queue.action"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polygon points="5 3 19 12 5 21"/>
@@ -229,11 +232,10 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
           background: "linear-gradient(90deg, #6860fe, #5089F7)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
         }}>
-          Welcome to Shrinkerr
+          {t("dashboard:setup.welcome")}
         </h1>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0, maxWidth: 500, marginInline: "auto" }}>
-          Convert your media library to x265 and reduce file size by 50-65% with no visible quality loss.
-          Save space, bandwidth & money while retaining quality. Follow these steps to get started.
+          {t("dashboard:setup.intro")}
         </p>
       </div>
 
@@ -278,7 +280,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
                 {step.title}
-                {step.optional && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: "normal" }}>optional</span>}
+                {step.optional && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: "normal" }}>{t("dashboard:setup.optional")}</span>}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{step.description}</div>
             </div>
@@ -303,7 +305,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
           <button className="btn btn-primary" style={{ padding: "8px 24px" }}
             onClick={onDismiss}
           >
-            Go to Dashboard
+            {t("dashboard:setup.goToDashboard")}
           </button>
         ) : (
           <button style={{
@@ -312,7 +314,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
           }}
             onClick={onDismiss}
           >
-            Skip setup — I know what I'm doing
+            {t("dashboard:setup.skip")}
           </button>
         )}
       </div>
@@ -323,6 +325,7 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
 // --- Dashboard (merged with Statistics) ---
 
 export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<number, JobProgress> }) {
+  const { t } = useTranslation(["dashboard", "common"]);
   const [dash, setDash] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
@@ -363,10 +366,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
   if (loading || !dash) {
     return (
       <div>
-        <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>Dashboard</h2>
+        <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>{t("dashboard:title")}</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>Loading dashboard...</div>
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("dashboard:loading")}</div>
         </div>
       </div>
     );
@@ -409,14 +412,14 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 style={{ color: "var(--text-primary)", fontSize: 20, margin: 0 }}>Dashboard</h2>
+        <h2 style={{ color: "var(--text-primary)", fontSize: 20, margin: 0 }}>{t("dashboard:title")}</h2>
         {totalCompleted > 0 && (
           <div style={{ display: "flex", gap: 8 }}>
             <a href="/api/jobs/export/csv" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>Export CSV</button>
+              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("dashboard:exportCsv")}</button>
             </a>
             <a href="/api/jobs/export/json" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>Export JSON</button>
+              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("dashboard:exportJson")}</button>
             </a>
           </div>
         )}
@@ -432,19 +435,19 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {/* Queue depth */}
         <div style={cardStyle}>
           <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{fmtNum(dash.queue?.pending)}</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Pending in queue</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.pendingInQueue")}</div>
           {(dash.queue?.failed || 0) > 0 && (
-            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{fmtNum(dash.queue.failed)} failed</div>
+            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{t("dashboard:cards.failed", { count: dash.queue.failed, num: fmtNum(dash.queue.failed) })}</div>
           )}
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{dash.queue?.completed?.toLocaleString() || 0} completed</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t("dashboard:cards.completed", { count: dash.queue?.completed || 0, num: dash.queue?.completed?.toLocaleString() || 0 })}</div>
         </div>
 
         {/* Total saved */}
         <div style={cardStyle}>
           <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{formatBytes(dash.total_saved || 0)}</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Total space saved</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalSpaceSaved")}</div>
           {dash.bandwidth_pct > 0 && (
-            <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{dash.bandwidth_pct}% smaller files</div>
+            <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{t("dashboard:cards.smallerFiles", { pct: dash.bandwidth_pct })}</div>
           )}
         </div>
 
@@ -453,7 +456,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           <div style={{ fontSize: 28, fontWeight: "bold", color: diskColor(totalFree) }}>
             {formatBytes(totalFree)}
           </div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Total free disk space</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalFreeDisk")}</div>
           {(dash.disk || []).length > 0 && (
             <div style={{ marginTop: 8, fontSize: 11 }}>
               {(dash.disk || []).map((d: any, i: number) => (
@@ -469,17 +472,17 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
       {/* Today's summary bar */}
       <div style={{ ...cardStyle, display: "flex", gap: 28, padding: "12px 20px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>Today</span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>jobs</span></span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{formatBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>saved</span></span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{t("dashboard:today.label")}</span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{formatBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
         {(today.avg_fps || 0) > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>avg fps/job</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
         )}
         {combinedFpsForSummary > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>combined fps</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.combinedFps")}</span></span>
         )}
         {(today.original_size || 0) > 0 && (today.space_saved || 0) > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>avg reduction</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgReduction")}</span></span>
         )}
       </div>
 
@@ -491,9 +494,9 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
             <path d="M3 9h18" />
             <path d="M9 21V9" />
           </svg>
-          <div style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.6 }}>No conversion data yet</div>
+          <div style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.6 }}>{t("dashboard:empty.title")}</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", opacity: 0.4, marginTop: 8 }}>
-            Start scanning and converting files to see statistics here.
+            {t("dashboard:empty.hint")}
           </div>
         </div>
       )}
@@ -507,24 +510,24 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {totalCompleted > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Processing Results</h3>
+              <h3 style={headingStyle}>{t("dashboard:results.title")}</h3>
               <Donut
                 segments={[
-                  { value: s.files_with_savings, color: "var(--accent)", label: "Saved space" },
-                  { value: s.files_no_savings, color: "var(--border)", label: "Ignored (no savings)" },
+                  { value: s.files_with_savings, color: "var(--accent)", label: t("dashboard:results.savedSpace") },
+                  { value: s.files_no_savings, color: "var(--border)", label: t("dashboard:results.ignoredNoSavings") },
                 ]}
                 centerText={`${totalCompleted > 0 ? Math.round(s.files_with_savings / totalCompleted * 100) : 0}%`}
               />
             </div>
 
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Summary</h3>
+              <h3 style={headingStyle}>{t("dashboard:summary.title")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {([
-                  ["Files with savings", s.files_with_savings, "var(--accent)"],
-                  ["Files ignored", s.files_no_savings, "var(--text-secondary)"],
-                  ["Pending", s.pending, "var(--text-secondary)"],
-                  ["Failed", s.failed, "#e94560"],
+                  [t("dashboard:summary.filesWithSavings"), s.files_with_savings, "var(--accent)"],
+                  [t("dashboard:summary.filesIgnored"), s.files_no_savings, "var(--text-secondary)"],
+                  [t("common:status.pending"), s.pending, "var(--text-secondary)"],
+                  [t("common:status.failed"), s.failed, "#e94560"],
                 ] as const).map(([label, val, color]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{label}</span>
@@ -533,7 +536,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 ))}
                 {s.avg_time_minutes > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Avg time per file</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:summary.avgTimePerFile")}</span>
                     <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>
                       {s.avg_time_minutes >= 60 ? `${(s.avg_time_minutes / 60).toFixed(1)}h` : `${s.avg_time_minutes.toFixed(0)}m`}
                     </span>
@@ -541,14 +544,14 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 )}
                 {s.est_remaining_hours > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Est. time remaining</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:summary.estRemaining")}</span>
                     <span style={{ color: "#ffa94d", fontWeight: "bold" }}>
-                      {s.est_remaining_hours >= 24 ? `${(s.est_remaining_hours / 24).toFixed(1)} days` : `${s.est_remaining_hours.toFixed(1)}h`}
+                      {s.est_remaining_hours >= 24 ? t("dashboard:summary.days", { value: (s.est_remaining_hours / 24).toFixed(1) }) : `${s.est_remaining_hours.toFixed(1)}h`}
                     </span>
                   </div>
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--text-muted)" }}>Total saved</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("dashboard:summary.totalSaved")}</span>
                   <span style={{ color: "var(--accent)", fontWeight: "bold", fontSize: 16 }}>{formatBytes(s.total_saved)}</span>
                 </div>
               </div>
@@ -561,18 +564,29 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 100 }}>
               <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>~{formatBytes(dash.projection.projected_savings)}</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>projected savings</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:projection.projectedSavings")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
-              At your current rate of <b style={{ color: "var(--accent)" }}>{formatBytes(dash.projection.avg_daily_savings)}/day</b> ({dash.projection.avg_jobs_per_day} jobs/day),
-              converting the remaining <b>{dash.projection.remaining_files.toLocaleString()}</b> files
-              ({formatBytes(dash.projection.remaining_size)}) will take approximately <b style={{ color: "var(--success)" }}>{
-                dash.projection.projected_days > 365
-                  ? `${(dash.projection.projected_days / 365).toFixed(1)} years`
-                  : dash.projection.projected_days > 30
-                  ? `${(dash.projection.projected_days / 30).toFixed(1)} months`
-                  : `${dash.projection.projected_days} days`
-              }</b>.
+              <Trans
+                t={t}
+                i18nKey="dashboard:projection.sentence"
+                values={{
+                  rate: formatBytes(dash.projection.avg_daily_savings),
+                  jobsPerDay: dash.projection.avg_jobs_per_day,
+                  files: dash.projection.remaining_files.toLocaleString(),
+                  size: formatBytes(dash.projection.remaining_size),
+                  duration: dash.projection.projected_days > 365
+                    ? t("dashboard:projection.years", { value: (dash.projection.projected_days / 365).toFixed(1) })
+                    : dash.projection.projected_days > 30
+                    ? t("dashboard:projection.months", { value: (dash.projection.projected_days / 30).toFixed(1) })
+                    : t("dashboard:projection.days", { value: dash.projection.projected_days }),
+                }}
+                components={{
+                  accent: <b style={{ color: "var(--accent)" }} />,
+                  b: <b />,
+                  success: <b style={{ color: "var(--success)" }} />,
+                }}
+              />
             </div>
           </div>
         )}
@@ -581,24 +595,24 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {s.scan_total > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Conversion Status</h3>
+              <h3 style={headingStyle}>{t("dashboard:conversion.title")}</h3>
               <Donut
                 size={110}
                 segments={[
-                  { value: s.needs_conversion, color: "#e94560", label: "Needs converting" },
-                  { value: s.already_converted, color: "var(--accent)", label: "Converted by Shrinkerr" },
+                  { value: s.needs_conversion, color: "#e94560", label: t("dashboard:conversion.needsConverting") },
+                  { value: s.already_converted, color: "var(--accent)", label: t("dashboard:conversion.converted") },
                 ]}
                 centerText={`${s.needs_conversion + s.already_converted > 0 ? Math.round(s.already_converted / (s.needs_conversion + s.already_converted) * 100) : 0}%`}
               />
             </div>
 
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Audio Cleanup Status</h3>
+              <h3 style={headingStyle}>{t("dashboard:audioCleanup.title")}</h3>
               <Donut
                 size={110}
                 segments={[
-                  { value: s.files_needing_audio_cleanup, color: "#ffa94d", label: "Needs cleanup" },
-                  { value: s.files_audio_cleaned, color: "var(--accent)", label: "Cleaned by Shrinkerr" },
+                  { value: s.files_needing_audio_cleanup, color: "#ffa94d", label: t("dashboard:audioCleanup.needsCleanup") },
+                  { value: s.files_audio_cleaned, color: "var(--accent)", label: t("dashboard:audioCleanup.cleaned") },
                 ]}
                 centerText={`${s.files_audio_cleaned + s.files_needing_audio_cleanup > 0 ? Math.round(s.files_audio_cleaned / (s.files_audio_cleaned + s.files_needing_audio_cleanup) * 100) : 0}%`}
               />
@@ -612,7 +626,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
           {s.scan_total > 0 && (
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Video Codecs (All Scanned)</h3>
+              <h3 style={headingStyle}>{t("dashboard:library.videoCodecs")}</h3>
               <Donut
                 size={110}
                 segments={s.codecs.map(([label, value]: [string, number], i: number) => ({
@@ -625,7 +639,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
           {Object.keys(s.savings_by_source || {}).length > 0 && (
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Avg Reduction by Source</h3>
+              <h3 style={headingStyle}>{t("dashboard:library.avgReductionBySource")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {Object.entries(s.savings_by_source).map(([src, data]: [string, any]) => (
                   <div key={src}>
@@ -646,7 +660,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {/* Source Types donut + Resolution donut */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
           <div style={cardStyle}>
-            <h3 style={headingStyle}>Source Types</h3>
+            <h3 style={headingStyle}>{t("dashboard:library.sourceTypes")}</h3>
             <Donut
               size={110}
               segments={(s.source_types || []).map(([label, value]: [string, number], i: number) => ({
@@ -657,7 +671,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           </div>
 
           <div style={cardStyle}>
-            <h3 style={headingStyle}>Resolution</h3>
+            <h3 style={headingStyle}>{t("dashboard:library.resolution")}</h3>
             <Donut
               size={110}
               segments={(s.resolutions || []).map(([label, value]: [string, number], i: number) => ({
@@ -685,7 +699,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           return (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
               <div style={cardStyle}>
-                <h3 style={headingStyle}>VMAF Scores</h3>
+                <h3 style={headingStyle}>{t("dashboard:vmaf.scores")}</h3>
                 <Donut
                   size={130}
                   segments={tierRows.map(r => ({
@@ -697,14 +711,14 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                 />
               </div>
               <div style={cardStyle}>
-                <h3 style={headingStyle}>VMAF Details</h3>
+                <h3 style={headingStyle}>{t("dashboard:vmaf.details")}</h3>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Total scored</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.totalScored")}</span>
                     <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{vm.count}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Average VMAF</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.average")}</span>
                     <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -723,32 +737,32 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
         {/* ===== TRENDS (90-day charts) ===== */}
         {chartData.length > 1 && <>
-          <h3 style={{ color: "var(--text-primary)", fontSize: 16, margin: "12px 0 4px" }}>Trends</h3>
+          <h3 style={{ color: "var(--text-primary)", fontSize: 16, margin: "12px 0 4px" }}>{t("dashboard:trends.title")}</h3>
 
           {/* Row 1: Cumulative Space Saved + Avg FPS per Job */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 12 }}>
             <div style={{ ...cardStyle, minHeight: 250 }}>
-              <h3 style={headingStyle}>Cumulative Space Saved</h3>
+              <h3 style={headingStyle}>{t("dashboard:trends.cumulativeSaved")}</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" TB" />
                   <Tooltip {...tooltipStyle} />
-                  <Area type="monotone" dataKey="cumulative_tb" stroke="#6860fe" fill="rgba(104,96,254,0.2)" strokeWidth={2} name="TB Saved" />
+                  <Area type="monotone" dataKey="cumulative_tb" stroke="#6860fe" fill="rgba(104,96,254,0.2)" strokeWidth={2} name={t("dashboard:trends.tbSaved")} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
             <div style={{ ...cardStyle, minHeight: 250 }}>
-              <h3 style={headingStyle}>Avg FPS per Job</h3>
+              <h3 style={headingStyle}>{t("dashboard:trends.avgFpsPerJob")}</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
-                  <Tooltip {...tooltipStyle} formatter={(v: any) => [`${Math.round(v)} fps`, "Avg FPS/Job"]} />
-                  <Line type="monotone" dataKey="avg_fps" stroke="#40ceff" dot={false} strokeWidth={2} name="Avg FPS/Job" connectNulls />
+                  <Tooltip {...tooltipStyle} formatter={(v: any) => [t("dashboard:trends.fpsValue", { value: Math.round(v) }), t("dashboard:trends.avgFpsJobSeries")]} />
+                  <Line type="monotone" dataKey="avg_fps" stroke="#40ceff" dot={false} strokeWidth={2} name={t("dashboard:trends.avgFpsJobSeries")} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -757,27 +771,27 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           {/* Row 2: Daily Space Saved + Daily Conversions */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 12 }}>
             <div style={{ ...cardStyle, minHeight: 250 }}>
-              <h3 style={headingStyle}>Daily Space Saved</h3>
+              <h3 style={headingStyle}>{t("dashboard:trends.dailySaved")}</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <RBarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" GB" />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="saved_gb" fill="#10B981" radius={[3, 3, 0, 0]} name="GB Saved" />
+                  <Bar dataKey="saved_gb" fill="#10B981" radius={[3, 3, 0, 0]} name={t("dashboard:trends.gbSaved")} />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
 
             <div style={{ ...cardStyle, minHeight: 250 }}>
-              <h3 style={headingStyle}>Daily Conversions</h3>
+              <h3 style={headingStyle}>{t("dashboard:trends.dailyConversions")}</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <RBarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="jobs_completed" fill="#6860fe" radius={[3, 3, 0, 0]} name="Jobs" />
+                  <Bar dataKey="jobs_completed" fill="#6860fe" radius={[3, 3, 0, 0]} name={t("dashboard:trends.jobs")} />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
@@ -790,14 +804,14 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
           {(s.size_distribution || []).length > 0 && (
             <div style={cardStyle}>
-              <h3 style={headingStyle}>File Size Distribution</h3>
+              <h3 style={headingStyle}>{t("dashboard:deepDive.sizeDistribution")}</h3>
               <HBarChart items={s.size_distribution.map((r: any) => ({ label: r.label, value: r.count }))} />
             </div>
           )}
 
           {(s.top_folders || []).length > 0 && (
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Saved by Library</h3>
+              <h3 style={headingStyle}>{t("dashboard:deepDive.savedByLibrary")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {s.top_folders.map((f: any, i: number) => (
                   <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -826,7 +840,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           const maxSaved = s.top_savers[0]?.space_saved || 1;
           return (
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Top 10 Biggest Savings</h3>
+              <h3 style={headingStyle}>{t("dashboard:deepDive.topSavings")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {s.top_savers.map((job: any, idx: number) => (
                   <div key={idx} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -855,11 +869,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 90 }}>
               <div style={{ fontSize: 32, fontWeight: "bold", color: "var(--success)" }}>{dash.bandwidth_pct}%</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>avg reduction</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:bandwidth.avgReduction")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7 }}>
-              Converted files use {dash.bandwidth_pct}% less streaming bandwidth per viewer.
-              For remote Plex streaming this means fewer buffering issues and lower upload usage.
+              {t("dashboard:bandwidth.description", { pct: dash.bandwidth_pct })}
             </div>
           </div>
         )}
@@ -868,7 +881,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {s.scan_total > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Native Languages (Scanned Titles)</h3>
+              <h3 style={headingStyle}>{t("dashboard:languages.native")}</h3>
               <Donut
                 size={110}
                 segments={(s.native_langs || []).map(([label, value]: [string, number], i: number) => ({
@@ -879,12 +892,12 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
             </div>
 
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Audio Track Languages (All Scanned)</h3>
+              <h3 style={headingStyle}>{t("dashboard:languages.audioTracks")}</h3>
               <HBarChart
                 items={(s.audio_langs || []).map(([label, value]: [string, number]) => ({ label, value }))}
               />
               <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted)" }}>
-                {s.total_audio_tracks} total audio tracks across {s.scan_total} files
+                {t("dashboard:languages.tracksAcrossFiles", { tracks: s.total_audio_tracks, files: s.scan_total })}
               </div>
             </div>
           </div>
@@ -894,23 +907,23 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {(s.audio_tracks_deleted > 0 || s.tracks_marked_removal > 0) && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
             <div style={cardStyle}>
-              <h3 style={headingStyle}>Audio Track Removal</h3>
+              <h3 style={headingStyle}>{t("dashboard:audioRemoval.title")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Tracks removed (completed)</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.removedCompleted")}</span>
                   <span style={{ color: "#ff6b9d", fontWeight: "bold" }}>{s.audio_tracks_deleted}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Tracks marked for removal</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.markedForRemoval")}</span>
                   <span style={{ color: "#ffa94d", fontWeight: "bold" }}>{s.tracks_marked_removal}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Total tracks scanned</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.totalScanned")}</span>
                   <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{s.total_audio_tracks}</span>
                 </div>
                 {s.total_audio_tracks > 0 && (
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Avg tracks per file</span>
+                    <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.avgPerFile")}</span>
                     <span style={{ color: "var(--text-secondary)", fontWeight: "bold" }}>{(s.total_audio_tracks / s.scan_total).toFixed(1)}</span>
                   </div>
                 )}
@@ -919,7 +932,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
 
             {(s.removed_langs || []).length > 0 && (
               <div style={cardStyle}>
-                <h3 style={headingStyle}>Tracks Marked for Removal by Language</h3>
+                <h3 style={headingStyle}>{t("dashboard:audioRemoval.byLanguage")}</h3>
                 <HBarChart
                   items={s.removed_langs.map(([label, value]: [string, number]) => ({ label, value }))}
                   colors={["#e94560", "#ff6b9d", "#ff8fb0", "#ffa94d", "#ffc078", "#ffd8a8", "#ffe8cc"]}
@@ -952,21 +965,26 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
           return (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
               <div style={cardStyle}>
-                <h3 style={{ ...headingStyle, marginBottom: 6 }}>Cloud Storage Savings</h3>
+                <h3 style={{ ...headingStyle, marginBottom: 6 }}>{t("dashboard:cloud.title")}</h3>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-                  If your library were in the cloud, you'd save this much per month by reclaiming {savedTB.toFixed(1)} TB:
+                  {t("dashboard:cloud.description", { tb: savedTB.toFixed(1) })}
                 </div>
                 {cloudCosts.map(c => (
                   <div key={c.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
                     <span style={{ color: "var(--text-muted)" }}>{c.name}</span>
-                    <span style={{ color: "var(--success)", fontWeight: 600 }}>${(savedTB * c.perTB).toFixed(2)}/mo</span>
+                    <span style={{ color: "var(--success)", fontWeight: 600 }}>{t("dashboard:cloud.perMonth", { amount: (savedTB * c.perTB).toFixed(2) })}</span>
                   </div>
                 ))}
               </div>
               <div style={cardStyle}>
-                <h3 style={{ ...headingStyle, marginBottom: 6 }}>Drives Saved</h3>
+                <h3 style={{ ...headingStyle, marginBottom: 6 }}>{t("dashboard:drives.title")}</h3>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-                  You've reclaimed <strong style={{ color: "var(--text-primary)" }}>{savedTB >= 1 ? `${savedTB.toFixed(1)} TB` : `${savedGB.toFixed(0)} GB`}</strong> — that's fewer drives you need:
+                  <Trans
+                    t={t}
+                    i18nKey="dashboard:drives.description"
+                    values={{ amount: savedTB >= 1 ? `${savedTB.toFixed(1)} TB` : `${savedGB.toFixed(0)} GB` }}
+                    components={{ strong: <strong style={{ color: "var(--text-primary)" }} /> }}
+                  />
                 </div>
                 {driveTypes.map(d => {
                   const drivesSaved = savedTB / d.size;
@@ -979,10 +997,10 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                       <span style={{ color: "var(--text-muted)" }}>{d.name} · ${d.price}</span>
                       <span style={{ display: "flex", gap: 12 }}>
                         <span style={{ color: "var(--accent)", fontWeight: 600 }}>
-                          {drivesSaved >= 1 ? `${Math.floor(drivesSaved)} drive${Math.floor(drivesSaved) !== 1 ? "s" : ""} saved` : `${(drivesSaved * 100).toFixed(0)}% of a drive`}
+                          {drivesSaved >= 1 ? t("dashboard:drives.drivesSaved", { count: Math.floor(drivesSaved) }) : t("dashboard:drives.pctOfDrive", { pct: (drivesSaved * 100).toFixed(0) })}
                         </span>
                         {moneySaved > 0 && (
-                          <span style={{ color: "var(--success)", fontWeight: 600 }}>${moneySaved} saved</span>
+                          <span style={{ color: "var(--success)", fontWeight: 600 }}>{t("dashboard:drives.moneySaved", { amount: moneySaved })}</span>
                         )}
                       </span>
                     </div>
@@ -996,9 +1014,9 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
         {/* Encoding Efficiency by Source */}
         {s.savings_by_source && Object.keys(s.savings_by_source).length > 0 && (
           <div style={cardStyle}>
-            <h3 style={{ ...headingStyle, marginBottom: 6 }}>Encoding Efficiency by Source</h3>
+            <h3 style={{ ...headingStyle, marginBottom: 6 }}>{t("dashboard:efficiency.title")}</h3>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 16 }}>
-              Which source types compress best? Higher % = more efficient. Focus encoding efforts on the best performers.
+              {t("dashboard:efficiency.description")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {Object.entries(s.savings_by_source)
@@ -1013,8 +1031,8 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                           {src}
                         </span>
                         <span style={{ display: "flex", gap: 12, color: "var(--text-muted)" }}>
-                          <span>{fmtNum(data.count)} files</span>
-                          <span>{formatBytes(data.saved)} saved</span>
+                          <span>{t("dashboard:efficiency.files", { count: data.count, num: fmtNum(data.count) })}</span>
+                          <span>{t("dashboard:efficiency.saved", { size: formatBytes(data.saved) })}</span>
                           <span style={{ color: "var(--success)", fontWeight: 600 }}>{data.percent}%</span>
                         </span>
                       </div>
@@ -1028,7 +1046,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
                         }} />
                       </div>
                       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                        {formatBytes(data.original)} original → {formatBytes(data.original - data.saved)} encoded
+                        {t("dashboard:efficiency.originalToEncoded", { original: formatBytes(data.original), encoded: formatBytes(data.original - data.saved) })}
                       </div>
                     </div>
                   );

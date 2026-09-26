@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
@@ -15,6 +16,7 @@ interface QueuePageProps {
 }
 
 export default function QueuePage({ jobProgressMap }: QueuePageProps) {
+  const { t } = useTranslation(["queue", "common"]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [tab, setTab] = useState<"pending" | "completed" | "failed">("pending");
@@ -225,7 +227,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
   const handleBulkMove = async (position: "top" | "bottom" | "up" | "down") => {
     bulkMoveJobs(selectedIds, position).then(() => load());
-    toast(`Moving ${selectedIds.length} job(s) ${position}`);
+    toast(t("queue:toasts.moving", { count: selectedIds.length, position: t(`queue:positions.${position}`) }));
   };
 
   const handleBulkVideoPreset = async (preset: string, cq: number) => {
@@ -240,7 +242,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         ? { ...j, libx265_preset: preset, libx265_crf: cq }
         : { ...j, nvenc_preset: preset, nvenc_cq: cq };
     }));
-    toast(`Video preset applied to ${selectedIds.length} job(s)`, "success");
+    toast(t("queue:toasts.videoPresetApplied", { count: selectedIds.length }), "success");
     bulkUpdateJobSettings(isCpu
       ? { job_ids: selectedIds, libx265_preset: preset, libx265_crf: cq }
       : { job_ids: selectedIds, nvenc_preset: preset, nvenc_cq: cq });
@@ -252,21 +254,21 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       selectedSet.has(j.id) ? { ...j, audio_codec: codec, audio_bitrate: bitrate } : j
     ));
     bulkUpdateJobSettings({ job_ids: selectedIds, audio_codec: codec, audio_bitrate: bitrate });
-    toast(`Audio preset applied to ${selectedIds.length} job(s)`, "success");
+    toast(t("queue:toasts.audioPresetApplied", { count: selectedIds.length }), "success");
   };
 
   const handleBulkIgnore = async () => {
-    if (!await confirm({ message: `Ignore ${selectedIds.length} selected job(s)?`, confirmLabel: "Ignore", danger: true })) return;
+    if (!await confirm({ message: t("queue:confirm.ignoreSelected", { count: selectedIds.length }), confirmLabel: t("common:actions.ignore"), danger: true })) return;
     const selectedSet = new Set(selectedIds);
     setJobs(prev => prev.filter(j => !selectedSet.has(j.id)));
     bulkIgnoreJobs(selectedIds as number[]);
     deselectAll();
     load();
-    toast(`${selectedIds.length} job(s) ignored`);
+    toast(t("queue:toasts.ignored", { count: selectedIds.length }));
   };
 
   const handleBulkRemove = async () => {
-    if (!await confirm({ message: `Remove ${selectedIds.length} selected job(s) from queue?`, confirmLabel: "Remove", danger: true })) return;
+    if (!await confirm({ message: t("queue:confirm.removeSelected", { count: selectedIds.length }), confirmLabel: t("common:actions.remove"), danger: true })) return;
     const selectedSet = new Set(selectedIds);
     setJobs(prev => prev.filter(j => !selectedSet.has(j.id)));
     for (const id of selectedIds) {
@@ -274,7 +276,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     }
     deselectAll();
     load();
-    toast(`${selectedIds.length} job(s) removed`);
+    toast(t("queue:toasts.removed", { count: selectedIds.length }));
   };
 
   // Drag-and-drop reorder for pending queue
@@ -369,13 +371,13 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             await ignoreFile(filePath);
             await removeJob(id);
             load();
-            toast("File ignored and removed from queue");
+            toast(t("queue:toasts.fileIgnored"));
           }}
           encodingDefaults={encodingDefaults}
         />
       </div>
     ))
-  ), [tab, tabJobs, selectedJobIds, dragIdx, dropIdx, encodingDefaults]);
+  ), [tab, tabJobs, selectedJobIds, dragIdx, dropIdx, encodingDefaults, t]);
 
   const completedRowEls = useMemo(() => (
     tab !== "completed" ? null : tabJobs.map((job) => (
@@ -405,11 +407,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     return (
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>Queue</h2>
+          <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>{t("queue:title")}</h2>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>Loading queue...</div>
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("queue:loadingQueue")}</div>
         </div>
       </div>
     );
@@ -426,14 +428,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>Queue</h2>
+        <h2 style={{ color: "var(--text-primary)", fontSize: 20 }}>{t("queue:title")}</h2>
         {hasActiveJobs ? (
-          <button className="btn btn-secondary" onClick={() => { pauseQueue(); toast("Queue paused"); }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause
+          <button className="btn btn-secondary" onClick={() => { pauseQueue(); toast(t("queue:toasts.queuePaused")); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> {t("common:actions.pause")}
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={() => { setQueueStarting(true); startQueue().then(() => { load(); toast("Queue started", "success"); }); }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg> Start
+          <button className="btn btn-primary" onClick={() => { setQueueStarting(true); startQueue().then(() => { load(); toast(t("queue:toasts.queueStarted"), "success"); }); }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg> {t("common:actions.start")}
           </button>
         )}
       </div>
@@ -455,14 +457,13 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
           </svg>
           <div>
-            <strong>Encoding paused</strong>
+            <strong>{t("queue:streamPause.title")}</strong>
             {streamPauseServers.length > 0 && (
-              <> — active stream{streamPauseServers.length > 1 ? "s" : ""} on{" "}
-              {streamPauseServers.join(" + ")}</>
+              <>{" "}{t("queue:streamPause.activeStreams", { count: streamPauseServers.length, servers: streamPauseServers.join(" + ") })}</>
             )}
             {streamPauseFrozen > 0 && (
               <span style={{ color: "var(--text-muted)" }}>
-                {" "}({streamPauseFrozen} job{streamPauseFrozen > 1 ? "s" : ""} frozen, will resume when stream ends)
+                {" "}{t("queue:streamPause.frozen", { count: streamPauseFrozen })}
               </span>
             )}
           </div>
@@ -510,7 +511,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             losslessCodec={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_codec : null}
             losslessBitrate={hasLossless && encodingDefaults?.auto_convert_lossless ? encodingDefaults?.lossless_target_bitrate : null}
             onCancel={() => {
-              cancelCurrentJob(job.id).then(() => { toast("Conversion cancelled"); load(); });
+              cancelCurrentJob(job.id).then(() => { toast(t("queue:toasts.conversionCancelled")); load(); });
             }}
           />
         );
@@ -554,7 +555,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             spinners.push(
               <div key={`starting-${i}`} className="job-active" style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, marginBottom: 8 }}>
                 <div className="spinner" style={{ width: 18, height: 18 }} />
-                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Starting...</span>
+                <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("queue:starting")}</span>
               </div>
             );
           }
@@ -574,7 +575,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             borderBottom: tab === "pending" ? "2px solid var(--accent)" : "2px solid transparent",
           }}
         >
-          Pending ({fmtNum(pendingCount)} remaining)
+          {t("queue:tabs.pendingRemaining", { count: pendingCount, formatted: fmtNum(pendingCount) })}
         </button>
         <button
           onClick={() => setTab("completed")}
@@ -585,7 +586,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             borderBottom: tab === "completed" ? "2px solid var(--success)" : "2px solid transparent",
           }}
         >
-          Completed ({fmtNum(completedCount)} &middot; saved {stats ? (() => { const gb = Math.max(0, stats.total_space_saved) / (1024**3); return gb >= 1000 ? (gb / 1024).toFixed(2) + " TB" : gb.toFixed(1) + " GB"; })() : "0 GB"})
+          {t("queue:tabs.completedSaved", { formatted: fmtNum(completedCount), saved: stats ? (() => { const gb = Math.max(0, stats.total_space_saved) / (1024**3); return gb >= 1000 ? (gb / 1024).toFixed(2) + " TB" : gb.toFixed(1) + " GB"; })() : "0 GB" })}
         </button>
         {failedCount > 0 && (
           <button
@@ -597,7 +598,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               borderBottom: tab === "failed" ? "2px solid #e94560" : "2px solid transparent",
             }}
           >
-            Failed ({fmtNum(failedCount)})
+            {t("queue:tabs.failedCount", { formatted: fmtNum(failedCount) })}
           </button>
         )}
       </div>
@@ -608,7 +609,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${tab} by filename…`}
+          placeholder={t("queue:search.placeholder", { tab: t(`common:status.${tab}`).toLowerCase() })}
           style={{
             width: "100%", padding: "8px 32px 8px 12px", fontSize: 13, boxSizing: "border-box",
             background: "var(--bg-primary)", border: "1px solid var(--border)",
@@ -618,7 +619,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         {search && (
           <button
             onClick={() => setSearch("")}
-            aria-label="Clear search"
+            aria-label={t("common:actions.clearSearch")}
             style={{
               position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
               background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16,
@@ -642,7 +643,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               defaultEncoder={encodingDefaults?.default_encoder}
               onChangePriority={async (priority: number) => {
                 await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
-                toast(`Priority set to ${["Normal", "High", "Highest"][priority]}`);
+                toast(t("queue:toasts.prioritySet", { priority: t(`queue:priority.${["normal", "high", "highest"][priority]}`) }));
                 load();
               }}
               onIgnore={handleBulkIgnore}
@@ -655,8 +656,8 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <>
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
-                  onClick={async () => { if (await confirm({ message: `Clear all ${pendingCount} pending items?`, confirmLabel: "Clear all", danger: true })) { clearPending().then(() => load()); } }}>
-                  Clear all
+                  onClick={async () => { if (await confirm({ message: t("queue:confirm.clearPending", { count: pendingCount }), confirmLabel: t("common:actions.clearAll"), danger: true })) { clearPending().then(() => load()); } }}>
+                  {t("common:actions.clearAll")}
                 </button>
               </div>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
@@ -669,9 +670,9 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />
-                  <span>Loading queue...</span>
+                  <span>{t("queue:loadingQueue")}</span>
                 </div>
-              ) : (appliedSearch ? `No pending jobs match “${appliedSearch}”.` : "No pending jobs.")}
+              ) : (appliedSearch ? t("queue:empty.pendingSearch", { search: appliedSearch }) : t("queue:empty.pending"))}
             </div>
           )}
         </>
@@ -685,7 +686,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                   onClick={() => { clearCompleted(); load(); }}>
-                  Clear done
+                  {t("queue:actions.clearDone")}
                 </button>
               </div>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
@@ -694,7 +695,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
               {loadingMore && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
-                  <div className="spinner" style={{ width: 16, height: 16 }} /> <span>Loading more…</span>
+                  <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
                 </div>
               )}
             </>
@@ -704,9 +705,9 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />
-                  <span>Loading completed jobs...</span>
+                  <span>{t("queue:empty.loadingCompleted")}</span>
                 </div>
-              ) : (appliedSearch ? `No completed jobs match “${appliedSearch}”.` : "No completed jobs yet.")}
+              ) : (appliedSearch ? t("queue:empty.completedSearch", { search: appliedSearch }) : t("queue:empty.completed"))}
             </div>
           )}
         </>
@@ -724,41 +725,41 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                     await retryJob(job.id);
                   }
                   load();
-                  toast(`Retrying ${tabJobs.length} failed job(s)`, "success");
+                  toast(t("queue:toasts.retrying", { count: tabJobs.length }), "success");
                   setTab("pending");
                 }}>
-                Retry all
+                {t("queue:actions.retryAll")}
               </button>
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "#e94560" }}
                 onClick={async () => {
                   const paths = tabJobs.map(j => j.file_path).filter(Boolean);
-                  if (!paths.length) { toast("No file paths on these jobs", "error"); return; }
+                  if (!paths.length) { toast(t("queue:toasts.noFilePaths"), "error"); return; }
                   if (!await confirm({
-                    message: `Re-request ${paths.length} file(s) from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.`,
-                    confirmLabel: `Re-request ${paths.length}`,
+                    message: t("queue:confirm.rerequest", { count: paths.length }),
+                    confirmLabel: t("queue:confirm.rerequestLabel", { count: paths.length }),
                     danger: true,
                   })) return;
                   const res = await researchFilesBulk(paths, true);
                   load();
                   if (res.failed === 0) {
-                    toast(`Re-requested ${res.succeeded} file(s) from Sonarr/Radarr`, "success");
+                    toast(t("queue:toasts.rerequested", { count: res.succeeded }), "success");
                   } else {
-                    toast(`${res.succeeded} re-requested, ${res.failed} failed (check logs)`, res.succeeded > 0 ? "success" : "error");
+                    toast(t("queue:toasts.rerequestPartial", { succeeded: res.succeeded, failed: res.failed }), res.succeeded > 0 ? "success" : "error");
                   }
                 }}>
-                Re-request all (Sonarr/Radarr)
+                {t("queue:actions.rerequestAll")}
               </button>
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                 onClick={async () => {
-                  if (!await confirm({ message: `Clear all ${tabJobs.length} failed job(s)?`, confirmLabel: "Clear all", danger: true })) return;
+                  if (!await confirm({ message: t("queue:confirm.clearFailed", { count: tabJobs.length }), confirmLabel: t("common:actions.clearAll"), danger: true })) return;
                   for (const job of tabJobs) {
                     await removeJob(job.id);
                   }
                   load();
-                  toast(`Cleared ${tabJobs.length} failed job(s)`);
+                  toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }));
                   setTab("pending");
                 }}>
-                Clear all
+                {t("common:actions.clearAll")}
               </button>
             </div>
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
@@ -767,7 +768,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
             {loadingMore && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
-                <div className="spinner" style={{ width: 16, height: 16 }} /> <span>Loading more…</span>
+                <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
               </div>
             )}
             </>
@@ -777,9 +778,9 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />
-                  <span>Loading failed jobs...</span>
+                  <span>{t("queue:empty.loadingFailed")}</span>
                 </div>
-              ) : (appliedSearch ? `No failed jobs match “${appliedSearch}”.` : "No failed jobs.")}
+              ) : (appliedSearch ? t("queue:empty.failedSearch", { search: appliedSearch }) : t("queue:empty.failed"))}
             </div>
           )}
         </>

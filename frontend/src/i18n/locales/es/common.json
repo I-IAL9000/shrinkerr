@@ -1,0 +1,45 @@
+{
+  "actions": {
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "save": "Guardar",
+    "remove": "Quitar",
+    "retry": "Reintentar",
+    "delete": "Eliminar",
+    "ignore": "Ignorar",
+    "unignore": "Dejar de ignorar",
+    "clear": "Borrar",
+    "clearAll": "Borrar todo",
+    "clearSearch": "Borrar búsqueda",
+    "close": "Cerrar",
+    "start": "Iniciar",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "refresh": "Actualizar",
+    "rescan": "Volver a escanear",
+    "selectAll": "Seleccionar todo",
+    "deselectAll": "Deseleccionar todo",
+    "addToQueue": "Añadir a la cola",
+    "moveToTrash": "Mover a la papelera"
+  },
+  "status": {
+    "loading": "Cargando…",
+    "loadingMore": "Cargando más…",
+    "pending": "Pendiente",
+    "running": "En curso",
+    "completed": "Completado",
+    "failed": "Fallido",
+    "cancelled": "Cancelado",
+    "none": "Ninguno",
+    "unknown": "Desconocido"
+  },
+  "language": {
+    "label": "Idioma",
+    "help": "Idioma de la interfaz de Shrinkerr en este navegador. Algunas pantallas y mensajes del servidor siguen solo en inglés mientras avanza la traducción."
+  },
+  "vmaf": {
+    "excellent": "Excelente",
+    "good": "Bueno",
+    "poor": "Deficiente"
+  }
+}

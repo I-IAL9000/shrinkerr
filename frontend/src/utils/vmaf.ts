@@ -21,6 +21,8 @@
  * backend/routes/stats.py. Edit both halves together.
  */
 
+import i18n from "../i18n";
+
 export type VmafTier = "excellent" | "good" | "poor";
 
 export const VMAF_EXCELLENT_MIN = 93;
@@ -32,11 +34,14 @@ export function vmafTier(score: number): VmafTier {
   return "poor";
 }
 
-const TIER_LABEL: Record<VmafTier, string> = {
-  excellent: "Excellent",
-  good: "Good",
-  poor: "Poor",
+// Translation keys (common namespace). Resolved at call time, not module load,
+// so a language switch takes effect on the next render. v0.9.131.
+const TIER_LABEL_KEY: Record<VmafTier, string> = {
+  excellent: "common:vmaf.excellent",
+  good: "common:vmaf.good",
+  poor: "common:vmaf.poor",
 };
+const tierLabel = (tier: VmafTier): string => i18n.t(TIER_LABEL_KEY[tier]);
 
 const TIER_RANGE: Record<VmafTier, string> = {
   excellent: "93+",
@@ -52,7 +57,7 @@ const TIER_COLOR: Record<VmafTier, string> = {
 
 /** Display label, e.g. "Excellent". */
 export function vmafLabel(score: number): string {
-  return TIER_LABEL[vmafTier(score)];
+  return tierLabel(vmafTier(score));
 }
 
 /** Display range hint, e.g. "93+", "87–93", "<87". */
@@ -62,7 +67,7 @@ export function vmafRange(tier: VmafTier): string {
 
 /** Combined "Excellent (93+)" form for legend / chip text. */
 export function vmafLabelWithRange(tier: VmafTier): string {
-  return `${TIER_LABEL[tier]} (${TIER_RANGE[tier]})`;
+  return `${tierLabel(tier)} (${TIER_RANGE[tier]})`;
 }
 
 /** CSS variable reference — pass to `style={{ color }}` directly. */

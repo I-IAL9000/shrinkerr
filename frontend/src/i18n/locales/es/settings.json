@@ -1,0 +1,9 @@
+{
+  "ui": {
+    "title": "Interfaz de usuario",
+    "theme": "Tema",
+    "themeHelp": "Cambia entre el modo oscuro y el claro",
+    "lightMode": "Modo claro",
+    "darkMode": "Modo oscuro"
+  }
+}

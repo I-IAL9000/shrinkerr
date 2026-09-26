@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
-import FilterBar, { FILTER_LABELS } from "../components/FilterBar";
+import FilterBar, { filterLabel } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
@@ -38,6 +39,7 @@ interface ScannerPageProps {
 }
 
 export default function ScannerPage({ scanProgress, onClearScanProgress }: ScannerPageProps) {
+  const { t } = useTranslation(["scanner", "common"]);
   const toast = useToast();
   const confirm = useConfirm();
   const [folders, setFolders] = useState<FolderInfo[]>([]);
@@ -209,7 +211,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       setScanStarted(false);
       if (refreshingMetadata) {
         setRefreshingMetadata(false);
-        toast("Metadata refresh complete", "success");
+        toast(t("scanner:toasts.metadataComplete"), "success");
       }
       loadTree();
       refreshStats();
@@ -325,9 +327,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           clearInterval(poll);
           setPosterPrefetching(false);
           if (s.status === "done") {
-            toast(`Posters fetched: ${s.resolved}/${s.total}`, "success");
+            toast(t("scanner:toasts.postersFetched", { resolved: s.resolved, total: s.total }), "success");
           } else {
-            toast(`Poster fetch error: ${s.status}`);
+            toast(t("scanner:toasts.posterFetchError", { status: s.status }));
           }
         }
       } catch { /* ignore */ }
@@ -564,7 +566,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleRescanFolder = async (folderPath: string) => {
-    toast(`Rescanning ${folderPath.split("/").pop()}...`);
+    toast(t("scanner:toasts.rescanningFolder", { name: folderPath.split("/").pop() }));
     await rescanFolder([folderPath]);
   };
 
@@ -572,9 +574,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     try {
       const res = await deleteFileFromDisk(filePath);
       if (res.file_deleted) {
-        toast("File moved to trash", "success");
+        toast(t("scanner:toasts.fileTrashed"), "success");
       } else {
-        toast("File not found on disk, removed from database");
+        toast(t("scanner:toasts.fileNotOnDisk"));
       }
       // Remove from loaded files and refresh tree
       setLoadedFiles(prev => {
@@ -587,15 +589,15 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
     } catch (err: any) {
-      toast(`Delete failed: ${err.message}`);
+      toast(t("scanner:toasts.deleteFailed", { error: err.message }));
     }
   };
 
   const handleBulkDelete = async () => {
     const selected = getSelectedFiles();
     if (!selected.length) return;
-    if (!await confirm({ message: `Move ${selected.length} file(s) to trash? This cannot be undone from Shrinkerr.`, confirmLabel: `Trash ${selected.length} files`, danger: true })) return;
-    setBulkAction(`Trashing ${selected.length} files...`);
+    if (!await confirm({ message: t("scanner:confirm.trash", { count: selected.length }), confirmLabel: t("scanner:confirm.trashLabel", { count: selected.length }), danger: true })) return;
+    setBulkAction(t("scanner:bulk.trashing", { count: selected.length }));
     try {
       let deleted = 0;
       for (const f of selected) {
@@ -609,7 +611,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
       setLoadedFiles(new Map());
-      toast(`Trashed ${deleted} file(s)`, "success");
+      toast(t("scanner:toasts.trashed", { count: deleted }), "success");
     } finally {
       setBulkAction(null);
     }
@@ -618,8 +620,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkRemove = async () => {
     const selected = getSelectedFiles();
     if (!selected.length) return;
-    if (!await confirm({ message: `Remove ${selected.length} file(s) from the list? Files stay on disk.`, confirmLabel: "Remove" })) return;
-    setBulkAction(`Removing ${selected.length} files...`);
+    if (!await confirm({ message: t("scanner:confirm.remove", { count: selected.length }), confirmLabel: t("common:actions.remove") })) return;
+    setBulkAction(t("scanner:bulk.removing", { count: selected.length }));
     try {
       for (const f of selected) {
         try { await removeScanResult(f.id); } catch {}
@@ -629,7 +631,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
       setLoadedFiles(new Map());
-      toast(`Removed ${selected.length} file(s) from list`, "success");
+      toast(t("scanner:toasts.removedFromList", { count: selected.length }), "success");
     } finally {
       setBulkAction(null);
     }
@@ -667,8 +669,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkUnignore = async () => {
     const selected = getSelectedFiles().filter(f => f.ignored);
     if (!selected.length) return;
-    if (!await confirm({ message: `Unignore ${selected.length} selected file(s)?`, confirmLabel: "Unignore" })) return;
-    setBulkAction(`Unignoring ${selected.length} files...`);
+    if (!await confirm({ message: t("scanner:confirm.unignore", { count: selected.length }), confirmLabel: t("common:actions.unignore") })) return;
+    setBulkAction(t("scanner:bulk.unignoring", { count: selected.length }));
     try {
       await Promise.all(selected.map(f => unignoreFile(f.file_path)));
       setSelectAllActive(false);
@@ -676,7 +678,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
       setLoadedFiles(new Map());
-      toast(`Unignored ${selected.length} file(s)`, "success");
+      toast(t("scanner:toasts.unignored", { count: selected.length }), "success");
     } finally {
       setBulkAction(null);
     }
@@ -685,8 +687,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const handleBulkIgnore = async () => {
     const paths = Array.from(selectedPaths);
     if (!paths.length) return;
-    if (!await confirm({ message: `Ignore ${selectedCount} selected file(s)?`, confirmLabel: "Ignore", danger: true })) return;
-    setBulkAction(`Ignoring ${selectedCount} files...`);
+    if (!await confirm({ message: t("scanner:confirm.ignore", { count: selectedCount }), confirmLabel: t("common:actions.ignore"), danger: true })) return;
+    setBulkAction(t("scanner:bulk.ignoring", { count: selectedCount }));
     try {
       await Promise.all(paths.map(p => ignoreFile(p)));
       setSelectAllActive(false);
@@ -694,7 +696,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
       setLoadedFiles(new Map());
-      toast(`Ignored ${paths.length} item(s)`, "success");
+      toast(t("scanner:toasts.ignored", { count: paths.length }), "success");
     } finally {
       setBulkAction(null);
     }
@@ -721,29 +723,29 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       folderSet.add(parts.slice(0, -1).join("/"));
     }
     if (folderSet.size === 0) {
-      toast("No files or folders selected");
+      toast(t("scanner:toasts.noSelection"));
       return;
     }
-    if (!await confirm({ message: `Rescan ${folderSet.size} folder(s)?`, confirmLabel: "Rescan" })) return;
+    if (!await confirm({ message: t("scanner:confirm.rescan", { count: folderSet.size }), confirmLabel: t("common:actions.rescan") })) return;
     for (const folder of folderSet) {
       await rescanFolder([folder]);
     }
     setSelectAllActive(false);
     setSelectedPaths(new Set());
-    toast(`Rescanning ${folderSet.size} folder(s)...`, "success");
+    toast(t("scanner:toasts.rescanningFolders", { count: folderSet.size }), "success");
   };
 
   const handleHealthCheck = async (mode: "quick" | "thorough") => {
     const { queueHealthChecks } = await import("../api");
     const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
     if (!paths.length && !selectAllActive) {
-      toast("No files or folders selected");
+      toast(t("scanner:toasts.noSelection"));
       return;
     }
     if (mode === "thorough") {
       if (!await confirm({
-        message: `Thorough check decodes every frame of every file — this can take a long time (roughly duration / 10 per file). Proceed?`,
-        confirmLabel: "Run thorough check",
+        message: t("scanner:confirm.thorough"),
+        confirmLabel: t("scanner:confirm.thoroughLabel"),
       })) return;
     }
     try {
@@ -754,14 +756,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         selectAllActive,
       );
       if (res.added > 0) {
-        toast(`Queued ${res.added} ${mode} health check${res.added !== 1 ? "s" : ""}`, "success");
+        toast(t(mode === "thorough" ? "scanner:toasts.healthQueuedThorough" : "scanner:toasts.healthQueuedQuick", { count: res.added }), "success");
         setSelectAllActive(false);
         setSelectedPaths(new Set());
       } else {
-        toast("No files to check (already queued or no matches)");
+        toast(t("scanner:toasts.healthNothingToCheck"));
       }
     } catch (err: any) {
-      toast(`Failed to queue health checks: ${err.message || "unknown error"}`);
+      toast(t("scanner:toasts.healthQueueFailed", { error: err.message || t("scanner:toasts.unknownError") }));
     }
   };
 
@@ -774,28 +776,28 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // No frontend tree-expansion required.
     const paths = Array.from(selectedPaths);
     if (paths.length === 0) {
-      toast("No files or folders selected");
+      toast(t("scanner:toasts.noSelection"));
       return;
     }
 
     const labels = {
-      replace: { name: "Request replacement", danger: true, verb: "re-requested" },
-      upgrade: { name: "Search for upgrade", danger: false, verb: "upgrade-searched" },
-      missing: { name: "Search missing episodes", danger: false, verb: "searched" },
+      replace: { name: t("scanner:arr.replaceName"), danger: true, verb: t("scanner:arr.replaceVerb") },
+      upgrade: { name: t("scanner:arr.upgradeName"), danger: false, verb: t("scanner:arr.upgradeVerb") },
+      missing: { name: t("scanner:arr.missingName"), danger: false, verb: t("scanner:arr.missingVerb") },
     };
     const cfg = labels[action];
 
     // Only replace needs a confirmation (destructive: deletes + blocklists)
     if (action === "replace") {
       if (!await confirm({
-        message: `${cfg.name} for ${paths.length} file(s)?\n\nThis will blocklist the current release, delete each file, and trigger a fresh search.`,
-        confirmLabel: `Replace ${paths.length}`,
+        message: t("scanner:confirm.replace", { name: cfg.name, count: paths.length }),
+        confirmLabel: t("scanner:confirm.replaceLabel", { n: paths.length }),
         danger: true,
       })) return;
     } else if (action === "missing") {
       if (!await confirm({
-        message: `Search for missing episodes across the series covered by your selection?\n\nShrinkerr will resolve unique series from ${paths.length} path(s) and ask Sonarr to search for any missing monitored episodes.`,
-        confirmLabel: "Search missing",
+        message: t("scanner:confirm.missing", { count: paths.length }),
+        confirmLabel: t("scanner:confirm.missingLabel"),
       })) return;
     }
 
@@ -805,39 +807,39 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       if (action === "missing") {
         // Aggregate response shape from search_missing_episodes
         if (res.success) {
-          const summary = `${res.series_searched || 0}/${res.series_resolved || 0} series searched, ${res.total_episode_ids || 0} missing episode(s)`
-            + (res.skipped_movie ? ` · skipped ${res.skipped_movie} movie(s)` : "")
-            + (res.unresolved ? ` · ${res.unresolved} unresolved path(s)` : "");
+          const summary = t("scanner:toasts.missingSummary", { searched: res.series_searched || 0, resolved: res.series_resolved || 0, count: res.total_episode_ids || 0 })
+            + (res.skipped_movie ? t("scanner:toasts.missingSkippedMovies", { count: res.skipped_movie }) : "")
+            + (res.unresolved ? t("scanner:toasts.missingUnresolved", { count: res.unresolved }) : "");
           toast(summary, "success");
         } else {
-          toast(`Missing search failed: ${res.error || "unknown error"}`, "error");
+          toast(t("scanner:toasts.missingFailed", { error: res.error || t("scanner:toasts.unknownError") }), "error");
         }
         return;
       }
 
       // replace/upgrade: per-file results
       if (res.failed === 0) {
-        toast(`${cfg.name}: ${res.succeeded} file(s) ${cfg.verb}`, "success");
+        toast(t("scanner:toasts.arrDone", { name: cfg.name, count: res.succeeded, verb: cfg.verb }), "success");
       } else {
-        toast(`${res.succeeded} ${cfg.verb}, ${res.failed} failed (check logs)`, res.succeeded > 0 ? "success" : "error");
+        toast(t("scanner:toasts.arrPartial", { succeeded: res.succeeded, verb: cfg.verb, failed: res.failed }), res.succeeded > 0 ? "success" : "error");
       }
     } catch (exc: any) {
-      toast(`${cfg.name} failed: ${exc?.message || exc}`, "error");
+      toast(t("scanner:toasts.arrFailed", { name: cfg.name, error: exc?.message || exc }), "error");
     }
   };
 
   const handleResetCorruptFlags = async () => {
     const { resetHealthStatus } = await import("../api");
     if (!await confirm({
-      message: "Clear the 'corrupt' flag on every file currently marked corrupt and un-ignore them? They'll go back to being considered healthy until the next health check runs.",
-      confirmLabel: "Clear corrupt flags",
+      message: t("scanner:confirm.resetCorrupt"),
+      confirmLabel: t("scanner:confirm.resetCorruptLabel"),
     })) return;
     try {
       const res = await resetHealthStatus({ reset_all_corrupt: true, unignore: true });
-      toast(`Cleared ${res.reset} corrupt flag(s)${res.unignored ? `, un-ignored ${res.unignored}` : ""}`, "success");
+      toast(t("scanner:toasts.corruptCleared", { count: res.reset }) + (res.unignored ? t("scanner:toasts.corruptUnignored", { n: res.unignored }) : ""), "success");
       loadTree();
     } catch (err: any) {
-      toast(`Failed to reset: ${err.message || "unknown error"}`, "error");
+      toast(t("scanner:toasts.resetFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");
     }
   };
 
@@ -866,18 +868,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     const pendingPaths = p.pending_paths;
     try { await ackDetectBatchPending(); } catch { /* ignore */ }
     const ok = await confirm({
-      message: `${pendingPaths.length} title(s) had a language detected, but their format (e.g. AVI) can't store the tag in place.\n\nRemux them to MKV now to apply it? This is a fast stream-copy — no re-encode, no quality loss, no size increase.`,
-      confirmLabel: `Remux ${pendingPaths.length} to MKV`,
+      message: t("scanner:confirm.remux", { count: pendingPaths.length }),
+      confirmLabel: t("scanner:confirm.remuxLabel", { n: pendingPaths.length }),
     });
     if (!ok) return;
     try {
       const r = await addJobsFromScan(pendingPaths, 0, false, { language_remux: true });
-      toast(`Queued ${r.added} remux job(s) to apply detected languages`, "success");
+      toast(t("scanner:toasts.remuxQueued", { count: r.added }), "success");
     } catch (e: any) {
-      toast(`Failed to queue remux: ${e?.message || e}`, "error");
+      toast(t("scanner:toasts.remuxFailed", { error: e?.message || e }), "error");
     }
     // toast/confirm are app-level stable refs (same as startDetectPoll's usage).
-  }, []);
+  }, [t]);
 
   const startDetectPoll = useCallback(() => {
     if (detectPollRef.current != null) return;  // already polling
@@ -890,10 +892,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       } else {
         if (detectWasActiveRef.current) {
           const msg = p.cancelled
-            ? `Detection cancelled — ${p.changed}/${p.done} updated`
+            ? t("scanner:toasts.detectCancelled", { changed: p.changed, done: p.done })
             : p.total === 0
-              ? "No unknown-language tracks found"
-              : `Language detection: ${p.changed}/${p.total} updated${p.failed ? `, ${p.failed} failed` : ""}`;
+              ? t("scanner:toasts.detectNoUnknown")
+              : t("scanner:toasts.detectDone", { changed: p.changed, total: p.total }) + (p.failed ? t("scanner:toasts.detectFailedSuffix", { n: p.failed }) : "");
           toast(msg, (p.failed && !p.changed) ? "error" : "success");
           loadTree();
           offerRemuxIfPending(p);
@@ -905,16 +907,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     };
     tick();
     detectPollRef.current = window.setInterval(tick, 1500);
-  }, [loadTree, offerRemuxIfPending]);
+  }, [loadTree, offerRemuxIfPending, t]);
 
   const startDetectBatch = async (paths: string[]) => {
     try {
       const res = await detectLanguagesBatch(paths);
       if (res.status === "already_running") {
-        toast("A language-detection run is already in progress");
+        toast(t("scanner:toasts.detectAlreadyRunning"));
       }
     } catch (exc: any) {
-      toast(`Failed to start detection: ${exc?.message || exc}`, "error");
+      toast(t("scanner:toasts.detectStartFailed", { error: exc?.message || exc }), "error");
       return;
     }
     detectWasActiveRef.current = true;
@@ -922,8 +924,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleCancelDetect = async () => {
-    try { await cancelDetectBatch(); toast("Cancelling after the current file…"); }
-    catch (exc: any) { toast(`Cancel failed: ${exc?.message || exc}`, "error"); }
+    try { await cancelDetectBatch(); toast(t("scanner:toasts.detectCancellingAfterCurrent")); }
+    catch (exc: any) { toast(t("scanner:toasts.cancelFailed", { error: exc?.message || exc }), "error"); }
   };
 
   // Order the visible folders exactly as the poster grid renders them (group
@@ -937,10 +939,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   const handleDetectAllUnknown = async () => {
     const paths = orderedFolderPaths();
-    if (paths.length === 0) { toast("No titles in the current filter"); return; }
+    if (paths.length === 0) { toast(t("scanner:toasts.noTitlesInFilter")); return; }
     if (!await confirm({
-      message: `Detect languages across all ${paths.length} title(s) in this filter?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. With image-sub OCR this can take a long time across a large filter.`,
-      confirmLabel: "Detect all",
+      message: t("scanner:confirm.detectAll", { count: paths.length }),
+      confirmLabel: t("scanner:confirm.detectAllLabel"),
     })) return;
     await startDetectBatch(paths);
   };
@@ -958,10 +960,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     const inOrder = ordered.filter(p => selectedPaths.has(p));
     const rest = Array.from(selectedPaths).filter(p => !inOrder.includes(p));
     const paths = selectAllActive ? ordered : [...inOrder, ...rest];
-    if (paths.length === 0) { toast("No files or folders selected"); return; }
+    if (paths.length === 0) { toast(t("scanner:toasts.noSelection")); return; }
     if (!await confirm({
-      message: `Detect languages for the ${paths.length} selected item(s)?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.`,
-      confirmLabel: "Detect languages",
+      message: t("scanner:confirm.detectSelected", { count: paths.length }),
+      confirmLabel: t("scanner:confirm.detectSelectedLabel"),
     })) return;
     await startDetectBatch(paths);
   };
@@ -1070,7 +1072,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       return;
     }
     if (!paths.length) {
-      toast("No files or folders selected");
+      toast(t("scanner:toasts.noSelection"));
       return;
     }
     setEstimatePaths(paths);
@@ -1108,10 +1110,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       setSelectedPaths(new Set());
       const skippedExisting = result.skipped_existing ?? 0;
       if (result.added > 0) {
-        const priorityLabel = priority > 0 ? ` (${["", "high", "highest"][priority]} priority)` : "";
-        const dupsNote = skippedExisting > 0 ? ` (${skippedExisting} already queued)` : "";
+        const priorityLabel = priority > 0 ? t(priority === 1 ? "scanner:toasts.priorityHigh" : "scanner:toasts.priorityHighest") : "";
+        const dupsNote = skippedExisting > 0 ? t("scanner:toasts.alreadyQueuedNote", { n: skippedExisting }) : "";
         toast(
-          `Added ${result.added} item${result.added !== 1 ? "s" : ""} to queue${priorityLabel}${dupsNote}`,
+          t("scanner:toasts.addedToQueue", { count: result.added, priority: priorityLabel, dups: dupsNote }),
           "success",
         );
       } else if (skippedExisting > 0) {
@@ -1119,14 +1121,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         // toast claimed "files may already be optimized" in both cases,
         // which was wrong when the user re-submitted items that were
         // simply already queued. v0.3.60.
-        toast(`All ${skippedExisting} item${skippedExisting !== 1 ? "s were" : " was"} already in the queue`);
+        toast(t("scanner:toasts.allAlreadyQueued", { count: skippedExisting }));
       } else {
-        toast(`No actionable items — files may already be optimized`);
+        toast(t("scanner:toasts.noActionable"));
       }
       loadTree();
       refreshStats();
     } catch (err: any) {
-      toast(`Failed to add to queue: ${err.message || "unknown error"}`);
+      toast(t("scanner:toasts.addFailed", { error: err.message || t("scanner:toasts.unknownError") }));
     } finally {
       setAddingToQueueCount(null);
     }
@@ -1259,7 +1261,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <input type="text" placeholder="Search folders..." value={searchInput}
+        <input type="text" placeholder={t("scanner:toolbar.searchPlaceholder")} value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           style={{ width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
         {searchInput && (
@@ -1269,7 +1271,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       </div>
       <button
         className="sort-pill"
-        title="Advanced search — query files by codec, bitrate, audio channels, VMAF, and more"
+        title={t("scanner:toolbar.advancedTitle")}
         onClick={() => setAdvSearchOpen(true)}
         style={{
           display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
@@ -1287,7 +1289,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           <path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/>
           <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
         </svg>
-        Advanced
+        {t("scanner:toolbar.advanced")}
         {advSearchPredicates.length > 0 && (
           <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
             {advSearchPredicates.length}
@@ -1295,12 +1297,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
       </button>
       <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-      <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>Sort:</span>
-      {([["name", "A-Z"], ["size", "Size"], ["files", "Files"], ["date", "Date"]] as const).map(([val, label]) => (
+      <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
+      {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
         <button key={val}
           className={`sort-pill ${sortBy === val ? "active" : ""}`}
           onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
-          {label} {sortBy === val && (sortDir === "asc"
+          {t(labelKey)} {sortBy === val && (sortDir === "asc"
             ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
             : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
           )}
@@ -1312,14 +1314,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         className="sort-pill"
         onClick={() => { const next = viewMode === "tree" ? "poster" : "tree"; setViewMode(next); localStorage.setItem("shrinkerr_viewMode", next); localStorage.removeItem("squeezarr_viewMode"); }}
         style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-        title={`Switch to ${viewMode === "tree" ? "poster" : "tree"} view`}
+        title={viewMode === "tree" ? t("scanner:toolbar.switchToPoster") : t("scanner:toolbar.switchToTree")}
       >
         {viewMode === "tree" ? (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         ) : (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         )}
-        {viewMode === "tree" ? "Posters" : "Tree"}
+        {viewMode === "tree" ? t("scanner:toolbar.posters") : t("scanner:toolbar.tree")}
       </button>
       {viewMode === "poster" && (
         <button
@@ -1335,7 +1337,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
           </svg>
-          {posterPrefetching ? `Fetching ${posterProgress.resolved}/${posterProgress.total}...` : "Refresh Posters"}
+          {posterPrefetching ? t("scanner:toolbar.fetchingPosters", { resolved: posterProgress.resolved, total: posterProgress.total }) : t("scanner:toolbar.refreshPosters")}
         </button>
       )}
     </>
@@ -1359,7 +1361,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             backgroundPosition: "right 10px center",
           }}
         >
-          <option value="all">All configured paths</option>
+          <option value="all">{t("scanner:toolbar.allPaths")}</option>
           {dirs
             .filter((d: any) => d.auto_scan !== false && d.auto_scan !== 0)
             .map((d: any) => (
@@ -1367,7 +1369,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             ))}
         </select>
         <button className="btn btn-primary" onClick={handleScan} disabled={scanning} style={{ height: 36 }}>
-          {scanning ? "Scanning..." : "Scan"}
+          {scanning ? t("scanner:toolbar.scanning") : t("scanner:toolbar.scan")}
         </button>
         {scanning && (
           <button
@@ -1377,10 +1379,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               cancelScan().catch(() => {});
               setScanStarted(false);
               onClearScanProgress?.();
-              toast("Scan cancelling...");
+              toast(t("scanner:toasts.scanCancelling"));
             }}
           >
-            Cancel
+            {t("common:actions.cancel")}
           </button>
         )}
         {!scanning && folders.length > 0 && (
@@ -1390,7 +1392,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 await cancelMetadata();
                 setRefreshingMetadata(false);
                 onClearScanProgress?.();
-                toast("Metadata refresh cancelled");
+                toast(t("scanner:toasts.metadataCancelled"));
                 loadTree();
               }}
               style={{
@@ -1398,7 +1400,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 color: "#e94560", cursor: "pointer", borderRadius: 4,
                 width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center",
               }}
-              title="Cancel metadata refresh"
+              title={t("scanner:toolbar.cancelMetadataTitle")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -1409,7 +1411,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onClick={async () => {
                 setRefreshingMetadata(true);
                 await refreshMetadata();
-                toast("Updating languages from TMDB/TVDB...");
+                toast(t("scanner:toasts.updatingLanguages"));
               }}
               style={{
                 background: "none", border: "1px solid var(--border)",
@@ -1419,7 +1421,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               }}
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
-              title="Update languages from TMDB/TVDB (for files with heuristic detection)"
+              title={t("scanner:toolbar.updateLanguagesTitle")}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -1429,28 +1431,27 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
         {scanning && (scanProgress?.status === "discovering" || !scanProgress) && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Discovering files{scanProgress?.current_file ? ` in ${scanProgress.current_file.split("/").filter(Boolean).pop()}` : ""}… (spinning up disks can take a minute)
+            {scanProgress?.current_file ? t("scanner:toolbar.discoveringIn", { folder: scanProgress.current_file.split("/").filter(Boolean).pop() }) : t("scanner:toolbar.discovering")}
           </span>
         )}
         {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && scanProgress.status !== "finalizing" && !scanProgress.status?.startsWith("health_check") && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} files probed
+            {t("scanner:toolbar.filesProbed", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {scanning && scanProgress?.status === "finalizing" && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Reading track metadata: {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)}
+            {t("scanner:toolbar.readingTrackMetadata", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {refreshingMetadata && scanProgress && scanProgress.status === "metadata" && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Metadata: {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)} checked
+            {t("scanner:toolbar.metadataChecked", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {scanning && scanProgress && scanProgress.status?.startsWith("health_check") && (
           <span style={{ fontSize: 12, opacity: 0.6 }}>
-            Health check ({scanProgress.status === "health_check_thorough" ? "thorough" : "quick"}):{" "}
-            {fmtNum(scanProgress.probed)} / {fmtNum(scanProgress.total)}
+            {t(scanProgress.status === "health_check_thorough" ? "scanner:toolbar.healthCheckThoroughProgress" : "scanner:toolbar.healthCheckQuickProgress", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
       </div>
@@ -1468,7 +1469,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             />
           </div>
           <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
-            {scanProgress.status === "finalizing" ? "Reading metadata" : "Probing"}: {scanProgress.current_file}
+            {t(scanProgress.status === "finalizing" ? "scanner:toolbar.readingMetadataFile" : "scanner:toolbar.probingFile", { file: scanProgress.current_file })}
           </div>
         </div>
       )}
@@ -1476,7 +1477,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>Loading scan results...</div>
+          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("scanner:empty.loading")}</div>
         </div>
       ) : (
         <>
@@ -1498,7 +1499,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
               </svg>
-              Filter{filter !== "all" ? `: ${filters.filter(f => f !== "all").map(f => FILTER_LABELS[f] || f.replace(/_/g, " ")).join(" | ")}` : ""}
+              {filter !== "all" ? t("scanner:toolbar.filterActive", { filters: filters.filter(f => f !== "all").map(f => filterLabel(f, t) || f.replace(/_/g, " ")).join(" | ") }) : t("scanner:toolbar.filter")}
               {filter !== "all" && (
                 <span style={{
                   background: "rgba(255,255,255,0.2)",
@@ -1518,7 +1519,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 onClick={() => { setFilters(["all"]); }}
                 style={{ background: "var(--bg-card)", color: "var(--text-muted)", gap: 4 }}
               >
-                Clear
+                {t("common:actions.clear")}
               </button>
             )}
             {/* Collapsed: the controls live here, inline with the filter
@@ -1535,7 +1536,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <div className="progress-bar-fill" style={{ width: `${(posterProgress.resolved / posterProgress.total) * 100}%` }} />
               </div>
               <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
-                Fetching posters: {posterProgress.resolved} / {posterProgress.total}
+                {t("scanner:toolbar.fetchingPostersProgress", { resolved: posterProgress.resolved, total: posterProgress.total })}
               </div>
             </div>
           )}
@@ -1612,7 +1613,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             position: "sticky" as const, top: 0, zIndex: 50,
           }}>
             <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
-              {selectAllActive || selectedPaths.size > 0 ? "Deselect all" : "Select all"}
+              {selectAllActive || selectedPaths.size > 0 ? t("common:actions.deselectAll") : t("common:actions.selectAll")}
             </button>
             {/* v0.9.20: one detect button that follows the selection — becomes
                 "Detect selected (N)" when items are picked, else "Detect all
@@ -1621,15 +1622,15 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <button
                 className="btn btn-secondary"
                 title={selectedCount > 0
-                  ? "Detect languages for the selected items (und audio + subtitle tracks), writing the tags back to the files"
-                  : "Detect languages for every title in the current Unknown-language filter, writing the tags back to the files"}
+                  ? t("scanner:selection.detectSelectedTitle")
+                  : t("scanner:selection.detectAllTitle")}
                 style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                 onClick={selectedCount > 0 ? handleBulkDetectLanguages : handleDetectAllUnknown}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
-                {selectedCount > 0 ? `Detect selected (${selectedCount})` : `Detect all unknown (${folders.length})`}
+                {selectedCount > 0 ? t("scanner:selection.detectSelected", { n: selectedCount }) : t("scanner:selection.detectAllUnknown", { n: folders.length })}
               </button>
             )}
             {selectedCount > 0 && (() => {
@@ -1637,27 +1638,27 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               const allSelectedIgnored = selectedFiles.length > 0 && selectedFiles.every(f => f.ignored);
               const someSelectedIgnored = selectedFiles.some(f => f.ignored);
               return <>
-                <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{selectedCount} selected</span>
+                <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{t("scanner:selection.selected", { count: selectedCount })}</span>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
                 <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleAddToQueue}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Add to queue
+                  {t("common:actions.addToQueue")}
                 </button>
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                  Rescan
+                  {t("common:actions.rescan")}
                 </button>
                 {/* v0.9.20: "Detect selected" is now the adaptive button above,
                     so the per-selection detect button here is removed. */}
                 <button
                   className="btn btn-secondary"
-                  title="Rename selected files using the renaming patterns"
+                  title={t("scanner:selection.renameTitle")}
                   style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                   onClick={() => {
                     // Pass all selected paths (folder + file) — server expands folders
                     const paths = Array.from(selectedPaths);
                     if (paths.length === 0) {
-                      toast("No files or folders selected");
+                      toast(t("scanner:toasts.noSelection"));
                       return;
                     }
                     setRenamePaths(paths);
@@ -1667,20 +1668,20 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                   </svg>
-                  Rename
+                  {t("scanner:selection.rename")}
                 </button>
                 {/* Health check dropdown: quick / thorough */}
                 <div ref={healthMenuRef} style={{ position: "relative", display: "inline-flex" }}>
                   <button
                     className="btn btn-secondary"
-                    title="Run a health check on the selected files"
+                    title={t("scanner:selection.healthCheckTitle")}
                     style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                     onClick={() => setHealthMenuOpen(o => !o)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                     </svg>
-                    Health check
+                    {t("scanner:selection.healthCheck")}
                     <span style={{ fontSize: 9, opacity: 0.6 }}>{healthMenuOpen ? "▲" : "▼"}</span>
                   </button>
                   {healthMenuOpen && (
@@ -1708,8 +1709,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Quick check</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Header / metadata parse. Fast — a few seconds per file.</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:selection.quickCheck")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:selection.quickCheckDesc")}</div>
                         </div>
                       </button>
                       <button
@@ -1720,8 +1721,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Thorough check</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Full frame-by-frame decode. Slow — roughly duration / 10 per file.</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:selection.thoroughCheck")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:selection.thoroughCheckDesc")}</div>
                         </div>
                       </button>
                     </div>
@@ -1732,7 +1733,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <div ref={arrMenuRef} style={{ position: "relative", display: "inline-flex" }}>
                   <button
                     className="btn btn-secondary"
-                    title="Sonarr/Radarr actions: upgrade, missing episodes, replacement"
+                    title={t("scanner:arr.menuTitle")}
                     style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                     onClick={() => setArrMenuOpen(o => !o)}
                   >
@@ -1740,7 +1741,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                       <circle cx="12" cy="12" r="10"/>
                       <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                     </svg>
-                    *arr actions
+                    {t("scanner:arr.menu")}
                     <span style={{ fontSize: 9, opacity: 0.6 }}>{arrMenuOpen ? "▲" : "▼"}</span>
                   </button>
                   {arrMenuOpen && (
@@ -1768,8 +1769,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                           <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Search for upgrades</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Find better releases per quality profile. No delete.</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.upgrade")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.upgradeDesc")}</div>
                         </div>
                       </button>
                       <button
@@ -1780,8 +1781,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Search missing episodes</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Per series covered by selection. Sonarr only.</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.missing")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.missingDesc")}</div>
                         </div>
                       </button>
                       <button
@@ -1792,8 +1793,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                           <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
-                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>Request replacements</div>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>Blocklist + delete + search fresh. Destructive.</div>
+                          <div style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 500 }}>{t("scanner:arr.replace")}</div>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("scanner:arr.replaceDesc")}</div>
                         </div>
                       </button>
                     </div>
@@ -1802,30 +1803,30 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {allSelectedIgnored ? (
                   <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    Unignore
+                    {t("common:actions.unignore")}
                   </button>
                 ) : (
                   <>
                     <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkIgnore}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                      Ignore
+                      {t("common:actions.ignore")}
                     </button>
                     {someSelectedIgnored && (
                       <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        Unignore
+                        {t("common:actions.unignore")}
                       </button>
                     )}
                   </>
                 )}
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRemove}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  Remove
+                  {t("common:actions.remove")}
                 </button>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "#e94560", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                  Trash files
+                  {t("scanner:selection.trashFiles")}
                 </button>
               </>;
             })()}
@@ -1848,14 +1849,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             }}>
               <div className="spinner" style={{ width: 18, height: 18 }} />
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                Detecting languages… {detectProgress.done}/{detectProgress.total || "?"}
+                {t("scanner:bulk.detecting", { done: detectProgress.done, total: detectProgress.total || "?" })}
                 {detectProgress.current ? ` — ${detectProgress.current}` : ""}
-                {detectProgress.cancelled ? " (cancelling…)" : ""}
+                {detectProgress.cancelled ? t("scanner:bulk.detectCancelling") : ""}
               </span>
               <button className="btn btn-secondary"
                 style={{ fontSize: 12, padding: "4px 12px", borderRadius: 14, marginLeft: "auto", whiteSpace: "nowrap" }}
                 onClick={handleCancelDetect} disabled={detectProgress.cancelled}>
-                Cancel
+                {t("common:actions.cancel")}
               </button>
             </div>
           )}
@@ -1899,7 +1900,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6,
             }}>
               <div className="spinner" style={{ width: 10, height: 10 }} />
-              Updating...
+              {t("scanner:empty.updating")}
             </div>
           )}
           {viewMode === "tree" ? (
@@ -1981,10 +1982,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <div className="spinner" style={{ width: 22, height: 22, flexShrink: 0 }} />
             <div style={{ display: "flex", flexDirection: "column" }}>
               <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: 14 }}>
-                Adding {addingToQueueCount.toLocaleString()} {addingToQueueCount === 1 ? "item" : "items"} to queue…
+                {t("scanner:empty.addingToQueue", { count: addingToQueueCount, num: addingToQueueCount.toLocaleString() })}
               </span>
               <span style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
-                Resolving rules, deduping, inserting jobs.
+                {t("scanner:empty.addingToQueueDetail")}
               </span>
             </div>
           </div>
@@ -1999,7 +2000,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           onApplied={() => {
             setRenamePaths(null);
             loadTree(filter);
-            toast("Rename applied", "success");
+            toast(t("scanner:toasts.renameApplied"), "success");
           }}
         />
       )}
@@ -2012,7 +2013,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             setAdvSearchPredicates(preds);
             setAdvSearchResults(new Set(paths));
             setAdvSearchOpen(false);
-            toast(`Advanced search: ${paths.length} match${paths.length === 1 ? "" : "es"}`, "success");
+            toast(t("scanner:toasts.advSearchMatches", { count: paths.length }), "success");
           }}
           onClose={() => setAdvSearchOpen(false)}
         />

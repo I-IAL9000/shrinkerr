@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { useCallback, useState, useEffect } from "react";
+import { useTranslation, Trans } from "react-i18next";
 import { useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 import DashboardPage from "./pages/DashboardPage";
@@ -20,6 +21,7 @@ import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import "./theme.css";
 
 function VersionBadge() {
+  const { t } = useTranslation(["nav", "common"]);
   const [version, setVersion] = useState<{ current: string; latest: string | null; update_available: boolean } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -38,7 +40,7 @@ function VersionBadge() {
         <div style={{ padding: "12px 12px 24px", marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }} className="version-badge">
           <button
             onClick={() => setModalOpen(true)}
-            title={`A newer version is available: v${version.latest} (you're on v${version.current})`}
+            title={t("nav:version.updateTooltip", { latest: version.latest, current: version.current })}
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "7px 14px", borderRadius: 20,
@@ -50,7 +52,7 @@ function VersionBadge() {
           >
             {/* Gift icon lifted from the Figma design-system file (node 91:31). */}
             <GiftIcon size={14} />
-            Update available
+            {t("nav:version.updateAvailable")}
           </button>
           <span style={{ fontSize: 10, color: "#5c6778" }}>
             v{version.current} → v{version.latest}
@@ -78,6 +80,7 @@ function VersionBadge() {
 }
 
 function NewFileBadge() {
+  const { t } = useTranslation(["nav", "common"]);
   const [count, setCount] = useState(0);
   const location = useLocation();
 
@@ -102,7 +105,7 @@ function NewFileBadge() {
       background: "var(--accent)", color: "white", fontSize: 9, fontWeight: "bold",
       padding: "1px 5px", borderRadius: 8, marginLeft: 6, verticalAlign: "middle",
     }}>
-      {count} new
+      {t("nav:sidebar.newFiles", { count })}
     </span>
   );
 }
@@ -128,22 +131,22 @@ function FailedJobBadge() {
 }
 
 const SETTINGS_SECTIONS = [
-  { id: "directories", label: "Directories" },
-  { id: "video", label: "Video" },
-  { id: "audio", label: "Audio" },
-  { id: "subtitles", label: "Subtitles" },
-  { id: "connections", label: "Connections" },
-  { id: "rules", label: "Rules" },
-  { id: "renaming", label: "Renaming" },
-  { id: "automation", label: "Automation" },
-  { id: "system", label: "System" },
-  { id: "updates", label: "Updates" },
-  { id: "support", label: "Support" },
+  { id: "directories", labelKey: "nav:settingsSections.directories" },
+  { id: "video", labelKey: "nav:settingsSections.video" },
+  { id: "audio", labelKey: "nav:settingsSections.audio" },
+  { id: "subtitles", labelKey: "nav:settingsSections.subtitles" },
+  { id: "connections", labelKey: "nav:settingsSections.connections" },
+  { id: "rules", labelKey: "nav:settingsSections.rules" },
+  { id: "renaming", labelKey: "nav:settingsSections.renaming" },
+  { id: "automation", labelKey: "nav:settingsSections.automation" },
+  { id: "system", labelKey: "nav:settingsSections.system" },
+  { id: "updates", labelKey: "nav:settingsSections.updates" },
+  { id: "support", labelKey: "nav:settingsSections.support" },
 ];
 
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: string;
   end?: boolean;
   icon: string;
   badge?: boolean;
@@ -151,45 +154,46 @@ interface NavItem {
   section: string;
 }
 
-const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
+const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
   {
-    label: "ENCODE",
+    labelKey: "nav:sidebar.sections.encode",
     items: [
-      { to: "/", label: "Dashboard", end: true, icon: "/icons/dashboard.svg", section: "ENCODE" },
-      { to: "/scanner", label: "Scanner", icon: "/icons/search.svg", badge: true, section: "ENCODE" },
-      { to: "/queue", label: "Queue", icon: "/icons/queue.svg", failedBadge: true, section: "ENCODE" },
-      { to: "/nodes", label: "Nodes", icon: "/icons/nodes.svg", section: "ENCODE" },
+      { to: "/", labelKey: "nav:sidebar.dashboard", end: true, icon: "/icons/dashboard.svg", section: "ENCODE" },
+      { to: "/scanner", labelKey: "nav:sidebar.scanner", icon: "/icons/search.svg", badge: true, section: "ENCODE" },
+      { to: "/queue", labelKey: "nav:sidebar.queue", icon: "/icons/queue.svg", failedBadge: true, section: "ENCODE" },
+      { to: "/nodes", labelKey: "nav:sidebar.nodes", icon: "/icons/nodes.svg", section: "ENCODE" },
     ],
   },
   {
-    label: "SYSTEM",
+    labelKey: "nav:sidebar.sections.system",
     items: [
-      { to: "/monitor", label: "Monitor", icon: "/icons/monitor.svg", section: "SYSTEM" },
-      { to: "/activity", label: "Activity", icon: "/icons/activity.svg", section: "SYSTEM" },
-      { to: "/logs", label: "Logs", icon: "/icons/terminal.svg", section: "SYSTEM" },
-      { to: "/schedule", label: "Schedule", icon: "/icons/clock.svg", section: "SYSTEM" },
+      { to: "/monitor", labelKey: "nav:sidebar.monitor", icon: "/icons/monitor.svg", section: "SYSTEM" },
+      { to: "/activity", labelKey: "nav:sidebar.activity", icon: "/icons/activity.svg", section: "SYSTEM" },
+      { to: "/logs", labelKey: "nav:sidebar.logs", icon: "/icons/terminal.svg", section: "SYSTEM" },
+      { to: "/schedule", labelKey: "nav:sidebar.schedule", icon: "/icons/clock.svg", section: "SYSTEM" },
     ],
   },
   {
-    label: "CONFIG",
+    labelKey: "nav:sidebar.sections.config",
     items: [
-      { to: "/settings", label: "Settings", icon: "/icons/settings.svg", section: "CONFIG" },
+      { to: "/settings", labelKey: "nav:sidebar.settings", icon: "/icons/settings.svg", section: "CONFIG" },
     ],
   },
 ];
 
 function SidebarNavItems() {
+  const { t } = useTranslation(["nav", "common"]);
   const location = useLocation();
   return (
     <>
       {NAV_SECTIONS.map(section => (
-        <div key={section.label}>
-          <div className="sidebar-section-label">{section.label}</div>
+        <div key={section.labelKey}>
+          <div className="sidebar-section-label">{t(section.labelKey)}</div>
           {section.items.map(item => (
             <React.Fragment key={item.to}>
               <NavLink to={item.to} end={item.end} className={({isActive}) => `sidebar-link ${isActive ? "active" : ""}`}>
                 <img src={item.icon} alt="" width="18" height="18" />
-                {item.label}
+                {t(item.labelKey)}
                 {item.badge && <NewFileBadge />}
                 {item.failedBadge && <FailedJobBadge />}
               </NavLink>
@@ -205,7 +209,7 @@ function SidebarNavItems() {
                         document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth" });
                       }}
                     >
-                      {s.label}
+                      {t(s.labelKey)}
                     </a>
                   ))}
                 </div>
@@ -219,6 +223,7 @@ function SidebarNavItems() {
 }
 
 function MobileMenu() {
+  const { t } = useTranslation(["nav", "common"]);
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
@@ -227,7 +232,7 @@ function MobileMenu() {
 
   return (
     <>
-      <button className="hamburger-btn" onClick={() => setOpen(!open)} aria-label="Menu">
+      <button className="hamburger-btn" onClick={() => setOpen(!open)} aria-label={t("nav:sidebar.menu")}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
           {open ? <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></> : <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>}
         </svg>
@@ -280,6 +285,7 @@ function KeyboardShortcuts({ onToggleQueue }: { onToggleQueue: () => void }) {
 }
 
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  const { t } = useTranslation(["nav", "common"]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -315,9 +321,9 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         setStoredApiKey("");
       }
 
-      setError("Invalid credentials");
+      setError(t("nav:login.invalidCredentials"));
     } catch {
-      setError("Connection failed");
+      setError(t("nav:login.connectionFailed"));
     } finally {
       setLoading(false);
     }
@@ -327,10 +333,10 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", background: "var(--bg-primary)" }}>
       <div style={{ background: "var(--bg-card)", padding: 32, borderRadius: 8, textAlign: "center", maxWidth: 360, width: "100%" }}>
         <img src="/shrinkerr-logo.svg" alt="Shrinkerr" height="32" style={{ marginBottom: 16 }} />
-        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>Sign in to continue</div>
+        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>{t("nav:login.subtitle")}</div>
         <input
           type="text"
-          placeholder="Username"
+          placeholder={t("nav:login.username")}
           value={username}
           onChange={e => { setUsername(e.target.value); setError(""); }}
           onKeyDown={e => { if (e.key === "Enter") document.getElementById("sq-pw")?.focus(); }}
@@ -345,7 +351,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         <input
           id="sq-pw"
           type="password"
-          placeholder="Password"
+          placeholder={t("nav:login.password")}
           value={password}
           onChange={e => { setPassword(e.target.value); setError(""); }}
           onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
@@ -359,7 +365,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         {error && <div style={{ color: "#e94560", fontSize: 12, marginBottom: 8 }}>{error}</div>}
         <button className="btn btn-primary" style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
           onClick={handleLogin} disabled={loading}>
-          {loading ? "Signing in..." : "Sign In"}
+          {loading ? t("nav:login.signingIn") : t("nav:login.signIn")}
         </button>
       </div>
     </div>
@@ -374,6 +380,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 type VmafRemeasureState = { phase: "running"; done: number; total: number; current: string };
 
 export default function App() {
+  const { t } = useTranslation(["nav", "common"]);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
@@ -493,11 +500,11 @@ export default function App() {
         try {
           const stats = await getJobStats();
           if (stats.running > 0 || stats.pending > 0) {
-            if (stats.running > 0) { await pauseQueue(); addToast("Queue paused"); }
-            else { await startQueue(); addToast("Queue started", "success"); }
+            if (stats.running > 0) { await pauseQueue(); addToast(t("nav:toast.queuePaused")); }
+            else { await startQueue(); addToast(t("nav:toast.queueStarted"), "success"); }
           } else {
             await startQueue();
-            addToast("Queue started", "success");
+            addToast(t("nav:toast.queueStarted"), "success");
           }
         } catch { /* ignore */ }
       }} />
@@ -543,7 +550,7 @@ export default function App() {
               <div className="spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ color: "var(--text-secondary)", fontWeight: 600, marginBottom: 2 }}>
-                  Re-measuring VMAF — {vmafRemeasure.done} of {vmafRemeasure.total}
+                  {t("nav:banner.vmafRemeasuring", { done: vmafRemeasure.done, total: vmafRemeasure.total })}
                 </div>
                 <div style={{
                   color: "var(--text-muted)",
@@ -551,7 +558,7 @@ export default function App() {
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 }} title={vmafRemeasure.current}>
-                  {vmafRemeasure.current || "starting…"}
+                  {vmafRemeasure.current || t("nav:banner.vmafStarting")}
                 </div>
               </div>
               <div style={{
@@ -587,8 +594,7 @@ export default function App() {
             }}>
               <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>⚠</span>
               <div style={{ flex: 1, minWidth: 0, color: "var(--text-secondary)" }}>
-                <strong>No TMDB API key configured</strong> — titles can't be matched to metadata (native language, posters).{" "}
-                <NavLink to="/settings" style={{ color: "var(--accent)" }}>Add a free key in Settings → Metadata</NavLink>.
+                <Trans i18nKey="nav:banner.tmdbMissing" components={{ b: <strong />, link: <NavLink to="/settings" style={{ color: "var(--accent)" }} /> }} />
               </div>
             </div>
           )}

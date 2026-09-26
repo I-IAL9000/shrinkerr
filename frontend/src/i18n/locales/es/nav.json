@@ -1,0 +1,57 @@
+{
+  "sidebar": {
+    "sections": {
+      "encode": "CODIFICAR",
+      "system": "SISTEMA",
+      "config": "AJUSTES"
+    },
+    "dashboard": "Panel",
+    "scanner": "Escáner",
+    "queue": "Cola",
+    "nodes": "Nodos",
+    "monitor": "Monitor",
+    "activity": "Actividad",
+    "logs": "Registros",
+    "schedule": "Programación",
+    "settings": "Ajustes",
+    "newFiles_one": "{{count}} nuevo",
+    "newFiles_many": "{{count}} nuevos",
+    "newFiles_other": "{{count}} nuevos",
+    "menu": "Menú"
+  },
+  "settingsSections": {
+    "directories": "Directorios",
+    "video": "Vídeo",
+    "audio": "Audio",
+    "subtitles": "Subtítulos",
+    "connections": "Conexiones",
+    "rules": "Reglas",
+    "renaming": "Renombrado",
+    "automation": "Automatización",
+    "system": "Sistema",
+    "updates": "Actualizaciones",
+    "support": "Soporte"
+  },
+  "version": {
+    "updateAvailable": "Actualización disponible",
+    "updateTooltip": "Hay una versión más reciente disponible: v{{latest}} (tienes la v{{current}})"
+  },
+  "login": {
+    "subtitle": "Inicia sesión para continuar",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "invalidCredentials": "Credenciales no válidas",
+    "connectionFailed": "Error de conexión",
+    "signingIn": "Iniciando sesión...",
+    "signIn": "Iniciar sesión"
+  },
+  "toast": {
+    "queuePaused": "Cola en pausa",
+    "queueStarted": "Cola iniciada"
+  },
+  "banner": {
+    "vmafRemeasuring": "Volviendo a medir VMAF — {{done}} de {{total}}",
+    "vmafStarting": "iniciando…",
+    "tmdbMissing": "<b>No hay ninguna clave de API de TMDB configurada</b>: no se pueden asociar los títulos con sus metadatos (idioma original, pósteres). <link>Añade una clave gratuita en Ajustes → Metadatos</link>."
+  }
+}
