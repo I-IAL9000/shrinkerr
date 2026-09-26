@@ -751,41 +751,64 @@ export const syncEmbyMetadata = () =>
 // WebSocket hook
 export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   const wsRef = useRef<WebSocket | null>(null);
+  // Keep the latest callback in a ref so the socket connects ONCE and isn't torn
+  // down / recreated whenever `onMessage`'s identity changes across renders.
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const apiKey = getStoredApiKey();
     const wsUrl = `${protocol}//${window.location.host}/ws${apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ""}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as WSMessage;
-        onMessage(msg);
-      } catch {}
-      // Re-broadcast on a window event so components that need to react
-      // to specific WS message types (e.g. vmaf_remeasure_progress) can
-      // subscribe without us having to wire bespoke callbacks down through
-      // the App tree. The event's `data` field is the raw JSON string —
-      // listeners parse it themselves to keep this hot path cheap.
-      window.dispatchEvent(new MessageEvent("ws-message", { data: event.data }));
+    let closed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      const existing = wsRef.current;
+      if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) return;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      ws.onmessage = (event) => {
+        try {
+          onMessageRef.current(JSON.parse(event.data) as WSMessage);
+        } catch {}
+        // Re-broadcast on a window event so components that need specific WS
+        // message types (e.g. vmaf_remeasure_progress) can subscribe without
+        // wiring bespoke callbacks through the App tree. `data` is the raw JSON.
+        window.dispatchEvent(new MessageEvent("ws-message", { data: event.data }));
+      };
+      ws.onclose = () => {
+        if (closed) return;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, 3000);
+      };
     };
 
-    ws.onclose = () => {
-      // Reconnect after 3 seconds
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.CLOSED) {
-          const newWs = new WebSocket(wsUrl);
-          newWs.onmessage = ws.onmessage;
-          newWs.onclose = ws.onclose;
-          wsRef.current = newWs;
-        }
-      }, 3000);
+    // When the tab is backgrounded the browser throttles timers to ~1 minute,
+    // so a socket that drops while hidden wouldn't reconnect until long after
+    // the user returns (stale live view for up to a minute). Reconnect promptly
+    // on refocus if the socket isn't healthy.
+    const onVisibility = () => {
+      if (document.hidden) return;
+      const s = wsRef.current;
+      if (!s || s.readyState === WebSocket.CLOSED || s.readyState === WebSocket.CLOSING) {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        connect();
+      }
     };
 
-    return () => ws.close();
-  }, [onMessage]);
+    connect();
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      closed = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      wsRef.current?.close();
+    };
+  }, []);
 }
 
 // Backups

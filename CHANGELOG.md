@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.129] — 2026-09-26
+
+### Fixed
+- **Queue tab switches are fast again and no longer flash "No completed jobs yet" before loading.** A tab switch was blocked by an in-flight poll (deferring the fetch up to 10s), and the Completed/Failed tabs fetched the entire job history unbounded — now a tab change fetches immediately and history tabs load the most recent 200 (counts still reflect the true total).
+- **The live queue view updates immediately when you return to the tab.** The WebSocket reconnect timer was throttled to ~1 minute while the tab was backgrounded; it now reconnects on refocus and the socket is no longer torn down on every render.
+
 ## [0.9.128] — 2026-09-26
 
 ### Fixed

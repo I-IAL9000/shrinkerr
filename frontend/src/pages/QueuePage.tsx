@@ -53,36 +53,52 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     }));
 
   const loadingRef = useRef(false);
+  const loadGen = useRef(0);
+  // Completed/failed histories can be enormous (tens of thousands of rows on a
+  // large library). Fetching them all made the tab hang for seconds and choked
+  // the render — show the most recent N; the tab COUNTS still come from stats.
+  const HISTORY_LIMIT = 200;
 
-  const load = async () => {
-    if (loadingRef.current) return; // Skip if already loading
+  const load = async (force = false) => {
+    // A poll already in flight must not block a tab switch. The old guard made
+    // a tab change skip its fetch, so the new tab sat on its empty state until
+    // the next poll (up to 10s later). Tab changes pass force=true; a generation
+    // counter drops any stale in-flight result so a slow poll can't clobber the
+    // newer tab's data. v0.9.129.
+    if (loadingRef.current && !force) return;
     loadingRef.current = true;
+    const myGen = ++loadGen.current;
+    const tabAtStart = tab;
     try {
       setTabLoading(true);
+      const historyLimit = tabAtStart === "pending" ? 0 : HISTORY_LIMIT;
       const [s, runningData, tabData] = await Promise.all([
         getJobStats(),
         getJobs("running"),
-        getJobs(tab),
+        getJobs(tabAtStart, historyLimit),
       ]);
+      if (myGen !== loadGen.current) return; // superseded by a newer load
       setStats(s);
       const allJobs = [...parseJobs(runningData), ...parseJobs(tabData)];
       // Ensure pending jobs are available for spinner cards
-      if (tab !== "pending" && runningData.length === 0 && s.pending > 0) {
+      if (tabAtStart !== "pending" && runningData.length === 0 && s.pending > 0) {
         try {
           const pendingData = await getJobs("pending", 0, 10);
           allJobs.push(...parseJobs(pendingData));
         } catch {}
       }
+      if (myGen !== loadGen.current) return;
       setJobs(allJobs);
       setInitialLoading(false);
       setTabLoading(false);
     } finally {
-      loadingRef.current = false;
+      if (myGen === loadGen.current) loadingRef.current = false;
     }
   };
 
-  // Load on mount and tab change
-  useEffect(() => { load(); }, [tab]);
+  // Load on mount and tab change. A tab change forces past the poll guard so the
+  // new tab fetches (and shows its spinner) immediately.
+  useEffect(() => { load(true); }, [tab]);
 
   // Poll every 10 seconds normally, every 2s while waiting for jobs to start.
   // Uses a visibility-aware interval so we don't burn CPU while the tab is
@@ -149,7 +165,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const selectedIds = Array.from(selectedJobIds) as number[];
 
   const handleBulkMove = async (position: "top" | "bottom" | "up" | "down") => {
-    bulkMoveJobs(selectedIds, position).then(load);
+    bulkMoveJobs(selectedIds, position).then(() => load());
     toast(`Moving ${selectedIds.length} job(s) ${position}`);
   };
 
@@ -288,8 +304,8 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         <JobListItem job={job}
           checked={selectedJobIds.has(job.id)}
           onCheck={(e) => handleJobClick(i, job.id, e)}
-          onCancel={(id) => { cancelJob(id).then(load); }}
-          onRemove={(id) => { removeJob(id).then(load); }}
+          onCancel={(id) => { cancelJob(id).then(() => load()); }}
+          onRemove={(id) => { removeJob(id).then(() => load()); }}
           onIgnore={async (id, filePath) => {
             await ignoreFile(filePath);
             await removeJob(id);
@@ -306,7 +322,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     tab !== "completed" ? null : tabJobs.map((job) => (
       <JobListItem key={job.id} job={job}
         onCancel={() => {}}
-        onRemove={(id) => { removeJob(id).then(load); }}
+        onRemove={(id) => { removeJob(id).then(() => load()); }}
       />
     ))
   ), [tab, tabJobs]);
@@ -314,14 +330,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const failedRowEls = useMemo(() => (
     tab !== "failed" ? null : tabJobs.map((job) => (
       <JobListItem key={job.id} job={job}
-        onCancel={(id) => { cancelJob(id).then(load); }}
+        onCancel={(id) => { cancelJob(id).then(() => load()); }}
         onRetry={(id) => {
           retryJob(id).then(res => {
             load();
             if (res.message) toast(res.message, "success");
           });
         }}
-        onRemove={(id) => { removeJob(id).then(load); }}
+        onRemove={(id) => { removeJob(id).then(() => load()); }}
       />
     ))
   ), [tab, tabJobs]);
@@ -555,7 +571,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <>
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
-                  onClick={async () => { if (await confirm({ message: `Clear all ${pendingCount} pending items?`, confirmLabel: "Clear all", danger: true })) { clearPending().then(load); } }}>
+                  onClick={async () => { if (await confirm({ message: `Clear all ${pendingCount} pending items?`, confirmLabel: "Clear all", danger: true })) { clearPending().then(() => load()); } }}>
                   Clear all
                 </button>
               </div>
