@@ -165,6 +165,8 @@ class SettingsUpdate(BaseModel):
     qsv_lookahead: Optional[bool] = None
     vaapi_qp: Optional[int] = None
     vaapi_compression_level: Optional[int] = None
+    # Apple VideoToolbox constant quality, 1-100 (HIGHER = better). v0.9.133.
+    videotoolbox_quality: Optional[int] = None
     # v0.5.7: hardware decode toggles. Native pairs (encoder + matching
     # decoder) default on — frames stay on the device, no PCIe transfer.
     # libx265+NVDEC defaults off because it requires GPU→CPU readback
@@ -172,6 +174,7 @@ class SettingsUpdate(BaseModel):
     nvenc_hw_decode: Optional[bool] = None
     qsv_hw_decode: Optional[bool] = None
     vaapi_hw_decode: Optional[bool] = None
+    videotoolbox_hw_decode: Optional[bool] = None
     libx265_use_nvdec: Optional[bool] = None
     # v0.5.9: NVENC output bit depth — "10bit" (default), "8bit", "auto"
     nvenc_bit_depth: Optional[str] = None

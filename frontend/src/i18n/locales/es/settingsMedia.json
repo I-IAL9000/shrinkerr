@@ -37,7 +37,8 @@
       "nvenc": "Codificación por hardware con tu GPU NVIDIA. Rápida y de menor consumo. Archivos algo más grandes que con CPU a la misma calidad.",
       "qsv": "Codificación por hardware con Intel Quick Sync (iGPU Gen8+ hasta Arc / Battlemage). Rápida y muy eficiente energéticamente. Requiere passthrough de /dev/dri; consulta la ayuda de abajo.",
       "vaapi": "Codificación por hardware mediante VA-API. Funciona con iGPU Intel y GPU AMD (Polaris / Vega / RDNA). La calidad depende del driver; en Intel, usa QSV si está disponible. Requiere passthrough de /dev/dri.",
-      "libx265": "Codificación por software con la CPU. Más lenta, pero logra mejor compresión por tasa de bits."
+      "libx265": "Codificación por software con la CPU. Más lenta, pero logra mejor compresión por tasa de bits.",
+      "videotoolbox": "Codificación por hardware en Apple Silicon (M1 y posteriores) mediante VideoToolbox. Muy rápida y eficiente. Solo disponible cuando Shrinkerr se ejecuta de forma nativa en macOS; Docker en un Mac no puede acceder a ella."
     },
     "passthrough": {
       "summary": "Passthrough en Compose para QSV / VAAPI",
@@ -136,6 +137,13 @@
     "vaapiCompressionHelp": "Profundidad de análisis del driver, de 0 a 7. El significado varía según el driver (Mesa AMD o Intel iHD), pero los valores bajos generan siempre archivos más pequeños a costa de velocidad. <b>4</b> es un término medio razonable. En hardware Intel donde funcionan VAAPI y QSV, QSV suele dar mejor calidad por bit con un rendimiento similar; VAAPI es más útil en GPU AMD (donde QSV no es una opción).",
     "vaapiQp": "Cuantizador de VAAPI (QP)",
     "vaapiQpHelp": "Objetivo de cuantizador constante (CQP). Menor = más calidad y archivos más grandes. <b>20-22</b> suele ser transparente; <b>23-26</b> equilibra calidad y tamaño de forma sensata.",
+    "videotoolboxDecode": {
+      "label": "Usar VideoToolbox para decodificar",
+      "help": "Decodifica las fuentes H.264 y HEVC en el motor multimedia del Mac antes de codificar. Otros códecs (MPEG-2, VC-1, …) pasan automáticamente a decodificación por software.",
+      "notDetected": "No se detectó decodificación VideoToolbox en este equipo."
+    },
+    "videotoolboxQuality": "Calidad VideoToolbox (q:v)",
+    "videotoolboxQualityHelp": "Calidad constante de 1 a 100: <b>más alto = mejor calidad, archivos más grandes</b> (al revés que CQ/CRF). <b>55</b> equivale aproximadamente a libx265 CRF 22 en tamaño y calidad; <b>60-65</b> para un resultado casi transparente, <b>45-50</b> para ahorrar más. Sin preajustes: la velocidad la fija el hardware.",
     "smart": {
       "title": "Codificación inteligente",
       "contentType": "Detección del tipo de contenido",

@@ -39,10 +39,15 @@ _ENCODING_DEFAULTS = {
     # compression_level (0–7, lower = more analysis). v0.3.68+.
     "vaapi_qp": "22",
     "vaapi_compression_level": "4",
+    # Apple VideoToolbox (hevc_videotoolbox): constant quality -q:v, 1–100,
+    # HIGHER = better (opposite of CQ/CRF). 55 ≈ libx265 CRF 22 in size and
+    # SSIM on an M1 Pro test clip. v0.9.133.
+    "videotoolbox_quality": "55",
     # v0.5.7: hardware decode. Native pairs default on; cross-bus opt-in.
     "nvenc_hw_decode": "true",
     "qsv_hw_decode": "true",
     "vaapi_hw_decode": "true",
+    "videotoolbox_hw_decode": "true",
     "libx265_use_nvdec": "false",
     # v0.5.9: NVENC bit-depth choice. "10bit" preserves pre-v0.5.9
     # hardcoded behaviour (main10 / p010le — best quality but excludes
@@ -493,9 +498,11 @@ async def get_encoding_settings():
         "qsv_lookahead": merged.get("qsv_lookahead", "false").lower() == "true",
         "vaapi_qp": int(merged.get("vaapi_qp", 22)),
         "vaapi_compression_level": int(merged.get("vaapi_compression_level", 4)),
+        "videotoolbox_quality": int(merged.get("videotoolbox_quality", 55)),
         "nvenc_hw_decode": merged.get("nvenc_hw_decode", "true").lower() == "true",
         "qsv_hw_decode": merged.get("qsv_hw_decode", "true").lower() == "true",
         "vaapi_hw_decode": merged.get("vaapi_hw_decode", "true").lower() == "true",
+        "videotoolbox_hw_decode": merged.get("videotoolbox_hw_decode", "true").lower() == "true",
         "libx265_use_nvdec": merged.get("libx265_use_nvdec", "false").lower() == "true",
         # v0.5.9: nvenc_bit_depth — "10bit" / "8bit" / "auto"
         "nvenc_bit_depth": merged.get("nvenc_bit_depth", "10bit"),
@@ -837,12 +844,16 @@ async def update_encoding_settings(update: SettingsUpdate):
             updates["vaapi_qp"] = str(update.vaapi_qp)
         if update.vaapi_compression_level is not None:
             updates["vaapi_compression_level"] = str(update.vaapi_compression_level)
+        if update.videotoolbox_quality is not None:
+            updates["videotoolbox_quality"] = str(max(1, min(100, update.videotoolbox_quality)))
         if update.nvenc_hw_decode is not None:
             updates["nvenc_hw_decode"] = "true" if update.nvenc_hw_decode else "false"
         if update.qsv_hw_decode is not None:
             updates["qsv_hw_decode"] = "true" if update.qsv_hw_decode else "false"
         if update.vaapi_hw_decode is not None:
             updates["vaapi_hw_decode"] = "true" if update.vaapi_hw_decode else "false"
+        if update.videotoolbox_hw_decode is not None:
+            updates["videotoolbox_hw_decode"] = "true" if update.videotoolbox_hw_decode else "false"
         if update.libx265_use_nvdec is not None:
             updates["libx265_use_nvdec"] = "true" if update.libx265_use_nvdec else "false"
         if update.nvenc_bit_depth is not None:

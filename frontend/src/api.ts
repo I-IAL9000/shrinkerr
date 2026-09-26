@@ -624,6 +624,8 @@ export interface EncoderCaps {
   nvenc: boolean;
   qsv: boolean;
   vaapi: boolean;
+  // v0.9.133: Apple VideoToolbox — only on a native macOS install.
+  videotoolbox?: boolean;
   libx265: boolean;
   available: string[];
   qsv_render_node?: string | null;
@@ -634,6 +636,7 @@ export interface EncoderCaps {
   nvdec_available?: boolean;
   qsv_decode_available?: boolean;
   vaapi_decode_available?: boolean;
+  videotoolbox_decode_available?: boolean;
 }
 export const getEncoderCaps = (force = false) =>
   apiFetch<EncoderCaps>(`/stats/encoder-caps${force ? "?force=1" : ""}`);

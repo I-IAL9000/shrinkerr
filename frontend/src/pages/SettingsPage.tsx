@@ -727,6 +727,9 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   {(encoderCaps?.vaapi || encoding.default_encoder === "vaapi") && (
                     <option value="vaapi">VAAPI (Intel / AMD GPU)</option>
                   )}
+                  {(encoderCaps?.videotoolbox || encoding.default_encoder === "videotoolbox") && (
+                    <option value="videotoolbox">VideoToolbox (Apple Silicon / Mac)</option>
+                  )}
                   <option value="libx265">{t("settingsMedia:video.libx265Option")}</option>
                 </select>
                 <div style={helpStyle}>
@@ -738,6 +741,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         return t("settingsMedia:video.encoderHelp.qsv");
                       case "vaapi":
                         return t("settingsMedia:video.encoderHelp.vaapi");
+                      case "videotoolbox":
+                        return t("settingsMedia:video.encoderHelp.videotoolbox");
                       case "libx265":
                       default:
                         return t("settingsMedia:video.encoderHelp.libx265");
@@ -1252,6 +1257,54 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   </div>
                 </>
               )}
+              {/* Apple VideoToolbox — constant quality -q:v, 1-100 where
+                  HIGHER is better (the reverse of CQ/CRF). No presets. v0.9.133. */}
+              {encoding.default_encoder === "videotoolbox" && (
+                <>
+                  <div style={{ marginBottom: 16, padding: "10px 12px", backgroundColor: "var(--bg-secondary)",
+                                border: "1px solid var(--border)", borderRadius: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10,
+                                    cursor: encoderCaps?.videotoolbox_decode_available ? "pointer" : "not-allowed",
+                                    opacity: encoderCaps?.videotoolbox_decode_available ? 1 : 0.5 }}>
+                      <input type="checkbox"
+                        checked={encoding?.videotoolbox_hw_decode ?? true}
+                        disabled={!encoderCaps?.videotoolbox_decode_available}
+                        onChange={e => setEncoding({ ...encoding, videotoolbox_hw_decode: e.target.checked })}
+                        style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.videotoolboxDecode.label")}</span>
+                    </label>
+                    <div style={{ ...helpStyle, marginTop: 6 }}>
+                      {t("settingsMedia:video.videotoolboxDecode.help")}
+                      {!encoderCaps?.videotoolbox_decode_available && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          {t("settingsMedia:video.videotoolboxDecode.notDetected")}
+                        </span>
+                      )}
+                      {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.videotoolbox_hw_decode ?? true) && (
+                        <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
+                          {t("settingsMedia:video.vmafDecoderWarning")}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={labelStyle}>{t("settingsMedia:video.videotoolboxQuality")}</span>
+                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.videotoolbox_quality ?? 55}</span>
+                    </div>
+                    <input type="range" min={30} max={85} value={encoding.videotoolbox_quality ?? 55}
+                      onChange={(e) => setEncoding({ ...encoding, videotoolbox_quality: parseInt(e.target.value) })}
+                      style={{ width: "100%", accentColor: "var(--accent)" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
+                      <span>{t("settingsMedia:video.scale.smallestFile", { value: 30 })}</span><span>55</span><span>65</span><span>{t("settingsMedia:video.scale.highestQuality", { value: 85 })}</span>
+                    </div>
+                    <div style={helpStyle}>
+                      <Trans i18nKey="settingsMedia:video.videotoolboxQualityHelp" components={{ b: <strong /> }} />
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Smart Encoding */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
@@ -1291,6 +1344,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   if (encoding?.nvenc_hw_decode ?? true) activeDecoders.push("NVENC+NVDEC");
                   if (encoding?.qsv_hw_decode ?? true) activeDecoders.push("QSV");
                   if (encoding?.vaapi_hw_decode ?? true) activeDecoders.push("VAAPI");
+                  if (encoding?.videotoolbox_hw_decode ?? true) activeDecoders.push("VideoToolbox");
                   if (encoding?.libx265_use_nvdec) activeDecoders.push("libx265+NVDEC");
                   if (activeDecoders.length === 0) return null;
                   return (
@@ -3542,9 +3596,10 @@ volumes:
                           {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
                           {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
                           {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
+                          {encoderCaps?.videotoolbox && <option value="videotoolbox">VideoToolbox (Mac)</option>}
                           <option value="libx265">libx265 (CPU)</option>
                         </select>
-                        {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi") && (
+                        {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi" || ruleForm.encoder === "videotoolbox") && (
                           <div style={{ ...helpStyle, marginTop: 4 }}>
                             {t("settingsIntegrations:rules.form.qsvVaapiNote")}
                           </div>

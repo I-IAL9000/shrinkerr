@@ -54,7 +54,7 @@
       "p6": "Very Slow",
       "p7": "Slowest (Best compression)"
     },
-    "hwHevcNote": "QSV/VAAPI use their global preset and quality from Settings → Encoding.",
+    "hwHevcNote": "QSV/VAAPI/VideoToolbox use their global preset and quality from Settings → Encoding.",
     "audio": "Audio",
     "audioCopy": "Copy (passthrough)",
     "resolution": "Resolution",

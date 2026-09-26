@@ -223,7 +223,7 @@
       },
       "encoder": "Encoder",
       "useDefault": "Use default",
-      "qsvVaapiNote": "QSV/VAAPI rules use the global preset and quality from Settings → Encoding.",
+      "qsvVaapiNote": "QSV/VAAPI/VideoToolbox rules use the global preset and quality from Settings → Encoding.",
       "preset": "Preset",
       "default": "Default",
       "resolution": "Resolution",

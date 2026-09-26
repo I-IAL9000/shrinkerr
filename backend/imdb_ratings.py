@@ -11,8 +11,12 @@ import os
 import time
 from pathlib import Path
 
+from backend.config import settings
+
 _RATINGS_URL = "https://datasets.imdbws.com/title.ratings.tsv.gz"
-_CACHE_DIR = Path("/app/data")
+# Next to the database (= /app/data in Docker). A hardcoded /app/data broke
+# startup on a native macOS install, where / is read-only.
+_CACHE_DIR = Path(settings.db_path).parent
 _CACHE_FILE = _CACHE_DIR / "imdb_ratings.tsv.gz"
 _REFRESH_INTERVAL = 86400  # 24 hours
 

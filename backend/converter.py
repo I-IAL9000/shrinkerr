@@ -57,6 +57,9 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     # v0.3.67+.
     ("vaapi_qp",                         22,        int),
     ("vaapi_compression_level",          4,         int),
+    # Apple VideoToolbox (hevc_videotoolbox) — constant-quality `-q:v`,
+    # 1–100 where HIGHER is better (the opposite of CQ/CRF). v0.9.133.
+    ("videotoolbox_quality",             55,        int),
     # v0.5.7: hardware decode toggles. Native pairs (encoder + matching
     # decoder) default on — frames stay on the device, no PCIe transfer.
     # libx265 + NVDEC defaults off because it requires GPU→CPU readback
@@ -65,6 +68,7 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("nvenc_hw_decode",                  True,      _str_to_bool),
     ("qsv_hw_decode",                    True,      _str_to_bool),
     ("vaapi_hw_decode",                  True,      _str_to_bool),
+    ("videotoolbox_hw_decode",           True,      _str_to_bool),
     ("libx265_use_nvdec",                False,     _str_to_bool),
     # v0.5.9: NVENC bit-depth choice. String "10bit" (default) / "8bit" /
     # "auto". The "auto" path probes source pix_fmt and resolves per-job
@@ -191,6 +195,7 @@ def build_ffmpeg_cmd(
     qsv_lookahead: bool = False,
     vaapi_qp: int = 22,
     vaapi_compression_level: int = 4,
+    videotoolbox_quality: int = 55,
     audio_codec: str = "copy",
     audio_bitrate: int = 128,
     lossless_conversion: dict | None = None,
@@ -214,6 +219,7 @@ def build_ffmpeg_cmd(
         nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
         qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
         vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
+        videotoolbox_quality=videotoolbox_quality,
         audio_codec=audio_codec, audio_bitrate=audio_bitrate,
         lossless_conversion=lossless_conversion,
         audio_stream_codecs=audio_stream_codecs,
@@ -237,6 +243,7 @@ def _build_ffmpeg_cmd_impl(
     qsv_lookahead: bool = False,
     vaapi_qp: int = 22,
     vaapi_compression_level: int = 4,
+    videotoolbox_quality: int = 55,
     audio_codec: str = "copy",
     audio_bitrate: int = 128,
     lossless_conversion: dict | None = None,
@@ -256,7 +263,7 @@ def _build_ffmpeg_cmd_impl(
     # When False, no -hwaccel flag is emitted and the filter chain
     # stays in its pre-v0.5.7 software-decode form.
     use_hw_decode: bool = False,
-    # 'cuda' / 'qsv' / 'vaapi' — what backend to use when use_hw_decode
+    # 'cuda' / 'qsv' / 'vaapi' / 'videotoolbox' — what backend to use when use_hw_decode
     # is True. Determined by caller based on encoder + libx265_use_nvdec.
     hw_decode_backend: str | None = None,
     # When True, frames stay on the device (decoder output_format =
@@ -323,7 +330,11 @@ def _build_ffmpeg_cmd_impl(
     # be set up by -hwaccel.
     if use_hw_decode and hw_decode_backend:
         cmd += ["-hwaccel", hw_decode_backend]
-        if hw_decode_keeps_on_device:
+        # VideoToolbox (v0.9.133) decodes into system memory: no
+        # -hwaccel_output_format, so the normal software filters (scale)
+        # work unchanged and ffmpeg quietly falls back to software for any
+        # codec the Mac can't decode (e.g. MPEG-2 on M1).
+        if hw_decode_keeps_on_device and hw_decode_backend != "videotoolbox":
             cmd += ["-hwaccel_output_format", hw_decode_backend]
         # else: libx265+NVDEC mixed mode — frames downloaded to CPU
 
@@ -401,7 +412,7 @@ def _build_ffmpeg_cmd_impl(
     # v0.5.7: when HW decode is on, scale on the device matching the
     # decoder backend; when off, retain pre-v0.5.7 software-scale path.
     scale = RESOLUTION_MAP.get(target_resolution)
-    if use_hw_decode and hw_decode_keeps_on_device:
+    if use_hw_decode and hw_decode_keeps_on_device and hw_decode_backend != "videotoolbox":
         # Native pair: frames stay on device. Scale with the matching
         # device-native scaler; no hwupload needed.
         if hw_decode_backend == "cuda":
@@ -457,12 +468,14 @@ def _build_ffmpeg_cmd_impl(
             if scale:
                 cmd += ["-vf", f"scale={scale}"]
         elif scale:
-            # NVENC / libx265 software scale.
+            # NVENC / libx265 / VideoToolbox software scale.
             cmd += ["-vf", f"scale={scale}"]
     # v0.5.7: log the decode/encode pipeline so debugging "is my GPU
     # being used" doesn't require reading ffmpeg's verbose output.
     if use_hw_decode and hw_decode_backend:
-        if hw_decode_keeps_on_device:
+        if hw_decode_backend == "videotoolbox":
+            _decode_label = "VIDEOTOOLBOX"
+        elif hw_decode_keeps_on_device:
             _decode_label = f"{hw_decode_backend.upper()} (on-device)"
         else:
             _decode_label = f"{hw_decode_backend.upper()} + CPU readback"
@@ -543,6 +556,22 @@ def _build_ffmpeg_cmd_impl(
             "-qp", str(vaapi_qp),
             "-compression_level", str(vaapi_compression_level),
             "-profile:v", "main",
+        ]
+    elif encoder == "videotoolbox":
+        # Apple VideoToolbox HEVC (macOS only). `-q:v` is constant quality,
+        # 1–100, higher = better. Output bit depth follows the source
+        # (nvenc_bit_depth arrives resolved: "10bit" only for 10/12-bit
+        # sources) — measured 8-bit vs 10-bit output nearly identical in size
+        # for 8-bit input, and main/nv12 keeps older players happy. HDR10
+        # colour tags + mastering/CLL metadata pass through (verified on
+        # M1 Pro, ffmpeg 8.0.1). No -allow_sw: fail loudly rather than
+        # silently software-encode. v0.9.133.
+        _vt_10bit = nvenc_bit_depth == "10bit"
+        cmd += [
+            "-c:v", "hevc_videotoolbox",
+            "-q:v", str(videotoolbox_quality),
+            "-profile:v", "main10" if _vt_10bit else "main",
+            "-pix_fmt", "p010le" if _vt_10bit else "nv12",
         ]
     else:
         # libx265
@@ -793,11 +822,15 @@ _VAAPI_DECODE_SUPPORTED = frozenset({
     "vp9", "av1", "av01",
     "mpeg2video", "vc1", "wmv3",
 })
+# VideoToolbox: H.264 + HEVC are hardware-decoded on every Apple Silicon Mac.
+# Others (AV1 is M3+, MPEG-2 not at all on M1) are left to software; ffmpeg
+# would fall back on its own anyway, this just keeps the log honest.
+_VIDEOTOOLBOX_DECODE_SUPPORTED = frozenset({"h264", "hevc", "h265"})
 
 
 def hw_decode_supports(decoder: str, source_codec: str | None,
                        source_pix_fmt: str | None = None) -> bool:
-    """True if `decoder` ('cuda'/'qsv'/'vaapi') can hardware-decode
+    """True if `decoder` ('cuda'/'qsv'/'vaapi'/'videotoolbox') can hardware-decode
     `source_codec` (lowercase ffprobe codec name). Returns False when
     source_codec is None/empty so probe failures fall back to software
     rather than crashing the cmd builder.
@@ -826,6 +859,7 @@ def hw_decode_supports(decoder: str, source_codec: str | None,
         "cuda": _NVDEC_SUPPORTED,
         "qsv": _QSV_DECODE_SUPPORTED,
         "vaapi": _VAAPI_DECODE_SUPPORTED,
+        "videotoolbox": _VIDEOTOOLBOX_DECODE_SUPPORTED,
     }
     return c in table.get(decoder, frozenset())
 
@@ -2088,6 +2122,7 @@ async def convert_file(
     qsv_lookahead = bool(live_settings.get("qsv_lookahead", False))
     vaapi_qp = live_settings.get("vaapi_qp", 22)
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
+    videotoolbox_quality = live_settings.get("videotoolbox_quality", 55)
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
     audio_bitrate = override_audio_bitrate if override_audio_bitrate is not None else live_settings.get("audio_bitrate", 128)
     # v0.5.7: hardware decode settings. Resolved per-job below once
@@ -2097,6 +2132,7 @@ async def convert_file(
     nvenc_hw_decode = bool(live_settings.get("nvenc_hw_decode", True))
     qsv_hw_decode = bool(live_settings.get("qsv_hw_decode", True))
     vaapi_hw_decode = bool(live_settings.get("vaapi_hw_decode", True))
+    videotoolbox_hw_decode = bool(live_settings.get("videotoolbox_hw_decode", True))
     libx265_use_nvdec = bool(live_settings.get("libx265_use_nvdec", False))
 
     # Probe file for audio/subtitle stream details
@@ -2371,6 +2407,8 @@ async def convert_file(
         active_preset, active_quality = qsv_preset, f"global_quality={qsv_cq}"
     elif encoder == "vaapi":
         active_preset, active_quality = f"compression_level={vaapi_compression_level}", f"qp={vaapi_qp}"
+    elif encoder == "videotoolbox":
+        active_preset, active_quality = "n/a", f"q:v={videotoolbox_quality}"
     else:
         active_preset, active_quality = nvenc_preset, f"cq={cq}"
     print(f"[CONVERT] Settings: encoder={encoder}, preset={active_preset}, {active_quality}, audio={audio_codec}, resolution={target_resolution}", flush=True)
@@ -2602,6 +2640,15 @@ async def convert_file(
             print(f"[CONVERT] HW decode unavailable for codec "
                   f"'{_src_codec_lower}' on VAAPI — software fallback for this job",
                   flush=True)
+    elif encoder == "videotoolbox" and videotoolbox_hw_decode:
+        if hw_decode_supports("videotoolbox", _src_codec_lower, source_pix_fmt):
+            _hw_use = True
+            _hw_backend = "videotoolbox"
+            _hw_on_device = True
+        else:
+            print(f"[CONVERT] HW decode unavailable for {_hw_skip_reason} "
+                  f"on VideoToolbox — software fallback for this job",
+                  flush=True)
     elif encoder == "libx265" and libx265_use_nvdec:
         if hw_decode_supports("cuda", _src_codec_lower, source_pix_fmt):
             _hw_use = True
@@ -2652,6 +2699,12 @@ async def convert_file(
     else:
         # Default and any unrecognised value fall through to 10bit.
         nvenc_effective_bit_depth = "10bit"
+    # VideoToolbox always follows the source bit depth (the NVENC setting
+    # doesn't apply to it). Carried to the cmd builder in the same arg.
+    if encoder == "videotoolbox":
+        _vpf = (source_pix_fmt or "").lower()
+        _v_hbd = ("p10" in _vpf) or ("p12" in _vpf) or ("10le" in _vpf) or ("12le" in _vpf)
+        nvenc_effective_bit_depth = "10bit" if _v_hbd else "8bit"
 
     # v0.7.14: NVDEC silently falls back to software decode for frames it
     # can't decode on-GPU (e.g. sources with "unknown" colour metadata).
@@ -2686,6 +2739,7 @@ async def convert_file(
             nvenc_preset=nvenc_preset, libx265_preset=libx265_preset,
             qsv_cq=qsv_cq, qsv_preset=qsv_preset, qsv_lookahead=qsv_lookahead,
             vaapi_qp=vaapi_qp, vaapi_compression_level=vaapi_compression_level,
+            videotoolbox_quality=videotoolbox_quality,
             cq=cq, crf=crf, audio_codec=audio_codec, audio_bitrate=audio_bitrate,
             lossless_conversion=lossless_conversion,
             audio_stream_codecs=audio_stream_codecs,
@@ -2712,7 +2766,10 @@ async def convert_file(
             c = c[:-1] + shlex.split(cf) + c[-1:]
         # During quiet hours, lower process priority.
         if nice:
-            c = ["nice", "-n", "15", "ionice", "-c", "3"] + c
+            # ionice is Linux-only (util-linux); a native macOS install
+            # would fail to launch ffmpeg at all with it in the argv.
+            _io = ["ionice", "-c", "3"] if shutil.which("ionice") else []
+            c = ["nice", "-n", "15"] + _io + c
         return c
 
     # Outer-scope state the success path (below) reads back after the run.

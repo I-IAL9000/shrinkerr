@@ -142,7 +142,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // managed centrally in Settings → Encoding. For per-batch overrides
   // we'd need new sliders; for v0.3.69 we just hide the legacy controls
   // and let the global QSV/VAAPI settings apply. v0.3.69+.
-  const isHwHevc = effectiveEncoder === "qsv" || effectiveEncoder === "vaapi";
+  const isHwHevc = effectiveEncoder === "qsv" || effectiveEncoder === "vaapi" || effectiveEncoder === "videotoolbox";
 
   // Debounced estimate refresh
   useEffect(() => {
@@ -378,6 +378,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
                       {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
                       {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
+                      {encoderCaps?.videotoolbox && <option value="videotoolbox">VideoToolbox (Mac)</option>}
                       <option value="libx265">libx265 (CPU)</option>
                     </select>
                   </div>

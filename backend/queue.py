@@ -482,6 +482,8 @@ class JobQueue:
                 affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'qsv')"
             if "vaapi" not in caps:
                 affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'vaapi')"
+            if "videotoolbox" not in caps:
+                affinity_sql += " AND (encoder IS NULL OR LOWER(encoder) != 'videotoolbox')"
 
             if exclude_ids:
                 placeholders = ",".join("?" * len(exclude_ids))

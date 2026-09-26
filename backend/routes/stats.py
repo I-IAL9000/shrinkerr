@@ -705,6 +705,7 @@ async def get_encoder_caps(force: bool = False):
         "nvenc": caps.nvenc,
         "qsv": caps.qsv,
         "vaapi": caps.vaapi,
+        "videotoolbox": caps.videotoolbox,
         # Always-present software fallback. Lets the SPA render a single
         # `available` list without special-casing libx265.
         "libx265": True,
@@ -719,6 +720,7 @@ async def get_encoder_caps(force: bool = False):
         "nvdec_available": caps.nvdec_available,
         "qsv_decode_available": caps.qsv_decode_available,
         "vaapi_decode_available": caps.vaapi_decode_available,
+        "videotoolbox_decode_available": caps.videotoolbox_decode_available,
     }
 
 

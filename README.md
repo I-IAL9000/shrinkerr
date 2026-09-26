@@ -117,7 +117,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
   - NVIDIA driver 525.60.13+ (for `:nvenc`) or 570+ (for `:edge-nvenc`)
   - **Linux**: [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit)
   - **Windows**: Docker Desktop in WSL2 mode (Windows 10 21H2+ / Windows 11) with a recent NVIDIA Windows driver — nothing else to install
-  - **macOS**: not supported — Apple Silicon has no NVIDIA path. For Mac performance, install Shrinkerr **natively (no Docker)** so ffmpeg can reach Apple's VideoToolbox encoder. See [Running Shrinkerr natively on macOS](docs/native-install-mac.md). Real-world: ~30–100 fps native vs. ~1 fps via Docker.
+  - **macOS**: no NVIDIA path, but Apple's **VideoToolbox** hardware encoder is supported when Shrinkerr runs **natively (no Docker)**, as a server or as a remote worker. See [Running Shrinkerr natively on macOS](docs/native-install-mac.md). Real-world: ~30–100 fps native vs. ~1 fps via Docker.
 
 ---
 

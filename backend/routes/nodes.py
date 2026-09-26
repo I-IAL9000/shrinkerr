@@ -326,6 +326,8 @@ async def request_job(req: RequestJobBody, request: Request):
         affinity_filter += " AND (encoder IS NULL OR LOWER(encoder) != 'qsv')"
     if "vaapi" not in capabilities:
         affinity_filter += " AND (encoder IS NULL OR LOWER(encoder) != 'vaapi')"
+    if "videotoolbox" not in capabilities:
+        affinity_filter += " AND (encoder IS NULL OR LOWER(encoder) != 'videotoolbox')"
 
     # If encoder translation is disabled, only assign jobs this node can run natively
     # (affinity still applies on top of this). A libx265-only node with translation
@@ -346,6 +348,8 @@ async def request_job(req: RequestJobBody, request: Request):
             native_encoders.append("qsv")
         if "vaapi" in capabilities:
             native_encoders.append("vaapi")
+        if "videotoolbox" in capabilities:
+            native_encoders.append("videotoolbox")
         if native_encoders:
             placeholders = ",".join("?" * len(native_encoders))
             affinity_filter += f" AND (encoder IS NULL OR encoder = '' OR LOWER(encoder) IN ({placeholders}))"
@@ -388,7 +392,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'nvenc_preset', 'nvenc_cq', 'default_encoder', "
             "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf', "
             "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq', "
-            "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec')"
+            "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec', "
+            "              'videotoolbox_quality', 'videotoolbox_hw_decode')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -459,6 +464,15 @@ async def request_job(req: RequestJobBody, request: Request):
     )
     assigned["libx265_use_nvdec"] = (
         srv_settings.get("libx265_use_nvdec", "false").lower() == "true"
+    )
+    # VideoToolbox (v0.9.133): a Mac worker encodes VT jobs — and NVENC jobs
+    # it translates — at the server's configured VT quality.
+    try:
+        assigned["videotoolbox_quality"] = int(srv_settings.get("videotoolbox_quality") or 55)
+    except (TypeError, ValueError):
+        assigned["videotoolbox_quality"] = 55
+    assigned["videotoolbox_hw_decode"] = (
+        srv_settings.get("videotoolbox_hw_decode", "true").lower() == "true"
     )
     print(f"[NODES] Assigned job {job['id']} ({job.get('encoder') or 'default'}) to node '{req.node_id}' ({node['name']})", flush=True)
 

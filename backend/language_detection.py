@@ -320,7 +320,10 @@ def _get_whisper_model():
             return None
     try:
         from faster_whisper import WhisperModel
-        cache_dir = os.environ.get("SHRINKERR_WHISPER_CACHE", "/app/data/models")
+        from backend.config import settings as _cfg
+        cache_dir = os.environ.get(
+            "SHRINKERR_WHISPER_CACHE", os.path.join(os.path.dirname(_cfg.db_path), "models")
+        )
         os.makedirs(cache_dir, exist_ok=True)
         # v0.9.19: cap CPU threads. CTranslate2 defaults to ALL cores, so one
         # detection that wedges (observed on a specific DTS track) pegs every

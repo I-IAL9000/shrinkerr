@@ -210,9 +210,10 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
             cap === "nvenc" ? "NVENC (GPU)" :
             cap === "qsv"   ? "QSV (Intel)" :
             cap === "vaapi" ? "VAAPI (GPU)" :
+            cap === "videotoolbox" ? "VideoToolbox (Mac)" :
             cap === "libx265" ? "libx265 (CPU)" :
             cap;
-          const isHardware = cap === "nvenc" || cap === "qsv" || cap === "vaapi";
+          const isHardware = cap === "nvenc" || cap === "qsv" || cap === "vaapi" || cap === "videotoolbox";
           return (
             <span key={cap} style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 12, fontWeight: 600,

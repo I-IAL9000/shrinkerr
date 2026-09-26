@@ -59,6 +59,10 @@ async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], 
         out = stdout.decode(errors="replace")
         if "libx265" in out:
             caps.append("libx265")
+        from backend.encoder_caps import videotoolbox_encode_works
+        if "hevc_videotoolbox" in out and await videotoolbox_encode_works():
+            caps.append("videotoolbox")
+            print("[WORKER] VideoToolbox encode test passed", flush=True)
 
         if "hevc_nvenc" not in out:
             nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"
@@ -139,7 +143,7 @@ async def _detect_ffmpeg_version() -> str | None:
 # file in the worker's data volume — rotated by the admin UI or by the
 # worker itself if the server ever 401s an authenticated call (drift
 # after a token rotation the worker didn't see). File mode is 0600.
-_TOKEN_FILE = "/app/data/worker_token"
+_TOKEN_FILE = os.path.join(DATA_DIR, "worker_token")
 
 
 def _load_stored_token() -> str:
@@ -405,8 +409,15 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 encoder = "nvenc"
             elif job_encoder in ("libx265", "x265", "cpu") and "libx265" in worker_capabilities:
                 encoder = "libx265"
+            elif job_encoder == "videotoolbox" and "videotoolbox" in worker_capabilities:
+                encoder = "videotoolbox"
             elif translate_allowed:
-                encoder = "nvenc" if "nvenc" in worker_capabilities else "libx265"
+                # Prefer a hardware encoder: a Mac worker takes NVENC jobs on
+                # VideoToolbox (~10x libx265's speed on Apple Silicon).
+                encoder = next(
+                    (e for e in ("nvenc", "videotoolbox") if e in worker_capabilities),
+                    "libx265",
+                )
             else:
                 print(f"[WORKER] Refusing job {job_id}: encoder '{job_encoder}' incompatible and translation disabled", flush=True)
                 await client.report_complete(
@@ -487,6 +498,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "qsv_hw_decode": bool(job.get("qsv_hw_decode", True)),
                 "vaapi_hw_decode": bool(job.get("vaapi_hw_decode", True)),
                 "libx265_use_nvdec": bool(job.get("libx265_use_nvdec", False)),
+                "videotoolbox_quality": int(job.get("videotoolbox_quality") or 55),
+                "videotoolbox_hw_decode": bool(job.get("videotoolbox_hw_decode", True)),
                 "trash_original_after_conversion": False,
                 "backup_original_days": 0,
             }

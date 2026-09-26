@@ -55,7 +55,7 @@
       "p6": "Muy lento",
       "p7": "Más lento (Mejor compresión)"
     },
-    "hwHevcNote": "QSV/VAAPI usan su preajuste y calidad globales de Ajustes → Codificación.",
+    "hwHevcNote": "QSV/VAAPI/VideoToolbox usan su preajuste y calidad globales de Ajustes → Codificación.",
     "audio": "Audio",
     "audioCopy": "Copiar (sin recodificar)",
     "resolution": "Resolución",

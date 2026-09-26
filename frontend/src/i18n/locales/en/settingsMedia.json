@@ -37,7 +37,8 @@
       "nvenc": "Hardware encoding using your NVIDIA GPU. Fast, lower power usage. Slightly larger files than CPU at the same quality.",
       "qsv": "Hardware encoding using Intel Quick Sync (Gen8+ iGPUs through Arc / Battlemage). Fast and very power-efficient. Requires /dev/dri passthrough — see the help block below.",
       "vaapi": "Hardware encoding via VA-API. Works on Intel iGPUs and AMD GPUs (Polaris / Vega / RDNA). Driver-quality varies; use QSV instead on Intel where available. Requires /dev/dri passthrough.",
-      "libx265": "Software encoding using CPU. Slower but achieves better compression per bitrate."
+      "libx265": "Software encoding using CPU. Slower but achieves better compression per bitrate.",
+      "videotoolbox": "Hardware encoding on Apple Silicon (M1 and later) via VideoToolbox. Very fast and power-efficient. Only available when Shrinkerr runs natively on macOS — Docker on a Mac can't reach it."
     },
     "passthrough": {
       "summary": "Compose passthrough for QSV / VAAPI",
@@ -136,6 +137,13 @@
     "vaapiCompressionHelp": "Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <b>4</b> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).",
     "vaapiQp": "VAAPI Quantizer (QP)",
     "vaapiQpHelp": "Constant quantizer (CQP) target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> trades quality for size sensibly.",
+    "videotoolboxDecode": {
+      "label": "Use VideoToolbox for decode",
+      "help": "Decodes H.264 and HEVC sources on the Mac's media engine before encoding. Other codecs (MPEG-2, VC-1, …) fall back to software decode automatically.",
+      "notDetected": "VideoToolbox decode not detected on this host."
+    },
+    "videotoolboxQuality": "VideoToolbox Quality (q:v)",
+    "videotoolboxQualityHelp": "Constant quality from 1 to 100 — <b>higher = better quality, larger files</b> (the reverse of CQ/CRF). <b>55</b> is roughly libx265 CRF 22 in size and quality; <b>60-65</b> for near-transparent output, <b>45-50</b> for bigger savings. No presets: speed is fixed by the hardware.",
     "smart": {
       "title": "Smart Encoding",
       "contentType": "Content type detection",

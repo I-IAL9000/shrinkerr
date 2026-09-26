@@ -17,7 +17,8 @@ macOS 14+ (Sonoma) on both Apple Silicon (M1/M2/M3/M4) and Intel.
 - [Prerequisites](#prerequisites)
 - [Install](#install)
 - [Configuration](#configuration)
-- [Using VideoToolbox today (workaround)](#using-videotoolbox-today-workaround)
+- [Using VideoToolbox](#using-videotoolbox)
+- [Using a Mac as a remote worker](#using-a-mac-as-a-remote-worker)
 - [Running as a launchd service](#running-as-a-launchd-service)
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
@@ -36,17 +37,10 @@ Running natively gives you:
 
 ## What's NOT supported yet
 
-- **VideoToolbox is not a first-class encoder option in the UI.** The
-  Settings → Video → Encoding dropdown lists `libx265` / `nvenc` /
-  `qsv` / `vaapi`. There's no VideoToolbox toggle. You can still use
-  VideoToolbox via the `custom_ffmpeg_flags` setting — see [Using
-  VideoToolbox today](#using-videotoolbox-today-workaround) below —
-  but the encoder-specific quality knobs, preset menus, and auto-
-  selection don't know about it. A proper VideoToolbox encoder is on
-  the roadmap; if you want it sooner, file an issue with your
-  benchmark numbers and ffmpeg config.
-- **NVENC / QSV / VAAPI are Linux-only.** Mac users default to
-  `libx265` (slow without VideoToolbox) or use the workaround below.
+- **NVENC / QSV / VAAPI are Linux-only.** On a Mac the choices are
+  VideoToolbox (hardware) and libx265 (software).
+- **VMAF** needs an ffmpeg built with libvmaf, which Homebrew's isn't.
+  VMAF is also skipped for hardware-decoded jobs on every encoder.
 - **Disc-folder + ISO conversion** still works on Mac (uses libdvdread
   / libbluray bundled with brew's ffmpeg).
 
@@ -92,20 +86,19 @@ That's it — the backend will serve the built frontend out of
 
 ## Configuration
 
-Shrinkerr reads config from environment variables. The defaults are
-sensible; the only required setup is pointing it at your media. Create
-`.env` in the repo root:
+Shrinkerr reads config from environment variables (it does not load a
+`.env` file itself). The only required setup is where to keep the
+database and where your media lives. Caches such as the IMDb ratings file
+go in the same folder as the database:
 
 ```sh
-# .env (example)
-SHRINKERR_DB_PATH=/Users/<you>/shrinkerr/shrinkerr.db
-SHRINKERR_MEDIA_ROOT=/Volumes/Media
-SHRINKERR_PORT=6680
+export SHRINKERR_DB_PATH=/Users/<you>/shrinkerr/data/shrinkerr.db
+export SHRINKERR_MEDIA_ROOT=/Volumes/Media
 # Optional — caps scanner parallelism (v0.7.9+). Default 4.
-SHRINKERR_SCAN_CONCURRENCY=4
+export SHRINKERR_SCAN_CONCURRENCY=4
 ```
 
-Start the app:
+Start the app (it listens on port 6680):
 
 ```sh
 source .venv/bin/activate
@@ -116,36 +109,46 @@ Visit http://localhost:6680 — first-run walkthrough takes you through
 adding media directories and encoding settings, same as the Docker
 flow.
 
-## Using VideoToolbox today (workaround)
+## Using VideoToolbox
 
-Until VideoToolbox is a first-class encoder option, you can get the
-speedup via the `custom_ffmpeg_flags` setting:
+When Shrinkerr runs natively on macOS with a VideoToolbox-enabled ffmpeg,
+**VideoToolbox (Apple Silicon / Mac)** appears in Settings → Video →
+Default Encoder. On a fresh install it's selected for you.
 
-1. Settings → Video → Encoding → set encoder to **libx265** (this is
-   the dropdown choice that lets the rest of the pipeline work; we'll
-   override the actual encoder via custom flags).
-2. Settings → Video → Advanced → `custom_ffmpeg_flags`, set to:
-   ```
-   -c:v hevc_videotoolbox -b:v 8000k -tag:v hvc1
-   ```
-   These flags get appended AFTER libx265's encoder args, and ffmpeg
-   honours the last `-c:v` it sees — so the libx265 stanza is
-   effectively replaced.
+- **Quality** is a constant-quality value from 1 to 100 where **higher
+  means better quality and larger files** (the reverse of CQ/CRF).
+  The default, 55, came out roughly equal to libx265 CRF 22 in size and
+  SSIM on an M1 Pro. Use 60–65 for near-transparent output and 45–50 for
+  bigger savings. There are no presets; speed is set by the hardware.
+- **Use VideoToolbox for decode** (on by default) decodes H.264 and HEVC
+  sources on the Mac's media engine. Other codecs (MPEG-2, VC-1, …) are
+  decoded in software automatically.
+- Output is 10-bit HEVC for 10-bit sources and 8-bit for 8-bit sources.
+  HDR10 colour tags and mastering/light-level metadata are kept.
+- Rules and the Queue dialog can pick VideoToolbox as the encoder; its
+  quality always comes from Settings.
 
-Tune the bitrate (`-b:v 8000k` → 8 Mbps) to your taste. VideoToolbox
-is bitrate-controlled, not CRF/CQ, so the UI's "Constant Quality"
-slider doesn't apply — set it to whatever and override here.
+On an M1 Pro, 1080p encodes run at roughly 120 fps with hardware decode.
 
-Caveats:
+## Using a Mac as a remote worker
 
-- The estimated-savings numbers in the UI assume libx265 compression
-  ratios. VideoToolbox typically produces larger files at the same
-  visual quality; expect the actual savings to be smaller than the
-  estimate.
-- VMAF analysis still runs and gives useful numbers.
-- The `x265`/`h265` filename tag is still applied by Shrinkerr's
-  renamer — the converted file IS HEVC, just from a different encoder,
-  so the tag is technically accurate.
+A Mac can also help a Linux/NVENC server as a remote worker. Run it
+natively (not in Docker) so it can reach VideoToolbox:
+
+```sh
+source .venv/bin/activate
+export SHRINKERR_MODE=worker
+export SERVER_URL=http://your-server:6680
+export API_KEY=<the server's API key>
+export WORKER_NAME=MacBook
+export SHRINKERR_DATA_DIR=/Users/<you>/shrinkerr-worker   # worker id + token
+python3 -m backend.main
+```
+
+The worker shows up on the Nodes page with a **VideoToolbox (Mac)**
+capability. NVENC jobs it picks up are encoded with VideoToolbox, at the
+VideoToolbox quality configured on the server. Turn off *translate
+encoder* for the node if it should only take jobs it can run natively.
 
 ## Running as a launchd service
 
@@ -221,11 +224,18 @@ doesn't have VT compiled in (rare; possibly a custom build). Run
 `ffmpeg -version` and confirm `--enable-videotoolbox` is in the
 configure line.
 
-**Conversion crashes with `Function not implemented` mid-stream** — the
-libx265 + VideoToolbox-via-custom-flags combination occasionally
-confuses ffmpeg's filter graph. Try removing `-tag:v hvc1` from the
-custom flags as a first cut.
+**VideoToolbox missing from the encoder dropdown** — Shrinkerr is running
+in Docker (a Linux VM can't reach VideoToolbox), or the ffmpeg on `PATH`
+isn't Homebrew's. Check `which ffmpeg` and the command above, then press
+**Re-detect** next to the encoder dropdown.
+
+**If you used the old `custom_ffmpeg_flags` workaround** (`-c:v
+hevc_videotoolbox …`) — clear those flags and pick VideoToolbox as the
+encoder instead.
+
+**`pip install` fails building `av`** — use Python 3.11 as shown above;
+the pinned dependencies don't build on the newest Python releases.
 
 **Anything else** — open an issue with the output of `ffmpeg
--version`, your custom_ffmpeg_flags string, and the failing job's
-"View ffmpeg log" expand from the Completed tab.
+-version` and the failing job's "View ffmpeg log" expand from the
+Completed tab.

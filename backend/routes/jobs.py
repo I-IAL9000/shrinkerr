@@ -1084,7 +1084,8 @@ async def add_jobs_by_path(payload: AddByPathRequest):
 
 class TestEncodeRequest(BaseModel):
     file_path: str
-    encoder: str | None = "nvenc"
+    # None = the configured default encoder (the Estimate modal's "Auto").
+    encoder: str | None = None
     cq: int | None = 20
     preset: str | None = "p6"
     sample_seconds: int = 30
@@ -1113,10 +1114,15 @@ async def start_test_encode(payload: TestEncodeRequest):
         finally:
             await db_t.close()
 
+    encoder = payload.encoder
+    if not encoder:
+        from backend.converter import get_live_encoding_settings
+        encoder = (await get_live_encoding_settings()).get("default_encoder") or "nvenc"
+
     try:
         result = await run_test_encode(
             file_path=test_file,
-            encoder=payload.encoder or "nvenc",
+            encoder=encoder,
             cq=payload.cq or 20,
             preset=payload.preset or "p6",
             sample_seconds=payload.sample_seconds,

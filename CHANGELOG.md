@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.133] — 2026-09-26
+
+### Added
+- **Apple VideoToolbox encoder for Macs.** Native macOS installs (not Docker) can pick VideoToolbox in Settings, rules and the queue dialog, with its own quality slider and hardware decode; Mac remote workers advertise it and encode NVENC jobs on it. Also fixes native macOS startup (hardcoded `/app/data`) and quiet-hours encodes on macOS (no `ionice`).
+
 ## [0.9.132] — 2026-09-26
 
 ### Added

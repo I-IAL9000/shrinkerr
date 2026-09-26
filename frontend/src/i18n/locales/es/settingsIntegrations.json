@@ -230,7 +230,7 @@
       },
       "encoder": "Codificador",
       "useDefault": "Usar predeterminado",
-      "qsvVaapiNote": "Las reglas QSV/VAAPI usan el preajuste y la calidad globales de Ajustes → Codificación.",
+      "qsvVaapiNote": "Las reglas QSV/VAAPI/VideoToolbox usan el preajuste y la calidad globales de Ajustes → Codificación.",
       "preset": "Preajuste",
       "default": "Predeterminado",
       "resolution": "Resolución",

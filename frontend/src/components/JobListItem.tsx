@@ -326,6 +326,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                       if (enc === "libx265") return "x265 (CPU)";
                       if (enc === "qsv") return "h265 (QSV)";
                       if (enc === "vaapi") return "h265 (VAAPI)";
+                      if (enc === "videotoolbox") return "h265 (VideoToolbox)";
                       return "h265 (NVENC)";
                     })()}
                   </span>

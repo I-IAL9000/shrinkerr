@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 
 
@@ -54,6 +55,11 @@ class EncoderCaps:
     nvdec_available: bool = False
     qsv_decode_available: bool = False
     vaapi_decode_available: bool = False
+    # v0.9.133: Apple VideoToolbox (hevc_videotoolbox). macOS-host only —
+    # a Linux container on a Mac can't reach it, so it only appears when
+    # Shrinkerr runs natively on macOS with a VT-enabled ffmpeg (Homebrew's).
+    videotoolbox: bool = False
+    videotoolbox_decode_available: bool = False
 
     @property
     def available(self) -> list[str]:
@@ -64,6 +70,8 @@ class EncoderCaps:
             out.append("qsv")
         if self.vaapi:
             out.append("vaapi")
+        if self.videotoolbox:
+            out.append("videotoolbox")
         return out
 
 
@@ -237,6 +245,7 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
     qsv = ("hevc_qsv" in encoders) and (intel_node is not None)
     # VAAPI works on Intel + AMD. Excluded from NVIDIA-only hosts.
     vaapi = ("hevc_vaapi" in encoders) and (va_node is not None)
+    videotoolbox = ("hevc_videotoolbox" in encoders) and sys.platform == "darwin"
 
     # v0.5.7: HW decode is gated on hwaccel compiled in AND matching
     # encoder available. Same gates the encoder uses — splitting them
@@ -244,6 +253,7 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
     nvdec = ("cuda" in hwaccels) and nvenc
     qsv_decode = ("qsv" in hwaccels) and qsv
     vaapi_decode = ("vaapi" in hwaccels) and vaapi
+    videotoolbox_decode = ("videotoolbox" in hwaccels) and videotoolbox
 
     _cached = EncoderCaps(
         nvenc=nvenc,
@@ -254,5 +264,29 @@ def detect_encoders(force: bool = False) -> EncoderCaps:
         nvdec_available=nvdec,
         qsv_decode_available=qsv_decode,
         vaapi_decode_available=vaapi_decode,
+        videotoolbox=videotoolbox,
+        videotoolbox_decode_available=videotoolbox_decode,
     )
     return _cached
+
+
+async def videotoolbox_encode_works() -> bool:
+    """One-frame hevc_videotoolbox test encode (v0.9.133). Node capability
+    detection uses this instead of trusting `ffmpeg -encoders` alone: a
+    macOS ffmpeg lists the encoder even when the session can't reach the
+    hardware (e.g. a headless/SSH launch without GPU access), and a Linux
+    build never passes. Mirrors the NVENC test encode in nodes.py."""
+    import asyncio
+    if sys.platform != "darwin":
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.04:r=25",
+            "-frames:v", "1", "-c:v", "hevc_videotoolbox", "-f", "null", "-",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=10)
+        return proc.returncode == 0
+    except Exception:
+        return False

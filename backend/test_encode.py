@@ -152,6 +152,15 @@ async def run_test_encode(
                 "-profile:v", "main10",
                 "-pix_fmt", "p010le",
             ]
+        elif encoder == "videotoolbox":
+            # VideoToolbox has its own 1–100 (higher = better) quality scale,
+            # so the CQ slider value doesn't apply — use the configured one.
+            from backend.converter import get_live_encoding_settings
+            vt_q = (await get_live_encoding_settings()).get("videotoolbox_quality", 55)
+            enc_cmd += [
+                "-c:v", "hevc_videotoolbox",
+                "-q:v", str(vt_q),
+            ]
         else:
             crf = cq + 2  # CRF offset for libx265
             enc_cmd += [

@@ -289,7 +289,9 @@ class NodeManager:
             # Seed default_encoder based on detected local capabilities when no
             # value has ever been stored — so CPU-only boxes don't land on
             # NVENC as the default. INSERT OR IGNORE preserves any prior user choice.
-            seed_encoder = "nvenc" if "nvenc" in capabilities else "libx265"
+            seed_encoder = next(
+                (e for e in ("nvenc", "videotoolbox") if e in capabilities), "libx265"
+            )
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES ('default_encoder', ?)",
                 (seed_encoder,),
@@ -709,6 +711,9 @@ class NodeManager:
                 caps.append("qsv")
             if "hevc_vaapi" in out and _vaapi_render_node():
                 caps.append("vaapi")
+            from backend.encoder_caps import videotoolbox_encode_works
+            if "hevc_videotoolbox" in out and await videotoolbox_encode_works():
+                caps.append("videotoolbox")
 
             if "hevc_nvenc" not in out:
                 nvenc_reason = "ffmpeg build has no hevc_nvenc encoder"

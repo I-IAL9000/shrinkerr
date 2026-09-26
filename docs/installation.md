@@ -279,15 +279,14 @@ roughly **1 fps** on Apple Silicon — usable for a one-off conversion,
 useless for a library.
 
 Native install (no Docker) gives you direct access to VideoToolbox via
-brew's ffmpeg, reaching ~30–100 fps for h265 encoding. The trade-off:
-slightly more setup than `docker compose up -d`, and VideoToolbox isn't
-yet a first-class encoder option in the Settings UI — you use it via
-the `custom_ffmpeg_flags` setting as a workaround until proper
-integration lands.
+brew's ffmpeg, reaching ~30–100 fps for h265 encoding. VideoToolbox is a
+regular encoder choice in Settings (selected by default on a fresh
+native install); the trade-off is slightly more setup than `docker
+compose up -d`.
 
 Full walkthrough: [Running Shrinkerr natively on macOS](native-install-mac.md).
-Covers brew prereqs, Python venv setup, the frontend build, the
-VideoToolbox `custom_ffmpeg_flags` recipe, launchd service file for
+Covers brew prereqs, Python venv setup, the frontend build, VideoToolbox
+settings, running a Mac as a remote worker, a launchd service file for
 auto-start, and troubleshooting.
 
 ## Reverse proxy setups
