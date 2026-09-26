@@ -4,6 +4,7 @@ import type { JobProgress } from "../types";
 import ProgressBar from "./ProgressBar";
 import { useConfirm } from "./ConfirmModal";
 import { fmtNum } from "../fmt";
+import { jobStep } from "../i18n/server";
 
 function formatEta(seconds: number | null): string {
   if (!seconds) return "";
@@ -45,7 +46,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
   return (
     <div className="job-active">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ color: "white", fontWeight: "bold" }}>{t("queue:card.now", { step: progress.step || t("queue:card.processing") })}</span>
+        <span style={{ color: "white", fontWeight: "bold" }}>{t("queue:card.now", { step: jobStep(progress) || t("queue:card.processing") })}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span style={{ color: "var(--accent)" }}>
             {t("queue:card.jobOf", { current: fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1), total: fmtNum(progress.jobs_total) })}
@@ -81,7 +82,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
         </span>
       </div>
       <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6, flexWrap: "wrap" }}>
-        <span>{progress.step === "vmaf analysis" ? t("queue:card.analyzingQuality") : progress.step}</span>
+        <span>{progress.step === "vmaf analysis" ? t("queue:card.analyzingQuality") : jobStep(progress)}</span>
         {(jobType === "convert" || jobType === "combined") && (
           encoder === "libx265" ? (
             <span>{libx265Preset || "medium"} / CRF {libx265Crf ?? 20}</span>

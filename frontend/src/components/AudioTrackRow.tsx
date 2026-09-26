@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AudioTrack } from "../types";
 import { LANGUAGES } from "../utils/languages";
+import { detectNote } from "../i18n/server";
 
 interface AudioTrackRowProps {
   track: AudioTrack;
@@ -10,6 +12,7 @@ interface AudioTrackRowProps {
 }
 
 export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: AudioTrackRowProps) {
+  const { t } = useTranslation(["fileDetail", "common"]);
   const [editing, setEditing] = useState(false);
   const sizeLabel = track.size_estimate_bytes
     ? `(~${(track.size_estimate_bytes / (1024 * 1024)).toFixed(0)} MB)`
@@ -42,13 +45,13 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
           store it in place — it applies when the file is converted to mkv. */}
       {track.detected_language && (track.language || "und").toLowerCase() === "und" && (
         <span style={{ color: "var(--accent)", fontSize: "0.85em", whiteSpace: "nowrap" }}>
-          {track.detected_language.toUpperCase()} detected → convert to MKV to apply
+          {t("fileDetail:tracks.detectedApply", { lang: track.detected_language.toUpperCase() })}
         </span>
       )}
       {/* v0.9.44: why detection couldn't resolve this track. */}
       {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
-        <span style={{ color: "var(--warning)", fontSize: "0.85em", opacity: 0.8 }} title="Why auto-detection didn't set a language">
-          {track.detect_note}
+        <span style={{ color: "var(--warning)", fontSize: "0.85em", opacity: 0.8 }} title={t("fileDetail:tracks.detectNoteTitle")}>
+          {detectNote(track)}
         </span>
       )}
       {/* v0.9.43: manual language override — for tracks detection can't
@@ -58,7 +61,7 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
           type="button"
           onClick={(e) => { e.stopPropagation(); setEditing(true); }}
           disabled={busy}
-          title="Set language manually"
+          title={t("fileDetail:tracks.setLanguageManually")}
           style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: busy ? "wait" : "pointer", padding: 0, fontSize: 12, display: "inline-flex", alignItems: "center", opacity: busy ? 0.5 : 1 }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

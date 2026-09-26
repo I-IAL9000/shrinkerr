@@ -1,0 +1,29 @@
+{
+  "emailSubject": "Shrinkerr: {{title}}",
+  "jobFailed": {
+    "title": "Job Failed",
+    "message": "{{fileName}} failed during conversion",
+    "fieldError": "Error"
+  },
+  "queueComplete": {
+    "title": "Queue Complete",
+    "message_one": "All jobs finished! {{count}} completed.",
+    "message_other": "All jobs finished! {{count}} completed.",
+    "fieldTotalSaved": "Total saved"
+  },
+  "diskLow": {
+    "title": "Low Disk Space",
+    "message": "Free space is {{free}} GB (threshold: {{threshold}} GB)",
+    "fieldPath": "Path",
+    "fieldFree": "Free",
+    "fieldTotal": "Total"
+  },
+  "test": {
+    "title": "Shrinkerr Test",
+    "message": "Test notification from Shrinkerr",
+    "webhookMessage": "Test notification",
+    "emailSubject": "Shrinkerr: Test Notification",
+    "fieldStatus": "Status",
+    "statusSuccess": "Test successful"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "groups": {
+    "video": "Vídeo",
+    "size": "Tamaño",
+    "audio": "Audio",
+    "subtitles": "Subtítulos",
+    "filename": "Nombre de archivo",
+    "state": "Estado",
+    "type": "Tipo",
+    "other": "Otros"
+  },
+  "properties": {
+    "video_codec": {
+      "label": "Códec de vídeo"
+    },
+    "video_height": {
+      "label": "Altura de vídeo (px)"
+    },
+    "duration_min": {
+      "label": "Duración (min)"
+    },
+    "needs_conversion": {
+      "label": "Necesita conversión"
+    },
+    "vmaf_score": {
+      "label": "Puntuación VMAF"
+    },
+    "file_size_mb": {
+      "label": "Tamaño de archivo (MB)"
+    },
+    "file_size_gb": {
+      "label": "Tamaño de archivo (GB)"
+    },
+    "bitrate_mbps": {
+      "label": "Tasa de bits (Mbps)"
+    },
+    "audio_codec": {
+      "label": "Códec de audio (cualquier pista)"
+    },
+    "audio_lang": {
+      "label": "Idioma de audio (cualquier pista)"
+    },
+    "audio_channels": {
+      "label": "Canales de audio (máx.)"
+    },
+    "audio_track_count": {
+      "label": "Número de pistas de audio"
+    },
+    "has_lossless_audio": {
+      "label": "Tiene audio sin pérdida"
+    },
+    "has_removable_tracks": {
+      "label": "Tiene pistas de audio eliminables"
+    },
+    "subtitle_lang": {
+      "label": "Idioma de subtítulos (cualquiera)"
+    },
+    "subtitle_count": {
+      "label": "Número de pistas de subtítulos"
+    },
+    "has_removable_subs": {
+      "label": "Tiene subtítulos eliminables"
+    },
+    "source": {
+      "label": "Origen",
+      "options": {
+        "unknown": "desconocido"
+      }
+    },
+    "hdr": {
+      "label": "HDR / Dolby Vision"
+    },
+    "file_path": {
+      "label": "Ruta del archivo"
+    },
+    "file_name": {
+      "label": "Nombre de archivo"
+    },
+    "health_status": {
+      "label": "Estado de salud"
+    },
+    "duplicate_count": {
+      "label": "Número de duplicados"
+    },
+    "media_type": {
+      "label": "Tipo",
+      "options": {
+        "movie": "Película",
+        "tv": "Serie",
+        "other": "Otro"
+      }
+    }
+  }
+}

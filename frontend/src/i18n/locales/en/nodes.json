@@ -1,0 +1,115 @@
+{
+  "title": "Worker Nodes",
+  "queuePaused": "Queue paused",
+  "onlineCount": "{{online}} of {{total}} online",
+  "loadingNodes": "Loading nodes...",
+  "empty": {
+    "title": "No worker nodes registered yet.",
+    "hint": "To add a remote worker, run the same Docker image with <code>SHRINKERR_MODE=worker</code>"
+  },
+  "setup": {
+    "title": "Add a remote worker",
+    "intro": "Run the same Shrinkerr Docker image on another machine with these environment variables:",
+    "gpuComment": "GPU worker (NVIDIA + NVENC):",
+    "cpuComment": "CPU-only worker (no GPU, any architecture):",
+    "footer": "The worker will auto-detect GPU capabilities and appear here within 30 seconds. Media directories must be mounted at the same paths (or configure PATH_MAPPINGS)."
+  },
+  "status": {
+    "online": "Online",
+    "working": "Working",
+    "offline": "Offline",
+    "suspended": "Suspended",
+    "paused": "Paused"
+  },
+  "relative": {
+    "never": "never",
+    "justNow": "just now",
+    "secondsAgo": "{{n}}s ago",
+    "minutesAgo": "{{n}}m ago",
+    "hoursAgo": "{{n}}h ago",
+    "daysAgo": "{{n}}d ago"
+  },
+  "card": {
+    "thisServer": "THIS SERVER",
+    "resumeNode": "Resume node",
+    "pauseNode": "Pause node",
+    "nodeSettings": "Node settings",
+    "cpuJobsOnly": "CPU jobs only",
+    "nvencJobsOnly": "NVENC jobs only",
+    "suspendedAfter_one": "Suspended after {{count}} consecutive failure",
+    "suspendedAfter_other": "Suspended after {{count}} consecutive failures",
+    "reset": "Reset",
+    "completed": "Completed:",
+    "saved": "Saved:",
+    "parallel": "Parallel:",
+    "host": "Host:",
+    "heartbeat": "Heartbeat:",
+    "pathMappings_one": "Path mappings ({{count}})",
+    "pathMappings_other": "Path mappings ({{count}})",
+    "removeConfirm": "Remove node \"{{name}}\"?",
+    "removeConfirmWorking": "Remove node \"{{name}}\"? Its current job will be released back to the queue.",
+    "removeNode": "Remove node"
+  },
+  "settings": {
+    "title": "Node settings",
+    "saving": "Saving...",
+    "saveFailed": "Save failed",
+    "pause": {
+      "title": "Pause",
+      "hint": "When paused, this node won't pick up new jobs. Already-running jobs continue.",
+      "checkbox": "Pause this node"
+    },
+    "parallel": {
+      "title": "Parallel jobs",
+      "hint": "Max number of jobs this node processes concurrently."
+    },
+    "affinity": {
+      "title": "Job affinity",
+      "hint": "Control what jobs this node accepts. Useful for dedicating the Mac to CPU-only work or forcing NVENC jobs to the GPU node.",
+      "any": "Any job (default)",
+      "cpuOnly": "Only CPU / libx265 jobs",
+      "nvencOnly": "Only NVENC / GPU jobs"
+    },
+    "translation": {
+      "title": "Encoder translation",
+      "hint": "When enabled, this node will transparently translate jobs between NVENC and libx265 based on its own capabilities.",
+      "both": "Translate jobs between NVENC and libx265",
+      "toNvenc": "Translate libx265 jobs to NVENC",
+      "toLibx265": "Translate NVENC jobs to libx265",
+      "showTable": "Show NVENC ↔ libx265 comparison table",
+      "hideTable": "Hide NVENC ↔ libx265 comparison table",
+      "nvencPreset": "NVENC preset",
+      "libx265Preset": "libx265 preset"
+    },
+    "token": {
+      "title": "Auth token",
+      "hint": "Remote workers authenticate with a per-node shared secret on top of the global API key. Rotating invalidates the current token; the worker re-bootstraps on its next heartbeat.",
+      "active": "Token active",
+      "issued": "issued {{date}}",
+      "none": "No token yet — next heartbeat will bootstrap one.",
+      "rotate": "Rotate token",
+      "rotating": "Rotating...",
+      "rotateConfirm": "Rotate this node's auth token?\n\nThe server will invalidate the current token immediately. The worker will drop its cached copy on the next 401 and automatically re-bootstrap a fresh token on its next heartbeat. In-flight jobs on this node will fail and be requeued.",
+      "rotated": "Token rotated. The worker will re-bootstrap on its next heartbeat.",
+      "rotateFailed": "Rotation failed: {{error}}",
+      "unknownError": "unknown error"
+    },
+    "paths": {
+      "title": "Path mappings",
+      "hint": "Translate paths between what the server dispatches and what the worker sees on disk. Most setups don't need this if the worker's -v mounts match the server's layout 1:1.",
+      "reported": "Reported by worker (from PATH_MAPPINGS env var):",
+      "override": "Override worker's env-var mappings",
+      "add": "+ Add mapping",
+      "help": "Paths must be absolute (start with <code>/</code>). Translation is applied when the server dispatches a job to this node: each mapping's <em>server</em> prefix is rewritten to its <em>worker</em> prefix before the worker sees the path."
+    },
+    "schedule": {
+      "title": "Schedule",
+      "hint": "Restrict when this node accepts jobs. When disabled, the node runs 24/7.",
+      "enable": "Enable schedule",
+      "clickHours": "Click hours when this node is allowed to process jobs:",
+      "activeHours_one": "Active {{count}} hour per day",
+      "activeHours_other": "Active {{count}} hours per day",
+      "noHours": "No hours selected — node will never run while schedule is enabled"
+    }
+  }
+}

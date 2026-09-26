@@ -244,6 +244,8 @@ async def remux_audio(
                 f"Not enough free disk space: need {original_size} bytes, "
                 f"have {stat.free} bytes free"
             ),
+            "error_key": "errors.notEnoughDiskSpace",
+            "error_params": {"need": str(original_size), "free": str(stat.free)},
         }
 
     temp_path = str(p.parent / (p.stem + ".remuxing.mkv"))
@@ -335,6 +337,9 @@ async def remux_audio(
                 "output_path": None,
                 "space_saved": 0,
                 "error": error_msg,
+                # Keys only the headline; the ffmpeg detail stays in `error`.
+                "error_key": "errors.ffmpegExited",
+                "error_params": {"code": str(proc.returncode)},
             }
 
     except asyncio.TimeoutError:
@@ -351,6 +356,7 @@ async def remux_audio(
             "output_path": None,
             "space_saved": 0,
             "error": "ffmpeg timed out",
+            "error_key": "errors.ffmpegTimedOut",
         }
     except Exception as exc:
         try:
@@ -406,6 +412,8 @@ async def remux_audio(
                 "output_path": None,
                 "space_saved": 0,
                 "error": diag,
+                # Keys only the first line; the diagnostic detail stays in `error`.
+                "error_key": "errors.remuxOutputMissing",
                 "source_intact": input_exists,
             }
 

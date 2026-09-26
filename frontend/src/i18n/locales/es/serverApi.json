@@ -1,0 +1,102 @@
+{
+  "common": {
+    "filePathRequired": "file_path es obligatorio",
+    "filePathsRequired": "file_paths es obligatorio"
+  },
+  "jobs": {
+    "backupNotFound": "No se encontró el archivo de copia de seguridad en el disco",
+    "cannotUndoStatus": "No se puede deshacer un trabajo con estado '{{status}}'",
+    "invalidHealthCheckMode": "mode debe ser 'quick' o 'thorough'",
+    "invalidPosition": "position debe ser top, bottom, up o down",
+    "noFilesInFolder": "No se encontraron archivos en la carpeta",
+    "noFilesOrResetAll": "Indica file_paths o establece reset_all_corrupt=true",
+    "notFound": "Trabajo no encontrado",
+    "taskNotFound": "Tarea no encontrada",
+    "vmafRemeasureRunning": "Ya hay una nueva medición de VMAF en curso."
+  },
+  "media": {
+    "noMediaDirs": "No hay directorios de medios configurados",
+    "noMediaDirsRefusing": "No hay directorios de medios configurados; no se operará sobre rutas arbitrarias",
+    "pathNotUnderMediaDir": "{{label}} no está dentro de un directorio de medios configurado",
+    "pathsOutsideMediaDirs": "Rutas fuera de los directorios de medios configurados: {{paths}}"
+  },
+  "nodes": {
+    "cannotRemoveLocal": "No se puede eliminar el nodo (el nodo local no se puede eliminar)",
+    "invalidJobAffinity": "job_affinity debe ser 'any', 'cpu_only' o 'nvenc_only'",
+    "localNoToken": "El nodo local se ejecuta dentro del proceso y no usa token de autenticación.",
+    "managerNotInitialized": "El gestor de nodos no está inicializado",
+    "noJobRunning": "No hay ningún trabajo en ejecución en este nodo",
+    "notFound": "Nodo no encontrado",
+    "notInErrorState": "El nodo no está en estado de error",
+    "pathMappingNotAbsolute": "La asignación de rutas debe usar rutas absolutas en ambos lados; se recibió server='{{server}}', worker='{{worker}}'."
+  },
+  "plex": {
+    "tokenAndServerRequired": "token y server_url son obligatorios",
+    "unreachable": "No se puede contactar con plex.tv: {{error}}"
+  },
+  "posters": {
+    "invalidMediaType": "media_type debe ser 'movie' o 'tv'",
+    "tmdbError": "TMDB devolvió {{status}}",
+    "tmdbKeyMissing": "La clave de API de TMDB no está configurada",
+    "tmdbRequestFailed": "Falló la solicitud a TMDB: {{error}}"
+  },
+  "queue": {
+    "notInitialized": "La cola no está inicializada",
+    "workerNotInitialized": "El trabajador no está inicializado"
+  },
+  "rename": {
+    "invalidCaseMode": "case_mode debe ser uno de: default, lower, upper",
+    "invalidSeparator": "separator debe ser uno de: space, dot, dash, underscore"
+  },
+  "rules": {
+    "conditionRequired": "Se requiere al menos una condición de coincidencia",
+    "embySyncFailed": "Falló la sincronización con Emby: {{error}}",
+    "invalidAction": "action debe ser encode, ignore o skip",
+    "invalidMatchType": "Tipo de coincidencia no válido: {{type}}",
+    "jellyfinSyncFailed": "Falló la sincronización con Jellyfin: {{error}}",
+    "noFieldsToUpdate": "No hay campos que actualizar",
+    "plexOptionsFailed": "No se pudieron obtener las opciones de Plex: {{error}}",
+    "plexSyncFailed": "Falló la sincronización con Plex: {{error}}"
+  },
+  "scan": {
+    "alreadyRunning": "Ya hay un escaneo en curso",
+    "fileNotInMediaDir": "El archivo no está dentro de un directorio de medios configurado",
+    "invalidFilePath": "Ruta de archivo no válida: {{error}}",
+    "languageRequired": "Se debe indicar un idioma",
+    "metadataRefreshRunning": "Ya hay una actualización de metadatos en curso",
+    "noPaths": "No hay rutas que escanear",
+    "probeFailed": "No se pudo analizar el archivo",
+    "trackNotFound": "Pista no encontrada",
+    "trashFailed": "No se pudo mover el archivo a la papelera: {{error}}"
+  },
+  "schedule": {
+    "invalidDatetime": "Fecha y hora no válidas: {{error}}"
+  },
+  "search": {
+    "unknownProperty": "Propiedad desconocida: {{property}}",
+    "unsupportedOp": "Operador '{{op}}' no admitido para la propiedad '{{property}}'"
+  },
+  "settings": {
+    "backupNotFound": "Copia de seguridad no encontrada",
+    "invalidBackupName": "Nombre de copia de seguridad no válido",
+    "mediaDirExists": "El directorio ya existe",
+    "notificationLanguageInvalid": "notification_language debe ser uno de: {{languages}}",
+    "pathEmpty": "{{label}} debe ser una cadena no vacía",
+    "pathInSystemDir": "{{label}} no está permitido dentro de {{dir}} (directorio del sistema)",
+    "pathIsRoot": "{{label}} no puede ser la raíz del sistema de archivos",
+    "pathMissing": "{{label}} no existe: {{path}}",
+    "pathNotAbsolute": "{{label}} debe ser una ruta absoluta",
+    "pathNotDirectory": "{{label}} no es un directorio: {{path}}",
+    "pathUnresolvable": "No se puede resolver {{label}}: {{error}}",
+    "postScriptNeedsAuth": "post_conversion_script ejecuta comandos arbitrarios después de cada trabajo. Activa la autenticación por contraseña (Ajustes → Sistema → Autenticación) antes de configurar este ajuste, para que no se pueda cambiar solo con una clave de API.",
+    "restoreInvalidDb": "Base de datos no válida en la copia de seguridad: {{error}}",
+    "restoreMissingDb": "El zip de la copia de seguridad debe contener shrinkerr.db o squeezarr.db",
+    "restoreNotZip": "Debes subir un archivo .zip"
+  },
+  "url": {
+    "blockedAddress": "{{label}} se resuelve a una dirección bloqueada ({{address}}). Los rangos link-local, IMDS e IPv6 site-local se rechazan para evitar SSRF.",
+    "invalid": "{{label}} no es una URL válida: {{error}}",
+    "invalidScheme": "{{label}} debe usar http:// o https:// (se recibió {{scheme}})",
+    "noHostname": "{{label}} no tiene nombre de host"
+  }
+}

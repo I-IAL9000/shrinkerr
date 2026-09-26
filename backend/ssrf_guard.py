@@ -29,7 +29,7 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-from fastapi import HTTPException
+from backend.api_errors import ApiError
 
 
 def _iter_resolved_ips(hostname: str) -> list[str]:
@@ -76,15 +76,17 @@ def validate_outbound_url(raw_url: str, *, label: str = "URL", block_private: bo
     try:
         parsed = urlparse(url if "://" in url else f"http://{url}")
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"{label} is not a valid URL: {exc}")
+        raise ApiError(status_code=400, detail=f"{label} is not a valid URL: {exc}", code="url.invalid", params={"label": label, "error": str(exc)})
     if parsed.scheme and parsed.scheme.lower() not in ("http", "https"):
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail=f"{label} must use http:// or https:// (got {parsed.scheme})",
+            code="url.invalidScheme",
+            params={"label": label, "scheme": parsed.scheme},
         )
     host = parsed.hostname
     if not host:
-        raise HTTPException(status_code=400, detail=f"{label} has no hostname")
+        raise ApiError(status_code=400, detail=f"{label} has no hostname", code="url.noHostname", params={"label": label})
 
     # Check the literal host AND everything it resolves to. Resolution
     # can be time-of-check-vs-time-of-use vulnerable (DNS rebinding);
@@ -94,11 +96,13 @@ def validate_outbound_url(raw_url: str, *, label: str = "URL", block_private: bo
     candidates = [host, *_iter_resolved_ips(host)]
     for candidate in candidates:
         if _is_blocked_ip(candidate, block_private=block_private):
-            raise HTTPException(
+            raise ApiError(
                 status_code=400,
                 detail=(
                     f"{label} resolves to a blocked address ({candidate}). "
                     "Link-local / IMDS / IPv6 site-local ranges are rejected to prevent SSRF."
                 ),
+                code="url.blockedAddress",
+                params={"label": label, "address": candidate},
             )
     return url

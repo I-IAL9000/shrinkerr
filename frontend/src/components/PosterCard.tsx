@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface PosterCardProps {
   title: string;
   year?: string | null;
@@ -21,6 +23,7 @@ export default function PosterCard({
   title, year, posterUrl, fileCount, totalSize,
   isSelected, onSelect, onClick, isExpanded, mediaType, onEditClick,
 }: PosterCardProps) {
+  const { t } = useTranslation(["library", "common"]);
   return (
     <div
       className={`poster-card ${isSelected ? "selected" : ""} ${isExpanded ? "expanded" : ""}`}
@@ -61,7 +64,7 @@ export default function PosterCard({
             background: mediaType === "tv" ? "#0D54E4" : "rgba(145, 53, 255, 0.85)",
             color: "white",
           }}>
-            {mediaType === "tv" ? "TV" : "MOVIE"}
+            {mediaType === "tv" ? t("library:badges.tvUpper") : t("library:badges.movieUpper")}
           </span>
         )}
 
@@ -75,7 +78,7 @@ export default function PosterCard({
         {onEditClick && (
           <button
             className="poster-edit-btn"
-            title="Fix TMDB match"
+            title={t("library:poster.fixMatchTitle")}
             onClick={(e) => { e.stopPropagation(); onEditClick(); }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -90,7 +93,7 @@ export default function PosterCard({
         <div className="poster-title" title={title}>{title}</div>
         {year && <div className="poster-year">{year}</div>}
         <div className="poster-meta">
-          <span>{fileCount} file{fileCount !== 1 ? "s" : ""}</span>
+          <span>{t("library:tree.files", { count: fileCount })}</span>
           <span>&middot;</span>
           <span>{formatSize(totalSize)}</span>
         </div>

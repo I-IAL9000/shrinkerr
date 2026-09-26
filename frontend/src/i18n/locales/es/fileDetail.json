@@ -1,0 +1,120 @@
+{
+  "tabs": {
+    "tracks": "Pistas",
+    "history": "Historial"
+  },
+  "tracks": {
+    "nativeLanguage": "Idioma original:",
+    "languageSource": {
+      "api": "desde API",
+      "manual": "coincidencia manual",
+      "heuristic": "heurístico"
+    },
+    "convertEstimate": "Convertir a x265 10-bit (ahorro est. ~{{size}} GB)",
+    "loading": "Cargando pistas...",
+    "audioHeading": "Pistas de audio:",
+    "noAudio": "No se detectaron pistas de audio",
+    "totalSavings": "Ahorro total est.: ~{{size}} GB",
+    "detectedApply": "{{lang}} detectado → convertir a MKV para aplicarlo",
+    "detectNoteTitle": "Por qué la detección automática no asignó un idioma",
+    "setLanguageManually": "Asignar idioma manualmente",
+    "settingLanguage": "Asignando idioma a la pista… (los archivos mp4 se remuxan, puede tardar un poco)"
+  },
+  "subtitles": {
+    "heading": "Pistas de subtítulos:",
+    "noEmbedded": "No hay pistas de subtítulos incrustadas",
+    "externalHeading": "Subtítulos externos:",
+    "forced": "FORZADO"
+  },
+  "history": {
+    "loading": "Cargando historial..."
+  },
+  "timeline": {
+    "empty": "Aún no hay eventos registrados.",
+    "relative": {
+      "seconds": "hace {{n}} s",
+      "minutes": "hace {{n}} min",
+      "hours": "hace {{n}} h",
+      "days": "hace {{n}} d"
+    },
+    "events": {
+      "scanned": "Escaneado",
+      "rescanned": "Reescaneado",
+      "queued": "En cola",
+      "started": "Iniciado",
+      "completed": "Completado",
+      "failed": "Fallido",
+      "skipped": "Omitido",
+      "ignored": "Ignorado",
+      "unignored": "Ya no ignorado",
+      "health_check": "Comprobación de estado",
+      "vmaf": "VMAF",
+      "reverted": "Revertido",
+      "arr_action": "Acción *arr"
+    }
+  },
+  "actions": {
+    "detectLanguages": "Detectar idiomas",
+    "detecting": "Detectando…",
+    "detectTitle": "Ejecutar la detección de idioma en las pistas de audio y subtítulos de texto con idioma desconocido (und) de este archivo",
+    "remuxApply": "Remuxar a MKV (aplicar idioma)",
+    "convertApply": "Convertir a MKV (aplicar idioma)",
+    "remuxApplyTitle": "Remuxar a MKV (copia de flujo, sin recodificar) para aplicar el idioma detectado; este contenedor no puede guardarlo directamente",
+    "convertApplyTitle": "Convertir este disco a MKV; el idioma se detecta y aplica durante la conversión",
+    "requesting": "Solicitando…",
+    "redownloadCorrupt": "Volver a descargar (archivo dañado)",
+    "requestReplacement": "Solicitar reemplazo",
+    "researchTitleCorrupt": "Este archivo parece dañado: bloquear la versión y pedir un reemplazo a Sonarr/Radarr",
+    "researchTitle": "Reemplazar este archivo por otra versión (bloquea la actual e inicia una nueva búsqueda)",
+    "searching": "Buscando…",
+    "searchUpgrade": "Buscar mejora",
+    "searchUpgradeTitle": "Pedir a Sonarr/Radarr que busque una versión mejor según tu perfil de calidad. NO bloquea ni elimina el archivo actual.",
+    "corruptNote": "ffprobe no pudo leer un flujo de vídeo en este archivo. Bloquea la versión y solicita una nueva descarga a Sonarr/Radarr."
+  },
+  "upgrade": {
+    "episodes_one": "{{series}} — {{count}} ep.",
+    "episodes_many": "{{series}} — {{count}} eps.",
+    "episodes_other": "{{series}} — {{count}} eps.",
+    "triggered": "Búsqueda de mejora iniciada ({{service}}): {{label}}",
+    "failed": "Falló la búsqueda de mejora: {{error}}",
+    "error": "Error en la búsqueda de mejora: {{error}}"
+  },
+  "research": {
+    "labelCorrupt": "Volver a descargar (el archivo está dañado)",
+    "labelReplace": "Volver a descargar (reemplazar por otra versión)",
+    "confirmMessage": "{{label}}\n\nSe bloqueará la versión actual, se eliminará el archivo y se pedirá a Sonarr/Radarr que obtenga un reemplazo.\n\n¿Continuar?",
+    "confirmLabel": "Volver a descargar",
+    "blocklisted": "bloqueada",
+    "notBlocklisted": "NO bloqueada",
+    "deleted": "eliminado",
+    "notDeleted": "no eliminado",
+    "searched": "búsqueda iniciada",
+    "notSearched": "búsqueda NO iniciada",
+    "requested": "Nueva descarga solicitada — {{parts}}",
+    "failed": "Falló la nueva descarga: {{error}}",
+    "error": "Error en la nueva descarga: {{error}}"
+  },
+  "detect": {
+    "changed": "Idiomas detectados — pistas actualizadas",
+    "unchanged": "No se resolvieron idiomas nuevos — consulta el motivo junto a cada pista",
+    "error": "Error en la detección de idioma: {{error}}"
+  },
+  "setLanguage": {
+    "success": "Idioma asignado",
+    "pending": "Guardado — remuxa/convierte a MKV para aplicarlo (este contenedor no se puede etiquetar directamente)",
+    "failed": "No se pudo asignar el idioma a esta pista",
+    "error": "No se pudo asignar el idioma: {{error}}"
+  },
+  "applyLanguage": {
+    "remuxMessage": "¿Remuxar este archivo a MKV para aplicar el idioma detectado?\n\nCopia de flujo rápida: sin recodificar, sin pérdida de calidad y sin aumento de tamaño. El {{ext}} se reemplaza por un .mkv.",
+    "convertMessage": "¿Convertir esto a MKV para aplicar el idioma?\n\nEl idioma se detecta y se asigna durante la conversión.",
+    "remuxConfirm": "Remuxar a MKV",
+    "convertConfirm": "Convertir a MKV",
+    "queuedRemux": "Remux en cola para aplicar el idioma",
+    "queuedConvert": "Conversión en cola para aplicar el idioma",
+    "alreadyQueued": "Ya está en la cola — revisa la pestaña Cola",
+    "nothingQueued": "No se añadió nada a la cola",
+    "queueFailed": "No se pudo añadir a la cola: {{error}}"
+  },
+  "unknownError": "error desconocido"
+}

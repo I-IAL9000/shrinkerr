@@ -237,5 +237,17 @@
     "addingToQueue_one": "Adding {{num}} item to queue…",
     "addingToQueue_other": "Adding {{num}} items to queue…",
     "addingToQueueDetail": "Resolving rules, deduping, inserting jobs."
+  },
+  "corruptBanner": {
+    "text": "Some files may be flagged corrupt due to benign ffmpeg warnings (e.g. \"number of reference frames exceeds max\"). Clear the flags and let them re-check.",
+    "clearAll": "Clear all corrupt flags"
+  },
+  "advBanner": {
+    "summary": "<b>Advanced search:</b> {{matches}} {{conditions}}",
+    "matches_one": "{{num}} match",
+    "matches_other": "{{num}} matches",
+    "conditions_one": "from {{count}} condition",
+    "conditions_other": "from {{count}} conditions",
+    "edit": "Edit"
   }
 }

@@ -1,0 +1,68 @@
+{
+  "queuedHealthCheck": "Queued for $t(serverEvents:labels.healthMode.{{mode}}) health check",
+  "queuedForJobType": "Queued for $t(serverEvents:labels.jobType.{{jobType}})",
+  "failedWithError": "Failed: {{error}}",
+  "healthCheckResult": "Health check: $t(serverEvents:labels.healthStatus.{{status}}) ($t(serverEvents:labels.healthMode.{{mode}}))",
+  "vmafScore": "VMAF: {{score}} ($t(serverEvents:labels.vmafTier.{{tier}}))",
+  "vmafScoreSuspect": "VMAF: {{score}} ($t(serverEvents:labels.vmafTier.{{tier}})) ⚠ measurement-suspect",
+  "vmafFailed": "VMAF failed — {{error}}",
+  "vmafRejected": "Rejected: VMAF {{score}} is below the configured minimum of {{min}} — encode rejected, original kept.",
+  "vmafRejectedBelowThreshold": "Rejected: VMAF below threshold",
+  "inlineCleanupLarger": "Running audio/sub cleanup inline (encode was larger)",
+  "keptOriginalVmaf": "Kept original — VMAF below threshold",
+  "keptOriginalLarger": "Kept original — encode was larger than source",
+  "convertedSaved": "Converted: saved {{gb}} GB ({{pct}}%)",
+  "convertedNoSavings": "Converted (no savings)",
+  "convertedOnNodeSaved": "Converted on {{node}}: saved {{gb}} GB ({{pct}}%)",
+  "failedOnNode": "Failed on {{node}}: {{error}}",
+  "restoredFromBackup": "Restored original from backup",
+  "externalSubsUpdated": "External subtitles updated (auto-detected)",
+  "ignoredWithReason": "Ignored ({{reason}})",
+  "unignored": "Unignored",
+  "arrReplace": "Replace ({{service}}): {{title}}",
+  "arrReplaceWithActions": "Replace ({{service}}): {{title}} — $t(serverEvents:labels.arrReplaceActions.{{actions}})",
+  "arrReplaceNoTitle": "Replace ({{service}})",
+  "arrReplaceNoTitleWithActions": "Replace ({{service}}) — $t(serverEvents:labels.arrReplaceActions.{{actions}})",
+  "arrUpgradeSonarr": "Upgrade search (sonarr): {{series}} — {{count}} episode(s)",
+  "arrUpgradeRadarr": "Upgrade search (radarr): {{movie}}",
+  "arrMissingSearch": "Missing-episode search",
+  "arrMissingSeries": "Missing search (sonarr): {{title}} — {{count}} missing episode(s)",
+  "arrMissingSeriesSearched": "Missing search (sonarr): {{title}} — {{count}} missing episode(s), search triggered",
+  "arrAction": "*arr action: {{action}}",
+  "arrFailed": "Failed $t(serverEvents:labels.arrAction.{{action}}): {{error}}",
+  "labels": {
+    "healthMode": {
+      "quick": "quick",
+      "thorough": "thorough"
+    },
+    "healthStatus": {
+      "healthy": "healthy",
+      "corrupt": "corrupt",
+      "warnings": "warnings"
+    },
+    "jobType": {
+      "convert": "convert",
+      "audio": "audio",
+      "combined": "combined"
+    },
+    "vmafTier": {
+      "Excellent": "Excellent",
+      "Good": "Good",
+      "Poor": "Poor"
+    },
+    "arrReplaceActions": {
+      "blocklisted": "blocklisted",
+      "deleted": "deleted file",
+      "searched": "search triggered",
+      "blocklisted_deleted": "blocklisted, deleted file",
+      "blocklisted_searched": "blocklisted, search triggered",
+      "deleted_searched": "deleted file, search triggered",
+      "blocklisted_deleted_searched": "blocklisted, deleted file, search triggered"
+    },
+    "arrAction": {
+      "replace": "replace",
+      "upgrade": "upgrade",
+      "missing": "missing"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "tokens": {
+    "heading": "Tokens — click to insert into:",
+    "help": "Focus any pattern field below, then click a token to insert it at the cursor. Add <code>:00</code> to numbers for zero-padding, e.g. <code>{season:00}</code>.",
+    "tooltip": "{{desc}} (e.g. \"{{example}}\")"
+  },
+  "activeField": {
+    "movie_file_pattern": "movie file pattern",
+    "tv_file_pattern": "tv file pattern",
+    "movie_folder_pattern": "movie folder pattern",
+    "tv_folder_pattern": "tv folder pattern",
+    "season_folder_pattern": "season folder pattern"
+  },
+  "behavior": {
+    "heading": "Behavior",
+    "autoRename": "Auto-rename after conversion",
+    "autoRenameHelp": "When enabled, Shrinkerr applies these patterns automatically after each successful conversion.",
+    "renameFolders": "Also rename folders",
+    "renameFoldersHelp": "Rename the movie/series/season folder using the folder patterns below (disabled by default — safer).",
+    "removeIllegal": "Remove illegal characters",
+    "removeIllegalHelp": "Strip characters that break filesystems: < > : \" | ? * and control chars."
+  },
+  "formatting": {
+    "heading": "Formatting",
+    "separator": "Separator",
+    "separators": {
+      "space": "Spaces (default)",
+      "dot": "Dots (.)",
+      "dash": "Dashes (-)",
+      "underscore": "Underscores (_)"
+    },
+    "case": "Case",
+    "cases": {
+      "default": "Default (as-is)",
+      "lower": "lowercase",
+      "upper": "UPPERCASE"
+    }
+  },
+  "patterns": {
+    "movieHeading": "Movie patterns",
+    "tvHeading": "TV patterns",
+    "movieFile": "Movie file",
+    "movieFolder": "Movie folder",
+    "episodeFile": "Episode file",
+    "seriesFolder": "Series folder",
+    "seasonFolder": "Season folder",
+    "loadingPreview": "loading preview…"
+  },
+  "save": "Save Renaming Settings",
+  "saving": "Saving...",
+  "toast": {
+    "saved": "Renaming settings saved",
+    "saveFailed": "Save failed"
+  }
+}

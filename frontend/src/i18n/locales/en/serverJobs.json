@@ -1,0 +1,78 @@
+{
+  "steps": {
+    "starting": "starting",
+    "converting": "converting",
+    "removingTracks": "removing tracks",
+    "removingSubtitles": "removing subtitles",
+    "applyingLanguage": "applying language",
+    "reorderingAudio": "reordering audio",
+    "detectingLanguage": "Detecting language…",
+    "qualityCrossCheck": "Quality cross-check",
+    "vmafAnalysis": "VMAF analysis",
+    "vmafRetry": "VMAF retry",
+    "vmafRemeasure": "VMAF remeasure",
+    "vmafRemeasureRetry": "VMAF remeasure (retry)",
+    "healthCheckMode": "health-check ($t(serverJobs:labels.healthMode.{{mode}}))",
+    "healthCheckStatus": "health-check ($t(serverJobs:labels.healthStatus.{{status}}))",
+    "healthCheckInline": "health check ($t(serverJobs:labels.healthMode.{{mode}}))"
+  },
+  "errors": {
+    "fileNotFound": "File not found",
+    "fileNotFoundPath": "File not found: {{path}}",
+    "healthCheckFailed": "Health check failed: {{error}}",
+    "healthCorrupt": "Corrupt: {{errors}}",
+    "healthCorruptUnknown": "Corrupt: unknown error",
+    "sourceGoneLikelyConverted": "Source file no longer exists — it was most likely already converted (the original is replaced by the HEVC output). Rescan the library to refresh this entry.",
+    "probeFailed": "Failed to probe file",
+    "audioCleanupOnDisc": "Audio/sub cleanup can't run on a disc image (ISO/VIDEO_TS/BDMV) — a disc must be fully converted, not stream-copied. Rescan and queue a conversion for this title to apply the cleanup.",
+    "cancelledByUser": "Cancelled by user",
+    "notEnoughDiskSpace": "Not enough free disk space: need {{need}} bytes, have {{free}} bytes free",
+    "ffmpegExited": "ffmpeg exited with code {{code}}",
+    "ffmpegTimedOut": "ffmpeg timed out",
+    "outputMissing": "Output file missing or empty after conversion.",
+    "remuxOutputMissing": "Output file missing or empty after remux.",
+    "originalLikelyCorrupt": "Original file likely corrupt — conversion produced an unusably-small output ({{outputMb}} MB from {{originalGb}} GB source). ffmpeg hit data corruption ffprobe doesn't catch upfront. Source row marked corrupt; original preserved.",
+    "vmafRejected": "VMAF {{score}} is below the configured minimum of {{min}} — encode rejected, original kept.",
+    "vmafBelowThreshold": "VMAF below threshold",
+    "workerEncoderUnsupported": "Worker cannot run encoder '{{encoder}}' and translation is disabled"
+  },
+  "labels": {
+    "healthMode": {
+      "quick": "quick",
+      "thorough": "thorough"
+    },
+    "healthStatus": {
+      "healthy": "healthy",
+      "corrupt": "corrupt",
+      "warnings": "warnings"
+    }
+  },
+  "detect": {
+    "extractingTrack": "Extracting subtitle track {{track}}…",
+    "extractingSample": "Extracting subtitle sample (track {{track}})…",
+    "extractingFullTrack": "Extracting full subtitle track {{track}}…",
+    "ocrLatin": "OCR (Latin) on subtitle track {{track}}…",
+    "ocrNonLatin": "OCR (CJK/Cyrillic/Arabic) on subtitle track {{track}}…"
+  },
+  "monitor": {
+    "nvencNoEncoder": "ffmpeg build has no hevc_nvenc encoder",
+    "nvencTestExited": "ffmpeg exited {{code}}",
+    "nvencTestCrashed": "NVENC test crashed: {{error}}",
+    "ffmpegNotRunnable": "ffmpeg not runnable: {{error}}",
+    "capabilitiesForced": "capabilities forced via CAPABILITIES env var"
+  },
+  "detectNotes": {
+    "streamUnsupported": "detection not supported for m2ts/transport-stream — convert to MKV first",
+    "audioTimedOut": "audio detection timed out",
+    "belowThreshold": "{{lang}} {{pct}}% — below {{threshold}}% threshold",
+    "noSpeech": "no speech detected",
+    "noIsoCode": "detected \"{{lang}}\" — no ISO-639-2 code",
+    "audioError": "audio detection error: {{error}}",
+    "audioUnidentified": "could not identify audio language",
+    "subNoText": "no text in subtitle",
+    "subNotConfident": "subtitle text not confidently identified",
+    "ocrNoText": "image subtitle OCR found no usable text",
+    "subUnsupported": "unsupported subtitle format for detection",
+    "subUnidentified": "could not identify subtitle language"
+  }
+}

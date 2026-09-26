@@ -198,6 +198,12 @@
       "lastLines_one": "(última {{count}} línea)",
       "lastLines_many": "(últimas {{count}} líneas)",
       "lastLines_other": "(últimas {{count}} líneas)"
+    },
+    "jobTypes": {
+      "convert": "Conversión",
+      "audio": "Limpieza de audio/subtítulos",
+      "combined": "Conversión + limpieza",
+      "health_check": "Comprobación de estado"
     }
   },
   "panel": {

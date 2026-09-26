@@ -1,0 +1,24 @@
+{
+  "title": "Activity",
+  "eventCount_one": "{{formatted}} event",
+  "eventCount_other": "{{formatted}} events",
+  "eventTypes": {
+    "all": "All events",
+    "completed": "Completed",
+    "failed": "Failed",
+    "queued": "Queued",
+    "healthCheck": "Health checks",
+    "vmaf": "VMAF analysis",
+    "ignoreChanges": "Ignore changes",
+    "reverts": "Reverts",
+    "arrActions": "Sonarr / Radarr actions"
+  },
+  "searchPlaceholder": "Search file path…",
+  "search": "Search",
+  "loadingActivity": "Loading activity…",
+  "pagination": {
+    "prev": "Prev",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{totalPages}}"
+  }
+}

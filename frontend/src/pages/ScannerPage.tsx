@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
@@ -1560,14 +1560,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
               <span style={{ color: "var(--text-secondary)", flex: 1 }}>
-                Some files may be flagged corrupt due to benign ffmpeg warnings (e.g. "number of reference frames exceeds max"). Clear the flags and let them re-check.
+                {t("scanner:corruptBanner.text")}
               </span>
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
                 onClick={handleResetCorruptFlags}
               >
-                Clear all corrupt flags
+                {t("scanner:corruptBanner.clearAll")}
               </button>
             </div>
           )}
@@ -1872,18 +1872,25 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
               </svg>
               <span style={{ fontSize: 12, color: "var(--accent)" }}>
-                <strong>Advanced search:</strong> {advSearchResults.size.toLocaleString()} match{advSearchResults.size === 1 ? "" : "es"} from {advSearchPredicates.length} condition{advSearchPredicates.length === 1 ? "" : "s"}
+                <Trans
+                  i18nKey="scanner:advBanner.summary"
+                  values={{
+                    matches: t("scanner:advBanner.matches", { count: advSearchResults.size, num: advSearchResults.size.toLocaleString() }),
+                    conditions: t("scanner:advBanner.conditions", { count: advSearchPredicates.length }),
+                  }}
+                  components={{ b: <strong /> }}
+                />
               </span>
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "3px 10px", marginLeft: "auto" }}
                 onClick={() => setAdvSearchOpen(true)}
-              >Edit</button>
+              >{t("scanner:advBanner.edit")}</button>
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "3px 10px" }}
                 onClick={() => { setAdvSearchResults(null); setAdvSearchPredicates([]); }}
-              >Clear</button>
+              >{t("common:actions.clear")}</button>
             </div>
           )}
           <div style={{

@@ -23,12 +23,22 @@ def _row_to_event(row) -> dict:
             details = json.loads(row["details_json"])
         except Exception:
             details = None
+    summary_params = None
+    if row["summary_params"]:
+        try:
+            summary_params = json.loads(row["summary_params"])
+        except Exception:
+            summary_params = None
     return {
         "id": row["id"],
         "file_path": row["file_path"],
         "event_type": row["event_type"],
         "occurred_at": row["occurred_at"],
         "summary": row["summary"],
+        # i18n key + params for the UI; NULL on rows written before message
+        # codes existed — the UI then falls back to the English `summary`.
+        "summary_key": row["summary_key"],
+        "summary_params": summary_params,
         "details": details,
     }
 
@@ -67,7 +77,8 @@ async def file_history(
 
         placeholders = ",".join("?" * len(paths))
         async with db.execute(
-            f"SELECT id, file_path, event_type, occurred_at, summary, details_json "
+            f"SELECT id, file_path, event_type, occurred_at, summary, details_json, "
+            f"summary_key, summary_params "
             f"FROM file_events WHERE file_path IN ({placeholders}) "
             f"ORDER BY occurred_at DESC LIMIT ?",
             (*paths, limit),
@@ -115,7 +126,8 @@ async def activity_feed(
             total = total_row["n"] if total_row else 0
 
         async with db.execute(
-            f"SELECT id, file_path, event_type, occurred_at, summary, details_json "
+            f"SELECT id, file_path, event_type, occurred_at, summary, details_json, "
+            f"summary_key, summary_params "
             f"FROM file_events {where_sql} ORDER BY occurred_at DESC LIMIT ? OFFSET ?",
             (*args, limit, offset),
         ) as cur:

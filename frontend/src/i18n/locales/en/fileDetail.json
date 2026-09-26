@@ -1,0 +1,119 @@
+{
+  "tabs": {
+    "tracks": "Tracks",
+    "history": "History"
+  },
+  "tracks": {
+    "nativeLanguage": "Native language:",
+    "languageSource": {
+      "api": "from API",
+      "manual": "manual match",
+      "heuristic": "heuristic"
+    },
+    "convertEstimate": "Convert to x265 10-bit (est. save ~{{size}} GB)",
+    "loading": "Loading tracks...",
+    "audioHeading": "Audio tracks:",
+    "noAudio": "No audio tracks detected",
+    "totalSavings": "Total est. savings: ~{{size}} GB",
+    "detectedApply": "{{lang}} detected → convert to MKV to apply",
+    "detectNoteTitle": "Why auto-detection didn't set a language",
+    "setLanguageManually": "Set language manually",
+    "settingLanguage": "Setting track language… (mp4 files are remuxed, this can take a moment)"
+  },
+  "subtitles": {
+    "heading": "Subtitle tracks:",
+    "noEmbedded": "No embedded subtitle tracks",
+    "externalHeading": "External subtitles:",
+    "forced": "FORCED"
+  },
+  "history": {
+    "loading": "Loading history..."
+  },
+  "timeline": {
+    "empty": "No events recorded yet.",
+    "relative": {
+      "seconds": "{{n}}s ago",
+      "minutes": "{{n}}m ago",
+      "hours": "{{n}}h ago",
+      "days": "{{n}}d ago"
+    },
+    "events": {
+      "scanned": "Scanned",
+      "rescanned": "Rescanned",
+      "queued": "Queued",
+      "started": "Started",
+      "completed": "Completed",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "ignored": "Ignored",
+      "unignored": "Unignored",
+      "health_check": "Health check",
+      "vmaf": "VMAF",
+      "reverted": "Reverted",
+      "arr_action": "*arr action"
+    }
+  },
+  "actions": {
+    "detectLanguages": "Detect languages",
+    "detecting": "Detecting…",
+    "detectTitle": "Run language detection on this file's unknown (und) audio and text-subtitle tracks",
+    "remuxApply": "Remux to MKV (apply language)",
+    "convertApply": "Convert to MKV (apply language)",
+    "remuxApplyTitle": "Remux to MKV (stream copy, no re-encode) to apply the detected language — this container can't store it in place",
+    "convertApplyTitle": "Convert this disc to MKV; the language is detected and applied during the conversion",
+    "requesting": "Requesting…",
+    "redownloadCorrupt": "Re-download (corrupt file)",
+    "requestReplacement": "Request replacement",
+    "researchTitleCorrupt": "This file appears corrupt — blocklist the release and ask Sonarr/Radarr for a replacement",
+    "researchTitle": "Replace this file with a different release (blocklists current, triggers new search)",
+    "searching": "Searching…",
+    "searchUpgrade": "Search for upgrade",
+    "searchUpgradeTitle": "Ask Sonarr/Radarr to search for a better release per your quality profile. Does NOT blocklist or delete the current file.",
+    "corruptNote": "ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr."
+  },
+  "upgrade": {
+    "episodes_one": "{{series}} — {{count}} ep",
+    "episodes_other": "{{series}} — {{count}} eps",
+    "triggered": "Upgrade search triggered ({{service}}): {{label}}",
+    "failed": "Upgrade search failed: {{error}}",
+    "error": "Upgrade search error: {{error}}"
+  },
+  "research": {
+    "labelCorrupt": "Re-download (file is corrupt)",
+    "labelReplace": "Re-download (replace with different release)",
+    "confirmMessage": "{{label}}\n\nThis will blocklist the current release, delete the file, and ask Sonarr/Radarr to grab a replacement.\n\nContinue?",
+    "confirmLabel": "Re-download",
+    "blocklisted": "blocklisted",
+    "notBlocklisted": "NOT blocklisted",
+    "deleted": "deleted",
+    "notDeleted": "not deleted",
+    "searched": "search triggered",
+    "notSearched": "search NOT triggered",
+    "requested": "Re-download requested — {{parts}}",
+    "failed": "Re-download failed: {{error}}",
+    "error": "Re-download error: {{error}}"
+  },
+  "detect": {
+    "changed": "Languages detected — tracks updated",
+    "unchanged": "No new languages resolved — see the reason next to each track",
+    "error": "Language detection error: {{error}}"
+  },
+  "setLanguage": {
+    "success": "Language set",
+    "pending": "Saved — remux/convert to MKV to apply it (this container can't be tagged in place)",
+    "failed": "Couldn't set the language for this track",
+    "error": "Failed to set language: {{error}}"
+  },
+  "applyLanguage": {
+    "remuxMessage": "Remux this file to MKV to apply the detected language?\n\nFast stream-copy — no re-encode, no quality loss, no size increase. The {{ext}} is replaced by an .mkv.",
+    "convertMessage": "Convert this to MKV to apply the language?\n\nThe language is detected and stamped during the conversion.",
+    "remuxConfirm": "Remux to MKV",
+    "convertConfirm": "Convert to MKV",
+    "queuedRemux": "Queued remux to apply language",
+    "queuedConvert": "Queued conversion to apply language",
+    "alreadyQueued": "Already in the queue — check the Queue tab",
+    "nothingQueued": "Nothing queued",
+    "queueFailed": "Failed to queue: {{error}}"
+  },
+  "unknownError": "unknown error"
+}

@@ -1280,7 +1280,8 @@ class FileWatcher:
         try:
             from backend.file_events import log_event, EVENT_RESCANNED
             for vp, *_ in changes:
-                await log_event(vp, EVENT_RESCANNED, "External subtitles updated (auto-detected)")
+                await log_event(vp, EVENT_RESCANNED, "External subtitles updated (auto-detected)",
+                                summary_key="externalSubsUpdated")
         except Exception:
             pass
         print(f"[WATCHER] External subs updated for {len(changes)} title(s)", flush=True)
@@ -1585,11 +1586,9 @@ class FileWatcher:
                         continue
                     checked.add(mount_key)
                     if usage.free < threshold_bytes:
-                        from backend.notifications import send_notification
+                        from backend.notifications import notify_disk_low
                         free_gb = usage.free / (1024 ** 3)
-                        await send_notification("disk_low", "Low Disk Space",
-                            f"Free space is {free_gb:.1f} GB (threshold: {threshold_gb} GB)",
-                            {"Path": d, "Free": f"{free_gb:.1f} GB", "Total": f"{usage.total / (1024**4):.1f} TB"})
+                        await notify_disk_low(d, free_gb, threshold_gb, usage.total / (1024**4))
                         self._last_disk_alert = time.monotonic()
                         break  # One alert is enough
                 except OSError:

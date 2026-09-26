@@ -1,22 +1,28 @@
 import type { FileEvent } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { vmafColor } from "../utils/vmaf";
+import { eventSummary } from "../i18n/server";
+import { fmtDateTime } from "../fmt";
 
 interface EventMeta { color: string; label: string; }
 
-const EVENT_META: Record<string, EventMeta> = {
-  scanned:      { color: "var(--text-muted)", label: "Scanned" },
-  rescanned:    { color: "var(--text-muted)", label: "Rescanned" },
-  queued:       { color: "var(--accent)",     label: "Queued" },
-  started:      { color: "var(--accent)",     label: "Started" },
-  completed:    { color: "var(--success)",    label: "Completed" },
-  failed:       { color: "var(--danger)",     label: "Failed" },
-  skipped:      { color: "var(--text-muted)", label: "Skipped" },
-  ignored:      { color: "var(--text-muted)", label: "Ignored" },
-  unignored:    { color: "var(--accent)",     label: "Unignored" },
-  health_check: { color: "var(--success)",    label: "Health check" },
-  vmaf:         { color: "var(--accent)",     label: "VMAF" },
-  reverted:     { color: "var(--warning)",    label: "Reverted" },
-  arr_action:   { color: "#e5a00d",           label: "*arr action" },
+// Labels are translation keys (fileDetail:timeline.events.*), resolved at
+// call time in metaFor() so a language switch applies on the next render.
+const EVENT_COLORS: Record<string, string> = {
+  scanned:      "var(--text-muted)",
+  rescanned:    "var(--text-muted)",
+  queued:       "var(--accent)",
+  started:      "var(--accent)",
+  completed:    "var(--success)",
+  failed:       "var(--danger)",
+  skipped:      "var(--text-muted)",
+  ignored:      "var(--text-muted)",
+  unignored:    "var(--accent)",
+  health_check: "var(--success)",
+  vmaf:         "var(--accent)",
+  reverted:     "var(--warning)",
+  arr_action:   "#e5a00d",
 };
 
 // For event types whose colour depends on the outcome stored in `details`.
@@ -26,13 +32,16 @@ const EVENT_META: Record<string, EventMeta> = {
 // healthy / excellent rows surrounding it. VMAF tiers come from the
 // canonical helper (utils/vmaf.ts).
 function metaFor(ev: FileEvent): EventMeta {
-  const base = EVENT_META[ev.event_type] || { color: "var(--text-muted)", label: ev.event_type };
+  const color = EVENT_COLORS[ev.event_type];
+  const base: EventMeta = color
+    ? { color, label: i18n.t(`fileDetail:timeline.events.${ev.event_type}`) }
+    : { color: "var(--text-muted)", label: ev.event_type };
   const details = (ev.details && typeof ev.details === "object") ? ev.details : null;
 
   if (ev.event_type === "health_check") {
     const status = details?.status as "healthy" | "warnings" | "corrupt" | null | undefined;
-    if (status === "corrupt") return { color: "var(--danger)",  label: "Health check" };
-    if (status === "warnings") return { color: "var(--warning)", label: "Health check" };
+    if (status === "corrupt") return { color: "var(--danger)",  label: base.label };
+    if (status === "warnings") return { color: "var(--warning)", label: base.label };
     // healthy / unknown → green default
     return base;
   }
@@ -41,7 +50,7 @@ function metaFor(ev: FileEvent): EventMeta {
     // Failure / rejection paths — score may be missing, but the event is
     // unambiguously bad. Red.
     if (details.vmaf_error || details.rejected) {
-      return { color: "var(--danger)", label: "VMAF" };
+      return { color: "var(--danger)", label: base.label };
     }
     const score = typeof details.vmaf_score === "number" ? details.vmaf_score : null;
     if (score != null) {
@@ -50,9 +59,9 @@ function metaFor(ev: FileEvent): EventMeta {
       // score's actual tier colour so a 39.5 ⚠ doesn't look like a real
       // quality crisis.
       if (details.vmaf_uncertain) {
-        return { color: "var(--warning)", label: "VMAF" };
+        return { color: "var(--warning)", label: base.label };
       }
-      return { color: vmafColor(score), label: "VMAF" };
+      return { color: vmafColor(score), label: base.label };
     }
     // No score, no failure — fall through to default accent colour.
   }
@@ -133,7 +142,7 @@ function EventIcon({ type, color, size = 14 }: { type: string; color: string; si
 
 function fmtDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString();
+    return fmtDateTime(iso);
   } catch {
     return iso;
   }
@@ -143,10 +152,10 @@ function fmtRelative(iso: string): string {
   try {
     const d = new Date(iso).getTime();
     const diff = (Date.now() - d) / 1000;
-    if (diff < 60) return `${Math.round(diff)}s ago`;
-    if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-    return `${Math.round(diff / 86400)}d ago`;
+    if (diff < 60) return i18n.t("fileDetail:timeline.relative.seconds", { n: Math.round(diff) });
+    if (diff < 3600) return i18n.t("fileDetail:timeline.relative.minutes", { n: Math.round(diff / 60) });
+    if (diff < 86400) return i18n.t("fileDetail:timeline.relative.hours", { n: Math.round(diff / 3600) });
+    return i18n.t("fileDetail:timeline.relative.days", { n: Math.round(diff / 86400) });
   } catch {
     return "";
   }
@@ -159,10 +168,11 @@ interface Props {
 }
 
 export default function EventTimeline({ events, compact = false, showFilePath = false }: Props) {
+  const { t } = useTranslation(["fileDetail", "common"]);
   if (!events || events.length === 0) {
     return (
       <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0", fontStyle: "italic" }}>
-        No events recorded yet.
+        {t("fileDetail:timeline.empty")}
       </div>
     );
   }
@@ -192,7 +202,7 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
               <span style={{ color: meta.color, fontWeight: 600, fontSize: 11 }}>{meta.label}</span>
             )}
             <span style={{ color: "var(--text-secondary)" }}>
-              {ev.summary}
+              {eventSummary(ev)}
               {showFilePath && (
                 <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
                   {ev.file_path}

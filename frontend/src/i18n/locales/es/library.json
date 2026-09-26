@@ -1,0 +1,53 @@
+{
+  "tree": {
+    "files_one": "{{count}} archivo",
+    "files_many": "{{count}} archivos",
+    "files_other": "{{count}} archivos",
+    "openOnImdb": "Abrir {{id}} en IMDb",
+    "openOnTvdb": "Abrir en TheTVDB",
+    "rescanFolder": "Volver a escanear {{name}}",
+    "ignoreFolderConfirm_one": "¿Ignorar {{count}} archivo en {{name}}/?",
+    "ignoreFolderConfirm_many": "¿Ignorar los {{count}} archivos de {{name}}/?",
+    "ignoreFolderConfirm_other": "¿Ignorar los {{count}} archivos de {{name}}/?",
+    "ignoreAll": "Ignorar todo",
+    "ignoreFolderTitle": "Ignorar todos los archivos de {{name}}/",
+    "ignoreFile": "Ignorar este archivo",
+    "removeFromList": "Quitar de la lista",
+    "trashConfirm": "¿Mover este archivo a la papelera?\n\n{{name}}",
+    "loadingFiles": "Cargando archivos...",
+    "noMatches": "Ningún archivo coincide con el filtro actual.",
+    "noFiles": "Aún no hay archivos escaneados. Ejecuta un escaneo para empezar."
+  },
+  "poster": {
+    "fixMatchTitle": "Corregir coincidencia de TMDB",
+    "noFilesFound": "No se encontraron archivos"
+  },
+  "fix": {
+    "title": "Corregir coincidencia",
+    "titlePlaceholder": "Título",
+    "yearPlaceholder": "Año",
+    "search": "Buscar",
+    "searching": "Buscando en TMDB...",
+    "noMatches": "No se encontraron coincidencias en TMDB",
+    "searchFailed": "La búsqueda falló",
+    "applyFailed": "No se pudo aplicar"
+  },
+  "badges": {
+    "videoCodec": "Códec de vídeo: {{codec}}",
+    "dvdFolder": "Carpeta de disco DVD-Video",
+    "blurayFolder": "Carpeta de disco Blu-ray",
+    "corrupt": "Corrupto",
+    "corruptWithType": "Corrupto (comprobación {{type}})",
+    "healthyWithType": "Correcto ({{type}})",
+    "healthyChecked": "Correcto (comprobado)",
+    "convertedBy": "Convertido por Shrinkerr",
+    "new": "NUEVO",
+    "queued": "EN COLA",
+    "ignored": "ignorado",
+    "clickToUnignore": "Clic para dejar de ignorar",
+    "tv": "Serie",
+    "movie": "Película",
+    "tvUpper": "SERIE",
+    "movieUpper": "PELÍCULA"
+  }
+}

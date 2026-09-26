@@ -1,0 +1,10 @@
+{
+  "title": "Logs",
+  "sourceAll": "All",
+  "searchPlaceholder": "Search logs...",
+  "autoScroll": "Auto-scroll",
+  "lineCount_one": "{{count}} line",
+  "lineCount_other": "{{count}} lines",
+  "empty": "No log entries yet. Logs will appear here in real time.",
+  "jumpToLatest": "Jump to latest"
+}

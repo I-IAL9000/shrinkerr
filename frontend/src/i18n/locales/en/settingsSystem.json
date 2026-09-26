@@ -1,0 +1,228 @@
+{
+  "renaming": {
+    "title": "Renaming"
+  },
+  "automation": {
+    "title": "Automation",
+    "autoQueue": {
+      "title": "Auto-Queue",
+      "newFiles": "Auto-queue new files",
+      "newFilesHelp": "New files detected in scanned folders by the watcher that need conversion or audio cleanup will be automatically added to the queue using your default encoding settings.",
+      "priority": "Auto-queue priority:",
+      "priorityHelp": "Newly-detected files use this priority. Rules with a Queue Priority action override this setting."
+    },
+    "filters": {
+      "title": "Conversion Filters",
+      "minFileSize": "Min file size (MB)",
+      "minBitrate": "Min bitrate (Mbps)",
+      "maxBitrate": "Max bitrate (Mbps)",
+      "help": "Set to 0 to disable. Typical bitrates: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Set min bitrate to 3 to skip already-compressed files. Set max bitrate to 80 to preserve 4K HDR remuxes."
+    },
+    "filename": {
+      "title": "Output Filename",
+      "suffix": "Filename suffix after conversion",
+      "suffixPlaceholder": "e.g. -Shrinkerr",
+      "useSuffix": "Use \"{{suffix}}\"",
+      "help": "Appended to the filename before the extension after conversion. Example: <code>Movie x265{{suffix}}.mkv</code>. Leave empty for no suffix."
+    },
+    "originals": {
+      "title": "Originals & Backups",
+      "trash": "Move originals to trash after conversion",
+      "trashHelp": "After a successful conversion, the original file is moved to the system trash instead of being permanently deleted.",
+      "backupFor": "Or backup originals for",
+      "days": "days",
+      "daysHint": "(0 = disabled, kept indefinitely when blank)",
+      "backupFolder": "Backup folder",
+      "backupFolderPlaceholder": ".shrinkerr_backup (default, same dir as file)",
+      "browse": "Browse",
+      "help": "Leave empty to use <code>.shrinkerr_backup</code> in the same directory. Set an absolute path (e.g. <code>/media/backups</code>) for centralized storage. Backup files are required for the <b>Undo Conversion</b> feature — without backups, conversions cannot be reverted.",
+      "deleteAll": "Delete all backups",
+      "noneFound": "No backup files found.",
+      "deleteAllConfirm_one": "Delete {{count}} backup file ({{size}} GB)? This cannot be undone.",
+      "deleteAllConfirm_other": "Delete all {{count}} backup files ({{size}} GB)? This cannot be undone.",
+      "deletedResult_one": "Deleted {{count}} file, freed {{size}} GB",
+      "deletedResult_other": "Deleted {{count}} files, freed {{size}} GB"
+    },
+    "stability": {
+      "title": "File Stability",
+      "delay": "Delay recently modified files",
+      "delayHelp": "Files modified within this window are postponed during scanning and auto-queue. They'll be picked up on the next scan once the window has passed. This prevents converting files that are still being downloaded, transferred, or processed by other tools like Sonarr/Radarr. Recommended for shared systems.",
+      "delayNewerThan": "Delay files newer than",
+      "minutes": "minutes"
+    },
+    "health": {
+      "title": "Health Checks",
+      "off": "Off",
+      "quick": "Quick",
+      "thorough": "Thorough",
+      "afterScan": "Auto-check after scans",
+      "afterScanHelp": "After each scan, queue a health check for files <b>newly detected in the last 24h</b> (capped at 1000 per scan to protect the queue). <b>Quick</b> parses headers (under 1s per file). <b>Thorough</b> decodes every frame (slow — minutes per file). To check files retroactively, use the manual <b>Quick check</b> / <b>Thorough check</b> buttons on the Scanner.",
+      "clearPending": "Clear pending health-check jobs",
+      "clearPendingConfirm": "Delete ALL pending health-check jobs? Running jobs and other job types are not affected.",
+      "afterConversion": "Auto-check after conversion",
+      "afterConversionHelp": "Verify each converted output. <b>Quick</b> confirms the container/streams parse. <b>Thorough</b> catches visual artifacts (decoder errors) at the cost of roughly duration/10 per file."
+    },
+    "advanced": {
+      "title": "Advanced",
+      "customFlags": "Custom ffmpeg flags",
+      "customFlagsPlaceholder": "e.g. -movflags +faststart",
+      "maxPlexCalls": "Max Plex API calls",
+      "help": "Custom flags are inserted before the output path in the ffmpeg command. Max Plex API calls limits concurrent requests to your Plex server (0 = unlimited)."
+    }
+  },
+  "webhooks": {
+    "title": "Webhook Endpoints",
+    "intro": "External tools can call these endpoints to control Shrinkerr. Authenticate with <code>?api_key=YOUR_KEY</code> or <code>X-Api-Key</code> header.",
+    "endpoints": {
+      "scan": "Trigger library scan",
+      "queue": "Add files to queue (body: {paths: [...]})",
+      "pause": "Pause the queue",
+      "resume": "Resume the queue",
+      "status": "Get current status"
+    },
+    "copyUrl": "Copy full URL"
+  },
+  "script": {
+    "title": "Post-Conversion Script",
+    "intro": "Run a custom script after each conversion completes. The script receives job details as environment variables.",
+    "path": "Script path",
+    "pathHelp": "Absolute path to an executable script inside the container. Leave empty to disable.",
+    "timeout": "Timeout (seconds)",
+    "envReference": "Environment Variables Reference",
+    "envErrorValue": "(error message if failed)"
+  },
+  "system": {
+    "title": "System"
+  },
+  "auth": {
+    "title": "Authentication",
+    "enable": "Enable username / password login",
+    "loginRequired": "<b>Login required.</b> Visitors will need either the username + password below or the API key (workers / scripts). If you lock yourself out, see the recovery instructions in the README.",
+    "username": "Username",
+    "password": "Password",
+    "passwordPlaceholder": "Enter new password...",
+    "passwordHelp": "Leave empty to keep current password",
+    "reveal": "Reveal",
+    "copy": "Copy to clipboard",
+    "regenerate": "Regenerate API key (server-side; takes effect immediately)",
+    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.",
+    "save": "Save Authentication"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "language": "Notification language",
+    "languageHelp": "Notifications (Discord, Telegram, email, webhooks…) are sent in this language, independent of the interface language chosen in each browser.",
+    "intro": "Get notified when the queue completes, a job fails, or disk space is low.",
+    "events": {
+      "queueComplete": "Queue complete",
+      "jobFailed": "Job failed",
+      "diskLow": "Disk space low"
+    },
+    "diskThreshold": "Disk threshold (GB)",
+    "webhookUrl": "Webhook URL",
+    "botToken": "Bot Token",
+    "chatId": "Chat ID",
+    "email": "Email (SMTP)",
+    "smtpHost": "SMTP Host",
+    "port": "Port",
+    "username": "Username",
+    "password": "Password",
+    "sendTo": "Send to",
+    "genericWebhook": "Generic Webhook",
+    "genericWebhookUrl": "URL (receives JSON POST)",
+    "payload": "Payload:",
+    "save": "Save Notification Settings",
+    "test": "Test Notifications"
+  },
+  "backups": {
+    "title": "Backups",
+    "create": "Backup Now",
+    "creating": "Creating...",
+    "intro": "Backups include the full database (scan results, jobs, settings, rules) as a zip file.",
+    "empty": "No backups yet",
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "time": "Time"
+    },
+    "restore": "Restore",
+    "restoreConfirm": "Restore from {{name}}? This will replace your current database. A safety backup will be created first.",
+    "deleteConfirm": "Delete backup {{name}}?",
+    "restoreUploadConfirm": "Restore from uploaded file {{name}}? This will replace your current database.",
+    "restoreFromFile": "Restore from file..."
+  },
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "space": "Space",
+    "actions": {
+      "dashboard": "Dashboard",
+      "scanner": "Scanner",
+      "queue": "Queue",
+      "statistics": "Statistics",
+      "logs": "Logs",
+      "schedule": "Schedule",
+      "settings": "Settings",
+      "startPause": "Start / Pause queue"
+    },
+    "note": "Shortcuts are disabled when typing in input fields."
+  },
+  "updates": {
+    "title": "Updates",
+    "runningVersion": "Running version",
+    "availableUpstream": "<b>v{{version}}</b> is available upstream",
+    "latest": "You're on the latest release ✓",
+    "checkFailed": "Couldn't check upstream — offline or rate-limited.",
+    "check": "Check for updates",
+    "checking": "Checking…",
+    "viewNotes": "View v{{version}} release notes",
+    "recent": "Recent releases",
+    "fullHistory": "Full history on GitHub ↗",
+    "loadingChangelog": "Loading changelog…",
+    "noEntries": "No changelog entries available."
+  },
+  "support": {
+    "title": "Support",
+    "intro": "Documentation, source, and where to report issues.",
+    "docs": {
+      "title": "Documentation",
+      "desc": "Installation, encoding guide, remote workers, rules, best practices, troubleshooting."
+    },
+    "repo": {
+      "title": "GitHub repository",
+      "desc": "Source code, releases, discussions, and container images."
+    },
+    "issue": {
+      "title": "Report an issue",
+      "desc": "Include your version, image variant, and a relevant log excerpt (see docs → Troubleshooting)."
+    },
+    "tmdb": "This product uses the TMDB API but is not endorsed or certified by TMDB."
+  },
+  "toasts": {
+    "clearedPending_one": "Removed {{formatted}} pending health-check job",
+    "clearedPending_other": "Removed {{formatted}} pending health-check jobs",
+    "urlCopied": "URL copied",
+    "scriptSaved": "Post-conversion script settings saved",
+    "noApiKey": "No API key configured",
+    "fetchKeyFailed": "Failed to fetch key: {{error}}",
+    "apiKeyCopied": "API key copied",
+    "apiKeyRegenerated": "API key regenerated — copy and update your worker / NZBGet / SABnzbd configs",
+    "regenerateEmpty": "Regenerate returned an empty key",
+    "regenerateFailed": "Regenerate failed: {{error}}",
+    "authSaved": "Authentication settings saved",
+    "notificationLanguageSaved": "Notification language saved",
+    "notificationLanguageFailed": "Couldn't save notification language: {{error}}",
+    "notificationsSaved": "Notification settings saved",
+    "testSent": "Test sent: {{providers}}",
+    "testFailed": "Failed: {{providers}}",
+    "noProviders": "No notification providers configured",
+    "backupCreated": "Backup created",
+    "backupFailed": "Backup failed",
+    "backupRestored": "Backup restored. Restart the container for full effect.",
+    "restoreFailed": "Restore failed",
+    "backupDeleted": "Backup deleted",
+    "deleteFailed": "Delete failed",
+    "updateAvailable": "v{{version}} is available",
+    "upToDate": "You're on the latest release",
+    "updateCheckFailed": "Couldn't reach GitHub — try again in a moment"
+  }
+}

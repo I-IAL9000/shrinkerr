@@ -1,0 +1,69 @@
+{
+  "title": "Schedule",
+  "enabled": "Enabled",
+  "disabled": "Disabled",
+  "hour": {
+    "am": "{{hour}}AM",
+    "pm": "{{hour}}PM"
+  },
+  "start": {
+    "title": "Schedule Queue Start",
+    "timeLabel": "Start time:",
+    "scheduled": "Scheduled: {{time}}",
+    "submit": "Schedule",
+    "toastScheduled": "Queue start scheduled",
+    "toastCancelled": "Schedule cancelled"
+  },
+  "quick": {
+    "title": "Quick Actions",
+    "startNow": "Start queue now",
+    "pauseAfterCurrent": "Pause after current job",
+    "toastStarted": "Queue started",
+    "toastPaused": "Queue paused"
+  },
+  "runHours": {
+    "title": "Run During These Hours Only",
+    "hint": "Click or drag to toggle hours on/off:",
+    "presetOvernight": "Overnight ({{range}})",
+    "presetNight": "Night ({{range}})",
+    "presetAllDay": "All day",
+    "summaryNone": "No hours selected. Queue will not run.",
+    "summaryAll": "All hours selected. Queue runs 24/7.",
+    "summaryRanges": "Runs: {{ranges}}",
+    "pausesOutside": "Pauses automatically outside selected hours.",
+    "save": "Save Run Hours",
+    "toastSaved": "Run hours saved"
+  },
+  "quiet": {
+    "title": "Quiet Hours",
+    "description": "Reduce encoding intensity during specified hours. Fewer parallel jobs and optionally lower process priority.",
+    "startHour": "Start hour",
+    "endHour": "End hour",
+    "maxParallel": "Max parallel jobs",
+    "priority": "Process priority",
+    "lowerPriority": "Lower priority (nice)",
+    "summaryActive": "Active {{start}}:00 - {{end}}:00. ",
+    "summaryActiveOvernight": "Active {{start}}:00 - {{end}}:00 (overnight). ",
+    "summaryParallel_one": "Max {{count}} parallel job.",
+    "summaryParallel_other": "Max {{count}} parallel jobs.",
+    "summaryNice": " Processes run at lower priority.",
+    "save": "Save Quiet Hours",
+    "toastSaved": "Quiet hours saved"
+  },
+  "streams": {
+    "title": "Plex / Jellyfin / Emby Stream-Aware Scheduling",
+    "description": "Pause encoding when media server users are actively streaming. Running ffmpeg processes are frozen (SIGSTOP) so they consume zero CPU/IO until the stream ends — no work is lost, the encode resumes (SIGCONT) from the exact frame it stopped at. New jobs also wait until streams end before starting. By default, both transcoding and direct-play streams trigger the pause; flip \"Count only\" to <em>Transcoding streams</em> if you want direct-play to allow encoding to continue.",
+    "threshold": "Pause when streams reach",
+    "countOnly": "Count only",
+    "optionTranscode": "Transcoding streams",
+    "optionAll": "All streams (including direct play)",
+    "summaryTranscode_one": "Encoding will pause when {{count}} or more transcoding stream is active.",
+    "summaryTranscode_other": "Encoding will pause when {{count}} or more transcoding streams are active.",
+    "summaryAll_one": "Encoding will pause when {{count}} or more stream is active.",
+    "summaryAll_other": "Encoding will pause when {{count}} or more streams are active.",
+    "directPlayNote": " Direct play streams won't trigger a pause since they don't use server CPU.",
+    "checksEvery": "Checks every 15 seconds.",
+    "save": "Save Streaming Settings",
+    "toastSaved": "Streaming settings saved"
+  }
+}

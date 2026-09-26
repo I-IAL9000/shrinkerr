@@ -1,0 +1,25 @@
+{
+  "title": "Actividad",
+  "eventCount_one": "{{formatted}} evento",
+  "eventCount_many": "{{formatted}} eventos",
+  "eventCount_other": "{{formatted}} eventos",
+  "eventTypes": {
+    "all": "Todos los eventos",
+    "completed": "Completados",
+    "failed": "Fallidos",
+    "queued": "En cola",
+    "healthCheck": "Comprobaciones de estado",
+    "vmaf": "Análisis VMAF",
+    "ignoreChanges": "Cambios de ignorados",
+    "reverts": "Reversiones",
+    "arrActions": "Acciones de Sonarr / Radarr"
+  },
+  "searchPlaceholder": "Buscar ruta de archivo…",
+  "search": "Buscar",
+  "loadingActivity": "Cargando actividad…",
+  "pagination": {
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "pageOf": "Página {{page}} de {{totalPages}}"
+  }
+}

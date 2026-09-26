@@ -1,0 +1,51 @@
+{
+  "tree": {
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "openOnImdb": "Open {{id}} on IMDb",
+    "openOnTvdb": "Open on TheTVDB",
+    "rescanFolder": "Rescan {{name}}",
+    "ignoreFolderConfirm_one": "Ignore all {{count}} file in {{name}}/?",
+    "ignoreFolderConfirm_other": "Ignore all {{count}} files in {{name}}/?",
+    "ignoreAll": "Ignore all",
+    "ignoreFolderTitle": "Ignore all files in {{name}}/",
+    "ignoreFile": "Ignore this file",
+    "removeFromList": "Remove from list",
+    "trashConfirm": "Move this file to trash?\n\n{{name}}",
+    "loadingFiles": "Loading files...",
+    "noMatches": "No files match the current filter.",
+    "noFiles": "No files scanned yet. Run a scan to get started."
+  },
+  "poster": {
+    "fixMatchTitle": "Fix TMDB match",
+    "noFilesFound": "No files found"
+  },
+  "fix": {
+    "title": "Fix match",
+    "titlePlaceholder": "Title",
+    "yearPlaceholder": "Year",
+    "search": "Search",
+    "searching": "Searching TMDB...",
+    "noMatches": "No matches found on TMDB",
+    "searchFailed": "Search failed",
+    "applyFailed": "Failed to apply"
+  },
+  "badges": {
+    "videoCodec": "Video codec: {{codec}}",
+    "dvdFolder": "DVD-Video disc folder",
+    "blurayFolder": "Blu-ray disc folder",
+    "corrupt": "Corrupt",
+    "corruptWithType": "Corrupt ({{type}} check)",
+    "healthyWithType": "Healthy ({{type}})",
+    "healthyChecked": "Healthy (checked)",
+    "convertedBy": "Converted by Shrinkerr",
+    "new": "NEW",
+    "queued": "QUEUED",
+    "ignored": "ignored",
+    "clickToUnignore": "Click to unignore",
+    "tv": "TV",
+    "movie": "Movie",
+    "tvUpper": "TV",
+    "movieUpper": "MOVIE"
+  }
+}

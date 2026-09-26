@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
@@ -7,6 +8,7 @@ import { LANGUAGES } from "../utils/languages";
 import { vmafLabel } from "../utils/vmaf";
 import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
+import { serverText, detectNote } from "../i18n/server";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -17,6 +19,7 @@ interface FileDetailProps {
 type Tab = "tracks" | "history";
 
 export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: FileDetailProps) {
+  const { t } = useTranslation(["fileDetail", "common"]);
   const [fetchedAudio, setFetchedAudio] = useState<AudioTrack[]>([]);
   const [fetchedSubs, setFetchedSubs] = useState<SubtitleTrack[]>([]);
   const [loading, setLoading] = useState(!file.audio_tracks?.length);
@@ -26,7 +29,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   const [researching, setResearching] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [detecting, setDetecting] = useState(false);
-  const [detectStage, setDetectStage] = useState<string | null>(null);
+  const [detectStage, setDetectStage] = useState<{ stage: string; stage_key?: string | null; stage_params?: Record<string, unknown> | null } | null>(null);
   const [detected, setDetected] = useState(false);
   // v0.9.86: writing a language to an mp4 remuxes the whole file (mkvpropedit
   // can't tag mp4), which can take a while — show a spinner and lock the track
@@ -43,24 +46,24 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       const r: any = await arrAction(file.file_path, "upgrade");
       if (r?.success) {
         const label = r.service === "sonarr"
-          ? `${r.series} — ${(r.episode_ids || []).length} ep(s)`
+          ? t("fileDetail:upgrade.episodes", { series: r.series, count: (r.episode_ids || []).length })
           : `${r.movie}`;
-        toast(`Upgrade search triggered (${r.service}): ${label}`, "success");
+        toast(t("fileDetail:upgrade.triggered", { service: r.service, label }), "success");
       } else {
-        toast(`Upgrade search failed: ${r?.error || "unknown error"}`, "error");
+        toast(t("fileDetail:upgrade.failed", { error: r?.error || t("fileDetail:unknownError") }), "error");
       }
     } catch (exc: any) {
-      toast(`Upgrade search error: ${exc?.message || exc}`, "error");
+      toast(t("fileDetail:upgrade.error", { error: exc?.message || exc }), "error");
     } finally {
       setUpgrading(false);
     }
   };
 
   const handleResearch = async () => {
-    const label = isCorrupt ? "Re-download (file is corrupt)" : "Re-download (replace with different release)";
+    const label = isCorrupt ? t("fileDetail:research.labelCorrupt") : t("fileDetail:research.labelReplace");
     const ok = await confirm({
-      message: `${label}\n\nThis will blocklist the current release, delete the file, and ask Sonarr/Radarr to grab a replacement.\n\nContinue?`,
-      confirmLabel: "Re-download",
+      message: t("fileDetail:research.confirmMessage", { label }),
+      confirmLabel: t("fileDetail:research.confirmLabel"),
       danger: true,
     });
     if (!ok) return;
@@ -70,16 +73,16 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       if (r.success) {
         const parts = [
           r.service === "sonarr" ? `Sonarr: ${r.series || ""}` : `Radarr: ${r.movie || ""}`,
-          r.blocklisted ? "blocklisted" : "NOT blocklisted",
-          r.deleted ? "deleted" : "not deleted",
-          r.searched ? "search triggered" : "search NOT triggered",
+          r.blocklisted ? t("fileDetail:research.blocklisted") : t("fileDetail:research.notBlocklisted"),
+          r.deleted ? t("fileDetail:research.deleted") : t("fileDetail:research.notDeleted"),
+          r.searched ? t("fileDetail:research.searched") : t("fileDetail:research.notSearched"),
         ];
-        toast(`Re-download requested — ${parts.join(", ")}`, "success");
+        toast(t("fileDetail:research.requested", { parts: parts.join(", ") }), "success");
       } else {
-        toast(`Re-download failed: ${r.error || "unknown error"}`, "error");
+        toast(t("fileDetail:research.failed", { error: r.error || t("fileDetail:unknownError") }), "error");
       }
     } catch (exc: any) {
-      toast(`Re-download error: ${exc?.message || exc}`, "error");
+      toast(t("fileDetail:research.error", { error: exc?.message || exc }), "error");
     } finally {
       setResearching(false);
     }
@@ -98,10 +101,10 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
         setFetchedSubs(r.subtitle_tracks || []);
         setDetected(true);
       }
-      toast(r.changed ? "Languages detected — tracks updated"
-        : "No new languages resolved — see the reason next to each track", "success");
+      toast(r.changed ? t("fileDetail:detect.changed")
+        : t("fileDetail:detect.unchanged"), "success");
     } catch (exc: any) {
-      toast(`Language detection error: ${exc?.message || exc}`, "error");
+      toast(t("fileDetail:detect.error", { error: exc?.message || exc }), "error");
     } finally {
       setDetecting(false);
       setDetectStage(null);
@@ -131,14 +134,14 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       setFetchedSubs(r.subtitle_tracks || []);
       setDetected(true);
       if (r.file_written) {
-        toast("Language set", "success");
+        toast(t("fileDetail:setLanguage.success"), "success");
       } else if (r.pending_detected) {
-        toast("Saved — remux/convert to MKV to apply it (this container can't be tagged in place)", "success");
+        toast(t("fileDetail:setLanguage.pending"), "success");
       } else {
-        toast("Couldn't set the language for this track", "error");
+        toast(t("fileDetail:setLanguage.failed"), "error");
       }
     } catch (exc: any) {
-      toast(`Failed to set language: ${exc?.message || exc}`, "error");
+      toast(t("fileDetail:setLanguage.error", { error: exc?.message || exc }), "error");
     } finally {
       setSettingLang(false);
     }
@@ -156,7 +159,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       try {
         const msg = JSON.parse(me.data);
         if (msg?.type !== "detect_progress" || msg.file_path !== file.file_path) return;
-        setDetectStage(msg.stage || null);
+        setDetectStage(msg.stage ? { stage: msg.stage, stage_key: msg.stage_key, stage_params: msg.stage_params } : null);
       } catch { return; }
     };
     window.addEventListener("ws-message", onWsMessage);
@@ -210,22 +213,22 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     const remux = isUntaggableFlat && !isDisc;
     const ok = await confirm({
       message: remux
-        ? `Remux this file to MKV to apply the detected language?\n\nFast stream-copy — no re-encode, no quality loss, no size increase. The ${_ext} is replaced by an .mkv.`
-        : "Convert this to MKV to apply the language?\n\nThe language is detected and stamped during the conversion.",
-      confirmLabel: remux ? "Remux to MKV" : "Convert to MKV",
+        ? t("fileDetail:applyLanguage.remuxMessage", { ext: _ext })
+        : t("fileDetail:applyLanguage.convertMessage"),
+      confirmLabel: remux ? t("fileDetail:applyLanguage.remuxConfirm") : t("fileDetail:applyLanguage.convertConfirm"),
     });
     if (!ok) return;
     try {
       const r = await addJobsFromScan([file.file_path], 0, false, remux ? { language_remux: true } : {});
       if (r.added) {
-        toast(`Queued ${remux ? "remux" : "conversion"} to apply language`, "success");
+        toast(remux ? t("fileDetail:applyLanguage.queuedRemux") : t("fileDetail:applyLanguage.queuedConvert"), "success");
       } else if (r.skipped_existing) {
-        toast("Already in the queue — check the Queue tab", "info");
+        toast(t("fileDetail:applyLanguage.alreadyQueued"), "info");
       } else {
-        toast("Nothing queued", "error");
+        toast(t("fileDetail:applyLanguage.nothingQueued"), "error");
       }
     } catch (exc: any) {
-      toast(`Failed to queue: ${exc?.message || exc}`, "error");
+      toast(t("fileDetail:applyLanguage.queueFailed", { error: exc?.message || exc }), "error");
     }
   };
 
@@ -251,8 +254,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
         {file.video_codec} &middot; {file.file_size_gb} GB
       </div>
       <div style={{ display: "flex", gap: 4, marginBottom: 8, borderBottom: "1px solid var(--border)" }}>
-        <button style={tabBtnStyle(tab === "tracks")} onClick={() => setTab("tracks")}>Tracks</button>
-        <button style={tabBtnStyle(tab === "history")} onClick={() => setTab("history")}>History</button>
+        <button style={tabBtnStyle(tab === "tracks")} onClick={() => setTab("tracks")}>{t("fileDetail:tabs.tracks")}</button>
+        <button style={tabBtnStyle(tab === "history")} onClick={() => setTab("history")}>{t("fileDetail:tabs.history")}</button>
       </div>
 
       {tab === "tracks" && (
@@ -262,12 +265,12 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
             // (not heuristic guesses). Only 'heuristic'/unset is a guess.
             const src = file.language_source || "heuristic";
             const matched = src === "api" || src === "manual" || src === "tmdb-manual";
-            const label = src === "api" ? "from API"
-              : (src === "manual" || src === "tmdb-manual") ? "manual match"
-              : "heuristic";
+            const label = src === "api" ? t("fileDetail:tracks.languageSource.api")
+              : (src === "manual" || src === "tmdb-manual") ? t("fileDetail:tracks.languageSource.manual")
+              : t("fileDetail:tracks.languageSource.heuristic");
             return (
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                Native language: <strong style={{ color: matched ? "var(--success)" : "var(--text-secondary)" }}>
+                {t("fileDetail:tracks.nativeLanguage")} <strong style={{ color: matched ? "var(--success)" : "var(--text-secondary)" }}>
                   {file.native_language.toUpperCase()}
                 </strong>
                 <span style={{
@@ -282,19 +285,19 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
           })()}
           {file.needs_conversion && (
             <div style={{ color: "var(--success)", marginBottom: 6 }}>
-              Convert to x265 10-bit (est. save ~{(convSavings / (1024**3)).toFixed(1)} GB)
+              {t("fileDetail:tracks.convertEstimate", { size: (convSavings / (1024**3)).toFixed(1) })}
             </div>
           )}
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
               <div className="spinner" style={{ width: 14, height: 14 }} />
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading tracks...</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("fileDetail:tracks.loading")}</span>
             </div>
           ) : (
             <>
               {audioTracks.length > 0 ? (
                 <>
-                  <div style={{ marginBottom: 2 }}>Audio tracks:</div>
+                  <div style={{ marginBottom: 2 }}>{t("fileDetail:tracks.audioHeading")}</div>
                   <div style={{ paddingLeft: 12 }}>
                     {[...audioTracks].sort((a, b) => a.stream_index - b.stream_index).map((track) => (
                       <AudioTrackRow
@@ -308,16 +311,16 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                   </div>
                 </>
               ) : (
-                <div style={{ fontSize: 12, color: "var(--danger)", fontStyle: "italic", marginBottom: 6 }}>No audio tracks detected</div>
+                <div style={{ fontSize: 12, color: "var(--danger)", fontStyle: "italic", marginBottom: 6 }}>{t("fileDetail:tracks.noAudio")}</div>
               )}
               {(() => {
-                const embedded = subtitleTracks.filter(t => !t.external);
-                const external = subtitleTracks.filter(t => t.external);
+                const embedded = subtitleTracks.filter(tr => !tr.external);
+                const external = subtitleTracks.filter(tr => tr.external);
                 return (
                   <>
                     {embedded.length > 0 ? (
                       <>
-                        <div style={{ marginTop: 8, marginBottom: 2 }}>Subtitle tracks:</div>
+                        <div style={{ marginTop: 8, marginBottom: 2 }}>{t("fileDetail:subtitles.heading")}</div>
                         <div style={{ paddingLeft: 12 }}>
                           {[...embedded].sort((a, b) => a.stream_index - b.stream_index).map((track) => (
                             <SubTrackRow key={track.stream_index} track={track} filePath={file.file_path} onToggle={handleToggleSubLocal} onSetLanguage={(idx, lang) => handleSetTrackLanguage("subtitle", idx, lang)} busy={settingLang} />
@@ -325,7 +328,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                         </div>
                       </>
                     ) : (
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginTop: 6 }}>No embedded subtitle tracks</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic", marginTop: 6 }}>{t("fileDetail:subtitles.noEmbedded")}</div>
                     )}
                     {external.length > 0 && (
                       <>
@@ -333,7 +336,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
                           </svg>
-                          External subtitles:
+                          {t("fileDetail:subtitles.externalHeading")}
                         </div>
                         <div style={{ paddingLeft: 12 }}>
                           {external.map((track) => (
@@ -348,7 +351,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
             </>
           )}
           <div style={{ color: "var(--success)", marginTop: 6, fontSize: 11 }}>
-            Total est. savings: ~{file.estimated_savings_gb} GB
+            {t("fileDetail:tracks.totalSavings", { size: file.estimated_savings_gb })}
           </div>
 
           {/* *arr actions — Replace (red when corrupt) + Search upgrade (quiet) */}
@@ -358,7 +361,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                 type="button"
                 onClick={handleDetect}
                 disabled={detecting}
-                title="Run language detection on this file's unknown (und) audio and text-subtitle tracks"
+                title={t("fileDetail:actions.detectTitle")}
                 style={{
                   background: "transparent",
                   color: "var(--text-muted)",
@@ -376,7 +379,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
-                {detecting ? "Detecting…" : "Detect languages"}
+                {detecting ? t("fileDetail:actions.detecting") : t("fileDetail:actions.detectLanguages")}
               </button>
             )}
             {showApplyViaConvert && (
@@ -384,8 +387,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                 type="button"
                 onClick={handleApplyLanguage}
                 title={isUntaggableFlat
-                  ? "Remux to MKV (stream copy, no re-encode) to apply the detected language — this container can't store it in place"
-                  : "Convert this disc to MKV; the language is detected and applied during the conversion"}
+                  ? t("fileDetail:actions.remuxApplyTitle")
+                  : t("fileDetail:actions.convertApplyTitle")}
                 style={{
                   background: "transparent",
                   color: "var(--accent)",
@@ -399,7 +402,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                   gap: 6,
                 }}
               >
-                {isUntaggableFlat && !isDisc ? "Remux to MKV (apply language)" : "Convert to MKV (apply language)"}
+                {isUntaggableFlat && !isDisc ? t("fileDetail:actions.remuxApply") : t("fileDetail:actions.convertApply")}
               </button>
             )}
             <button
@@ -407,8 +410,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               onClick={handleResearch}
               disabled={researching || upgrading}
               title={isCorrupt
-                ? "This file appears corrupt — blocklist the release and ask Sonarr/Radarr for a replacement"
-                : "Replace this file with a different release (blocklists current, triggers new search)"}
+                ? t("fileDetail:actions.researchTitleCorrupt")
+                : t("fileDetail:actions.researchTitle")}
               style={{
                 background: isCorrupt ? "#e94560" : "transparent",
                 color: isCorrupt ? "#fff" : "var(--text-muted)",
@@ -428,17 +431,17 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                 <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
               </svg>
               {researching
-                ? "Requesting…"
+                ? t("fileDetail:actions.requesting")
                 : isCorrupt
-                  ? "Re-download (corrupt file)"
-                  : "Request replacement"}
+                  ? t("fileDetail:actions.redownloadCorrupt")
+                  : t("fileDetail:actions.requestReplacement")}
             </button>
 
             <button
               type="button"
               onClick={handleUpgradeSearch}
               disabled={researching || upgrading}
-              title="Ask Sonarr/Radarr to search for a better release per your quality profile. Does NOT blocklist or delete the current file."
+              title={t("fileDetail:actions.searchUpgradeTitle")}
               style={{
                 background: "transparent",
                 color: "var(--text-muted)",
@@ -456,24 +459,24 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
               </svg>
-              {upgrading ? "Searching…" : "Search for upgrade"}
+              {upgrading ? t("fileDetail:actions.searching") : t("fileDetail:actions.searchUpgrade")}
             </button>
           </div>
           {detecting && detectStage && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
               <div className="spinner" style={{ width: 12, height: 12 }} />
-              <span>{detectStage}</span>
+              <span>{serverText("serverJobs", detectStage.stage_key, detectStage.stage_params, detectStage.stage)}</span>
             </div>
           )}
           {settingLang && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>
               <div className="spinner" style={{ width: 12, height: 12 }} />
-              <span>Setting track language… (mp4 files are remuxed, this can take a moment)</span>
+              <span>{t("fileDetail:tracks.settingLanguage")}</span>
             </div>
           )}
           {isCorrupt && (
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-              ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr.
+              {t("fileDetail:actions.corruptNote")}
             </div>
           )}
         </>
@@ -484,7 +487,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
           {historyLoading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
               <div className="spinner" style={{ width: 14, height: 14 }} />
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading history...</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("fileDetail:history.loading")}</span>
             </div>
           ) : (
             // If the file has a VMAF score in scan_results but no VMAF event
@@ -548,6 +551,7 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
   onSetLanguage?: (streamIndex: number, language: string) => void;
   busy?: boolean;
 }) {
+  const { t } = useTranslation(["fileDetail", "common"]);
   const [editing, setEditing] = useState(false);
   const basename = isExternal && track.external_path
     ? track.external_path.split("/").pop() || track.title
@@ -569,14 +573,14 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
       <span style={{ color: track.keep ? "var(--text-secondary)" : "var(--text-muted)", textDecoration: track.keep ? "none" : "line-through" }}>
         {track.language.toUpperCase()} — {track.codec}
         {track.title && !isExternal && ` — ${track.title}`}
-        {track.forced && <span style={{ fontSize: 9, color: "var(--warning)", marginLeft: 4 }}>FORCED</span>}
+        {track.forced && <span style={{ fontSize: 9, color: "var(--warning)", marginLeft: 4 }}>{t("fileDetail:subtitles.forced")}</span>}
       </span>
       {isExternal && basename && (
         <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.7 }}>{basename}</span>
       )}
       {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
-        <span style={{ fontSize: 10, color: "var(--warning)", opacity: 0.8 }} title="Why auto-detection didn't set a language">
-          {track.detect_note}
+        <span style={{ fontSize: 10, color: "var(--warning)", opacity: 0.8 }} title={t("fileDetail:tracks.detectNoteTitle")}>
+          {detectNote(track)}
         </span>
       )}
       {onSetLanguage && !editing && (
@@ -584,7 +588,7 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
           type="button"
           onClick={(e) => { e.stopPropagation(); setEditing(true); }}
           disabled={busy}
-          title="Set language manually"
+          title={t("fileDetail:tracks.setLanguageManually")}
           style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: busy ? "wait" : "pointer", padding: 0, display: "inline-flex", alignItems: "center", opacity: busy ? 0.5 : 1 }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

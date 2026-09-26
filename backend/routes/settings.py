@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Request, UploadFile, File
+from backend.api_errors import ApiError
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -208,6 +209,8 @@ _ENCODING_DEFAULTS = {
     "notify_job_failed": "false",
     "notify_disk_low": "false",
     "disk_space_threshold_gb": "50",
+    # Language for outbound notification text (backend/locales/<code>/).
+    "notification_language": "en",
     # NZBGet integration
     "nzbget_enabled": "false",
     "nzbget_tags": '[]',
@@ -260,29 +263,31 @@ def _validate_filesystem_path(
     and bypass every downstream containment guard.
     """
     if not isinstance(raw_path, str) or not raw_path.strip():
-        raise HTTPException(status_code=400, detail=f"{label} must be a non-empty string")
+        raise ApiError(status_code=400, detail=f"{label} must be a non-empty string", code="settings.pathEmpty", params={"label": label})
     raw_path = raw_path.strip()
     p = Path(raw_path)
     if not p.is_absolute():
-        raise HTTPException(status_code=400, detail=f"{label} must be an absolute path")
+        raise ApiError(status_code=400, detail=f"{label} must be an absolute path", code="settings.pathNotAbsolute", params={"label": label})
     try:
         resolved = p.resolve(strict=False)
     except (OSError, RuntimeError) as exc:
-        raise HTTPException(status_code=400, detail=f"{label} cannot be resolved: {exc}")
+        raise ApiError(status_code=400, detail=f"{label} cannot be resolved: {exc}", code="settings.pathUnresolvable", params={"label": label, "error": str(exc)})
     if must_exist:
         if not resolved.exists():
-            raise HTTPException(status_code=400, detail=f"{label} does not exist: {resolved}")
+            raise ApiError(status_code=400, detail=f"{label} does not exist: {resolved}", code="settings.pathMissing", params={"label": label, "path": str(resolved)})
         if not resolved.is_dir():
-            raise HTTPException(status_code=400, detail=f"{label} is not a directory: {resolved}")
+            raise ApiError(status_code=400, detail=f"{label} is not a directory: {resolved}", code="settings.pathNotDirectory", params={"label": label, "path": str(resolved)})
     if forbid_system_dirs:
         resolved_str = str(resolved)
         if resolved_str == "/":
-            raise HTTPException(status_code=400, detail=f"{label} cannot be the filesystem root")
+            raise ApiError(status_code=400, detail=f"{label} cannot be the filesystem root", code="settings.pathIsRoot", params={"label": label})
         for forbidden in _DISALLOWED_MEDIA_DIR_PREFIXES:
             if resolved_str == forbidden or resolved_str.startswith(forbidden + "/"):
-                raise HTTPException(
+                raise ApiError(
                     status_code=400,
                     detail=f"{label} is not allowed under {forbidden} (system directory)",
+                    code="settings.pathInSystemDir",
+                    params={"label": label, "dir": forbidden},
                 )
     return str(resolved)
 
@@ -309,7 +314,7 @@ async def add_media_dir(media_dir: MediaDir):
                 new_id = cur.lastrowid
             await db.commit()
         except aiosqlite.IntegrityError:
-            raise HTTPException(status_code=409, detail="Directory already exists")
+            raise ApiError(status_code=409, detail="Directory already exists", code="settings.mediaDirExists")
     finally:
         await db.close()
     return {
@@ -689,6 +694,7 @@ async def get_encoding_settings():
                  "webhook_url", "notify_queue_complete", "notify_job_failed",
                  "notify_disk_low", "disk_space_threshold_gb"]:
         result[key] = merged.get(key, "")
+    result["notification_language"] = merged.get("notification_language", "en")
     smtp_pass = merged.get("smtp_pass", "")
     result["smtp_pass"] = ("****" + smtp_pass[-4:]) if smtp_pass else ""
     # Parse booleans for frontend
@@ -741,7 +747,8 @@ async def ignore_file(req: IgnoreFileRequest):
         await db.close()
     try:
         from backend.file_events import log_event, EVENT_IGNORED
-        await log_event(req.file_path, EVENT_IGNORED, f"Ignored ({req.reason})", {"reason": req.reason})
+        await log_event(req.file_path, EVENT_IGNORED, f"Ignored ({req.reason})", {"reason": req.reason},
+                        summary_key="ignoredWithReason", summary_params={"reason": req.reason})
     except Exception:
         pass
     return {"status": "ignored"}
@@ -784,7 +791,7 @@ async def unignore_file(file_path: str):
         await db.close()
     try:
         from backend.file_events import log_event, EVENT_UNIGNORED
-        await log_event(file_path, EVENT_UNIGNORED, "Unignored")
+        await log_event(file_path, EVENT_UNIGNORED, "Unignored", summary_key="unignored")
     except Exception:
         pass
     return {"status": "unignored"}
@@ -1130,13 +1137,14 @@ async def update_encoding_settings(update: SettingsUpdate):
                     row = await cur.fetchone()
                 auth_enabled = bool(row) and (row[0] == "true")
                 if not auth_enabled:
-                    raise HTTPException(
+                    raise ApiError(
                         status_code=403,
                         detail=(
                             "post_conversion_script runs arbitrary commands after every job. "
                             "Enable password auth (Settings → System → Authentication) before "
                             "configuring this setting so it can't be changed with just an API key."
                         ),
+                        code="settings.postScriptNeedsAuth",
                     )
             updates["post_conversion_script"] = new_script
         if update.post_conversion_script_timeout is not None:
@@ -1164,6 +1172,18 @@ async def update_encoding_settings(update: SettingsUpdate):
                 updates[key] = val
         if update.smtp_pass is not None and not update.smtp_pass.startswith("****"):
             updates["smtp_pass"] = update.smtp_pass
+        if update.notification_language is not None:
+            from backend.i18n import available_languages
+            _nl = update.notification_language.strip()
+            if _nl not in available_languages():
+                _langs = ", ".join(available_languages())
+                raise ApiError(
+                    status_code=400,
+                    detail=f"notification_language must be one of: {_langs}",
+                    code="settings.notificationLanguageInvalid",
+                    params={"languages": _langs},
+                )
+            updates["notification_language"] = _nl
 
         for key, value in updates.items():
             await db.execute(
@@ -1233,6 +1253,10 @@ async def update_encoding_settings(update: SettingsUpdate):
     if auth_keys & set(updates.keys()):
         from backend.main import _auth_cache
         _auth_cache["checked_at"] = 0
+
+    if "notification_language" in updates:
+        from backend.i18n import set_current_language
+        set_current_language(updates["notification_language"])
 
     return {"status": "updated", "keys": list(updates.keys())}
 
@@ -1830,10 +1854,10 @@ async def list_backups():
 async def download_backup(name: str):
     """Download a backup zip file."""
     if "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(400, "Invalid backup name")
+        raise ApiError(400, "Invalid backup name", code="settings.invalidBackupName")
     path = BACKUP_DIR / name
     if not path.exists() or not path.is_file():
-        raise HTTPException(404, "Backup not found")
+        raise ApiError(404, "Backup not found", code="settings.backupNotFound")
     return FileResponse(
         path=str(path),
         media_type="application/zip",
@@ -1845,10 +1869,10 @@ async def download_backup(name: str):
 async def delete_backup(name: str):
     """Delete a specific backup file."""
     if "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(400, "Invalid backup name")
+        raise ApiError(400, "Invalid backup name", code="settings.invalidBackupName")
     path = BACKUP_DIR / name
     if not path.exists():
-        raise HTTPException(404, "Backup not found")
+        raise ApiError(404, "Backup not found", code="settings.backupNotFound")
     path.unlink()
     return {"status": "deleted"}
 
@@ -1857,7 +1881,7 @@ async def delete_backup(name: str):
 async def restore_backup(file: UploadFile = File(...)):
     """Restore from a backup zip. Replaces the current database."""
     if not file.filename or not file.filename.endswith(".zip"):
-        raise HTTPException(400, "Must upload a .zip file")
+        raise ApiError(400, "Must upload a .zip file", code="settings.restoreNotZip")
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     tmp_zip = BACKUP_DIR / f"_restore_upload_{datetime.now().strftime('%H%M%S')}.zip"
@@ -1873,7 +1897,7 @@ async def restore_backup(file: UploadFile = File(...)):
             names = zf.namelist()
             db_name = "shrinkerr.db" if "shrinkerr.db" in names else ("squeezarr.db" if "squeezarr.db" in names else None)
             if db_name is None:
-                raise HTTPException(400, "Backup zip must contain shrinkerr.db or squeezarr.db")
+                raise ApiError(400, "Backup zip must contain shrinkerr.db or squeezarr.db", code="settings.restoreMissingDb")
             zf.extract(db_name, BACKUP_DIR)
             extracted = BACKUP_DIR / db_name
             extracted.rename(tmp_db)
@@ -1887,7 +1911,7 @@ async def restore_backup(file: UploadFile = File(...)):
             finally:
                 await test_db.close()
         except Exception as exc:
-            raise HTTPException(400, f"Invalid database in backup: {exc}")
+            raise ApiError(400, f"Invalid database in backup: {exc}", code="settings.restoreInvalidDb", params={"error": str(exc)})
 
         # Create a safety backup of the current DB before replacing
         safety_name = f"shrinkerr_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"

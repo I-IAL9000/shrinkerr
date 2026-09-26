@@ -1,0 +1,28 @@
+{
+  "changelog": {
+    "updateAvailable": "Actualización disponible",
+    "releaseNotes": "Notas de la versión",
+    "versionLine": "Tienes la <b>v{{current}}</b> · la más reciente es la <accent>v{{latest}}</accent>",
+    "loadError": "No se pudo cargar el registro de cambios. La <link>página de versiones de GitHub</link> tiene el historial completo.",
+    "loading": "Cargando notas de la versión…",
+    "empty": "No se encontraron entradas en el registro de cambios. Consulta la <link>página de versiones de GitHub</link>.",
+    "localFallback": "No se pudo conectar con GitHub para obtener las nuevas notas de la versión; se muestra el CHANGELOG.md instalado. La <link>página de versiones</link> tiene las entradas más recientes.",
+    "viewOnGithub": "Ver en GitHub ↗",
+    "latest": "Más reciente",
+    "sections": {
+      "Added": "Añadido",
+      "Changed": "Cambiado",
+      "Fixed": "Corregido",
+      "Deprecated": "Obsoleto",
+      "Removed": "Eliminado",
+      "Security": "Seguridad"
+    }
+  },
+  "folderBrowser": {
+    "title": "Seleccionar carpeta",
+    "go": "Ir",
+    "noSubdirectories": "No hay subcarpetas",
+    "selected": "Seleccionada:",
+    "select": "Seleccionar"
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "renaming": {
+    "title": "Renombrado"
+  },
+  "automation": {
+    "title": "Automatización",
+    "autoQueue": {
+      "title": "Cola automática",
+      "newFiles": "Añadir automáticamente los archivos nuevos a la cola",
+      "newFilesHelp": "Los archivos nuevos que el vigilante detecte en las carpetas escaneadas y que necesiten conversión o limpieza de audio se añadirán automáticamente a la cola con tu configuración de codificación predeterminada.",
+      "priority": "Prioridad de la cola automática:",
+      "priorityHelp": "Los archivos recién detectados usan esta prioridad. Las reglas con una acción de prioridad en cola anulan este ajuste."
+    },
+    "filters": {
+      "title": "Filtros de conversión",
+      "minFileSize": "Tamaño mínimo de archivo (MB)",
+      "minBitrate": "Tasa de bits mínima (Mbps)",
+      "maxBitrate": "Tasa de bits máxima (Mbps)",
+      "help": "Pon 0 para desactivar. Tasas de bits habituales: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Pon la tasa mínima en 3 para omitir archivos ya comprimidos. Pon la tasa máxima en 80 para conservar los remux 4K HDR."
+    },
+    "filename": {
+      "title": "Nombre del archivo de salida",
+      "suffix": "Sufijo del nombre de archivo tras la conversión",
+      "suffixPlaceholder": "p. ej. -Shrinkerr",
+      "useSuffix": "Usar \"{{suffix}}\"",
+      "help": "Se añade al nombre del archivo, antes de la extensión, tras la conversión. Ejemplo: <code>Movie x265{{suffix}}.mkv</code>. Déjalo vacío para no añadir sufijo."
+    },
+    "originals": {
+      "title": "Originales y copias de seguridad",
+      "trash": "Mover los originales a la papelera tras la conversión",
+      "trashHelp": "Tras una conversión correcta, el archivo original se mueve a la papelera del sistema en lugar de eliminarse definitivamente.",
+      "backupFor": "O guardar copia de los originales durante",
+      "days": "días",
+      "daysHint": "(0 = desactivado; se conservan indefinidamente si está vacío)",
+      "backupFolder": "Carpeta de copias",
+      "backupFolderPlaceholder": ".shrinkerr_backup (predeterminado, misma carpeta que el archivo)",
+      "browse": "Examinar",
+      "help": "Déjalo vacío para usar <code>.shrinkerr_backup</code> en la misma carpeta. Indica una ruta absoluta (p. ej. <code>/media/backups</code>) para centralizar el almacenamiento. Las copias de seguridad son necesarias para la función <b>Deshacer conversión</b>: sin ellas, las conversiones no se pueden revertir.",
+      "deleteAll": "Eliminar todas las copias",
+      "noneFound": "No se encontraron copias de seguridad.",
+      "deleteAllConfirm_one": "¿Eliminar {{count}} copia de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
+      "deleteAllConfirm_many": "¿Eliminar las {{count}} copias de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
+      "deleteAllConfirm_other": "¿Eliminar las {{count}} copias de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
+      "deletedResult_one": "Se eliminó {{count}} archivo; se liberaron {{size}} GB",
+      "deletedResult_many": "Se eliminaron {{count}} archivos; se liberaron {{size}} GB",
+      "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}} GB"
+    },
+    "stability": {
+      "title": "Estabilidad de archivos",
+      "delay": "Retrasar los archivos modificados recientemente",
+      "delayHelp": "Los archivos modificados dentro de este intervalo se posponen durante el escaneo y la cola automática. Se procesarán en el siguiente escaneo, una vez pasado el intervalo. Así se evita convertir archivos que aún se están descargando, transfiriendo o procesando con otras herramientas como Sonarr/Radarr. Recomendado en sistemas compartidos.",
+      "delayNewerThan": "Retrasar archivos de menos de",
+      "minutes": "minutos"
+    },
+    "health": {
+      "title": "Comprobaciones de integridad",
+      "off": "Desactivado",
+      "quick": "Rápida",
+      "thorough": "Exhaustiva",
+      "afterScan": "Comprobar automáticamente tras los escaneos",
+      "afterScanHelp": "Tras cada escaneo, pone en cola una comprobación de integridad para los archivos <b>detectados en las últimas 24 h</b> (máximo 1000 por escaneo para proteger la cola). La <b>rápida</b> analiza las cabeceras (menos de 1 s por archivo). La <b>exhaustiva</b> decodifica todos los fotogramas (lenta: minutos por archivo). Para comprobar archivos existentes, usa los botones manuales <b>Comprobación rápida</b> / <b>Comprobación exhaustiva</b> del Escáner.",
+      "clearPending": "Borrar trabajos de comprobación pendientes",
+      "clearPendingConfirm": "¿Eliminar TODOS los trabajos de comprobación de integridad pendientes? Los trabajos en curso y los de otros tipos no se verán afectados.",
+      "afterConversion": "Comprobar automáticamente tras la conversión",
+      "afterConversionHelp": "Verifica cada archivo convertido. La <b>rápida</b> confirma que el contenedor y las pistas se leen correctamente. La <b>exhaustiva</b> detecta artefactos visuales (errores del decodificador) a costa de aproximadamente duración/10 por archivo."
+    },
+    "advanced": {
+      "title": "Avanzado",
+      "customFlags": "Parámetros personalizados de ffmpeg",
+      "customFlagsPlaceholder": "p. ej. -movflags +faststart",
+      "maxPlexCalls": "Máx. llamadas a la API de Plex",
+      "help": "Los parámetros personalizados se insertan antes de la ruta de salida en el comando de ffmpeg. El máximo de llamadas a la API de Plex limita las solicitudes simultáneas a tu servidor Plex (0 = sin límite)."
+    }
+  },
+  "webhooks": {
+    "title": "Endpoints de webhook",
+    "intro": "Las herramientas externas pueden llamar a estos endpoints para controlar Shrinkerr. Autentícate con <code>?api_key=YOUR_KEY</code> o con la cabecera <code>X-Api-Key</code>.",
+    "endpoints": {
+      "scan": "Iniciar el escaneo de la biblioteca",
+      "queue": "Añadir archivos a la cola (cuerpo: {paths: [...]})",
+      "pause": "Pausar la cola",
+      "resume": "Reanudar la cola",
+      "status": "Obtener el estado actual"
+    },
+    "copyUrl": "Copiar la URL completa"
+  },
+  "script": {
+    "title": "Script posterior a la conversión",
+    "intro": "Ejecuta un script personalizado al terminar cada conversión. El script recibe los datos del trabajo como variables de entorno.",
+    "path": "Ruta del script",
+    "pathHelp": "Ruta absoluta a un script ejecutable dentro del contenedor. Déjalo vacío para desactivarlo.",
+    "timeout": "Tiempo límite (segundos)",
+    "envReference": "Referencia de variables de entorno",
+    "envErrorValue": "(mensaje de error si falló)"
+  },
+  "system": {
+    "title": "Sistema"
+  },
+  "auth": {
+    "title": "Autenticación",
+    "enable": "Activar inicio de sesión con usuario y contraseña",
+    "loginRequired": "<b>Inicio de sesión obligatorio.</b> Los visitantes necesitarán el usuario y la contraseña de abajo o la clave de API (workers / scripts). Si te quedas sin acceso, consulta las instrucciones de recuperación en el README.",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "passwordPlaceholder": "Introduce una nueva contraseña...",
+    "passwordHelp": "Déjalo vacío para mantener la contraseña actual",
+    "reveal": "Mostrar",
+    "copy": "Copiar al portapapeles",
+    "regenerate": "Regenerar la clave de API (en el servidor; se aplica de inmediato)",
+    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa.",
+    "save": "Guardar autenticación"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "language": "Idioma de las notificaciones",
+    "languageHelp": "Las notificaciones (Discord, Telegram, correo electrónico, webhooks…) se envían en este idioma, con independencia del idioma de la interfaz elegido en cada navegador.",
+    "intro": "Recibe una notificación cuando la cola termine, un trabajo falle o quede poco espacio en disco.",
+    "events": {
+      "queueComplete": "Cola completada",
+      "jobFailed": "Trabajo fallido",
+      "diskLow": "Poco espacio en disco"
+    },
+    "diskThreshold": "Umbral de disco (GB)",
+    "webhookUrl": "URL del webhook",
+    "botToken": "Token del bot",
+    "chatId": "ID del chat",
+    "email": "Correo electrónico (SMTP)",
+    "smtpHost": "Servidor SMTP",
+    "port": "Puerto",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "sendTo": "Enviar a",
+    "genericWebhook": "Webhook genérico",
+    "genericWebhookUrl": "URL (recibe un POST JSON)",
+    "payload": "Contenido:",
+    "save": "Guardar ajustes de notificaciones",
+    "test": "Probar notificaciones"
+  },
+  "backups": {
+    "title": "Copias de seguridad",
+    "create": "Crear copia ahora",
+    "creating": "Creando...",
+    "intro": "Las copias de seguridad incluyen la base de datos completa (resultados de escaneo, trabajos, ajustes y reglas) en un archivo zip.",
+    "empty": "Aún no hay copias de seguridad",
+    "columns": {
+      "name": "Nombre",
+      "size": "Tamaño",
+      "time": "Fecha"
+    },
+    "restore": "Restaurar",
+    "restoreConfirm": "¿Restaurar desde {{name}}? Se reemplazará tu base de datos actual. Antes se creará una copia de seguridad de respaldo.",
+    "deleteConfirm": "¿Eliminar la copia de seguridad {{name}}?",
+    "restoreUploadConfirm": "¿Restaurar desde el archivo subido {{name}}? Se reemplazará tu base de datos actual.",
+    "restoreFromFile": "Restaurar desde archivo..."
+  },
+  "shortcuts": {
+    "title": "Atajos de teclado",
+    "space": "Espacio",
+    "actions": {
+      "dashboard": "Panel",
+      "scanner": "Escáner",
+      "queue": "Cola",
+      "statistics": "Estadísticas",
+      "logs": "Registros",
+      "schedule": "Programación",
+      "settings": "Ajustes",
+      "startPause": "Iniciar / pausar la cola"
+    },
+    "note": "Los atajos se desactivan mientras escribes en campos de texto."
+  },
+  "updates": {
+    "title": "Actualizaciones",
+    "runningVersion": "Versión en ejecución",
+    "availableUpstream": "<b>v{{version}}</b> está disponible",
+    "latest": "Tienes la última versión ✓",
+    "checkFailed": "No se pudo comprobar: sin conexión o límite de solicitudes alcanzado.",
+    "check": "Buscar actualizaciones",
+    "checking": "Comprobando…",
+    "viewNotes": "Ver notas de la versión v{{version}}",
+    "recent": "Versiones recientes",
+    "fullHistory": "Historial completo en GitHub ↗",
+    "loadingChangelog": "Cargando el registro de cambios…",
+    "noEntries": "No hay entradas en el registro de cambios."
+  },
+  "support": {
+    "title": "Soporte",
+    "intro": "Documentación, código fuente y dónde informar de problemas.",
+    "docs": {
+      "title": "Documentación",
+      "desc": "Instalación, guía de codificación, workers remotos, reglas, buenas prácticas y solución de problemas."
+    },
+    "repo": {
+      "title": "Repositorio de GitHub",
+      "desc": "Código fuente, versiones, debates e imágenes de contenedor."
+    },
+    "issue": {
+      "title": "Informar de un problema",
+      "desc": "Incluye tu versión, la variante de la imagen y un extracto relevante del registro (consulta docs → Troubleshooting)."
+    },
+    "tmdb": "Este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica."
+  },
+  "toasts": {
+    "clearedPending_one": "Se eliminó {{formatted}} trabajo de comprobación pendiente",
+    "clearedPending_many": "Se eliminaron {{formatted}} trabajos de comprobación pendientes",
+    "clearedPending_other": "Se eliminaron {{formatted}} trabajos de comprobación pendientes",
+    "urlCopied": "URL copiada",
+    "scriptSaved": "Ajustes del script posterior a la conversión guardados",
+    "noApiKey": "No hay ninguna clave de API configurada",
+    "fetchKeyFailed": "No se pudo obtener la clave: {{error}}",
+    "apiKeyCopied": "Clave de API copiada",
+    "apiKeyRegenerated": "Clave de API regenerada: cópiala y actualiza la configuración de tus workers / NZBGet / SABnzbd",
+    "regenerateEmpty": "La regeneración devolvió una clave vacía",
+    "regenerateFailed": "Error al regenerar: {{error}}",
+    "authSaved": "Ajustes de autenticación guardados",
+    "notificationLanguageSaved": "Idioma de las notificaciones guardado",
+    "notificationLanguageFailed": "No se pudo guardar el idioma de las notificaciones: {{error}}",
+    "notificationsSaved": "Ajustes de notificaciones guardados",
+    "testSent": "Prueba enviada: {{providers}}",
+    "testFailed": "Error: {{providers}}",
+    "noProviders": "No hay ningún proveedor de notificaciones configurado",
+    "backupCreated": "Copia de seguridad creada",
+    "backupFailed": "Error al crear la copia de seguridad",
+    "backupRestored": "Copia de seguridad restaurada. Reinicia el contenedor para que se aplique por completo.",
+    "restoreFailed": "Error al restaurar",
+    "backupDeleted": "Copia de seguridad eliminada",
+    "deleteFailed": "Error al eliminar",
+    "updateAvailable": "v{{version}} está disponible",
+    "upToDate": "Tienes la última versión",
+    "updateCheckFailed": "No se pudo conectar con GitHub; inténtalo de nuevo en un momento"
+  }
+}

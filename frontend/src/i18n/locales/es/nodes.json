@@ -1,0 +1,118 @@
+{
+  "title": "Nodos trabajadores",
+  "queuePaused": "Cola en pausa",
+  "onlineCount": "{{online}} de {{total}} en línea",
+  "loadingNodes": "Cargando nodos...",
+  "empty": {
+    "title": "Aún no hay nodos trabajadores registrados.",
+    "hint": "Para añadir un trabajador remoto, ejecuta la misma imagen de Docker con <code>SHRINKERR_MODE=worker</code>"
+  },
+  "setup": {
+    "title": "Añadir un trabajador remoto",
+    "intro": "Ejecuta la misma imagen de Docker de Shrinkerr en otra máquina con estas variables de entorno:",
+    "gpuComment": "Trabajador con GPU (NVIDIA + NVENC):",
+    "cpuComment": "Trabajador solo CPU (sin GPU, cualquier arquitectura):",
+    "footer": "El trabajador detectará automáticamente las capacidades de la GPU y aparecerá aquí en menos de 30 segundos. Los directorios de medios deben montarse en las mismas rutas (o configura PATH_MAPPINGS)."
+  },
+  "status": {
+    "online": "En línea",
+    "working": "Trabajando",
+    "offline": "Sin conexión",
+    "suspended": "Suspendido",
+    "paused": "En pausa"
+  },
+  "relative": {
+    "never": "nunca",
+    "justNow": "justo ahora",
+    "secondsAgo": "hace {{n}} s",
+    "minutesAgo": "hace {{n}} min",
+    "hoursAgo": "hace {{n}} h",
+    "daysAgo": "hace {{n}} d"
+  },
+  "card": {
+    "thisServer": "ESTE SERVIDOR",
+    "resumeNode": "Reanudar nodo",
+    "pauseNode": "Pausar nodo",
+    "nodeSettings": "Ajustes del nodo",
+    "cpuJobsOnly": "Solo trabajos de CPU",
+    "nvencJobsOnly": "Solo trabajos de NVENC",
+    "suspendedAfter_one": "Suspendido tras {{count}} fallo consecutivo",
+    "suspendedAfter_many": "Suspendido tras {{count}} fallos consecutivos",
+    "suspendedAfter_other": "Suspendido tras {{count}} fallos consecutivos",
+    "reset": "Restablecer",
+    "completed": "Completados:",
+    "saved": "Ahorrado:",
+    "parallel": "En paralelo:",
+    "host": "Host:",
+    "heartbeat": "Latido:",
+    "pathMappings_one": "Asignaciones de rutas ({{count}})",
+    "pathMappings_many": "Asignaciones de rutas ({{count}})",
+    "pathMappings_other": "Asignaciones de rutas ({{count}})",
+    "removeConfirm": "¿Eliminar el nodo \"{{name}}\"?",
+    "removeConfirmWorking": "¿Eliminar el nodo \"{{name}}\"? Su trabajo actual se devolverá a la cola.",
+    "removeNode": "Eliminar nodo"
+  },
+  "settings": {
+    "title": "Ajustes del nodo",
+    "saving": "Guardando...",
+    "saveFailed": "Error al guardar",
+    "pause": {
+      "title": "Pausa",
+      "hint": "Mientras esté en pausa, este nodo no aceptará trabajos nuevos. Los trabajos en curso continúan.",
+      "checkbox": "Pausar este nodo"
+    },
+    "parallel": {
+      "title": "Trabajos en paralelo",
+      "hint": "Número máximo de trabajos que este nodo procesa a la vez."
+    },
+    "affinity": {
+      "title": "Afinidad de trabajos",
+      "hint": "Controla qué trabajos acepta este nodo. Útil para dedicar el Mac a trabajos solo de CPU o para forzar los trabajos de NVENC al nodo con GPU.",
+      "any": "Cualquier trabajo (predeterminado)",
+      "cpuOnly": "Solo trabajos de CPU / libx265",
+      "nvencOnly": "Solo trabajos de NVENC / GPU"
+    },
+    "translation": {
+      "title": "Traducción de codificador",
+      "hint": "Si se activa, este nodo traducirá de forma transparente los trabajos entre NVENC y libx265 según sus propias capacidades.",
+      "both": "Traducir trabajos entre NVENC y libx265",
+      "toNvenc": "Traducir trabajos de libx265 a NVENC",
+      "toLibx265": "Traducir trabajos de NVENC a libx265",
+      "showTable": "Mostrar tabla comparativa NVENC ↔ libx265",
+      "hideTable": "Ocultar tabla comparativa NVENC ↔ libx265",
+      "nvencPreset": "Preset de NVENC",
+      "libx265Preset": "Preset de libx265"
+    },
+    "token": {
+      "title": "Token de autenticación",
+      "hint": "Los trabajadores remotos se autentican con un secreto compartido por nodo, además de la clave de API global. Al rotarlo se invalida el token actual; el trabajador obtiene uno nuevo en su siguiente latido.",
+      "active": "Token activo",
+      "issued": "emitido el {{date}}",
+      "none": "Aún no hay token: el siguiente latido generará uno.",
+      "rotate": "Rotar token",
+      "rotating": "Rotando...",
+      "rotateConfirm": "¿Rotar el token de autenticación de este nodo?\n\nEl servidor invalidará el token actual de inmediato. El trabajador descartará su copia en caché con el siguiente 401 y obtendrá automáticamente un token nuevo en su siguiente latido. Los trabajos en curso en este nodo fallarán y volverán a la cola.",
+      "rotated": "Token rotado. El trabajador obtendrá uno nuevo en su siguiente latido.",
+      "rotateFailed": "Error al rotar: {{error}}",
+      "unknownError": "error desconocido"
+    },
+    "paths": {
+      "title": "Asignaciones de rutas",
+      "hint": "Traduce las rutas entre lo que envía el servidor y lo que el trabajador ve en disco. La mayoría de las configuraciones no lo necesitan si los montajes -v del trabajador coinciden 1:1 con la estructura del servidor.",
+      "reported": "Informadas por el trabajador (desde la variable de entorno PATH_MAPPINGS):",
+      "override": "Sustituir las asignaciones de la variable de entorno del trabajador",
+      "add": "+ Añadir asignación",
+      "help": "Las rutas deben ser absolutas (empezar por <code>/</code>). La traducción se aplica cuando el servidor envía un trabajo a este nodo: el prefijo de <em>servidor</em> de cada asignación se reescribe con su prefijo de <em>trabajador</em> antes de que el trabajador vea la ruta."
+    },
+    "schedule": {
+      "title": "Horario",
+      "hint": "Limita cuándo acepta trabajos este nodo. Si está desactivado, el nodo funciona 24/7.",
+      "enable": "Activar horario",
+      "clickHours": "Haz clic en las horas en las que este nodo puede procesar trabajos:",
+      "activeHours_one": "Activo {{count}} hora al día",
+      "activeHours_many": "Activo {{count}} horas al día",
+      "activeHours_other": "Activo {{count}} horas al día",
+      "noHours": "No hay horas seleccionadas: el nodo nunca se ejecutará mientras el horario esté activado"
+    }
+  }
+}

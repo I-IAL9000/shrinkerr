@@ -1,0 +1,61 @@
+{
+  "title": "Monitor del sistema",
+  "loadFailed": "No se pudieron cargar las métricas del sistema",
+  "loading": "Cargando métricas...",
+  "autoRefresh": "Actualización automática cada 3 segundos",
+  "top": {
+    "encodingJobs": "Trabajos de codificación",
+    "plexStreams": "Transmisiones de Plex",
+    "encodingFps": "FPS de codificación"
+  },
+  "gpu": {
+    "utilization": "Uso",
+    "power": "Potencia",
+    "temperature": "Temperatura",
+    "encoder": "NVENC (codificador)",
+    "decoder": "NVDEC (decodificador)"
+  },
+  "capability": {
+    "title": "Capacidad de codificación",
+    "nvencNoStats": "NVENC está disponible: las conversiones usan la GPU. Las estadísticas de la GPU en vivo (uso / temperatura / VRAM) no están accesibles en este host porque <code>nvidia-smi</code> no puede leer el dispositivo. Causa más habitual: al NVIDIA Container Toolkit le falta la capacidad <code>utility</code>; establece <code>NVIDIA_DRIVER_CAPABILITIES=compute,video,utility</code> en el contenedor y reinícialo.",
+    "cpuOnly": "No se detectó ninguna GPU NVIDIA en este host: Shrinkerr usará codificación por CPU (libx265).",
+    "nvencOff": "NVENC desactivado",
+    "driver": "controlador {{version}}"
+  },
+  "cpu": {
+    "title_one": "CPU — {{count}} núcleo",
+    "title_many": "CPU — {{count}} núcleos",
+    "title_other": "CPU — {{count}} núcleos",
+    "swap": "Swap",
+    "loadAverage": "Carga media",
+    "frequency": "Frecuencia"
+  },
+  "disk": {
+    "title": "E/S de disco",
+    "read": "Lectura MB/s",
+    "write": "Escritura MB/s"
+  },
+  "plex": {
+    "title": "Transmisiones de Plex",
+    "total": "Transmisiones totales",
+    "transcoding": "Transcodificando",
+    "directPlay": "Reproducción directa",
+    "direct": "Directa"
+  },
+  "workload": {
+    "title": "Carga de trabajo de Shrinkerr",
+    "liveFps": "FPS en vivo",
+    "avgFps": "FPS medio",
+    "totalSaved": "Total ahorrado"
+  },
+  "nodes": {
+    "title": "Nodos de trabajo",
+    "reporting": "{{reporting}} de {{total}} informando",
+    "job": "trabajo n.º {{id}}",
+    "stale": "desactualizado ({{seconds}} s)",
+    "noMetrics": "aún sin métricas",
+    "temp": "Temp.",
+    "cores": "Núcleos",
+    "load": "Carga"
+  }
+}

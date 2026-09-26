@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.132] — 2026-09-26
+
+### Added
+- **The rest of the interface, server messages, and notifications are now translatable (Spanish included).** Every screen, activity/history entries, job errors, API errors and detection notes follow your UI language, and a new Settings → System → Notifications language setting controls outbound Discord/webhook/email text; history recorded before this version stays English.
+
 ## [0.9.131] — 2026-09-26
 
 ### Added

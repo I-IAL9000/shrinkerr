@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import type { FolderInfo } from "./FileTree";
 import type { ScannedFile } from "../types";
 import { resolvePosterMetadata, getFilesByTitle } from "../api";
@@ -137,6 +138,7 @@ export default function PosterGrid({
   mediaDirs,
   sortBy = "name", sortDir = "asc",
 }: PosterGridProps) {
+  const { t } = useTranslation(["library", "common"]);
   const mediaRoots = useMemo(
     () => new Set((mediaDirs || []).map(d => d.replace(/\/$/, ""))),
     [mediaDirs],
@@ -479,7 +481,7 @@ export default function PosterGrid({
                 )}
                 {meta?.media_type && (
                   <span style={{ background: "var(--bg-primary)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
-                    {meta.media_type === "tv" ? "TV" : "Movie"}
+                    {meta.media_type === "tv" ? t("library:badges.tv") : t("library:badges.movie")}
                   </span>
                 )}
                 {meta?.genres && <span>{meta.genres}</span>}
@@ -494,7 +496,7 @@ export default function PosterGrid({
             {loadingFiles ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 16 }}>
                 <div className="spinner" style={{ width: 16, height: 16 }} />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading files...</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("library:tree.loadingFiles")}</span>
               </div>
             ) : expandedFiles.length > 0 ? (
               <div style={{ padding: "4px 12px 8px" }}>
@@ -521,7 +523,7 @@ export default function PosterGrid({
                             <span className="tree-file-size" style={{ marginLeft: "auto", flexShrink: 0 }}>{file.file_size_gb} GB</span>
                             <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0 }}>{getCodecLabel(file.video_codec, file.needs_conversion)}</span>
                             {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
-                              <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0, gap: 4 }} title={file.disc_type === "dvd" ? "DVD-Video disc folder" : "Blu-ray disc folder"}>
+                              <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0, gap: 4 }} title={file.disc_type === "dvd" ? t("library:badges.dvdFolder") : t("library:badges.blurayFolder")}>
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <circle cx="12" cy="12" r="10"/>
                                   <circle cx="12" cy="12" r="3"/>
@@ -530,13 +532,13 @@ export default function PosterGrid({
                                 {file.disc_type === "dvd" ? "DVD" : "Blu-ray"}
                               </span>
                             )}
-                            {file.converted && <span style={{ color: "var(--success)", fontSize: 14, flexShrink: 0 }} title="Converted by Shrinkerr" aria-label="Converted by Shrinkerr">&#x2713;</span>}
-                            {file.is_new && <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, flexShrink: 0 }}>NEW</span>}
-                            {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }} title="Click to unignore" aria-label="Click to unignore">ignored ✕</button>}
+                            {file.converted && <span style={{ color: "var(--success)", fontSize: 14, flexShrink: 0 }} title={t("library:badges.convertedBy")} aria-label={t("library:badges.convertedBy")}>&#x2713;</span>}
+                            {file.is_new && <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, flexShrink: 0 }}>{t("library:badges.new")}</span>}
+                            {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }} title={t("library:badges.clickToUnignore")} aria-label={t("library:badges.clickToUnignore")}>{t("library:badges.ignored")} ✕</button>}
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0, marginLeft: 4 }}>
-                              {!file.ignored && onIgnoreFile && <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 14 }} title="Ignore this file" aria-label="Ignore this file">&#x2298;</button>}
-                              <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 16 }} title="Remove from list" aria-label="Remove from list">&times;</button>
-                              {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }} title="Move to trash" aria-label="Move to trash"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
+                              {!file.ignored && onIgnoreFile && <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 14 }} title={t("library:tree.ignoreFile")} aria-label={t("library:tree.ignoreFile")}>&#x2298;</button>}
+                              <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 16 }} title={t("library:tree.removeFromList")} aria-label={t("library:tree.removeFromList")}>&times;</button>
+                              {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }} title={t("common:actions.moveToTrash")} aria-label={t("common:actions.moveToTrash")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
                             </div>
                           </div>
                           {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={toggleAudioTrack} onToggleSubTrack={toggleSubTrack} />}
@@ -547,7 +549,7 @@ export default function PosterGrid({
                 })()}
               </div>
             ) : (
-              <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>No files found</div>
+              <div style={{ padding: 16, fontSize: 12, color: "var(--text-muted)" }}>{t("library:poster.noFilesFound")}</div>
             )}
           </div>
         </div>
@@ -561,9 +563,9 @@ export default function PosterGrid({
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
           {search || allowedPaths || (filter && filter !== "all") ? (
-            <div style={{ fontSize: 13 }}>No files match the current filter.</div>
+            <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (
-            <div style={{ fontSize: 13 }}>No files scanned yet. Run a scan to get started.</div>
+            <div style={{ fontSize: 13 }}>{t("library:tree.noFiles")}</div>
           )}
         </div>
       )}

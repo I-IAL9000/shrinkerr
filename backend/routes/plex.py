@@ -1,7 +1,8 @@
 """Plex auth endpoints — PIN-based OAuth ("Plex Connect")."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
@@ -42,7 +43,7 @@ async def auth_start():
     try:
         return await create_pin()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"plex.tv unreachable: {exc}")
+        raise ApiError(status_code=502, detail=f"plex.tv unreachable: {exc}", code="plex.unreachable", params={"error": str(exc)})
 
 
 @router.post("/auth/check")
@@ -71,7 +72,7 @@ async def auth_resources(req: ResourcesRequest):
     try:
         servers = await get_resources(req.token)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"plex.tv unreachable: {exc}")
+        raise ApiError(status_code=502, detail=f"plex.tv unreachable: {exc}", code="plex.unreachable", params={"error": str(exc)})
 
     # Probe each connection; tag with `reachable` so UI can preselect best.
     # Keep it bounded — first ~6 connections across all servers is plenty.
@@ -105,7 +106,7 @@ async def auth_save(req: SaveConnectionRequest):
     settings if the payload was incomplete).
     """
     if not req.token or not req.server_url:
-        raise HTTPException(status_code=400, detail="token and server_url required")
+        raise ApiError(status_code=400, detail="token and server_url required", code="plex.tokenAndServerRequired")
 
     db = await connect_db()
     try:

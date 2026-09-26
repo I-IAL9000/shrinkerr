@@ -1,0 +1,94 @@
+{
+  "groups": {
+    "video": "Video",
+    "size": "Size",
+    "audio": "Audio",
+    "subtitles": "Subtitles",
+    "filename": "Filename",
+    "state": "State",
+    "type": "Type",
+    "other": "Other"
+  },
+  "properties": {
+    "video_codec": {
+      "label": "Video codec"
+    },
+    "video_height": {
+      "label": "Video height (px)"
+    },
+    "duration_min": {
+      "label": "Duration (min)"
+    },
+    "needs_conversion": {
+      "label": "Needs conversion"
+    },
+    "vmaf_score": {
+      "label": "VMAF score"
+    },
+    "file_size_mb": {
+      "label": "File size (MB)"
+    },
+    "file_size_gb": {
+      "label": "File size (GB)"
+    },
+    "bitrate_mbps": {
+      "label": "Bitrate (Mbps)"
+    },
+    "audio_codec": {
+      "label": "Audio codec (any track)"
+    },
+    "audio_lang": {
+      "label": "Audio language (any track)"
+    },
+    "audio_channels": {
+      "label": "Audio channels (max)"
+    },
+    "audio_track_count": {
+      "label": "Audio track count"
+    },
+    "has_lossless_audio": {
+      "label": "Has lossless audio"
+    },
+    "has_removable_tracks": {
+      "label": "Has removable audio tracks"
+    },
+    "subtitle_lang": {
+      "label": "Subtitle language (any)"
+    },
+    "subtitle_count": {
+      "label": "Subtitle track count"
+    },
+    "has_removable_subs": {
+      "label": "Has removable subs"
+    },
+    "source": {
+      "label": "Source",
+      "options": {
+        "unknown": "unknown"
+      }
+    },
+    "hdr": {
+      "label": "HDR / Dolby Vision"
+    },
+    "file_path": {
+      "label": "File path"
+    },
+    "file_name": {
+      "label": "Filename"
+    },
+    "health_status": {
+      "label": "Health status"
+    },
+    "duplicate_count": {
+      "label": "Duplicate count"
+    },
+    "media_type": {
+      "label": "Type",
+      "options": {
+        "movie": "Movie",
+        "tv": "TV Show",
+        "other": "Other"
+      }
+    }
+  }
+}

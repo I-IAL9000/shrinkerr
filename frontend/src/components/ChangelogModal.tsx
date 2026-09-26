@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { getChangelog, getUpstreamChangelog, getVersion, type ChangelogEntry } from "../api";
 import ChangelogEntryView from "./ChangelogEntry";
 
@@ -24,6 +25,7 @@ export default function ChangelogModal({
   /** When true, show upstream entries newer than current. When false, show the whole local file. */
   showLatestOnly?: boolean;
 }) {
+  const { t } = useTranslation(["dialogs", "common"]);
   const [entries, setEntries] = useState<ChangelogEntry[] | null>(null);
   const [current, setCurrent] = useState<string>("");
   // Latest version reported by the backend at the time the modal opened.
@@ -118,17 +120,22 @@ export default function ChangelogModal({
         }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>
-              {showLatestOnly && headerLatest ? "Update available" : "Release notes"}
+              {showLatestOnly && headerLatest ? t("dialogs:changelog.updateAvailable") : t("dialogs:changelog.releaseNotes")}
             </div>
             {showLatestOnly && headerLatest && current && (
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                You're on <strong>v{current}</strong> · latest is <strong style={{ color: "var(--accent)" }}>v{headerLatest}</strong>
+                <Trans
+                  t={t}
+                  i18nKey="dialogs:changelog.versionLine"
+                  values={{ current, latest: headerLatest }}
+                  components={{ b: <strong />, accent: <strong style={{ color: "var(--accent)" }} /> }}
+                />
               </div>
             )}
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("common:actions.close")}
             style={{
               background: "none", border: "none", cursor: "pointer",
               color: "var(--text-muted)", fontSize: 22, padding: 4, lineHeight: 1,
@@ -140,18 +147,18 @@ export default function ChangelogModal({
         <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
           {error && (
             <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 24, textAlign: "center" }}>
-              Couldn't load the changelog. The <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>GitHub releases page</a> has the full history.
+              <Trans t={t} i18nKey="dialogs:changelog.loadError" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
             </div>
           )}
           {!error && entries === null && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: 40 }}>
               <div className="spinner" style={{ width: 18, height: 18 }} />
-              <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading release notes…</span>
+              <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dialogs:changelog.loading")}</span>
             </div>
           )}
           {!error && entries && entries.length === 0 && (
             <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 24, textAlign: "center" }}>
-              No changelog entries found. Check the <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>GitHub releases page</a>.
+              <Trans t={t} i18nKey="dialogs:changelog.empty" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
             </div>
           )}
           {/* Visible notice when we couldn't reach GitHub and fell back to
@@ -167,8 +174,7 @@ export default function ChangelogModal({
               background: "rgba(255,169,77,0.06)",
               border: "1px solid rgba(255,169,77,0.25)",
             }}>
-              Couldn't reach GitHub to fetch the new release notes — showing your installed
-              CHANGELOG.md instead. The <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>releases page</a> has the latest entries.
+              <Trans t={t} i18nKey="dialogs:changelog.localFallback" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
             </div>
           )}
           {/* The LATEST badge lights up on the entry whose version equals
@@ -195,10 +201,10 @@ export default function ChangelogModal({
             rel="noopener noreferrer"
             style={{ fontSize: 12, color: "var(--text-muted)", textDecoration: "none" }}
           >
-            View on GitHub ↗
+            {t("dialogs:changelog.viewOnGithub")}
           </a>
           <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={onClose}>
-            Close
+            {t("common:actions.close")}
           </button>
         </div>
       </div>

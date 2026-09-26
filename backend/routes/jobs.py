@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
@@ -56,7 +57,7 @@ async def add_job(
     audio_tracks_to_remove: Optional[list[int]] = None,
 ):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     job_id = await _queue.add_job(
         file_path=file_path,
         job_type=job_type,
@@ -69,7 +70,7 @@ async def add_job(
 @router.post("/add-bulk")
 async def add_bulk_jobs(payload: BulkJobCreate):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     job_ids = []
     for job_data in payload.jobs:
         job_id = await _queue.add_job(
@@ -159,7 +160,7 @@ def _classify_job_type(
 async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     """Create jobs from scan results — resolves track data from DB automatically."""
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     file_paths = list(payload.file_paths)
 
@@ -510,7 +511,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 @router.get("/")
 async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 0, search: str = ""):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     if status:
         return await _queue.get_jobs_by_status(status, limit=limit, offset=offset, search=search)
     return await _queue.get_all_jobs(limit=limit, offset=offset)
@@ -519,7 +520,7 @@ async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 
 @router.get("/stats")
 async def get_stats():
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     stats = await _queue.get_stats()
     # Surface the stream-aware pause state so the Queue page can render a
     # "Paused — <Server> streaming" banner instead of leaving the user to
@@ -547,7 +548,7 @@ async def get_stats():
 @router.post("/start")
 async def start_worker():
     if _worker is None:
-        raise HTTPException(status_code=503, detail="Worker not initialized")
+        raise ApiError(status_code=503, detail="Worker not initialized", code="queue.workerNotInitialized")
     try:
         print(f"[API] Starting worker, running={_worker._running}, paused={_worker._paused}", flush=True)
         _worker.start()
@@ -563,7 +564,7 @@ async def start_worker():
 @router.post("/pause")
 async def pause_worker():
     if _worker is None:
-        raise HTTPException(status_code=503, detail="Worker not initialized")
+        raise ApiError(status_code=503, detail="Worker not initialized", code="queue.workerNotInitialized")
     _worker.pause()
     return {"status": "paused"}
 
@@ -571,7 +572,7 @@ async def pause_worker():
 @router.post("/resume")
 async def resume_worker():
     if _worker is None:
-        raise HTTPException(status_code=503, detail="Worker not initialized")
+        raise ApiError(status_code=503, detail="Worker not initialized", code="queue.workerNotInitialized")
     _worker.resume()
     return {"status": "resumed"}
 
@@ -579,7 +580,7 @@ async def resume_worker():
 @router.post("/cancel-current")
 async def cancel_current_job(job_id: Optional[int] = None):
     if _worker is None:
-        raise HTTPException(status_code=503, detail="Worker not initialized")
+        raise ApiError(status_code=503, detail="Worker not initialized", code="queue.workerNotInitialized")
     cancelled_id = await _worker.cancel_current(job_id)
     if cancelled_id is None:
         return {"status": "no_job_running"}
@@ -589,7 +590,7 @@ async def cancel_current_job(job_id: Optional[int] = None):
 @router.post("/reorder")
 async def reorder_jobs(payload: ReorderRequest):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     await _queue.reorder_jobs(payload.job_ids)
     return {"status": "reordered"}
 
@@ -597,7 +598,7 @@ async def reorder_jobs(payload: ReorderRequest):
 @router.post("/bulk-update-settings")
 async def bulk_update_settings(payload: BulkUpdateSettingsRequest):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     # Build SET clause dynamically from provided fields
     updates = []
     params = []
@@ -650,9 +651,9 @@ async def bulk_update_settings(payload: BulkUpdateSettingsRequest):
 @router.post("/bulk-move")
 async def bulk_move(payload: BulkMoveRequest):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     if payload.position not in ("top", "bottom", "up", "down"):
-        raise HTTPException(status_code=400, detail="position must be top, bottom, up, or down")
+        raise ApiError(status_code=400, detail="position must be top, bottom, up, or down", code="jobs.invalidPosition")
     db = await connect_db()
     try:
         # Get all pending jobs ordered by queue_order
@@ -701,7 +702,7 @@ async def bulk_move(payload: BulkMoveRequest):
 @router.post("/bulk-ignore")
 async def bulk_ignore(payload: BulkIgnoreRequest):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     db = await connect_db()
     try:
         ignored = 0
@@ -740,11 +741,11 @@ class HealthCheckRequest(BaseModel):
 async def queue_health_checks(payload: HealthCheckRequest):
     """Queue health_check jobs for the given files (or current filter when select_all=True)."""
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     mode = payload.mode.lower()
     if mode not in ("quick", "thorough"):
-        raise HTTPException(status_code=400, detail="mode must be 'quick' or 'thorough'")
+        raise ApiError(status_code=400, detail="mode must be 'quick' or 'thorough'", code="jobs.invalidHealthCheckMode")
 
     file_paths = list(payload.file_paths)
 
@@ -874,7 +875,7 @@ async def reset_health_status(payload: ResetHealthRequest):
     normal scan views. Set unignore=False to leave ignored_files alone.
     """
     if not payload.reset_all_corrupt and not payload.file_paths:
-        raise HTTPException(status_code=400, detail="Provide file_paths or set reset_all_corrupt=true")
+        raise ApiError(status_code=400, detail="Provide file_paths or set reset_all_corrupt=true", code="jobs.noFilesOrResetAll")
 
     db = await connect_db()
     try:
@@ -948,7 +949,7 @@ async def clear_pending_health_checks():
 async def add_jobs_by_path(payload: AddByPathRequest):
     """Queue files by path — probes files directly without requiring scan_results."""
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
     from backend.rule_resolver import resolve_rules_for_batch
@@ -972,9 +973,10 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     # Containment check — stops callers from queuing `/etc/hostname` etc.
     allowed_dirs = await load_media_dirs()
     if not allowed_dirs:
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail="No media directories configured",
+            code="media.noMediaDirs",
         )
     safe_file_paths: list[str] = []
     early_errors: list[str] = []
@@ -1107,7 +1109,7 @@ async def start_test_encode(payload: TestEncodeRequest):
                 if row:
                     test_file = row["file_path"]
                 else:
-                    raise HTTPException(status_code=400, detail="No files found in folder")
+                    raise ApiError(status_code=400, detail="No files found in folder", code="jobs.noFilesInFolder")
         finally:
             await db_t.close()
 
@@ -1133,7 +1135,7 @@ async def get_test_encode(task_id: str):
     from backend.test_encode import get_task
     task = get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise ApiError(status_code=404, detail="Task not found", code="jobs.taskNotFound")
     return task
 
 
@@ -1195,7 +1197,7 @@ async def start_vmaf_remeasure():
     over the websocket as `{type: "vmaf_remeasure_progress", ...}`.
     """
     if _remeasure_task["running"]:
-        raise HTTPException(409, "A VMAF re-measure pass is already running.")
+        raise ApiError(409, "A VMAF re-measure pass is already running.", code="jobs.vmafRemeasureRunning")
 
     from backend.database import connect_db
     db = await connect_db()
@@ -1306,7 +1308,7 @@ async def start_vmaf_remeasure():
 @router.delete("/{job_id}")
 async def remove_job(job_id: int):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     await _queue.remove_job(job_id)
     return {"status": "removed", "job_id": job_id}
 
@@ -1314,7 +1316,7 @@ async def remove_job(job_id: int):
 @router.post("/{job_id}/cancel")
 async def cancel_job(job_id: int):
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     await _queue.update_status(job_id, "cancelled")
     return {"status": "cancelled", "job_id": job_id}
 
@@ -1334,7 +1336,7 @@ async def retry_job(job_id: int):
     from backend.converter import rename_x264_to_x265
 
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     # Fetch job to check its file_path
     db = await connect_db()
@@ -1388,7 +1390,8 @@ async def retry_job(job_id: int):
                         # Mark the failed job as completed (conversion happened)
                         await db2.execute(
                             "UPDATE jobs SET status = 'completed', completed_at = ?, "
-                            "file_path = ?, error_log = NULL WHERE id = ?",
+                            "file_path = ?, error_log = NULL, error_key = NULL, "
+                            "error_params = NULL WHERE id = ?",
                             (now, candidate, job_id),
                         )
                         # Update scan_results to point to the new file
@@ -1463,7 +1466,7 @@ async def retry_job(job_id: int):
                 if sr and sr["needs_conversion"]:
                     await db_check.execute(
                         "UPDATE jobs SET job_type = 'combined', status = 'pending', "
-                        "error_log = NULL WHERE id = ?",
+                        "error_log = NULL, error_key = NULL, error_params = NULL WHERE id = ?",
                         (job_id,),
                     )
                     await db_check.commit()
@@ -1488,7 +1491,7 @@ async def retry_job(job_id: int):
 @router.post("/clear-completed")
 async def clear_completed():
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     await _queue.clear_completed()
     return {"status": "cleared"}
 
@@ -1496,7 +1499,7 @@ async def clear_completed():
 @router.post("/clear-pending")
 async def clear_pending():
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
     await _queue.clear_pending()
     return {"status": "cleared"}
 
@@ -1546,13 +1549,13 @@ async def undo_conversion(job_id: int):
         ) as cur:
             job = await cur.fetchone()
         if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+            raise ApiError(status_code=404, detail="Job not found", code="jobs.notFound")
         if job["status"] not in ("completed", "reverted"):
-            raise HTTPException(status_code=400, detail=f"Cannot undo job with status '{job['status']}'")
+            raise ApiError(status_code=400, detail=f"Cannot undo job with status '{job['status']}'", code="jobs.cannotUndoStatus", params={"status": job["status"]})
 
         backup_path = job["backup_path"]
         if not backup_path or not os.path.exists(backup_path):
-            raise HTTPException(status_code=400, detail="Backup file not found on disk")
+            raise ApiError(status_code=400, detail="Backup file not found on disk", code="jobs.backupNotFound")
 
         converted_path = job["file_path"]
         original_path = job["original_file_path"] or job["file_path"]
@@ -1584,7 +1587,8 @@ async def undo_conversion(job_id: int):
 
         try:
             from backend.file_events import log_event, EVENT_REVERTED
-            await log_event(original_path, EVENT_REVERTED, "Restored original from backup", {"job_id": job_id, "converted_path": converted_path})
+            await log_event(original_path, EVENT_REVERTED, "Restored original from backup", {"job_id": job_id, "converted_path": converted_path},
+                            summary_key="restoredFromBackup")
         except Exception:
             pass
 
@@ -1606,14 +1610,19 @@ async def get_job_log(job_id: int):
             """SELECT ffmpeg_command, ffmpeg_log, error_log, encoding_stats, vmaf_score,
                       space_saved, original_size, started_at, completed_at,
                       encoder, nvenc_preset, nvenc_cq, audio_codec, audio_bitrate,
-                      libx265_crf, target_resolution, status
+                      libx265_crf, target_resolution, status, error_key, error_params
                FROM jobs WHERE id = ?""",
             (job_id,),
         ) as cur:
             row = await cur.fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Job not found")
+            raise ApiError(status_code=404, detail="Job not found", code="jobs.notFound")
         result = dict(row)
+        if result.get("error_params"):
+            try:
+                result["error_params"] = json.loads(result["error_params"])
+            except (json.JSONDecodeError, ValueError):
+                result["error_params"] = None
         # Parse encoding_stats JSON
         if result.get("encoding_stats"):
             try:

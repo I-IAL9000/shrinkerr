@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.arr import (
@@ -19,36 +20,57 @@ from backend.file_events import log_event, EVENT_ARR_ACTION
 router = APIRouter(prefix="/api/arr")
 
 
-def _summary_for_action(action: str, result: dict) -> str:
-    """Build a one-line human-readable summary from a per-file result dict."""
+def _summary_for_action(action: str, result: dict) -> tuple[str, str | None, dict | None]:
+    """Build a one-line human-readable summary from a per-file result dict.
+
+    Returns (english_summary, summary_key, summary_params) — the key/params
+    let the UI translate it (serverEvents:<key>)."""
     service = result.get("service") or "?"
     if action == "replace":
         title = result.get("series") or result.get("movie") or ""
         bits = []
+        ids = []
         if result.get("blocklisted"):
             bits.append("blocklisted")
+            ids.append("blocklisted")
         if result.get("deleted"):
             bits.append("deleted file")
+            ids.append("deleted")
         if result.get("searched"):
             bits.append("search triggered")
+            ids.append("searched")
         tail = f" — {', '.join(bits)}" if bits else ""
-        return f"Replace ({service}): {title}{tail}" if title else f"Replace ({service}){tail}"
+        params = {"service": service, "title": title, "actions": "_".join(ids)}
+        if title:
+            summary_key = "arrReplaceWithActions" if bits else "arrReplace"
+            return f"Replace ({service}): {title}{tail}", summary_key, params
+        summary_key = "arrReplaceNoTitleWithActions" if bits else "arrReplaceNoTitle"
+        return f"Replace ({service}){tail}", summary_key, params
     if action == "upgrade":
         if service == "sonarr":
             ep_ids = result.get("episode_ids") or []
-            return f"Upgrade search (sonarr): {result.get('series', '?')} — {len(ep_ids)} episode(s)"
-        return f"Upgrade search (radarr): {result.get('movie', '?')}"
+            summary_key = "arrUpgradeSonarr"
+            return (f"Upgrade search (sonarr): {result.get('series', '?')} — {len(ep_ids)} episode(s)",
+                    summary_key, {"series": result.get('series', '?'), "count": len(ep_ids)})
+        summary_key = "arrUpgradeRadarr"
+        return (f"Upgrade search (radarr): {result.get('movie', '?')}",
+                summary_key, {"movie": result.get('movie', '?')})
     if action == "missing":
-        return "Missing-episode search"
-    return f"*arr action: {action}"
+        summary_key = "arrMissingSearch"
+        return "Missing-episode search", summary_key, None
+    summary_key = "arrAction"
+    return f"*arr action: {action}", summary_key, {"action": action}
 
 
 async def _log_arr_event(action: str, file_path: str, result: dict) -> None:
     """Write a file_events row for an *arr action. Swallows all errors."""
     success = bool(result.get("success"))
-    summary = _summary_for_action(action, result)
+    summary, summary_key, summary_params = _summary_for_action(action, result)
     if not success:
         summary = f"Failed {action}: {result.get('error', 'unknown error')}"
+        # `action` is the closed Action literal (nested label in the catalog).
+        summary_key = "arrFailed" if action in ("replace", "upgrade", "missing") else None
+        summary_params = {"action": action, "error": result.get('error', 'unknown error')}
     details = {
         "action": action,
         "success": success,
@@ -57,7 +79,8 @@ async def _log_arr_event(action: str, file_path: str, result: dict) -> None:
         **{k: v for k, v in result.items() if k not in ("results", "details")},
     }
     try:
-        await log_event(file_path, EVENT_ARR_ACTION, summary, details)
+        await log_event(file_path, EVENT_ARR_ACTION, summary, details,
+                        summary_key=summary_key, summary_params=summary_params)
         tag = action.upper()
         print(f"[ARR-ACTION] {tag} {'OK' if success else 'FAIL'} → {file_path} · {summary}", flush=True)
     except Exception:
@@ -133,7 +156,7 @@ async def action_single(payload: ActionRequest):
         (Sonarr only; movies have no per-file missing concept).
     """
     if not payload.file_path:
-        raise HTTPException(status_code=400, detail="file_path required")
+        raise ApiError(status_code=400, detail="file_path required", code="common.filePathRequired")
     result = await dispatch_action(payload.action, payload.file_path, delete_file=payload.delete_file)
     await _log_arr_event(payload.action, payload.file_path, result)
     return result
@@ -150,7 +173,7 @@ async def action_bulk(payload: BulkActionRequest):
     fires exactly one per-series missing search.
     """
     if not payload.file_paths:
-        raise HTTPException(status_code=400, detail="file_paths required")
+        raise ApiError(status_code=400, detail="file_paths required", code="common.filePathsRequired")
 
     # "missing" is inherently bulk + series-level — search_missing_episodes
     # handles folder paths directly (walks up to find the containing series)
@@ -192,7 +215,10 @@ async def action_bulk(payload: BulkActionRequest):
                     "series_title": title,
                     "missing_count": d.get("missing_count"),
                     "note": d.get("note"),
-                })
+                },
+                    summary_key="arrMissingSeriesSearched" if d.get("searched") else "arrMissingSeries",
+                    summary_params={"title": title, "count": d.get('missing_count', 0)},
+                )
             print(
                 f"[ARR-ACTION] MISSING {'OK' if result.get('success') else 'FAIL'} — "
                 f"{result.get('series_searched', 0)}/{result.get('series_resolved', 0)} series, "
@@ -271,7 +297,7 @@ class BulkResearchRequest(BaseModel):
 async def research_single(payload: ResearchRequest):
     """Alias for /action with action=replace."""
     if not payload.file_path:
-        raise HTTPException(status_code=400, detail="file_path required")
+        raise ApiError(status_code=400, detail="file_path required", code="common.filePathRequired")
     result = await research_file(payload.file_path, delete_file=payload.delete_file)
     await _log_arr_event("replace", payload.file_path, result)
     return result
@@ -281,7 +307,7 @@ async def research_single(payload: ResearchRequest):
 async def research_bulk(payload: BulkResearchRequest):
     """Alias for /action/bulk with action=replace. Also expands folder paths."""
     if not payload.file_paths:
-        raise HTTPException(status_code=400, detail="file_paths required")
+        raise ApiError(status_code=400, detail="file_paths required", code="common.filePathsRequired")
 
     file_paths = await _expand_folder_paths(payload.file_paths)
 

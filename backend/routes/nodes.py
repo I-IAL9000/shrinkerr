@@ -10,10 +10,12 @@ import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
-from backend.websocket import ws_manager
+from backend.websocket import ws_manager, step_code
+from backend.nodes import nvenc_reason_code
 
 
 router = APIRouter(prefix="/api/nodes")
@@ -37,7 +39,7 @@ def _get_nm(request: Request):
     """Get NodeManager from app state."""
     nm = getattr(request.app.state, "node_manager", None)
     if nm is None:
-        raise HTTPException(503, "Node manager not initialized")
+        raise ApiError(503, "Node manager not initialized", code="nodes.managerNotInitialized")
     return nm
 
 
@@ -187,6 +189,9 @@ class CompletionReport(BaseModel):
     backup_path: str | None = None
     ffmpeg_command: str | None = None
     encoding_stats: dict | None = None
+    # i18n code for a Shrinkerr-authored `error` headline (older workers omit it)
+    error_key: str | None = None
+    error_params: dict | None = None
 
 
 class MetricsReport(BaseModel):
@@ -531,6 +536,7 @@ async def report_progress(req: ProgressReport, request: Request):
         "fps": req.fps,
         "eta": req.eta_seconds,
         "step": req.step,
+        **step_code(req.step),
         "jobs_completed": srow["completed"] if srow else 0,
         "jobs_total": 0,
         "total_saved": srow["saved"] if srow else 0,
@@ -577,7 +583,8 @@ async def report_complete(req: CompletionReport, request: Request):
             now = datetime.now(timezone.utc).isoformat()
             await db.execute(
                 "UPDATE jobs SET status = 'completed', completed_at = ?, "
-                "space_saved = ?, error_log = NULL WHERE id = ?",
+                "space_saved = ?, error_log = NULL, error_key = NULL, error_params = NULL "
+                "WHERE id = ?",
                 (now, req.space_saved, req.job_id),
             )
             # Store encoding stats if provided
@@ -612,6 +619,7 @@ async def report_complete(req: CompletionReport, request: Request):
                 await db.execute(
                     "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                     "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                    "error_key = NULL, error_params = NULL, "
                     "assigned_node_id = NULL, assigned_at = NULL, cancel_requested = 0 "
                     "WHERE id = ?",
                     (req.job_id,),
@@ -620,8 +628,10 @@ async def report_complete(req: CompletionReport, request: Request):
             else:
                 await db.execute(
                     "UPDATE jobs SET status = 'failed', completed_at = ?, error_log = ?, "
+                    "error_key = ?, error_params = ?, "
                     "assigned_node_id = NULL, assigned_at = NULL WHERE id = ?",
-                    (now, req.error, req.job_id),
+                    (now, req.error, req.error_key,
+                     json.dumps(req.error_params) if req.error_params else None, req.job_id),
                 )
         await db.commit()
 
@@ -646,6 +656,8 @@ async def report_complete(req: CompletionReport, request: Request):
         "status": "completed" if req.success else "failed",
         "space_saved": req.space_saved if req.success else 0,
         "error": req.error,
+        **({"error_key": req.error_key, "error_params": req.error_params}
+           if req.error_key and not req.success else {}),
     })
 
     # Log to file_events
@@ -655,18 +667,24 @@ async def report_complete(req: CompletionReport, request: Request):
             gb = req.space_saved / (1024 ** 3)
             original_size = job["original_size"] if job else 0
             pct = (req.space_saved / original_size * 100) if original_size else 0
+            node_label = (await nm.get_node(req.node_id) or {}).get('name', req.node_id)
             await log_event(
                 job["file_path"] if job else "",
                 EVENT_COMPLETED,
-                f"Converted on {(await nm.get_node(req.node_id) or {}).get('name', req.node_id)}: saved {gb:.2f} GB ({pct:.0f}%)",
+                f"Converted on {node_label}: saved {gb:.2f} GB ({pct:.0f}%)",
                 {"job_id": req.job_id, "node_id": req.node_id, "space_saved": req.space_saved},
+                summary_key="convertedOnNodeSaved",
+                summary_params={"node": node_label, "gb": f"{gb:.2f}", "pct": f"{pct:.0f}"},
             )
         elif not req.success:
+            node_label = (await nm.get_node(req.node_id) or {}).get('name', req.node_id)
             await log_event(
                 job["file_path"] if job else "",
                 EVENT_FAILED,
-                f"Failed on {(await nm.get_node(req.node_id) or {}).get('name', req.node_id)}: {(req.error or '')[:120]}",
+                f"Failed on {node_label}: {(req.error or '')[:120]}",
                 {"job_id": req.job_id, "node_id": req.node_id},
+                summary_key="failedOnNode",
+                summary_params={"node": node_label, "error": (req.error or '')[:120]},
             )
     except Exception:
         pass
@@ -727,6 +745,7 @@ async def get_all_node_metrics(request: Request):
             "gpu_name": node.get("gpu_name"),
             "driver_version": node.get("driver_version"),
             "nvenc_unavailable_reason": node.get("nvenc_unavailable_reason"),
+            **nvenc_reason_code(node.get("nvenc_unavailable_reason")),
             "os_info": node.get("os_info"),
             "current_job_id": node.get("current_job_id"),
             "capabilities": node.get("capabilities", []),
@@ -754,7 +773,7 @@ async def remove_node(node_id: str, request: Request):
     nm = _get_nm(request)
     ok = await nm.remove_node(node_id)
     if not ok:
-        raise HTTPException(400, "Cannot remove node (local node cannot be removed)")
+        raise ApiError(400, "Cannot remove node (local node cannot be removed)", code="nodes.cannotRemoveLocal")
     return {"status": "removed"}
 
 
@@ -764,10 +783,10 @@ async def cancel_node_job(node_id: str, request: Request):
     nm = _get_nm(request)
     node = await nm.get_node(node_id)
     if not node:
-        raise HTTPException(404, "Node not found")
+        raise ApiError(404, "Node not found", code="nodes.notFound")
     job_id = node.get("current_job_id")
     if not job_id:
-        raise HTTPException(400, "No job running on this node")
+        raise ApiError(400, "No job running on this node", code="nodes.noJobRunning")
 
     # Set cancel flag (checked by report-progress)
     nm.request_cancel(job_id)
@@ -811,7 +830,7 @@ async def update_node_settings(node_id: str, body: NodeSettingsBody, request: Re
     nm = _get_nm(request)
     node = await nm.get_node(node_id)
     if not node:
-        raise HTTPException(404, "Node not found")
+        raise ApiError(404, "Node not found", code="nodes.notFound")
 
     updates = []
     params = []
@@ -823,7 +842,7 @@ async def update_node_settings(node_id: str, body: NodeSettingsBody, request: Re
         params.append(max(1, min(32, body.max_jobs)))
     if body.job_affinity is not None:
         if body.job_affinity not in ("any", "cpu_only", "nvenc_only"):
-            raise HTTPException(400, "job_affinity must be 'any', 'cpu_only', or 'nvenc_only'")
+            raise ApiError(400, "job_affinity must be 'any', 'cpu_only', or 'nvenc_only'", code="nodes.invalidJobAffinity")
         updates.append("job_affinity = ?")
         params.append(body.job_affinity)
     if body.translate_encoder is not None:
@@ -855,9 +874,11 @@ async def update_node_settings(node_id: str, body: NodeSettingsBody, request: Re
                 if not s or not w:
                     continue
                 if not s.startswith("/") or not w.startswith("/"):
-                    raise HTTPException(
+                    raise ApiError(
                         400,
                         f"Path mapping must use absolute paths on both sides; got server='{s}', worker='{w}'.",
+                        code="nodes.pathMappingNotAbsolute",
+                        params={"server": s, "worker": w},
                     )
                 rows.append({"server": s, "worker": w})
             updates.append("path_mappings_override = ?")
@@ -928,7 +949,7 @@ async def reset_node(node_id: str, request: Request):
     nm = _get_nm(request)
     ok = await nm.reset_node(node_id)
     if not ok:
-        raise HTTPException(400, "Node is not in error state")
+        raise ApiError(400, "Node is not in error state", code="nodes.notInErrorState")
 
     node = await nm.get_node(node_id)
     if node:
@@ -958,11 +979,12 @@ async def rotate_node_token(node_id: str, request: Request):
     nm = _get_nm(request)
     node = await nm.get_node(node_id)
     if not node:
-        raise HTTPException(404, "Node not found")
+        raise ApiError(404, "Node not found", code="nodes.notFound")
     if node_id == "local":
-        raise HTTPException(
+        raise ApiError(
             400,
             "The local node runs in-process and does not use an auth token.",
+            code="nodes.localNoToken",
         )
 
     await nm.clear_token(node_id)

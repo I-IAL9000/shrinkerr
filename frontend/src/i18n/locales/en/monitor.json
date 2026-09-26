@@ -1,0 +1,60 @@
+{
+  "title": "System Monitor",
+  "loadFailed": "Failed to load system metrics",
+  "loading": "Loading metrics...",
+  "autoRefresh": "Auto-refreshing every 3 seconds",
+  "top": {
+    "encodingJobs": "Encoding Jobs",
+    "plexStreams": "Plex Streams",
+    "encodingFps": "Encoding FPS"
+  },
+  "gpu": {
+    "utilization": "Utilization",
+    "power": "Power",
+    "temperature": "Temperature",
+    "encoder": "NVENC (Encoder)",
+    "decoder": "NVDEC (Decoder)"
+  },
+  "capability": {
+    "title": "Encoding Capability",
+    "nvencNoStats": "NVENC is available — conversions use the GPU. Live GPU stats (utilization / temp / VRAM) aren't reachable on this host because <code>nvidia-smi</code> can't read the device. Most common cause: the NVIDIA Container Toolkit is missing the <code>utility</code> capability — set <code>NVIDIA_DRIVER_CAPABILITIES=compute,video,utility</code> on the container and restart.",
+    "cpuOnly": "No NVIDIA GPU detected on this host — Shrinkerr will use CPU encoding (libx265).",
+    "nvencOff": "NVENC off",
+    "driver": "driver {{version}}"
+  },
+  "cpu": {
+    "title_one": "CPU — {{count}} core",
+    "title_other": "CPU — {{count}} cores",
+    "swap": "Swap",
+    "loadAverage": "Load Average",
+    "frequency": "Frequency"
+  },
+  "disk": {
+    "title": "Disk I/O",
+    "read": "Read MB/s",
+    "write": "Write MB/s"
+  },
+  "plex": {
+    "title": "Plex Streams",
+    "total": "Total Streams",
+    "transcoding": "Transcoding",
+    "directPlay": "Direct Play",
+    "direct": "Direct"
+  },
+  "workload": {
+    "title": "Shrinkerr Workload",
+    "liveFps": "Live FPS",
+    "avgFps": "Avg FPS",
+    "totalSaved": "Total Saved"
+  },
+  "nodes": {
+    "title": "Worker Nodes",
+    "reporting": "{{reporting}} of {{total}} reporting",
+    "job": "job #{{id}}",
+    "stale": "{{seconds}}s stale",
+    "noMetrics": "no metrics yet",
+    "temp": "Temp",
+    "cores": "Cores",
+    "load": "Load"
+  }
+}

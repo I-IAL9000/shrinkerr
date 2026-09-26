@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { ScannedFile } from "../types";
 import { getScanFiles, getScanFilesByPaths } from "../api";
 import { getCodecLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
+import { serverText } from "../i18n/server";
 
 export type SortBy = "name" | "size" | "files" | "date";
 export type SortDirection = "asc" | "desc";
@@ -268,6 +270,7 @@ function parseMediaId(folderName: string): { type: "imdb"; id: string } | { type
 }
 
 function MediaIdLink({ folderName }: { folderName: string }) {
+  const { t } = useTranslation(["library", "common"]);
   const mediaId = parseMediaId(folderName);
   if (!mediaId) return null;
 
@@ -278,7 +281,7 @@ function MediaIdLink({ folderName }: { folderName: string }) {
         target="_blank"
         rel="noopener noreferrer"
         onClick={(e) => e.stopPropagation()}
-        title={`Open ${mediaId.id} on IMDb`}
+        title={t("library:tree.openOnImdb", { id: mediaId.id })}
         style={{ display: "inline-flex", alignItems: "center", marginLeft: 6, opacity: 0.7, transition: "opacity 0.15s" }}
         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
         onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
@@ -294,7 +297,7 @@ function MediaIdLink({ folderName }: { folderName: string }) {
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      title={`Open on TheTVDB`}
+      title={t("library:tree.openOnTvdb")}
       style={{ display: "inline-flex", alignItems: "center", marginLeft: 6, opacity: 0.7, transition: "opacity 0.15s" }}
       onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
       onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.7")}
@@ -363,6 +366,7 @@ const FolderRow = memo(function FolderRow({
   onIgnoreFolder?: (path: string) => void;
   onRescanFolder?: (path: string) => void;
 }) {
+  const { t } = useTranslation(["library", "common"]);
   const confirm = useConfirm();
   const hasMediaId = /\[(?:tvdb-\d+|tt\d+)\]/.test(node.name);
   const isFlat = node.name.includes("  >  ");
@@ -385,7 +389,7 @@ const FolderRow = memo(function FolderRow({
       </span>
       <MediaIdLink folderName={node.name} />
       <span className="tree-file-size">
-        {node.agg_file_count} files &middot; {node.agg_total_size >= 1024 ** 4 ? `${(node.agg_total_size / (1024 ** 4)).toFixed(1)} TB` : `${(node.agg_total_size / (1024 ** 3)).toFixed(1)} GB`}
+        {t("library:tree.files", { count: node.agg_file_count })} &middot; {node.agg_total_size >= 1024 ** 4 ? `${(node.agg_total_size / (1024 ** 4)).toFixed(1)} TB` : `${(node.agg_total_size / (1024 ** 3)).toFixed(1)} GB`}
       </span>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
         {onRescanFolder && parseMediaId(node.name) && (
@@ -394,7 +398,7 @@ const FolderRow = memo(function FolderRow({
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, opacity: 0.6, transition: "opacity 0.15s" }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
-            title={`Rescan ${node.name}`}
+            title={t("library:tree.rescanFolder", { name: node.name })}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -405,12 +409,12 @@ const FolderRow = memo(function FolderRow({
           <button
             onClick={async (e) => {
               e.stopPropagation();
-              if (await confirm({ message: `Ignore all ${node.agg_file_count} files in ${node.name}/?`, confirmLabel: "Ignore all", danger: true })) {
+              if (await confirm({ message: t("library:tree.ignoreFolderConfirm", { count: node.agg_file_count, name: node.name }), confirmLabel: t("library:tree.ignoreAll"), danger: true })) {
                 onIgnoreFolder(node.path + "/");
               }
             }}
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 14 }}
-            title={`Ignore all files in ${node.name}/`}
+            title={t("library:tree.ignoreFolderTitle", { name: node.name })}
           >
             &#x2298;
           </button>
@@ -441,6 +445,7 @@ const FileRow = memo(function FileRow({
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
+  const { t } = useTranslation(["library", "common"]);
   const confirm = useConfirm();
   const codecLabel = getCodecLabel(file.video_codec, file.needs_conversion);
   const codecClass = file.needs_conversion ? "x264" : "x265";
@@ -460,11 +465,11 @@ const FileRow = memo(function FileRow({
         </span>
         <span className="tree-name" style={{ cursor: "pointer" }}>{file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
-        <span className={`codec-badge ${codecClass}`} title={`Video codec: ${codecLabel}`} aria-label={`Video codec: ${codecLabel}`}>
+        <span className={`codec-badge ${codecClass}`} title={t("library:badges.videoCodec", { codec: codecLabel })} aria-label={t("library:badges.videoCodec", { codec: codecLabel })}>
           {codecLabel}
         </span>
         {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
-          <span className={`codec-badge ${codecClass}`} style={{ gap: 4 }} title={file.disc_type === "dvd" ? "DVD-Video disc folder" : "Blu-ray disc folder"}>
+          <span className={`codec-badge ${codecClass}`} style={{ gap: 4 }} title={file.disc_type === "dvd" ? t("library:badges.dvdFolder") : t("library:badges.blurayFolder")}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/>
               <circle cx="12" cy="12" r="3"/>
@@ -475,7 +480,7 @@ const FileRow = memo(function FileRow({
         )}
         {(file.health_status === "corrupt" || file.probe_status === "corrupt") && (
           <span
-            title={`Corrupt${file.health_check_type ? ` (${file.health_check_type} check)` : ""}`}
+            title={file.health_check_type ? t("library:badges.corruptWithType", { type: serverText("serverJobs", `labels.healthMode.${file.health_check_type}`, null, file.health_check_type) }) : t("library:badges.corrupt")}
             style={{ display: "inline-flex", alignItems: "center", color: "var(--danger)" }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -487,7 +492,7 @@ const FileRow = memo(function FileRow({
         )}
         {file.health_status === "healthy" && (
           <span
-            title={`Healthy (${file.health_check_type || "checked"})`}
+            title={file.health_check_type ? t("library:badges.healthyWithType", { type: serverText("serverJobs", `labels.healthMode.${file.health_check_type}`, null, file.health_check_type) }) : t("library:badges.healthyChecked")}
             style={{ display: "inline-flex", alignItems: "center", color: "var(--success)", opacity: 0.7 }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -496,43 +501,43 @@ const FileRow = memo(function FileRow({
           </span>
         )}
         {file.converted && (
-          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title="Converted by Shrinkerr" aria-label="Converted by Shrinkerr">&#x2713;</span>
+          <span style={{ color: "var(--success)", fontSize: 14, display: "inline-flex", alignItems: "center" }} title={t("library:badges.convertedBy")} aria-label={t("library:badges.convertedBy")}>&#x2713;</span>
         )}
         {file.is_new && (
-          <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>NEW</span>
+          <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>{t("library:badges.new")}</span>
         )}
         {file.queued && (
-          <span style={{ fontSize: 9, fontWeight: "bold", color: "var(--text-secondary)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>QUEUED</span>
+          <span style={{ fontSize: 9, fontWeight: "bold", color: "var(--text-secondary)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>{t("library:badges.queued")}</span>
         )}
         {file.ignored && onUnignoreFile && (
           <button
             onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }}
             style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}
-            title="Click to unignore"
-          >ignored ✕</button>
+            title={t("library:badges.clickToUnignore")}
+          >{t("library:badges.ignored")} ✕</button>
         )}
         <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
           {!file.ignored && onIgnoreFile && (
             <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }}
               style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 14 }}
-              title="Ignore this file" aria-label="Ignore this file">&#x2298;</button>
+              title={t("library:tree.ignoreFile")} aria-label={t("library:tree.ignoreFile")}>&#x2298;</button>
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }}
             style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, fontSize: 16 }}
-            title="Remove from list" aria-label="Remove from list">&times;</button>
+            title={t("library:tree.removeFromList")} aria-label={t("library:tree.removeFromList")}>&times;</button>
           {onDeleteFile && (
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                if (await confirm({ message: `Move this file to trash?\n\n${file.file_name}`, confirmLabel: "Move to trash", danger: true })) {
+                if (await confirm({ message: t("library:tree.trashConfirm", { name: file.file_name }), confirmLabel: t("common:actions.moveToTrash"), danger: true })) {
                   onDeleteFile(file.file_path);
                 }
               }}
               style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, opacity: 0.6 }}
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
-              title="Move to trash"
-              aria-label="Move to trash"
+              title={t("common:actions.moveToTrash")}
+              aria-label={t("common:actions.moveToTrash")}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -563,6 +568,7 @@ export default function FileTree({
   onFolderFilesLoaded, externalFiles, mediaDirs,
   sortBy = "name", sortDir = "asc", search = "", allowedPaths,
 }: FileTreeProps) {
+  const { t } = useTranslation(["library", "common"]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [internalFiles, setInternalFiles] = useState<Map<string, ScannedFile[]>>(new Map());
   // Use external files (from parent, updated on track toggle) when available, fallback to internal
@@ -1024,7 +1030,7 @@ export default function FileTree({
             return (
               <div key={`l-${row.folderPath}`} style={{ height: ROW_HEIGHT, paddingLeft: row.depth * 16, display: "flex", alignItems: "center", gap: 8 }}>
                 <div className="spinner" style={{ width: 14, height: 14 }} />
-                <span style={{ fontSize: 12, opacity: 0.5 }}>Loading files...</span>
+                <span style={{ fontSize: 12, opacity: 0.5 }}>{t("library:tree.loadingFiles")}</span>
               </div>
             );
           })}
@@ -1034,9 +1040,9 @@ export default function FileTree({
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
           {search || allowedPaths || (filter && filter !== "all") ? (
-            <div style={{ fontSize: 13 }}>No files match the current filter.</div>
+            <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (
-            <div style={{ fontSize: 13 }}>No files scanned yet. Run a scan to get started.</div>
+            <div style={{ fontSize: 13 }}>{t("library:tree.noFiles")}</div>
           )}
         </div>
       )}

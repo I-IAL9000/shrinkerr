@@ -1,0 +1,28 @@
+{
+  "changelog": {
+    "updateAvailable": "Update available",
+    "releaseNotes": "Release notes",
+    "versionLine": "You're on <b>v{{current}}</b> · latest is <accent>v{{latest}}</accent>",
+    "loadError": "Couldn't load the changelog. The <link>GitHub releases page</link> has the full history.",
+    "loading": "Loading release notes…",
+    "empty": "No changelog entries found. Check the <link>GitHub releases page</link>.",
+    "localFallback": "Couldn't reach GitHub to fetch the new release notes — showing your installed CHANGELOG.md instead. The <link>releases page</link> has the latest entries.",
+    "viewOnGithub": "View on GitHub ↗",
+    "latest": "Latest",
+    "sections": {
+      "Added": "Added",
+      "Changed": "Changed",
+      "Fixed": "Fixed",
+      "Deprecated": "Deprecated",
+      "Removed": "Removed",
+      "Security": "Security"
+    }
+  },
+  "folderBrowser": {
+    "title": "Select Folder",
+    "go": "Go",
+    "noSubdirectories": "No subdirectories",
+    "selected": "Selected:",
+    "select": "Select"
+  }
+}

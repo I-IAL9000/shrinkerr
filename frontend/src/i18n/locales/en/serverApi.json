@@ -1,0 +1,102 @@
+{
+  "common": {
+    "filePathRequired": "file_path required",
+    "filePathsRequired": "file_paths required"
+  },
+  "jobs": {
+    "backupNotFound": "Backup file not found on disk",
+    "cannotUndoStatus": "Cannot undo job with status '{{status}}'",
+    "invalidHealthCheckMode": "mode must be 'quick' or 'thorough'",
+    "invalidPosition": "position must be top, bottom, up, or down",
+    "noFilesInFolder": "No files found in folder",
+    "noFilesOrResetAll": "Provide file_paths or set reset_all_corrupt=true",
+    "notFound": "Job not found",
+    "taskNotFound": "Task not found",
+    "vmafRemeasureRunning": "A VMAF re-measure pass is already running."
+  },
+  "media": {
+    "noMediaDirs": "No media directories configured",
+    "noMediaDirsRefusing": "No media directories configured — refusing to operate on arbitrary paths",
+    "pathNotUnderMediaDir": "{{label}} is not under a configured media directory",
+    "pathsOutsideMediaDirs": "Paths outside configured media directories: {{paths}}"
+  },
+  "nodes": {
+    "cannotRemoveLocal": "Cannot remove node (local node cannot be removed)",
+    "invalidJobAffinity": "job_affinity must be 'any', 'cpu_only', or 'nvenc_only'",
+    "localNoToken": "The local node runs in-process and does not use an auth token.",
+    "managerNotInitialized": "Node manager not initialized",
+    "noJobRunning": "No job running on this node",
+    "notFound": "Node not found",
+    "notInErrorState": "Node is not in error state",
+    "pathMappingNotAbsolute": "Path mapping must use absolute paths on both sides; got server='{{server}}', worker='{{worker}}'."
+  },
+  "plex": {
+    "tokenAndServerRequired": "token and server_url required",
+    "unreachable": "plex.tv unreachable: {{error}}"
+  },
+  "posters": {
+    "invalidMediaType": "media_type must be 'movie' or 'tv'",
+    "tmdbError": "TMDB returned {{status}}",
+    "tmdbKeyMissing": "TMDB API key not configured",
+    "tmdbRequestFailed": "TMDB request failed: {{error}}"
+  },
+  "queue": {
+    "notInitialized": "Queue not initialized",
+    "workerNotInitialized": "Worker not initialized"
+  },
+  "rename": {
+    "invalidCaseMode": "case_mode must be one of: default, lower, upper",
+    "invalidSeparator": "separator must be one of: space, dot, dash, underscore"
+  },
+  "rules": {
+    "conditionRequired": "At least one match condition required",
+    "embySyncFailed": "Emby sync failed: {{error}}",
+    "invalidAction": "action must be encode, ignore, or skip",
+    "invalidMatchType": "Invalid match type: {{type}}",
+    "jellyfinSyncFailed": "Jellyfin sync failed: {{error}}",
+    "noFieldsToUpdate": "No fields to update",
+    "plexOptionsFailed": "Failed to fetch Plex options: {{error}}",
+    "plexSyncFailed": "Plex sync failed: {{error}}"
+  },
+  "scan": {
+    "alreadyRunning": "Scan already in progress",
+    "fileNotInMediaDir": "File is not under a configured media directory",
+    "invalidFilePath": "Invalid file path: {{error}}",
+    "languageRequired": "A language must be provided",
+    "metadataRefreshRunning": "Metadata refresh already in progress",
+    "noPaths": "No paths to scan",
+    "probeFailed": "Could not probe file",
+    "trackNotFound": "Track not found",
+    "trashFailed": "Failed to trash file: {{error}}"
+  },
+  "schedule": {
+    "invalidDatetime": "Invalid datetime: {{error}}"
+  },
+  "search": {
+    "unknownProperty": "Unknown property: {{property}}",
+    "unsupportedOp": "Unsupported op '{{op}}' for property '{{property}}'"
+  },
+  "settings": {
+    "backupNotFound": "Backup not found",
+    "invalidBackupName": "Invalid backup name",
+    "mediaDirExists": "Directory already exists",
+    "notificationLanguageInvalid": "notification_language must be one of: {{languages}}",
+    "pathEmpty": "{{label}} must be a non-empty string",
+    "pathInSystemDir": "{{label}} is not allowed under {{dir}} (system directory)",
+    "pathIsRoot": "{{label}} cannot be the filesystem root",
+    "pathMissing": "{{label}} does not exist: {{path}}",
+    "pathNotAbsolute": "{{label}} must be an absolute path",
+    "pathNotDirectory": "{{label}} is not a directory: {{path}}",
+    "pathUnresolvable": "{{label}} cannot be resolved: {{error}}",
+    "postScriptNeedsAuth": "post_conversion_script runs arbitrary commands after every job. Enable password auth (Settings → System → Authentication) before configuring this setting so it can't be changed with just an API key.",
+    "restoreInvalidDb": "Invalid database in backup: {{error}}",
+    "restoreMissingDb": "Backup zip must contain shrinkerr.db or squeezarr.db",
+    "restoreNotZip": "Must upload a .zip file"
+  },
+  "url": {
+    "blockedAddress": "{{label}} resolves to a blocked address ({{address}}). Link-local / IMDS / IPv6 site-local ranges are rejected to prevent SSRF.",
+    "invalid": "{{label}} is not a valid URL: {{error}}",
+    "invalidScheme": "{{label}} must use http:// or https:// (got {{scheme}})",
+    "noHostname": "{{label}} has no hostname"
+  }
+}

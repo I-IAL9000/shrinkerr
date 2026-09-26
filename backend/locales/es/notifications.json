@@ -1,0 +1,29 @@
+{
+  "emailSubject": "Shrinkerr: {{title}}",
+  "jobFailed": {
+    "title": "Trabajo fallido",
+    "message": "{{fileName}} falló durante la conversión",
+    "fieldError": "Error"
+  },
+  "queueComplete": {
+    "title": "Cola completada",
+    "message_one": "¡Todos los trabajos han terminado! {{count}} completado.",
+    "message_other": "¡Todos los trabajos han terminado! {{count}} completados.",
+    "fieldTotalSaved": "Total ahorrado"
+  },
+  "diskLow": {
+    "title": "Poco espacio en disco",
+    "message": "Espacio libre: {{free}} GB (umbral: {{threshold}} GB)",
+    "fieldPath": "Ruta",
+    "fieldFree": "Libre",
+    "fieldTotal": "Total"
+  },
+  "test": {
+    "title": "Prueba de Shrinkerr",
+    "message": "Notificación de prueba de Shrinkerr",
+    "webhookMessage": "Notificación de prueba",
+    "emailSubject": "Shrinkerr: Notificación de prueba",
+    "fieldStatus": "Estado",
+    "statusSuccess": "Prueba exitosa"
+  }
+}

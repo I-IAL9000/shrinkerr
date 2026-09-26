@@ -2208,6 +2208,8 @@ async def convert_file(
                 f"Not enough free disk space: need {original_size} bytes, "
                 f"have {stat.free} bytes free"
             ),
+            "error_key": "errors.notEnoughDiskSpace",
+            "error_params": {"need": str(original_size), "free": str(stat.free)},
         }
 
     # v0.7.24: resolve the target resolution BEFORE building the output
@@ -2878,6 +2880,9 @@ async def convert_file(
                     "output_path": None,
                     "space_saved": 0,
                     "error": error_msg,
+                    # Keys only the headline; the ffmpeg detail stays in `error`.
+                    "error_key": "errors.ffmpegExited",
+                    "error_params": {"code": str(proc.returncode)},
                     "ffmpeg_command": full_command,
                     "ffmpeg_log": "\n".join(local_all_lines[-500:]),
                 }
@@ -2906,6 +2911,7 @@ async def convert_file(
                 "output_path": None,
                 "space_saved": 0,
                 "error": "ffmpeg timed out",
+                "error_key": "errors.ffmpegTimedOut",
                 "ffmpeg_command": full_command,
                 "ffmpeg_log": "\n".join(all_lines[-500:]),
             }}
@@ -3049,6 +3055,8 @@ async def convert_file(
             "output_path": None,
             "space_saved": 0,
             "error": diag,
+            # Keys only the first line; the diagnostic detail stays in `error`.
+            "error_key": "errors.outputMissing",
             "source_intact": input_exists,
         }
 
@@ -3142,6 +3150,8 @@ async def convert_file(
             "output_path": None,
             "space_saved": 0,
             "error": diagnosis_msg,
+            "error_key": "errors.originalLikelyCorrupt",
+            "error_params": {"outputMb": str(_output_mb), "originalGb": f"{_original_gb:.2f}"},
         }
 
     # If the converted file is LARGER than the original, discard it.
@@ -3656,6 +3666,7 @@ async def convert_file(
             "vmaf_uncertain": vmaf_uncertain,
             "vmaf_rejected": True,
             "vmaf_reject_reason": vmaf_reject_reason,
+            "vmaf_reject_params": {"score": str(vmaf_score), "min": f"{vmaf_min_score:g}"},
             "vmaf_min_score": vmaf_min_score,
             "ffmpeg_command": full_command,
             "ffmpeg_log": "\n".join(all_lines[-500:]),

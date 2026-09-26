@@ -112,18 +112,21 @@ async def require_in_media_dirs(path: str, *, label: str = "Path") -> str:
     """
     # Local import keeps this module FastAPI-agnostic (we'd like to be able
     # to reuse the helpers in CLI/test contexts without pulling fastapi in).
-    from fastapi import HTTPException
+    from backend.api_errors import ApiError
 
     dirs = await load_media_dirs()
     if not dirs:
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail="No media directories configured — refusing to operate on arbitrary paths",
+            code="media.noMediaDirsRefusing",
         )
     resolved = _resolve(path)
     if not is_in_any(resolved, dirs):
-        raise HTTPException(
+        raise ApiError(
             status_code=403,
             detail=f"{label} is not under a configured media directory",
+            code="media.pathNotUnderMediaDir",
+            params={"label": label},
         )
     return resolved

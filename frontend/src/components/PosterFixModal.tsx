@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { searchTMDB, overridePoster } from "../api";
 import type { TMDBSearchResult } from "../api";
 
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function PosterFixModal({ folderPath, currentTitle, currentYear, onClose, onFixed }: Props) {
+  const { t } = useTranslation(["library", "common"]);
   const [query, setQuery] = useState(currentTitle);
   const [year, setYear] = useState(currentYear || "");
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
@@ -28,9 +30,9 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
       // was title-only and an obscure exact match could fail to surface.
       const res = await searchTMDB(query, year || undefined, folderPath);
       setResults(res.results);
-      if (res.results.length === 0) setError("No matches found on TMDB");
+      if (res.results.length === 0) setError(t("library:fix.noMatches"));
     } catch (e: any) {
-      setError(e?.message || "Search failed");
+      setError(e?.message || t("library:fix.searchFailed"));
     } finally {
       setLoading(false);
     }
@@ -49,7 +51,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
       await overridePoster(folderPath, r.tmdb_id, r.media_type);
       onFixed();
     } catch (e: any) {
-      setError(e?.message || "Failed to apply");
+      setError(e?.message || t("library:fix.applyFailed"));
       setApplying(null);
     }
   };
@@ -73,7 +75,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Fix match</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t("library:fix.title")}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, maxWidth: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {folderPath}
             </div>
@@ -88,7 +90,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-            placeholder="Title"
+            placeholder={t("library:fix.titlePlaceholder")}
             style={{
               flex: 1, padding: "6px 10px", fontSize: 13,
               background: "var(--bg-primary)", border: "1px solid var(--border)",
@@ -100,7 +102,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
             value={year}
             onChange={e => setYear(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-            placeholder="Year"
+            placeholder={t("library:fix.yearPlaceholder")}
             style={{
               width: 80, padding: "6px 10px", fontSize: 13,
               background: "var(--bg-primary)", border: "1px solid var(--border)",
@@ -108,7 +110,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
             }}
           />
           <button className="btn btn-primary" onClick={doSearch} disabled={loading}>
-            {loading ? "..." : "Search"}
+            {loading ? "..." : t("library:fix.search")}
           </button>
         </div>
 
@@ -122,7 +124,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
           {loading && results.length === 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 20, color: "var(--text-muted)", fontSize: 12 }}>
               <div className="spinner" style={{ width: 14, height: 14 }} />
-              Searching TMDB...
+              {t("library:fix.searching")}
             </div>
           ) : (
             <div style={{
@@ -154,7 +156,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
                       fontSize: 8, fontWeight: 700, padding: "2px 4px", borderRadius: 3,
                       background: r.media_type === "tv" ? "#0D54E4" : "rgba(145, 53, 255, 0.85)",
                       color: "white",
-                    }}>{r.media_type === "tv" ? "TV" : "MOVIE"}</span>
+                    }}>{r.media_type === "tv" ? t("library:badges.tvUpper") : t("library:badges.movieUpper")}</span>
                     {applying === r.tmdb_id && (
                       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <div className="spinner" style={{ width: 20, height: 20 }} />

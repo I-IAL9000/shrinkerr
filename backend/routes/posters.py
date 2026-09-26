@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 
 import aiosqlite
 from fastapi import APIRouter, HTTPException
+from backend.api_errors import ApiError
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -1437,7 +1438,7 @@ async def search_tmdb(req: TMDBSearchRequest):
         await db.close()
 
     if not tmdb_key:
-        raise HTTPException(400, "TMDB API key not configured")
+        raise ApiError(400, "TMDB API key not configured", code="posters.tmdbKeyMissing")
 
     # Bracket-ID-driven exact lookup. If the folder name carries a Sonarr/
     # Radarr ID, the user has already told us exactly which title this is
@@ -1551,10 +1552,10 @@ async def search_tmdb(req: TMDBSearchRequest):
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(endpoint, params=params)
         if resp.status_code != 200:
-            raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
+            raise ApiError(resp.status_code, f"TMDB returned {resp.status_code}", code="posters.tmdbError", params={"status": resp.status_code})
         raw_results = resp.json().get("results", [])
     except httpx.RequestError as exc:
-        raise HTTPException(502, f"TMDB request failed: {exc}")
+        raise ApiError(502, f"TMDB request failed: {exc}", code="posters.tmdbRequestFailed", params={"error": str(exc)})
 
     # Normalise + filter by inferred type (when bracket told us). Skip
     # the ones we already pinned above so the user doesn't see
@@ -1632,7 +1633,7 @@ class OverrideRequest(BaseModel):
 async def override_poster(req: OverrideRequest):
     """Replace the cached poster metadata for a folder with a user-selected TMDB match."""
     if req.media_type not in ("movie", "tv"):
-        raise HTTPException(400, "media_type must be 'movie' or 'tv'")
+        raise ApiError(400, "media_type must be 'movie' or 'tv'", code="posters.invalidMediaType")
 
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -1644,7 +1645,7 @@ async def override_poster(req: OverrideRequest):
         await db.close()
 
     if not tmdb_key:
-        raise HTTPException(400, "TMDB API key not configured")
+        raise ApiError(400, "TMDB API key not configured", code="posters.tmdbKeyMissing")
 
     # Fetch the specific TMDB item details
     import httpx
@@ -1653,10 +1654,10 @@ async def override_poster(req: OverrideRequest):
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(detail_url, params={"api_key": tmdb_key})
         if resp.status_code != 200:
-            raise HTTPException(resp.status_code, f"TMDB returned {resp.status_code}")
+            raise ApiError(resp.status_code, f"TMDB returned {resp.status_code}", code="posters.tmdbError", params={"status": resp.status_code})
         data = resp.json()
     except httpx.RequestError as exc:
-        raise HTTPException(502, f"TMDB request failed: {exc}")
+        raise ApiError(502, f"TMDB request failed: {exc}", code="posters.tmdbRequestFailed", params={"error": str(exc)})
 
     title = data.get("title") or data.get("name") or "Unknown"
     release_date = data.get("release_date") or data.get("first_air_date") or ""

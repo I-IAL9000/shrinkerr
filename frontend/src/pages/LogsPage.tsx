@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { getStoredApiKey } from "../api";
 
 interface LogEntry {
@@ -35,6 +36,7 @@ const SOURCE_OPTIONS = [
 const MAX_DOM_LINES = 1000;
 
 export default function LogsPage() {
+  const { t } = useTranslation(["logs", "common"]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [sourceFilter, setSourceFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -148,7 +150,7 @@ export default function LogsPage() {
         }}
       >
         <h2 style={{ color: "var(--text-primary)", fontSize: 16, fontWeight: 600, margin: 0, marginRight: 8 }}>
-          Logs
+          {t("logs:title")}
         </h2>
 
         {/* Source filter */}
@@ -167,7 +169,7 @@ export default function LogsPage() {
         >
           {SOURCE_OPTIONS.map((s) => (
             <option key={s} value={s}>
-              {s}
+              {s === "All" ? t("logs:sourceAll") : s}
             </option>
           ))}
         </select>
@@ -175,7 +177,7 @@ export default function LogsPage() {
         {/* Search */}
         <input
           type="text"
-          placeholder="Search logs..."
+          placeholder={t("logs:searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{
@@ -208,7 +210,7 @@ export default function LogsPage() {
             onChange={(e) => setAutoScroll(e.target.checked)}
             style={{ accentColor: "var(--accent)" }}
           />
-          Auto-scroll
+          {t("logs:autoScroll")}
         </label>
 
         {/* Clear button */}
@@ -224,11 +226,11 @@ export default function LogsPage() {
             cursor: "pointer",
           }}
         >
-          Clear
+          {t("common:actions.clear")}
         </button>
 
         <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)" }}>
-          {displayed.length} lines
+          {t("logs:lineCount", { count: displayed.length })}
         </span>
       </div>
 
@@ -256,7 +258,7 @@ export default function LogsPage() {
               fontSize: 13,
             }}
           >
-            No log entries yet. Logs will appear here in real time.
+            {t("logs:empty")}
           </div>
         )}
         {displayed.map((entry, i) => (
@@ -284,7 +286,7 @@ export default function LogsPage() {
             zIndex: 10,
           }}
         >
-          Jump to latest
+          {t("logs:jumpToLatest")}
         </button>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { previewRename, applyRename } from "../api";
 import type { RenamePlan } from "../api";
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
+  const { t } = useTranslation(["scannerModals", "common"]);
   const [plans, setPlans] = useState<RenamePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -41,7 +43,7 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
       }, 1500);
     } catch (e: any) {
       setApplying(false);
-      setResult({ error: e?.message || "Apply failed" });
+      setResult({ error: e?.message || t("scannerModals:rename.applyFailed") });
     }
   };
 
@@ -65,9 +67,9 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
       >
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Rename preview</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t("scannerModals:rename.title")}</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-              {loading ? "Resolving metadata..." : `${changedPlans.length} file${changedPlans.length === 1 ? "" : "s"} will change · ${noopCount} already match the pattern`}
+              {loading ? t("scannerModals:rename.resolvingMetadata") : `${t("scannerModals:rename.willChange", { count: changedPlans.length })} · ${t("scannerModals:rename.alreadyMatch", { count: noopCount })}`}
             </div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
@@ -76,17 +78,17 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
         <div style={{ padding: 14, overflow: "auto", flex: 1 }}>
           {loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 20, color: "var(--text-muted)" }}>
-              <div className="spinner" style={{ width: 14, height: 14 }} /> Resolving renames via Sonarr/Radarr/TMDB...
+              <div className="spinner" style={{ width: 14, height: 14 }} /> {t("scannerModals:rename.resolving")}
             </div>
           ) : plans.length === 0 ? (
-            <div style={{ padding: 20, color: "var(--text-muted)", textAlign: "center" }}>No files selected</div>
+            <div style={{ padding: 20, color: "var(--text-muted)", textAlign: "center" }}>{t("scannerModals:rename.noFiles")}</div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                  <th style={{ padding: "6px 8px", textAlign: "left", color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Current</th>
-                  <th style={{ padding: "6px 8px", textAlign: "left", color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>New</th>
-                  <th style={{ padding: "6px 8px", width: 80, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>Status</th>
+                  <th style={{ padding: "6px 8px", textAlign: "left", color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>{t("scannerModals:rename.colCurrent")}</th>
+                  <th style={{ padding: "6px 8px", textAlign: "left", color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>{t("scannerModals:rename.colNew")}</th>
+                  <th style={{ padding: "6px 8px", width: 80, color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase" }}>{t("scannerModals:rename.colStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,11 +102,11 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
                     </td>
                     <td style={{ padding: "6px 8px", fontSize: 10 }}>
                       {p.error ? (
-                        <span style={{ color: "var(--danger)" }}>Error</span>
+                        <span style={{ color: "var(--danger)" }}>{t("scannerModals:rename.statusError")}</span>
                       ) : p.changed ? (
-                        <span style={{ color: "var(--success)" }}>Rename</span>
+                        <span style={{ color: "var(--success)" }}>{t("scannerModals:rename.statusRename")}</span>
                       ) : (
-                        <span style={{ color: "var(--text-muted)" }}>Unchanged</span>
+                        <span style={{ color: "var(--text-muted)" }}>{t("scannerModals:rename.statusUnchanged")}</span>
                       )}
                     </td>
                   </tr>
@@ -118,9 +120,9 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
                 <span style={{ color: "var(--danger)" }}>{result.error}</span>
               ) : (
                 <span style={{ color: "var(--success)" }}>
-                  Renamed {result.results?.filter((r: any) => r.applied).length || 0} file(s).{" "}
-                  {result.rescans?.arr?.length > 0 && `Sonarr/Radarr rescan triggered. `}
-                  {result.rescans?.plex?.length > 0 && `Plex scan triggered.`}
+                  {t("scannerModals:rename.renamed", { count: result.results?.filter((r: any) => r.applied).length || 0 })}{" "}
+                  {result.rescans?.arr?.length > 0 && `${t("scannerModals:rename.arrRescanTriggered")} `}
+                  {result.rescans?.plex?.length > 0 && t("scannerModals:rename.plexScanTriggered")}
                 </span>
               )}
             </div>
@@ -131,21 +133,21 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
           <div style={{ display: "flex", gap: 16, fontSize: 11, color: "var(--text-secondary)" }}>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
               <input type="checkbox" checked={rescanArr} onChange={e => setRescanArr(e.target.checked)} />
-              Rescan Sonarr/Radarr
+              {t("scannerModals:rename.rescanArr")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
               <input type="checkbox" checked={rescanPlex} onChange={e => setRescanPlex(e.target.checked)} />
-              Rescan Plex
+              {t("scannerModals:rename.rescanPlex")}
             </label>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-secondary" onClick={onClose}>{t("common:actions.cancel")}</button>
             <button
               className="btn btn-primary"
               onClick={apply}
               disabled={applying || loading || changedPlans.length === 0 || !!result}
             >
-              {applying ? "Renaming..." : result ? "Done" : `Rename ${changedPlans.length} file${changedPlans.length === 1 ? "" : "s"}`}
+              {applying ? t("scannerModals:rename.renaming") : result ? t("scannerModals:rename.done") : t("scannerModals:rename.renameFiles", { count: changedPlans.length })}
             </button>
           </div>
         </div>

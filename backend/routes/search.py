@@ -12,6 +12,7 @@ import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
@@ -289,9 +290,9 @@ async def advanced_search(req: SearchRequest):
     for pred in req.predicates:
         prop = PROPERTIES.get(pred.property)
         if not prop:
-            raise HTTPException(400, f"Unknown property: {pred.property}")
+            raise ApiError(400, f"Unknown property: {pred.property}", code="search.unknownProperty", params={"property": pred.property})
         if pred.op not in prop.get("ops", []):
-            raise HTTPException(400, f"Unsupported op '{pred.op}' for property '{pred.property}'")
+            raise ApiError(400, f"Unsupported op '{pred.op}' for property '{pred.property}'", code="search.unsupportedOp", params={"op": pred.op, "property": pred.property})
 
         kind = prop["kind"]
         if kind in ("column", "computed"):

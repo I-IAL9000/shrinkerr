@@ -20,6 +20,8 @@ class AudioTrack(BaseModel):
     # v0.9.44: why detection left this track und (e.g. "eng 49% — below 0.60
     # threshold", "no text in subtitle"), for display next to the track.
     detect_note: Optional[str] = None
+    detect_note_key: Optional[str] = None      # v0.9.132 message code (serverJobs:detectNotes.*)
+    detect_note_params: Optional[dict] = None
 
 class SubtitleTrack(BaseModel):
     stream_index: int
@@ -37,6 +39,8 @@ class SubtitleTrack(BaseModel):
     external_path: str = ""      # Absolute path to the external subtitle file
     detected_language: Optional[str] = None  # v0.9.35 (see AudioTrack)
     detect_note: Optional[str] = None         # v0.9.44 (see AudioTrack)
+    detect_note_key: Optional[str] = None      # v0.9.132
+    detect_note_params: Optional[dict] = None
 
 class ScannedFile(BaseModel):
     id: Optional[int] = None
@@ -303,6 +307,7 @@ class SettingsUpdate(BaseModel):
     notify_job_failed: Optional[bool] = None
     notify_disk_low: Optional[bool] = None
     disk_space_threshold_gb: Optional[Any] = None
+    notification_language: Optional[str] = None
     # NZBGet integration
     nzbget_enabled: Optional[bool] = None
     nzbget_tags: Optional[list[str]] = None

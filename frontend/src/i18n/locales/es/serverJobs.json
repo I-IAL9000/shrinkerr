@@ -1,0 +1,78 @@
+{
+  "steps": {
+    "starting": "iniciando",
+    "converting": "convirtiendo",
+    "removingTracks": "eliminando pistas",
+    "removingSubtitles": "eliminando subtítulos",
+    "applyingLanguage": "aplicando idioma",
+    "reorderingAudio": "reordenando audio",
+    "detectingLanguage": "Detectando idioma…",
+    "qualityCrossCheck": "Verificación cruzada de calidad",
+    "vmafAnalysis": "Análisis VMAF",
+    "vmafRetry": "Reintento de VMAF",
+    "vmafRemeasure": "Nueva medición de VMAF",
+    "vmafRemeasureRetry": "Nueva medición de VMAF (reintento)",
+    "healthCheckMode": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",
+    "healthCheckStatus": "comprobación de estado ($t(serverJobs:labels.healthStatus.{{status}}))",
+    "healthCheckInline": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))"
+  },
+  "errors": {
+    "fileNotFound": "Archivo no encontrado",
+    "fileNotFoundPath": "Archivo no encontrado: {{path}}",
+    "healthCheckFailed": "La comprobación de estado falló: {{error}}",
+    "healthCorrupt": "Corrupto: {{errors}}",
+    "healthCorruptUnknown": "Corrupto: error desconocido",
+    "sourceGoneLikelyConverted": "El archivo de origen ya no existe — lo más probable es que ya se haya convertido (el original se reemplaza por la salida HEVC). Vuelve a escanear la biblioteca para actualizar esta entrada.",
+    "probeFailed": "No se pudo analizar el archivo",
+    "audioCleanupOnDisc": "La limpieza de audio/subtítulos no puede ejecutarse en una imagen de disco (ISO/VIDEO_TS/BDMV) — un disco debe convertirse por completo, no copiarse por flujo. Vuelve a escanear y pon en cola una conversión de este título para aplicar la limpieza.",
+    "cancelledByUser": "Cancelado por el usuario",
+    "notEnoughDiskSpace": "No hay suficiente espacio libre en disco: se necesitan {{need}} bytes y hay {{free}} bytes libres",
+    "ffmpegExited": "ffmpeg terminó con el código {{code}}",
+    "ffmpegTimedOut": "ffmpeg agotó el tiempo de espera",
+    "outputMissing": "El archivo de salida falta o está vacío tras la conversión.",
+    "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",
+    "originalLikelyCorrupt": "Probablemente el archivo original está corrupto — la conversión produjo una salida demasiado pequeña para ser útil ({{outputMb}} MB de un archivo de origen de {{originalGb}} GB). ffmpeg encontró datos corruptos que ffprobe no detecta de antemano. La entrada del archivo de origen se marcó como corrupta; se conserva el original.",
+    "vmafRejected": "VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",
+    "vmafBelowThreshold": "VMAF por debajo del umbral",
+    "workerEncoderUnsupported": "El nodo no puede ejecutar el codificador '{{encoder}}' y la traducción de codificador está desactivada"
+  },
+  "labels": {
+    "healthMode": {
+      "quick": "rápida",
+      "thorough": "exhaustiva"
+    },
+    "healthStatus": {
+      "healthy": "correcto",
+      "corrupt": "corrupto",
+      "warnings": "con advertencias"
+    }
+  },
+  "detect": {
+    "extractingTrack": "Extrayendo la pista de subtítulos {{track}}…",
+    "extractingSample": "Extrayendo una muestra de subtítulos (pista {{track}})…",
+    "extractingFullTrack": "Extrayendo la pista de subtítulos {{track}} completa…",
+    "ocrLatin": "OCR (latino) en la pista de subtítulos {{track}}…",
+    "ocrNonLatin": "OCR (CJK/cirílico/árabe) en la pista de subtítulos {{track}}…"
+  },
+  "monitor": {
+    "nvencNoEncoder": "La compilación de ffmpeg no incluye el codificador hevc_nvenc",
+    "nvencTestExited": "ffmpeg terminó con código {{code}}",
+    "nvencTestCrashed": "La prueba de NVENC falló: {{error}}",
+    "ffmpegNotRunnable": "No se puede ejecutar ffmpeg: {{error}}",
+    "capabilitiesForced": "Capacidades forzadas mediante la variable de entorno CAPABILITIES"
+  },
+  "detectNotes": {
+    "streamUnsupported": "no se admite la detección en m2ts/transport stream: convierte primero a MKV",
+    "audioTimedOut": "se agotó el tiempo de detección de audio",
+    "belowThreshold": "{{lang}} {{pct}} %: por debajo del umbral del {{threshold}} %",
+    "noSpeech": "no se detectó voz",
+    "noIsoCode": "se detectó \"{{lang}}\": sin código ISO-639-2",
+    "audioError": "error en la detección de audio: {{error}}",
+    "audioUnidentified": "no se pudo identificar el idioma del audio",
+    "subNoText": "el subtítulo no contiene texto",
+    "subNotConfident": "no se pudo identificar con seguridad el idioma del subtítulo",
+    "ocrNoText": "el OCR del subtítulo de imagen no encontró texto utilizable",
+    "subUnsupported": "formato de subtítulo no compatible con la detección",
+    "subUnidentified": "no se pudo identificar el idioma del subtítulo"
+  }
+}

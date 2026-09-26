@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation, Trans } from "react-i18next";
+import i18n from "../i18n";
 import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings, getEncoderCaps, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
@@ -11,14 +13,17 @@ function formatBytes(bytes: number): string {
 }
 
 function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 60) return i18n.t("scannerModals:time.seconds", { n: seconds });
+  if (seconds < 3600) return i18n.t("scannerModals:time.minutes", { n: Math.round(seconds / 60) });
   const h = Math.floor(seconds / 3600);
   const m = Math.round((seconds % 3600) / 60);
-  return h > 24 ? `${(seconds / 86400).toFixed(1)} days` : `${h}h ${m}m`;
+  return h > 24
+    ? i18n.t("scannerModals:time.days", { n: (seconds / 86400).toFixed(1) })
+    : i18n.t("scannerModals:time.hoursMinutes", { h, m });
 }
 
-const PRIORITY_LABELS = ["Normal", "High", "Highest"];
+// → scannerModals:estimate.priorities.*
+const PRIORITY_KEYS = ["normal", "high", "highest"];
 const PRIORITY_COLORS = ["var(--text-muted)", "#ffa94d", "#e94560"];
 
 export interface EncodingOverrides {
@@ -36,17 +41,20 @@ export interface EncodingOverrides {
   cleanup_only?: boolean;
 }
 
-const CPU_PRESETS = [
+// label is the x265 preset name (not translated); suffixKey → scannerModals:overrides.*
+const CPU_PRESETS: { value: string; label: string; suffixKey?: string }[] = [
   { value: "ultrafast", label: "Ultrafast" },
   { value: "superfast", label: "Superfast" },
   { value: "veryfast", label: "Very Fast" },
   { value: "faster", label: "Faster" },
   { value: "fast", label: "Fast" },
-  { value: "medium", label: "Medium (default)" },
+  { value: "medium", label: "Medium", suffixKey: "cpuPresetDefault" },
   { value: "slow", label: "Slow" },
   { value: "slower", label: "Slower" },
-  { value: "veryslow", label: "Very Slow (Best compression)" },
+  { value: "veryslow", label: "Very Slow", suffixKey: "cpuPresetBest" },
 ];
+
+const NVENC_PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
 
 interface EstimateModalProps {
   filePaths: string[];
@@ -57,6 +65,7 @@ interface EstimateModalProps {
 }
 
 export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter, onConfirm, onCancel }: EstimateModalProps) {
+  const { t } = useTranslation(["scannerModals", "common"]);
   const [estimate, setEstimate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [priority, setPriority] = useState(0);
@@ -150,7 +159,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setLoading(false);
     }).catch(err => {
       console.error("Estimate failed:", err);
-      setEstimate({ total_files: 0, error: err?.message || "Unknown error" });
+      setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
   }, [overrideRules, cq, forceReencode, isCpu]);
@@ -183,7 +192,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" as const,
         border: "1px solid var(--border)",
       }}>
-        <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>Add to Queue</h3>
+        <h3 style={{ color: "white", margin: "0 0 16px", fontSize: 16 }}>{t("scannerModals:estimate.title")}</h3>
 
         {/* Override rules toggle */}
         {hasIgnoredFiles && (
@@ -196,15 +205,15 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: "#ffa94d", fontWeight: 500 }}>Some selected files are covered by encoding rules</div>
+              <div style={{ fontSize: 12, color: "#ffa94d", fontWeight: 500 }}>{t("scannerModals:estimate.rulesWarningTitle")}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                Toggle override to process them anyway with default settings.
+                {t("scannerModals:estimate.rulesWarningHelp")}
               </div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", flexShrink: 0 }}>
               <input type="checkbox" checked={overrideRules} onChange={() => setOverrideRules(!overrideRules)}
                 style={{ accentColor: "var(--accent)" }} />
-              <span style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>Override rules</span>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>{t("scannerModals:estimate.overrideRules")}</span>
             </label>
           </div>
         )}
@@ -212,7 +221,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         {loading ? (
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 20, justifyContent: "center" }}>
             <div className="spinner" style={{ width: 20, height: 20 }} />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Estimating...</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("scannerModals:estimate.estimating")}</span>
           </div>
         ) : estimate ? (
           <>
@@ -220,15 +229,15 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             <div className="estimate-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16 }}>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: "bold", color: "white" }}>{fmtNum(estimate.total_files)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Files to process</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.filesToProcess")}</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--success)" }}>~{formatBytes(estimate.estimated_savings)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Est. savings ({estimate.savings_pct}%)</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estSavings", { pct: estimate.savings_pct })}</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--accent)" }}>~{formatTime(estimate.estimated_time_seconds)}</div>
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Est. time</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estTime")}</div>
               </div>
             </div>
 
@@ -236,14 +245,14 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             {(estimate.total_files > 0) && (
               <div className="estimate-breakdown-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By job type</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.byJobType")}</div>
                   {(() => {
                     const bt = estimate.by_type || {};
                     const conv = (bt.convert || 0) + (bt.combined || 0);
                     const cleanup = (bt.audio || 0) + (bt.combined || 0);
                     const items: [string, number][] = [];
-                    if (conv > 0) items.push(["conversions", conv]);
-                    if (cleanup > 0) items.push(["audio/sub cleanups", cleanup]);
+                    if (conv > 0) items.push([t("scannerModals:estimate.conversions"), conv]);
+                    if (cleanup > 0) items.push([t("scannerModals:estimate.cleanups"), cleanup]);
                     if (items.length === 0) {
                       Object.entries(bt).filter(([, v]) => (v as number) > 0).forEach(([k, v]) => items.push([k, v as number]));
                     }
@@ -256,7 +265,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   })()}
                 </div>
                 <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By source</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.bySource")}</div>
                   {Object.entries(estimate.by_source || {}).sort(([,a], [,b]) => (b as number) - (a as number)).map(([k, v]) => (
                     <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 3 }}>
                       <span style={{ color: "var(--text-muted)" }}>{k}</span>
@@ -272,7 +281,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               <div className="estimate-breakdown-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
                 {estimate.resolution_breakdown && (
                   <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>By resolution</div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.byResolution")}</div>
                     {(["4k", "1080p", "720p", "sd"] as const).map(res => {
                       const count = estimate.resolution_breakdown[res] || 0;
                       if (!count) return null;
@@ -290,15 +299,20 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
             {estimate.total_files === 0 && (
               <div style={{ textAlign: "center", padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-                No actionable files in selection. Files may already be optimized.
+                {t("scannerModals:estimate.noActionable")}
                 {(estimate.ignored_files > 0 || estimate.skipped_by_rules > 0) && (
                   <div style={{ marginTop: 8 }}>
                     {estimate.ignored_files > 0 && (
-                      <span>{fmtNum(estimate.ignored_files)} file{estimate.ignored_files !== 1 ? "s" : ""} with <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }}>IGNORE</span> status</span>
+                      <span><Trans
+                        i18nKey="scannerModals:estimate.ignoredFiles"
+                        count={estimate.ignored_files}
+                        values={{ num: fmtNum(estimate.ignored_files) }}
+                        components={{ badge: <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }} /> }}
+                      /></span>
                     )}
                     {estimate.ignored_files > 0 && estimate.skipped_by_rules > 0 && <span> · </span>}
                     {estimate.skipped_by_rules > 0 && (
-                      <span style={{ color: "#ffa94d" }}>{fmtNum(estimate.skipped_by_rules)} skipped by rules</span>
+                      <span style={{ color: "#ffa94d" }}>{t("scannerModals:estimate.skippedByRules", { num: fmtNum(estimate.skipped_by_rules) })}</span>
                     )}
                   </div>
                 )}
@@ -310,16 +324,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <input type="checkbox" checked={overrideRules}
                     onChange={() => setOverrideRules(!overrideRules)}
                     style={{ accentColor: "var(--accent)" }} />
-                  Include ignored files and override rules
+                  {t("scannerModals:estimate.includeIgnored")}
                 </label>
               </div>
             )}
 
             {/* Priority selector */}
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>Priority</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>{t("scannerModals:estimate.priority")}</div>
               <div style={{ display: "flex", gap: 8 }}>
-                {PRIORITY_LABELS.map((label, i) => (
+                {PRIORITY_KEYS.map((labelKey, i) => (
                   <button key={i}
                     style={{
                       padding: "5px 14px", borderRadius: 4, fontSize: 12, cursor: "pointer",
@@ -329,7 +343,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       fontWeight: priority === i ? 600 : 400,
                     }}
                     onClick={() => setPriority(i)}
-                  >{label}</button>
+                  >{t(`scannerModals:estimate.priorities.${labelKey}`)}</button>
                 ))}
               </div>
             </div>
@@ -347,9 +361,9 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: settingsOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
-                Encoding Settings
+                {t("scannerModals:overrides.encodingSettings")}
                 <span style={{ marginLeft: "auto", opacity: 0.5, fontSize: 11 }}>
-                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null ? "Custom" : "Default settings"}
+                  {cq !== null || encoder !== null || preset !== null || audioCdc !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
                 </span>
               </button>
 
@@ -357,10 +371,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 <div style={{ background: "var(--bg-primary)", borderRadius: "0 0 4px 4px", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
                   {/* Encoder */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Encoder</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.encoder")}</label>
                     <select value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">Auto</option>
+                      <option value="">{t("scannerModals:overrides.auto")}</option>
                       {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
                       {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
                       {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
@@ -374,7 +388,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       requested. */}
                   {!isHwHevc && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Quality ({isCpu ? "CRF" : "CQ"})</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
                       <input type="range" min={15} max={40} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
                         onChange={e => setCqSlider(Number(e.target.value))}
@@ -387,7 +401,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       {cq !== null && (
                         <button onClick={() => setCq(null)}
                           style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", padding: "1px 6px", borderRadius: 3, fontSize: 10, cursor: "pointer" }}>
-                          Reset
+                          {t("scannerModals:overrides.reset")}
                         </button>
                       )}
                     </div>
@@ -398,21 +412,17 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       Quality above. */}
                   {!isHwHevc && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Preset</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.preset")}</label>
                     <select value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">Auto</option>
+                      <option value="">{t("scannerModals:overrides.auto")}</option>
                       {isCpu ? (
-                        CPU_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)
+                        CPU_PRESETS.map(p => <option key={p.value} value={p.value}>{p.suffixKey ? `${p.label} ${t(`scannerModals:overrides.${p.suffixKey}`)}` : p.label}</option>)
                       ) : (
                         <>
-                          <option value="p1">P1 — Fastest</option>
-                          <option value="p2">P2 — Very Fast</option>
-                          <option value="p3">P3 — Fast</option>
-                          <option value="p4">P4 — Medium</option>
-                          <option value="p5">P5 — Slow</option>
-                          <option value="p6">P6 — Very Slow</option>
-                          <option value="p7">P7 — Slowest (Best compression)</option>
+                          {NVENC_PRESET_IDS.map(id => (
+                            <option key={id} value={id}>{`${id.toUpperCase()} — ${t(`scannerModals:overrides.nvencPresets.${id}`)}`}</option>
+                          ))}
                         </>
                       )}
                     </select>
@@ -420,17 +430,17 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   )}
                   {isHwHevc && (
                     <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0 0 90px" }}>
-                      QSV/VAAPI use their global preset and quality from Settings → Encoding.
+                      {t("scannerModals:overrides.hwHevcNote")}
                     </div>
                   )}
 
                   {/* Audio Codec */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Audio</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.audio")}</label>
                     <select value={audioCdc ?? ""} onChange={e => setAudioCdc(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">Auto</option>
-                      <option value="copy">Copy (passthrough)</option>
+                      <option value="">{t("scannerModals:overrides.auto")}</option>
+                      <option value="copy">{t("scannerModals:overrides.audioCopy")}</option>
                       <option value="eac3">EAC3 (Dolby Digital+)</option>
                       <option value="ac3">AC3 (Dolby Digital)</option>
                       <option value="aac">AAC</option>
@@ -439,7 +449,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     {audioCdc && audioCdc !== "copy" && (
                       <select value={audioBr ?? ""} onChange={e => setAudioBr(e.target.value ? Number(e.target.value) : null)}
                         style={{ width: 80, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                        <option value="">Auto</option>
+                        <option value="">{t("scannerModals:overrides.auto")}</option>
                         <option value="96">96k</option>
                         <option value="128">128k</option>
                         <option value="192">192k</option>
@@ -452,10 +462,10 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
                   {/* Resolution */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Resolution</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.resolution")}</label>
                     <select value={resolution ?? ""} onChange={e => setResolution(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
-                      <option value="">Auto (keep original)</option>
+                      <option value="">{t("scannerModals:overrides.autoKeepOriginal")}</option>
                       <option value="1080p">1080p</option>
                       <option value="720p">720p</option>
                       <option value="480p">480p</option>
@@ -466,7 +476,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       below. Checking force_reencode auto-clears cleanup_only
                       and vice versa. v0.3.80+. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Re-encode</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.reencode")}</label>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                       <input type="checkbox" checked={forceReencode} onChange={(e) => {
                         setForceReencode(e.target.checked);
@@ -474,7 +484,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       }}
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={{ fontSize: 11, color: forceReencode ? "var(--text-secondary)" : "var(--text-muted)" }}>
-                        Force re-encode all files (including x265)
+                        {t("scannerModals:overrides.forceReencode")}
                       </span>
                     </label>
                   </div>
@@ -483,7 +493,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       but skips video re-encode entirely. Same effect as a
                       rule with action="ignore", expressed per-batch. v0.3.80+. */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
-                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>Audio/sub</label>
+                    <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.audioSub")}</label>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                       <input type="checkbox" checked={cleanupOnly} onChange={(e) => {
                         setCleanupOnly(e.target.checked);
@@ -491,7 +501,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       }}
                         style={{ accentColor: "var(--accent)" }} />
                       <span style={{ fontSize: 11, color: cleanupOnly ? "var(--text-secondary)" : "var(--text-muted)" }}>
-                        Cleanup only — no video conversion
+                        {t("scannerModals:overrides.cleanupOnly")}
                       </span>
                     </label>
                   </div>
@@ -526,11 +536,11 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                         {testRunning ? (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                             <div className="spinner" style={{ width: 12, height: 12 }} />
-                            {testStep === "extracting" ? "Extracting sample..." :
-                             testStep === "encoding" ? "Encoding sample..." :
-                             testStep === "analyzing" ? "VMAF analysis..." : "Starting..."}
+                            {testStep === "extracting" ? t("scannerModals:test.extracting") :
+                             testStep === "encoding" ? t("scannerModals:test.encoding") :
+                             testStep === "analyzing" ? t("scannerModals:test.analyzing") : t("scannerModals:test.starting")}
                           </span>
-                        ) : "Test Encode (30s sample)"}
+                        ) : t("scannerModals:test.button")}
                       </button>
                       {testRunning && (
                         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
@@ -551,7 +561,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                             fontWeight: 600,
                             color: testResult.ratio > 50 ? "var(--success)" : testResult.ratio > 30 ? "var(--accent)" : "var(--text-muted)",
                           }}>
-                            {testResult.ratio}% savings
+                            {t("scannerModals:test.savings", { pct: testResult.ratio })}
                           </span>
                           {testResult.vmaf_score != null && (
                             <span style={{
@@ -571,7 +581,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       )}
                       {testResult && testResult.status === "failed" && (
                         <span style={{ fontSize: 11, color: "#e94560" }}>
-                          Failed: {testResult.error?.slice(0, 80)}
+                          {t("scannerModals:test.failed", { error: testResult.error?.slice(0, 80) })}
                         </span>
                       )}
                     </div>
@@ -582,7 +592,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
           </>
         ) : (
           <div style={{ color: "var(--text-muted)", padding: 20, textAlign: "center" }}>
-            Failed to estimate
+            {t("scannerModals:estimate.failed")}
             {estimate?.error && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 8 }}>{estimate.error}</div>}
           </div>
         )}
@@ -590,13 +600,13 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         {/* Actions */}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }} onClick={onCancel}>
-            Cancel
+            {t("common:actions.cancel")}
           </button>
           <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
             onClick={() => onConfirm(priority, overrideRules, buildOverrides())}
           >
-            Add {fmtNum(estimate?.total_files || filePaths.length)} to Queue
+            {t("scannerModals:estimate.addToQueue", { num: fmtNum(estimate?.total_files || filePaths.length) })}
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { WSMessage } from "./types";
+import i18n from "./i18n";
 
 const API_BASE = "/api";
 
@@ -39,6 +40,13 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       const body = await res.json();
       if (body && typeof body === "object") {
         if (typeof body.detail === "string") detail = body.detail;
+        // v0.9.132: ApiError responses carry a stable `code` + `params`;
+        // translate them, falling back to the server's English detail.
+        if (typeof body.code === "string" && body.code) {
+          const params = body.params && typeof body.params === "object" ? body.params : {};
+          const translated = String(i18n.t(`serverApi:${body.code}`, { ...params, defaultValue: detail ?? "" }));
+          detail = translated || detail;
+        }
         else if (Array.isArray(body.detail)) {
           // Pydantic validation errors come as a list of {loc, msg, type}
           detail = body.detail
@@ -167,6 +175,9 @@ export interface FileEvent {
   event_type: string;
   occurred_at: string;
   summary: string;
+  // v0.9.132 message codes — see i18n/server.ts eventSummary().
+  summary_key?: string | null;
+  summary_params?: Record<string, unknown> | null;
   details: any;
 }
 export const getFileHistory = (path: string, limit = 100) =>
@@ -262,6 +273,9 @@ export interface NodeMetricsEntry {
   // if the node has NVENC working. Shown on the Monitor card as actionable
   // copy so the user knows what to fix (old driver, missing GPU, etc.).
   nvenc_unavailable_reason: string | null;
+  // i18n key (serverJobs) for Shrinkerr-authored reasons; absent for raw ffmpeg output.
+  nvenc_unavailable_reason_key?: string | null;
+  nvenc_unavailable_reason_params?: Record<string, unknown> | null;
   os_info: string | null;
   current_job_id: number | null;
   capabilities: string[];

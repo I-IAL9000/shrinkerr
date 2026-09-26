@@ -505,6 +505,22 @@ async def _detect_clip_language(clip_path: str, timeout: int = 120) -> tuple[str
     return await _whisper_worker.detect(clip_path, timeout=timeout)
 
 
+class KeyedNote(str):
+    """A detection note that is still the plain English ``str`` every existing
+    caller and test expects, but also carries a message code for the UI
+    (``serverJobs:detectNotes.<key>``) set where the note is created, so the
+    frontend never has to match English prose. v0.9.132."""
+
+    key: str
+    params: dict
+
+    def __new__(cls, text: str, key: str, params: dict | None = None):
+        obj = super().__new__(cls, text)
+        obj.key = key
+        obj.params = params or {}
+        return obj
+
+
 async def detect_audio_language(file_path: str, stream_index: int, duration: float = 0.0) -> tuple[str | None, float, str | None]:
     """Detect an audio track's spoken language via faster-whisper on 30s
     clips. Returns (ISO 639-2 B-form, confidence, note). On success note is
@@ -547,17 +563,21 @@ async def detect_audio_language(file_path: str, stream_index: int, duration: flo
         if best_conf >= threshold:
             break  # confident enough — don't sample further
     if timed_out:
-        return (None, 0.0, "audio detection timed out")
+        return (None, 0.0, KeyedNote("audio detection timed out", "audioTimedOut"))
     if not best_iso1 or best_conf < threshold:
         print(f"[LANG-DETECT] audio s{stream_index}: below confidence "
               f"{best_iso1 or 'no-speech'}@{best_conf:.2f} < {threshold:.2f}", flush=True)
-        note = (f"{best_iso1} {round(best_conf * 100)}% — below {round(threshold * 100)}% threshold"
-                if best_iso1 else "no speech detected")
+        if best_iso1:
+            pct, thr = round(best_conf * 100), round(threshold * 100)
+            note = KeyedNote(f"{best_iso1} {pct}% — below {thr}% threshold", "belowThreshold",
+                             {"lang": best_iso1, "pct": pct, "threshold": thr})
+        else:
+            note = KeyedNote("no speech detected", "noSpeech")
         return (None, 0.0, note)
     iso2 = _iso_to_iso639_2b(best_iso1)
     if not iso2:
         print(f"[LANG-DETECT] audio s{stream_index}: {best_iso1} has no ISO-639-2 mapping", flush=True)
-        return (None, 0.0, f'detected "{best_iso1}" — no ISO-639-2 code')
+        return (None, 0.0, KeyedNote(f'detected "{best_iso1}" — no ISO-639-2 code', "noIsoCode", {"lang": best_iso1}))
     return (iso2, best_conf, None)
 
 

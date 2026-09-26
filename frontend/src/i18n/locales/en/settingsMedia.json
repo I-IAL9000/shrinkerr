@@ -1,0 +1,670 @@
+{
+  "header": {
+    "title": "Settings",
+    "export": "Export",
+    "import": "Import",
+    "importSuccess": "Imported {{settings}} settings, {{dirs}} dirs, {{rules}} rules",
+    "importFailed": "Import failed: {{error}}",
+    "saved": "Settings saved!"
+  },
+  "directories": {
+    "title": "Media Directories",
+    "noScan": "no scan",
+    "noScanTitle": "Webhook-eligible only — scanner and watcher skip this directory. Useful for an NZBGet/SABnzbd downloads landing zone.",
+    "scan": "Scan",
+    "updateFailed": "Failed to update",
+    "empty": "No directories configured",
+    "browse": "Browse",
+    "pathPlaceholder": "Path (e.g., /media/Movies/HD 2020)",
+    "typeOptional": "Type (optional)",
+    "types": {
+      "movies": "Movies",
+      "tvShows": "TV Shows",
+      "other": "Other"
+    },
+    "add": "+ Add",
+    "addFailed": "Could not add directory"
+  },
+  "video": {
+    "title": "Video Settings",
+    "encodingDefaults": "Encoding Defaults",
+    "defaultEncoder": "Default Encoder",
+    "redetectTitle": "Re-detect hardware encoders. Use this after enabling /dev/dri passthrough or changing the BIOS iGPU setting.",
+    "detecting": "Detecting…",
+    "redetect": "Re-detect",
+    "libx265Option": "libx265 (CPU — Software)",
+    "encoderHelp": {
+      "nvenc": "Hardware encoding using your NVIDIA GPU. Fast, lower power usage. Slightly larger files than CPU at the same quality.",
+      "qsv": "Hardware encoding using Intel Quick Sync (Gen8+ iGPUs through Arc / Battlemage). Fast and very power-efficient. Requires /dev/dri passthrough — see the help block below.",
+      "vaapi": "Hardware encoding via VA-API. Works on Intel iGPUs and AMD GPUs (Polaris / Vega / RDNA). Driver-quality varies; use QSV instead on Intel where available. Requires /dev/dri passthrough.",
+      "libx265": "Software encoding using CPU. Slower but achieves better compression per bitrate."
+    },
+    "passthrough": {
+      "summary": "Compose passthrough for QSV / VAAPI",
+      "addTo": "Add to your <code>docker-compose.yml</code>:",
+      "findGid": "Find the GID with <code>stat -c '%g' /dev/dri/renderD128</code> on the host.",
+      "restart": "Then <code>docker compose down && up -d</code> and click <em>Re-detect</em> above.",
+      "verify": "Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes."
+    },
+    "targetCodec": "Target Codec",
+    "parallelJobs": "Parallel Jobs",
+    "parallelJobsHelp": "Number of simultaneous encoding jobs. Higher = faster queue processing but more GPU/CPU load.",
+    "ffmpegThreads": "FFmpeg Threads Per Job",
+    "auto": "auto",
+    "ffmpegThreadsHelp": "<b>auto (0)</b> lets ffmpeg use every available core per job — fine for a single job, but with <b>Parallel Jobs > 1</b> two jobs on an 8-core CPU each try to use all 8 cores and fight each other, eroding throughput. <b>1–2</b> is a good cap for older CPUs running parallel software (libx265) encodes. <b>NVENC / QSV / VAAPI</b> users can usually leave this at <b>1–2</b> too — the GPU does the heavy lifting, ffmpeg just needs threads for muxing and filtering. Set higher if you want a single job to fully saturate a modern many-core CPU.",
+    "targetResolution": "Target Resolution",
+    "convertFrom": "Convert From (source codecs)",
+    "always": "(always)",
+    "convertFromHelp": "Select which source codecs should be converted to the target codec.",
+    "vmafDecoderWarning": "⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.",
+    "scale": {
+      "highestQuality": "{{value}} (Highest quality)",
+      "smallestFile": "{{value}} (Smallest file)",
+      "presetFastest": "p1 (Fastest)",
+      "presetBest": "p7 (Best)",
+      "bestQualitySlowest": "{{value}} (Best quality, slowest)",
+      "fastest": "{{value}} (Fastest)"
+    },
+    "nvdec": {
+      "label": "Use NVDEC for decode",
+      "help": "Decodes the source on the GPU before NVENC encodes it. Frames stay on-device — no PCIe transfer. Falls back silently to software decode for unsupported source codecs (MS-MPEG4v3, exotic formats).",
+      "notDetected": "NVDEC not detected on this host."
+    },
+    "bitDepth": {
+      "label": "Bit Depth",
+      "10bit": "10-bit (main10 / p010le) — default",
+      "8bit": "8-bit (main / nv12) — Maxwell-compatible",
+      "auto": "Match source (10-bit in → 10-bit out, else 8-bit)",
+      "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for Maxwell silicon (GTX 9xx / 750 Ti / Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it."
+    },
+    "nvencPreset": "NVENC Preset",
+    "nvencCq": "NVENC Constant Quality (CQ)",
+    "nvencCqHelp": "Controls quality vs file size. Lower = higher quality, larger files. <b>18-20:</b> Transparent quality (recommended). <b>21-24:</b> Good quality, noticeable savings. <b>25+:</b> Visible quality loss, maximum compression.",
+    "cpuFallback": {
+      "title": "CPU fallback",
+      "help": "When an NVENC job is picked up by a CPU-only worker, use these libx265 settings instead of auto-translating from the NVENC preset/CQ. Leave blank for automatic translation.",
+      "autoTranslate": "Auto (translate)"
+    },
+    "gpuFallback": {
+      "title": "GPU fallback",
+      "help": "When a libx265 job is picked up by a GPU-capable worker, use these NVENC settings instead of the hardcoded defaults. Leave blank for automatic.",
+      "auto": "Auto"
+    },
+    "preset": "Preset",
+    "autoPlaceholder": "auto",
+    "presetNames": {
+      "ultrafast": "Ultrafast",
+      "superfast": "Superfast",
+      "veryfast": "Very Fast",
+      "faster": "Faster",
+      "fast": "Fast",
+      "medium": "Medium",
+      "slow": "Slow",
+      "slower": "Slower",
+      "veryslow": "Very Slow",
+      "mediumDefault": "Medium (default)",
+      "mediumRecommended": "Medium (recommended)",
+      "veryslowBest": "Very Slow (Best compression)"
+    },
+    "x265Nvdec": {
+      "label": "Use NVDEC for decode (mixed mode)",
+      "help": "Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Falls back silently to software decode for unsupported source codecs. Defaults off."
+    },
+    "cpuPreset": "CPU Preset",
+    "cpuPresetHelp": "Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality. <b>medium:</b> Balanced speed and quality (recommended). <b>slow/slower:</b> Better compression, significantly slower. <b>fast/veryfast:</b> Quick encodes, larger files.",
+    "crf": "Constant Rate Factor (CRF)",
+    "crfHelp": "Controls quality vs file size. Lower = higher quality, larger files. CRF 18-20 is typically transparent to the original.",
+    "qsvDecode": {
+      "label": "Use QSV for decode",
+      "help": "Decodes the source on the Intel iGPU before QSV encodes it. Frames stay on-die — no upload overhead. Falls back silently to software decode for unsupported source codecs.",
+      "notDetected": "QSV decode not detected on this host."
+    },
+    "qsvPreset": "QSV Preset",
+    "qsvPresetHelp": "Encoder analysis depth. <b>Note:</b> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <b>medium</b> is fine for most hardware.",
+    "qsvQuality": "QSV Quality (global_quality)",
+    "qsvQualityHelp": "QSV's ICQ-mode quality target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> is good quality with noticeable savings. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.",
+    "lookahead": {
+      "label": "Look-ahead rate control",
+      "help": "Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs."
+    },
+    "vaapiDecode": {
+      "label": "Use VAAPI for decode",
+      "help": "Decodes the source on the GPU/iGPU via VAAPI before encoding. Frames stay on the DRM device. Falls back silently to software decode for unsupported source codecs.",
+      "notDetected": "VAAPI decode not detected on this host."
+    },
+    "vaapiCompression": "VAAPI Compression Level",
+    "vaapiCompressionHelp": "Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <b>4</b> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).",
+    "vaapiQp": "VAAPI Quantizer (QP)",
+    "vaapiQpHelp": "Constant quantizer (CQP) target. Lower = higher quality, larger files. <b>20-22</b> is typically transparent; <b>23-26</b> trades quality for size sensibly.",
+    "smart": {
+      "title": "Smart Encoding",
+      "contentType": "Content type detection",
+      "contentTypeHelp": "Automatically detects content type from filenames (anime, grain, animation, remux) and applies optimized CQ values. Anime compresses well (CQ 22), grain needs conservative settings (CQ 24). Applied when no encoding rule sets a CQ value.",
+      "vmaf": "VMAF quality analysis",
+      "hwWarning_one": "<b>⚠ VMAF will not run on hardware-decoded jobs.</b> VMAF compares the encoded output to software-decoded source frames. With <b2>{{count}}</b2> hardware decode toggle currently on ({{decoders}}), jobs that use those encoders will skip VMAF — no score is computed and the quality threshold won't be applied. To enforce VMAF on every job, disable the hardware decode toggles in the encoder section above.",
+      "hwWarning_other": "<b>⚠ VMAF will not run on hardware-decoded jobs.</b> VMAF compares the encoded output to software-decoded source frames. With <b2>{{count}}</b2> hardware decode toggles currently on ({{decoders}}), jobs that use those encoders will skip VMAF — no score is computed and the quality threshold won't be applied. To enforce VMAF on every job, disable the hardware decode toggles in the encoder section above.",
+      "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix. It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality. When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion. Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.",
+      "score": "Score",
+      "quality": "Quality",
+      "tiers": {
+        "transparent": "Transparent / indistinguishable",
+        "highQuality": "High quality streaming",
+        "acceptable": "Acceptable quality",
+        "degradation": "Noticeable degradation"
+      },
+      "minScore": "Reject encodes below a minimum VMAF score",
+      "minScoreHelp": "When enabled, any encode whose measured VMAF score is below the threshold is discarded — the encoded temp file is deleted, the original is left in place, and the job is recorded as <b>rejected</b> with the score and threshold visible in the job details. Useful as a safety net against overly-aggressive CQ/CRF settings.",
+      "resAware": "Resolution-aware quality",
+      "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Fallback when no rule or content detection sets CQ."
+    },
+    "vmafRemeasure": {
+      "title": "Re-measure suspect VMAF scores",
+      "help": "Re-runs VMAF on completed jobs whose recorded score landed below \"Excellent\" or got flagged measurement-suspect (libvmaf can de-sync mid-window and return artificially low scores on visually-fine encodes). Skips jobs where the original pre-rename file no longer exists. Uses the same bimodal-aware retry path as fresh encodes.",
+      "startedToast_one": "Re-measuring {{count}} VMAF score...",
+      "startedToast_other": "Re-measuring {{count}} VMAF scores...",
+      "noCandidatesToast": "No remeasure candidates.",
+      "startFailed": "VMAF re-measure failed to start: {{error}}",
+      "unknownError": "unknown error",
+      "progress": "Re-measuring: {{done}} / {{total}}",
+      "running": "Re-measuring...",
+      "button_one": "Re-measure {{count}} score",
+      "button_other": "Re-measure {{count}} scores",
+      "noCandidates": "No candidates — every completed job is at \"Excellent\" or has no comparable source.",
+      "lastPass_one": "Last pass: <b>{{count}} rescued</b>",
+      "lastPass_other": "Last pass: <b>{{count}} rescued</b>",
+      "unchanged": ", {{count}} unchanged",
+      "skipped_one": ", {{count}} skipped (source missing)",
+      "skipped_other": ", {{count}} skipped (source missing)"
+    },
+    "timeouts": {
+      "title": "Timeouts",
+      "ffmpeg": "ffmpeg timeout (hours)",
+      "ffprobe": "ffprobe timeout (seconds)"
+    },
+    "save": "Save Encoding Settings",
+    "guide": {
+      "title": "Conversion Guide",
+      "cols": {
+        "preset": "Preset",
+        "speed": "Speed",
+        "speed1080p": "Speed (1080p)",
+        "qualitySize": "Quality/Size",
+        "priority": "Priority",
+        "settings": "Settings",
+        "savings": "Savings",
+        "quality": "Quality"
+      },
+      "cells": {
+        "largestFiles": "Largest files",
+        "balanced": "Balanced",
+        "goodCompression": "Good compression",
+        "greatCompression": "Great compression",
+        "bestCompression": "Best compression",
+        "betterCompression": "Better compression",
+        "slightlySmaller": "Slightly smaller",
+        "greatDefault": "Great (default)",
+        "veryGood": "Very good",
+        "bestPractical": "Best practical",
+        "diminishingReturns": "Diminishing returns",
+        "maxQuality": "Max quality",
+        "qualityFirst": "Quality first",
+        "spaceSaver": "Space saver",
+        "maxCompression": "Max compression",
+        "maxThroughput": "Max throughput",
+        "overkill": "Overkill",
+        "transparent": "Transparent",
+        "excellent": "Excellent",
+        "good": "Good",
+        "noticeableLoss": "Noticeable loss"
+      },
+      "nvencPresets": {
+        "title": "NVENC presets (GPU)",
+        "desc": "Higher preset = slower encoding but better compression. Unlike libx265, NVENC preset speed changes very little between p1 and p7 — the quality gains are also modest. Default to p3-p5 and adjust CQ for size.",
+        "note": "Speeds are approximate for 1080p on Quadro P2200."
+      },
+      "nvencCombos": {
+        "title": "NVENC recommended combos"
+      },
+      "x265Presets": {
+        "title": "libx265 presets (CPU)",
+        "desc": "libx265 preset cost scales EXPONENTIALLY — each step right roughly doubles encode time. Default `medium` is the quality-per-minute sweet spot; drop to `fast` or `veryfast` for backfills, bump to `slow`/`slower` only for archival masters.",
+        "note": "Speeds are rough for 10-bit output on a modern desktop CPU. M1/M2 Macs run ~40-60% of these numbers; older CPUs slower."
+      },
+      "x265Combos": {
+        "title": "libx265 recommended combos"
+      },
+      "cqCrf": {
+        "title": "Understanding CQ / CRF",
+        "desc": "CQ (NVENC) and CRF (libx265) control the quality target. Lower = higher quality, larger files. The encoder allocates more bits to complex scenes and fewer to simple ones."
+      },
+      "tipsTitle": "Tips",
+      "tips": {
+        "sources": "<b>Sources:</b> Blu-ray rips (15-40 GB) see the biggest savings; WEB-DL files (3-8 GB) are already well-compressed — expect smaller gains, or bump CQ/CRF 2-3 points.",
+        "grain": "<b>Grain-heavy content</b> (film, older movies) needs lower CQ/CRF values to preserve detail, or the encoder smears grain into blocks.",
+        "animation": "<b>Animation</b> compresses extremely well — even CQ 25+ looks great. Consider a dedicated rule targeting your anime directory.",
+        "nvencVsX265": "<b>NVENC vs libx265 quality:</b> NVENC CQ ≈ libx265 CRF + 0–2 for matched perceptual quality. libx265 still produces ~25% smaller files at the same quality, trading 5-50× encode time.",
+        "x265Scaling": "<b>libx265 preset scaling:</b> each step slower roughly doubles encode time. Going from `fast` to `slow` is 4×, `fast` to `veryslow` is 20×+. Know your patience budget before picking.",
+        "nvencScaling": "<b>NVENC preset scaling:</b> minimal — p7 is only ~5× slower than p1 on the same card, and the quality gap is small. Default p3-p5 is usually the right answer.",
+        "testEncode": "<b>Try a test encode first:</b> the Estimate modal's <em>Test encode</em> button runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.",
+        "mixedFleets": "<b>Mixed fleets:</b> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above."
+      },
+      "current": {
+        "x265": "Current: libx265 {{preset}} / CRF {{crf}}",
+        "nvenc": "Current: NVENC {{preset}} / CQ {{cq}}",
+        "maxQuality": "Maximum quality, conservative compression",
+        "highQuality": "High quality, moderate compression",
+        "greatQuality": "Great quality with good space savings",
+        "goodSolid": "Good quality, solid compression",
+        "goodAggressive": "Good quality, aggressive compression",
+        "maxCompression": "Maximum compression, some quality tradeoff"
+      }
+    }
+  },
+  "audio": {
+    "title": "Audio Settings",
+    "trackRules": "Audio Track Rules",
+    "removeUnwanted": "Remove unwanted audio tracks",
+    "alwaysKeep": "Always Keep Languages",
+    "searchPlaceholder": "Search languages to add...",
+    "alwaysKeepHelp": "Audio tracks in these languages are kept by default. You can override per-track in the file detail editor.",
+    "dedup": {
+      "label": "Keep only the best track per always-keep language",
+      "help": "When a file has multiple tracks in the same always-keep language (e.g. EAC3 5.1 + AAC 2.0 + commentary, all English), keep only the highest-quality one by default (ranked by channels, then codec: TrueHD > FLAC/PCM > DTS-HD MA > DTS > EAC3 > AC3 > AAC). Turn off to keep every track in always-keep languages — you can still uncheck individual tracks in the file detail editor."
+    },
+    "keepNative": {
+      "label": "Auto-keep native language audio tracks",
+      "help": "Automatically keep audio tracks matching each file's detected native language. Disable if you only want to keep dubbed / specified language tracks. (Subtitles have their own toggle in the Subtitles section — they're off by default.)"
+    },
+    "reorderNative": {
+      "label": "Reorder native language to first audio stream",
+      "help": "During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup."
+    },
+    "keepUnknown": {
+      "label": "Keep unknown/undefined tracks",
+      "help": "Tracks tagged as \"und\" or with no language metadata"
+    },
+    "autoDetect": {
+      "label": "Auto-detect languages for unknown tracks before converting",
+      "help": "Before converting or cleaning up audio, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view."
+    },
+    "model": {
+      "label": "Audio detection model",
+      "tiny": "Tiny — fastest, ~75 MB (default)",
+      "base": "Base — better accuracy, ~140 MB",
+      "small": "Small — best accuracy, ~460 MB, slower",
+      "medium": "Medium — higher accuracy, ~1.5 GB, GPU recommended",
+      "large-v3": "Large-v3 — best accuracy (incl. low-resource langs), ~3 GB, GPU strongly recommended",
+      "help": "faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Medium/Large-v3 are practical only with an NVIDIA GPU (the :nvenc image). Downloads on first use; takes effect on the next detection (no restart)."
+    },
+    "audioConfidence": "Audio confidence",
+    "subtitleConfidence": "Subtitle confidence",
+    "confidenceHelp": "Minimum confidence (0–1) to accept a detected language — lower tags more tracks but risks wrong tags. Defaults: audio 0.6, subtitle 0.7. (A <code>SHRINKERR_*</code> env var, if set, overrides these.)",
+    "conversion": {
+      "title": "Audio Conversion",
+      "codec": "Audio Codec",
+      "bitrate": "Audio Bitrate",
+      "bitrateHelp": "Higher bitrate = better audio quality, larger files. <b>128 kbps:</b> Good for stereo. <b>256 kbps:</b> Good for 5.1 surround. <b>384-640 kbps:</b> High quality surround.",
+      "downmix": "Downmix surround to stereo",
+      "downmixHelp": "Convert 5.1/7.1 surround to stereo. Saves space but loses surround channels."
+    },
+    "lossless": {
+      "label": "Auto-convert lossless audio",
+      "help": "Automatically convert lossless audio tracks (DTS-HD MA, TrueHD, PCM, FLAC) to a smaller lossy codec during video conversion. Lossy tracks are left untouched.",
+      "targetCodec": "Target Codec",
+      "targetBitrate": "Target Bitrate"
+    },
+    "save": "Save Audio Rules",
+    "guide": {
+      "title": "Audio Guide",
+      "perHour": "{{size}}/hr",
+      "codecs": {
+        "title": "Common Audio Codecs",
+        "cols": {
+          "codec": "Codec",
+          "type": "Type",
+          "typicalSize": "Typical Size"
+        },
+        "lossy": "Lossy",
+        "lossy51": "Lossy 5.1",
+        "lossy5171": "Lossy 5.1/7.1",
+        "lossless5171": "Lossless 5.1/7.1",
+        "lossless71": "Lossless 7.1",
+        "lossless": "Lossless",
+        "uncompressed": "Uncompressed"
+      },
+      "removing": {
+        "title": "Space Saved by Removing Tracks",
+        "desc": "Each extra audio track adds significant file size. A 2-hour movie with 4 unnecessary audio tracks can waste 1-8 GB.",
+        "cols": {
+          "tracksRemoved": "Tracks Removed",
+          "typicalSavings": "Typical Savings",
+          "example": "Example"
+        },
+        "commentary": "Commentary track",
+        "foreignDub": "Foreign dub",
+        "threeForeignDubs": "3 foreign dubs",
+        "losslessForeign": "Lossless foreign",
+        "atmosForeignDub": "Atmos foreign dub"
+      },
+      "reencode": {
+        "title": "Re-encoding vs Copy",
+        "cols": {
+          "mode": "Mode",
+          "speed": "Speed",
+          "useWhen": "Use When"
+        },
+        "copy": "Copy",
+        "instant": "Instant",
+        "fast": "Fast",
+        "always": "Always (recommended)",
+        "stereoSmall": "Stereo, small files",
+        "stereoGood": "Stereo, good quality",
+        "compatibility": "5.1, compatibility",
+        "modern": "5.1/7.1, modern"
+      },
+      "tipsTitle": "Tips",
+      "tips": {
+        "copy": "Use \"Copy\" mode unless you specifically need a different codec — it's instant and lossless",
+        "bluray": "Blu-ray discs often include 3-6 language dubs — removing them is the easiest space win",
+        "lossless": "DTS-HD MA and TrueHD are lossless and huge — consider keeping only for your primary language",
+        "commentary": "Commentary tracks are usually AC3 stereo (~250 MB each) — safe to remove unless you listen to them",
+        "native": "The native language is auto-detected per file, so foreign films keep their original audio"
+      },
+      "current": {
+        "summary": "Current: Keep {{langs}} + native",
+        "none": "none",
+        "onlyNative": "Only the native language track is kept",
+        "keptCount_one": "{{count}} language kept by default, plus native auto-detected per file",
+        "keptCount_other": "{{count}} languages kept by default, plus native auto-detected per file"
+      }
+    }
+  },
+  "subtitles": {
+    "title": "Subtitles",
+    "removeUnwanted": "Remove unwanted subtitle tracks",
+    "keepLanguages": "Keep Subtitle Languages",
+    "searchPlaceholder": "Search languages to add...",
+    "keepHelp": "Internal subtitle tracks in these languages will always be kept. Forced subtitles are always kept regardless of language. Only tracks in other languages will be marked for removal.",
+    "keepUnknown": {
+      "label": "Keep unknown/undefined subtitles",
+      "help": "Subtitle tracks tagged as \"und\" or with no language metadata"
+    },
+    "keepNative": {
+      "label": "Auto-keep native language subtitle tracks",
+      "help": "Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <b>off</b> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons."
+    },
+    "autoDetect": {
+      "label": "Auto-detect languages for unknown tracks before converting",
+      "help": "Before converting or cleaning up subtitles, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view."
+    },
+    "save": "Save Subtitle Rules",
+    "external": {
+      "title": "External Subtitles",
+      "merge": "Merge external subtitles into video",
+      "mergeHelp": "During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container. Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
+      "deleteAfter": "Delete external subtitle files after merge",
+      "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge.",
+      "save": "Save External Subtitle Settings"
+    }
+  },
+  "options": {
+    "presets": {
+      "p1": {
+        "label": "Fastest",
+        "desc": "Lowest quality, highest speed. Good for quick tests."
+      },
+      "p2": {
+        "label": "Very Fast",
+        "desc": "Slightly better quality than p1, still very quick."
+      },
+      "p3": {
+        "label": "Fast",
+        "desc": "Reasonable quality with good speed. Good for batch processing."
+      },
+      "p4": {
+        "label": "Medium",
+        "desc": "Balanced quality and speed. Good default for general use."
+      },
+      "p5": {
+        "label": "Slow",
+        "desc": "Better compression efficiency. Noticeably slower."
+      },
+      "p6": {
+        "label": "Very Slow",
+        "desc": "High quality with good compression. Recommended for storage."
+      },
+      "p7": {
+        "label": "Slowest",
+        "desc": "Best compression NVENC offers (best quality-per-bit → smaller files at the same CQ). Slowest speed."
+      }
+    },
+    "targetCodecs": {
+      "hevc": {
+        "label": "HEVC / H.265",
+        "desc": "Modern codec, excellent compression. Widely supported."
+      },
+      "av1": {
+        "label": "AV1 (future)",
+        "desc": "Next-gen codec, best compression. Requires AV1-capable GPU."
+      }
+    },
+    "sourceCodecs": {
+      "h264": "H.264 / AVC / x264",
+      "mpeg2": "MPEG-2",
+      "mpeg4": "MPEG-4 Part 2 / XviD / DivX",
+      "vc1": "VC-1 (WMV)",
+      "msmpeg4v3": "MS-MPEG4v3 (old DivX/AVI)",
+      "vp9": "VP9 (YouTube/WebM)",
+      "hevc": "H.265 / HEVC / x265",
+      "av1": "AV1"
+    },
+    "audioCodecs": {
+      "copy": {
+        "label": "Copy (no re-encode)",
+        "desc": "Keep original audio codec. Fastest, no quality loss."
+      },
+      "aac": {
+        "label": "AAC",
+        "desc": "Widely compatible. Good quality at lower bitrates."
+      },
+      "ac3": {
+        "label": "AC3 (Dolby Digital)",
+        "desc": "Standard surround sound. Max 640 kbps."
+      },
+      "eac3": {
+        "label": "EAC3 (Dolby Digital+)",
+        "desc": "Enhanced AC3. Better quality at same bitrate."
+      },
+      "opus": {
+        "label": "Opus",
+        "desc": "Best quality per bitrate. Limited device support."
+      },
+      "flac": {
+        "label": "FLAC",
+        "desc": "Lossless compression. Large files, perfect quality."
+      }
+    },
+    "resolutions": {
+      "copy": {
+        "label": "Copy (keep original)",
+        "desc": "Keep the original resolution. No scaling applied."
+      },
+      "1080p": {
+        "label": "1080p (1920×1080)",
+        "desc": "Full HD. Good balance of quality and size for most content."
+      },
+      "720p": {
+        "label": "720p (1280×720)",
+        "desc": "HD. Significant size reduction, still good on smaller screens."
+      },
+      "480p": {
+        "label": "480p (854×480)",
+        "desc": "SD. Very small files. Best for mobile or low-bandwidth."
+      }
+    }
+  },
+  "languages": {
+    "eng": "English",
+    "isl": "Icelandic",
+    "ice": "Icelandic (alt)",
+    "aar": "Afar",
+    "afr": "Afrikaans",
+    "aka": "Akan",
+    "amh": "Amharic",
+    "ara": "Arabic",
+    "arg": "Aragonese",
+    "asm": "Assamese",
+    "aze": "Azerbaijani",
+    "bak": "Bashkir",
+    "bam": "Bambara",
+    "bel": "Belarusian",
+    "ben": "Bengali",
+    "bos": "Bosnian",
+    "bre": "Breton",
+    "bul": "Bulgarian",
+    "cat": "Catalan",
+    "ces": "Czech",
+    "cze": "Czech (alt)",
+    "chi": "Chinese",
+    "zho": "Chinese (alt)",
+    "cmn": "Mandarin",
+    "cor": "Cornish",
+    "cos": "Corsican",
+    "cre": "Cree",
+    "cym": "Welsh",
+    "dan": "Danish",
+    "deu": "German",
+    "ger": "German (alt)",
+    "div": "Divehi",
+    "dut": "Dutch (alt)",
+    "nld": "Dutch",
+    "dzo": "Dzongkha",
+    "ell": "Greek",
+    "gre": "Greek (alt)",
+    "epo": "Esperanto",
+    "est": "Estonian",
+    "eus": "Basque",
+    "ewe": "Ewe",
+    "fao": "Faroese",
+    "fas": "Persian",
+    "per": "Persian (alt)",
+    "fij": "Fijian",
+    "fin": "Finnish",
+    "fra": "French",
+    "fre": "French (alt)",
+    "fry": "Western Frisian",
+    "ful": "Fulah",
+    "gla": "Scottish Gaelic",
+    "gle": "Irish",
+    "glg": "Galician",
+    "grn": "Guarani",
+    "guj": "Gujarati",
+    "hat": "Haitian Creole",
+    "hau": "Hausa",
+    "heb": "Hebrew",
+    "her": "Herero",
+    "hin": "Hindi",
+    "hrv": "Croatian",
+    "hun": "Hungarian",
+    "hye": "Armenian",
+    "arm": "Armenian (alt)",
+    "ibo": "Igbo",
+    "ido": "Ido",
+    "ind": "Indonesian",
+    "ita": "Italian",
+    "jav": "Javanese",
+    "jpn": "Japanese",
+    "kal": "Kalaallisut",
+    "kan": "Kannada",
+    "kas": "Kashmiri",
+    "kat": "Georgian",
+    "geo": "Georgian (alt)",
+    "kaz": "Kazakh",
+    "khm": "Khmer",
+    "kin": "Kinyarwanda",
+    "kir": "Kirghiz",
+    "kor": "Korean",
+    "kur": "Kurdish",
+    "lao": "Lao",
+    "lat": "Latin",
+    "lav": "Latvian",
+    "lit": "Lithuanian",
+    "ltz": "Luxembourgish",
+    "mac": "Macedonian (alt)",
+    "mkd": "Macedonian",
+    "mal": "Malayalam",
+    "mar": "Marathi",
+    "may": "Malay (alt)",
+    "msa": "Malay",
+    "mlg": "Malagasy",
+    "mlt": "Maltese",
+    "mon": "Mongolian",
+    "mri": "Maori",
+    "mya": "Myanmar",
+    "bur": "Myanmar (alt)",
+    "nep": "Nepali",
+    "nob": "Norwegian Bokmål",
+    "nor": "Norwegian",
+    "nno": "Norwegian Nynorsk",
+    "oci": "Occitan",
+    "ori": "Oriya",
+    "orm": "Oromo",
+    "pan": "Panjabi",
+    "pol": "Polish",
+    "por": "Portuguese",
+    "pus": "Pashto",
+    "que": "Quechua",
+    "roh": "Romansh",
+    "ron": "Romanian",
+    "rum": "Romanian (alt)",
+    "run": "Rundi",
+    "rus": "Russian",
+    "sag": "Sango",
+    "san": "Sanskrit",
+    "sin": "Sinhala",
+    "slk": "Slovak",
+    "slo": "Slovak (alt)",
+    "slv": "Slovenian",
+    "sme": "Northern Sami",
+    "smo": "Samoan",
+    "sna": "Shona",
+    "snd": "Sindhi",
+    "som": "Somali",
+    "sot": "Southern Sotho",
+    "spa": "Spanish",
+    "sqi": "Albanian",
+    "alb": "Albanian (alt)",
+    "srp": "Serbian",
+    "ssw": "Swati",
+    "sun": "Sundanese",
+    "swa": "Swahili",
+    "swe": "Swedish",
+    "tam": "Tamil",
+    "tat": "Tatar",
+    "tel": "Telugu",
+    "tgk": "Tajik",
+    "tgl": "Tagalog",
+    "tha": "Thai",
+    "tib": "Tibetan (alt)",
+    "bod": "Tibetan",
+    "tir": "Tigrinya",
+    "ton": "Tonga",
+    "tsn": "Tswana",
+    "tso": "Tsonga",
+    "tuk": "Turkmen",
+    "tur": "Turkish",
+    "twi": "Twi",
+    "uig": "Uighur",
+    "ukr": "Ukrainian",
+    "urd": "Urdu",
+    "uzb": "Uzbek",
+    "vie": "Vietnamese",
+    "vol": "Volapük",
+    "wln": "Walloon",
+    "wol": "Wolof",
+    "xho": "Xhosa",
+    "yid": "Yiddish",
+    "yor": "Yoruba",
+    "zul": "Zulu"
+  }
+}

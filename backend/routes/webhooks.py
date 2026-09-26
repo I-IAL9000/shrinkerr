@@ -4,7 +4,8 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
@@ -30,7 +31,7 @@ async def webhook_scan(request: WebhookScanRequest = WebhookScanRequest()):
     import backend.routes.scan as scan_mod
 
     if scan_mod._scan_task and not scan_mod._scan_task.done():
-        raise HTTPException(status_code=409, detail="Scan already in progress")
+        raise ApiError(status_code=409, detail="Scan already in progress", code="scan.alreadyRunning")
 
     paths = request.paths
     # Load configured media directories — used either as the full scan set
@@ -51,21 +52,24 @@ async def webhook_scan(request: WebhookScanRequest = WebhookScanRequest()):
         # mounted secrets.
         from backend.media_paths import is_in_any, _resolve
         if not configured:
-            raise HTTPException(
+            raise ApiError(
                 status_code=400,
                 detail="No media directories configured",
+                code="media.noMediaDirs",
             )
         resolved = [_resolve(p) for p in paths]
         bad = [p for p, r in zip(paths, resolved) if not is_in_any(r, configured)]
         if bad:
-            raise HTTPException(
+            raise ApiError(
                 status_code=403,
                 detail=f"Paths outside configured media directories: {bad}",
+                code="media.pathsOutsideMediaDirs",
+                params={"paths": ", ".join(bad)},
             )
         paths = resolved
 
     if not paths:
-        raise HTTPException(status_code=400, detail="No paths to scan")
+        raise ApiError(status_code=400, detail="No paths to scan", code="scan.noPaths")
 
     scan_mod._scan_task = asyncio.create_task(_run_scan(paths))
     return {"status": "started", "paths": paths}
@@ -80,7 +84,7 @@ async def webhook_queue(request: WebhookQueueRequest):
     from backend.media_paths import load_media_dirs, is_in_any, _resolve
 
     if _queue is None:
-        raise HTTPException(status_code=503, detail="Queue not initialized")
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     # Load source codecs from settings
     source_codecs = ["h264"]
@@ -100,9 +104,10 @@ async def webhook_queue(request: WebhookQueueRequest):
     # readable files (e.g. /proc/*, mounted secrets).
     allowed_dirs = await load_media_dirs()
     if not allowed_dirs:
-        raise HTTPException(
+        raise ApiError(
             status_code=400,
             detail="No media directories configured",
+            code="media.noMediaDirs",
         )
 
     added = 0

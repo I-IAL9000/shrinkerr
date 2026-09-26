@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { ChangelogEntry as ChangelogEntryData } from "../api";
 
 /**
@@ -26,6 +27,7 @@ export default function ChangelogEntryView({
   /** When true, render with an accent border — used for the "latest release" card. */
   highlight?: boolean;
 }) {
+  const { t } = useTranslation(["dialogs", "common"]);
   return (
     <div
       style={{
@@ -51,7 +53,7 @@ export default function ChangelogEntryView({
             background: "rgba(104,96,254,0.15)", color: "var(--accent)",
             textTransform: "uppercase", letterSpacing: 0.5,
           }}>
-            Latest
+            {t("dialogs:changelog.latest")}
           </span>
         )}
       </div>
@@ -71,7 +73,9 @@ export default function ChangelogEntryView({
               fontSize: 11, fontWeight: 700, textTransform: "uppercase",
               letterSpacing: 0.6, color, marginBottom: 4,
             }}>
-              {sectionName}
+              {/* Known keep-a-changelog headings get a translated label;
+                  anything else from CHANGELOG.md is shown as-is. */}
+              {t(`dialogs:changelog.sections.${sectionName}`, { defaultValue: sectionName })}
             </div>
             <ul style={{ margin: 0, paddingLeft: 20, color: "var(--text-secondary)", fontSize: 12, lineHeight: 1.65 }}>
               {bullets.map((b, i) => (

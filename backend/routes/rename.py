@@ -6,7 +6,8 @@ from dataclasses import asdict
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
@@ -51,9 +52,9 @@ async def put_rename_settings(payload: SettingsPayload):
     data = {k: v for k, v in payload.dict().items() if v is not None}
     # Validate
     if "separator" in data and data["separator"] not in ("space", "dot", "dash", "underscore"):
-        raise HTTPException(400, "separator must be one of: space, dot, dash, underscore")
+        raise ApiError(400, "separator must be one of: space, dot, dash, underscore", code="rename.invalidSeparator")
     if "case_mode" in data and data["case_mode"] not in ("default", "lower", "upper"):
-        raise HTTPException(400, "case_mode must be one of: default, lower, upper")
+        raise ApiError(400, "case_mode must be one of: default, lower, upper", code="rename.invalidCaseMode")
     s = await save_settings(data)
     return asdict(s)
 

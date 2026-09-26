@@ -44,12 +44,33 @@ EVENT_TYPES = (
 )
 
 
+# Closed value sets the UI translates via nested labels
+# (serverEvents:labels.healthStatus.* / labels.healthMode.*). A value outside
+# these gets no summary_key, so the UI shows the English summary instead of a
+# missing nested key.
+HEALTH_STATUSES = ("healthy", "corrupt", "warnings")
+HEALTH_MODES = ("quick", "thorough")
+
+
+def health_check_code(status: str, mode: str) -> dict:
+    """log_event kwargs for the "Health check: {status} ({mode})" summary."""
+    if status not in HEALTH_STATUSES or mode not in HEALTH_MODES:
+        return {}
+    summary_key = "healthCheckResult"  # literal assignment: seen by test_message_codes' scan
+    return {"summary_key": summary_key, "summary_params": {"status": status, "mode": mode}}
+
+
+def _params_json(params: Optional[dict[str, Any]]) -> Optional[str]:
+    return json.dumps(params) if params else None
+
+
 async def log_events_bulk(
-    events: list[tuple[str, str, str, Optional[dict[str, Any]]]],
+    events: list[tuple],
 ) -> None:
     """Append many events in a single connection + transaction.
 
-    Each tuple is (file_path, event_type, summary, details_or_None). Used
+    Each tuple is (file_path, event_type, summary, details_or_None) with an
+    optional trailing (summary_key, summary_params) pair. Used
     by callers that fan out hundreds/thousands of events at once (bulk
     queue add, bulk health check). Without this, the per-call log_event
     pattern opens a fresh DB connection + transaction for every event —
@@ -63,13 +84,19 @@ async def log_events_bulk(
             await db.execute("PRAGMA journal_mode=WAL")
             await db.execute("PRAGMA busy_timeout=10000")
             now = datetime.now(timezone.utc).isoformat()
-            params = [
-                (fp, et, now, summary, json.dumps(details) if details else None)
-                for fp, et, summary, details in events
-            ]
+            params = []
+            for ev in events:
+                fp, et, summary, details = ev[:4]
+                key = ev[4] if len(ev) > 4 else None
+                kparams = ev[5] if len(ev) > 5 else None
+                params.append((
+                    fp, et, now, summary,
+                    json.dumps(details) if details else None,
+                    key, _params_json(kparams),
+                ))
             await db.executemany(
-                "INSERT INTO file_events (file_path, event_type, occurred_at, summary, details_json) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO file_events (file_path, event_type, occurred_at, summary, details_json, "
+                "summary_key, summary_params) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 params,
             )
             await db.commit()
@@ -87,22 +114,31 @@ async def log_event(
     event_type: str,
     summary: str,
     details: Optional[dict[str, Any]] = None,
+    summary_key: Optional[str] = None,
+    summary_params: Optional[dict[str, Any]] = None,
 ) -> None:
-    """Append a row to file_events. Never raises — failures are logged & swallowed."""
+    """Append a row to file_events. Never raises — failures are logged & swallowed.
+
+    ``summary`` is the English text (fallback + non-UI consumers);
+    ``summary_key``/``summary_params`` let the UI render a translation
+    (``serverEvents:<key>``). Params are pre-formatted primitives.
+    """
     try:
         db = await aiosqlite.connect(DB_PATH)
         try:
             await db.execute("PRAGMA journal_mode=WAL")
             await db.execute("PRAGMA busy_timeout=10000")
             await db.execute(
-                "INSERT INTO file_events (file_path, event_type, occurred_at, summary, details_json) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO file_events (file_path, event_type, occurred_at, summary, details_json, "
+                "summary_key, summary_params) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     file_path,
                     event_type,
                     datetime.now(timezone.utc).isoformat(),
                     summary,
                     json.dumps(details) if details else None,
+                    summary_key,
+                    _params_json(summary_params),
                 ),
             )
             await db.commit()

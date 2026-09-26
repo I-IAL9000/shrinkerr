@@ -270,5 +270,19 @@
     "addingToQueue_many": "Añadiendo {{num}} elementos a la cola…",
     "addingToQueue_other": "Añadiendo {{num}} elementos a la cola…",
     "addingToQueueDetail": "Resolviendo reglas, eliminando duplicados e insertando trabajos."
+  },
+  "corruptBanner": {
+    "text": "Algunos archivos pueden estar marcados como corruptos por advertencias inofensivas de ffmpeg (p. ej. «number of reference frames exceeds max»). Borra las marcas y deja que se vuelvan a comprobar.",
+    "clearAll": "Borrar todas las marcas de corrupto"
+  },
+  "advBanner": {
+    "summary": "<b>Búsqueda avanzada:</b> {{matches}} {{conditions}}",
+    "matches_one": "{{num}} coincidencia",
+    "matches_many": "{{num}} coincidencias",
+    "matches_other": "{{num}} coincidencias",
+    "conditions_one": "de {{count}} condición",
+    "conditions_many": "de {{count}} condiciones",
+    "conditions_other": "de {{count}} condiciones",
+    "edit": "Editar"
   }
 }

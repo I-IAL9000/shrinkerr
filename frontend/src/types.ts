@@ -10,6 +10,8 @@ export interface AudioTrack {
   locked: boolean;
   detected_language?: string | null;  // v0.9.35: detected but not writable in place (AVI); applied on convert
   detect_note?: string | null;         // v0.9.44: why detection left it und
+  detect_note_key?: string | null;     // v0.9.132 message code
+  detect_note_params?: Record<string, unknown> | null;
 }
 
 export interface SubtitleTrack {
@@ -24,6 +26,8 @@ export interface SubtitleTrack {
   external_path?: string;
   detected_language?: string | null;  // v0.9.35 (see AudioTrack)
   detect_note?: string | null;         // v0.9.44: why detection left it und
+  detect_note_key?: string | null;     // v0.9.132 message code
+  detect_note_params?: Record<string, unknown> | null;
 }
 
 export interface ScannedFile {
@@ -84,6 +88,9 @@ export interface Job {
   fps: number | null;
   eta_seconds: number | null;
   error_log: string | null;
+  // v0.9.132 message codes — translated headline for Shrinkerr-authored errors.
+  error_key?: string | null;
+  error_params?: Record<string, unknown> | null;
   space_saved: number;
   original_size: number;
   nvenc_preset: string | null;
@@ -193,6 +200,9 @@ export interface JobProgress {
   fps: number | null;
   eta: number | null;
   step: string;
+  // v0.9.132 message codes for the step label.
+  step_key?: string | null;
+  step_params?: Record<string, unknown> | null;
   jobs_completed: number;
   jobs_total: number;
   total_saved: number;

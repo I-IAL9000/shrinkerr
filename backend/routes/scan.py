@@ -5,7 +5,8 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
@@ -827,7 +828,7 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
 
             if hc_mode != "off" and unchecked:
                 from backend.health_check import run_check
-                from backend.file_events import log_event, EVENT_HEALTH_CHECK
+                from backend.file_events import log_event, EVENT_HEALTH_CHECK, health_check_code
                 from datetime import datetime, timezone
                 total = len(unchecked)
                 print(f"[SCANNER] Running inline {hc_mode} health check on {total} new file(s)", flush=True)
@@ -880,6 +881,7 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
                                         "duration_seconds": result.get("duration_seconds"),
                                         "errors": errors[:5] if errors else None,
                                     },
+                                    **health_check_code("corrupt", hc_mode),
                                 )
                             except Exception:
                                 pass
@@ -923,7 +925,7 @@ async def start_scan(request: ScanRequest):
     # v0.7.32: scan_is_actively_running() reaps a hung scan, so hitting
     # "Scan" recovers from the stuck-flag deadlock instead of 409ing.
     if scan_is_actively_running():
-        raise HTTPException(status_code=409, detail="Scan already in progress")
+        raise ApiError(status_code=409, detail="Scan already in progress", code="scan.alreadyRunning")
     _scan_task = asyncio.create_task(_run_scan(request.paths))
     return {"status": "started", "paths": request.paths}
 
@@ -1060,7 +1062,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # "not und", never saving or writing the result.
     probe = await probe_file(req.file_path, detect_und_subs=False)
     if probe is None:
-        raise HTTPException(404, "Could not probe file")
+        raise ApiError(404, "Could not probe file", code="scan.probeFailed")
     duration = probe.get("duration", 0.0) or 0.0
     raw_audio = probe.get("audio_tracks", []) or []
     raw_subs = probe.get("subtitle_tracks", []) or []
@@ -1105,7 +1107,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     # OCR over a network mount hung unkillably for 15+ min. Skip detection for
     # them and record a clear note instead of attempting (and hanging on) it.
     is_stream = req.file_path.lower().endswith((".m2ts", ".mts", ".ts"))
-    _STREAM_NOTE = "detection not supported for m2ts/transport-stream — convert to MKV first"
+    from backend.language_detection import KeyedNote  # v0.9.132 message codes
+    _STREAM_NOTE = KeyedNote("detection not supported for m2ts/transport-stream — convert to MKV first", "streamUnsupported")
 
     # Audio: detect und tracks.
     for i, t in enumerate(raw_audio):
@@ -1122,7 +1125,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     lang, _c, _note = await detect_audio_language(req.file_path, t["stream_index"], duration=duration)
                 except Exception as _dexc:
                     lang = None
-                    _note = f"audio detection error: {str(_dexc)[:80]}"
+                    _err = str(_dexc)[:80]
+                    _note = KeyedNote(f"audio detection error: {_err}", "audioError", {"error": _err})
             if lang:
                 t["language"] = lang
                 audio_write[i] = lang
@@ -1130,7 +1134,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             else:
                 # v0.9.46: always record a reason so the UI never shows a bare
                 # und with no explanation.
-                detect_notes[("audio", t["stream_index"])] = _note or "could not identify audio language"
+                detect_notes[("audio", t["stream_index"])] = _note or KeyedNote("could not identify audio language", "audioUnidentified")
                 print(f"[LANG-DETECT] audio s{t.get('stream_index')} codec={t.get('codec')} "
                       f"title={t.get('title','')!r}: stayed und", flush=True)
 
@@ -1165,15 +1169,15 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     sub_write[j] = new_lang
                     changed = True
                 else:
-                    _sub_note = ("no text in subtitle" if not (txt and txt.strip())
-                                 else "subtitle text not confidently identified")
+                    _sub_note = (KeyedNote("no text in subtitle", "subNoText") if not (txt and txt.strip())
+                                 else KeyedNote("subtitle text not confidently identified", "subNotConfident"))
             elif codec_l in _IMAGE_SUB_CODECS:
                 try:
                     from backend.image_sub_ocr import detect_image_sub_language
                     # v0.9.1: stream coarse OCR stages to the UI (image-sub
                     # OCR takes minutes).
-                    async def _ocr_progress(stage, _fp=req.file_path):
-                        await ws_manager.send_detect_progress(_fp, stage)
+                    async def _ocr_progress(stage, stage_key=None, stage_params=None, _fp=req.file_path):
+                        await ws_manager.send_detect_progress(_fp, stage, stage_key=stage_key, stage_params=stage_params)
                     ocr_lang, _c = await detect_image_sub_language(
                         req.file_path, t["stream_index"], codec_l,
                         progress_cb=_ocr_progress)
@@ -1192,13 +1196,13 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
                     sub_write[j] = ocr_lang
                     changed = True
                 else:
-                    _sub_note = "image subtitle OCR found no usable text"
+                    _sub_note = KeyedNote("image subtitle OCR found no usable text", "ocrNoText")
             else:
-                _sub_note = "unsupported subtitle format for detection"
+                _sub_note = KeyedNote("unsupported subtitle format for detection", "subUnsupported")
             # Per-track outcome (title path returned earlier via `continue`).
             if (t.get("language") or "und").lower() == "und":
                 _sup = "text" if codec_l in _TEXT_SUB_CODECS else "image" if codec_l in _IMAGE_SUB_CODECS else "unsupported"
-                detect_notes[("sub", t["stream_index"])] = _sub_note or "could not identify subtitle language"
+                detect_notes[("sub", t["stream_index"])] = _sub_note or KeyedNote("could not identify subtitle language", "subUnidentified")
                 print(f"[LANG-DETECT] sub s{t.get('stream_index')} codec={codec_l} ({_sup}): stayed und", flush=True)
 
     # External sidecar subs: read the file text (charset-aware), detect with
@@ -1314,12 +1318,18 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         except Exception:
             pass
     # v0.9.44: attach the "why it stayed und" note to each still-und track.
+    # v0.9.132: also carry the note's message code (KeyedNote) so the UI can
+    # translate it; plain-str notes (none expected) just get no key.
+    def _attach_note(t, note):
+        t.detect_note = str(note)
+        t.detect_note_key = getattr(note, "key", None)
+        t.detect_note_params = getattr(note, "params", None) or None
     for t in audio_tracks:
         if ("audio", t.stream_index) in detect_notes:
-            t.detect_note = detect_notes[("audio", t.stream_index)]
+            _attach_note(t, detect_notes[("audio", t.stream_index)])
     for t in subtitle_tracks:
         if ("sub", t.stream_index) in detect_notes:
-            t.detect_note = detect_notes[("sub", t.stream_index)]
+            _attach_note(t, detect_notes[("sub", t.stream_index)])
     audio_json = json.dumps([t.model_dump() for t in audio_tracks])
     subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
     has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
@@ -1404,7 +1414,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
 
     lang = (req.language or "").strip().lower()
     if not lang:
-        raise HTTPException(400, "A language must be provided")
+        raise ApiError(400, "A language must be provided", code="scan.languageRequired")
     # "und" is allowed on purpose: it resets a track (e.g. one the old model
     # mis-detected) back to undetermined so language detection will re-run on
     # it. Detection re-probes the file, so the und must be written to the file,
@@ -1412,7 +1422,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
 
     probe = await probe_file(req.file_path, detect_und_subs=False)
     if probe is None:
-        raise HTTPException(404, "Could not probe file")
+        raise ApiError(404, "Could not probe file", code="scan.probeFailed")
     duration = probe.get("duration", 0.0) or 0.0
     raw_audio = probe.get("audio_tracks", []) or []
     raw_subs = probe.get("subtitle_tracks", []) or []
@@ -1458,7 +1468,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
                     matched = True; break
 
     if not matched:
-        raise HTTPException(404, "Track not found")
+        raise ApiError(404, "Track not found", code="scan.trackNotFound")
 
     # Write to the file if possible; anything that doesn't stick is remembered
     # as pending below (applied via Remux/Convert-to-MKV).
@@ -3489,7 +3499,7 @@ async def _run_metadata_refresh(deep: bool = False) -> None:
 async def refresh_metadata(deep: bool = False):
     global _metadata_task
     if _metadata_task and not _metadata_task.done():
-        raise HTTPException(status_code=409, detail="Metadata refresh already in progress")
+        raise ApiError(status_code=409, detail="Metadata refresh already in progress", code="scan.metadataRefreshRunning")
     _metadata_task = asyncio.create_task(_run_metadata_refresh(deep=deep))
     return {"status": "started"}
 
@@ -3611,7 +3621,7 @@ async def rescan_folder(request: ScanRequest):
     """Rescan a specific folder (e.g. a single movie or TV show directory)."""
     global _scan_task
     if scan_is_actively_running():  # v0.7.32: reaps a hung scan
-        raise HTTPException(status_code=409, detail="Scan already in progress")
+        raise ApiError(status_code=409, detail="Scan already in progress", code="scan.alreadyRunning")
     _scan_task = asyncio.create_task(_run_scan(request.paths, is_folder_rescan=True))
     return {"status": "started", "paths": request.paths}
 
@@ -3656,7 +3666,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
     try:
         resolved_target = _P(file_path).resolve(strict=False)
     except (OSError, RuntimeError) as exc:
-        raise HTTPException(400, f"Invalid file path: {exc}")
+        raise ApiError(400, f"Invalid file path: {exc}", code="scan.invalidFilePath", params={"error": str(exc)})
     resolved_target_str = str(resolved_target)
 
     def _is_inside(child: str, parent: str) -> bool:
@@ -3667,7 +3677,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
         return common == str(_P(parent).resolve(strict=False))
 
     if not any(_is_inside(resolved_target_str, d) for d in dirs):
-        raise HTTPException(403, "File is not under a configured media directory")
+        raise ApiError(403, "File is not under a configured media directory", code="scan.fileNotInMediaDir")
 
     # Use the resolved path downstream so an attacker can't smuggle a path
     # with traversal components past the DB lookups either.
@@ -3689,7 +3699,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
         from send2trash import send2trash
         send2trash(file_path)
     except Exception as exc:
-        raise HTTPException(500, f"Failed to trash file: {exc}")
+        raise ApiError(500, f"Failed to trash file: {exc}", code="scan.trashFailed", params={"error": str(exc)})
 
     # Remove from scan_results
     db = await aiosqlite.connect(DB_PATH)

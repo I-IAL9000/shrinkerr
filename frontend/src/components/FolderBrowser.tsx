@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { browseDirectory } from "../api";
 
 interface FolderBrowserProps {
@@ -9,6 +10,7 @@ interface FolderBrowserProps {
 }
 
 export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect, onCancel }: FolderBrowserProps) {
+  const { t } = useTranslation(["dialogs", "common"]);
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([]);
@@ -60,7 +62,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
           padding: "16px 20px", borderBottom: "1px solid var(--border)",
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
-          <span style={{ color: "white", fontWeight: "bold", fontSize: 15 }}>Select Folder</span>
+          <span style={{ color: "white", fontWeight: "bold", fontSize: 15 }}>{t("dialogs:folderBrowser.title")}</span>
           <button onClick={onCancel} style={{
             background: "none", border: "none", color: "var(--text-muted)",
             cursor: "pointer", fontSize: 18, lineHeight: 1,
@@ -81,7 +83,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
               }}
               placeholder="/path/to/media"
             />
-            <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "8px 12px" }}>Go</button>
+            <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "8px 12px" }}>{t("dialogs:folderBrowser.go")}</button>
           </div>
         </form>
 
@@ -95,7 +97,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
 
         {/* Directory listing */}
         <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 12px" }}>
-          {loading && <div style={{ padding: 20, textAlign: "center", opacity: 0.5 }}>Loading...</div>}
+          {loading && <div style={{ padding: 20, textAlign: "center", opacity: 0.5 }}>{t("common:status.loading")}</div>}
           {error && <div style={{ padding: 12, color: "#e94560", fontSize: 12 }}>{error}</div>}
 
           {!loading && (
@@ -139,7 +141,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
               ))}
 
               {!loading && dirs.length === 0 && !error && (
-                <div style={{ padding: 20, textAlign: "center", opacity: 0.5, fontSize: 12 }}>No subdirectories</div>
+                <div style={{ padding: 20, textAlign: "center", opacity: 0.5, fontSize: 12 }}>{t("dialogs:folderBrowser.noSubdirectories")}</div>
               )}
             </div>
           )}
@@ -151,11 +153,11 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Selected: <span style={{ color: "var(--accent)" }}>{currentPath}</span>
+            {t("dialogs:folderBrowser.selected")} <span style={{ color: "var(--accent)" }}>{currentPath}</span>
           </span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={onCancel} style={{ padding: "8px 16px" }}>Cancel</button>
-            <button className="btn btn-primary" onClick={() => onSelect(currentPath)} style={{ padding: "8px 16px" }}>Select</button>
+            <button className="btn btn-secondary" onClick={onCancel} style={{ padding: "8px 16px" }}>{t("common:actions.cancel")}</button>
+            <button className="btn btn-primary" onClick={() => onSelect(currentPath)} style={{ padding: "8px 16px" }}>{t("dialogs:folderBrowser.select")}</button>
           </div>
         </div>
       </div>

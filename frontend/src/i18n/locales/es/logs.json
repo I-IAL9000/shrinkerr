@@ -1,0 +1,11 @@
+{
+  "title": "Registros",
+  "sourceAll": "Todos",
+  "searchPlaceholder": "Buscar en los registros...",
+  "autoScroll": "Desplazamiento automático",
+  "lineCount_one": "{{count}} línea",
+  "lineCount_many": "{{count}} líneas",
+  "lineCount_other": "{{count}} líneas",
+  "empty": "Aún no hay entradas de registro. Los registros aparecerán aquí en tiempo real.",
+  "jumpToLatest": "Ir a lo más reciente"
+}

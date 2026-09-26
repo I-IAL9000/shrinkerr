@@ -1,0 +1,41 @@
+{
+  "categories": {
+    "movie": "Movie",
+    "tv": "TV",
+    "quality": "Quality",
+    "audio": "Audio",
+    "release": "Release"
+  },
+  "tokens": {
+    "movie": {
+      "Title": "Movie title",
+      "Year": "Release year",
+      "TmdbId": "TMDB ID",
+      "ImdbId": "IMDb ID",
+      "Edition": "Edition"
+    },
+    "tv": {
+      "SeriesTitle": "Series title",
+      "Year": "Series year",
+      "season": "Season number (use {season:00} for zero-padded)",
+      "episode": "Episode number (use {episode:00} for zero-padded)",
+      "EpisodeTitle": "Episode title",
+      "TvdbId": "TVDB ID"
+    },
+    "quality": {
+      "Quality": "Combined resolution + source. Don't also use {Resolution} or {Source} or you'll get duplicates.",
+      "Resolution": "Video resolution only (use instead of {Quality} if you want resolution and source separated)",
+      "Source": "Source only, e.g. BluRay, WEB-DL, HDTV (use instead of {Quality} if you want resolution and source separated)",
+      "VideoCodec": "Video codec",
+      "VideoDynamicRange": "HDR / HDR10+ / DV / Dolby Vision, blank for SDR"
+    },
+    "audio": {
+      "AudioCodec": "Audio codec",
+      "AudioChannels": "Audio channel layout"
+    },
+    "release": {
+      "ReleaseGroup": "Release group",
+      "Proper": "Proper/Repack marker"
+    }
+  }
+}

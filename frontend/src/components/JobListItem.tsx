@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
 import { getJobLog } from "../api";
 import { vmafColor, vmafLabel } from "../utils/vmaf";
+import { jobErrorHeadline } from "../i18n/server";
+import { fmtDateTime } from "../fmt";
 
 interface JobListItemProps {
   job: Job;
@@ -98,7 +100,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, width: 34, flexShrink: 0 }}>
             {isHealthCorrupt ? (
               <span
-                title={job.error_log || t("queue:item.corruptTitle")}
+                title={jobErrorHeadline(job) ?? job.error_log ?? t("queue:item.corruptTitle")}
                 style={{ color: "var(--danger, #e94560)", fontSize: 14, display: "inline-flex", alignItems: "center" }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -162,7 +164,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           {job.job_type === "health_check" ? (
             job.error_log && job.error_log.startsWith("Corrupt") ? (
               <span
-                title={job.error_log}
+                title={jobErrorHeadline(job) ?? job.error_log}
                 style={{ fontSize: 11, color: "#ffffff", background: "var(--danger)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
               >{t("queue:item.corrupt")}</span>
             ) : (
@@ -181,7 +183,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 // (vs. a generic "no savings" skip). Full reason lives in
                 // the expanded view + tooltip.
                 <span
-                  title={job.error_log}
+                  title={jobErrorHeadline(job) ?? job.error_log}
                   style={{ fontSize: 11, color: "#ffa94d", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
                 >
                   {t("queue:item.vmafRejected")}
@@ -439,7 +441,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: "#ffa94d" }}>{t("queue:item.vmafBanner.title")}</div>
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
-                    {job.error_log} {t("queue:item.vmafBanner.body")}
+                    {jobErrorHeadline(job) ?? job.error_log} {t("queue:item.vmafBanner.body")}
                   </div>
                 </div>
               </div>
@@ -462,11 +464,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               {logData.encoding_stats?.encode_seconds > 0 && (
                 <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encodeTime")} <strong style={{ color: "var(--text-secondary)" }}>{formatDuration("2000-01-01T00:00:00", new Date(new Date("2000-01-01T00:00:00").getTime() + logData.encoding_stats.encode_seconds * 1000).toISOString())}</strong></span>
               )}
-              <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.type")} {job.job_type}</span>
+              <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.type")} {t(`queue:item.jobTypes.${job.job_type}`, { defaultValue: job.job_type })}</span>
               {logData.started_at && logData.completed_at && (
                 <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.total")} {formatDuration(logData.started_at, logData.completed_at)}</span>
               )}
-              {logData.started_at && <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.started")} {new Date(logData.started_at).toLocaleString()}</span>}
+              {logData.started_at && <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.started")} {fmtDateTime(logData.started_at)}</span>}
             </div>
 
             {/* Health check result (inline post-conversion OR standalone health_check job) */}
@@ -567,19 +569,35 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         {/* Primary error message — sticky-captured by the converter so
             the actual error survives even when an MKV's stream metadata
             would otherwise push it out of the rolling buffer. v0.4.8+. */}
-        {job.error_log ? (
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#e94560", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-            {job.error_log}
-          </div>
-        ) : (
+        {job.error_log || job.error_key ? (() => {
+          // v0.9.132: translated headline for Shrinkerr-authored errors; the
+          // rest of error_log (ffmpeg stderr etc.) stays as verbatim detail.
+          // The English headline is error_log's first line, so drop it when
+          // a translated one is shown to avoid saying it twice.
+          const headline = jobErrorHeadline(job);
+          const raw = job.error_log ?? "";
+          const detail = headline ? raw.split("\n").slice(1).join("\n").trim() : raw;
+          return (
+            <>
+              {headline && (
+                <div style={{ fontSize: 12, color: "#e94560", fontWeight: 600, marginBottom: detail ? 4 : 0 }}>{headline}</div>
+              )}
+              {detail && (
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#e94560", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                  {detail}
+                </div>
+              )}
+            </>
+          );
+        })() : (
           <div style={{ color: "var(--text-muted)" }}>{t("queue:item.noErrorDetails")}</div>
         )}
         <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
-          <span>{t("queue:item.details.type")} {job.job_type}</span>
+          <span>{t("queue:item.details.type")} {t(`queue:item.jobTypes.${job.job_type}`, { defaultValue: job.job_type })}</span>
           {job.encoder && <span>{t("queue:item.details.encoder")} {job.encoder}</span>}
           {(job as any).original_size > 0 && <span>{t("queue:item.details.size")} {formatBytes((job as any).original_size)}</span>}
-          {job.started_at && <span>{t("queue:item.details.started")} {new Date(job.started_at).toLocaleString()}</span>}
-          {job.completed_at && <span>{t("queue:item.details.failed")} {new Date(job.completed_at).toLocaleString()}</span>}
+          {job.started_at && <span>{t("queue:item.details.started")} {fmtDateTime(job.started_at)}</span>}
+          {job.completed_at && <span>{t("queue:item.details.failed")} {fmtDateTime(job.completed_at)}</span>}
         </div>
         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, opacity: 0.6, wordBreak: "break-all" }}>
           {job.file_path}

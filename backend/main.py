@@ -357,6 +357,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)
 
+# Coded errors (ApiError) render {detail, code, params} so the UI can
+# translate them; plain HTTPException keeps FastAPI's default {detail}.
+from backend.api_errors import ApiError, api_error_handler
+app.add_exception_handler(ApiError, api_error_handler)
+
 # Auth settings cache (replaces old _api_key_cache)
 _auth_cache: dict = {"settings": None, "checked_at": 0}
 

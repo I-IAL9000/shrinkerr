@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { getSchedule, setSchedule, cancelSchedule, startQueue, pauseQueue, setRunHours, getEncodingSettings, updateEncodingSettings } from "../api";
 import { useToast } from "../useToast";
+import { fmtDateTime } from "../fmt";
 
 // Use `backgroundColor` (not the `background` shorthand) so the global
 // `select { background-image: <chevron-svg> }` rule from theme.css survives.
@@ -12,6 +14,7 @@ const inputStyle: React.CSSProperties = {
 };
 
 export default function SchedulePage() {
+  const { t } = useTranslation(["schedule", "common"]);
   const [scheduledTime, setScheduledTime] = useState<string | null>(null);
   const [inputTime, setInputTime] = useState("");
   const [runHoursEnabled, setRunHoursEnabled] = useState(false);
@@ -80,19 +83,19 @@ export default function SchedulePage() {
     if (!inputTime) return;
     await setSchedule(new Date(inputTime).toISOString());
     setScheduledTime(inputTime);
-    toast("Queue start scheduled", "success");
+    toast(t("schedule:start.toastScheduled"), "success");
   };
 
   const handleCancel = async () => {
     await cancelSchedule();
     setScheduledTime(null);
-    toast("Schedule cancelled");
+    toast(t("schedule:start.toastCancelled"));
   };
 
   const formatHour = (h: number) => {
-    if (h === 0) return "12AM";
-    if (h === 12) return "12PM";
-    return h < 12 ? `${h}AM` : `${h - 12}PM`;
+    if (h === 0) return t("schedule:hour.am", { hour: 12 });
+    if (h === 12) return t("schedule:hour.pm", { hour: 12 });
+    return h < 12 ? t("schedule:hour.am", { hour: h }) : t("schedule:hour.pm", { hour: h - 12 });
   };
 
   const toggleHour = (i: number, forceValue?: boolean) => {
@@ -107,8 +110,8 @@ export default function SchedulePage() {
 
   // Build summary text
   const buildSummary = () => {
-    if (activeCount === 0) return "No hours selected. Queue will not run.";
-    if (activeCount === 24) return "All hours selected. Queue runs 24/7.";
+    if (activeCount === 0) return t("schedule:runHours.summaryNone");
+    if (activeCount === 24) return t("schedule:runHours.summaryAll");
 
     // Find contiguous ranges
     const ranges: string[] = [];
@@ -128,16 +131,16 @@ export default function SchedulePage() {
       const first = ranges.shift()!;
       ranges.unshift(`${last.split("-")[0]}-${first.split("-")[1]}`);
     }
-    return `Runs: ${ranges.join(", ")}`;
+    return t("schedule:runHours.summaryRanges", { ranges: ranges.join(", ") });
   };
 
   return (
     <div>
-      <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>Schedule</h2>
+      <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>{t("schedule:title")}</h2>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
-          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>Schedule Queue Start</h3>
-          <label style={{ fontSize: 12, opacity: 0.5 }}>Start time:</label>
+          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:start.title")}</h3>
+          <label style={{ fontSize: 12, opacity: 0.5 }}>{t("schedule:start.timeLabel")}</label>
           <input
             type="datetime-local"
             value={inputTime}
@@ -151,22 +154,22 @@ export default function SchedulePage() {
           {scheduledTime && (
             <div style={{ marginBottom: 12 }}>
               <span style={{ color: "var(--success)" }}>
-                Scheduled: {new Date(scheduledTime).toLocaleString()}
+                {t("schedule:start.scheduled", { time: fmtDateTime(scheduledTime) })}
               </span>
               <button className="btn btn-secondary" onClick={handleCancel}
-                style={{ marginLeft: 8, fontSize: 11, padding: "4px 8px" }}>Cancel</button>
+                style={{ marginLeft: 8, fontSize: 11, padding: "4px 8px" }}>{t("common:actions.cancel")}</button>
             </div>
           )}
-          <button className="btn btn-primary" onClick={handleSchedule}>Schedule</button>
+          <button className="btn btn-primary" onClick={handleSchedule}>{t("schedule:start.submit")}</button>
         </div>
 
         <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
-          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>Quick Actions</h3>
+          <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:quick.title")}</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={() => { startQueue(); toast("Queue started", "success"); }}>Start queue now</button>
+              onClick={() => { startQueue(); toast(t("schedule:quick.toastStarted"), "success"); }}>{t("schedule:quick.startNow")}</button>
             <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={() => { pauseQueue(); toast("Queue paused"); }}>Pause after current job</button>
+              onClick={() => { pauseQueue(); toast(t("schedule:quick.toastPaused")); }}>{t("schedule:quick.pauseAfterCurrent")}</button>
           </div>
         </div>
       </div>
@@ -174,9 +177,9 @@ export default function SchedulePage() {
       {/* Run Hours */}
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h3 style={{ color: "var(--text-primary)" }}>Run During These Hours Only</h3>
+          <h3 style={{ color: "var(--text-primary)" }}>{t("schedule:runHours.title")}</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{runHoursEnabled ? "Enabled" : "Disabled"}</span>
+            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{runHoursEnabled ? t("schedule:enabled") : t("schedule:disabled")}</span>
             <input type="checkbox" checked={runHoursEnabled}
               onChange={(e) => setRunHoursEnabled(e.target.checked)}
               style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
@@ -185,7 +188,7 @@ export default function SchedulePage() {
 
         <div style={{ opacity: runHoursEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
-            Click or drag to toggle hours on/off:
+            {t("schedule:runHours.hint")}
           </div>
 
           {/* Clickable 24-hour grid */}
@@ -230,7 +233,7 @@ export default function SchedulePage() {
 
           {/* Hour labels */}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginBottom: 12, padding: "0 2px" }}>
-            <span>12AM</span><span>6AM</span><span>12PM</span><span>6PM</span><span>11PM</span>
+            <span>{formatHour(0)}</span><span>{formatHour(6)}</span><span>{formatHour(12)}</span><span>{formatHour(18)}</span><span>{formatHour(23)}</span>
           </div>
 
           {/* Quick presets */}
@@ -238,29 +241,29 @@ export default function SchedulePage() {
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array.from({ length: 24 }, (_, i) => i >= 22 || i < 8))}>
-              Overnight (10PM-8AM)
+              {t("schedule:runHours.presetOvernight", { range: `${formatHour(22)}-${formatHour(8)}` })}
             </button>
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array.from({ length: 24 }, (_, i) => i >= 0 && i < 8))}>
-              Night (12AM-8AM)
+              {t("schedule:runHours.presetNight", { range: `${formatHour(0)}-${formatHour(8)}` })}
             </button>
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array(24).fill(true))}>
-              All day
+              {t("schedule:runHours.presetAllDay")}
             </button>
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array(24).fill(false))}>
-              Clear
+              {t("common:actions.clear")}
             </button>
           </div>
 
           {/* Summary */}
           {runHoursEnabled && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
-              {buildSummary()} Pauses automatically outside selected hours.
+              {buildSummary()} {t("schedule:runHours.pausesOutside")}
             </div>
           )}
 
@@ -268,9 +271,9 @@ export default function SchedulePage() {
             onClick={async () => {
               const hours = activeHours.map((v, i) => v ? i : -1).filter(i => i >= 0);
               await setRunHours({ enabled: runHoursEnabled, hours });
-              toast("Run hours saved", "success");
+              toast(t("schedule:runHours.toastSaved"), "success");
             }}>
-            Save Run Hours
+            {t("schedule:runHours.save")}
           </button>
         </div>
       </div>
@@ -278,47 +281,47 @@ export default function SchedulePage() {
       {/* Quiet Hours */}
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <h3 style={{ color: "var(--text-primary)" }}>Quiet Hours</h3>
+          <h3 style={{ color: "var(--text-primary)" }}>{t("schedule:quiet.title")}</h3>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{quietEnabled ? "Enabled" : "Disabled"}</span>
+            <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{quietEnabled ? t("schedule:enabled") : t("schedule:disabled")}</span>
             <input type="checkbox" checked={quietEnabled}
               onChange={(e) => setQuietEnabled(e.target.checked)}
               style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
           </label>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          Reduce encoding intensity during specified hours. Fewer parallel jobs and optionally lower process priority.
+          {t("schedule:quiet.description")}
         </div>
 
         <div style={{ opacity: quietEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 16 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Start hour</label>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.startHour")}</label>
               <select style={inputStyle} value={quietStart} disabled={!quietEnabled}
                 onChange={e => setQuietStart(Number(e.target.value))}>
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i}:00</option>)}
               </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>End hour</label>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.endHour")}</label>
               <select style={inputStyle} value={quietEnd} disabled={!quietEnabled}
                 onChange={e => setQuietEnd(Number(e.target.value))}>
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i}:00</option>)}
               </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Max parallel jobs</label>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.maxParallel")}</label>
               <input type="number" style={inputStyle} min={1} max={16} disabled={!quietEnabled}
                 value={quietParallel}
                 onChange={e => setQuietParallel(Number(e.target.value))} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Process priority</label>
+              <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.priority")}</label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: quietEnabled ? "pointer" : "default", height: 36 }}>
                 <input type="checkbox" checked={quietNice} disabled={!quietEnabled}
                   onChange={() => setQuietNice(!quietNice)}
                   style={{ accentColor: "var(--accent)" }} />
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Lower priority (nice)</span>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("schedule:quiet.lowerPriority")}</span>
               </label>
             </div>
           </div>
@@ -326,10 +329,10 @@ export default function SchedulePage() {
           {quietEnabled && (
             <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4, marginBottom: 12 }}>
               {quietStart > quietEnd
-                ? `Active ${quietStart}:00 - ${quietEnd}:00 (overnight). `
-                : `Active ${quietStart}:00 - ${quietEnd}:00. `}
-              Max {quietParallel} parallel job{quietParallel !== 1 ? "s" : ""}.
-              {quietNice ? " Processes run at lower priority." : ""}
+                ? t("schedule:quiet.summaryActiveOvernight", { start: quietStart, end: quietEnd })
+                : t("schedule:quiet.summaryActive", { start: quietStart, end: quietEnd })}
+              {t("schedule:quiet.summaryParallel", { count: quietParallel })}
+              {quietNice ? t("schedule:quiet.summaryNice") : ""}
             </div>
           )}
 
@@ -342,18 +345,18 @@ export default function SchedulePage() {
                 quiet_hours_parallel: String(quietParallel),
                 quiet_hours_nice: quietNice,
               });
-              toast("Quiet hours saved", "success");
+              toast(t("schedule:quiet.toastSaved"), "success");
             }}>
-            Save Quiet Hours
+            {t("schedule:quiet.save")}
           </button>
         </div>
       </div>
 
       {/* Stream-Aware Scheduling */}
       <div style={{ background: "var(--bg-card)", padding: 20, borderRadius: 6, marginTop: 12 }}>
-        <h3 style={{ color: "var(--text-primary)", marginBottom: 8 }}>Plex / Jellyfin / Emby Stream-Aware Scheduling</h3>
+        <h3 style={{ color: "var(--text-primary)", marginBottom: 8 }}>{t("schedule:streams.title")}</h3>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-          Pause encoding when media server users are actively streaming. Running ffmpeg processes are frozen (SIGSTOP) so they consume zero CPU/IO until the stream ends — no work is lost, the encode resumes (SIGCONT) from the exact frame it stopped at. New jobs also wait until streams end before starting. By default, both transcoding and direct-play streams trigger the pause; flip "Count only" to <em>Transcoding streams</em> if you want direct-play to allow encoding to continue.
+          <Trans t={t} i18nKey="schedule:streams.description" components={{ em: <em /> }} />
         </div>
 
         {/* Plex */}
@@ -361,7 +364,7 @@ export default function SchedulePage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Plex</span>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{plexPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{plexPauseEnabled ? t("schedule:enabled") : t("schedule:disabled")}</span>
               <input type="checkbox" checked={plexPauseEnabled}
                 onChange={(e) => setPlexPauseEnabled(e.target.checked)}
                 style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
@@ -370,26 +373,26 @@ export default function SchedulePage() {
           <div style={{ opacity: plexPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.threshold")}</label>
                 <input type="number" min={1} max={20} style={inputStyle} disabled={!plexPauseEnabled}
                   value={plexPauseThreshold}
                   onChange={e => setPlexPauseThreshold(Number(e.target.value))} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
                 <select style={inputStyle} disabled={!plexPauseEnabled}
                   value={plexPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setPlexPauseTranscodeOnly(e.target.value === "transcode")}>
-                  <option value="transcode">Transcoding streams</option>
-                  <option value="all">All streams (including direct play)</option>
+                  <option value="transcode">{t("schedule:streams.optionTranscode")}</option>
+                  <option value="all">{t("schedule:streams.optionAll")}</option>
                 </select>
               </div>
             </div>
             {plexPauseEnabled && (
               <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
-                Encoding will pause when {plexPauseThreshold} or more {plexPauseTranscodeOnly ? "transcoding" : ""} stream{plexPauseThreshold !== 1 ? "s" : ""} {plexPauseTranscodeOnly ? "are" : plexPauseThreshold === 1 ? "is" : "are"} active.
-                {plexPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
-                {" "}Checks every 15 seconds.
+                {t(plexPauseTranscodeOnly ? "schedule:streams.summaryTranscode" : "schedule:streams.summaryAll", { count: plexPauseThreshold })}
+                {plexPauseTranscodeOnly && t("schedule:streams.directPlayNote")}
+                {" "}{t("schedule:streams.checksEvery")}
               </div>
             )}
           </div>
@@ -400,7 +403,7 @@ export default function SchedulePage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Jellyfin</span>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{jellyfinPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{jellyfinPauseEnabled ? t("schedule:enabled") : t("schedule:disabled")}</span>
               <input type="checkbox" checked={jellyfinPauseEnabled}
                 onChange={(e) => setJellyfinPauseEnabled(e.target.checked)}
                 style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
@@ -409,26 +412,26 @@ export default function SchedulePage() {
           <div style={{ opacity: jellyfinPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.threshold")}</label>
                 <input type="number" min={1} max={20} style={inputStyle} disabled={!jellyfinPauseEnabled}
                   value={jellyfinPauseThreshold}
                   onChange={e => setJellyfinPauseThreshold(Number(e.target.value))} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
                 <select style={inputStyle} disabled={!jellyfinPauseEnabled}
                   value={jellyfinPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setJellyfinPauseTranscodeOnly(e.target.value === "transcode")}>
-                  <option value="transcode">Transcoding streams</option>
-                  <option value="all">All streams (including direct play)</option>
+                  <option value="transcode">{t("schedule:streams.optionTranscode")}</option>
+                  <option value="all">{t("schedule:streams.optionAll")}</option>
                 </select>
               </div>
             </div>
             {jellyfinPauseEnabled && (
               <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
-                Encoding will pause when {jellyfinPauseThreshold} or more {jellyfinPauseTranscodeOnly ? "transcoding" : ""} stream{jellyfinPauseThreshold !== 1 ? "s" : ""} {jellyfinPauseTranscodeOnly ? "are" : jellyfinPauseThreshold === 1 ? "is" : "are"} active.
-                {jellyfinPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
-                {" "}Checks every 15 seconds.
+                {t(jellyfinPauseTranscodeOnly ? "schedule:streams.summaryTranscode" : "schedule:streams.summaryAll", { count: jellyfinPauseThreshold })}
+                {jellyfinPauseTranscodeOnly && t("schedule:streams.directPlayNote")}
+                {" "}{t("schedule:streams.checksEvery")}
               </div>
             )}
           </div>
@@ -439,7 +442,7 @@ export default function SchedulePage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Emby</span>
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{embyPauseEnabled ? "Enabled" : "Disabled"}</span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{embyPauseEnabled ? t("schedule:enabled") : t("schedule:disabled")}</span>
               <input type="checkbox" checked={embyPauseEnabled}
                 onChange={(e) => setEmbyPauseEnabled(e.target.checked)}
                 style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
@@ -448,26 +451,26 @@ export default function SchedulePage() {
           <div style={{ opacity: embyPauseEnabled ? 1 : 0.4, transition: "opacity 0.2s" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 10 }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Pause when streams reach</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.threshold")}</label>
                 <input type="number" min={1} max={20} style={inputStyle} disabled={!embyPauseEnabled}
                   value={embyPauseThreshold}
                   onChange={e => setEmbyPauseThreshold(Number(e.target.value))} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Count only</label>
+                <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
                 <select style={inputStyle} disabled={!embyPauseEnabled}
                   value={embyPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setEmbyPauseTranscodeOnly(e.target.value === "transcode")}>
-                  <option value="transcode">Transcoding streams</option>
-                  <option value="all">All streams (including direct play)</option>
+                  <option value="transcode">{t("schedule:streams.optionTranscode")}</option>
+                  <option value="all">{t("schedule:streams.optionAll")}</option>
                 </select>
               </div>
             </div>
             {embyPauseEnabled && (
               <div style={{ fontSize: 12, color: "var(--text-muted)", background: "var(--bg-primary)", padding: 10, borderRadius: 4 }}>
-                Encoding will pause when {embyPauseThreshold} or more {embyPauseTranscodeOnly ? "transcoding" : ""} stream{embyPauseThreshold !== 1 ? "s" : ""} {embyPauseTranscodeOnly ? "are" : embyPauseThreshold === 1 ? "is" : "are"} active.
-                {embyPauseTranscodeOnly && " Direct play streams won't trigger a pause since they don't use server CPU."}
-                {" "}Checks every 15 seconds.
+                {t(embyPauseTranscodeOnly ? "schedule:streams.summaryTranscode" : "schedule:streams.summaryAll", { count: embyPauseThreshold })}
+                {embyPauseTranscodeOnly && t("schedule:streams.directPlayNote")}
+                {" "}{t("schedule:streams.checksEvery")}
               </div>
             )}
           </div>
@@ -486,9 +489,9 @@ export default function SchedulePage() {
               emby_pause_stream_threshold: String(embyPauseThreshold),
               emby_pause_transcode_only: embyPauseTranscodeOnly,
             });
-            toast("Streaming settings saved", "success");
+            toast(t("schedule:streams.toastSaved"), "success");
           }}>
-          Save Streaming Settings
+          {t("schedule:streams.save")}
         </button>
       </div>
     </div>

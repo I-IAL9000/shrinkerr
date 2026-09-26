@@ -374,13 +374,14 @@ async def detect_image_sub_language(
     `progress_cb` (v0.9.1): optional async callable(stage: str) invoked at
     coarse stages so the UI can show live status through the multi-minute
     OCR. Called with 'Extracting subtitle…', 'OCR (Latin)…',
-    'OCR (CJK/Cyrillic/Arabic)…'."""
+    'OCR (CJK/Cyrillic/Arabic)…' plus `stage_key`/`stage_params` keywords
+    (serverJobs `detect.*` i18n key) so the UI can translate the stage."""
     from backend.language_detection import detect_subtitle_language
 
-    async def _report(stage: str):
+    async def _report(stage: str, stage_key: str):
         if progress_cb is not None:
             try:
-                await progress_cb(stage)
+                await progress_cb(stage, stage_key=stage_key, stage_params={"track": stream_index})
             except Exception:
                 pass
 
@@ -391,17 +392,17 @@ async def detect_image_sub_language(
         if codec_l in _VOBSUB_CODECS:
             # VobSub (DVD) → subtile-ocr. Same Latin-first / non-Latin-fallback
             # shape as PGS; the extract + OCR tool differ.
-            await _report(f"Extracting subtitle track {stream_index}…")
+            await _report(f"Extracting subtitle track {stream_index}…", stage_key="detect.extractingTrack")
             idx = await _extract_vobsub(file_path, stream_index, workdir)
             if not idx:
                 return (None, 0.0)
-            await _report(f"OCR (Latin) on subtitle track {stream_index}…")
+            await _report(f"OCR (Latin) on subtitle track {stream_index}…", stage_key="detect.ocrLatin")
             text = await loop.run_in_executor(None, _subtile_ocr_to_text, idx, _VOBSUB_LATIN_LANG)
             if text:
                 lang, conf = detect_subtitle_language(text)
                 if lang:
                     return (lang, conf)
-            await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…")
+            await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…", stage_key="detect.ocrNonLatin")
             text = await loop.run_in_executor(None, _subtile_ocr_to_text, idx, _VOBSUB_NON_LATIN_LANG)
             if text:
                 return detect_subtitle_language(text)
@@ -410,13 +411,13 @@ async def detect_image_sub_language(
         # PGS (Blu-ray) → pgsrip. Two OCR passes (Latin, then non-Latin) over
         # a given .sup.
         async def _ocr_pgs(sup_path):
-            await _report(f"OCR (Latin) on subtitle track {stream_index}…")
+            await _report(f"OCR (Latin) on subtitle track {stream_index}…", stage_key="detect.ocrLatin")
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _LATIN_LANGS)
             if text:
                 lang, conf = detect_subtitle_language(text)
                 if lang:
                     return (lang, conf)
-            await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…")
+            await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…", stage_key="detect.ocrNonLatin")
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _NON_LATIN_LANGS)
             if text:
                 lang, conf = detect_subtitle_language(text)
@@ -429,7 +430,7 @@ async def detect_image_sub_language(
         # lines to ID the language.
         sample = _pgs_sample_seconds()
         if sample:
-            await _report(f"Extracting subtitle sample (track {stream_index})…")
+            await _report(f"Extracting subtitle sample (track {stream_index})…", stage_key="detect.extractingSample")
             sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=sample)
             if sup:
                 result = await _ocr_pgs(sup)
@@ -438,7 +439,7 @@ async def detect_image_sub_language(
         # Full track — either sampling is disabled, or the sample had no
         # detectable text (sparse opening / forced sub whose events fall
         # outside the window).
-        await _report(f"Extracting full subtitle track {stream_index}…")
+        await _report(f"Extracting full subtitle track {stream_index}…", stage_key="detect.extractingFullTrack")
         sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=None)
         if not sup:
             return (None, 0.0)

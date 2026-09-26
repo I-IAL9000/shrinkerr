@@ -1,22 +1,24 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getActivity, type FileEvent } from "../api";
 import EventTimeline from "../components/EventTimeline";
 
 const EVENT_OPTIONS = [
-  { value: "all", label: "All events" },
-  { value: "completed", label: "Completed" },
-  { value: "failed", label: "Failed" },
-  { value: "queued", label: "Queued" },
-  { value: "health_check", label: "Health checks" },
-  { value: "vmaf", label: "VMAF analysis" },
-  { value: "ignored,unignored", label: "Ignore changes" },
-  { value: "reverted", label: "Reverts" },
-  { value: "arr_action", label: "Sonarr / Radarr actions" },
+  { value: "all", labelKey: "activity:eventTypes.all" },
+  { value: "completed", labelKey: "activity:eventTypes.completed" },
+  { value: "failed", labelKey: "activity:eventTypes.failed" },
+  { value: "queued", labelKey: "activity:eventTypes.queued" },
+  { value: "health_check", labelKey: "activity:eventTypes.healthCheck" },
+  { value: "vmaf", labelKey: "activity:eventTypes.vmaf" },
+  { value: "ignored,unignored", labelKey: "activity:eventTypes.ignoreChanges" },
+  { value: "reverted", labelKey: "activity:eventTypes.reverts" },
+  { value: "arr_action", labelKey: "activity:eventTypes.arrActions" },
 ];
 
 const PAGE_SIZE = 100;
 
 export default function ActivityPage() {
+  const { t } = useTranslation(["activity", "common"]);
   const [events, setEvents] = useState<FileEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -51,9 +53,9 @@ export default function ActivityPage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 16, flexWrap: "wrap" }}>
-        <h1 style={{ color: "var(--text-primary)", fontSize: 22 }}>Activity</h1>
+        <h1 style={{ color: "var(--text-primary)", fontSize: 22 }}>{t("activity:title")}</h1>
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          {loading ? "Loading…" : `${total.toLocaleString()} event${total === 1 ? "" : "s"}`}
+          {loading ? t("common:status.loading") : t("activity:eventCount", { count: total, formatted: total.toLocaleString() })}
         </div>
       </div>
 
@@ -69,7 +71,7 @@ export default function ActivityPage() {
           style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12 }}
         >
           {EVENT_OPTIONS.map(o => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
           ))}
         </select>
 
@@ -79,7 +81,7 @@ export default function ActivityPage() {
         >
           <input
             type="text"
-            placeholder="Search file path…"
+            placeholder={t("activity:searchPlaceholder")}
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{
@@ -88,7 +90,7 @@ export default function ActivityPage() {
             }}
           />
           <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}>
-            Search
+            {t("activity:search")}
           </button>
           {appliedSearch && (
             <button
@@ -96,7 +98,7 @@ export default function ActivityPage() {
               className="btn btn-secondary"
               style={{ fontSize: 12, padding: "6px 12px" }}
               onClick={() => { setSearch(""); setAppliedSearch(""); }}
-            >Clear</button>
+            >{t("common:actions.clear")}</button>
           )}
         </form>
       </div>
@@ -105,7 +107,7 @@ export default function ActivityPage() {
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 16 }}>
           <div className="spinner" style={{ width: 16, height: 16 }} />
-          <span style={{ color: "var(--text-muted)" }}>Loading activity…</span>
+          <span style={{ color: "var(--text-muted)" }}>{t("activity:loadingActivity")}</span>
         </div>
       ) : (
         <EventTimeline events={events} showFilePath />
@@ -120,10 +122,10 @@ export default function ActivityPage() {
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
             style={{ fontSize: 12, padding: "6px 12px", opacity: offset === 0 ? 0.5 : 1 }}
           >
-            Prev
+            {t("activity:pagination.prev")}
           </button>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Page {page} of {totalPages}
+            {t("activity:pagination.pageOf", { page, totalPages })}
           </span>
           <button
             className="btn btn-secondary"
@@ -131,7 +133,7 @@ export default function ActivityPage() {
             onClick={() => setOffset(offset + PAGE_SIZE)}
             style={{ fontSize: 12, padding: "6px 12px", opacity: offset + PAGE_SIZE >= total ? 0.5 : 1 }}
           >
-            Next
+            {t("activity:pagination.next")}
           </button>
         </div>
       )}

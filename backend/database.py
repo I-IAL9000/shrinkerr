@@ -640,6 +640,19 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_file_events_time ON file_events(occurred_at DESC);
             CREATE INDEX IF NOT EXISTS idx_file_events_type ON file_events(event_type);
         """)
+        # Migration: message codes so the UI can translate server-authored
+        # text. `summary`/`error_log` keep the English (fallback + logs);
+        # the *_key column is an i18n key and *_params its JSON params.
+        for table, col in [
+            ("file_events", "summary_key"),
+            ("file_events", "summary_params"),
+            ("jobs", "error_key"),
+            ("jobs", "error_params"),
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT DEFAULT NULL")
+            except Exception:
+                pass
 
         # Backfill converted flag from completed jobs that actually saved space
         # Match on file_path OR original_file_path (handles renames during conversion)

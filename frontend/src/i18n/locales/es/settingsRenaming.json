@@ -1,0 +1,55 @@
+{
+  "tokens": {
+    "heading": "Variables — haz clic para insertar en:",
+    "help": "Selecciona un campo de patrón y haz clic en una variable para insertarla en el cursor. Añade <code>:00</code> a los números para rellenar con ceros, p. ej. <code>{season:00}</code>.",
+    "tooltip": "{{desc}} (p. ej. \"{{example}}\")"
+  },
+  "activeField": {
+    "movie_file_pattern": "patrón de archivo de película",
+    "tv_file_pattern": "patrón de archivo de serie",
+    "movie_folder_pattern": "patrón de carpeta de película",
+    "tv_folder_pattern": "patrón de carpeta de serie",
+    "season_folder_pattern": "patrón de carpeta de temporada"
+  },
+  "behavior": {
+    "heading": "Comportamiento",
+    "autoRename": "Renombrar automáticamente tras la conversión",
+    "autoRenameHelp": "Si está activado, Shrinkerr aplica estos patrones automáticamente después de cada conversión correcta.",
+    "renameFolders": "Renombrar también las carpetas",
+    "renameFoldersHelp": "Renombra la carpeta de la película, serie o temporada con los patrones de carpeta de abajo (desactivado por defecto, más seguro).",
+    "removeIllegal": "Eliminar caracteres no válidos",
+    "removeIllegalHelp": "Quita los caracteres que dan problemas en los sistemas de archivos: < > : \" | ? * y los caracteres de control."
+  },
+  "formatting": {
+    "heading": "Formato",
+    "separator": "Separador",
+    "separators": {
+      "space": "Espacios (predeterminado)",
+      "dot": "Puntos (.)",
+      "dash": "Guiones (-)",
+      "underscore": "Guiones bajos (_)"
+    },
+    "case": "Mayúsculas y minúsculas",
+    "cases": {
+      "default": "Predeterminado (sin cambios)",
+      "lower": "minúsculas",
+      "upper": "MAYÚSCULAS"
+    }
+  },
+  "patterns": {
+    "movieHeading": "Patrones de películas",
+    "tvHeading": "Patrones de series",
+    "movieFile": "Archivo de película",
+    "movieFolder": "Carpeta de película",
+    "episodeFile": "Archivo de episodio",
+    "seriesFolder": "Carpeta de serie",
+    "seasonFolder": "Carpeta de temporada",
+    "loadingPreview": "cargando vista previa…"
+  },
+  "save": "Guardar ajustes de renombrado",
+  "saving": "Guardando...",
+  "toast": {
+    "saved": "Ajustes de renombrado guardados",
+    "saveFailed": "Error al guardar"
+  }
+}

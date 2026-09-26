@@ -2,7 +2,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend import scheduler as sched_module
@@ -27,7 +28,7 @@ async def set_schedule(request: ScheduleSetRequest):
     try:
         start_time = datetime.fromisoformat(request.start_time)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid datetime: {exc}")
+        raise ApiError(status_code=422, detail=f"Invalid datetime: {exc}", code="schedule.invalidDatetime", params={"error": str(exc)})
     job_id = sched_module.schedule_queue_start(start_time)
     return {"status": "scheduled", "job_id": job_id, "start_time": start_time.isoformat()}
 

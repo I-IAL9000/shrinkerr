@@ -75,6 +75,18 @@ async def _list_select_cols(db: aiosqlite.Connection) -> str:
     return _LIST_COLS_CACHE
 
 
+def _job_row(row) -> dict:
+    """Row -> dict for API responses, with the error_params JSON parsed."""
+    d = dict(row)
+    raw = d.get("error_params")
+    if isinstance(raw, str):
+        try:
+            d["error_params"] = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            d["error_params"] = None
+    return d
+
+
 async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
     """Run user-configured post-conversion script with job details as env vars."""
     try:
@@ -237,11 +249,15 @@ class JobQueue:
         finally:
             await db.close()
 
-    async def _log_event(self, file_path: str, event_type: str, summary: str, details: dict | None = None) -> None:
+    async def _log_event(
+        self, file_path: str, event_type: str, summary: str, details: dict | None = None,
+        summary_key: str | None = None, summary_params: dict | None = None,
+    ) -> None:
         """Convenience wrapper around file_events.log_event (never raises)."""
         try:
             from backend.file_events import log_event
-            await log_event(file_path, event_type, summary, details)
+            await log_event(file_path, event_type, summary, details,
+                            summary_key=summary_key, summary_params=summary_params)
         except Exception:
             pass
 
@@ -390,17 +406,23 @@ class JobQueue:
         # Use the bulk helper so adding 1000 jobs is one transaction, not 1000.
         # v0.3.57+.
         try:
-            from backend.file_events import log_events_bulk, EVENT_QUEUED
-            events: list[tuple[str, str, str, dict | None]] = []
+            from backend.file_events import log_events_bulk, EVENT_QUEUED, HEALTH_MODES
+            events: list[tuple] = []
             for j, jid in zip(jobs, job_ids):
                 if not jid:
                     continue
                 jt = j.get("job_type", "convert")
                 if jt == "health_check":
-                    summary = f"Queued for {j.get('encoder', 'quick')} health check"
+                    mode = j.get('encoder', 'quick')
+                    summary = f"Queued for {mode} health check"
+                    summary_key = "queuedHealthCheck" if mode in HEALTH_MODES else None
+                    summary_params = {"mode": mode}
                 else:
                     summary = f"Queued for {jt}"
-                events.append((j["file_path"], EVENT_QUEUED, summary, {"job_id": jid, "job_type": jt}))
+                    summary_key = "queuedForJobType" if jt in ("convert", "audio", "combined") else None
+                    summary_params = {"jobType": jt}
+                events.append((j["file_path"], EVENT_QUEUED, summary, {"job_id": jid, "job_type": jt},
+                               summary_key, summary_params))
             if events:
                 await log_events_bulk(events)
         except Exception:
@@ -420,6 +442,7 @@ class JobQueue:
             async with db.execute(
                 "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                 "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                "error_key = NULL, error_params = NULL, "
                 "assigned_node_id = NULL, assigned_at = NULL "
                 "WHERE status = 'running' "
                 "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')"
@@ -499,7 +522,7 @@ class JobQueue:
                 params += [limit, offset]
             async with db.execute(sql, params) as cur:
                 rows = await cur.fetchall()
-                return [dict(r) for r in rows]
+                return [_job_row(r) for r in rows]
         finally:
             await db.close()
 
@@ -514,7 +537,7 @@ class JobQueue:
                 params = [limit, offset]
             async with db.execute(sql, params) as cur:
                 rows = await cur.fetchall()
-                return [dict(r) for r in rows]
+                return [_job_row(r) for r in rows]
         finally:
             await db.close()
 
@@ -523,25 +546,34 @@ class JobQueue:
         job_id: int,
         status: str,
         error_log: Optional[str] = None,
+        error_key: Optional[str] = None,
+        error_params: Optional[dict] = None,
     ) -> None:
+        # error_key/error_params: i18n code for the Shrinkerr-authored headline
+        # of error_log (UI renders t(`serverJobs:${error_key}`)). Always written alongside
+        # error_log so a status change never leaves a stale key behind.
+        ep = json.dumps(error_params) if error_params else None
         for attempt in range(5):
             db = await self._connect()
             try:
                 now = _utcnow()
                 if status == "running":
                     await db.execute(
-                        "UPDATE jobs SET status = ?, started_at = ?, error_log = ? WHERE id = ?",
-                        (status, now, error_log, job_id),
+                        "UPDATE jobs SET status = ?, started_at = ?, error_log = ?, "
+                        "error_key = ?, error_params = ? WHERE id = ?",
+                        (status, now, error_log, error_key, ep, job_id),
                     )
                 elif status in ("completed", "failed"):
                     await db.execute(
-                        "UPDATE jobs SET status = ?, completed_at = ?, error_log = ? WHERE id = ?",
-                        (status, now, error_log, job_id),
+                        "UPDATE jobs SET status = ?, completed_at = ?, error_log = ?, "
+                        "error_key = ?, error_params = ? WHERE id = ?",
+                        (status, now, error_log, error_key, ep, job_id),
                     )
                 else:
                     await db.execute(
-                        "UPDATE jobs SET status = ?, error_log = ? WHERE id = ?",
-                        (status, error_log, job_id),
+                        "UPDATE jobs SET status = ?, error_log = ?, "
+                        "error_key = ?, error_params = ? WHERE id = ?",
+                        (status, error_log, error_key, ep, job_id),
                     )
                 await db.commit()
                 return
@@ -945,6 +977,7 @@ class QueueWorker:
             await db.execute(
                 f"UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                 f"eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                f"error_key = NULL, error_params = NULL, "
                 f"assigned_node_id = NULL, assigned_at = NULL WHERE id IN ({ph})",
                 orphans,
             )
@@ -1414,7 +1447,8 @@ class QueueWorker:
             if not requeued:
                 try:
                     from backend.file_events import log_event, EVENT_FAILED
-                    await log_event(job.get("file_path", ""), EVENT_FAILED, f"Failed: {str(exc)[:120]}", {"job_id": job_id})
+                    await log_event(job.get("file_path", ""), EVENT_FAILED, f"Failed: {str(exc)[:120]}", {"job_id": job_id},
+                                    summary_key="failedWithError", summary_params={"error": str(exc)[:120]})
                 except Exception:
                     pass
         finally:
@@ -1483,7 +1517,8 @@ class QueueWorker:
             mode = "quick"
 
         if not await _async_exists(file_path):
-            await self.queue.update_status(job_id, "failed", error_log="File not found")
+            await self.queue.update_status(job_id, "failed", error_log="File not found",
+                                           error_key="errors.fileNotFound")
             return
 
         await ws_manager.send_job_progress(
@@ -1493,6 +1528,7 @@ class QueueWorker:
             fps=None,
             eta=None,
             step=f"health-check ({mode})",
+            step_key="steps.healthCheckMode", step_params={"mode": mode},
             jobs_completed=stats["completed"],
             jobs_total=stats["total_jobs"],
             total_saved=stats["total_space_saved"],
@@ -1501,7 +1537,8 @@ class QueueWorker:
         try:
             result = await run_check(file_path, mode=mode)
         except Exception as exc:
-            await self.queue.update_status(job_id, "failed", error_log=f"Health check failed: {exc}")
+            await self.queue.update_status(job_id, "failed", error_log=f"Health check failed: {exc}",
+                                           error_key="errors.healthCheckFailed", error_params={"error": str(exc)})
             return
 
         status = result.get("status", "healthy")
@@ -1539,13 +1576,21 @@ class QueueWorker:
 
         # Mark the job completed with the status recorded as error_log for visibility
         error_log = None
+        error_key = None
+        error_params = None
         if status == "corrupt":
             error_log = "Corrupt: " + ("; ".join(errors[:3]) if errors else "unknown error")
-        await self.queue.update_status(job_id, "completed", error_log=error_log)
+            if errors:
+                error_key = "errors.healthCorrupt"
+                error_params = {"errors": "; ".join(errors[:3])}
+            else:
+                error_key = "errors.healthCorruptUnknown"
+        await self.queue.update_status(job_id, "completed", error_log=error_log,
+                                       error_key=error_key, error_params=error_params)
 
         # File-events log
         try:
-            from backend.file_events import log_event, EVENT_HEALTH_CHECK
+            from backend.file_events import log_event, EVENT_HEALTH_CHECK, health_check_code
             await log_event(
                 file_path,
                 EVENT_HEALTH_CHECK,
@@ -1557,11 +1602,13 @@ class QueueWorker:
                     "errors": errors[:5] if errors else None,
                     "job_id": job_id,
                 },
+                **health_check_code(status, mode),
             )
         except Exception:
             pass
 
         # Broadcast final progress
+        from backend.file_events import HEALTH_STATUSES
         stats_final = await self.queue.get_stats()
         await ws_manager.send_job_progress(
             job_id=job_id,
@@ -1570,6 +1617,8 @@ class QueueWorker:
             fps=None,
             eta=0,
             step=f"health-check ({status})",
+            step_key="steps.healthCheckStatus" if status in HEALTH_STATUSES else None,
+            step_params={"status": status},
             jobs_completed=stats_final["completed"],
             jobs_total=stats_final["total_jobs"],
             total_saved=stats_final["total_space_saved"],
@@ -1656,12 +1705,14 @@ class QueueWorker:
                     "converted (the original is replaced by the HEVC output). "
                     "Rescan the library to refresh this entry."
                 ),
+                error_key="errors.sourceGoneLikelyConverted",
             )
             return
         probe = await probe_file(file_path)
         if probe is None:
             print(f"[WORKER] Job {job_id}: FAILED to probe {file_path}", flush=True)
-            await self.queue.update_status(job_id, "failed", error_log="Failed to probe file")
+            await self.queue.update_status(job_id, "failed", error_log="Failed to probe file",
+                                           error_key="errors.probeFailed")
             return
         print(f"[WORKER] Job {job_id}: probed OK, duration={probe.get('duration', 0):.1f}s, codec={probe.get('video_codec', '?')}", flush=True)
 
@@ -1683,7 +1734,8 @@ class QueueWorker:
                 "queue a conversion for this title to apply the cleanup."
             )
             print(f"[WORKER] Job {job_id}: {msg} ({file_path})", flush=True)
-            await self.queue.update_status(job_id, "failed", error_log=msg)
+            await self.queue.update_status(job_id, "failed", error_log=msg,
+                                           error_key="errors.audioCleanupOnDisc")
             return
 
         jobs_total = stats["total_jobs"]
@@ -1811,6 +1863,7 @@ class QueueWorker:
                             await db.execute(
                                 "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                                 "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
+                                "error_key = NULL, error_params = NULL, "
                                 "assigned_node_id = NULL, assigned_at = NULL, cancel_requested = 0 "
                                 "WHERE id = ?",
                                 (job_id,),
@@ -1820,10 +1873,14 @@ class QueueWorker:
                             await db.close()
                         print(f"[WORKER] Job {job_id} returned to pending (node paused)", flush=True)
                     else:
-                        await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user")
-                        await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user")
+                        await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
+                                                       error_key="errors.cancelledByUser")
+                        await ws_manager.send_job_complete(job_id, "cancelled", 0, "Cancelled by user",
+                                                           error_key="errors.cancelledByUser")
                 else:
-                    await self.queue.update_status(job_id, "failed", error_log=result["error"])
+                    await self.queue.update_status(job_id, "failed", error_log=result["error"],
+                                                   error_key=result.get("error_key"),
+                                                   error_params=result.get("error_params"))
                     # Persist ffmpeg_command + ffmpeg_log on failure too
                     # so the Completed-tab failed-job expand can show the
                     # invocation + full log. Pre-v0.4.9 these only got
@@ -1838,12 +1895,13 @@ class QueueWorker:
                             )
                         except Exception as exc:
                             print(f"[WORKER] Failed to persist ffmpeg log on failure (non-fatal): {exc}", flush=True)
-                    await ws_manager.send_job_complete(job_id, "failed", 0, result["error"])
+                    await ws_manager.send_job_complete(job_id, "failed", 0, result["error"],
+                                                       error_key=result.get("error_key"),
+                                                       error_params=result.get("error_params"))
                     try:
-                        from backend.notifications import send_notification
-                        await send_notification("job_failed", "Job Failed",
-                            f"{file_name} failed during conversion",
-                            {"Error": result["error"][:200]})
+                        # v0.9.132: localized via notification_language.
+                        from backend.notifications import notify_job_failed
+                        await notify_job_failed(file_name, result["error"][:200])
                     except Exception:
                         pass
                 return
@@ -2116,8 +2174,10 @@ class QueueWorker:
                     else: tier = "Poor"
                     from backend.file_events import log_event, EVENT_VMAF
                     summary = f"VMAF: {vmaf_score} ({tier})"
+                    summary_key = "vmafScore"
                     if vmaf_uncertain:
                         summary += " ⚠ measurement-suspect"
+                        summary_key = "vmafScoreSuspect"
                     await log_event(
                         vmaf_path,
                         EVENT_VMAF,
@@ -2128,6 +2188,8 @@ class QueueWorker:
                             "job_id": job_id,
                             "vmaf_uncertain": vmaf_uncertain,
                         },
+                        summary_key=summary_key,
+                        summary_params={"score": str(vmaf_score), "tier": tier},
                     )
                 except Exception:
                     pass
@@ -2144,6 +2206,8 @@ class QueueWorker:
                         EVENT_VMAF,
                         f"VMAF failed — {vmaf_err[:200]}",
                         {"vmaf_error": vmaf_err, "job_id": job_id},
+                        summary_key="vmafFailed",
+                        summary_params={"error": vmaf_err[:200]},
                     )
                 except Exception:
                     pass
@@ -2213,6 +2277,7 @@ class QueueWorker:
                             EVENT_QUEUED,
                             "Running audio/sub cleanup inline (encode was larger)",
                             {"job_id": job_id, "job_type": "audio", "inline": True},
+                            summary_key="inlineCleanupLarger",
                         )
                     except Exception:
                         pass
@@ -2226,12 +2291,18 @@ class QueueWorker:
                 # miss usually means the user's CQ is too aggressive for this
                 # content and they may want to retry with different settings.
                 reason = result.get("vmaf_reject_reason") or "VMAF below threshold"
+                reject_params = result.get("vmaf_reject_params")
+                if result.get("vmaf_reject_reason") and reject_params:
+                    error_key = "errors.vmafRejected"
+                else:
+                    error_key = "errors.vmafBelowThreshold"
+                    reject_params = None
                 try:
                     db = await self._db()
                     try:
                         await db.execute(
-                            "UPDATE jobs SET error_log = ? WHERE id = ?",
-                            (reason, job_id),
+                            "UPDATE jobs SET error_log = ?, error_key = ?, error_params = ? WHERE id = ?",
+                            (reason, error_key, json.dumps(reject_params) if reject_params else None, job_id),
                         )
                         await db.commit()
                     finally:
@@ -2250,6 +2321,8 @@ class QueueWorker:
                             "rejected": True,
                             "job_id": job_id,
                         },
+                        summary_key="vmafRejected" if reject_params else "vmafRejectedBelowThreshold",
+                        summary_params=reject_params,
                     )
                 except Exception:
                     pass
@@ -2350,8 +2423,12 @@ class QueueWorker:
                     audio_languages=_remux_audio_langs or None,
                 )
                 if not result["success"]:
-                    await self.queue.update_status(job_id, "failed", error_log=result["error"])
-                    await ws_manager.send_job_complete(job_id, "failed", space_saved, result["error"])
+                    await self.queue.update_status(job_id, "failed", error_log=result["error"],
+                                                   error_key=result.get("error_key"),
+                                                   error_params=result.get("error_params"))
+                    await ws_manager.send_job_complete(job_id, "failed", space_saved, result["error"],
+                                                       error_key=result.get("error_key"),
+                                                       error_params=result.get("error_params"))
                     return
                 space_saved += result.get("space_saved", 0)
 
@@ -2561,6 +2638,7 @@ class QueueWorker:
                     fps=None,
                     eta=None,
                     step=step_label,
+                    step_key="steps.healthCheckInline", step_params={"mode": hc_mode_post},
                     jobs_completed=jobs_completed,
                     jobs_total=jobs_total,
                     total_saved=total_saved,
@@ -2574,6 +2652,7 @@ class QueueWorker:
                         fps=None,
                         eta=None,
                         step=step_label,
+                        step_key="steps.healthCheckInline", step_params={"mode": hc_mode_post},
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
@@ -2624,6 +2703,7 @@ class QueueWorker:
                     finally:
                         await db.close()
                     print(f"[WORKER] Inline health check: {hc_status} ({hc_result.get('duration_seconds', 0)}s)", flush=True)
+                    from backend.file_events import health_check_code
                     await self.queue._log_event(
                         current_file_path,
                         "health_check",
@@ -2635,6 +2715,7 @@ class QueueWorker:
                             "errors": hc_errors[:5] if hc_errors else None,
                             "job_id": job_id,
                         },
+                        **health_check_code(hc_status, hc_mode_post),
                     )
                 except Exception as hc_exc:
                     print(f"[WORKER] Inline health check failed: {hc_exc}", flush=True)
@@ -2652,16 +2733,22 @@ class QueueWorker:
         #   4) Fallback: conversion with zero savings → "Converted (no savings)"
         try:
             from backend.file_events import log_event, EVENT_COMPLETED
+            summary_params = None
             if result.get("vmaf_rejected"):
                 summary = "Kept original — VMAF below threshold"
+                summary_key = "keptOriginalVmaf"
             elif result.get("skipped_larger"):
                 summary = "Kept original — encode was larger than source"
+                summary_key = "keptOriginalLarger"
             elif space_saved > 0:
                 gb = space_saved / (1024 ** 3)
                 pct = (space_saved / file_size * 100) if file_size else 0
                 summary = f"Converted: saved {gb:.2f} GB ({pct:.0f}%)"
+                summary_key = "convertedSaved"
+                summary_params = {"gb": f"{gb:.2f}", "pct": f"{pct:.0f}"}
             else:
                 summary = "Converted (no savings)"
+                summary_key = "convertedNoSavings"
             await log_event(
                 current_file_path,
                 EVENT_COMPLETED,
@@ -2677,6 +2764,8 @@ class QueueWorker:
                     "skipped_larger": bool(result.get("skipped_larger")),
                     "original_path": file_path if current_file_path != file_path else None,
                 },
+                summary_key=summary_key,
+                summary_params=summary_params,
             )
         except Exception:
             pass
@@ -2968,17 +3057,15 @@ class QueueWorker:
 
         # Notifications: check if queue is now empty
         try:
-            from backend.notifications import send_notification
-            import os
+            # v0.9.132: localized via notification_language.
+            from backend.notifications import notify_queue_complete
             stats = await self.queue.get_stats()
             if stats["pending"] == 0 and stats["running"] <= 1:
                 def _fmt(b: int) -> str:
                     if b >= 1024**4: return f"{b / 1024**4:.2f} TB"
                     if b >= 1024**3: return f"{b / 1024**3:.1f} GB"
                     return f"{b / 1024**2:.0f} MB"
-                await send_notification("queue_complete", "Queue Complete",
-                    f"All jobs finished! {stats['completed']} completed.",
-                    {"Total saved": _fmt(stats["total_space_saved"])})
+                await notify_queue_complete(stats["completed"], _fmt(stats["total_space_saved"]))
         except Exception:
             pass
 

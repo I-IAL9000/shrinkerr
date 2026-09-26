@@ -1,0 +1,41 @@
+{
+  "categories": {
+    "movie": "Película",
+    "tv": "TV",
+    "quality": "Calidad",
+    "audio": "Audio",
+    "release": "Lanzamiento"
+  },
+  "tokens": {
+    "movie": {
+      "Title": "Título de la película",
+      "Year": "Año de estreno",
+      "TmdbId": "ID de TMDB",
+      "ImdbId": "ID de IMDb",
+      "Edition": "Edición"
+    },
+    "tv": {
+      "SeriesTitle": "Título de la serie",
+      "Year": "Año de la serie",
+      "season": "Número de temporada (usa {season:00} para rellenar con ceros)",
+      "episode": "Número de episodio (usa {episode:00} para rellenar con ceros)",
+      "EpisodeTitle": "Título del episodio",
+      "TvdbId": "ID de TVDB"
+    },
+    "quality": {
+      "Quality": "Resolución + origen combinados. No uses también {Resolution} ni {Source} o saldrán duplicados.",
+      "Resolution": "Solo la resolución de vídeo (úsalo en lugar de {Quality} si quieres la resolución y el origen por separado)",
+      "Source": "Solo el origen, p. ej. BluRay, WEB-DL, HDTV (úsalo en lugar de {Quality} si quieres la resolución y el origen por separado)",
+      "VideoCodec": "Códec de vídeo",
+      "VideoDynamicRange": "HDR / HDR10+ / DV / Dolby Vision; vacío para SDR"
+    },
+    "audio": {
+      "AudioCodec": "Códec de audio",
+      "AudioChannels": "Distribución de canales de audio"
+    },
+    "release": {
+      "ReleaseGroup": "Grupo de lanzamiento",
+      "Proper": "Marca Proper/Repack"
+    }
+  }
+}

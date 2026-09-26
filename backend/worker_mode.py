@@ -284,11 +284,14 @@ class ServerClient:
                               vmaf_score: float | None = None,
                               backup_path: str | None = None,
                               ffmpeg_command: str | None = None,
-                              encoding_stats: dict | None = None) -> dict:
+                              encoding_stats: dict | None = None,
+                              error_key: str | None = None,
+                              error_params: dict | None = None) -> dict:
         resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
             "space_saved": space_saved, "error": error,
+            "error_key": error_key, "error_params": error_params,
             "vmaf_score": vmaf_score, "backup_path": backup_path,
             "ffmpeg_command": ffmpeg_command, "encoding_stats": encoding_stats,
         })
@@ -325,7 +328,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
 
     if not os.path.exists(file_path):
         print(f"[WORKER] File not found: {file_path}", flush=True)
-        await client.report_complete(node_id, job_id, False, error=f"File not found: {file_path}")
+        await client.report_complete(node_id, job_id, False, error=f"File not found: {file_path}",
+                                     error_key="errors.fileNotFoundPath", error_params={"path": file_path})
         return
 
     # Import the converter modules (available because we're using the same Docker image)
@@ -381,7 +385,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         # Probe
         probe = await probe_file(file_path)
         if not probe:
-            await client.report_complete(node_id, job_id, False, error="Failed to probe file")
+            await client.report_complete(node_id, job_id, False, error="Failed to probe file",
+                                         error_key="errors.probeFailed")
             return
 
         duration = probe.get("duration", 0)
@@ -407,6 +412,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 await client.report_complete(
                     node_id, job_id, False,
                     error=f"Worker cannot run encoder '{job_encoder}' and translation is disabled",
+                    error_key="errors.workerEncoderUnsupported",
+                    error_params={"encoder": job_encoder},
                 )
                 return
 
@@ -510,7 +517,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
 
             if cancel_flag:
                 print(f"[WORKER] Job {job_id} cancelled", flush=True)
-                await client.report_complete(node_id, job_id, False, error="Cancelled by user")
+                await client.report_complete(node_id, job_id, False, error="Cancelled by user",
+                                             error_key="errors.cancelledByUser")
                 return
 
             if result.get("error"):
@@ -519,6 +527,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                     node_id, job_id, False,
                     error=result["error"],
                     ffmpeg_command=result.get("ffmpeg_command"),
+                    error_key=result.get("error_key"),
+                    error_params=result.get("error_params"),
                 )
                 return
 

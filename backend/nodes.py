@@ -12,9 +12,37 @@ import shutil
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import re
+
 import aiosqlite
 
 from backend.database import DB_PATH
+
+
+# Shrinkerr-authored NVENC-unavailable reasons (from _detect_capabilities
+# here and its mirror in worker_mode) -> serverJobs i18n key + params. The
+# reason is persisted/sent as English only, so the key is derived from it at
+# the API layer — that way reasons reported by older remote workers translate
+# too. Anything else (ffmpeg's stderr tail) gets no key and shows verbatim.
+NVENC_REASON_CODES: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"ffmpeg build has no hevc_nvenc encoder"), "monitor.nvencNoEncoder"),
+    (re.compile(r"ffmpeg exited (?P<code>-?\d+)"), "monitor.nvencTestExited"),
+    (re.compile(r"NVENC test crashed: (?P<error>.*)", re.S), "monitor.nvencTestCrashed"),
+    (re.compile(r"ffmpeg not runnable: (?P<error>.*)", re.S), "monitor.ffmpegNotRunnable"),
+    (re.compile(r"capabilities forced via CAPABILITIES env var"), "monitor.capabilitiesForced"),
+]
+
+
+def nvenc_reason_code(reason: str | None) -> dict:
+    """`nvenc_unavailable_reason_key`/`_params` for a reason string, or {}."""
+    for pattern, key in NVENC_REASON_CODES:
+        m = pattern.fullmatch(reason or "")
+        if m:
+            out: dict = {"nvenc_unavailable_reason_key": key}
+            if m.groupdict():
+                out["nvenc_unavailable_reason_params"] = m.groupdict()
+            return out
+    return {}
 
 
 class NodeManager:

@@ -1,0 +1,72 @@
+{
+  "title": "Programación",
+  "enabled": "Activado",
+  "disabled": "Desactivado",
+  "hour": {
+    "am": "{{hour}} a. m.",
+    "pm": "{{hour}} p. m."
+  },
+  "start": {
+    "title": "Programar inicio de la cola",
+    "timeLabel": "Hora de inicio:",
+    "scheduled": "Programado: {{time}}",
+    "submit": "Programar",
+    "toastScheduled": "Inicio de la cola programado",
+    "toastCancelled": "Programación cancelada"
+  },
+  "quick": {
+    "title": "Acciones rápidas",
+    "startNow": "Iniciar la cola ahora",
+    "pauseAfterCurrent": "Pausar tras el trabajo actual",
+    "toastStarted": "Cola iniciada",
+    "toastPaused": "Cola en pausa"
+  },
+  "runHours": {
+    "title": "Ejecutar solo durante estas horas",
+    "hint": "Haz clic o arrastra para activar/desactivar horas:",
+    "presetOvernight": "Por la noche ({{range}})",
+    "presetNight": "Madrugada ({{range}})",
+    "presetAllDay": "Todo el día",
+    "summaryNone": "No hay horas seleccionadas. La cola no se ejecutará.",
+    "summaryAll": "Todas las horas seleccionadas. La cola se ejecuta 24/7.",
+    "summaryRanges": "Se ejecuta: {{ranges}}",
+    "pausesOutside": "Se pausa automáticamente fuera de las horas seleccionadas.",
+    "save": "Guardar horas de ejecución",
+    "toastSaved": "Horas de ejecución guardadas"
+  },
+  "quiet": {
+    "title": "Horas de silencio",
+    "description": "Reduce la intensidad de la codificación durante las horas indicadas: menos trabajos en paralelo y, opcionalmente, menor prioridad de los procesos.",
+    "startHour": "Hora de inicio",
+    "endHour": "Hora de fin",
+    "maxParallel": "Máx. de trabajos en paralelo",
+    "priority": "Prioridad de los procesos",
+    "lowerPriority": "Prioridad más baja (nice)",
+    "summaryActive": "Activo de {{start}}:00 a {{end}}:00. ",
+    "summaryActiveOvernight": "Activo de {{start}}:00 a {{end}}:00 (durante la noche). ",
+    "summaryParallel_one": "Máx. {{count}} trabajo en paralelo.",
+    "summaryParallel_many": "Máx. {{count}} trabajos en paralelo.",
+    "summaryParallel_other": "Máx. {{count}} trabajos en paralelo.",
+    "summaryNice": " Los procesos se ejecutan con menor prioridad.",
+    "save": "Guardar horas de silencio",
+    "toastSaved": "Horas de silencio guardadas"
+  },
+  "streams": {
+    "title": "Programación según transmisiones de Plex / Jellyfin / Emby",
+    "description": "Pausa la codificación cuando los usuarios del servidor multimedia están transmitiendo. Los procesos de ffmpeg en curso se congelan (SIGSTOP), de modo que no consumen CPU ni E/S hasta que termina la transmisión; no se pierde trabajo y la codificación se reanuda (SIGCONT) exactamente desde el fotograma en que se detuvo. Los trabajos nuevos también esperan a que terminen las transmisiones antes de empezar. De forma predeterminada, tanto las transmisiones con transcodificación como las de reproducción directa activan la pausa; cambia \"Contar solo\" a <em>Transmisiones con transcodificación</em> si quieres que la reproducción directa permita continuar la codificación.",
+    "threshold": "Pausar cuando las transmisiones lleguen a",
+    "countOnly": "Contar solo",
+    "optionTranscode": "Transmisiones con transcodificación",
+    "optionAll": "Todas las transmisiones (incluida la reproducción directa)",
+    "summaryTranscode_one": "La codificación se pausará cuando haya {{count}} o más transmisiones con transcodificación activas.",
+    "summaryTranscode_many": "La codificación se pausará cuando haya {{count}} o más transmisiones con transcodificación activas.",
+    "summaryTranscode_other": "La codificación se pausará cuando haya {{count}} o más transmisiones con transcodificación activas.",
+    "summaryAll_one": "La codificación se pausará cuando haya {{count}} o más transmisiones activas.",
+    "summaryAll_many": "La codificación se pausará cuando haya {{count}} o más transmisiones activas.",
+    "summaryAll_other": "La codificación se pausará cuando haya {{count}} o más transmisiones activas.",
+    "directPlayNote": " Las transmisiones de reproducción directa no activan la pausa, ya que no usan la CPU del servidor.",
+    "checksEvery": "Se comprueba cada 15 segundos.",
+    "save": "Guardar ajustes de transmisión",
+    "toastSaved": "Ajustes de transmisión guardados"
+  }
+}

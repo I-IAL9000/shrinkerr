@@ -21,106 +21,64 @@ import {
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
 import { useToast } from "../useToast";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
 
-const PRESET_INFO: Record<string, { label: string; desc: string }> = {
-  p1: { label: "Fastest", desc: "Lowest quality, highest speed. Good for quick tests." },
-  p2: { label: "Very Fast", desc: "Slightly better quality than p1, still very quick." },
-  p3: { label: "Fast", desc: "Reasonable quality with good speed. Good for batch processing." },
-  p4: { label: "Medium", desc: "Balanced quality and speed. Good default for general use." },
-  p5: { label: "Slow", desc: "Better compression efficiency. Noticeably slower." },
-  p6: { label: "Very Slow", desc: "High quality with good compression. Recommended for storage." },
-  p7: { label: "Slowest", desc: "Best compression NVENC offers (best quality-per-bit → smaller files at the same CQ). Slowest speed." },
-};
+// Preset ids whose label/description live in settingsMedia:options.presets.<id>.
+const PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
 
+// label/desc text for these lists lives in settingsMedia:options.* — keyed by value.
 const TARGET_CODECS = [
-  { value: "hevc", label: "HEVC / H.265", desc: "Modern codec, excellent compression. Widely supported." },
-  { value: "av1", label: "AV1 (future)", desc: "Next-gen codec, best compression. Requires AV1-capable GPU." },
+  { value: "hevc" },
+  { value: "av1" },
 ];
 
 const SOURCE_CODECS = [
-  { value: "h264", label: "H.264 / AVC / x264", always: false, defaultOn: true },
-  { value: "mpeg2", label: "MPEG-2", always: false, defaultOn: true },
-  { value: "mpeg4", label: "MPEG-4 Part 2 / XviD / DivX", always: false, defaultOn: true },
-  { value: "vc1", label: "VC-1 (WMV)", always: false, defaultOn: true },
-  { value: "msmpeg4v3", label: "MS-MPEG4v3 (old DivX/AVI)", always: false, defaultOn: false },
-  { value: "vp9", label: "VP9 (YouTube/WebM)", always: false, defaultOn: false },
-  { value: "hevc", label: "H.265 / HEVC / x265", always: false, defaultOn: false },
-  { value: "av1", label: "AV1", always: false, defaultOn: false },
+  { value: "h264", always: false, defaultOn: true },
+  { value: "mpeg2", always: false, defaultOn: true },
+  { value: "mpeg4", always: false, defaultOn: true },
+  { value: "vc1", always: false, defaultOn: true },
+  { value: "msmpeg4v3", always: false, defaultOn: false },
+  { value: "vp9", always: false, defaultOn: false },
+  { value: "hevc", always: false, defaultOn: false },
+  { value: "av1", always: false, defaultOn: false },
 ];
 
+// Display names live in settingsMedia:languages.<code>.
 const ALL_LANGUAGES = [
-  { code: "eng", name: "English" }, { code: "isl", name: "Icelandic" }, { code: "ice", name: "Icelandic (alt)" },
-  { code: "aar", name: "Afar" }, { code: "afr", name: "Afrikaans" }, { code: "aka", name: "Akan" },
-  { code: "amh", name: "Amharic" }, { code: "ara", name: "Arabic" }, { code: "arg", name: "Aragonese" },
-  { code: "asm", name: "Assamese" }, { code: "aze", name: "Azerbaijani" }, { code: "bak", name: "Bashkir" },
-  { code: "bam", name: "Bambara" }, { code: "bel", name: "Belarusian" }, { code: "ben", name: "Bengali" },
-  { code: "bos", name: "Bosnian" }, { code: "bre", name: "Breton" }, { code: "bul", name: "Bulgarian" },
-  { code: "cat", name: "Catalan" }, { code: "ces", name: "Czech" }, { code: "cze", name: "Czech (alt)" },
-  { code: "chi", name: "Chinese" }, { code: "zho", name: "Chinese (alt)" }, { code: "cmn", name: "Mandarin" },
-  { code: "cor", name: "Cornish" }, { code: "cos", name: "Corsican" }, { code: "cre", name: "Cree" },
-  { code: "cym", name: "Welsh" }, { code: "dan", name: "Danish" }, { code: "deu", name: "German" },
-  { code: "ger", name: "German (alt)" }, { code: "div", name: "Divehi" }, { code: "dut", name: "Dutch (alt)" },
-  { code: "nld", name: "Dutch" }, { code: "dzo", name: "Dzongkha" }, { code: "ell", name: "Greek" },
-  { code: "gre", name: "Greek (alt)" }, { code: "epo", name: "Esperanto" }, { code: "est", name: "Estonian" },
-  { code: "eus", name: "Basque" }, { code: "ewe", name: "Ewe" }, { code: "fao", name: "Faroese" },
-  { code: "fas", name: "Persian" }, { code: "per", name: "Persian (alt)" }, { code: "fij", name: "Fijian" },
-  { code: "fin", name: "Finnish" }, { code: "fra", name: "French" }, { code: "fre", name: "French (alt)" },
-  { code: "fry", name: "Western Frisian" }, { code: "ful", name: "Fulah" }, { code: "gla", name: "Scottish Gaelic" },
-  { code: "gle", name: "Irish" }, { code: "glg", name: "Galician" }, { code: "grn", name: "Guarani" },
-  { code: "guj", name: "Gujarati" }, { code: "hat", name: "Haitian Creole" }, { code: "hau", name: "Hausa" },
-  { code: "heb", name: "Hebrew" }, { code: "her", name: "Herero" }, { code: "hin", name: "Hindi" },
-  { code: "hrv", name: "Croatian" }, { code: "hun", name: "Hungarian" }, { code: "hye", name: "Armenian" },
-  { code: "arm", name: "Armenian (alt)" }, { code: "ibo", name: "Igbo" }, { code: "ido", name: "Ido" },
-  { code: "ind", name: "Indonesian" }, { code: "ita", name: "Italian" }, { code: "jav", name: "Javanese" },
-  { code: "jpn", name: "Japanese" }, { code: "kal", name: "Kalaallisut" }, { code: "kan", name: "Kannada" },
-  { code: "kas", name: "Kashmiri" }, { code: "kat", name: "Georgian" }, { code: "geo", name: "Georgian (alt)" },
-  { code: "kaz", name: "Kazakh" }, { code: "khm", name: "Khmer" }, { code: "kin", name: "Kinyarwanda" },
-  { code: "kir", name: "Kirghiz" }, { code: "kor", name: "Korean" }, { code: "kur", name: "Kurdish" },
-  { code: "lao", name: "Lao" }, { code: "lat", name: "Latin" }, { code: "lav", name: "Latvian" },
-  { code: "lit", name: "Lithuanian" }, { code: "ltz", name: "Luxembourgish" }, { code: "mac", name: "Macedonian (alt)" },
-  { code: "mkd", name: "Macedonian" }, { code: "mal", name: "Malayalam" }, { code: "mar", name: "Marathi" },
-  { code: "may", name: "Malay (alt)" }, { code: "msa", name: "Malay" }, { code: "mlg", name: "Malagasy" },
-  { code: "mlt", name: "Maltese" }, { code: "mon", name: "Mongolian" }, { code: "mri", name: "Maori" },
-  { code: "mya", name: "Myanmar" }, { code: "bur", name: "Myanmar (alt)" }, { code: "nep", name: "Nepali" },
-  { code: "nob", name: "Norwegian Bokmål" }, { code: "nor", name: "Norwegian" }, { code: "nno", name: "Norwegian Nynorsk" },
-  { code: "oci", name: "Occitan" }, { code: "ori", name: "Oriya" }, { code: "orm", name: "Oromo" },
-  { code: "pan", name: "Panjabi" }, { code: "pol", name: "Polish" }, { code: "por", name: "Portuguese" },
-  { code: "pus", name: "Pashto" }, { code: "que", name: "Quechua" }, { code: "roh", name: "Romansh" },
-  { code: "ron", name: "Romanian" }, { code: "rum", name: "Romanian (alt)" }, { code: "run", name: "Rundi" },
-  { code: "rus", name: "Russian" }, { code: "sag", name: "Sango" }, { code: "san", name: "Sanskrit" },
-  { code: "sin", name: "Sinhala" }, { code: "slk", name: "Slovak" }, { code: "slo", name: "Slovak (alt)" },
-  { code: "slv", name: "Slovenian" }, { code: "sme", name: "Northern Sami" }, { code: "smo", name: "Samoan" },
-  { code: "sna", name: "Shona" }, { code: "snd", name: "Sindhi" }, { code: "som", name: "Somali" },
-  { code: "sot", name: "Southern Sotho" }, { code: "spa", name: "Spanish" }, { code: "sqi", name: "Albanian" },
-  { code: "alb", name: "Albanian (alt)" }, { code: "srp", name: "Serbian" }, { code: "ssw", name: "Swati" },
-  { code: "sun", name: "Sundanese" }, { code: "swa", name: "Swahili" }, { code: "swe", name: "Swedish" },
-  { code: "tam", name: "Tamil" }, { code: "tat", name: "Tatar" }, { code: "tel", name: "Telugu" },
-  { code: "tgk", name: "Tajik" }, { code: "tgl", name: "Tagalog" }, { code: "tha", name: "Thai" },
-  { code: "tib", name: "Tibetan (alt)" }, { code: "bod", name: "Tibetan" }, { code: "tir", name: "Tigrinya" },
-  { code: "ton", name: "Tonga" }, { code: "tsn", name: "Tswana" }, { code: "tso", name: "Tsonga" },
-  { code: "tuk", name: "Turkmen" }, { code: "tur", name: "Turkish" }, { code: "twi", name: "Twi" },
-  { code: "uig", name: "Uighur" }, { code: "ukr", name: "Ukrainian" }, { code: "urd", name: "Urdu" },
-  { code: "uzb", name: "Uzbek" }, { code: "vie", name: "Vietnamese" }, { code: "vol", name: "Volapük" },
-  { code: "wln", name: "Walloon" }, { code: "wol", name: "Wolof" }, { code: "xho", name: "Xhosa" },
-  { code: "yid", name: "Yiddish" }, { code: "yor", name: "Yoruba" }, { code: "zul", name: "Zulu" },
+  "eng", "isl", "ice", "aar", "afr", "aka", "amh", "ara", "arg", "asm",
+  "aze", "bak", "bam", "bel", "ben", "bos", "bre", "bul", "cat", "ces",
+  "cze", "chi", "zho", "cmn", "cor", "cos", "cre", "cym", "dan", "deu",
+  "ger", "div", "dut", "nld", "dzo", "ell", "gre", "epo", "est", "eus",
+  "ewe", "fao", "fas", "per", "fij", "fin", "fra", "fre", "fry", "ful",
+  "gla", "gle", "glg", "grn", "guj", "hat", "hau", "heb", "her", "hin",
+  "hrv", "hun", "hye", "arm", "ibo", "ido", "ind", "ita", "jav", "jpn",
+  "kal", "kan", "kas", "kat", "geo", "kaz", "khm", "kin", "kir", "kor",
+  "kur", "lao", "lat", "lav", "lit", "ltz", "mac", "mkd", "mal", "mar",
+  "may", "msa", "mlg", "mlt", "mon", "mri", "mya", "bur", "nep", "nob",
+  "nor", "nno", "oci", "ori", "orm", "pan", "pol", "por", "pus", "que",
+  "roh", "ron", "rum", "run", "rus", "sag", "san", "sin", "slk", "slo",
+  "slv", "sme", "smo", "sna", "snd", "som", "sot", "spa", "sqi", "alb",
+  "srp", "ssw", "sun", "swa", "swe", "tam", "tat", "tel", "tgk", "tgl",
+  "tha", "tib", "bod", "tir", "ton", "tsn", "tso", "tuk", "tur", "twi",
+  "uig", "ukr", "urd", "uzb", "vie", "vol", "wln", "wol", "xho", "yid",
+  "yor", "zul",
 ];
 
 const AUDIO_CODECS = [
-  { value: "copy", label: "Copy (no re-encode)", desc: "Keep original audio codec. Fastest, no quality loss." },
-  { value: "aac", label: "AAC", desc: "Widely compatible. Good quality at lower bitrates." },
-  { value: "ac3", label: "AC3 (Dolby Digital)", desc: "Standard surround sound. Max 640 kbps." },
-  { value: "eac3", label: "EAC3 (Dolby Digital+)", desc: "Enhanced AC3. Better quality at same bitrate." },
-  { value: "opus", label: "Opus", desc: "Best quality per bitrate. Limited device support." },
-  { value: "flac", label: "FLAC", desc: "Lossless compression. Large files, perfect quality." },
+  { value: "copy" },
+  { value: "aac" },
+  { value: "ac3" },
+  { value: "eac3" },
+  { value: "opus" },
+  { value: "flac" },
 ];
 
 const RESOLUTION_OPTIONS = [
-  { value: "copy", label: "Copy (keep original)", desc: "Keep the original resolution. No scaling applied." },
-  { value: "1080p", label: "1080p (1920×1080)", desc: "Full HD. Good balance of quality and size for most content." },
-  { value: "720p", label: "720p (1280×720)", desc: "HD. Significant size reduction, still good on smaller screens." },
-  { value: "480p", label: "480p (854×480)", desc: "SD. Very small files. Best for mobile or low-bandwidth." },
+  { value: "copy" },
+  { value: "1080p" },
+  { value: "720p" },
+  { value: "480p" },
 ];
 
 const inputStyle: React.CSSProperties = {
@@ -143,6 +101,7 @@ const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 
  */
 function VmafRemeasureRow() {
   const toast = useToast();
+  const { t } = useTranslation(["settingsMedia", "common"]);
   const [status, setStatus] = useState<{ running: boolean; candidates: number } | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
   const [outcome, setOutcome] = useState<{ rescued: number; unchanged: number; skipped: number } | null>(null);
@@ -201,14 +160,14 @@ function VmafRemeasureRow() {
     try {
       const r = await startVmafRemeasure();
       if (r.started) {
-        toast(`Re-measuring ${r.total} VMAF score${r.total === 1 ? "" : "s"}...`, "success");
+        toast(t("settingsMedia:video.vmafRemeasure.startedToast", { count: r.total }), "success");
         setStatus(s => s ? { ...s, running: true } : { running: true, candidates: r.total });
         setOutcome(null);
       } else {
-        toast(r.message || "No remeasure candidates.", "info");
+        toast(r.message || t("settingsMedia:video.vmafRemeasure.noCandidatesToast"), "info");
       }
     } catch (e: any) {
-      toast(`VMAF re-measure failed to start: ${e?.message || "unknown error"}`, "error");
+      toast(t("settingsMedia:video.vmafRemeasure.startFailed", { error: e?.message || t("settingsMedia:video.vmafRemeasure.unknownError") }), "error");
     }
   };
 
@@ -216,14 +175,14 @@ function VmafRemeasureRow() {
   const showCandidates = status.candidates > 0;
   return (
     <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
-      <div style={{ ...labelStyle, marginBottom: 4 }}>Re-measure suspect VMAF scores</div>
+      <div style={{ ...labelStyle, marginBottom: 4 }}>{t("settingsMedia:video.vmafRemeasure.title")}</div>
       <div style={{ ...helpStyle, marginBottom: 10, marginTop: 0 }}>
-        Re-runs VMAF on completed jobs whose recorded score landed below "Excellent" or got flagged measurement-suspect (libvmaf can de-sync mid-window and return artificially low scores on visually-fine encodes). Skips jobs where the original pre-rename file no longer exists. Uses the same bimodal-aware retry path as fresh encodes.
+        {t("settingsMedia:video.vmafRemeasure.help")}
       </div>
       {progress && progress.total > 0 ? (
         <div>
           <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 }}>
-            Re-measuring: {progress.done} / {progress.total} {progress.current ? `— ${progress.current}` : ""}
+            {t("settingsMedia:video.vmafRemeasure.progress", { done: progress.done, total: progress.total })} {progress.current ? `— ${progress.current}` : ""}
           </div>
           <div style={{ height: 6, background: "var(--bg-card)", borderRadius: 3, overflow: "hidden" }}>
             <div style={{
@@ -241,18 +200,19 @@ function VmafRemeasureRow() {
             onClick={start}
             style={{ fontSize: 12 }}
           >
-            {status.running ? "Re-measuring..." : `Re-measure ${status.candidates} score${status.candidates === 1 ? "" : "s"}`}
+            {status.running ? t("settingsMedia:video.vmafRemeasure.running") : t("settingsMedia:video.vmafRemeasure.button", { count: status.candidates })}
           </button>
           {!showCandidates && (
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              No candidates — every completed job is at "Excellent" or has no comparable source.
+              {t("settingsMedia:video.vmafRemeasure.noCandidates")}
             </span>
           )}
           {outcome && (
             <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-              Last pass: <strong style={{ color: "var(--success)" }}>{outcome.rescued} rescued</strong>
-              {outcome.unchanged > 0 && <>, {outcome.unchanged} unchanged</>}
-              {outcome.skipped > 0 && <>, {outcome.skipped} skipped (source missing)</>}
+              <Trans i18nKey="settingsMedia:video.vmafRemeasure.lastPass" count={outcome.rescued}
+                components={{ b: <strong style={{ color: "var(--success)" }} /> }} />
+              {outcome.unchanged > 0 && t("settingsMedia:video.vmafRemeasure.unchanged", { count: outcome.unchanged })}
+              {outcome.skipped > 0 && t("settingsMedia:video.vmafRemeasure.skipped", { count: outcome.skipped })}
             </span>
           )}
         </div>
@@ -360,26 +320,30 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   };
   const loadPlexOpts = () => getPlexOptions().then(setPlexOpts).catch(() => {});
 
+  // Display labels come from settingsIntegrations:conditions.*; the `value`
+  // fields stay as the API's operator ids.
+  const ct = (key: string) => t(`settingsIntegrations:conditions.${key}`);
+  const op = (value: string, labelKey: string = value) => ({ value, label: ct(`operators.${labelKey}`) });
   const CONDITION_TYPES: Record<string, { label: string; group: string; operators: { value: string; label: string }[]; valueType: "select" | "text" | "number" | "duration" }> = {
-    directory: { label: "Media Directory", group: "Path", operators: [{ value: "is", label: "is" }], valueType: "select" },
-    source: { label: "Source", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    resolution: { label: "Resolution", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    video_codec: { label: "Video Codec", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    audio_codec: { label: "Audio Codec", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "select" },
-    file_size: { label: "File Size (GB)", group: "File", operators: [{ value: "greater_than", label: "greater than" }, { value: "less_than", label: "less than" }], valueType: "number" },
-    date_added: { label: "Date Added", group: "File", operators: [{ value: "less_than", label: "newer than" }, { value: "greater_than", label: "older than" }], valueType: "duration" },
-    media_type: { label: "Type", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    title: { label: "Title", group: "File", operators: [{ value: "contains", label: "contains" }, { value: "does_not_contain", label: "does not contain" }], valueType: "text" },
-    release_group: { label: "Release Group", group: "File", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    label: { label: "Plex Label", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    collection: { label: "Plex Collection", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    genre: { label: "Plex Genre", group: "Plex", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    library: { label: "Plex Library", group: "Plex", operators: [{ value: "is", label: "is" }], valueType: "select" },
-    arr_tag: { label: "Sonarr/Radarr Tag", group: "Arr", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    jellyfin_tag: { label: "Jellyfin Tag", group: "Jellyfin", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    emby_tag: { label: "Emby Tag", group: "Emby", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
-    emby_watched: { label: "Emby Watched", group: "Emby", operators: [{ value: "is", label: "is" }], valueType: "select" },
-    nzbget_category: { label: "Download Category", group: "Downloads", operators: [{ value: "is", label: "is" }, { value: "is_not", label: "is not" }], valueType: "select" },
+    directory: { label: ct("types.directory"), group: ct("groups.path"), operators: [op("is")], valueType: "select" },
+    source: { label: ct("types.source"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    resolution: { label: ct("types.resolution"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    video_codec: { label: ct("types.video_codec"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    audio_codec: { label: ct("types.audio_codec"), group: ct("groups.file"), operators: [op("contains"), op("does_not_contain")], valueType: "select" },
+    file_size: { label: ct("types.file_size"), group: ct("groups.file"), operators: [op("greater_than"), op("less_than")], valueType: "number" },
+    date_added: { label: ct("types.date_added"), group: ct("groups.file"), operators: [op("less_than", "newer_than"), op("greater_than", "older_than")], valueType: "duration" },
+    media_type: { label: ct("types.media_type"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    title: { label: ct("types.title"), group: ct("groups.file"), operators: [op("contains"), op("does_not_contain")], valueType: "text" },
+    release_group: { label: ct("types.release_group"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    label: { label: ct("types.label"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
+    collection: { label: ct("types.collection"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
+    genre: { label: ct("types.genre"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
+    library: { label: ct("types.library"), group: "Plex", operators: [op("is")], valueType: "select" },
+    arr_tag: { label: ct("types.arr_tag"), group: "Arr", operators: [op("is"), op("is_not")], valueType: "select" },
+    jellyfin_tag: { label: ct("types.jellyfin_tag"), group: "Jellyfin", operators: [op("is"), op("is_not")], valueType: "select" },
+    emby_tag: { label: ct("types.emby_tag"), group: "Emby", operators: [op("is"), op("is_not")], valueType: "select" },
+    emby_watched: { label: ct("types.emby_watched"), group: "Emby", operators: [op("is")], valueType: "select" },
+    nzbget_category: { label: ct("types.nzbget_category"), group: ct("groups.downloads"), operators: [op("is"), op("is_not")], valueType: "select" },
   };
 
   const updateConditionType = (idx: number, newType: string) => {
@@ -436,7 +400,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
       // open from a direct click — this handler IS a direct click, so it's fine.
       const popup = window.open(auth_url, "plex_auth", "width=550,height=750");
       if (!popup) {
-        setPlexPickerError("Popup blocked. Please allow popups for this site and try again.");
+        setPlexPickerError(t("settingsIntegrations:plex.errors.popupBlocked"));
         return;
       }
       setPlexAuthState("waiting");
@@ -446,7 +410,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
       const poll = async () => {
         if (Date.now() > deadline) {
           setPlexAuthState("idle");
-          setPlexPickerError("Timed out waiting for Plex sign-in. Please try again.");
+          setPlexPickerError(t("settingsIntegrations:plex.errors.timedOut"));
           try { popup.close(); } catch {}
           return;
         }
@@ -454,7 +418,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           const res = await plexAuthCheck(pin_id);
           if (res.expired) {
             setPlexAuthState("idle");
-            setPlexPickerError("Plex sign-in PIN expired. Please try again.");
+            setPlexPickerError(t("settingsIntegrations:plex.errors.pinExpired"));
             try { popup.close(); } catch {}
             return;
           }
@@ -470,7 +434,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               const recommended = servers[0]?.recommended_uri || servers[0]?.connections?.[0]?.uri || "";
               setPlexPickedUri(recommended);
             } catch (e: any) {
-              setPlexPickerError(`Couldn't list your Plex servers: ${e?.message || e}`);
+              setPlexPickerError(t("settingsIntegrations:plex.errors.listServersFailed", { error: e?.message || e }));
             }
             return;
           }
@@ -546,7 +510,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
       // saw "nothing happens" on click. Surface backend validation
       // errors (path doesn't exist, isn't a directory, system path,
       // already-configured) explicitly via a toast.
-      toast(e?.message || "Could not add directory", "error");
+      toast(e?.message || t("settingsMedia:directories.addFailed"), "error");
     }
   };
 
@@ -575,34 +539,36 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     setEncoding({ ...encoding, always_keep_languages: keepLangs.filter((l: string) => l !== code) });
   };
 
+  const langName = (code: string) => t(`settingsMedia:languages.${code}`);
+
   const filteredLangs = langSearch.length > 0
-    ? ALL_LANGUAGES.filter(l =>
-        (l.name.toLowerCase().includes(langSearch.toLowerCase()) ||
-         l.code.toLowerCase().includes(langSearch.toLowerCase())) &&
-        !keepLangs.includes(l.code)
-      ).slice(0, 8)
+    ? ALL_LANGUAGES.filter(code =>
+        (langName(code).toLowerCase().includes(langSearch.toLowerCase()) ||
+         code.toLowerCase().includes(langSearch.toLowerCase())) &&
+        !keepLangs.includes(code)
+      ).slice(0, 8).map(code => ({ code, name: langName(code) }))
     : [];
 
   const subKeepLangs: string[] = encoding?.sub_keep_languages || [];
   const subFilteredLangs = subLangSearch.length > 0
-    ? ALL_LANGUAGES.filter(l =>
-        (l.name.toLowerCase().includes(subLangSearch.toLowerCase()) ||
-         l.code.toLowerCase().includes(subLangSearch.toLowerCase())) &&
-        !subKeepLangs.includes(l.code)
-      ).slice(0, 8)
+    ? ALL_LANGUAGES.filter(code =>
+        (langName(code).toLowerCase().includes(subLangSearch.toLowerCase()) ||
+         code.toLowerCase().includes(subLangSearch.toLowerCase())) &&
+        !subKeepLangs.includes(code)
+      ).slice(0, 8).map(code => ({ code, name: langName(code) }))
     : [];
 
 
   return (
     <div className="settings-page" ref={pageRef}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h2 style={{ color: "white", fontSize: 20 }}>Settings</h2>
+        <h2 style={{ color: "white", fontSize: 20 }}>{t("settingsMedia:header.title")}</h2>
         <div style={{ display: "flex", gap: 8 }}>
           <a href="/api/settings/export" download style={{ textDecoration: "none" }}>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>Export</button>
+            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("settingsMedia:header.export")}</button>
           </a>
           <label className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>
-            Import
+            {t("settingsMedia:header.import")}
             <input type="file" accept=".json" style={{ display: "none" }}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
@@ -611,10 +577,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   const text = await file.text();
                   const data = JSON.parse(text);
                   const res = await importSettings(data);
-                  toast(`Imported ${res.settings_count} settings, ${res.dirs_count} dirs, ${res.rules_count} rules`, "success");
+                  toast(t("settingsMedia:header.importSuccess", { settings: res.settings_count, dirs: res.dirs_count, rules: res.rules_count }), "success");
                   window.location.reload();
                 } catch (err: any) {
-                  toast(`Import failed: ${err.message}`);
+                  toast(t("settingsMedia:header.importFailed", { error: err.message }));
                 }
               }}
             />
@@ -627,13 +593,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           position: "fixed", top: 20, right: 20, background: "var(--success)", color: "white",
           padding: "10px 20px", borderRadius: 6, fontSize: 13, fontWeight: "bold", zIndex: 1000,
         }}>
-          Settings saved!
+          {t("settingsMedia:header.saved")}
         </div>
       )}
 
 
       <h2 id="directories" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 0, marginBottom: 12, scrollMarginTop: 20 }}>
-        Media Directories
+        {t("settingsMedia:directories.title")}
       </h2>
       {/* Media Directories */}
       <div style={sectionStyle}>
@@ -652,9 +618,9 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--border)" }}>{d.label}</span>}
                   {!autoScan && (
                     <span
-                      title="Webhook-eligible only — scanner and watcher skip this directory. Useful for an NZBGet/SABnzbd downloads landing zone."
+                      title={t("settingsMedia:directories.noScanTitle")}
                       style={{ fontSize: 10, color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--bg-card)", cursor: "help" }}
-                    >no scan</span>
+                    >{t("settingsMedia:directories.noScan")}</span>
                   )}
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -667,11 +633,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           await updateMediaDir(d.id, { auto_scan: e.target.checked });
                           loadDirs();
                         } catch (err: any) {
-                          toast(err?.message || "Failed to update", "error");
+                          toast(err?.message || t("settingsMedia:directories.updateFailed"), "error");
                         }
                       }}
                     />
-                    Scan
+                    {t("settingsMedia:directories.scan")}
                   </label>
                   <button onClick={() => handleRemoveDir(d.id)}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
@@ -679,7 +645,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </div>
             );
           })}
-          {dirs.length === 0 && <div style={{ opacity: 0.5 }}>No directories configured</div>}
+          {dirs.length === 0 && <div style={{ opacity: 0.5 }}>{t("settingsMedia:directories.empty")}</div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-secondary" onClick={() => setBrowserOpen(true)}
@@ -687,18 +653,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2, marginRight: 4 }}>
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
             </svg>
-            Browse
+            {t("settingsMedia:directories.browse")}
           </button>
-          <input placeholder="Path (e.g., /media/Movies/HD 2020)" value={newPath} onChange={(e) => setNewPath(e.target.value)}
+          <input placeholder={t("settingsMedia:directories.pathPlaceholder")} value={newPath} onChange={(e) => setNewPath(e.target.value)}
             style={{ ...inputStyle, flex: "1 1 200px", minWidth: 150 }} />
           <select value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
             style={{ ...inputStyle, width: 140 }}>
-            <option value="">Type (optional)</option>
-            <option value="Movies">Movies</option>
-            <option value="TV Shows">TV Shows</option>
-            <option value="Other">Other</option>
+            <option value="">{t("settingsMedia:directories.typeOptional")}</option>
+            <option value="Movies">{t("settingsMedia:directories.types.movies")}</option>
+            <option value="TV Shows">{t("settingsMedia:directories.types.tvShows")}</option>
+            <option value="Other">{t("settingsMedia:directories.types.other")}</option>
           </select>
-          <button className="btn btn-secondary" onClick={handleAddDir} style={{ height: 36, whiteSpace: "nowrap" }}>+ Add</button>
+          <button className="btn btn-secondary" onClick={handleAddDir} style={{ height: 36, whiteSpace: "nowrap" }}>{t("settingsMedia:directories.add")}</button>
         </div>
         <FolderBrowser
           isOpen={browserOpen}
@@ -711,18 +677,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
       {encoding && (
         <>
           <h2 id="video" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Video Settings
+            {t("settingsMedia:video.title")}
           </h2>
           {/* Encoding Defaults */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 16 }}>Encoding Defaults</h3>
+            <h3 style={{ color: "white", marginBottom: 16 }}>{t("settingsMedia:video.encodingDefaults")}</h3>
             <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: "1 1 300px", minWidth: 0, maxWidth: 500 }}>
 
               {/* Default Encoder */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={labelStyle}>Default Encoder</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.defaultEncoder")}</span>
                   <button
                     type="button"
                     onClick={async () => {
@@ -731,14 +697,14 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       catch { /* keep prior caps */ }
                       finally { setEncoderCapsRefreshing(false); }
                     }}
-                    title="Re-detect hardware encoders. Use this after enabling /dev/dri passthrough or changing the BIOS iGPU setting."
+                    title={t("settingsMedia:video.redetectTitle")}
                     style={{
                       background: "none", border: "1px solid var(--border)",
                       color: "var(--text-muted)", cursor: "pointer",
                       borderRadius: 4, padding: "2px 8px", fontSize: 11,
                     }}
                   >
-                    {encoderCapsRefreshing ? "Detecting…" : "Re-detect"}
+                    {encoderCapsRefreshing ? t("settingsMedia:video.detecting") : t("settingsMedia:video.redetect")}
                   </button>
                 </div>
                 <select value={encoding.default_encoder}
@@ -761,20 +727,20 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   {(encoderCaps?.vaapi || encoding.default_encoder === "vaapi") && (
                     <option value="vaapi">VAAPI (Intel / AMD GPU)</option>
                   )}
-                  <option value="libx265">libx265 (CPU — Software)</option>
+                  <option value="libx265">{t("settingsMedia:video.libx265Option")}</option>
                 </select>
                 <div style={helpStyle}>
                   {(() => {
                     switch (encoding.default_encoder) {
                       case "nvenc":
-                        return "Hardware encoding using your NVIDIA GPU. Fast, lower power usage. Slightly larger files than CPU at the same quality.";
+                        return t("settingsMedia:video.encoderHelp.nvenc");
                       case "qsv":
-                        return "Hardware encoding using Intel Quick Sync (Gen8+ iGPUs through Arc / Battlemage). Fast and very power-efficient. Requires /dev/dri passthrough — see the help block below.";
+                        return t("settingsMedia:video.encoderHelp.qsv");
                       case "vaapi":
-                        return "Hardware encoding via VA-API. Works on Intel iGPUs and AMD GPUs (Polaris / Vega / RDNA). Driver-quality varies; use QSV instead on Intel where available. Requires /dev/dri passthrough.";
+                        return t("settingsMedia:video.encoderHelp.vaapi");
                       case "libx265":
                       default:
-                        return "Software encoding using CPU. Slower but achieves better compression per bitrate.";
+                        return t("settingsMedia:video.encoderHelp.libx265");
                     }
                   })()}
                 </div>
@@ -783,10 +749,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 {(encoderCaps?.qsv || encoderCaps?.vaapi || ["qsv", "vaapi"].includes(encoding.default_encoder)) && (
                   <details style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
                     <summary style={{ cursor: "pointer", color: "var(--text-secondary)" }}>
-                      Compose passthrough for QSV / VAAPI
+                      {t("settingsMedia:video.passthrough.summary")}
                     </summary>
                     <div style={{ paddingLeft: 8, lineHeight: 1.7, marginTop: 6 }}>
-                      Add to your <code>docker-compose.yml</code>:
+                      <Trans i18nKey="settingsMedia:video.passthrough.addTo" components={{ code: <code /> }} />
                       <pre style={{ margin: "6px 0", padding: 8, background: "var(--bg-primary)", borderRadius: 4, fontSize: 11, overflow: "auto" }}>{`services:
   shrinkerr:
     devices:
@@ -794,9 +760,9 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     group_add:
       - video
       - "<GID>"   # numeric group that owns /dev/dri/renderD128 on host`}</pre>
-                      Find the GID with <code>stat -c '%g' /dev/dri/renderD128</code> on the host.
-                      Then <code>docker compose down &amp;&amp; up -d</code> and click <em>Re-detect</em> above.
-                      Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes.
+                      <Trans i18nKey="settingsMedia:video.passthrough.findGid" components={{ code: <code /> }} />{" "}
+                      <Trans i18nKey="settingsMedia:video.passthrough.restart" components={{ code: <code />, em: <em /> }} />{" "}
+                      <Trans i18nKey="settingsMedia:video.passthrough.verify" components={{ code: <code /> }} />
                     </div>
                   </details>
                 )}
@@ -804,23 +770,23 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {/* Target Codec */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Target Codec</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.targetCodec")}</div>
                 <select value={encoding.target_codec || "hevc"}
                   onChange={(e) => setEncoding({ ...encoding, target_codec: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {TARGET_CODECS.map(c => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
+                    <option key={c.value} value={c.value}>{t(`settingsMedia:options.targetCodecs.${c.value}.label`)}</option>
                   ))}
                 </select>
                 <div style={helpStyle}>
-                  {TARGET_CODECS.find(c => c.value === (encoding.target_codec || "hevc"))?.desc}
+                  {(() => { const c = TARGET_CODECS.find(c => c.value === (encoding.target_codec || "hevc")); return c && t(`settingsMedia:options.targetCodecs.${c.value}.desc`); })()}
                 </div>
               </div>
 
               {/* Parallel Jobs */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={labelStyle}>Parallel Jobs</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.parallelJobs")}</span>
                   <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding?.parallel_jobs ?? 8}</span>
                 </div>
                 <input type="range" min={1} max={16} value={encoding?.parallel_jobs ?? 8}
@@ -830,47 +796,47 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <span>1</span><span>4</span><span>8</span><span>12</span><span>16</span>
                 </div>
                 <div style={helpStyle}>
-                  Number of simultaneous encoding jobs. Higher = faster queue processing but more GPU/CPU load.
+                  {t("settingsMedia:video.parallelJobsHelp")}
                 </div>
               </div>
 
               {/* FFmpeg threads per job */}
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={labelStyle}>FFmpeg Threads Per Job</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.ffmpegThreads")}</span>
                   <span style={{ color: "var(--accent)", fontWeight: "bold" }}>
-                    {(encoding?.ffmpeg_threads ?? 0) === 0 ? "auto" : encoding?.ffmpeg_threads}
+                    {(encoding?.ffmpeg_threads ?? 0) === 0 ? t("settingsMedia:video.auto") : encoding?.ffmpeg_threads}
                   </span>
                 </div>
                 <input type="range" min={0} max={16} value={encoding?.ffmpeg_threads ?? 0}
                   onChange={(e) => setEncoding({ ...encoding, ffmpeg_threads: parseInt(e.target.value) })}
                   style={{ width: "100%", accentColor: "var(--accent)" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                  <span>auto</span><span>2</span><span>4</span><span>8</span><span>12</span><span>16</span>
+                  <span>{t("settingsMedia:video.auto")}</span><span>2</span><span>4</span><span>8</span><span>12</span><span>16</span>
                 </div>
                 <div style={helpStyle}>
-                  <strong>auto (0)</strong> lets ffmpeg use every available core per job — fine for a single job, but with <strong>Parallel Jobs &gt; 1</strong> two jobs on an 8-core CPU each try to use all 8 cores and fight each other, eroding throughput. <strong>1–2</strong> is a good cap for older CPUs running parallel software (libx265) encodes. <strong>NVENC / QSV / VAAPI</strong> users can usually leave this at <strong>1–2</strong> too — the GPU does the heavy lifting, ffmpeg just needs threads for muxing and filtering. Set higher if you want a single job to fully saturate a modern many-core CPU.
+                  <Trans i18nKey="settingsMedia:video.ffmpegThreadsHelp" components={{ b: <strong /> }} />
                 </div>
               </div>
 
               {/* Target Resolution */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Target Resolution</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.targetResolution")}</div>
                 <select value={encoding.target_resolution || "copy"}
                   onChange={(e) => setEncoding({ ...encoding, target_resolution: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {RESOLUTION_OPTIONS.map(r => (
-                    <option key={r.value} value={r.value}>{r.label}</option>
+                    <option key={r.value} value={r.value}>{t(`settingsMedia:options.resolutions.${r.value}.label`)}</option>
                   ))}
                 </select>
                 <div style={helpStyle}>
-                  {RESOLUTION_OPTIONS.find(r => r.value === (encoding.target_resolution || "copy"))?.desc}
+                  {(() => { const r = RESOLUTION_OPTIONS.find(r => r.value === (encoding.target_resolution || "copy")); return r && t(`settingsMedia:options.resolutions.${r.value}.desc`); })()}
                 </div>
               </div>
 
               {/* Source Codecs to Convert */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Convert From (source codecs)</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.convertFrom")}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {SOURCE_CODECS.map(c => (
                     <label key={c.value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
@@ -889,12 +855,12 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         }}
                         style={{ accentColor: "var(--accent)" }}
                       />
-                      <span style={{ color: c.always ? "var(--success)" : "var(--text-secondary)" }}>{c.label}</span>
-                      {c.always && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>(always)</span>}
+                      <span style={{ color: c.always ? "var(--success)" : "var(--text-secondary)" }}>{t(`settingsMedia:options.sourceCodecs.${c.value}`)}</span>
+                      {c.always && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{t("settingsMedia:video.always")}</span>}
                     </label>
                   ))}
                 </div>
-                <div style={helpStyle}>Select which source codecs should be converted to the target codec.</div>
+                <div style={helpStyle}>{t("settingsMedia:video.convertFromHelp")}</div>
               </div>
 
               {encoding.default_encoder === "nvenc" && (
@@ -910,18 +876,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         disabled={!encoderCaps?.nvdec_available}
                         onChange={e => setEncoding({ ...encoding, nvenc_hw_decode: e.target.checked })}
                         style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use NVDEC for decode</span>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.nvdec.label")}</span>
                     </label>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      Decodes the source on the GPU before NVENC encodes it. Frames stay on-device — no PCIe transfer. Falls back silently to software decode for unsupported source codecs (MS-MPEG4v3, exotic formats).
+                      {t("settingsMedia:video.nvdec.help")}
                       {!encoderCaps?.nvdec_available && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          NVDEC not detected on this host.
+                          {t("settingsMedia:video.nvdec.notDetected")}
                         </span>
                       )}
                       {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.nvenc_hw_decode ?? true) && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                          {t("settingsMedia:video.vmafDecoderWarning")}
                         </span>
                       )}
                     </div>
@@ -929,83 +895,74 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
                   {/* v0.5.9: NVENC bit-depth choice */}
                   <div style={{ marginBottom: 16 }}>
-                    <div style={{ ...labelStyle, marginBottom: 6 }}>Bit Depth</div>
+                    <div style={{ ...labelStyle, marginBottom: 6 }}>{t("settingsMedia:video.bitDepth.label")}</div>
                     <select value={encoding?.nvenc_bit_depth || "10bit"}
                       onChange={e => setEncoding({ ...encoding, nvenc_bit_depth: e.target.value })}
                       style={{ ...inputStyle, width: "100%", maxWidth: 360 }}>
-                      <option value="10bit">10-bit (main10 / p010le) — default</option>
-                      <option value="8bit">8-bit (main / nv12) — Maxwell-compatible</option>
-                      <option value="auto">Match source (10-bit in → 10-bit out, else 8-bit)</option>
+                      <option value="10bit">{t("settingsMedia:video.bitDepth.10bit")}</option>
+                      <option value="8bit">{t("settingsMedia:video.bitDepth.8bit")}</option>
+                      <option value="auto">{t("settingsMedia:video.bitDepth.auto")}</option>
                     </select>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      <strong>10-bit</strong> is best for quality (less banding, slightly larger files on most sources) but requires <strong>Pascal-or-newer NVIDIA</strong> (GTX 10xx / Quadro P-series / RTX). <strong>8-bit</strong> is the only option for Maxwell silicon (GTX 9xx / 750 Ti / Quadro M-series), produces smaller files on most material, and encodes a little faster. <strong>Match source</strong> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it.
+                      <Trans i18nKey="settingsMedia:video.bitDepth.help" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
                   {/* NVENC Preset */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>NVENC Preset</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.nvencPreset")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
                     </div>
                     <input type="range" min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_preset: `p${e.target.value}` })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>p1 (Fastest)</span><span>p4</span><span>p7 (Best)</span>
+                      <span>{t("settingsMedia:video.scale.presetFastest")}</span><span>p4</span><span>{t("settingsMedia:video.scale.presetBest")}</span>
                     </div>
                     <div style={{ ...helpStyle, padding: 8, background: "var(--bg-primary)", borderRadius: 4, marginTop: 8 }}>
-                      <strong style={{ color: "var(--accent)" }}>{PRESET_INFO[encoding.nvenc_preset || "p6"]?.label}</strong>
-                      {" — "}{PRESET_INFO[encoding.nvenc_preset || "p6"]?.desc}
+                      <strong style={{ color: "var(--accent)" }}>{PRESET_IDS.includes(encoding.nvenc_preset || "p6") && t(`settingsMedia:options.presets.${encoding.nvenc_preset || "p6"}.label`)}</strong>
+                      {" — "}{PRESET_IDS.includes(encoding.nvenc_preset || "p6") && t(`settingsMedia:options.presets.${encoding.nvenc_preset || "p6"}.desc`)}
                     </div>
                   </div>
 
                   {/* NVENC CQ */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>NVENC Constant Quality (CQ)</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.nvencCq")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
                     </div>
                     <input type="range" min={15} max={40} value={encoding.nvenc_cq}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>15 (Highest quality)</span><span>20</span><span>24</span><span>30 (Smallest file)</span>
+                      <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>20</span><span>24</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 30 })}</span>
                     </div>
                     <div style={helpStyle}>
-                      Controls quality vs file size. Lower = higher quality, larger files.
-                      <strong> 18-20:</strong> Transparent quality (recommended).
-                      <strong> 21-24:</strong> Good quality, noticeable savings.
-                      <strong> 25+:</strong> Visible quality loss, maximum compression.
+                      <Trans i18nKey="settingsMedia:video.nvencCqHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
                   {/* CPU fallback for NVENC jobs picked up by CPU-only workers */}
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
-                      CPU fallback
+                      {t("settingsMedia:video.cpuFallback.title")}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-                      When an NVENC job is picked up by a CPU-only worker, use these libx265 settings instead of auto-translating from the NVENC preset/CQ. Leave blank for automatic translation.
+                      {t("settingsMedia:video.cpuFallback.help")}
                     </div>
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                       <div style={{ flex: 1 }}>
-                        <div style={labelStyle}>Preset</div>
+                        <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
                         <select
                           value={encoding.nvenc_cpu_fallback_preset || ""}
                           onChange={(e) => setEncoding({ ...encoding, nvenc_cpu_fallback_preset: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}
                         >
-                          <option value="">Auto (translate)</option>
-                          <option value="ultrafast">Ultrafast</option>
-                          <option value="superfast">Superfast</option>
-                          <option value="veryfast">Very Fast</option>
-                          <option value="faster">Faster</option>
-                          <option value="fast">Fast</option>
-                          <option value="medium">Medium</option>
-                          <option value="slow">Slow</option>
-                          <option value="slower">Slower</option>
-                          <option value="veryslow">Very Slow</option>
+                          <option value="">{t("settingsMedia:video.cpuFallback.autoTranslate")}</option>
+                          {["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"].map(p => (
+                            <option key={p} value={p}>{t(`settingsMedia:video.presetNames.${p}`)}</option>
+                          ))}
                         </select>
                       </div>
                       <div style={{ width: 100 }}>
@@ -1014,7 +971,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           type="number"
                           min={15}
                           max={40}
-                          placeholder="auto"
+                          placeholder={t("settingsMedia:video.autoPlaceholder")}
                           value={encoding.nvenc_cpu_fallback_crf ?? ""}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -1040,18 +997,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         disabled={!encoderCaps?.nvdec_available}
                         onChange={e => setEncoding({ ...encoding, libx265_use_nvdec: e.target.checked })}
                         style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use NVDEC for decode (mixed mode)</span>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.x265Nvdec.label")}</span>
                     </label>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      Decodes the source on NVIDIA GPU (NVDEC), then transfers frames to CPU for libx265 encoding. Net win on slow CPUs paired with a dGPU; on modern CPUs the PCIe transfer overhead usually exceeds the savings. Falls back silently to software decode for unsupported source codecs. Defaults off.
+                      {t("settingsMedia:video.x265Nvdec.help")}
                       {!encoderCaps?.nvdec_available && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          NVDEC not detected on this host.
+                          {t("settingsMedia:video.nvdec.notDetected")}
                         </span>
                       )}
                       {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && encoding?.libx265_use_nvdec && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                          {t("settingsMedia:video.vmafDecoderWarning")}
                         </span>
                       )}
                     </div>
@@ -1060,72 +1017,64 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   {/* libx265 Preset */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>CPU Preset</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.cpuPreset")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_preset || "medium"}</span>
                     </div>
                     <select value={encoding.libx265_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, libx265_preset: e.target.value })}
                       style={{ ...inputStyle, width: "100%" }}>
-                      <option value="ultrafast">Ultrafast</option>
-                      <option value="superfast">Superfast</option>
-                      <option value="veryfast">Very Fast</option>
-                      <option value="faster">Faster</option>
-                      <option value="fast">Fast</option>
-                      <option value="medium">Medium (default)</option>
-                      <option value="slow">Slow</option>
-                      <option value="slower">Slower</option>
-                      <option value="veryslow">Very Slow (Best compression)</option>
+                      <option value="ultrafast">{t("settingsMedia:video.presetNames.ultrafast")}</option>
+                      <option value="superfast">{t("settingsMedia:video.presetNames.superfast")}</option>
+                      <option value="veryfast">{t("settingsMedia:video.presetNames.veryfast")}</option>
+                      <option value="faster">{t("settingsMedia:video.presetNames.faster")}</option>
+                      <option value="fast">{t("settingsMedia:video.presetNames.fast")}</option>
+                      <option value="medium">{t("settingsMedia:video.presetNames.mediumDefault")}</option>
+                      <option value="slow">{t("settingsMedia:video.presetNames.slow")}</option>
+                      <option value="slower">{t("settingsMedia:video.presetNames.slower")}</option>
+                      <option value="veryslow">{t("settingsMedia:video.presetNames.veryslowBest")}</option>
                     </select>
                     <div style={helpStyle}>
-                      Controls encoding speed vs compression efficiency. Slower presets produce smaller files at the same quality.
-                      <strong> medium:</strong> Balanced speed and quality (recommended).
-                      <strong> slow/slower:</strong> Better compression, significantly slower.
-                      <strong> fast/veryfast:</strong> Quick encodes, larger files.
+                      <Trans i18nKey="settingsMedia:video.cpuPresetHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
                   {/* libx265 CRF */}
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>Constant Rate Factor (CRF)</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.crf")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
                     </div>
                     <input type="range" min={15} max={28} value={encoding.libx265_crf}
                       onChange={(e) => setEncoding({ ...encoding, libx265_crf: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>15 (Highest quality)</span><span>20</span><span>24</span><span>28 (Smallest file)</span>
+                      <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>20</span><span>24</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 28 })}</span>
                     </div>
                     <div style={helpStyle}>
-                      Controls quality vs file size. Lower = higher quality, larger files.
-                      CRF 18-20 is typically transparent to the original.
+                      {t("settingsMedia:video.crfHelp")}
                     </div>
                   </div>
 
                   {/* GPU fallback for libx265 jobs picked up by NVENC workers */}
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "white", marginBottom: 4 }}>
-                      GPU fallback
+                      {t("settingsMedia:video.gpuFallback.title")}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
-                      When a libx265 job is picked up by a GPU-capable worker, use these NVENC settings instead of the hardcoded defaults. Leave blank for automatic.
+                      {t("settingsMedia:video.gpuFallback.help")}
                     </div>
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                       <div style={{ flex: 1 }}>
-                        <div style={labelStyle}>Preset</div>
+                        <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
                         <select
                           value={encoding.libx265_gpu_fallback_preset || ""}
                           onChange={(e) => setEncoding({ ...encoding, libx265_gpu_fallback_preset: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}
                         >
-                          <option value="">Auto</option>
-                          <option value="p1">P1 — Fastest</option>
-                          <option value="p2">P2 — Very Fast</option>
-                          <option value="p3">P3 — Fast</option>
-                          <option value="p4">P4 — Medium</option>
-                          <option value="p5">P5 — Slow</option>
-                          <option value="p6">P6 — Very Slow</option>
-                          <option value="p7">P7 — Slowest</option>
+                          <option value="">{t("settingsMedia:video.gpuFallback.auto")}</option>
+                          {PRESET_IDS.map(p => (
+                            <option key={p} value={p}>{p.toUpperCase()} — {t(`settingsMedia:options.presets.${p}.label`)}</option>
+                          ))}
                         </select>
                       </div>
                       <div style={{ width: 100 }}>
@@ -1134,7 +1083,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           type="number"
                           min={15}
                           max={40}
-                          placeholder="auto"
+                          placeholder={t("settingsMedia:video.autoPlaceholder")}
                           value={encoding.libx265_gpu_fallback_cq ?? ""}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -1163,18 +1112,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         disabled={!encoderCaps?.qsv_decode_available}
                         onChange={e => setEncoding({ ...encoding, qsv_hw_decode: e.target.checked })}
                         style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use QSV for decode</span>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.qsvDecode.label")}</span>
                     </label>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      Decodes the source on the Intel iGPU before QSV encodes it. Frames stay on-die — no upload overhead. Falls back silently to software decode for unsupported source codecs.
+                      {t("settingsMedia:video.qsvDecode.help")}
                       {!encoderCaps?.qsv_decode_available && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          QSV decode not detected on this host.
+                          {t("settingsMedia:video.qsvDecode.notDetected")}
                         </span>
                       )}
                       {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.qsv_hw_decode ?? true) && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                          {t("settingsMedia:video.vmafDecoderWarning")}
                         </span>
                       )}
                     </div>
@@ -1182,38 +1131,38 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>QSV Preset</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.qsvPreset")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_preset || "medium"}</span>
                     </div>
                     <select value={encoding.qsv_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, qsv_preset: e.target.value })}
                       style={{ ...inputStyle, width: "100%" }}>
-                      <option value="veryfast">Very Fast</option>
-                      <option value="faster">Faster</option>
-                      <option value="fast">Fast</option>
-                      <option value="medium">Medium (recommended)</option>
-                      <option value="slow">Slow</option>
-                      <option value="slower">Slower</option>
-                      <option value="veryslow">Very Slow (Best compression)</option>
+                      <option value="veryfast">{t("settingsMedia:video.presetNames.veryfast")}</option>
+                      <option value="faster">{t("settingsMedia:video.presetNames.faster")}</option>
+                      <option value="fast">{t("settingsMedia:video.presetNames.fast")}</option>
+                      <option value="medium">{t("settingsMedia:video.presetNames.mediumRecommended")}</option>
+                      <option value="slow">{t("settingsMedia:video.presetNames.slow")}</option>
+                      <option value="slower">{t("settingsMedia:video.presetNames.slower")}</option>
+                      <option value="veryslow">{t("settingsMedia:video.presetNames.veryslowBest")}</option>
                     </select>
                     <div style={helpStyle}>
-                      Encoder analysis depth. <strong>Note:</strong> unlike libx265, QSV's preset cost curve is nearly flat — `slower` is typically only ~10-20% slower than `medium` with modest quality gains. The bigger lever for QSV quality is the look-ahead toggle below. <strong>medium</strong> is fine for most hardware.
+                      <Trans i18nKey="settingsMedia:video.qsvPresetHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>QSV Quality (global_quality)</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.qsvQuality")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_cq ?? 22}</span>
                     </div>
                     <input type="range" min={15} max={32} value={encoding.qsv_cq ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, qsv_cq: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>15 (Highest quality)</span><span>22</span><span>26</span><span>32 (Smallest file)</span>
+                      <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>22</span><span>26</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 32 })}</span>
                     </div>
                     <div style={helpStyle}>
-                      QSV's ICQ-mode quality target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> is good quality with noticeable savings. Rough cross-encoder mapping: QSV CQ ≈ NVENC CQ (within ±1) ≈ libx265 CRF + 1.
+                      <Trans i18nKey="settingsMedia:video.qsvQualityHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
@@ -1230,10 +1179,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         onChange={(e) => setEncoding({ ...encoding, qsv_lookahead: e.target.checked })}
                         style={{ accentColor: "var(--accent)" }}
                       />
-                      <span style={labelStyle}>Look-ahead rate control</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.lookahead.label")}</span>
                     </label>
                     <div style={helpStyle}>
-                      Trades ~10–20% encode speed for a small visual quality bump on rapid-motion scenes. Useful when the hardware has throughput to spare (Arc / 11th-gen+); diminishing returns on older Intel iGPUs.
+                      {t("settingsMedia:video.lookahead.help")}
                     </div>
                   </div>
                 </>
@@ -1253,18 +1202,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         disabled={!encoderCaps?.vaapi_decode_available}
                         onChange={e => setEncoding({ ...encoding, vaapi_hw_decode: e.target.checked })}
                         style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>Use VAAPI for decode</span>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t("settingsMedia:video.vaapiDecode.label")}</span>
                     </label>
                     <div style={{ ...helpStyle, marginTop: 6 }}>
-                      Decodes the source on the GPU/iGPU via VAAPI before encoding. Frames stay on the DRM device. Falls back silently to software decode for unsupported source codecs.
+                      {t("settingsMedia:video.vaapiDecode.help")}
                       {!encoderCaps?.vaapi_decode_available && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          VAAPI decode not detected on this host.
+                          {t("settingsMedia:video.vaapiDecode.notDetected")}
                         </span>
                       )}
                       {(encoding?.vmaf_analysis_enabled === true || encoding?.vmaf_analysis_enabled === "true" || encoding?.vmaf_analysis_enabled == null) && (encoding?.vaapi_hw_decode ?? true) && (
                         <span style={{ color: "var(--warning)", display: "block", marginTop: 4 }}>
-                          ⚠ VMAF won't run on jobs that use this decoder. See the VMAF section.
+                          {t("settingsMedia:video.vmafDecoderWarning")}
                         </span>
                       )}
                     </div>
@@ -1272,33 +1221,33 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>VAAPI Compression Level</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.vaapiCompression")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_compression_level ?? 4}</span>
                     </div>
                     <input type="range" min={0} max={7} value={encoding.vaapi_compression_level ?? 4}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_compression_level: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>0 (Best quality, slowest)</span><span>4</span><span>7 (Fastest)</span>
+                      <span>{t("settingsMedia:video.scale.bestQualitySlowest", { value: 0 })}</span><span>4</span><span>{t("settingsMedia:video.scale.fastest", { value: 7 })}</span>
                     </div>
                     <div style={helpStyle}>
-                      Driver-side analysis depth, 0–7. Semantics vary by driver (Mesa AMD vs Intel iHD), but lower values consistently produce smaller files at the cost of speed. <strong>4</strong> is a sane median. On Intel hardware where both VAAPI and QSV work, QSV usually produces better quality per bit at similar throughput — VAAPI is most useful on AMD GPUs (where QSV isn't an option).
+                      <Trans i18nKey="settingsMedia:video.vaapiCompressionHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <span style={labelStyle}>VAAPI Quantizer (QP)</span>
+                      <span style={labelStyle}>{t("settingsMedia:video.vaapiQp")}</span>
                       <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_qp ?? 22}</span>
                     </div>
                     <input type="range" min={15} max={32} value={encoding.vaapi_qp ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_qp: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                      <span>15 (Highest quality)</span><span>22</span><span>26</span><span>32 (Smallest file)</span>
+                      <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>22</span><span>26</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 32 })}</span>
                     </div>
                     <div style={helpStyle}>
-                      Constant quantizer (CQP) target. Lower = higher quality, larger files. <strong>20-22</strong> is typically transparent; <strong>23-26</strong> trades quality for size sensibly.
+                      <Trans i18nKey="settingsMedia:video.vaapiQpHelp" components={{ b: <strong /> }} />
                     </div>
                   </div>
                 </>
@@ -1306,7 +1255,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {/* Smart Encoding */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "white", marginBottom: 12 }}>Smart Encoding</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "white", marginBottom: 12 }}>{t("settingsMedia:video.smart.title")}</div>
 
                 {/* Content Type Detection Toggle */}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
@@ -1314,12 +1263,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     checked={encoding.content_type_detection === true || encoding.content_type_detection === "true"}
                     onChange={(e) => setEncoding({ ...encoding, content_type_detection: e.target.checked })}
                     style={{ accentColor: "var(--accent)" }} />
-                  <span style={labelStyle}>Content type detection</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.smart.contentType")}</span>
                 </label>
                 <div style={helpStyle}>
-                  Automatically detects content type from filenames (anime, grain, animation, remux) and applies
-                  optimized CQ values. Anime compresses well (CQ 22), grain needs conservative settings (CQ 24).
-                  Applied when no encoding rule sets a CQ value.
+                  {t("settingsMedia:video.smart.contentTypeHelp")}
                 </div>
 
                 {/* VMAF Analysis Toggle */}
@@ -1328,7 +1275,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     checked={encoding.vmaf_analysis_enabled === true || encoding.vmaf_analysis_enabled === "true" || (encoding.vmaf_analysis_enabled == null)}
                     onChange={(e) => setEncoding({ ...encoding, vmaf_analysis_enabled: e.target.checked })}
                     style={{ accentColor: "var(--accent)" }} />
-                  <span style={labelStyle}>VMAF quality analysis</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.smart.vmaf")}</span>
                 </label>
                 {/* v0.5.7: HW decode / VMAF incompatibility surface.
                     Renders only when VMAF is enabled AND at least one HW decode
@@ -1353,34 +1300,28 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       border: "1px solid rgba(255, 200, 80, 0.45)",
                       borderRadius: 4, fontSize: 13, color: "var(--text-primary)", lineHeight: 1.5,
                     }}>
-                      <strong style={{ color: "var(--warning)" }}>⚠ VMAF will not run on hardware-decoded jobs.</strong>{" "}
-                      VMAF compares the encoded output to software-decoded source frames. With{" "}
-                      <strong>{activeDecoders.length}</strong> hardware decode toggle{activeDecoders.length > 1 ? "s" : ""}{" "}
-                      currently on ({activeDecoders.join(", ")}), jobs that use those encoders will skip VMAF — no score
-                      is computed and the quality threshold won't be applied. To enforce VMAF on every job,
-                      disable the hardware decode toggles in the encoder section above.
+                      <Trans i18nKey="settingsMedia:video.smart.hwWarning" count={activeDecoders.length}
+                        values={{ decoders: activeDecoders.join(", ") }}
+                        components={{ b: <strong style={{ color: "var(--warning)" }} />, b2: <strong /> }} />
                     </div>
                   );
                 })()}
                 <div style={helpStyle}>
-                  <strong>VMAF</strong> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix.
-                  It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality.
-                  When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion.
-                  Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.
+                  <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
                 </div>
                 <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                      <th style={{ textAlign: "left", padding: "4px 0 4px 28px", color: "var(--text-secondary)", fontWeight: 600, width: 120 }}>Score</th>
-                      <th style={{ textAlign: "left", padding: "4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>Quality</th>
+                      <th style={{ textAlign: "left", padding: "4px 0 4px 28px", color: "var(--text-secondary)", fontWeight: 600, width: 120 }}>{t("settingsMedia:video.smart.score")}</th>
+                      <th style={{ textAlign: "left", padding: "4px 0", color: "var(--text-secondary)", fontWeight: 600 }}>{t("settingsMedia:video.smart.quality")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[
-                      ["93+", "Transparent / indistinguishable", "#18ffa5"],
-                      ["87–93", "High quality streaming", "var(--accent)"],
-                      ["80–87", "Acceptable quality", "#ffa94d"],
-                      ["< 80", "Noticeable degradation", "#e94560"],
+                      ["93+", t("settingsMedia:video.smart.tiers.transparent"), "#18ffa5"],
+                      ["87–93", t("settingsMedia:video.smart.tiers.highQuality"), "var(--accent)"],
+                      ["80–87", t("settingsMedia:video.smart.tiers.acceptable"), "#ffa94d"],
+                      ["< 80", t("settingsMedia:video.smart.tiers.degradation"), "#e94560"],
                     ].map(([score, desc, color]) => (
                       <tr key={score as string} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "4px 0 4px 28px", color: color as string, fontWeight: 600 }}>{score}</td>
@@ -1413,14 +1354,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: e.target.checked ? 85 : 0 })}
                           style={{ accentColor: "var(--accent)" }}
                         />
-                        <span style={labelStyle}>Reject encodes below a minimum VMAF score</span>
+                        <span style={labelStyle}>{t("settingsMedia:video.smart.minScore")}</span>
                       </label>
                       <div style={{ ...helpStyle, marginLeft: 26 }}>
-                        When enabled, any encode whose measured VMAF score is below the threshold
-                        is discarded — the encoded temp file is deleted, the original is left in
-                        place, and the job is recorded as <strong>rejected</strong> with the score and
-                        threshold visible in the job details. Useful as a safety net against
-                        overly-aggressive CQ/CRF settings.
+                        <Trans i18nKey="settingsMedia:video.smart.minScoreHelp" components={{ b: <strong /> }} />
                       </div>
                       {enabled && (
                         <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
@@ -1462,11 +1399,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     checked={encoding.resolution_aware_cq === true || encoding.resolution_aware_cq === "true"}
                     onChange={(e) => setEncoding({ ...encoding, resolution_aware_cq: e.target.checked })}
                     style={{ accentColor: "var(--accent)" }} />
-                  <span style={labelStyle}>Resolution-aware quality</span>
+                  <span style={labelStyle}>{t("settingsMedia:video.smart.resAware")}</span>
                 </label>
                 <div style={helpStyle}>
-                  Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts.
-                  Fallback when no rule or content detection sets CQ.
+                  {t("settingsMedia:video.smart.resAwareHelp")}
                 </div>
 
                 {(encoding.resolution_aware_cq === true || encoding.resolution_aware_cq === "true") && (
@@ -1494,17 +1430,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {/* Timeouts */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>Timeouts</h4>
+                <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>{t("settingsMedia:video.timeouts.title")}</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={labelStyle}>ffmpeg timeout (hours)</span>
+                    <span style={labelStyle}>{t("settingsMedia:video.timeouts.ffmpeg")}</span>
                     <input type="number" min={1} max={72} step={1}
                       value={Math.round((encoding.ffmpeg_timeout || 21600) / 3600)}
                       onChange={(e) => setEncoding({ ...encoding, ffmpeg_timeout: parseInt(e.target.value) * 3600 })}
                       style={{ ...inputStyle, width: 70, textAlign: "center" as const }} />
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={labelStyle}>ffprobe timeout (seconds)</span>
+                    <span style={labelStyle}>{t("settingsMedia:video.timeouts.ffprobe")}</span>
                     <input type="number" min={5} max={300} step={5}
                       value={encoding.ffprobe_timeout || 30}
                       onChange={(e) => setEncoding({ ...encoding, ffprobe_timeout: parseInt(e.target.value) })}
@@ -1514,7 +1450,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </div>
 
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start" }}>
-                Save Encoding Settings
+                {t("settingsMedia:video.save")}
               </button>
             </div>
 
@@ -1523,73 +1459,73 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               flex: "1 1 300px", minWidth: 0, background: "var(--bg-primary)", borderRadius: 6,
               padding: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
             }}>
-              <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>Conversion Guide</h4>
+              <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>{t("settingsMedia:video.guide.title")}</h4>
 
               {[
                 // ── NVENC (GPU) ────────────────────────────────────────
                 {
-                  title: "NVENC presets (GPU)",
-                  desc: "Higher preset = slower encoding but better compression. Unlike libx265, NVENC preset speed changes very little between p1 and p7 — the quality gains are also modest. Default to p3-p5 and adjust CQ for size.",
-                  cols: ["Preset", "Speed", "Quality/Size"],
+                  title: t("settingsMedia:video.guide.nvencPresets.title"),
+                  desc: t("settingsMedia:video.guide.nvencPresets.desc"),
+                  cols: [t("settingsMedia:video.guide.cols.preset"), t("settingsMedia:video.guide.cols.speed"), t("settingsMedia:video.guide.cols.qualitySize")],
                   rows: [
-                    ["p1-p2", "~400 fps", "Largest files"],
-                    ["p3-p4", "~250 fps", "Balanced"],
-                    ["p5", "~180 fps", "Good compression"],
-                    ["p6", "~120 fps", "Great compression"],
-                    ["p7", "~80 fps", "Best compression"],
+                    ["p1-p2", "~400 fps", t("settingsMedia:video.guide.cells.largestFiles")],
+                    ["p3-p4", "~250 fps", t("settingsMedia:video.guide.cells.balanced")],
+                    ["p5", "~180 fps", t("settingsMedia:video.guide.cells.goodCompression")],
+                    ["p6", "~120 fps", t("settingsMedia:video.guide.cells.greatCompression")],
+                    ["p7", "~80 fps", t("settingsMedia:video.guide.cells.bestCompression")],
                   ],
-                  note: "Speeds are approximate for 1080p on Quadro P2200.",
+                  note: t("settingsMedia:video.guide.nvencPresets.note"),
                 },
                 {
-                  title: "NVENC recommended combos",
-                  cols: ["Priority", "Settings", "Savings"],
+                  title: t("settingsMedia:video.guide.nvencCombos.title"),
+                  cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    ["Max quality", "p7 / CQ 20", "20-30%"],
-                    ["Quality first", "p6 / CQ 21", "25-35%"],
-                    ["Balanced", "p5 / CQ 23", "35-45%"],
-                    ["Space saver", "p4 / CQ 25", "45-55%"],
-                    ["Max compression", "p3 / CQ 27", "55-65%"],
+                    [t("settingsMedia:video.guide.cells.maxQuality"), "p7 / CQ 20", "20-30%"],
+                    [t("settingsMedia:video.guide.cells.qualityFirst"), "p6 / CQ 21", "25-35%"],
+                    [t("settingsMedia:video.guide.cells.balanced"), "p5 / CQ 23", "35-45%"],
+                    [t("settingsMedia:video.guide.cells.spaceSaver"), "p4 / CQ 25", "45-55%"],
+                    [t("settingsMedia:video.guide.cells.maxCompression"), "p3 / CQ 27", "55-65%"],
                   ],
                 },
                 // ── libx265 (CPU) ──────────────────────────────────────
                 {
-                  title: "libx265 presets (CPU)",
-                  desc: "libx265 preset cost scales EXPONENTIALLY — each step right roughly doubles encode time. Default `medium` is the quality-per-minute sweet spot; drop to `fast` or `veryfast` for backfills, bump to `slow`/`slower` only for archival masters.",
-                  cols: ["Preset", "Speed (1080p)", "Quality/Size"],
+                  title: t("settingsMedia:video.guide.x265Presets.title"),
+                  desc: t("settingsMedia:video.guide.x265Presets.desc"),
+                  cols: [t("settingsMedia:video.guide.cols.preset"), t("settingsMedia:video.guide.cols.speed1080p"), t("settingsMedia:video.guide.cols.qualitySize")],
                   rows: [
-                    ["ultrafast", "~120 fps", "Largest files"],
-                    ["superfast", "~80 fps", "Slightly smaller"],
-                    ["veryfast", "~50 fps", "Good compression"],
-                    ["fast", "~20 fps", "Better compression"],
-                    ["medium", "~10 fps", "Great (default)"],
-                    ["slow", "~5 fps", "Very good"],
-                    ["slower", "~2 fps", "Best practical"],
-                    ["veryslow", "~1 fps", "Diminishing returns"],
+                    ["ultrafast", "~120 fps", t("settingsMedia:video.guide.cells.largestFiles")],
+                    ["superfast", "~80 fps", t("settingsMedia:video.guide.cells.slightlySmaller")],
+                    ["veryfast", "~50 fps", t("settingsMedia:video.guide.cells.goodCompression")],
+                    ["fast", "~20 fps", t("settingsMedia:video.guide.cells.betterCompression")],
+                    ["medium", "~10 fps", t("settingsMedia:video.guide.cells.greatDefault")],
+                    ["slow", "~5 fps", t("settingsMedia:video.guide.cells.veryGood")],
+                    ["slower", "~2 fps", t("settingsMedia:video.guide.cells.bestPractical")],
+                    ["veryslow", "~1 fps", t("settingsMedia:video.guide.cells.diminishingReturns")],
                   ],
-                  note: "Speeds are rough for 10-bit output on a modern desktop CPU. M1/M2 Macs run ~40-60% of these numbers; older CPUs slower.",
+                  note: t("settingsMedia:video.guide.x265Presets.note"),
                 },
                 {
-                  title: "libx265 recommended combos",
-                  cols: ["Priority", "Settings", "Savings"],
+                  title: t("settingsMedia:video.guide.x265Combos.title"),
+                  cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    ["Max quality", "slow / CRF 18", "25-35%"],
-                    ["Quality first", "medium / CRF 20", "35-45%"],
-                    ["Balanced", "fast / CRF 23", "45-55%"],
-                    ["Space saver", "veryfast / CRF 25", "55-65%"],
-                    ["Max throughput", "superfast / CRF 26", "60-70%"],
+                    [t("settingsMedia:video.guide.cells.maxQuality"), "slow / CRF 18", "25-35%"],
+                    [t("settingsMedia:video.guide.cells.qualityFirst"), "medium / CRF 20", "35-45%"],
+                    [t("settingsMedia:video.guide.cells.balanced"), "fast / CRF 23", "45-55%"],
+                    [t("settingsMedia:video.guide.cells.spaceSaver"), "veryfast / CRF 25", "55-65%"],
+                    [t("settingsMedia:video.guide.cells.maxThroughput"), "superfast / CRF 26", "60-70%"],
                   ],
                 },
                 // ── Shared quality target ──────────────────────────────
                 {
-                  title: "Understanding CQ / CRF",
-                  desc: "CQ (NVENC) and CRF (libx265) control the quality target. Lower = higher quality, larger files. The encoder allocates more bits to complex scenes and fewer to simple ones.",
-                  cols: ["CQ/CRF", "Quality", "Savings"],
+                  title: t("settingsMedia:video.guide.cqCrf.title"),
+                  desc: t("settingsMedia:video.guide.cqCrf.desc"),
+                  cols: ["CQ/CRF", t("settingsMedia:video.guide.cols.quality"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    ["15-18", "Overkill", "5-15%"],
-                    ["19-20", "Transparent", "20-30%"],
-                    ["21-23", "Excellent", "30-45%"],
-                    ["24-26", "Good", "45-60%"],
-                    ["27-30", "Noticeable loss", "60%+"],
+                    ["15-18", t("settingsMedia:video.guide.cells.overkill"), "5-15%"],
+                    ["19-20", t("settingsMedia:video.guide.cells.transparent"), "20-30%"],
+                    ["21-23", t("settingsMedia:video.guide.cells.excellent"), "30-45%"],
+                    ["24-26", t("settingsMedia:video.guide.cells.good"), "45-60%"],
+                    ["27-30", t("settingsMedia:video.guide.cells.noticeableLoss"), "60%+"],
                   ],
                 },
               ].map((section) => (
@@ -1626,16 +1562,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               ))}
 
               <div style={{ marginBottom: 16 }}>
-                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>Tips</div>
+                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:video.guide.tipsTitle")}</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
-                  <li style={{ marginBottom: 4 }}><strong>Sources:</strong> Blu-ray rips (15-40 GB) see the biggest savings; WEB-DL files (3-8 GB) are already well-compressed — expect smaller gains, or bump CQ/CRF 2-3 points.</li>
-                  <li style={{ marginBottom: 4 }}><strong>Grain-heavy content</strong> (film, older movies) needs lower CQ/CRF values to preserve detail, or the encoder smears grain into blocks.</li>
-                  <li style={{ marginBottom: 4 }}><strong>Animation</strong> compresses extremely well — even CQ 25+ looks great. Consider a dedicated rule targeting your anime directory.</li>
-                  <li style={{ marginBottom: 4 }}><strong>NVENC vs libx265 quality:</strong> NVENC CQ ≈ libx265 CRF + 0–2 for matched perceptual quality. libx265 still produces ~25% smaller files at the same quality, trading 5-50× encode time.</li>
-                  <li style={{ marginBottom: 4 }}><strong>libx265 preset scaling:</strong> each step slower roughly doubles encode time. Going from `fast` to `slow` is 4×, `fast` to `veryslow` is 20×+. Know your patience budget before picking.</li>
-                  <li style={{ marginBottom: 4 }}><strong>NVENC preset scaling:</strong> minimal — p7 is only ~5× slower than p1 on the same card, and the quality gap is small. Default p3-p5 is usually the right answer.</li>
-                  <li style={{ marginBottom: 4 }}><strong>Try a test encode first:</strong> the Estimate modal's <em>Test encode</em> button runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.</li>
-                  <li style={{ marginBottom: 4 }}><strong>Mixed fleets:</strong> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above.</li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.sources" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.grain" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.animation" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencVsX265" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.x265Scaling" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencScaling" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.testEncode" components={{ b: <strong />, em: <em /> }} /></li>
+                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.mixedFleets" components={{ b: <strong />, em: <em /> }} /></li>
                 </ul>
               </div>
 
@@ -1657,18 +1593,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     };
                     const r = presetRank[preset] ?? 6;
                     let desc: string;
-                    if (crf <= 20 && r >= 7) desc = "Maximum quality, conservative compression";
-                    else if (crf <= 20) desc = "High quality, moderate compression";
-                    else if (crf <= 23 && r >= 5) desc = "Great quality with good space savings";
-                    else if (crf <= 23) desc = "Good quality, solid compression";
-                    else if (crf <= 26) desc = "Good quality, aggressive compression";
-                    else desc = "Maximum compression, some quality tradeoff";
+                    if (crf <= 20 && r >= 7) desc = "maxQuality";
+                    else if (crf <= 20) desc = "highQuality";
+                    else if (crf <= 23 && r >= 5) desc = "greatQuality";
+                    else if (crf <= 23) desc = "goodSolid";
+                    else if (crf <= 26) desc = "goodAggressive";
+                    else desc = "maxCompression";
                     return (
                       <>
                         <strong style={{ color: "var(--success)" }}>
-                          Current: libx265 {preset} / CRF {crf}
+                          {t("settingsMedia:video.guide.current.x265", { preset, crf })}
                         </strong>
-                        <span> — {desc}</span>
+                        <span> — {t(`settingsMedia:video.guide.current.${desc}`)}</span>
                       </>
                     );
                   }
@@ -1676,18 +1612,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   const cq: number = encoding.nvenc_cq || 20;
                   const p = parseInt(preset.replace("p", ""));
                   let desc: string;
-                  if (cq <= 20 && p >= 6) desc = "Maximum quality, conservative compression";
-                  else if (cq <= 20) desc = "High quality, moderate compression";
-                  else if (cq <= 23 && p >= 5) desc = "Great quality with good space savings";
-                  else if (cq <= 23) desc = "Good quality, solid compression";
-                  else if (cq <= 26) desc = "Good quality, aggressive compression";
-                  else desc = "Maximum compression, some quality tradeoff";
+                  if (cq <= 20 && p >= 6) desc = "maxQuality";
+                  else if (cq <= 20) desc = "highQuality";
+                  else if (cq <= 23 && p >= 5) desc = "greatQuality";
+                  else if (cq <= 23) desc = "goodSolid";
+                  else if (cq <= 26) desc = "goodAggressive";
+                  else desc = "maxCompression";
                   return (
                     <>
                       <strong style={{ color: "var(--success)" }}>
-                        Current: NVENC {preset} / CQ {cq}
+                        {t("settingsMedia:video.guide.current.nvenc", { preset, cq })}
                       </strong>
-                      <span> — {desc}</span>
+                      <span> — {t(`settingsMedia:video.guide.current.${desc}`)}</span>
                     </>
                   );
                 })()}
@@ -1697,17 +1633,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           </div>
 
           <h2 id="audio" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Audio Settings
+            {t("settingsMedia:audio.title")}
           </h2>
           {/* Audio Track Rules */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Audio Track Rules</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsMedia:audio.trackRules")}</h3>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 16 }}>
               <input type="checkbox" checked={encoding?.audio_cleanup_enabled ?? true}
                 readOnly
                 onClick={() => setEncoding({ ...encoding, audio_cleanup_enabled: !(encoding?.audio_cleanup_enabled ?? true) })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Remove unwanted audio tracks</span>
+              <span style={labelStyle}>{t("settingsMedia:audio.removeUnwanted")}</span>
             </label>
             {(encoding?.audio_cleanup_enabled ?? true) && (
             <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
@@ -1715,16 +1651,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
               {/* Always Keep Languages */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Always Keep Languages</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.alwaysKeep")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                   {keepLangs.map((code: string) => {
-                    const lang = ALL_LANGUAGES.find(l => l.code === code);
+                    const known = ALL_LANGUAGES.includes(code);
                     return (
                       <span key={code} style={{
                         background: "var(--border)", color: "var(--success)", padding: "4px 10px",
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
-                        {lang ? `${lang.name} (${code})` : code}
+                        {known ? `${langName(code)} (${code})` : code}
                         <button onClick={() => removeLanguage(code)} style={{
                           background: "none", border: "none", color: "var(--text-muted)",
                           cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1,
@@ -1735,7 +1671,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </div>
                 <div style={{ position: "relative" }}>
                   <input
-                    placeholder="Search languages to add..."
+                    placeholder={t("settingsMedia:audio.searchPlaceholder")}
                     value={langSearch}
                     onChange={(e) => setLangSearch(e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
@@ -1761,7 +1697,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   )}
                 </div>
                 <div style={helpStyle}>
-                  Audio tracks in these languages are kept by default. You can override per-track in the file detail editor.
+                  {t("settingsMedia:audio.alwaysKeepHelp")}
                 </div>
               </div>
 
@@ -1770,10 +1706,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.always_keep_dedup !== false}
                   onChange={() => setEncoding({ ...encoding, always_keep_dedup: encoding.always_keep_dedup === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Keep only the best track per always-keep language</span>
+                <span style={labelStyle}>{t("settingsMedia:audio.dedup.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                When a file has multiple tracks in the same always-keep language (e.g. EAC3 5.1 + AAC 2.0 + commentary, all English), keep only the highest-quality one by default (ranked by channels, then codec: TrueHD &gt; FLAC/PCM &gt; DTS-HD MA &gt; DTS &gt; EAC3 &gt; AC3 &gt; AAC). Turn off to keep every track in always-keep languages — you can still uncheck individual tracks in the file detail editor.
+                {t("settingsMedia:audio.dedup.help")}
               </div>
 
               {/* Keep native language */}
@@ -1781,10 +1717,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.keep_native_language !== false}
                   onChange={() => setEncoding({ ...encoding, keep_native_language: encoding.keep_native_language === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Auto-keep native language audio tracks</span>
+                <span style={labelStyle}>{t("settingsMedia:audio.keepNative.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Automatically keep audio tracks matching each file's detected native language. Disable if you only want to keep dubbed / specified language tracks. (Subtitles have their own toggle in the Subtitles section — they're off by default.)
+                {t("settingsMedia:audio.keepNative.help")}
               </div>
 
               {/* Reorder native language first */}
@@ -1792,10 +1728,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.reorder_native_audio !== false}
                   onChange={() => setEncoding({ ...encoding, reorder_native_audio: encoding.reorder_native_audio === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Reorder native language to first audio stream</span>
+                <span style={labelStyle}>{t("settingsMedia:audio.reorderNative.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup.
+                {t("settingsMedia:audio.reorderNative.help")}
               </div>
 
               {/* Ignore Unknown Tracks */}
@@ -1804,10 +1740,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   readOnly
                   onClick={() => setEncoding({ ...encoding, ignore_unknown_tracks: !encoding.ignore_unknown_tracks })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Keep unknown/undefined tracks</span>
+                <span style={labelStyle}>{t("settingsMedia:audio.keepUnknown.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Tracks tagged as "und" or with no language metadata
+                {t("settingsMedia:audio.keepUnknown.help")}
               </div>
 
               {/* v0.8.0: auto-detect languages for und tracks */}
@@ -1815,38 +1751,36 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.auto_detect_languages !== false}
                   onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Auto-detect languages for unknown tracks before converting</span>
+                <span style={labelStyle}>{t("settingsMedia:audio.autoDetect.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Before converting or cleaning up audio, run language detection on "und"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view.
+                {t("settingsMedia:audio.autoDetect.help")}
               </div>
 
               {/* v0.9.18: language-detection tuning (model + confidence gates) */}
               <div style={{ marginTop: 14 }}>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Audio detection model</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.model.label")}</div>
                 <select value={encoding.lang_detect_whisper_model || "tiny"}
                   onChange={(e) => setEncoding({ ...encoding, lang_detect_whisper_model: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
-                  <option value="tiny">Tiny — fastest, ~75 MB (default)</option>
-                  <option value="base">Base — better accuracy, ~140 MB</option>
-                  <option value="small">Small — best accuracy, ~460 MB, slower</option>
-                  <option value="medium">Medium — higher accuracy, ~1.5 GB, GPU recommended</option>
-                  <option value="large-v3">Large-v3 — best accuracy (incl. low-resource langs), ~3 GB, GPU strongly recommended</option>
+                  {["tiny", "base", "small", "medium", "large-v3"].map(m => (
+                    <option key={m} value={m}>{t(`settingsMedia:audio.model.${m}`)}</option>
+                  ))}
                 </select>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  faster-whisper model for spoken-language ID. Larger is more accurate on non-English speech at the cost of download size, RAM, and speed. Medium/Large-v3 are practical only with an NVIDIA GPU (the :nvenc image). Downloads on first use; takes effect on the next detection (no restart).
+                  {t("settingsMedia:audio.model.help")}
                 </div>
               </div>
               <div style={{ marginTop: 12, display: "flex", gap: 16 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ ...labelStyle, marginBottom: 8 }}>Audio confidence</div>
+                  <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.audioConfidence")}</div>
                   <input type="number" min={0.1} max={0.95} step={0.05}
                     value={encoding.lang_detect_audio_min ?? 0.6}
                     onChange={(e) => setEncoding({ ...encoding, lang_detect_audio_min: parseFloat(e.target.value) })}
                     style={{ ...inputStyle, width: "100%" }} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ ...labelStyle, marginBottom: 8 }}>Subtitle confidence</div>
+                  <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.subtitleConfidence")}</div>
                   <input type="number" min={0.1} max={0.95} step={0.05}
                     value={encoding.lang_detect_sub_min ?? 0.7}
                     onChange={(e) => setEncoding({ ...encoding, lang_detect_sub_min: parseFloat(e.target.value) })}
@@ -1854,24 +1788,24 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </div>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                Minimum confidence (0–1) to accept a detected language — lower tags more tracks but risks wrong tags. Defaults: audio 0.6, subtitle 0.7. (A <code>SHRINKERR_*</code> env var, if set, overrides these.)
+                <Trans i18nKey="settingsMedia:audio.confidenceHelp" components={{ code: <code /> }} />
               </div>
 
               {/* Audio Conversion */}
               <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>Audio Conversion</h4>
+                <h4 style={{ color: "white", fontSize: 13, marginBottom: 12 }}>{t("settingsMedia:audio.conversion.title")}</h4>
 
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ ...labelStyle, marginBottom: 8 }}>Audio Codec</div>
+                  <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.conversion.codec")}</div>
                   <select value={encoding.audio_codec || "copy"}
                     onChange={(e) => setEncoding({ ...encoding, audio_codec: e.target.value })}
                     style={{ ...inputStyle, width: "100%" }}>
                     {AUDIO_CODECS.map(c => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
+                      <option key={c.value} value={c.value}>{t(`settingsMedia:options.audioCodecs.${c.value}.label`)}</option>
                     ))}
                   </select>
                   <div style={helpStyle}>
-                    {AUDIO_CODECS.find(c => c.value === (encoding.audio_codec || "copy"))?.desc}
+                    {(() => { const c = AUDIO_CODECS.find(c => c.value === (encoding.audio_codec || "copy")); return c && t(`settingsMedia:options.audioCodecs.${c.value}.desc`); })()}
                   </div>
                 </div>
 
@@ -1879,7 +1813,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <>
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                        <span style={labelStyle}>Audio Bitrate</span>
+                        <span style={labelStyle}>{t("settingsMedia:audio.conversion.bitrate")}</span>
                         <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.audio_bitrate || 128} kbps</span>
                       </div>
                       <input type="range" min={64} max={640} step={32}
@@ -1890,10 +1824,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         <span>64 kbps</span><span>128</span><span>256</span><span>384</span><span>640 kbps</span>
                       </div>
                       <div style={helpStyle}>
-                        Higher bitrate = better audio quality, larger files.
-                        <strong> 128 kbps:</strong> Good for stereo.
-                        <strong> 256 kbps:</strong> Good for 5.1 surround.
-                        <strong> 384-640 kbps:</strong> High quality surround.
+                        <Trans i18nKey="settingsMedia:audio.conversion.bitrateHelp" components={{ b: <strong /> }} />
                       </div>
                     </div>
 
@@ -1903,10 +1834,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                           readOnly
                           onClick={() => setEncoding({ ...encoding, audio_downmix: !encoding.audio_downmix })}
                           style={{ flexShrink: 0 }} />
-                        <span style={labelStyle}>Downmix surround to stereo</span>
+                        <span style={labelStyle}>{t("settingsMedia:audio.conversion.downmix")}</span>
                       </label>
                       <div style={{ ...helpStyle, paddingLeft: 26 }}>
-                        Convert 5.1/7.1 surround to stereo. Saves space but loses surround channels.
+                        {t("settingsMedia:audio.conversion.downmixHelp")}
                       </div>
                     </div>
                   </>
@@ -1919,27 +1850,27 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       readOnly
                       onClick={() => setEncoding({ ...encoding, auto_convert_lossless: !encoding.auto_convert_lossless })}
                       style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>Auto-convert lossless audio</span>
+                    <span style={labelStyle}>{t("settingsMedia:audio.lossless.label")}</span>
                   </label>
                   <div style={{ ...helpStyle, paddingLeft: 26 }}>
-                    Automatically convert lossless audio tracks (DTS-HD MA, TrueHD, PCM, FLAC) to a smaller lossy codec during video conversion. Lossy tracks are left untouched.
+                    {t("settingsMedia:audio.lossless.help")}
                   </div>
 
                   {encoding.auto_convert_lossless && (
                     <div style={{ paddingLeft: 26, marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                       <div>
-                        <div style={{ ...labelStyle, marginBottom: 8 }}>Target Codec</div>
+                        <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.lossless.targetCodec")}</div>
                         <select value={encoding.lossless_target_codec || "eac3"}
                           onChange={(e) => setEncoding({ ...encoding, lossless_target_codec: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}>
                           {AUDIO_CODECS.filter(c => c.value !== "copy" && c.value !== "flac").map(c => (
-                            <option key={c.value} value={c.value}>{c.label}</option>
+                            <option key={c.value} value={c.value}>{t(`settingsMedia:options.audioCodecs.${c.value}.label`)}</option>
                           ))}
                         </select>
                       </div>
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                          <span style={labelStyle}>Target Bitrate</span>
+                          <span style={labelStyle}>{t("settingsMedia:audio.lossless.targetBitrate")}</span>
                           <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.lossless_target_bitrate || 640} kbps</span>
                         </div>
                         <input type="range" min={128} max={640} step={32}
@@ -1956,7 +1887,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </div>
 
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start" }}>
-                Save Audio Rules
+                {t("settingsMedia:audio.save")}
               </button>
             </div>
 
@@ -1965,44 +1896,44 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               flex: "1 1 300px", minWidth: 0, background: "var(--bg-primary)", borderRadius: 6,
               padding: 16, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
             }}>
-              <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>Audio Guide</h4>
+              <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>{t("settingsMedia:audio.guide.title")}</h4>
 
               {[
                 {
-                  title: "Common Audio Codecs",
-                  cols: ["Codec", "Type", "Typical Size"],
+                  title: t("settingsMedia:audio.guide.codecs.title"),
+                  cols: [t("settingsMedia:audio.guide.codecs.cols.codec"), t("settingsMedia:audio.guide.codecs.cols.type"), t("settingsMedia:audio.guide.codecs.cols.typicalSize")],
                   rows: [
-                    ["AAC", "Lossy", "~50 MB/hr"],
-                    ["AC3 (DD)", "Lossy 5.1", "~250 MB/hr"],
-                    ["EAC3 (DD+)", "Lossy 5.1/7.1", "~350 MB/hr"],
-                    ["DTS", "Lossy 5.1", "~550 MB/hr"],
-                    ["DTS-HD MA", "Lossless 5.1/7.1", "~1.5 GB/hr"],
-                    ["TrueHD", "Lossless 7.1", "~2 GB/hr"],
-                    ["FLAC", "Lossless", "~1 GB/hr"],
-                    ["PCM", "Uncompressed", "~3 GB/hr"],
+                    ["AAC", t("settingsMedia:audio.guide.codecs.lossy"), t("settingsMedia:audio.guide.perHour", { size: "~50 MB" })],
+                    ["AC3 (DD)", t("settingsMedia:audio.guide.codecs.lossy51"), t("settingsMedia:audio.guide.perHour", { size: "~250 MB" })],
+                    ["EAC3 (DD+)", t("settingsMedia:audio.guide.codecs.lossy5171"), t("settingsMedia:audio.guide.perHour", { size: "~350 MB" })],
+                    ["DTS", t("settingsMedia:audio.guide.codecs.lossy51"), t("settingsMedia:audio.guide.perHour", { size: "~550 MB" })],
+                    ["DTS-HD MA", t("settingsMedia:audio.guide.codecs.lossless5171"), t("settingsMedia:audio.guide.perHour", { size: "~1.5 GB" })],
+                    ["TrueHD", t("settingsMedia:audio.guide.codecs.lossless71"), t("settingsMedia:audio.guide.perHour", { size: "~2 GB" })],
+                    ["FLAC", t("settingsMedia:audio.guide.codecs.lossless"), t("settingsMedia:audio.guide.perHour", { size: "~1 GB" })],
+                    ["PCM", t("settingsMedia:audio.guide.codecs.uncompressed"), t("settingsMedia:audio.guide.perHour", { size: "~3 GB" })],
                   ],
                 },
                 {
-                  title: "Space Saved by Removing Tracks",
-                  desc: "Each extra audio track adds significant file size. A 2-hour movie with 4 unnecessary audio tracks can waste 1-8 GB.",
-                  cols: ["Tracks Removed", "Typical Savings", "Example"],
+                  title: t("settingsMedia:audio.guide.removing.title"),
+                  desc: t("settingsMedia:audio.guide.removing.desc"),
+                  cols: [t("settingsMedia:audio.guide.removing.cols.tracksRemoved"), t("settingsMedia:audio.guide.removing.cols.typicalSavings"), t("settingsMedia:audio.guide.removing.cols.example")],
                   rows: [
-                    ["1 × AC3", "~500 MB", "Commentary track"],
-                    ["1 × DTS", "~1.1 GB", "Foreign dub"],
-                    ["3 × AC3", "~1.5 GB", "3 foreign dubs"],
-                    ["1 × DTS-HD MA", "~3 GB", "Lossless foreign"],
-                    ["1 × TrueHD", "~4 GB", "Atmos foreign dub"],
+                    ["1 × AC3", "~500 MB", t("settingsMedia:audio.guide.removing.commentary")],
+                    ["1 × DTS", "~1.1 GB", t("settingsMedia:audio.guide.removing.foreignDub")],
+                    ["3 × AC3", "~1.5 GB", t("settingsMedia:audio.guide.removing.threeForeignDubs")],
+                    ["1 × DTS-HD MA", "~3 GB", t("settingsMedia:audio.guide.removing.losslessForeign")],
+                    ["1 × TrueHD", "~4 GB", t("settingsMedia:audio.guide.removing.atmosForeignDub")],
                   ],
                 },
                 {
-                  title: "Re-encoding vs Copy",
-                  cols: ["Mode", "Speed", "Use When"],
+                  title: t("settingsMedia:audio.guide.reencode.title"),
+                  cols: [t("settingsMedia:audio.guide.reencode.cols.mode"), t("settingsMedia:audio.guide.reencode.cols.speed"), t("settingsMedia:audio.guide.reencode.cols.useWhen")],
                   rows: [
-                    ["Copy", "Instant", "Always (recommended)"],
-                    ["AAC 128k", "Fast", "Stereo, small files"],
-                    ["AAC 256k", "Fast", "Stereo, good quality"],
-                    ["AC3 384k", "Fast", "5.1, compatibility"],
-                    ["EAC3 640k", "Fast", "5.1/7.1, modern"],
+                    [t("settingsMedia:audio.guide.reencode.copy"), t("settingsMedia:audio.guide.reencode.instant"), t("settingsMedia:audio.guide.reencode.always")],
+                    ["AAC 128k", t("settingsMedia:audio.guide.reencode.fast"), t("settingsMedia:audio.guide.reencode.stereoSmall")],
+                    ["AAC 256k", t("settingsMedia:audio.guide.reencode.fast"), t("settingsMedia:audio.guide.reencode.stereoGood")],
+                    ["AC3 384k", t("settingsMedia:audio.guide.reencode.fast"), t("settingsMedia:audio.guide.reencode.compatibility")],
+                    ["EAC3 640k", t("settingsMedia:audio.guide.reencode.fast"), t("settingsMedia:audio.guide.reencode.modern")],
                   ],
                 },
               ].map((section) => (
@@ -2036,13 +1967,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               ))}
 
               <div style={{ marginBottom: 16 }}>
-                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>Tips</div>
+                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:audio.guide.tipsTitle")}</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
-                  <li style={{ marginBottom: 4 }}>Use "Copy" mode unless you specifically need a different codec — it's instant and lossless</li>
-                  <li style={{ marginBottom: 4 }}>Blu-ray discs often include 3-6 language dubs — removing them is the easiest space win</li>
-                  <li style={{ marginBottom: 4 }}>DTS-HD MA and TrueHD are lossless and huge — consider keeping only for your primary language</li>
-                  <li style={{ marginBottom: 4 }}>Commentary tracks are usually AC3 stereo (~250 MB each) — safe to remove unless you listen to them</li>
-                  <li style={{ marginBottom: 4 }}>The native language is auto-detected per file, so foreign films keep their original audio</li>
+                  {["copy", "bluray", "lossless", "commentary", "native"].map(k => (
+                    <li key={k} style={{ marginBottom: 4 }}>{t(`settingsMedia:audio.guide.tips.${k}`)}</li>
+                  ))}
                 </ul>
               </div>
 
@@ -2050,11 +1979,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 background: "var(--bg-card)", padding: 10, borderRadius: 4,
                 border: "1px solid var(--border)", fontSize: 11,
               }}>
-                <strong style={{ color: "var(--success)" }}>Current: Keep {keepLangs.join(", ").toUpperCase() || "none"} + native</strong>
+                <strong style={{ color: "var(--success)" }}>{t("settingsMedia:audio.guide.current.summary", { langs: keepLangs.join(", ").toUpperCase() || t("settingsMedia:audio.guide.current.none") })}</strong>
                 <span> — </span>
                 {keepLangs.length === 0
-                  ? "Only the native language track is kept"
-                  : `${keepLangs.length} language${keepLangs.length > 1 ? "s" : ""} kept by default, plus native auto-detected per file`}
+                  ? t("settingsMedia:audio.guide.current.onlyNative")
+                  : t("settingsMedia:audio.guide.current.keptCount", { count: keepLangs.length })}
               </div>
             </div>
             </div>
@@ -2062,7 +1991,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           </div>
 
           <h2 id="subtitles" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Subtitles
+            {t("settingsMedia:subtitles.title")}
           </h2>
           {/* Subtitle Cleanup */}
           <div style={sectionStyle}>
@@ -2071,23 +2000,23 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 readOnly
                 onClick={() => setEncoding({ ...encoding, sub_cleanup_enabled: !(encoding?.sub_cleanup_enabled ?? true) })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Remove unwanted subtitle tracks</span>
+              <span style={labelStyle}>{t("settingsMedia:subtitles.removeUnwanted")}</span>
             </label>
             {(encoding?.sub_cleanup_enabled ?? true) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 500 }}>
 
               {/* Subtitle Keep Languages */}
               <div>
-                <div style={{ ...labelStyle, marginBottom: 8 }}>Keep Subtitle Languages</div>
+                <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:subtitles.keepLanguages")}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                   {(encoding.sub_keep_languages || []).map((code: string) => {
-                    const lang = ALL_LANGUAGES.find(l => l.code === code);
+                    const known = ALL_LANGUAGES.includes(code);
                     return (
                       <span key={code} style={{
                         background: "var(--border)", color: "var(--success)", padding: "4px 10px",
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
-                        {lang ? `${lang.name} (${code})` : code}
+                        {known ? `${langName(code)} (${code})` : code}
                         <button onClick={() => {
                           setEncoding({ ...encoding, sub_keep_languages: (encoding.sub_keep_languages || []).filter((c: string) => c !== code) });
                         }} style={{
@@ -2100,7 +2029,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 </div>
                 <div style={{ position: "relative" }}>
                   <input
-                    placeholder="Search languages to add..."
+                    placeholder={t("settingsMedia:subtitles.searchPlaceholder")}
                     value={subLangSearch}
                     onChange={(e) => setSubLangSearch(e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
@@ -2131,7 +2060,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   )}
                 </div>
                 <div style={helpStyle}>
-                  Internal subtitle tracks in these languages will always be kept. Forced subtitles are always kept regardless of language. Only tracks in other languages will be marked for removal.
+                  {t("settingsMedia:subtitles.keepHelp")}
                 </div>
               </div>
 
@@ -2141,10 +2070,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   readOnly
                   onClick={() => setEncoding({ ...encoding, sub_keep_unknown: !(encoding.sub_keep_unknown ?? true) })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Keep unknown/undefined subtitles</span>
+                <span style={labelStyle}>{t("settingsMedia:subtitles.keepUnknown.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
-                Subtitle tracks tagged as "und" or with no language metadata
+                {t("settingsMedia:subtitles.keepUnknown.help")}
               </div>
 
               {/* v0.5.20: Auto-keep native-language subs (separate from audio) */}
@@ -2152,10 +2081,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.keep_native_subs === true || encoding.keep_native_subs === "true"}
                   onChange={() => setEncoding({ ...encoding, keep_native_subs: !(encoding.keep_native_subs === true || encoding.keep_native_subs === "true") })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Auto-keep native language subtitle tracks</span>
+                <span style={labelStyle}>{t("settingsMedia:subtitles.keepNative.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -14, paddingLeft: 26 }}>
-                Keep subtitle tracks whose language matches the file's detected native language, even if it's not in the keep list above. Defaults <strong>off</strong> — for most setups, native-language subs on a same-language audio track are noise. Turn on if you want them for SDH / hearing-impaired reasons.
+                <Trans i18nKey="settingsMedia:subtitles.keepNative.help" components={{ b: <strong /> }} />
               </div>
 
               {/* v0.8.2: same auto-detect-languages toggle as audio section (shared setting) */}
@@ -2163,30 +2092,29 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <input type="checkbox" checked={encoding.auto_detect_languages !== false}
                   onChange={() => setEncoding({ ...encoding, auto_detect_languages: encoding.auto_detect_languages === false })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Auto-detect languages for unknown tracks before converting</span>
+                <span style={labelStyle}>{t("settingsMedia:subtitles.autoDetect.label")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                Before converting or cleaning up subtitles, run language detection on "und"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view.
+                {t("settingsMedia:subtitles.autoDetect.help")}
               </div>
 
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start" }}>
-                Save Subtitle Rules
+                {t("settingsMedia:subtitles.save")}
               </button>
             </div>
             )}
 
             {/* External Subtitles */}
             <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>External Subtitles</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsMedia:subtitles.external.title")}</div>
               <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
                 <input type="checkbox" checked={encoding.merge_external_subs ?? false}
                   onChange={() => setEncoding({ ...encoding, merge_external_subs: !(encoding.merge_external_subs ?? false) })}
                   style={{ flexShrink: 0 }} />
-                <span style={labelStyle}>Merge external subtitles into video</span>
+                <span style={labelStyle}>{t("settingsMedia:subtitles.external.merge")}</span>
               </label>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
-                During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container.
-                Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).
+                <Trans i18nKey="settingsMedia:subtitles.external.mergeHelp" components={{ code: <code /> }} />
               </div>
 
               {(encoding.merge_external_subs ?? false) && (
@@ -2194,27 +2122,27 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <input type="checkbox" checked={encoding.delete_external_subs_after_merge ?? false}
                     onChange={() => setEncoding({ ...encoding, delete_external_subs_after_merge: !(encoding.delete_external_subs_after_merge ?? false) })}
                     style={{ flexShrink: 0 }} />
-                  <span style={labelStyle}>Delete external subtitle files after merge</span>
+                  <span style={labelStyle}>{t("settingsMedia:subtitles.external.deleteAfter")}</span>
                 </label>
               )}
               {(encoding.merge_external_subs ?? false) && (encoding.delete_external_subs_after_merge ?? false) && (
                 <div style={{ fontSize: 11, color: "var(--warning)", paddingLeft: 26, marginTop: -4 }}>
-                  The original .srt/.ass files will be permanently deleted after a successful merge.
+                  {t("settingsMedia:subtitles.external.deleteWarning")}
                 </div>
               )}
 
               <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ alignSelf: "flex-start", marginTop: 12 }}>
-                Save External Subtitle Settings
+                {t("settingsMedia:subtitles.external.save")}
               </button>
             </div>
           </div>
 
           <h2 id="connections" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Connections
+            {t("settingsIntegrations:connections.title")}
           </h2>
           {/* Metadata APIs */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 4 }}>Metadata APIs</h3>
+            <h3 style={{ color: "white", marginBottom: 4 }}>{t("settingsIntegrations:tmdb.title")}</h3>
             {encoding.tmdb_key_source === "bundled" || encoding.tmdb_key_source === "user" ? (
               <>
                 {/* Success banner shown for BOTH sources (bundled + user) — the
@@ -2241,40 +2169,40 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   </svg>
                   <div>
                     <div style={{ color: "var(--success)", fontWeight: 600, marginBottom: 2 }}>
-                      TMDB is already connected
+                      {t("settingsIntegrations:tmdb.alreadyConnected")}
                     </div>
                     {encoding.tmdb_key_source === "bundled" ? (
                       <>
-                        Posters, ratings, original-language detection, and TVDB ID resolution work out of the box using a bundled non-commercial key. You don't need to do anything.
+                        {t("settingsIntegrations:tmdb.bundledDesc")}
                       </>
                     ) : (
                       <>
-                        Posters, ratings, original-language detection, and TVDB ID resolution are active, using the API key you've configured below.
+                        {t("settingsIntegrations:tmdb.userDesc")}
                       </>
                     )}
                   </div>
                 </div>
                 {encoding.tmdb_key_source === "bundled" && (
                   <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-                    Adding your own key below is <strong>optional</strong> — useful only if you want a dedicated rate-limit quota, or as a fallback in case the bundled key is ever rotated.
+                    <Trans i18nKey="settingsIntegrations:tmdb.optionalNote" components={{ strong: <strong /> }} />
                   </div>
                 )}
               </>
             ) : (
               <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-                Connect to TMDB to fetch movie and TV show metadata, posters, ratings, and detect the original language for accurate audio track classification. TMDB also resolves TVDB IDs, so a separate TVDB key isn't required. Powers the poster grid view and improves foreign title handling.
+                {t("settingsIntegrations:tmdb.intro")}
               </div>
             )}
 
             {/* TMDB API Key */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ ...labelStyle, marginBottom: 8 }}>
-                TMDB API Key{" "}
+                {t("settingsIntegrations:tmdb.apiKey")}{" "}
                 <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "var(--accent)" }}>(Get free key)</a>
+                  style={{ fontSize: 11, color: "var(--accent)" }}>{t("settingsIntegrations:tmdb.getFreeKey")}</a>
                 {encoding.tmdb_key_source === "bundled" && (
                   <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 8 }}>
-                    · optional
+                    {t("settingsIntegrations:tmdb.optional")}
                   </span>
                 )}
               </div>
@@ -2284,7 +2212,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     type={showTmdbKey ? "text" : "password"}
                     value={tmdbKey}
                     onChange={(e) => setTmdbKey(e.target.value)}
-                    placeholder="Enter TMDB API key..."
+                    placeholder={t("settingsIntegrations:tmdb.keyPlaceholder")}
                     style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
                   />
                   <button
@@ -2293,7 +2221,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
                       background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14,
                     }}
-                    title={showTmdbKey ? "Hide" : "Show"}
+                    title={showTmdbKey ? t("settingsIntegrations:tmdb.hide") : t("settingsIntegrations:tmdb.show")}
                   >
                     {showTmdbKey ? (
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2318,16 +2246,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       if (res.success) {
                         setTmdbTest({ status: "success" });
                       } else {
-                        setTmdbTest({ status: "error", error: res.error || "Test failed" });
+                        setTmdbTest({ status: "error", error: res.error || t("settingsIntegrations:tmdb.testFailed") });
                       }
                     } catch (e: any) {
-                      setTmdbTest({ status: "error", error: e.message || "Request failed" });
+                      setTmdbTest({ status: "error", error: e.message || t("settingsIntegrations:tmdb.requestFailed") });
                     }
                   }}
                   disabled={tmdbTest.status === "loading"}
                   style={{ minWidth: 60 }}
                 >
-                  {tmdbTest.status === "loading" ? "..." : "Test"}
+                  {tmdbTest.status === "loading" ? "..." : t("settingsIntegrations:tmdb.test")}
                 </button>
                 {tmdbTest.status === "success" && (
                   <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
@@ -2346,7 +2274,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     fontSize: 12,
                     color: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent)",
                   }}>
-                    {encoding.tmdb_key_source === "user" ? "Connected — using your key" : "Connected — using bundled key"}
+                    {encoding.tmdb_key_source === "user" ? t("settingsIntegrations:tmdb.connectedUser") : t("settingsIntegrations:tmdb.connectedBundled")}
                   </span>
                 </div>
               )}
@@ -2364,7 +2292,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 setTimeout(() => setSaved(false), 2000);
               }}
             >
-              Save API Key
+              {t("settingsIntegrations:tmdb.save")}
             </button>
 
           </div>
@@ -2373,7 +2301,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Plex</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect your Plex server to automatically refresh your library after each conversion, create encoding rules based on Plex labels, collections, and genres, prioritize unwatched content in the queue, and pause encoding when someone is streaming.
+              {t("settingsIntegrations:plex.intro")}
             </div>
 
             {/* ── Connected state: show current connection + disconnect ────── */}
@@ -2391,7 +2319,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--success)", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "white" }}>
-                    Connected to <span style={{ color: "#e5a00d" }}>{plexConn.server_name || "Plex"}</span>
+                    <Trans i18nKey="settingsIntegrations:plex.connectedTo" values={{ name: plexConn.server_name || "Plex" }}
+                      components={{ srv: <span style={{ color: "#e5a00d" }} /> }} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {plexConn.user?.email ? `${plexConn.user.email} · ` : ""}{plexConn.server_url}
@@ -2402,7 +2331,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   style={{ fontSize: 12, padding: "6px 12px" }}
                   onClick={handlePlexDisconnect}
                 >
-                  Disconnect
+                  {t("settingsIntegrations:plex.disconnect")}
                 </button>
               </div>
             )}
@@ -2429,10 +2358,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M11.644 1.59a.9.9 0 0 1 .712 0l9 4.5a.9.9 0 0 1 .544.826v10.168a.9.9 0 0 1-.544.826l-9 4.5a.9.9 0 0 1-.712 0l-9-4.5a.9.9 0 0 1-.544-.826V6.916a.9.9 0 0 1 .544-.826l9-4.5Z"/>
                   </svg>
-                  Connect to Plex
+                  {t("settingsIntegrations:plex.connect")}
                 </button>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-                  Opens Plex sign-in in a popup. After you sign in we'll list your servers so you can pick which one to connect.
+                  {t("settingsIntegrations:plex.connectHelp")}
                 </div>
               </>
             )}
@@ -2450,9 +2379,9 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               }}>
                 <div className="spinner" style={{ width: 18, height: 18 }} />
                 <div>
-                  <div style={{ fontSize: 13, color: "white" }}>Waiting for Plex sign-in…</div>
+                  <div style={{ fontSize: 13, color: "white" }}>{t("settingsIntegrations:plex.waiting")}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    Complete the sign-in in the popup window. This page will update automatically.
+                    {t("settingsIntegrations:plex.waitingHelp")}
                   </div>
                 </div>
                 <div style={{ flex: 1 }} />
@@ -2461,7 +2390,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   style={{ fontSize: 12, padding: "4px 10px" }}
                   onClick={() => { setPlexAuthState("idle"); setPlexPickerError(""); }}
                 >
-                  Cancel
+                  {t("common:actions.cancel")}
                 </button>
               </div>
             )}
@@ -2476,11 +2405,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 marginBottom: 12,
               }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>
-                  Choose which Plex server to connect
+                  {t("settingsIntegrations:plex.chooseServer")}
                 </div>
                 {plexServers.length === 0 ? (
                   <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 0" }}>
-                    No Plex servers found for this account.
+                    {t("settingsIntegrations:plex.noServers")}
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -2512,11 +2441,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, color: "white", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 <span style={{ fontWeight: 500 }}>{server.name}</span>
-                                {server.owned && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(229,160,13,0.2)", color: "#e5a00d" }}>OWNED</span>}
-                                {conn.local && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>LOCAL</span>}
-                                {conn.relay && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--border)", color: "var(--text-muted)" }}>RELAY</span>}
-                                {conn.reachable === true && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>REACHABLE</span>}
-                                {conn.reachable === false && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(231,76,60,0.2)", color: "var(--danger, #e74c3c)" }}>UNREACHABLE</span>}
+                                {server.owned && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(229,160,13,0.2)", color: "#e5a00d" }}>{t("settingsIntegrations:plex.badges.owned")}</span>}
+                                {conn.local && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>{t("settingsIntegrations:plex.badges.local")}</span>}
+                                {conn.relay && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--border)", color: "var(--text-muted)" }}>{t("settingsIntegrations:plex.badges.relay")}</span>}
+                                {conn.reachable === true && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>{t("settingsIntegrations:plex.badges.reachable")}</span>}
+                                {conn.reachable === false && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(231,76,60,0.2)", color: "var(--danger, #e74c3c)" }}>{t("settingsIntegrations:plex.badges.unreachable")}</span>}
                               </div>
                               <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {conn.uri}
@@ -2535,21 +2464,21 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     disabled={!plexPickedUri}
                     onClick={handlePlexSaveConnection}
                   >
-                    Use this server
+                    {t("settingsIntegrations:plex.useServer")}
                   </button>
                   <button
                     className="btn btn-secondary"
                     style={{ fontSize: 12, padding: "6px 14px" }}
                     onClick={() => { setPlexAuthState("idle"); setPlexPendingToken(""); setPlexServers([]); setPlexPickedUri(""); setPlexPickerError(""); }}
                   >
-                    Cancel
+                    {t("common:actions.cancel")}
                   </button>
                 </div>
               </div>
             )}
 
             {plexAuthState === "saving" && (
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>Saving…</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>{t("settingsIntegrations:plex.saving")}</div>
             )}
 
             {plexPickerError && (
@@ -2571,13 +2500,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 textDecoration: "underline",
               }}
             >
-              {showManualPlex ? "Hide manual setup" : "Advanced: enter URL & token manually"}
+              {showManualPlex ? t("settingsIntegrations:plex.hideManual") : t("settingsIntegrations:plex.showManual")}
             </button>
 
             {showManualPlex && (
               <div style={{ borderLeft: "2px solid var(--border)", paddingLeft: 12, marginTop: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={labelStyle}>Plex Server URL</span>
+                  <span style={labelStyle}>{t("settingsIntegrations:plex.serverUrl")}</span>
                 </div>
                 <input
                   type="text"
@@ -2588,8 +2517,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 />
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={labelStyle}>Plex Auth Token</span>
-                  <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>(How to find your token)</a>
+                  <span style={labelStyle}>{t("settingsIntegrations:plex.authToken")}</span>
+                  <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>{t("settingsIntegrations:plex.findToken")}</a>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ position: "relative", flex: 1 }}>
@@ -2597,7 +2526,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       type={showPlexToken ? "text" : "password"}
                       value={plexToken}
                       onChange={(e) => setPlexToken(e.target.value)}
-                      placeholder="Your Plex auth token"
+                      placeholder={t("settingsIntegrations:plex.tokenPlaceholder")}
                       style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
                     />
                     <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
@@ -2614,17 +2543,17 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         if (result.success) {
                           setPlexTest({ status: "success", serverName: (result as any).server_name, libraryCount: (result as any).library_count });
                         } else {
-                          setPlexTest({ status: "error", error: (result as any).error || "Failed" });
+                          setPlexTest({ status: "error", error: (result as any).error || t("settingsIntegrations:plex.failed") });
                         }
                       } catch (e: any) {
                         setPlexTest({ status: "error", error: e.message });
                       }
                     }}
                   >
-                    {plexTest.status === "loading" ? "Testing..." : "Test"}
+                    {plexTest.status === "loading" ? t("settingsIntegrations:plex.testing") : t("settingsIntegrations:plex.test")}
                   </button>
                   {plexTest.status === "success" && (
-                    <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {plexTest.serverName} ({plexTest.libraryCount} libraries)</span>
+                    <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {t("settingsIntegrations:plex.testSuccess", { name: plexTest.serverName, count: plexTest.libraryCount })}</span>
                   )}
                   {plexTest.status === "error" && (
                     <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
@@ -2634,7 +2563,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             )}
 
             <div style={{ marginTop: 16 }}>
-              <span style={labelStyle}>Path Mapping (Container → Host)</span>
+              <span style={labelStyle}>{t("settingsIntegrations:plex.pathMapping")}</span>
               <input
                 type="text"
                 value={plexPathMapping}
@@ -2643,9 +2572,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 style={{ ...inputStyle, width: "100%", marginTop: 4 }}
               />
               <div style={helpStyle}>
-                Maps Docker container paths to host paths that Plex can see.
-                Format: <code>/container/path=/host/path</code>.
-                Multiple mappings separated by <code>;</code>
+                <Trans i18nKey="settingsIntegrations:plex.pathMappingHelp" components={{ code: <code /> }} />
               </div>
             </div>
 
@@ -2653,10 +2580,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <input type="checkbox" checked={encoding?.plex_scan_after_conversion !== false && encoding?.plex_scan_after_conversion !== "false"}
                 onChange={() => setEncoding({ ...encoding, plex_scan_after_conversion: encoding?.plex_scan_after_conversion === false || encoding?.plex_scan_after_conversion === "false" })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Refresh library after conversion</span>
+              <span style={labelStyle}>{t("settingsIntegrations:shared.refreshAfter")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 28 }}>
-              Trigger a partial Plex library scan after each file is converted so changes appear immediately.
+              {t("settingsIntegrations:plex.refreshAfterHelp")}
             </div>
 
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
@@ -2664,20 +2591,20 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 readOnly
                 onClick={() => setEncoding({ ...encoding, plex_empty_trash_after_scan: !encoding?.plex_empty_trash_after_scan })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Empty trash after scan</span>
+              <span style={labelStyle}>{t("settingsIntegrations:plex.emptyTrash")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-              Automatically empty the Plex library trash after each conversion scan completes.
+              {t("settingsIntegrations:plex.emptyTrashHelp")}
             </div>
 
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
               <input type="checkbox" checked={encoding?.plex_prioritize_unwatched || false}
                 onChange={() => setEncoding({ ...encoding, plex_prioritize_unwatched: !encoding?.plex_prioritize_unwatched })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Prioritize unwatched content</span>
+              <span style={labelStyle}>{t("settingsIntegrations:plex.prioritizeUnwatched")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-              When adding files to the queue, unwatched content automatically gets High priority so it converts first. You're more likely to notice quality improvements on content you haven't watched yet. Requires syncing with Plex.
+              {t("settingsIntegrations:plex.prioritizeUnwatchedHelp")}
             </div>
 
             <button
@@ -2694,7 +2621,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 setTimeout(() => setSaved(false), 2000);
               }}
             >
-              Save Plex Settings
+              {t("settingsIntegrations:plex.save")}
             </button>
           </div>
 
@@ -2702,18 +2629,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Jellyfin</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect your Jellyfin server to automatically refresh your library after each conversion, create encoding rules based on Jellyfin tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.
+              {t("settingsIntegrations:jellyfin.intro")}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <div style={labelStyle}>Jellyfin URL</div>
+                <div style={labelStyle}>{t("settingsIntegrations:jellyfin.url")}</div>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
                   value={encoding?.jellyfin_url || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_url: e.target.value })} />
               </div>
               <div>
-                <div style={labelStyle}>API Key</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="Your Jellyfin API key"
+                <div style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:jellyfin.apiKeyPlaceholder")}
                   type="password"
                   value={encoding?.jellyfin_api_key || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_api_key: e.target.value })} />
@@ -2721,21 +2648,21 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <div style={labelStyle}>User ID (optional)</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="Auto-detected if empty"
+                <div style={labelStyle}>{t("settingsIntegrations:shared.userIdOptional")}</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:shared.autoDetected")}
                   value={encoding?.jellyfin_user_id || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_user_id: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Used for watched status. Leave empty to auto-detect the admin user.
+                  {t("settingsIntegrations:shared.userIdHelp")}
                 </div>
               </div>
               <div>
-                <div style={labelStyle}>Path mapping</div>
+                <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
                   value={encoding?.jellyfin_path_mapping || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_path_mapping: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Maps container paths to Jellyfin paths. Format: /container=/jellyfin
+                  {t("settingsIntegrations:jellyfin.pathMappingHelp")}
                 </div>
               </div>
             </div>
@@ -2744,14 +2671,14 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 onClick={async () => {
                   try {
                     const r = await testApiKey("jellyfin");
-                    if (r.success) toast(`Connected to ${(r as any).server_name || "Jellyfin"} (${(r as any).library_count || 0} libraries)`, "success");
-                    else toast(r.error || "Connection failed");
-                  } catch { toast("Connection failed"); }
-                }}>Test Connection</button>
+                    if (r.success) toast(t("settingsIntegrations:shared.connectedLibraries", { name: (r as any).server_name || "Jellyfin", count: (r as any).library_count || 0 }), "success");
+                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"));
+                  } catch { toast(t("settingsIntegrations:shared.connectionFailed")); }
+                }}>{t("settingsIntegrations:shared.testConnection")}</button>
               {encoding?.jellyfin_configured && (
                 <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
-                  Connected
+                  {t("settingsIntegrations:shared.connected")}
                 </span>
               )}
             </div>
@@ -2759,7 +2686,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <input type="checkbox" checked={encoding?.jellyfin_scan_after_conversion !== false && encoding?.jellyfin_scan_after_conversion !== "false"}
                   onChange={() => setEncoding({ ...encoding, jellyfin_scan_after_conversion: encoding?.jellyfin_scan_after_conversion === false || encoding?.jellyfin_scan_after_conversion === "false" })} />
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Refresh library after conversion</span>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsIntegrations:shared.refreshAfter")}</span>
               </label>
             </div>
             <button className="btn btn-primary" style={{ marginTop: 16 }}
@@ -2771,26 +2698,26 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   jellyfin_path_mapping: encoding?.jellyfin_path_mapping,
                   jellyfin_scan_after_conversion: encoding?.jellyfin_scan_after_conversion,
                 } as any);
-                toast("Jellyfin settings saved", "success");
-              }}>Save Jellyfin Settings</button>
+                toast(t("settingsIntegrations:jellyfin.saved"), "success");
+              }}>{t("settingsIntegrations:jellyfin.save")}</button>
           </div>
 
           {/* Emby */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 4 }}>Emby</h3>
             <div style={{ ...helpStyle, marginTop: 0, marginBottom: 16 }}>
-              Connect your Emby server to automatically refresh your library after each conversion, create encoding rules based on Emby tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.
+              {t("settingsIntegrations:emby.intro")}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <div style={labelStyle}>Emby URL</div>
+                <div style={labelStyle}>{t("settingsIntegrations:emby.url")}</div>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
                   value={encoding?.emby_url || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_url: e.target.value })} />
               </div>
               <div>
-                <div style={labelStyle}>API Key</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="Your Emby API key"
+                <div style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:emby.apiKeyPlaceholder")}
                   type="password"
                   value={encoding?.emby_api_key || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_api_key: e.target.value })} />
@@ -2798,21 +2725,21 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
-                <div style={labelStyle}>User ID (optional)</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="Auto-detected if empty"
+                <div style={labelStyle}>{t("settingsIntegrations:shared.userIdOptional")}</div>
+                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:shared.autoDetected")}
                   value={encoding?.emby_user_id || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_user_id: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Used for watched status. Leave empty to auto-detect the admin user.
+                  {t("settingsIntegrations:shared.userIdHelp")}
                 </div>
               </div>
               <div>
-                <div style={labelStyle}>Path mapping</div>
+                <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
                   value={encoding?.emby_path_mapping || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_path_mapping: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Maps container paths to Emby paths. Format: /container=/emby
+                  {t("settingsIntegrations:emby.pathMappingHelp")}
                 </div>
               </div>
             </div>
@@ -2821,14 +2748,14 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 onClick={async () => {
                   try {
                     const r = await testApiKey("emby");
-                    if (r.success) toast(`Connected to ${(r as any).server_name || "Emby"} (${(r as any).library_count || 0} libraries)`, "success");
-                    else toast(r.error || "Connection failed");
-                  } catch { toast("Connection failed"); }
-                }}>Test Connection</button>
+                    if (r.success) toast(t("settingsIntegrations:shared.connectedLibraries", { name: (r as any).server_name || "Emby", count: (r as any).library_count || 0 }), "success");
+                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"));
+                  } catch { toast(t("settingsIntegrations:shared.connectionFailed")); }
+                }}>{t("settingsIntegrations:shared.testConnection")}</button>
               {encoding?.emby_configured && (
                 <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)" }} />
-                  Connected
+                  {t("settingsIntegrations:shared.connected")}
                 </span>
               )}
             </div>
@@ -2836,7 +2763,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                 <input type="checkbox" checked={encoding?.emby_scan_after_conversion !== false && encoding?.emby_scan_after_conversion !== "false"}
                   onChange={() => setEncoding({ ...encoding, emby_scan_after_conversion: encoding?.emby_scan_after_conversion === false || encoding?.emby_scan_after_conversion === "false" })} />
-                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>Refresh library after conversion</span>
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsIntegrations:shared.refreshAfter")}</span>
               </label>
             </div>
             <button className="btn btn-primary" style={{ marginTop: 16 }}
@@ -2848,15 +2775,15 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   emby_path_mapping: encoding?.emby_path_mapping,
                   emby_scan_after_conversion: encoding?.emby_scan_after_conversion,
                 } as any);
-                toast("Emby settings saved", "success");
-              }}>Save Emby Settings</button>
+                toast(t("settingsIntegrations:emby.saved"), "success");
+              }}>{t("settingsIntegrations:emby.save")}</button>
           </div>
 
           {/* Sonarr / Radarr Integration */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 16 }}>Sonarr / Radarr</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              After conversion, Shrinkerr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.
+              {t("settingsIntegrations:arr.intro")}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
               {/* Sonarr */}
@@ -2864,24 +2791,24 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Sonarr</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div>
-                    <label style={labelStyle}>URL</label>
+                    <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:8989"
                       value={encoding?.sonarr_url || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_url: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>API Key</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Sonarr Settings > General"
+                    <label style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:arr.sonarrKeyPlaceholder")}
                       value={encoding?.sonarr_api_key || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_api_key: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Path Mapping</label>
+                    <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/  (container=sonarr)"
                       value={encoding?.sonarr_path_mapping || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      Maps container paths to Sonarr paths. e.g. /media/TV1=/TV1
+                      {t("settingsIntegrations:arr.sonarrPathHelp")}
                     </div>
                   </div>
                 </div>
@@ -2891,24 +2818,24 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Radarr</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div>
-                    <label style={labelStyle}>URL</label>
+                    <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:7878"
                       value={encoding?.radarr_url || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_url: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>API Key</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder="From Radarr Settings > General"
+                    <label style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:arr.radarrKeyPlaceholder")}
                       value={encoding?.radarr_api_key || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_api_key: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Path Mapping</label>
+                    <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="/media/Movies=/  (container=radarr)"
                       value={encoding?.radarr_path_mapping || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      Maps container paths to Radarr paths. e.g. /media/Movies=/Movies
+                      {t("settingsIntegrations:arr.radarrPathHelp")}
                     </div>
                   </div>
                 </div>
@@ -2919,30 +2846,30 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 onClick={async () => {
                   try {
                     await updateEncodingSettings(encoding);
-                    toast("Sonarr/Radarr settings saved", "success");
-                  } catch (err: any) { toast(`Save failed: ${err.message}`); }
+                    toast(t("settingsIntegrations:arr.saved"), "success");
+                  } catch (err: any) { toast(t("settingsIntegrations:shared.saveFailed", { error: err.message })); }
                 }}
-              >Save</button>
+              >{t("common:actions.save")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   try {
                     await updateEncodingSettings(encoding);
                     const res = await testApiKey("sonarr") as any;
-                    if (res.success) toast(`Sonarr connected (v${res.version})`, "success");
+                    if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Sonarr", version: res.version }), "success");
                     else toast(`Sonarr: ${res.error}`);
-                  } catch (err: any) { toast(`Sonarr test failed: ${err.message}`); }
+                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Sonarr", error: err.message })); }
                 }}
-              >Test Sonarr</button>
+              >{t("settingsIntegrations:arr.testSonarr")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   try {
                     await updateEncodingSettings(encoding);
                     const res = await testApiKey("radarr") as any;
-                    if (res.success) toast(`Radarr connected (v${res.version})`, "success");
+                    if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Radarr", version: res.version }), "success");
                     else toast(`Radarr: ${res.error}`);
-                  } catch (err: any) { toast(`Radarr test failed: ${err.message}`); }
+                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Radarr", error: err.message })); }
                 }}
-              >Test Radarr</button>
+              >{t("settingsIntegrations:arr.testRadarr")}</button>
             </div>
           </div>
 
@@ -2951,19 +2878,19 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <h3 style={{ color: "white", margin: 0 }}>NZBGet / SABnzbd</h3>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? "Enabled" : "Disabled"}</span>
+                <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? t("settingsIntegrations:shared.enabled") : t("settingsIntegrations:shared.disabled")}</span>
                 <input type="checkbox" checked={encoding?.nzbget_enabled || false}
                   onChange={() => setEncoding({ ...encoding, nzbget_enabled: !encoding?.nzbget_enabled })}
                   style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
               </label>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              Automatically convert downloads after NZBGet or SABnzbd completes. The script checks Sonarr/Radarr for matching tags before converting. Sonarr/Radarr connection settings are inherited from above.
+              {t("settingsIntegrations:downloaders.intro")}
             </div>
 
             {/* Tags */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Tags to match in Sonarr/Radarr</div>
+              <div style={labelStyle}>{t("settingsIntegrations:downloaders.tagsLabel")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_tags || []).map((tag: string) => (
                   <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
@@ -2972,7 +2899,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
                   </span>
                 ))}
-                <input type="text" placeholder="Add tag..."
+                <input type="text" placeholder={t("settingsIntegrations:downloaders.addTag")}
                   style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 100, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
@@ -2984,12 +2911,12 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     }
                   }} />
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Series/movies must have at least one of these tags. Press Enter to add.</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsIntegrations:downloaders.tagsHelp")}</div>
             </div>
 
             {/* Categories */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Categories to process</div>
+              <div style={labelStyle}>{t("settingsIntegrations:downloaders.categoriesLabel")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_categories || []).map((cat: string) => (
                   <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
@@ -2998,7 +2925,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
                   </span>
                 ))}
-                <input type="text" placeholder="Add category..."
+                <input type="text" placeholder={t("settingsIntegrations:downloaders.addCategory")}
                   style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 120, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
@@ -3010,13 +2937,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     }
                   }} />
               </div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Only downloads in these categories will be processed. Works with both NZBGet and SABnzbd. Press Enter to add.</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsIntegrations:downloaders.categoriesHelp")}</div>
             </div>
 
             {/* Path Mappings */}
             <div style={{ marginBottom: 16 }}>
-              <div style={labelStyle}>Path mappings (download client → Shrinkerr path)</div>
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Map your download client's completed folder to a path Shrinkerr can access. Make sure this path is added as a volume in your Shrinkerr docker-compose.</div>
+              <div style={labelStyle}>{t("settingsIntegrations:downloaders.pathMappingsLabel")}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>{t("settingsIntegrations:downloaders.pathMappingsHelp")}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
@@ -3043,7 +2970,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 ))}
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px", alignSelf: "flex-start" }}
                   onClick={() => setEncoding({ ...encoding, nzbget_path_mappings: [...(encoding?.nzbget_path_mappings || []), { from: "", to: "" }] })}>
-                  + Add mapping
+                  {t("settingsIntegrations:downloaders.addMapping")}
                 </button>
               </div>
             </div>
@@ -3051,32 +2978,32 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             {/* Options row */}
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
               <div>
-                <div style={labelStyle}>Priority</div>
+                <div style={labelStyle}>{t("settingsIntegrations:downloaders.priority")}</div>
                 <select value={encoding?.nzbget_priority || "High"}
                   onChange={(e) => setEncoding({ ...encoding, nzbget_priority: e.target.value })}
                   style={{ ...inputStyle, width: 140 }}>
-                  <option value="Normal">Normal</option>
-                  <option value="High">High</option>
-                  <option value="Highest">Highest</option>
+                  <option value="Normal">{t("settingsIntegrations:priorities.normal")}</option>
+                  <option value="High">{t("settingsIntegrations:priorities.high")}</option>
+                  <option value="Highest">{t("settingsIntegrations:priorities.highest")}</option>
                 </select>
               </div>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
                 <input type="checkbox" checked={encoding?.nzbget_wait_for_completion !== false}
                   onChange={() => setEncoding({ ...encoding, nzbget_wait_for_completion: encoding?.nzbget_wait_for_completion === false })}
                   style={{ accentColor: "var(--accent)" }} />
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Wait for conversion to complete</span>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("settingsIntegrations:downloaders.waitForCompletion")}</span>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
                 <input type="checkbox" checked={encoding?.nzbget_check_sonarr_tags !== false}
                   onChange={() => setEncoding({ ...encoding, nzbget_check_sonarr_tags: encoding?.nzbget_check_sonarr_tags === false })}
                   style={{ accentColor: "var(--accent)" }} />
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Check Sonarr tags</span>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("settingsIntegrations:downloaders.checkSonarrTags")}</span>
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 18 }}>
                 <input type="checkbox" checked={encoding?.nzbget_check_radarr_tags !== false}
                   onChange={() => setEncoding({ ...encoding, nzbget_check_radarr_tags: encoding?.nzbget_check_radarr_tags === false })}
                   style={{ accentColor: "var(--accent)" }} />
-                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Check Radarr tags</span>
+                <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("settingsIntegrations:downloaders.checkRadarrTags")}</span>
               </label>
             </div>
 
@@ -3085,30 +3012,30 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
                 onClick={async () => {
                   await updateEncodingSettings(encoding);
-                  toast("Download client settings saved", "success");
-                }}>Save</button>
+                  toast(t("settingsIntegrations:downloaders.saved"), "success");
+                }}>{t("common:actions.save")}</button>
               <a href="/api/settings/nzbget-script" download="Shrinkerr.py" style={{ textDecoration: "none" }}>
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
-                  Download NZBGet Script
+                  {t("settingsIntegrations:downloaders.downloadNzbget")}
                 </button>
               </a>
               <a href="/api/settings/sabnzbd-script" download="shrinkerr.py" style={{ textDecoration: "none" }}>
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
-                  Download SABnzbd Script
+                  {t("settingsIntegrations:downloaders.downloadSabnzbd")}
                 </button>
               </a>
             </div>
 
             {/* Installation instructions */}
             <details style={{ fontSize: 12, color: "var(--text-muted)" }} open>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Setup prerequisites (read first)</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>{t("settingsIntegrations:downloaders.prereq.summary")}</summary>
               <div style={{ paddingLeft: 8, lineHeight: 1.7 }}>
                 <p style={{ margin: "4px 0" }}>
-                  Before the script can hand files to Shrinkerr, the Shrinkerr container has to be able to <em>see</em> what NZBGet/SABnzbd downloaded. That means two things must line up:
+                  <Trans i18nKey="settingsIntegrations:downloaders.prereq.intro" components={{ em: <em /> }} />
                 </p>
                 <ol style={{ margin: "4px 0 8px", paddingLeft: 20 }}>
                   <li>
-                    <b>Both containers mount the same host directory at the same internal path.</b> Easiest: match exactly.
+                    <Trans i18nKey="settingsIntegrations:downloaders.prereq.sameMount" components={{ b: <b /> }} />
                     <pre style={{ margin: "4px 0", padding: 8, background: "var(--bg-primary)", borderRadius: 4, fontSize: 11, overflow: "auto" }}>{`# nzbget docker-compose.yml
 volumes:
   - /home/me/Downloads:/Downloads:rw
@@ -3116,65 +3043,65 @@ volumes:
 # shrinkerr docker-compose.yml
 volumes:
   - /home/me/Downloads:/Downloads:rw   # ← same line, same case`}</pre>
-                    After changing volumes, run <code>docker compose down &amp;&amp; up -d</code> to recreate the container; <code>up -d</code> alone won't pick up new volumes.
+                    <Trans i18nKey="settingsIntegrations:downloaders.prereq.recreate" components={{ code: <code /> }} />
                   </li>
                   <li>
-                    <b>Add NZBGet's category folders as media directories.</b> Settings → Media directories → add e.g. <code>/Downloads/completed/TV</code> and <code>/Downloads/completed/Movies</code>. For each:
+                    <Trans i18nKey="settingsIntegrations:downloaders.prereq.mediaDirs" components={{ b: <b />, code: <code /> }} />
                     <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                      <li>Type = <b>Other</b> — keeps TMDB from matching release-name folders</li>
-                      <li>Uncheck <b>Scan</b> — webhook accepts paths under it but the file tree won't show release-name temp folders</li>
+                      <li><Trans i18nKey="settingsIntegrations:downloaders.prereq.typeOther" components={{ b: <b /> }} /></li>
+                      <li><Trans i18nKey="settingsIntegrations:downloaders.prereq.uncheckScan" components={{ b: <b /> }} /></li>
                     </ul>
                   </li>
                   <li>
-                    <b>Path mappings (above) only when paths differ between containers.</b> If both mount the same host folder at the same internal path (recommended), leave path mappings empty. Only add mappings when the script's view of the file path differs from Shrinkerr's view.
+                    <Trans i18nKey="settingsIntegrations:downloaders.prereq.pathMappings" components={{ b: <b /> }} />
                   </li>
                 </ol>
               </div>
             </details>
             <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>NZBGet installation</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>{t("settingsIntegrations:downloaders.nzbgetInstall.summary")}</summary>
               <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
-                <li>Complete the prerequisites above (volume mounts + media dirs)</li>
-                <li>Save settings above and click <b>Download NZBGet Script</b></li>
-                <li>Place <code>Shrinkerr.py</code> in your NZBGet <b>ScriptDir</b> folder</li>
-                <li>In NZBGet → Settings → Extension Scripts, enable <b>Shrinkerr</b></li>
-                <li>Restart NZBGet or click <b>Reload</b> in the scripts section</li>
-                <li>The script auto-configures from Shrinkerr — no extra NZBGet settings needed</li>
-                <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
+                <li>{t("settingsIntegrations:downloaders.install.prereq")}</li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.nzbgetInstall.download" components={{ b: <b /> }} /></li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.nzbgetInstall.place" components={{ b: <b />, code: <code /> }} /></li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.nzbgetInstall.enable" components={{ b: <b /> }} /></li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.nzbgetInstall.restart" components={{ b: <b /> }} /></li>
+                <li>{t("settingsIntegrations:downloaders.nzbgetInstall.autoConfig")}</li>
+                <li>{t("settingsIntegrations:downloaders.install.addTags")}</li>
               </ol>
             </details>
             <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>SABnzbd installation</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>{t("settingsIntegrations:downloaders.sabInstall.summary")}</summary>
               <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 2 }}>
-                <li>Complete the prerequisites above (volume mounts + media dirs)</li>
-                <li>Save settings above and click <b>Download SABnzbd Script</b></li>
-                <li>Place <code>shrinkerr.py</code> in your SABnzbd <b>scripts</b> folder</li>
-                <li>In SABnzbd → Config → Categories, set <b>shrinkerr.py</b> as the post-processing script for your TV/Movie categories</li>
-                <li>The script auto-configures from Shrinkerr — your URL and API key are baked in</li>
-                <li>Add your configured tags to series in Sonarr / movies in Radarr</li>
+                <li>{t("settingsIntegrations:downloaders.install.prereq")}</li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.sabInstall.download" components={{ b: <b /> }} /></li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.sabInstall.place" components={{ b: <b />, code: <code /> }} /></li>
+                <li><Trans i18nKey="settingsIntegrations:downloaders.sabInstall.categories" components={{ b: <b /> }} /></li>
+                <li>{t("settingsIntegrations:downloaders.sabInstall.autoConfig")}</li>
+                <li>{t("settingsIntegrations:downloaders.install.addTags")}</li>
               </ol>
             </details>
             <details style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Troubleshooting: "Outside media dirs"</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>{t("settingsIntegrations:downloaders.troubleshoot.summary")}</summary>
               <div style={{ paddingLeft: 8, lineHeight: 1.7 }}>
                 <p style={{ margin: "4px 0" }}>
-                  If NZBGet/SABnzbd logs show <code>Shrinkerr: Outside media dirs: /path/to/file.mkv</code>, the path the script reports is not under any directory you've registered in Shrinkerr.
+                  <Trans i18nKey="settingsIntegrations:downloaders.troubleshoot.intro" components={{ code: <code /> }} />
                 </p>
                 <ol style={{ margin: "4px 0", paddingLeft: 20 }}>
-                  <li>Check exactly what path the script reported (it's in the same log line)</li>
-                  <li>Verify the Shrinkerr container can see that path: <code>docker exec shrinkerr ls &lt;path&gt;</code></li>
-                  <li>If the file isn't there, your two containers don't agree on where <code>/Downloads</code> points. Align the volume mounts (above), or add a path mapping that translates the script's view into Shrinkerr's view</li>
-                  <li>If the file IS there, just add it as a media directory (Type=Other, Scan=off)</li>
+                  <li>{t("settingsIntegrations:downloaders.troubleshoot.checkPath")}</li>
+                  <li>{t("settingsIntegrations:downloaders.troubleshoot.verify")} <code>docker exec shrinkerr ls &lt;path&gt;</code></li>
+                  <li><Trans i18nKey="settingsIntegrations:downloaders.troubleshoot.notThere" components={{ code: <code /> }} /></li>
+                  <li>{t("settingsIntegrations:downloaders.troubleshoot.isThere")}</li>
                 </ol>
               </div>
             </details>
             <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(104,96,254,0.1)", borderRadius: 4, fontSize: 12 }}>
-              <b style={{ color: "var(--accent)" }}>Tip:</b> Use <b>Encoding Rules</b> in Shrinkerr to set different conversion profiles (CQ, preset, audio codec) based on Sonarr/Radarr tags. Tag-based downloads will follow your encoding rules automatically.
+              <Trans i18nKey="settingsIntegrations:downloaders.tip" components={{ tip: <b style={{ color: "var(--accent)" }} />, b: <b /> }} />
             </div>
           </div>
 
           <h2 id="rules" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Encoding Rules
+            {t("settingsIntegrations:rules.title")}
           </h2>
           {/* Encoding Rules */}
           <div style={sectionStyle}>
@@ -3189,17 +3116,17 @@ volumes:
                         const res = await syncPlexRuleMetadata();
                         await loadPlexOpts();
                         const parts = [];
-                        if (res.labels_synced) parts.push(`${res.labels_synced} labels`);
-                        if (res.collections_synced) parts.push(`${res.collections_synced} collections`);
-                        if (res.genres_synced) parts.push(`${res.genres_synced} genres`);
-                        if (res.libraries_synced) parts.push(`${res.libraries_synced} libraries`);
-                        if (res.watch_synced) parts.push(`${res.watch_synced} watch status`);
-                        toast(`Synced: ${parts.join(", ") || "no changes"}`, "success");
-                      } catch (err: any) { toast(err.message || "Sync failed"); }
+                        if (res.labels_synced) parts.push(t("settingsIntegrations:rules.sync.labels", { count: res.labels_synced }));
+                        if (res.collections_synced) parts.push(t("settingsIntegrations:rules.sync.collections", { count: res.collections_synced }));
+                        if (res.genres_synced) parts.push(t("settingsIntegrations:rules.sync.genres", { count: res.genres_synced }));
+                        if (res.libraries_synced) parts.push(t("settingsIntegrations:rules.sync.libraries", { count: res.libraries_synced }));
+                        if (res.watch_synced) parts.push(t("settingsIntegrations:rules.sync.watch", { count: res.watch_synced }));
+                        toast(t("settingsIntegrations:rules.synced", { parts: parts.join(", ") || t("settingsIntegrations:rules.noChanges") }), "success");
+                      } catch (err: any) { toast(err.message || t("settingsIntegrations:rules.syncFailed")); }
                       setRuleSyncing(false);
                     }}
                   >
-                    {ruleSyncing ? "Syncing..." : "Sync from Plex"}
+                    {ruleSyncing ? t("settingsIntegrations:rules.syncing") : t("settingsIntegrations:rules.syncFromPlex")}
                   </button>
                 )}
                 <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 10px" }}
@@ -3209,14 +3136,12 @@ volumes:
                     setRuleForm({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
                     if (plexOpts.labels.length === 0) loadPlexOpts();
                   }}
-                >+ Add Rule</button>
+                >{t("settingsIntegrations:rules.addRule")}</button>
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14, lineHeight: 1.6 }}>
-              Apply different encoding settings based on where files are located. Match by media directory, or connect
-              Plex to match by label, collection, or library. Rules are evaluated top-to-bottom &mdash; the first match wins.
-              Files with no matching rule use the global defaults below.
-              {encoding?.plex_configured && <span> Click <b>Sync from Plex</b> after creating label/collection rules to build the folder lookup cache.</span>}
+              {t("settingsIntegrations:rules.intro")}
+              {encoding?.plex_configured && <span> <Trans i18nKey="settingsIntegrations:rules.introPlex" components={{ b: <b /> }} /></span>}
             </div>
 
             {/* Rule list */}
@@ -3248,7 +3173,7 @@ volumes:
                         cursor: "grab",
                       }}>
                       {/* Drag handle + priority + toggle + name */}
-                      <span style={{ cursor: "grab", opacity: 0.3, fontSize: 14, flexShrink: 0 }} title="Drag to reorder">&#x2807;</span>
+                      <span style={{ cursor: "grab", opacity: 0.3, fontSize: 14, flexShrink: 0 }} title={t("settingsIntegrations:rules.dragToReorder")}>&#x2807;</span>
                       <span style={{ color: "var(--text-muted)", fontSize: 11 }}>#{idx + 1}</span>
                       <input type="checkbox" checked={!!rule.enabled}
                         onChange={async () => {
@@ -3276,9 +3201,9 @@ volumes:
                           const suffix = c.type === "file_size" ? " GB" : "";
                           return (
                             <span key={ci} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, whiteSpace: "nowrap" }}>
-                              {ci > 0 && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{rule.match_mode === "all" ? "and" : "or"}</span>}
+                              {ci > 0 && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{rule.match_mode === "all" ? t("settingsIntegrations:rules.and") : t("settingsIntegrations:rules.or")}</span>}
                               <span style={{ fontSize: 9, padding: "1px 4px", borderRadius: 6, fontWeight: "bold", background: bg, color: fg }}>
-                                {c.type === "directory" ? "dir" : c.type.replace("_", " ")}
+                                {t(`settingsIntegrations:conditions.badges.${c.type}`, { defaultValue: c.type.replace("_", " ") })}
                               </span>
                               {opLabel && <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{opLabel}</span>}
                               <span style={{ color: "var(--text-secondary)", fontSize: 11 }} title={c.value}>{display}{suffix}</span>
@@ -3292,7 +3217,7 @@ volumes:
                         background: rule.action === "encode" ? "rgba(24,255,165,0.15)" : rule.action === "skip" ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
                         color: rule.action === "encode" ? "#18ffa5" : rule.action === "skip" ? "#e94560" : "#ffa94d",
                       }}>
-                        {rule.action === "encode" ? "Encode" : rule.action === "skip" ? "Skip all" : "Audio/sub only"}
+                        {rule.action === "encode" ? t("settingsIntegrations:rules.actionBadge.encode") : rule.action === "skip" ? t("settingsIntegrations:rules.actionBadge.skip") : t("settingsIntegrations:rules.actionBadge.ignore")}
                       </span>
                       {rule.action !== "skip" && (
                         <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -3303,8 +3228,8 @@ volumes:
                             rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
                             rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
                             rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
-                            rule.queue_priority != null ? ["Normal", "High", "Highest"][rule.queue_priority] : null,
-                          ].filter(Boolean).join(" ") || "defaults"}
+                            rule.queue_priority != null ? [t("settingsIntegrations:priorities.normal"), t("settingsIntegrations:priorities.high"), t("settingsIntegrations:priorities.highest")][rule.queue_priority] : null,
+                          ].filter(Boolean).join(" ") || t("settingsIntegrations:rules.defaults")}
                         </span>
                       )}
                       <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
@@ -3330,14 +3255,14 @@ volumes:
                               queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
                             });
                           }}
-                          title="Edit"
+                          title={t("settingsIntegrations:rules.edit")}
                         >&#9998;</button>
                         <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, fontSize: 12 }}
                           onClick={async () => {
                             await deleteEncodingRule(rule.id);
                             loadRules();
                           }}
-                          title="Delete"
+                          title={t("common:actions.delete")}
                         >&times;</button>
                       </div>
                     </div>
@@ -3348,7 +3273,7 @@ volumes:
 
             {rules.length === 0 && !showAddRule && (
               <div style={{ textAlign: "center", padding: 20, opacity: 0.4, fontSize: 13 }}>
-                No encoding rules yet. Add a rule to apply different settings per media directory{encoding?.plex_configured ? ", Plex label, collection, or library" : ""}.
+                {encoding?.plex_configured ? t("settingsIntegrations:rules.emptyPlex") : t("settingsIntegrations:rules.empty")}
               </div>
             )}
 
@@ -3357,19 +3282,19 @@ volumes:
               <div style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8 }}>
                 {/* Rule name */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
-                  <label style={labelStyle}>Name</label>
-                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} placeholder="e.g. 4K Max Quality"
+                  <label style={labelStyle}>{t("settingsIntegrations:rules.form.name")}</label>
+                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} placeholder={t("settingsIntegrations:rules.form.namePlaceholder")}
                     onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })} />
                 </div>
 
                 {/* Match conditions */}
                 <div style={{ marginBottom: 12 }}>
-                  <label style={labelStyle}>Match conditions</label>
+                  <label style={labelStyle}>{t("settingsIntegrations:rules.form.matchConditions")}</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 12 }}>
                     <select value={ruleForm.match_mode} onChange={e => setRuleForm({...ruleForm, match_mode: e.target.value})}
                       style={{ ...inputStyle, width: 260, fontWeight: 500 }}>
-                      <option value="any">Match any of the following</option>
-                      <option value="all">Match all of the following</option>
+                      <option value="any">{t("settingsIntegrations:rules.form.matchAny")}</option>
+                      <option value="all">{t("settingsIntegrations:rules.form.matchAll")}</option>
                     </select>
                     <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 8px" }}
                       onClick={() => setRuleForm({...ruleForm, conditions: [...ruleForm.conditions, { type: "directory", operator: "is", value: "" }]})}>
@@ -3381,38 +3306,38 @@ volumes:
                       <div key={condIdx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         {/* Type */}
                         <select value={cond.type} onChange={e => updateConditionType(condIdx, e.target.value)} style={{ ...inputStyle, width: 160 }}>
-                          <optgroup label="Path">
-                            <option value="directory">Media Directory</option>
+                          <optgroup label={t("settingsIntegrations:conditions.groups.path")}>
+                            <option value="directory">{t("settingsIntegrations:conditions.types.directory")}</option>
                           </optgroup>
-                          <optgroup label="File">
-                            <option value="source">Source</option>
-                            <option value="resolution">Resolution</option>
-                            <option value="video_codec">Video Codec</option>
-                            <option value="audio_codec">Audio Codec</option>
-                            <option value="file_size">File Size (GB)</option>
-                            <option value="date_added">Date Added</option>
-                            <option value="media_type">Type</option>
-                            <option value="title">Title</option>
-                            <option value="release_group">Release Group</option>
+                          <optgroup label={t("settingsIntegrations:conditions.groups.file")}>
+                            <option value="source">{t("settingsIntegrations:conditions.types.source")}</option>
+                            <option value="resolution">{t("settingsIntegrations:conditions.types.resolution")}</option>
+                            <option value="video_codec">{t("settingsIntegrations:conditions.types.video_codec")}</option>
+                            <option value="audio_codec">{t("settingsIntegrations:conditions.types.audio_codec")}</option>
+                            <option value="file_size">{t("settingsIntegrations:conditions.types.file_size")}</option>
+                            <option value="date_added">{t("settingsIntegrations:conditions.types.date_added")}</option>
+                            <option value="media_type">{t("settingsIntegrations:conditions.types.media_type")}</option>
+                            <option value="title">{t("settingsIntegrations:conditions.types.title")}</option>
+                            <option value="release_group">{t("settingsIntegrations:conditions.types.release_group")}</option>
                           </optgroup>
                           <optgroup label="Plex">
-                            <option value="label">Label</option>
-                            <option value="collection">Collection</option>
-                            <option value="genre">Genre</option>
-                            <option value="library">Library</option>
+                            <option value="label">{t("settingsIntegrations:conditions.plexOptions.label")}</option>
+                            <option value="collection">{t("settingsIntegrations:conditions.plexOptions.collection")}</option>
+                            <option value="genre">{t("settingsIntegrations:conditions.plexOptions.genre")}</option>
+                            <option value="library">{t("settingsIntegrations:conditions.plexOptions.library")}</option>
                           </optgroup>
                           <optgroup label="Arr">
-                            <option value="arr_tag">Sonarr/Radarr Tag</option>
+                            <option value="arr_tag">{t("settingsIntegrations:conditions.types.arr_tag")}</option>
                           </optgroup>
                           <optgroup label="Jellyfin">
-                            <option value="jellyfin_tag">Jellyfin Tag</option>
+                            <option value="jellyfin_tag">{t("settingsIntegrations:conditions.types.jellyfin_tag")}</option>
                           </optgroup>
                           <optgroup label="Emby">
-                            <option value="emby_tag">Emby Tag</option>
-                            <option value="emby_watched">Emby Watched</option>
+                            <option value="emby_tag">{t("settingsIntegrations:conditions.types.emby_tag")}</option>
+                            <option value="emby_watched">{t("settingsIntegrations:conditions.types.emby_watched")}</option>
                           </optgroup>
-                          <optgroup label="Downloads">
-                            <option value="nzbget_category">Download Category</option>
+                          <optgroup label={t("settingsIntegrations:conditions.groups.downloads")}>
+                            <option value="nzbget_category">{t("settingsIntegrations:conditions.types.nzbget_category")}</option>
                           </optgroup>
                         </select>
                         {/* Operator */}
@@ -3428,54 +3353,54 @@ volumes:
 
                           if (cond.type === "directory") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select directory...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.selectDirectory")}</option>
                               {dirs.map(d => <option key={d.path} value={d.path}>{d.label ? `${d.label} (${d.path})` : d.path}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "source") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.sources || []).map((s: string) => <option key={s} value={s}>{s}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "resolution") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.resolutions || []).map((r: string) => <option key={r} value={r}>{r}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "video_codec") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.video_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "audio_codec") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.audio_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "media_type") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
-                              <option value="movie">Movie</option>
-                              <option value="tv">TV Show</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
+                              <option value="movie">{t("settingsIntegrations:conditions.values.movie")}</option>
+                              <option value="tv">{t("settingsIntegrations:conditions.values.tv")}</option>
                             </select>;
                           }
 
                           if (cond.type === "release_group") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
                               <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                                <option value="">Select or type...</option>
+                                <option value="">{t("settingsIntegrations:conditions.values.selectOrType")}</option>
                                 {(condOpts.release_groups || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type group name..."
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeGroupName")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
@@ -3483,10 +3408,10 @@ volumes:
                           if (cond.type === "label") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
                               <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                                <option value="">Select...</option>
+                                <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                 {(plexOpts.labels || []).map((l: string) => <option key={l} value={l}>{l}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type manually..."
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
@@ -3494,60 +3419,60 @@ volumes:
                           if (cond.type === "collection") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
                               <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                                <option value="">Select...</option>
+                                <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                 {(plexOpts.collections || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Or type manually..."
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
 
                           if (cond.type === "genre") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(plexOpts.genres || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "library") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(plexOpts.libraries || []).map((l: any) => <option key={l.title} value={l.title}>{l.title}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "arr_tag") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select tag...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.arr_tags || []).map((t: any) => <option key={`${t.source}-${t.label}`} value={t.label}>{t.label} ({t.source})</option>)}
                             </select>;
                           }
 
                           if (cond.type === "jellyfin_tag") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select tag...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.jellyfin_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "emby_tag") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select tag...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.emby_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "emby_watched") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select...</option>
-                              <option value="true">Watched</option>
-                              <option value="false">Unwatched</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
+                              <option value="true">{t("settingsIntegrations:conditions.values.watched")}</option>
+                              <option value="false">{t("settingsIntegrations:conditions.values.unwatched")}</option>
                             </select>;
                           }
 
                           if (cond.type === "nzbget_category") {
                             return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
-                              <option value="">Select category...</option>
+                              <option value="">{t("settingsIntegrations:conditions.values.selectCategory")}</option>
                               {(condOpts.nzbget_categories || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
                           }
@@ -3567,9 +3492,9 @@ volumes:
                                 <select style={{ ...inputStyle, width: 110 }}
                                         value={unit}
                                         onChange={e => setBoth(num, e.target.value)}>
-                                  <option value="h">hours</option>
-                                  <option value="d">days</option>
-                                  <option value="w">weeks</option>
+                                  <option value="h">{t("settingsIntegrations:conditions.values.hours")}</option>
+                                  <option value="d">{t("settingsIntegrations:conditions.values.days")}</option>
+                                  <option value="w">{t("settingsIntegrations:conditions.values.weeks")}</option>
                                 </select>
                               </div>
                             );
@@ -3577,11 +3502,11 @@ volumes:
 
                           if (ct.valueType === "number") {
                             return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1 }} value={cond.value}
-                              placeholder="Size in GB..." onChange={e => updateConditionValue(condIdx, e.target.value)} />;
+                              placeholder={t("settingsIntegrations:conditions.values.sizePlaceholder")} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                           }
 
                           // Default: text input
-                          return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder="Enter value..."
+                          return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.enterValue")}
                             onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                         })()}
                         {/* Remove button */}
@@ -3591,7 +3516,7 @@ volumes:
                               const updated = ruleForm.conditions.filter((_, i) => i !== condIdx);
                               setRuleForm({ ...ruleForm, conditions: updated });
                             }}
-                            title="Remove condition">&times;</button>
+                            title={t("settingsIntegrations:conditions.values.removeCondition")}>&times;</button>
                         )}
                       </div>
                     ))}
@@ -3600,20 +3525,20 @@ volumes:
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
                     <div>
-                      <label style={labelStyle}>Action</label>
+                      <label style={labelStyle}>{t("settingsIntegrations:rules.form.action")}</label>
                       <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.action}
                         onChange={e => setRuleForm({ ...ruleForm, action: e.target.value })}>
-                        <option value="encode">Encode (apply settings)</option>
-                        <option value="ignore">Skip conversion (audio/sub cleanup only)</option>
-                        <option value="skip">Skip entirely (do nothing)</option>
+                        <option value="encode">{t("settingsIntegrations:rules.form.actions.encode")}</option>
+                        <option value="ignore">{t("settingsIntegrations:rules.form.actions.ignore")}</option>
+                        <option value="skip">{t("settingsIntegrations:rules.form.actions.skip")}</option>
                       </select>
                     </div>
                     {ruleForm.action === "encode" && <>
                       <div>
-                        <label style={labelStyle}>Encoder</label>
+                        <label style={labelStyle}>{t("settingsIntegrations:rules.form.encoder")}</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
                           onChange={e => setRuleForm({ ...ruleForm, encoder: e.target.value })}>
-                          <option value="">Use default</option>
+                          <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                           {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
                           {encoderCaps?.qsv && <option value="qsv">Intel QSV</option>}
                           {encoderCaps?.vaapi && <option value="vaapi">VAAPI (Intel/AMD)</option>}
@@ -3621,7 +3546,7 @@ volumes:
                         </select>
                         {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi") && (
                           <div style={{ ...helpStyle, marginTop: 4 }}>
-                            QSV/VAAPI rules use the global preset and quality from Settings → Encoding.
+                            {t("settingsIntegrations:rules.form.qsvVaapiNote")}
                           </div>
                         )}
                       </div>
@@ -3633,17 +3558,17 @@ volumes:
                           inherits whichever encoder Settings → Encoding picks). */}
                       {(ruleForm.encoder === "" || ruleForm.encoder === "nvenc" || ruleForm.encoder === "libx265") && <>
                       <div>
-                        <label style={labelStyle}>Preset</label>
+                        <label style={labelStyle}>{t("settingsIntegrations:rules.form.preset")}</label>
                         {ruleForm.encoder === "libx265" ? (
                           <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.libx265_preset}
                             onChange={e => setRuleForm({ ...ruleForm, libx265_preset: e.target.value })}>
-                            <option value="">Use default</option>
+                            <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                             {["ultrafast","superfast","veryfast","faster","fast","medium","slow","slower","veryslow"].map(p => <option key={p} value={p}>{p}</option>)}
                           </select>
                         ) : (
                           <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
                             onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
-                            <option value="">Use default</option>
+                            <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                             {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
                           </select>
                         )}
@@ -3652,7 +3577,7 @@ volumes:
                         <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
                         <input type="number" style={{ ...inputStyle, width: "100%" }}
                           value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
-                          placeholder="Default" min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
+                          placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
                           onChange={e => {
                             if (ruleForm.encoder === "libx265") {
                               setRuleForm({ ...ruleForm, libx265_crf: e.target.value });
@@ -3664,11 +3589,11 @@ volumes:
                       </div>
                       </>}
                       <div>
-                        <label style={labelStyle}>Resolution</label>
+                        <label style={labelStyle}>{t("settingsIntegrations:rules.form.resolution")}</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}
                           onChange={e => setRuleForm({ ...ruleForm, target_resolution: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="copy">Copy (keep original)</option>
+                          <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
+                          <option value="copy">{t("settingsMedia:options.resolutions.copy.label")}</option>
                           <option value="1080p">1080p</option>
                           <option value="720p">720p</option>
                           <option value="480p">480p</option>
@@ -3677,11 +3602,11 @@ volumes:
                     </>}
                     {ruleForm.action !== "skip" && <>
                       <div>
-                        <label style={labelStyle}>Audio codec</label>
+                        <label style={labelStyle}>{t("settingsIntegrations:rules.form.audioCodec")}</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_codec}
                           onChange={e => setRuleForm({ ...ruleForm, audio_codec: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="copy">Copy (no conversion)</option>
+                          <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
+                          <option value="copy">{t("settingsIntegrations:rules.form.copyNoConversion")}</option>
                           <option value="eac3">EAC3</option>
                           <option value="ac3">AC3</option>
                           <option value="aac">AAC</option>
@@ -3690,26 +3615,26 @@ volumes:
                         </select>
                       </div>
                       <div>
-                        <label style={labelStyle}>Audio bitrate</label>
+                        <label style={labelStyle}>{t("settingsIntegrations:rules.form.audioBitrate")}</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_bitrate}
                           onChange={e => setRuleForm({ ...ruleForm, audio_bitrate: e.target.value })}>
-                          <option value="">Use default</option>
-                          <option value="640">640k (Blu-ray)</option>
-                          <option value="448">448k (streaming)</option>
-                          <option value="256">256k (compact)</option>
-                          <option value="128">128k (low)</option>
+                          <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
+                          <option value="640">{t("settingsIntegrations:rules.form.bitrates.640")}</option>
+                          <option value="448">{t("settingsIntegrations:rules.form.bitrates.448")}</option>
+                          <option value="256">{t("settingsIntegrations:rules.form.bitrates.256")}</option>
+                          <option value="128">{t("settingsIntegrations:rules.form.bitrates.128")}</option>
                         </select>
                       </div>
                     </>}
                     {ruleForm.action !== "skip" && (
                       <div>
-                        <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Queue priority</label>
+                        <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsIntegrations:rules.form.queuePriority")}</label>
                         <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
                           onChange={e => setRuleForm({ ...ruleForm, queue_priority: e.target.value })}>
-                          <option value="">Default</option>
-                          <option value="0">Normal</option>
-                          <option value="1">High</option>
-                          <option value="2">Highest</option>
+                          <option value="">{t("settingsIntegrations:rules.form.default")}</option>
+                          <option value="0">{t("settingsIntegrations:priorities.normal")}</option>
+                          <option value="1">{t("settingsIntegrations:priorities.high")}</option>
+                          <option value="2">{t("settingsIntegrations:priorities.highest")}</option>
                         </select>
                       </div>
                     )}
@@ -3720,12 +3645,12 @@ volumes:
                     onClick={async () => {
                       // Validation with feedback
                       if (!ruleForm.name.trim()) {
-                        toast("Please enter a rule name");
+                        toast(t("settingsIntegrations:rules.toasts.nameRequired"));
                         return;
                       }
                       const validConditions = ruleForm.conditions.filter(c => c.value);
                       if (validConditions.length === 0) {
-                        toast("Please add at least one match condition with a value");
+                        toast(t("settingsIntegrations:rules.toasts.conditionRequired"));
                         return;
                       }
                       const emptyConditions = ruleForm.conditions.filter(c => !c.value);
@@ -3769,55 +3694,55 @@ volumes:
                       try {
                         if (editingRuleId) {
                           await updateEncodingRule(editingRuleId, data);
-                          toast("Rule updated", "success");
+                          toast(t("settingsIntegrations:rules.toasts.updated"), "success");
                         } else {
                           await createEncodingRule(data);
-                          toast("Rule created", "success");
+                          toast(t("settingsIntegrations:rules.toasts.created"), "success");
                         }
                         setShowAddRule(false);
                         setEditingRuleId(null);
                         // Small delay to let DB commit, then reload
                         setTimeout(loadRules, 200);
                       } catch (err: any) {
-                        toast(err.message || "Failed to save rule");
+                        toast(err.message || t("settingsIntegrations:rules.toasts.saveFailed"));
                       }
                     }}
                   >
-                    {editingRuleId ? "Update Rule" : "Add Rule"}
+                    {editingRuleId ? t("settingsIntegrations:rules.form.update") : t("settingsIntegrations:rules.form.add")}
                   </button>
                   <button className="btn btn-secondary" style={{ fontSize: 12, padding: "4px 12px" }}
                     onClick={() => { setShowAddRule(false); setEditingRuleId(null); }}
-                  >Cancel</button>
+                  >{t("common:actions.cancel")}</button>
                 </div>
               </div>
             )}
           </div>
 
           <h2 id="renaming" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Renaming
+            {t("settingsSystem:renaming.title")}
           </h2>
           <RenamingSettings />
 
           <h2 id="automation" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Automation
+            {t("settingsSystem:automation.title")}
           </h2>
           {/* Automation — at the bottom */}
           <div style={sectionStyle}>
-            <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Auto-Queue</div>
+            <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.autoQueue.title")}</div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.auto_queue_new || false}
                 onClick={() => setEncoding({ ...encoding, auto_queue_new: !encoding?.auto_queue_new })}
                 readOnly
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Auto-queue new files</span>
+              <span style={labelStyle}>{t("settingsSystem:automation.autoQueue.newFiles")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 16 }}>
-              New files detected in scanned folders by the watcher that need conversion or audio cleanup will be automatically added to the queue using your default encoding settings.
+              {t("settingsSystem:automation.autoQueue.newFilesHelp")}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 16,
                           opacity: encoding?.auto_queue_new ? 1 : 0.5 }}>
-              <span style={labelStyle}>Auto-queue priority:</span>
+              <span style={labelStyle}>{t("settingsSystem:automation.autoQueue.priority")}</span>
               <select style={{ ...inputStyle, width: 130 }}
                 value={String(encoding?.auto_queue_priority ?? 0)}
                 disabled={!encoding?.auto_queue_new}
@@ -3825,98 +3750,100 @@ volumes:
                   ...encoding,
                   auto_queue_priority: parseInt(e.target.value, 10),
                 })}>
-                <option value="0">Normal</option>
-                <option value="1">High</option>
-                <option value="2">Highest</option>
+                <option value="0">{t("settingsIntegrations:priorities.normal")}</option>
+                <option value="1">{t("settingsIntegrations:priorities.high")}</option>
+                <option value="2">{t("settingsIntegrations:priorities.highest")}</option>
               </select>
               <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>
-                Newly-detected files use this priority. Rules with a Queue Priority action override this setting.
+                {t("settingsSystem:automation.autoQueue.priorityHelp")}
               </span>
             </div>
 
             {/* Conversion filters */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Conversion Filters</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.filters.title")}</div>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>Min file size (MB)</label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.filters.minFileSize")}</label>
                   <input type="number" min={0} style={{ ...inputStyle, width: 90 }}
                     value={encoding?.min_file_size_mb ?? 0}
                     onChange={e => setEncoding({ ...encoding, min_file_size_mb: e.target.value })} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>Min bitrate (Mbps)</label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.filters.minBitrate")}</label>
                   <input type="number" min={0} style={{ ...inputStyle, width: 90 }}
                     value={encoding?.min_bitrate_mbps ?? 0}
                     onChange={e => setEncoding({ ...encoding, min_bitrate_mbps: e.target.value })} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>Max bitrate (Mbps)</label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.filters.maxBitrate")}</label>
                   <input type="number" min={0} style={{ ...inputStyle, width: 90 }}
                     value={encoding?.max_bitrate_mbps ?? 0}
                     onChange={e => setEncoding({ ...encoding, max_bitrate_mbps: e.target.value })} />
                 </div>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
-                Set to 0 to disable. Typical bitrates: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Set min bitrate to 3 to skip already-compressed files. Set max bitrate to 80 to preserve 4K HDR remuxes.
+                {t("settingsSystem:automation.filters.help")}
               </div>
             </div>
 
             {/* Output Filename */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Output Filename</div>
-              <div style={labelStyle}>Filename suffix after conversion</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.filename.title")}</div>
+              <div style={labelStyle}>{t("settingsSystem:automation.filename.suffix")}</div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
                 <input type="text" style={{ ...inputStyle, flex: "1 1 200px", maxWidth: 300 }}
                   value={encoding?.filename_suffix ?? ""}
                   onChange={e => setEncoding({ ...encoding, filename_suffix: e.target.value })}
-                  placeholder="e.g. -Shrinkerr" />
+                  placeholder={t("settingsSystem:automation.filename.suffixPlaceholder")} />
                 {!encoding?.filename_suffix && (
                   <button className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}
                     onClick={() => setEncoding({ ...encoding, filename_suffix: "-Shrinkerr" })}>
-                    Use "-Shrinkerr"
+                    {t("settingsSystem:automation.filename.useSuffix", { suffix: "-Shrinkerr" })}
                   </button>
                 )}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                Appended to the filename before the extension after conversion.
-                Example: <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>Movie x265{encoding?.filename_suffix || ""}.mkv</code>.
-                Leave empty for no suffix.
+                <Trans
+                  i18nKey="settingsSystem:automation.filename.help"
+                  values={{ suffix: encoding?.filename_suffix || "" }}
+                  components={{ code: <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }} /> }}
+                />
               </div>
             </div>
 
             {/* Originals & Backups */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Originals & Backups</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.originals.title")}</div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.trash_original_after_conversion || false}
                 onChange={() => setEncoding({ ...encoding, trash_original_after_conversion: !encoding?.trash_original_after_conversion })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Move originals to trash after conversion</span>
+              <span style={labelStyle}>{t("settingsSystem:automation.originals.trash")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 12 }}>
-              After a successful conversion, the original file is moved to the system trash instead of being permanently deleted.
+              {t("settingsSystem:automation.originals.trashHelp")}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Or backup originals for</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.originals.backupFor")}</span>
               <input type="number" min={0} style={{ ...inputStyle, width: 60 }}
                 value={encoding?.backup_original_days ?? 0}
                 onChange={e => setEncoding({ ...encoding, backup_original_days: e.target.value })} />
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>days</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.6 }}>(0 = disabled, kept indefinitely when blank)</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.originals.days")}</span>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.6 }}>{t("settingsSystem:automation.originals.daysHint")}</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>Backup folder</span>
+              <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>{t("settingsSystem:automation.originals.backupFolder")}</span>
               <input type="text" style={{ ...inputStyle, flex: 1 }}
                 value={encoding?.backup_folder ?? ""}
                 onChange={e => setEncoding({ ...encoding, backup_folder: e.target.value })}
-                placeholder=".shrinkerr_backup (default, same dir as file)" />
+                placeholder={t("settingsSystem:automation.originals.backupFolderPlaceholder")} />
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap", flexShrink: 0 }}
                 onClick={() => setBackupBrowserOpen(true)}
-              >Browse</button>
+              >{t("settingsSystem:automation.originals.browse")}</button>
             </div>
             <FolderBrowser
               isOpen={backupBrowserOpen}
@@ -3925,9 +3852,10 @@ volumes:
               onCancel={() => setBackupBrowserOpen(false)}
             />
             <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 26, marginBottom: 6 }}>
-              Leave empty to use <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>.shrinkerr_backup</code> in the same directory.
-              Set an absolute path (e.g. <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }}>/media/backups</code>) for centralized storage.
-              Backup files are required for the <strong>Undo Conversion</strong> feature — without backups, conversions cannot be reverted.
+              <Trans
+                i18nKey="settingsSystem:automation.originals.help"
+                components={{ code: <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }} />, b: <strong /> }}
+              />
             </div>
             <div style={{ paddingLeft: 26, marginBottom: 16 }}>
               <button
@@ -3937,141 +3865,139 @@ volumes:
                   const { getBackups, deleteBackups } = await import("../api");
                   const data = await getBackups();
                   if (data.total_count === 0) {
-                    alert("No backup files found.");
+                    alert(t("settingsSystem:automation.originals.noneFound"));
                     return;
                   }
                   const sizeGB = (data.total_size / (1024 ** 3)).toFixed(1);
-                  if (confirm(`Delete all ${data.total_count} backup file(s) (${sizeGB} GB)? This cannot be undone.`)) {
+                  if (confirm(t("settingsSystem:automation.originals.deleteAllConfirm", { count: data.total_count, size: sizeGB }))) {
                     const result = await deleteBackups();
-                    alert(`Deleted ${result.deleted} file(s), freed ${(result.freed / (1024 ** 3)).toFixed(1)} GB`);
+                    alert(t("settingsSystem:automation.originals.deletedResult", { count: result.deleted, size: (result.freed / (1024 ** 3)).toFixed(1) }));
                   }
                 }}
               >
-                Delete all backups
+                {t("settingsSystem:automation.originals.deleteAll")}
               </button>
             </div>
 
             {/* File Stability */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>File Stability</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.stability.title")}</div>
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input type="checkbox" checked={encoding?.skip_files_newer_enabled || false}
                 onChange={() => setEncoding({ ...encoding, skip_files_newer_enabled: !encoding?.skip_files_newer_enabled })}
                 style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>Delay recently modified files</span>
+              <span style={labelStyle}>{t("settingsSystem:automation.stability.delay")}</span>
             </label>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-              Files modified within this window are postponed during scanning and auto-queue. They'll be picked up on the next scan once the window has passed. This prevents converting files that are still being downloaded, transferred, or processed by other tools like Sonarr/Radarr. Recommended for shared systems.
+              {t("settingsSystem:automation.stability.delayHelp")}
             </div>
             {encoding?.skip_files_newer_enabled && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Delay files newer than</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.stability.delayNewerThan")}</span>
                 <input type="number" min={1} max={1440}
                   style={{ ...inputStyle, width: 70 }}
                   value={encoding?.skip_files_newer_than_minutes ?? 10}
                   onChange={e => setEncoding({ ...encoding, skip_files_newer_than_minutes: e.target.value })} />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>minutes</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.stability.minutes")}</span>
               </div>
             )}
 
             {/* Health Checks */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Health Checks</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.health.title")}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <span style={{ ...labelStyle, flex: "0 0 240px" }}>Auto-check after scans</span>
+              <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterScan")}</span>
               <select
                 style={{ ...inputStyle, width: 140 }}
                 value={encoding?.health_check_on_scan ?? "off"}
                 onChange={e => setEncoding({ ...encoding, health_check_on_scan: e.target.value })}
               >
-                <option value="off">Off</option>
-                <option value="quick">Quick</option>
-                <option value="thorough">Thorough</option>
+                <option value="off">{t("settingsSystem:automation.health.off")}</option>
+                <option value="quick">{t("settingsSystem:automation.health.quick")}</option>
+                <option value="thorough">{t("settingsSystem:automation.health.thorough")}</option>
               </select>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 8 }}>
-              After each scan, queue a health check for files <strong>newly detected in the last 24h</strong> (capped at 1000 per scan to protect the queue).
-              <strong> Quick</strong> parses headers (&lt;1s per file). <strong>Thorough</strong> decodes every frame (slow — minutes per file).
-              To check files retroactively, use the manual <strong>Quick check</strong> / <strong>Thorough check</strong> buttons on the Scanner.
+              <Trans i18nKey="settingsSystem:automation.health.afterScanHelp" components={{ b: <strong /> }} />
             </div>
             <div style={{ marginBottom: 14, paddingLeft: 0 }}>
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "rgba(233,69,96,0.4)" }}
                 onClick={async () => {
-                  if (!confirm("Delete ALL pending health-check jobs? Running jobs and other job types are not affected.")) return;
+                  if (!confirm(t("settingsSystem:automation.health.clearPendingConfirm"))) return;
                   const { clearPendingHealthChecks } = await import("../api");
                   const res = await clearPendingHealthChecks();
-                  toast(`Removed ${res.deleted.toLocaleString()} pending health-check job${res.deleted === 1 ? "" : "s"}`, "success");
+                  toast(t("settingsSystem:toasts.clearedPending", { count: res.deleted, formatted: res.deleted.toLocaleString() }), "success");
                 }}
-              >Clear pending health-check jobs</button>
+              >{t("settingsSystem:automation.health.clearPending")}</button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <span style={{ ...labelStyle, flex: "0 0 240px" }}>Auto-check after conversion</span>
+              <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterConversion")}</span>
               <select
                 style={{ ...inputStyle, width: 140 }}
                 value={encoding?.health_check_after_conversion ?? "off"}
                 onChange={e => setEncoding({ ...encoding, health_check_after_conversion: e.target.value })}
               >
-                <option value="off">Off</option>
-                <option value="quick">Quick</option>
-                <option value="thorough">Thorough</option>
+                <option value="off">{t("settingsSystem:automation.health.off")}</option>
+                <option value="quick">{t("settingsSystem:automation.health.quick")}</option>
+                <option value="thorough">{t("settingsSystem:automation.health.thorough")}</option>
               </select>
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 0, marginBottom: 12 }}>
-              Verify each converted output. <strong>Quick</strong> confirms the container/streams parse. <strong>Thorough</strong> catches visual artifacts (decoder errors) at the cost of roughly duration/10 per file.
+              <Trans i18nKey="settingsSystem:automation.health.afterConversionHelp" components={{ b: <strong /> }} />
             </div>
 
             {/* Advanced */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
-              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>Advanced</div>
+              <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.advanced.title")}</div>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 300px" }}>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>Custom ffmpeg flags</label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.advanced.customFlags")}</label>
                   <input type="text" style={{ ...inputStyle, width: "100%" }}
-                    placeholder="e.g. -movflags +faststart"
+                    placeholder={t("settingsSystem:automation.advanced.customFlagsPlaceholder")}
                     value={encoding?.custom_ffmpeg_flags ?? ""}
                     onChange={e => setEncoding({ ...encoding, custom_ffmpeg_flags: e.target.value })} />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>Max Plex API calls</label>
+                  <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.advanced.maxPlexCalls")}</label>
                   <input type="number" min={0} style={{ ...inputStyle, width: 90 }}
                     value={encoding?.max_plex_api_calls ?? 0}
                     onChange={e => setEncoding({ ...encoding, max_plex_api_calls: e.target.value })} />
                 </div>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-                Custom flags are inserted before the output path in the ffmpeg command. Max Plex API calls limits concurrent requests to your Plex server (0 = unlimited).
+                {t("settingsSystem:automation.advanced.help")}
               </div>
             </div>
 
             <button className="btn btn-primary" onClick={handleSaveEncoding} style={{ marginTop: 16 }}>
-              Save
+              {t("common:actions.save")}
             </button>
           </div>
 
           {/* Webhook Endpoints */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Webhook Endpoints</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:webhooks.title")}</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              External tools can call these endpoints to control Shrinkerr. Authenticate with <code style={{ color: "var(--accent)" }}>?api_key=YOUR_KEY</code> or <code style={{ color: "var(--accent)" }}>X-Api-Key</code> header.
+              <Trans i18nKey="settingsSystem:webhooks.intro" components={{ code: <code style={{ color: "var(--accent)" }} /> }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
-                { method: "POST", path: "/api/webhooks/scan", desc: "Trigger library scan" },
-                { method: "POST", path: "/api/webhooks/queue", desc: "Add files to queue (body: {paths: [...]})" },
-                { method: "POST", path: "/api/webhooks/pause", desc: "Pause the queue" },
-                { method: "POST", path: "/api/webhooks/resume", desc: "Resume the queue" },
-                { method: "GET", path: "/api/webhooks/status", desc: "Get current status" },
+                { method: "POST", path: "/api/webhooks/scan", desc: t("settingsSystem:webhooks.endpoints.scan") },
+                { method: "POST", path: "/api/webhooks/queue", desc: t("settingsSystem:webhooks.endpoints.queue") },
+                { method: "POST", path: "/api/webhooks/pause", desc: t("settingsSystem:webhooks.endpoints.pause") },
+                { method: "POST", path: "/api/webhooks/resume", desc: t("settingsSystem:webhooks.endpoints.resume") },
+                { method: "GET", path: "/api/webhooks/status", desc: t("settingsSystem:webhooks.endpoints.status") },
               ].map(ep => (
                 <div key={ep.path} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
                   <span style={{ color: ep.method === "GET" ? "#40ceff" : "var(--success)", fontWeight: 600, width: 40, flexShrink: 0 }}>{ep.method}</span>
                   <code style={{ color: "var(--text-secondary)", flex: 1 }}>{ep.path}</code>
                   <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{ep.desc}</span>
                   <button
-                    title="Copy full URL"
+                    title={t("settingsSystem:webhooks.copyUrl")}
                     onClick={() => {
                       const url = `${window.location.origin}${ep.path}`;
                       const ta = document.createElement("textarea");
@@ -4082,7 +4008,7 @@ volumes:
                       ta.select();
                       document.execCommand("copy");
                       document.body.removeChild(ta);
-                      toast("URL copied", "success");
+                      toast(t("settingsSystem:toasts.urlCopied"), "success");
                     }}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, flexShrink: 0 }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4096,28 +4022,28 @@ volumes:
 
           {/* Post-Conversion Script */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Post-Conversion Script</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:script.title")}</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              Run a custom script after each conversion completes. The script receives job details as environment variables.
+              {t("settingsSystem:script.intro")}
             </div>
             <div style={{ marginBottom: 12 }}>
-              <div style={labelStyle}>Script path</div>
+              <div style={labelStyle}>{t("settingsSystem:script.path")}</div>
               <input type="text" style={{ ...inputStyle, width: "100%", maxWidth: 500 }}
                 value={encoding?.post_conversion_script || ""}
                 onChange={e => setEncoding({ ...encoding, post_conversion_script: e.target.value })}
                 placeholder="/path/to/script.sh" />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                Absolute path to an executable script inside the container. Leave empty to disable.
+                {t("settingsSystem:script.pathHelp")}
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <div style={labelStyle}>Timeout (seconds)</div>
+              <div style={labelStyle}>{t("settingsSystem:script.timeout")}</div>
               <input type="number" style={{ ...inputStyle, width: 100 }}
                 value={encoding?.post_conversion_script_timeout || 300}
                 onChange={e => setEncoding({ ...encoding, post_conversion_script_timeout: parseInt(e.target.value) || 300 })} />
             </div>
             <details style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>Environment Variables Reference</summary>
+              <summary style={{ cursor: "pointer", color: "var(--text-secondary)", marginBottom: 8 }}>{t("settingsSystem:script.envReference")}</summary>
               <div style={{ backgroundColor: "var(--bg-primary)", padding: 12, borderRadius: 4, fontFamily: "monospace", fontSize: 11, lineHeight: 1.8 }}>
                 {[
                   "SHRINKERR_EVENT=job_completed",
@@ -4133,7 +4059,7 @@ volumes:
                   "SHRINKERR_FPS=195.5",
                   "SHRINKERR_VMAF_SCORE=96.2",
                   "SHRINKERR_STATUS=completed|failed",
-                  "SHRINKERR_ERROR=(error message if failed)",
+                  `SHRINKERR_ERROR=${t("settingsSystem:script.envErrorValue")}`,
                   // The legacy SQUEEZARR_* variants are also set for backward
                   // compatibility with scripts written before the rename.
                 ].map(v => <div key={v}>{v}</div>)}
@@ -4145,16 +4071,16 @@ volumes:
                   post_conversion_script: encoding?.post_conversion_script || "",
                   post_conversion_script_timeout: encoding?.post_conversion_script_timeout || 300,
                 });
-                toast("Post-conversion script settings saved", "success");
-              }}>Save</button>
+                toast(t("settingsSystem:toasts.scriptSaved"), "success");
+              }}>{t("common:actions.save")}</button>
           </div>
 
           <h2 id="system" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            System
+            {t("settingsSystem:system.title")}
           </h2>
           {/* Authentication */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", margin: 0, marginBottom: 12 }}>Authentication</h3>
+            <h3 style={{ color: "white", margin: 0, marginBottom: 12 }}>{t("settingsSystem:auth.title")}</h3>
 
             {/* Enable toggle — left-aligned, prominent. Pre-v0.5.6 the
                 toggle sat in the section header on the right; users in
@@ -4165,10 +4091,10 @@ volumes:
                 onChange={() => setEncoding({ ...encoding, auth_enabled: !encoding?.auth_enabled })}
                 style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
               <span style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
-                Enable username / password login
+                {t("settingsSystem:auth.enable")}
               </span>
               <span style={{ fontSize: 12, color: encoding?.auth_enabled ? "var(--success)" : "var(--text-muted)", marginLeft: 6 }}>
-                ({encoding?.auth_enabled ? "Enabled" : "Disabled"})
+                ({encoding?.auth_enabled ? t("settingsIntegrations:shared.enabled") : t("settingsIntegrations:shared.disabled")})
               </span>
             </label>
 
@@ -4186,7 +4112,7 @@ volumes:
                 color: "var(--text-primary)",
                 lineHeight: 1.5,
               }}>
-                <strong style={{ color: "var(--success)" }}>Login required.</strong> Visitors will need either the username + password below or the API key (workers / scripts). If you lock yourself out, see the recovery instructions in the README.
+                <Trans i18nKey="settingsSystem:auth.loginRequired" components={{ b: <strong style={{ color: "var(--success)" }} /> }} />
               </div>
             )}
 
@@ -4196,7 +4122,7 @@ volumes:
                 conditionally, which surprised users who couldn't see the
                 fields until after enabling. */}
             <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
-              <div style={labelStyle}>Username</div>
+              <div style={labelStyle}>{t("settingsSystem:auth.username")}</div>
               <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
                 value={encoding?.auth_username || ""}
                 disabled={!encoding?.auth_enabled}
@@ -4204,13 +4130,13 @@ volumes:
                 placeholder="admin" />
             </div>
             <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
-              <div style={labelStyle}>Password</div>
+              <div style={labelStyle}>{t("settingsSystem:auth.password")}</div>
               <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
                 value={encoding?.auth_password || ""}
                 disabled={!encoding?.auth_enabled}
                 onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
-                placeholder="Enter new password..." />
-              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Leave empty to keep current password</div>
+                placeholder={t("settingsSystem:auth.passwordPlaceholder")} />
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("settingsSystem:auth.passwordHelp")}</div>
             </div>
 
             {/* API Key section — masked by default, reveal or copy pulls
@@ -4218,7 +4144,7 @@ volumes:
                  response can stay masked against session-hijack / XSS
                  exfil. */}
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12, marginTop: 12 }}>
-              <div style={labelStyle}>API Key</div>
+              <div style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</div>
               <div style={{ display: "flex", gap: 0, alignItems: "center", marginBottom: 4, maxWidth: 500 }}>
                 <input type="text" readOnly
                   value={encoding?.api_key || ""}
@@ -4227,17 +4153,17 @@ volumes:
                     borderRadius: "4px 0 0 4px", borderRight: "none",
                   }} />
                 <button
-                  title="Reveal"
+                  title={t("settingsSystem:auth.reveal")}
                   onClick={async () => {
                     try {
                       const r = await getApiKey();
                       if (r?.api_key) {
                         setEncoding({ ...encoding, api_key: r.api_key });
                       } else {
-                        toast("No API key configured", "error");
+                        toast(t("settingsSystem:toasts.noApiKey"), "error");
                       }
                     } catch (e: any) {
-                      toast(`Failed to fetch key: ${e?.message || e}`, "error");
+                      toast(t("settingsSystem:toasts.fetchKeyFailed", { error: e?.message || e }), "error");
                     }
                   }}
                   style={{
@@ -4250,7 +4176,7 @@ volumes:
                   </svg>
                 </button>
                 <button
-                  title="Copy to clipboard"
+                  title={t("settingsSystem:auth.copy")}
                   onClick={async () => {
                     // Always pull the unmasked value from the server on
                     // click — the React state may be showing the masked
@@ -4261,15 +4187,15 @@ volumes:
                       const r = await getApiKey();
                       text = r?.api_key || "";
                     } catch (e: any) {
-                      toast(`Failed to fetch key: ${e?.message || e}`, "error");
+                      toast(t("settingsSystem:toasts.fetchKeyFailed", { error: e?.message || e }), "error");
                       return;
                     }
                     if (!text) {
-                      toast("No API key configured", "error");
+                      toast(t("settingsSystem:toasts.noApiKey"), "error");
                       return;
                     }
                     if (navigator.clipboard?.writeText) {
-                      navigator.clipboard.writeText(text).then(() => toast("API key copied", "success")).catch(() => {
+                      navigator.clipboard.writeText(text).then(() => toast(t("settingsSystem:toasts.apiKeyCopied"), "success")).catch(() => {
                         const ta = document.createElement("textarea");
                         ta.value = text;
                         ta.style.position = "fixed";
@@ -4278,7 +4204,7 @@ volumes:
                         ta.select();
                         document.execCommand("copy");
                         document.body.removeChild(ta);
-                        toast("API key copied", "success");
+                        toast(t("settingsSystem:toasts.apiKeyCopied"), "success");
                       });
                     } else {
                       const ta = document.createElement("textarea");
@@ -4289,7 +4215,7 @@ volumes:
                       ta.select();
                       document.execCommand("copy");
                       document.body.removeChild(ta);
-                      toast("API key copied", "success");
+                      toast(t("settingsSystem:toasts.apiKeyCopied"), "success");
                     }
                   }}
                   style={{
@@ -4302,7 +4228,7 @@ volumes:
                   </svg>
                 </button>
                 <button
-                  title="Regenerate API key (server-side; takes effect immediately)"
+                  title={t("settingsSystem:auth.regenerate")}
                   onClick={async () => {
                     // Server-side generation: portable across browser
                     // contexts (no `crypto.randomUUID` requirement) and
@@ -4315,12 +4241,12 @@ volumes:
                       const r = await regenerateApiKey();
                       if (r?.api_key) {
                         setEncoding({ ...encoding, api_key: r.api_key });
-                        toast("API key regenerated — copy and update your worker / NZBGet / SABnzbd configs", "success");
+                        toast(t("settingsSystem:toasts.apiKeyRegenerated"), "success");
                       } else {
-                        toast("Regenerate returned an empty key", "error");
+                        toast(t("settingsSystem:toasts.regenerateEmpty"), "error");
                       }
                     } catch (e: any) {
-                      toast(`Regenerate failed: ${e?.message || e}`, "error");
+                      toast(t("settingsSystem:toasts.regenerateFailed", { error: e?.message || e }), "error");
                     }
                   }}
                   style={{
@@ -4334,7 +4260,7 @@ volumes:
                 </button>
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.
+                {t("settingsSystem:auth.apiKeyHelp")}
               </div>
             </div>
 
@@ -4347,23 +4273,54 @@ volumes:
                 await updateEncodingSettings(data);
                 // Clear the password field after saving
                 setEncoding({ ...encoding, auth_password: "" });
-                toast("Authentication settings saved", "success");
-              }}>Save Authentication</button>
+                toast(t("settingsSystem:toasts.authSaved"), "success");
+              }}>{t("settingsSystem:auth.save")}</button>
           </div>
 
           {/* Notifications */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Notifications</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:notifications.title")}</h3>
+
+            {/* Notification language — server-side setting, independent of
+                the per-browser UI language above. Saved immediately. */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsSystem:notifications.language")}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, maxWidth: 480 }}>
+                  {t("settingsSystem:notifications.languageHelp")}
+                </div>
+              </div>
+              <select
+                value={encoding?.notification_language || "en"}
+                onChange={async (e) => {
+                  const value = e.target.value;
+                  try {
+                    await updateEncodingSettings({ notification_language: value });
+                    setEncoding((prev: any) => ({ ...prev, notification_language: value }));
+                    toast(t("settingsSystem:toasts.notificationLanguageSaved"), "success");
+                  } catch (err: any) {
+                    toast(t("settingsSystem:toasts.notificationLanguageFailed", { error: err?.message || err }), "error");
+                  }
+                }}
+                aria-label={t("settingsSystem:notifications.language")}
+                style={{ ...inputStyle, width: "auto", minWidth: 140 }}
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>{l.label}</option>
+                ))}
+              </select>
+            </div>
+
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-              Get notified when the queue completes, a job fails, or disk space is low.
+              {t("settingsSystem:notifications.intro")}
             </div>
 
             {/* Event toggles */}
             <div style={{ display: "flex", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
               {[
-                ["notify_queue_complete", "Queue complete"],
-                ["notify_job_failed", "Job failed"],
-                ["notify_disk_low", "Disk space low"],
+                ["notify_queue_complete", t("settingsSystem:notifications.events.queueComplete")],
+                ["notify_job_failed", t("settingsSystem:notifications.events.jobFailed")],
+                ["notify_disk_low", t("settingsSystem:notifications.events.diskLow")],
               ].map(([key, label]) => (
                 <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
                   <input type="checkbox" checked={encoding?.[key] ?? false}
@@ -4373,7 +4330,7 @@ volumes:
                 </label>
               ))}
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <label style={{ ...labelStyle, margin: 0 }}>Disk threshold (GB)</label>
+                <label style={{ ...labelStyle, margin: 0 }}>{t("settingsSystem:notifications.diskThreshold")}</label>
                 <input type="number" style={{ ...inputStyle, width: 70 }}
                   value={encoding?.disk_space_threshold_gb || "50"}
                   onChange={e => setEncoding({ ...encoding, disk_space_threshold_gb: e.target.value })} />
@@ -4385,7 +4342,7 @@ volumes:
               {/* Discord */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Discord</div>
-                <label style={labelStyle}>Webhook URL</label>
+                <label style={labelStyle}>{t("settingsSystem:notifications.webhookUrl")}</label>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="https://discord.com/api/webhooks/..."
                   value={encoding?.discord_webhook_url || ""}
                   onChange={e => setEncoding({ ...encoding, discord_webhook_url: e.target.value })} />
@@ -4396,13 +4353,13 @@ volumes:
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Telegram</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Bot Token</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.botToken")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="123456:ABC-DEF..."
                       value={encoding?.telegram_bot_token || ""}
                       onChange={e => setEncoding({ ...encoding, telegram_bot_token: e.target.value })} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={labelStyle}>Chat ID</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.chatId")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="-100123456789"
                       value={encoding?.telegram_chat_id || ""}
                       onChange={e => setEncoding({ ...encoding, telegram_chat_id: e.target.value })} />
@@ -4412,16 +4369,16 @@ volumes:
 
               {/* Email */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Email (SMTP)</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>{t("settingsSystem:notifications.email")}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 8 }}>
                   <div>
-                    <label style={labelStyle}>SMTP Host</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.smtpHost")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="smtp.gmail.com"
                       value={encoding?.smtp_host || ""}
                       onChange={e => setEncoding({ ...encoding, smtp_host: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Port</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.port")}</label>
                     <input style={{ ...inputStyle, width: "100%" }} placeholder="587"
                       value={encoding?.smtp_port || "587"}
                       onChange={e => setEncoding({ ...encoding, smtp_port: e.target.value })} />
@@ -4429,19 +4386,19 @@ volumes:
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                   <div>
-                    <label style={labelStyle}>Username</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.username")}</label>
                     <input style={{ ...inputStyle, width: "100%" }}
                       value={encoding?.smtp_user || ""}
                       onChange={e => setEncoding({ ...encoding, smtp_user: e.target.value })} />
                   </div>
                   <div>
-                    <label style={labelStyle}>Password</label>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.password")}</label>
                     <input type="password" style={{ ...inputStyle, width: "100%" }}
                       value={encoding?.smtp_pass || ""}
                       onChange={e => setEncoding({ ...encoding, smtp_pass: e.target.value })} />
                   </div>
                 </div>
-                <label style={labelStyle}>Send to</label>
+                <label style={labelStyle}>{t("settingsSystem:notifications.sendTo")}</label>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="you@email.com"
                   value={encoding?.email_to || ""}
                   onChange={e => setEncoding({ ...encoding, email_to: e.target.value })} />
@@ -4449,13 +4406,13 @@ volumes:
 
               {/* Generic Webhook */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Generic Webhook</div>
-                <label style={labelStyle}>URL (receives JSON POST)</label>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>{t("settingsSystem:notifications.genericWebhook")}</div>
+                <label style={labelStyle}>{t("settingsSystem:notifications.genericWebhookUrl")}</label>
                 <input style={{ ...inputStyle, width: "100%" }} placeholder="https://your-server.com/webhook"
                   value={encoding?.webhook_url || ""}
                   onChange={e => setEncoding({ ...encoding, webhook_url: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                  Payload: {"{ event, title, message, fields }"}
+                  {t("settingsSystem:notifications.payload")} {"{ event, title, message, fields }"}
                 </div>
               </div>
             </div>
@@ -4464,9 +4421,9 @@ volumes:
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   await updateEncodingSettings(encoding);
-                  toast("Notification settings saved", "success");
+                  toast(t("settingsSystem:toasts.notificationsSaved"), "success");
                 }}
-              >Save Notification Settings</button>
+              >{t("settingsSystem:notifications.save")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   await updateEncodingSettings(encoding);
@@ -4474,43 +4431,43 @@ volumes:
                   const results = res.results || {};
                   const ok = Object.entries(results).filter(([, v]) => v).map(([k]) => k);
                   const fail = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
-                  if (ok.length > 0) toast(`Test sent: ${ok.join(", ")}`, "success");
-                  if (fail.length > 0) toast(`Failed: ${fail.join(", ")}`);
-                  if (ok.length === 0 && fail.length === 0) toast("No notification providers configured");
+                  if (ok.length > 0) toast(t("settingsSystem:toasts.testSent", { providers: ok.join(", ") }), "success");
+                  if (fail.length > 0) toast(t("settingsSystem:toasts.testFailed", { providers: fail.join(", ") }));
+                  if (ok.length === 0 && fail.length === 0) toast(t("settingsSystem:toasts.noProviders"));
                 }}
-              >Test Notifications</button>
+              >{t("settingsSystem:notifications.test")}</button>
             </div>
           </div>
 
           {/* Backups */}
           <div style={sectionStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ color: "white", margin: 0 }}>Backups</h3>
+              <h3 style={{ color: "white", margin: 0 }}>{t("settingsSystem:backups.title")}</h3>
               <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 12px" }}
                 disabled={backupCreating}
                 onClick={async () => {
                   setBackupCreating(true);
                   try {
                     await createBackup();
-                    toast("Backup created", "success");
+                    toast(t("settingsSystem:toasts.backupCreated"), "success");
                     loadBackups();
-                  } catch { toast("Backup failed"); }
+                  } catch { toast(t("settingsSystem:toasts.backupFailed")); }
                   setBackupCreating(false);
                 }}>
-                {backupCreating ? "Creating..." : "Backup Now"}
+                {backupCreating ? t("settingsSystem:backups.creating") : t("settingsSystem:backups.create")}
               </button>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              Backups include the full database (scan results, jobs, settings, rules) as a zip file.
+              {t("settingsSystem:backups.intro")}
             </div>
             {backupList.length === 0 ? (
               <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12, opacity: 0.6 }}>
-                No backups yet
+                {t("settingsSystem:backups.empty")}
               </div>
             ) : (
               <div style={{ borderRadius: 4, overflow: "hidden" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 60px", gap: 0, padding: "6px 12px", fontSize: 11, fontWeight: 600, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
-                  <span>Name</span><span>Size</span><span>Time</span><span></span>
+                  <span>{t("settingsSystem:backups.columns.name")}</span><span>{t("settingsSystem:backups.columns.size")}</span><span>{t("settingsSystem:backups.columns.time")}</span><span></span>
                 </div>
                 {backupList.map(b => (
                   <div key={b.name} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 60px", gap: 0, padding: "8px 12px", fontSize: 12, borderBottom: "1px solid var(--bg-primary)", alignItems: "center" }}>
@@ -4519,34 +4476,34 @@ volumes:
                     </a>
                     <span style={{ color: "var(--text-muted)" }}>{(b.size / (1024 * 1024)).toFixed(1)} MiB</span>
                     <span style={{ color: "var(--text-muted)" }}>
-                      {new Date(b.created_at).toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" })}
+                      {new Date(b.created_at).toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "numeric" })}
                     </span>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                      <button title="Restore" style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center" }}
+                      <button title={t("settingsSystem:backups.restore")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center" }}
                         onClick={async () => {
-                          if (!confirm(`Restore from ${b.name}? This will replace your current database. A safety backup will be created first.`)) return;
+                          if (!confirm(t("settingsSystem:backups.restoreConfirm", { name: b.name }))) return;
                           try {
                             const resp = await fetch(downloadBackupUrl(b.name));
                             const blob = await resp.blob();
                             const file = new File([blob], b.name, { type: "application/zip" });
                             await restoreBackup(file);
-                            toast("Backup restored. Restart the container for full effect.", "success");
-                          } catch { toast("Restore failed"); }
+                            toast(t("settingsSystem:toasts.backupRestored"), "success");
+                          } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
                         }}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
                         </svg>
                       </button>
-                      <button title="Delete" style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center", opacity: 0.6 }}
+                      <button title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center", opacity: 0.6 }}
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
                         onClick={async () => {
-                          if (!confirm(`Delete backup ${b.name}?`)) return;
+                          if (!confirm(t("settingsSystem:backups.deleteConfirm", { name: b.name }))) return;
                           try {
                             await deleteBackup(b.name);
                             loadBackups();
-                            toast("Backup deleted");
-                          } catch { toast("Delete failed"); }
+                            toast(t("settingsSystem:toasts.backupDeleted"));
+                          } catch { toast(t("settingsSystem:toasts.deleteFailed")); }
                         }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -4563,16 +4520,16 @@ volumes:
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    if (!confirm(`Restore from uploaded file ${file.name}? This will replace your current database.`)) { e.target.value = ""; return; }
+                    if (!confirm(t("settingsSystem:backups.restoreUploadConfirm", { name: file.name }))) { e.target.value = ""; return; }
                     try {
                       await restoreBackup(file);
-                      toast("Backup restored. Restart the container for full effect.", "success");
+                      toast(t("settingsSystem:toasts.backupRestored"), "success");
                       loadBackups();
-                    } catch { toast("Restore failed"); }
+                    } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
                     e.target.value = "";
                   }} />
                 <span style={{ border: "1px solid var(--border)", padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
-                  Restore from file...
+                  {t("settingsSystem:backups.restoreFromFile")}
                 </span>
               </label>
             </div>
@@ -4623,36 +4580,36 @@ volumes:
 
           {/* Keyboard Shortcuts */}
           <div style={sectionStyle}>
-            <h3 style={{ color: "white", marginBottom: 12 }}>Keyboard Shortcuts</h3>
+            <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:shortcuts.title")}</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {[
-                ["D", "Dashboard"],
-                ["S", "Scanner"],
-                ["Q", "Queue"],
-                ["T", "Statistics"],
-                ["L", "Logs"],
-                ["H", "Schedule"],
-                ["E", "Settings"],
-                ["Space", "Start / Pause queue"],
+                ["D", t("settingsSystem:shortcuts.actions.dashboard")],
+                ["S", t("settingsSystem:shortcuts.actions.scanner")],
+                ["Q", t("settingsSystem:shortcuts.actions.queue")],
+                ["T", t("settingsSystem:shortcuts.actions.statistics")],
+                ["L", t("settingsSystem:shortcuts.actions.logs")],
+                ["H", t("settingsSystem:shortcuts.actions.schedule")],
+                ["E", t("settingsSystem:shortcuts.actions.settings")],
+                ["Space", t("settingsSystem:shortcuts.actions.startPause")],
               ].map(([key, action]) => (
                 <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
                   <kbd style={{
                     background: "var(--bg-primary)", border: "1px solid var(--border)",
                     borderRadius: 4, padding: "2px 8px", fontSize: 12, fontFamily: "var(--font-mono)",
                     color: "var(--accent)", minWidth: 36, textAlign: "center", fontWeight: 600,
-                  }}>{key}</kbd>
+                  }}>{key === "Space" ? t("settingsSystem:shortcuts.space") : key}</kbd>
                   <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{action}</span>
                 </div>
               ))}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, opacity: 0.6 }}>
-              Shortcuts are disabled when typing in input fields.
+              {t("settingsSystem:shortcuts.note")}
             </div>
           </div>
 
           {/* ── Updates ───────────────────────────────────────────────── */}
           <h2 id="updates" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Updates
+            {t("settingsSystem:updates.title")}
           </h2>
 
           {/* Version summary card */}
@@ -4660,21 +4617,21 @@ volumes:
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <img src="/favicon.svg" alt="" width="28" height="28" />
               <div>
-                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Running version</div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{t("settingsSystem:updates.runningVersion")}</div>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>
                   v{versionInfo?.current ?? "…"}
                 </div>
                 {versionInfo?.update_available && versionInfo.latest ? (
                   <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
-                    <strong>v{versionInfo.latest}</strong> is available upstream
+                    <Trans i18nKey="settingsSystem:updates.availableUpstream" values={{ version: versionInfo.latest }} components={{ b: <strong /> }} />
                   </div>
                 ) : versionInfo?.latest ? (
                   <div style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>
-                    You're on the latest release ✓
+                    {t("settingsSystem:updates.latest")}
                   </div>
                 ) : (
                   <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
-                    Couldn't check upstream — offline or rate-limited.
+                    {t("settingsSystem:updates.checkFailed")}
                   </div>
                 )}
               </div>
@@ -4692,18 +4649,18 @@ volumes:
                     const v = await getVersion(true);
                     setVersionInfo(v);
                     if (v.update_available) {
-                      toast(`v${v.latest} is available`, "success");
+                      toast(t("settingsSystem:toasts.updateAvailable", { version: v.latest }), "success");
                     } else {
-                      toast("You're on the latest release", "success");
+                      toast(t("settingsSystem:toasts.upToDate"), "success");
                     }
                   } catch {
-                    toast("Couldn't reach GitHub — try again in a moment", "error");
+                    toast(t("settingsSystem:toasts.updateCheckFailed"), "error");
                   } finally {
                     setUpdateCheckLoading(false);
                   }
                 }}
               >
-                {updateCheckLoading ? "Checking…" : "Check for updates"}
+                {updateCheckLoading ? t("settingsSystem:updates.checking") : t("settingsSystem:updates.check")}
               </button>
               {versionInfo?.update_available && (
                 <button
@@ -4711,7 +4668,7 @@ volumes:
                   style={{ fontSize: 12, padding: "7px 14px" }}
                   onClick={() => setChangelogModalOpen(true)}
                 >
-                  View v{versionInfo.latest} release notes
+                  {t("settingsSystem:updates.viewNotes", { version: versionInfo.latest })}
                 </button>
               )}
             </div>
@@ -4723,7 +4680,7 @@ volumes:
           <div style={{ marginTop: 10 }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10, padding: "0 2px" }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
-                Recent releases
+                {t("settingsSystem:updates.recent")}
               </div>
               <a
                 href="https://github.com/I-IAL9000/shrinkerr/blob/main/CHANGELOG.md"
@@ -4731,18 +4688,18 @@ volumes:
                 rel="noopener noreferrer"
                 style={{ fontSize: 11, color: "var(--text-muted)", textDecoration: "none" }}
               >
-                Full history on GitHub ↗
+                {t("settingsSystem:updates.fullHistory")}
               </a>
             </div>
             {changelogEntries === null && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 24 }}>
                 <div className="spinner" style={{ width: 16, height: 16 }} />
-                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Loading changelog…</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:updates.loadingChangelog")}</span>
               </div>
             )}
             {changelogEntries && changelogEntries.length === 0 && (
               <div style={{ padding: 20, fontSize: 12, color: "var(--text-muted)", textAlign: "center", background: "var(--bg-card)", borderRadius: 6 }}>
-                No changelog entries available.
+                {t("settingsSystem:updates.noEntries")}
               </div>
             )}
             {changelogEntries && changelogEntries.map((e, i) => (
@@ -4767,19 +4724,19 @@ volumes:
 
           {/* ── Support ───────────────────────────────────────────────── */}
           <h2 id="support" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            Support
+            {t("settingsSystem:support.title")}
           </h2>
 
           <div style={sectionStyle}>
             <div style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 14 }}>
-              Documentation, source, and where to report issues.
+              {t("settingsSystem:support.intro")}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
                 {
                   href: "https://github.com/I-IAL9000/shrinkerr/tree/main/docs",
-                  title: "Documentation",
-                  desc: "Installation, encoding guide, remote workers, rules, best practices, troubleshooting.",
+                  title: t("settingsSystem:support.docs.title"),
+                  desc: t("settingsSystem:support.docs.desc"),
                   icon: (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
@@ -4789,8 +4746,8 @@ volumes:
                 },
                 {
                   href: "https://github.com/I-IAL9000/shrinkerr",
-                  title: "GitHub repository",
-                  desc: "Source code, releases, discussions, and container images.",
+                  title: t("settingsSystem:support.repo.title"),
+                  desc: t("settingsSystem:support.repo.desc"),
                   icon: (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M12 0.296C5.37 0.296 0 5.666 0 12.296c0 5.302 3.438 9.8 8.205 11.387 0.6 0.111 0.819-0.26 0.819-0.578 0-0.285-0.01-1.04-0.015-2.04-3.338 0.725-4.042-1.61-4.042-1.61-0.546-1.385-1.333-1.754-1.333-1.754-1.089-0.744 0.083-0.729 0.083-0.729 1.205 0.085 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492 0.997 0.108-0.775 0.418-1.305 0.762-1.605-2.665-0.302-5.466-1.332-5.466-5.93 0-1.31 0.469-2.381 1.236-3.221-0.124-0.303-0.535-1.524 0.117-3.176 0 0 1.008-0.322 3.3 1.23 0.957-0.266 1.983-0.399 3.003-0.404 1.02 0.005 2.047 0.138 3.006 0.404 2.29-1.552 3.296-1.23 3.296-1.23 0.653 1.653 0.242 2.874 0.118 3.176 0.77 0.84 1.235 1.911 1.235 3.221 0 4.609-2.805 5.624-5.478 5.921 0.43 0.371 0.814 1.103 0.814 2.222 0 1.604-0.014 2.898-0.014 3.292 0 0.321 0.217 0.696 0.826 0.578C20.565 22.092 24 17.596 24 12.296 24 5.666 18.628 0.296 12 0.296z"/>
@@ -4799,8 +4756,8 @@ volumes:
                 },
                 {
                   href: "https://github.com/I-IAL9000/shrinkerr/issues/new",
-                  title: "Report an issue",
-                  desc: "Include your version, image variant, and a relevant log excerpt (see docs → Troubleshooting).",
+                  title: t("settingsSystem:support.issue.title"),
+                  desc: t("settingsSystem:support.issue.desc"),
                   icon: (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="10"/>
@@ -4854,8 +4811,7 @@ volumes:
               display: "flex", alignItems: "center", gap: 8,
             }}>
               <span>
-                This product uses the TMDB API but is not endorsed or
-                certified by TMDB.
+                {t("settingsSystem:support.tmdb")}
               </span>
               <a
                 href="https://www.themoviedb.org/"

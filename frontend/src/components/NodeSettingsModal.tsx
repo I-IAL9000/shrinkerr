@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { updateNodeSettings, rotateNodeToken } from "../api";
 import type { WorkerNode, NodeSettings } from "../types";
+import { fmtDateTime } from "../fmt";
 
 interface Props {
   node: WorkerNode;
@@ -24,6 +26,7 @@ const CQ_CRF_TABLE: { nvenc_preset: string; libx265_preset: string; nvenc_cq: nu
 ];
 
 export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
+  const { t } = useTranslation(["nodes", "common"]);
   const [settings, setSettings] = useState<NodeSettings>({
     paused: node.paused ?? false,
     max_jobs: node.max_jobs ?? 1,
@@ -36,7 +39,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
   const [showTable, setShowTable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
-  const [rotateMessage, setRotateMessage] = useState<string | null>(null);
+  const [rotateMessage, setRotateMessage] = useState<{ text: string; failed: boolean } | null>(null);
 
   // Path mappings override — tri-state.
   //   overrideActive=false → don't send the field; server keeps whatever
@@ -71,26 +74,20 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
       await updateNodeSettings(node.id, payload);
       onSaved();  // closes modal + refreshes
     } catch (e: any) {
-      setError(e?.message || "Save failed");
+      setError(e?.message || t("nodes:settings.saveFailed"));
       setSaving(false);
     }
   };
 
   const rotateToken = async () => {
-    if (!confirm(
-      "Rotate this node's auth token?\n\n" +
-      "The server will invalidate the current token immediately. " +
-      "The worker will drop its cached copy on the next 401 and " +
-      "automatically re-bootstrap a fresh token on its next heartbeat. " +
-      "In-flight jobs on this node will fail and be requeued."
-    )) return;
+    if (!confirm(t("nodes:settings.token.rotateConfirm"))) return;
     setRotating(true);
     setRotateMessage(null);
     try {
       await rotateNodeToken(node.id);
-      setRotateMessage("Token rotated. The worker will re-bootstrap on its next heartbeat.");
+      setRotateMessage({ text: t("nodes:settings.token.rotated"), failed: false });
     } catch (e: any) {
-      setRotateMessage(`Rotation failed: ${e?.message || "unknown error"}`);
+      setRotateMessage({ text: t("nodes:settings.token.rotateFailed", { error: e?.message || t("nodes:settings.token.unknownError") }), failed: true });
     } finally {
       setRotating(false);
     }
@@ -121,7 +118,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>Node settings</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t("nodes:settings.title")}</span>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{node.name}</span>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 18 }}>×</button>
@@ -130,7 +127,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Pause */}
           <section>
-            <Label title="Pause" hint="When paused, this node won't pick up new jobs. Already-running jobs continue." />
+            <Label title={t("nodes:settings.pause.title")} hint={t("nodes:settings.pause.hint")} />
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input
                 type="checkbox"
@@ -138,14 +135,14 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 onChange={e => setSettings({ ...settings, paused: e.target.checked })}
               />
               <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Pause this node
+                {t("nodes:settings.pause.checkbox")}
               </span>
             </label>
           </section>
 
           {/* Parallel jobs */}
           <section>
-            <Label title="Parallel jobs" hint="Max number of jobs this node processes concurrently." />
+            <Label title={t("nodes:settings.parallel.title")} hint={t("nodes:settings.parallel.hint")} />
             <input
               type="number"
               min={1}
@@ -162,7 +159,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
 
           {/* Job affinity */}
           <section>
-            <Label title="Job affinity" hint="Control what jobs this node accepts. Useful for dedicating the Mac to CPU-only work or forcing NVENC jobs to the GPU node." />
+            <Label title={t("nodes:settings.affinity.title")} hint={t("nodes:settings.affinity.hint")} />
             <select
               value={settings.job_affinity ?? "any"}
               onChange={e => setSettings({ ...settings, job_affinity: e.target.value as any })}
@@ -172,15 +169,15 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 borderRadius: 4, color: "var(--text-primary)",
               }}
             >
-              <option value="any">Any job (default)</option>
-              <option value="cpu_only">Only CPU / libx265 jobs</option>
-              <option value="nvenc_only">Only NVENC / GPU jobs</option>
+              <option value="any">{t("nodes:settings.affinity.any")}</option>
+              <option value="cpu_only">{t("nodes:settings.affinity.cpuOnly")}</option>
+              <option value="nvenc_only">{t("nodes:settings.affinity.nvencOnly")}</option>
             </select>
           </section>
 
           {/* Encoder translation */}
           <section>
-            <Label title="Encoder translation" hint="When enabled, this node will transparently translate jobs between NVENC and libx265 based on its own capabilities." />
+            <Label title={t("nodes:settings.translation.title")} hint={t("nodes:settings.translation.hint")} />
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
               <input
                 type="checkbox"
@@ -188,7 +185,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 onChange={e => setSettings({ ...settings, translate_encoder: e.target.checked })}
               />
               <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Translate {hasNvenc && hasLibx265 ? "jobs between NVENC and libx265" : hasNvenc ? "libx265 jobs to NVENC" : "NVENC jobs to libx265"}
+                {hasNvenc && hasLibx265 ? t("nodes:settings.translation.both") : hasNvenc ? t("nodes:settings.translation.toNvenc") : t("nodes:settings.translation.toLibx265")}
               </span>
             </label>
             <button
@@ -198,15 +195,15 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 border: "none", cursor: "pointer", padding: 0,
               }}
             >
-              {showTable ? "Hide" : "Show"} NVENC ↔ libx265 comparison table
+              {showTable ? t("nodes:settings.translation.hideTable") : t("nodes:settings.translation.showTable")}
             </button>
             {showTable && (
               <div style={{ marginTop: 8, background: "var(--bg-primary)", borderRadius: 4, border: "1px solid var(--border)", overflow: "hidden" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                   <thead>
                     <tr style={{ background: "rgba(255,255,255,0.02)" }}>
-                      <th style={thStyle}>NVENC preset</th>
-                      <th style={thStyle}>libx265 preset</th>
+                      <th style={thStyle}>{t("nodes:settings.translation.nvencPreset")}</th>
+                      <th style={thStyle}>{t("nodes:settings.translation.libx265Preset")}</th>
                       <th style={thStyle}>NVENC CQ</th>
                       <th style={thStyle}>libx265 CRF</th>
                     </tr>
@@ -230,20 +227,20 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
           {node.id !== "local" && (
             <section>
               <Label
-                title="Auth token"
-                hint="Remote workers authenticate with a per-node shared secret on top of the global API key. Rotating invalidates the current token; the worker re-bootstraps on its next heartbeat."
+                title={t("nodes:settings.token.title")}
+                hint={t("nodes:settings.token.hint")}
               />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
                 {node.has_token ? (
                   <>
-                    <span style={{ color: "var(--success, #4caf50)" }}>● Token active</span>
+                    <span style={{ color: "var(--success, #4caf50)" }}>● {t("nodes:settings.token.active")}</span>
                     {node.token_issued_at && (
-                      <> &middot; issued {new Date(node.token_issued_at).toLocaleString()}</>
+                      <> &middot; {t("nodes:settings.token.issued", { date: fmtDateTime(node.token_issued_at) })}</>
                     )}
                   </>
                 ) : (
                   <span style={{ color: "var(--text-muted)" }}>
-                    No token yet — next heartbeat will bootstrap one.
+                    {t("nodes:settings.token.none")}
                   </span>
                 )}
               </div>
@@ -253,14 +250,14 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 className="btn btn-secondary"
                 style={{ fontSize: 12 }}
               >
-                {rotating ? "Rotating..." : "Rotate token"}
+                {rotating ? t("nodes:settings.token.rotating") : t("nodes:settings.token.rotate")}
               </button>
               {rotateMessage && (
                 <div style={{
                   marginTop: 8, fontSize: 11,
-                  color: rotateMessage.startsWith("Rotation failed") ? "var(--danger)" : "var(--text-secondary)",
+                  color: rotateMessage.failed ? "var(--danger)" : "var(--text-secondary)",
                 }}>
-                  {rotateMessage}
+                  {rotateMessage.text}
                 </div>
               )}
             </section>
@@ -271,8 +268,8 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
           {node.id !== "local" && (
             <section>
               <Label
-                title="Path mappings"
-                hint="Translate paths between what the server dispatches and what the worker sees on disk. Most setups don't need this if the worker's -v mounts match the server's layout 1:1."
+                title={t("nodes:settings.paths.title")}
+                hint={t("nodes:settings.paths.hint")}
               />
 
               {/* Show the worker-reported mappings as informational — these
@@ -286,7 +283,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                   border: "1px solid var(--border)", borderRadius: 4,
                 }}>
                   <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                    Reported by worker (from PATH_MAPPINGS env var):
+                    {t("nodes:settings.paths.reported")}
                   </div>
                   {node.path_mappings.map((m, i) => (
                     <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>
@@ -311,7 +308,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                   }}
                 />
                 <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  Override worker's env-var mappings
+                  {t("nodes:settings.paths.override")}
                 </span>
               </label>
 
@@ -359,7 +356,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                           setOverrideRows(overrideRows.filter((_, idx) => idx !== i));
                           markOverrideTouched();
                         }}
-                        title="Remove"
+                        title={t("common:actions.remove")}
                         style={{
                           background: "none", border: "none", color: "var(--text-muted)",
                           cursor: "pointer", fontSize: 16, padding: "0 6px",
@@ -376,9 +373,9 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                       alignSelf: "flex-start", fontSize: 11, color: "var(--accent)",
                       background: "none", border: "none", cursor: "pointer", padding: "4px 0",
                     }}
-                  >+ Add mapping</button>
+                  >{t("nodes:settings.paths.add")}</button>
                   <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>
-                    Paths must be absolute (start with <code>/</code>). Translation is applied when the server dispatches a job to this node: each mapping's <em>server</em> prefix is rewritten to its <em>worker</em> prefix before the worker sees the path.
+                    <Trans i18nKey="nodes:settings.paths.help" components={{ code: <code />, em: <em /> }} />
                   </div>
                 </div>
               )}
@@ -387,19 +384,19 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
 
           {/* Per-node schedule */}
           <section>
-            <Label title="Schedule" hint="Restrict when this node accepts jobs. When disabled, the node runs 24/7." />
+            <Label title={t("nodes:settings.schedule.title")} hint={t("nodes:settings.schedule.hint")} />
             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 10 }}>
               <input
                 type="checkbox"
                 checked={!!settings.schedule_enabled}
                 onChange={e => setSettings({ ...settings, schedule_enabled: e.target.checked })}
               />
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Enable schedule</span>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{t("nodes:settings.schedule.enable")}</span>
             </label>
             {settings.schedule_enabled && (
               <div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6 }}>
-                  Click hours when this node is allowed to process jobs:
+                  {t("nodes:settings.schedule.clickHours")}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 3 }}>
                   {Array.from({ length: 24 }, (_, h) => {
@@ -420,8 +417,8 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                 </div>
                 <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
                   {settings.schedule_hours && settings.schedule_hours.length > 0
-                    ? `Active ${settings.schedule_hours.length} hour${settings.schedule_hours.length === 1 ? "" : "s"} per day`
-                    : "No hours selected — node will never run while schedule is enabled"}
+                    ? t("nodes:settings.schedule.activeHours", { count: settings.schedule_hours.length })
+                    : t("nodes:settings.schedule.noHours")}
                 </div>
               </div>
             )}
@@ -434,9 +431,9 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
             {error || ""}
           </span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-secondary" onClick={onClose}>{t("common:actions.cancel")}</button>
             <button className="btn btn-primary" onClick={save} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? t("nodes:settings.saving") : t("common:actions.save")}
             </button>
           </div>
         </div>

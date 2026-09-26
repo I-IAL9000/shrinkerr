@@ -176,6 +176,12 @@
       "ffmpegLog": "ffmpeg log",
       "lastLines_one": "(last {{count}} line)",
       "lastLines_other": "(last {{count}} lines)"
+    },
+    "jobTypes": {
+      "convert": "Conversion",
+      "audio": "Audio/subtitle cleanup",
+      "combined": "Conversion + cleanup",
+      "health_check": "Health check"
     }
   },
   "panel": {

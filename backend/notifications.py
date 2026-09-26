@@ -8,6 +8,7 @@ from email.mime.multipart import MIMEMultipart
 import httpx
 
 from backend.database import connect_db
+from backend.i18n import set_current_language, t
 
 
 async def _get_notification_settings() -> dict:
@@ -18,10 +19,13 @@ async def _get_notification_settings() -> dict:
         async with db.execute(
             "SELECT key, value FROM settings WHERE key LIKE 'notify_%' OR key LIKE 'discord_%' "
             "OR key LIKE 'telegram_%' OR key LIKE 'smtp_%' OR key LIKE 'email_%' "
-            "OR key LIKE 'webhook_%' OR key = 'disk_space_threshold_gb'"
+            "OR key LIKE 'webhook_%' OR key = 'disk_space_threshold_gb' "
+            "OR key = 'notification_language'"
         ) as cur:
             for row in await cur.fetchall():
                 settings[row["key"]] = row["value"]
+        # Keep i18n's cached language in sync so t(lang=None) matches.
+        set_current_language(settings.get("notification_language"))
         return settings
     finally:
         await db.close()
@@ -126,10 +130,15 @@ async def _send_webhook(url: str, event: str, title: str, message: str, fields: 
 async def send_notification(event: str, title: str, message: str, fields: dict | None = None) -> dict:
     """Send notifications for an event to all configured providers.
 
+    `title`/`message`/`fields` are sent as given (callers pass already
+    translated text — prefer the notify_* helpers below).
     Returns dict of provider -> success bool.
     """
     settings = await _get_notification_settings()
+    return await _dispatch(settings, event, title, message, fields)
 
+
+async def _dispatch(settings: dict, event: str, title: str, message: str, fields: dict | None = None) -> dict:
     if not _is_enabled(settings, event):
         return {}
 
@@ -153,7 +162,8 @@ async def send_notification(event: str, title: str, message: str, fields: dict |
     email_to = settings.get("email_to", "")
     if smtp_host and email_to:
         body = f"{message}\n\n" + "\n".join(f"{k}: {v}" for k, v in fields.items()) if fields else message
-        results["email"] = await _send_email(settings, f"Shrinkerr: {title}", body)
+        subject = t("notifications:emailSubject", _lang(settings), title=title)
+        results["email"] = await _send_email(settings, subject, body)
 
     # Generic webhook
     webhook_url = settings.get("webhook_url", "")
@@ -168,28 +178,77 @@ async def send_notification(event: str, title: str, message: str, fields: dict |
     return results
 
 
+def _lang(settings: dict) -> str:
+    return settings.get("notification_language") or "en"
+
+
+async def notify_job_failed(file_name: str, error: str) -> dict:
+    """`job_failed` notification in the configured notification_language."""
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    return await _dispatch(
+        settings, "job_failed",
+        t("notifications:jobFailed.title", lang),
+        t("notifications:jobFailed.message", lang, fileName=file_name),
+        {t("notifications:jobFailed.fieldError", lang): error},
+    )
+
+
+async def notify_queue_complete(completed: int, total_saved: str) -> dict:
+    """`queue_complete` notification. `total_saved` is a preformatted size (e.g. "1.2 TB")."""
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    return await _dispatch(
+        settings, "queue_complete",
+        t("notifications:queueComplete.title", lang),
+        t("notifications:queueComplete.message", lang, count=completed),
+        {t("notifications:queueComplete.fieldTotalSaved", lang): total_saved},
+    )
+
+
+async def notify_disk_low(path: str, free_gb: float, threshold_gb, total_tb: float) -> dict:
+    """`disk_low` notification in the configured notification_language."""
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    return await _dispatch(
+        settings, "disk_low",
+        t("notifications:diskLow.title", lang),
+        t("notifications:diskLow.message", lang, free=f"{free_gb:.1f}", threshold=threshold_gb),
+        {
+            t("notifications:diskLow.fieldPath", lang): path,
+            t("notifications:diskLow.fieldFree", lang): f"{free_gb:.1f} GB",
+            t("notifications:diskLow.fieldTotal", lang): f"{total_tb:.1f} TB",
+        },
+    )
+
+
 async def test_notifications() -> dict:
     """Send a test notification to all configured providers (ignoring event toggles)."""
     settings = await _get_notification_settings()
+    lang = _lang(settings)
     results = {}
-    fields = {"Status": "Test successful"}
+    title = t("notifications:test.title", lang)
+    message = t("notifications:test.message", lang)
+    fields = {t("notifications:test.fieldStatus", lang): t("notifications:test.statusSuccess", lang)}
 
     discord_url = settings.get("discord_webhook_url", "")
     if discord_url:
-        results["discord"] = await _send_discord(discord_url, "Shrinkerr Test", "Test notification from Shrinkerr", fields)
+        results["discord"] = await _send_discord(discord_url, title, message, fields)
 
     tg_token = settings.get("telegram_bot_token", "")
     tg_chat = settings.get("telegram_chat_id", "")
     if tg_token and tg_chat:
-        results["telegram"] = await _send_telegram(tg_token, tg_chat, "Shrinkerr Test", "Test notification from Shrinkerr", fields)
+        results["telegram"] = await _send_telegram(tg_token, tg_chat, title, message, fields)
 
     smtp_host = settings.get("smtp_host", "")
     email_to = settings.get("email_to", "")
     if smtp_host and email_to:
-        results["email"] = await _send_email(settings, "Shrinkerr: Test Notification", "Test notification from Shrinkerr")
+        results["email"] = await _send_email(settings, t("notifications:test.emailSubject", lang), message)
 
     webhook_url = settings.get("webhook_url", "")
     if webhook_url:
-        results["webhook"] = await _send_webhook(webhook_url, "test", "Shrinkerr Test", "Test notification", fields)
+        results["webhook"] = await _send_webhook(
+            webhook_url, "test", title, t("notifications:test.webhookMessage", lang), fields,
+        )
 
     return results

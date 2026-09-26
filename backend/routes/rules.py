@@ -4,7 +4,8 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import connect_db
@@ -130,7 +131,7 @@ async def list_rules():
 @router.post("/")
 async def create_rule(payload: RuleCreate):
     if not payload.match_conditions:
-        raise HTTPException(400, "At least one match condition required")
+        raise ApiError(400, "At least one match condition required", code="rules.conditionRequired")
     valid_types = (
         "directory", "label", "collection", "genre", "library",
         "source", "resolution", "video_codec", "audio_codec",
@@ -138,9 +139,9 @@ async def create_rule(payload: RuleCreate):
     )
     for cond in payload.match_conditions:
         if cond.type not in valid_types:
-            raise HTTPException(400, f"Invalid match type: {cond.type}")
+            raise ApiError(400, f"Invalid match type: {cond.type}", code="rules.invalidMatchType", params={"type": cond.type})
     if payload.action not in ("encode", "ignore", "skip"):
-        raise HTTPException(400, "action must be encode, ignore, or skip")
+        raise ApiError(400, "action must be encode, ignore, or skip", code="rules.invalidAction")
 
     db = await connect_db()
     try:
@@ -270,7 +271,7 @@ async def update_rule(rule_id: int, payload: RuleUpdate):
                 values.append(json.dumps(stored))
 
         if not updates:
-            raise HTTPException(400, "No fields to update")
+            raise ApiError(400, "No fields to update", code="rules.noFieldsToUpdate")
 
         values.append(rule_id)
         await db.execute(
@@ -301,7 +302,7 @@ async def sync_plex():
         result = await sync_plex_metadata_cache()
         return {"status": "synced", **result}
     except Exception as exc:
-        raise HTTPException(500, f"Plex sync failed: {exc}")
+        raise ApiError(500, f"Plex sync failed: {exc}", code="rules.plexSyncFailed", params={"error": str(exc)})
 
 
 @router.post("/sync-jellyfin")
@@ -311,7 +312,7 @@ async def sync_jellyfin():
         result = await sync_jellyfin_metadata_cache()
         return {"status": "synced", **result}
     except Exception as exc:
-        raise HTTPException(500, f"Jellyfin sync failed: {exc}")
+        raise ApiError(500, f"Jellyfin sync failed: {exc}", code="rules.jellyfinSyncFailed", params={"error": str(exc)})
 
 
 @router.post("/sync-emby")
@@ -322,7 +323,7 @@ async def sync_emby() -> dict:
         result = await sync_emby_metadata_cache()
         return {"status": "synced", **result}
     except Exception as exc:
-        raise HTTPException(500, f"Emby sync failed: {exc}")
+        raise ApiError(500, f"Emby sync failed: {exc}", code="rules.embySyncFailed", params={"error": str(exc)})
 
 
 @router.get("/plex-options")
@@ -331,7 +332,7 @@ async def plex_options():
     try:
         return await get_available_plex_options()
     except Exception as exc:
-        raise HTTPException(500, f"Failed to fetch Plex options: {exc}")
+        raise ApiError(500, f"Failed to fetch Plex options: {exc}", code="rules.plexOptionsFailed", params={"error": str(exc)})
 
 
 @router.get("/condition-options")
@@ -476,7 +477,7 @@ async def get_condition_options():
 async def test_rule(payload: dict):
     file_path = payload.get("file_path")
     if not file_path:
-        raise HTTPException(400, "file_path required")
+        raise ApiError(400, "file_path required", code="common.filePathRequired")
     from backend.rule_resolver import resolve_rules_for_batch
     results = await resolve_rules_for_batch([file_path])
     return {"file_path": file_path, "matched_rule": results.get(file_path)}

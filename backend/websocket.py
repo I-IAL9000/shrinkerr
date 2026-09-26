@@ -21,6 +21,34 @@ _JOB_PROGRESS_MIN_INTERVAL = 0.5
 _BROADCAST_PER_CONNECTION_TIMEOUT = 2.0
 
 
+# English progress-step label -> i18n key, relative to the serverJobs
+# namespace (UI renders t(`serverJobs:${step_key}`)). The
+# labels are emitted from deep inside converter/audio (and by remote workers
+# over /report-progress, possibly running an older build), so the key is
+# derived here from the English rather than threaded through every progress
+# callback. Labels with parameters pass an explicit step_key instead.
+STEP_KEYS: dict[str, str] = {
+    "starting": "steps.starting",
+    "converting": "steps.converting",
+    "removing tracks": "steps.removingTracks",
+    "removing subtitles": "steps.removingSubtitles",
+    "applying language": "steps.applyingLanguage",
+    "reordering audio": "steps.reorderingAudio",
+    "Detecting language…": "steps.detectingLanguage",
+    "Quality cross-check": "steps.qualityCrossCheck",
+    "VMAF analysis": "steps.vmafAnalysis",
+    "VMAF retry": "steps.vmafRetry",
+    "VMAF remeasure": "steps.vmafRemeasure",
+    "VMAF remeasure (retry)": "steps.vmafRemeasureRetry",
+}
+
+
+def step_code(step: Optional[str]) -> dict:
+    """WS payload fields ({"step_key": ...} or {}) for an English step label."""
+    key = STEP_KEYS.get(step or "")
+    return {"step_key": key} if key else {}
+
+
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -75,16 +103,28 @@ class ConnectionManager:
             "probed": probed,
         })
 
-    async def send_detect_progress(self, file_path: str, stage: str) -> None:
+    async def send_detect_progress(
+        self,
+        file_path: str,
+        stage: str,
+        stage_key: Optional[str] = None,
+        stage_params: Optional[dict] = None,
+    ) -> None:
         """Live status for the on-demand language-detection action. Image-sub
         OCR can take minutes, so the UI shows coarse stages ('Extracting
         subtitle…', 'OCR pass 1 (Latin)…', 'OCR pass 2 (CJK/Cyrillic)…',
-        'done'). v0.9.1+."""
-        await self.broadcast({
+        'done'). v0.9.1+. `stage` stays English; `stage_key`/`stage_params`
+        (serverJobs `detect.*`) let the UI translate it."""
+        msg: dict = {
             "type": "detect_progress",
             "file_path": file_path,
             "stage": stage,
-        })
+        }
+        if stage_key:
+            msg["stage_key"] = stage_key
+            if stage_params:
+                msg["stage_params"] = stage_params
+        await self.broadcast(msg)
 
     async def send_scan_results_changed(self, added: int = 0, removed: int = 0) -> None:
         """Lightweight ping that the scan_results table just changed.
@@ -113,7 +153,12 @@ class ConnectionManager:
         total_saved: int,
         node_name: Optional[str] = None,
         node_id: Optional[str] = None,
+        step_key: Optional[str] = None,
+        step_params: Optional[dict] = None,
     ) -> None:
+        # `step` stays the English label; `step_key`/`step_params` let the UI
+        # translate it (t(`serverJobs:${step_key}`)). Derived from STEP_KEYS when
+        # not passed; omitted for unknown labels (UI shows `step` verbatim).
         # Throttle per-job updates to _JOB_PROGRESS_MIN_INTERVAL. Always let
         # through the first update for a job (last is None) and terminal
         # updates (progress >= 99.99 — covers both the final ffmpeg frame
@@ -139,6 +184,12 @@ class ConnectionManager:
             "jobs_total": jobs_total,
             "total_saved": total_saved,
         }
+        if not step_key:
+            step_key = step_code(step).get("step_key")
+        if step_key:
+            msg["step_key"] = step_key
+            if step_params:
+                msg["step_params"] = step_params
         if node_name:
             msg["node_name"] = node_name
         if node_id:
@@ -162,17 +213,24 @@ class ConnectionManager:
         status: str,
         space_saved: int,
         error: Optional[str],
+        error_key: Optional[str] = None,
+        error_params: Optional[dict] = None,
     ) -> None:
         # Also release on normal completion — belt-and-suspenders with the
         # worker's `finally` cleanup.
         self.release_job_throttle(job_id)
-        await self.broadcast({
+        msg: dict = {
             "type": "job_complete",
             "job_id": job_id,
             "status": status,
             "space_saved": space_saved,
             "error": error,
-        })
+        }
+        if error_key:
+            msg["error_key"] = error_key
+            if error_params:
+                msg["error_params"] = error_params
+        await self.broadcast(msg)
 
 
 ws_manager = ConnectionManager()

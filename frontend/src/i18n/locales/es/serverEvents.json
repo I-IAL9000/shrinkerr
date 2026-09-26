@@ -1,0 +1,68 @@
+{
+  "queuedHealthCheck": "En cola para comprobación de estado $t(serverEvents:labels.healthMode.{{mode}})",
+  "queuedForJobType": "En cola para $t(serverEvents:labels.jobType.{{jobType}})",
+  "failedWithError": "Falló: {{error}}",
+  "healthCheckResult": "Comprobación de estado: $t(serverEvents:labels.healthStatus.{{status}}) ($t(serverEvents:labels.healthMode.{{mode}}))",
+  "vmafScore": "VMAF: {{score}} ($t(serverEvents:labels.vmafTier.{{tier}}))",
+  "vmafScoreSuspect": "VMAF: {{score}} ($t(serverEvents:labels.vmafTier.{{tier}})) ⚠ medición dudosa",
+  "vmafFailed": "VMAF falló — {{error}}",
+  "vmafRejected": "Rechazado: VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",
+  "vmafRejectedBelowThreshold": "Rechazado: VMAF por debajo del umbral",
+  "inlineCleanupLarger": "Ejecutando la limpieza de audio/subtítulos en el mismo trabajo (la codificación era más grande)",
+  "keptOriginalVmaf": "Se conservó el original — VMAF por debajo del umbral",
+  "keptOriginalLarger": "Se conservó el original — la codificación era más grande que el archivo de origen",
+  "convertedSaved": "Convertido: {{gb}} GB ahorrados ({{pct}}%)",
+  "convertedNoSavings": "Convertido (sin ahorro)",
+  "convertedOnNodeSaved": "Convertido en {{node}}: {{gb}} GB ahorrados ({{pct}}%)",
+  "failedOnNode": "Falló en {{node}}: {{error}}",
+  "restoredFromBackup": "Original restaurado desde la copia de seguridad",
+  "externalSubsUpdated": "Subtítulos externos actualizados (detectados automáticamente)",
+  "ignoredWithReason": "Ignorado ({{reason}})",
+  "unignored": "Ya no ignorado",
+  "arrReplace": "Reemplazar ({{service}}): {{title}}",
+  "arrReplaceWithActions": "Reemplazar ({{service}}): {{title}} — $t(serverEvents:labels.arrReplaceActions.{{actions}})",
+  "arrReplaceNoTitle": "Reemplazar ({{service}})",
+  "arrReplaceNoTitleWithActions": "Reemplazar ({{service}}) — $t(serverEvents:labels.arrReplaceActions.{{actions}})",
+  "arrUpgradeSonarr": "Búsqueda de mejora (sonarr): {{series}} — {{count}} episodio(s)",
+  "arrUpgradeRadarr": "Búsqueda de mejora (radarr): {{movie}}",
+  "arrMissingSearch": "Búsqueda de episodios faltantes",
+  "arrMissingSeries": "Búsqueda de faltantes (sonarr): {{title}} — {{count}} episodio(s) faltante(s)",
+  "arrMissingSeriesSearched": "Búsqueda de faltantes (sonarr): {{title}} — {{count}} episodio(s) faltante(s), búsqueda iniciada",
+  "arrAction": "Acción *arr: {{action}}",
+  "arrFailed": "Error al $t(serverEvents:labels.arrAction.{{action}}): {{error}}",
+  "labels": {
+    "healthMode": {
+      "quick": "rápida",
+      "thorough": "exhaustiva"
+    },
+    "healthStatus": {
+      "healthy": "correcto",
+      "corrupt": "corrupto",
+      "warnings": "con advertencias"
+    },
+    "jobType": {
+      "convert": "conversión",
+      "audio": "limpieza de audio",
+      "combined": "conversión combinada"
+    },
+    "vmafTier": {
+      "Excellent": "Excelente",
+      "Good": "Bueno",
+      "Poor": "Deficiente"
+    },
+    "arrReplaceActions": {
+      "blocklisted": "en lista de bloqueo",
+      "deleted": "archivo eliminado",
+      "searched": "búsqueda iniciada",
+      "blocklisted_deleted": "en lista de bloqueo, archivo eliminado",
+      "blocklisted_searched": "en lista de bloqueo, búsqueda iniciada",
+      "deleted_searched": "archivo eliminado, búsqueda iniciada",
+      "blocklisted_deleted_searched": "en lista de bloqueo, archivo eliminado, búsqueda iniciada"
+    },
+    "arrAction": {
+      "replace": "reemplazar",
+      "upgrade": "mejorar",
+      "missing": "buscar faltantes"
+    }
+  }
+}
