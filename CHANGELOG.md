@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.137] — 2026-09-26
+
+### Changed
+- **Queue: the search field now matches the Scanner's** (fixed width, left-aligned), with each tab's Clear/Retry buttons on the same row, right-aligned.
+
 ## [0.9.136] — 2026-09-26
 
 ### Fixed

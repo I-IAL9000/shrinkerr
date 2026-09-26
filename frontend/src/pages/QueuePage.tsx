@@ -638,122 +638,45 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         )}
       </div>
 
-      {/* Filename search — server-side, covers the full history on every tab */}
-      <div style={{ marginBottom: 12, position: "relative" }}>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("queue:search.placeholder", { tab: t(`common:status.${tab}`).toLowerCase() })}
-          style={{
-            width: "100%", padding: "8px 32px 8px 12px", fontSize: 13, boxSizing: "border-box",
-            background: "var(--bg-primary)", border: "1px solid var(--border)",
-            borderRadius: 6, color: "var(--text-primary)",
-          }}
-        />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
-            aria-label={t("common:actions.clearSearch")}
-            style={{
-              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-              background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16,
-            }}
-          >&times;</button>
-        )}
-      </div>
 
-      {/* Pending tab */}
-      {tab === "pending" && (
-        <>
-          {selectedJobIds.size > 0 && (
-            <QueueControlPanel
-              selectedCount={selectedJobIds.size}
-              onMoveTop={() => handleBulkMove("top")}
-              onMoveUp={() => handleBulkMove("up")}
-              onMoveDown={() => handleBulkMove("down")}
-              onMoveBottom={() => handleBulkMove("bottom")}
-              onChangeVideoPreset={handleBulkVideoPreset}
-              onChangeAudioPreset={handleBulkAudioPreset}
-              defaultEncoder={encodingDefaults?.default_encoder}
-              onChangePriority={async (priority: number) => {
-                await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
-                toast(t("queue:toasts.prioritySet", { priority: t(`queue:priority.${["normal", "high", "highest"][priority]}`) }));
-                load();
-              }}
-              onIgnore={handleBulkIgnore}
-              onRemove={handleBulkRemove}
-              onSelectAll={() => setSelectedJobIds(new Set(pendingIds))}
-              onDeselectAll={deselectAll}
-            />
+      {/* Toolbar: filename search (server-side, covers the full history on
+          every tab; same pill style as the Scanner's) left, the tab's bulk
+          actions right. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ position: "relative", width: 300, maxWidth: "100%" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t("queue:search.placeholder", { tab: t(`common:status.${tab}`).toLowerCase() })}
+            style={{ width: "100%", padding: "6px 28px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              aria-label={t("common:actions.clearSearch")}
+              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+            >&times;</button>
           )}
-          {tabJobs.length > 0 && (
-            <>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+          {tab === "pending" && tabJobs.length > 0 && (<>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                   onClick={async () => { if (await confirm({ message: t("queue:confirm.clearPending", { count: pendingCount }), confirmLabel: t("common:actions.clearAll"), danger: true })) { clearPending().then(() => load()); } }}>
                   {t("common:actions.clearAll")}
                 </button>
-              </div>
-              <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {pendingRowEls}
-              </div>
-            </>
-          )}
-          {tabJobs.length === 0 && (
-            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-              {(initialLoading || tabLoading) ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                  <div className="spinner" style={{ width: 18, height: 18 }} />
-                  <span>{t("queue:loadingQueue")}</span>
-                </div>
-              ) : (appliedSearch ? t("queue:empty.pendingSearch", { search: appliedSearch }) : t("queue:empty.pending"))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Completed tab */}
-      {tab === "completed" && (
-        <>
-          {tabJobs.length > 0 && (
-            <>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          </>)}
+          {tab === "completed" && tabJobs.length > 0 && (<>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                   onClick={() => { clearCompleted(); load(); }}>
                   {t("queue:actions.clearDone")}
                 </button>
-              </div>
-              <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {completedRowEls}
-              </div>
-              {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
-              {loadingMore && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
-                  <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
-                </div>
-              )}
-            </>
-          )}
-          {tabJobs.length === 0 && (
-            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
-              {(initialLoading || tabLoading) ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
-                  <div className="spinner" style={{ width: 18, height: 18 }} />
-                  <span>{t("queue:empty.loadingCompleted")}</span>
-                </div>
-              ) : (appliedSearch ? t("queue:empty.completedSearch", { search: appliedSearch }) : t("queue:empty.completed"))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Failed tab */}
-      {tab === "failed" && (
-        <>
-          {tabJobs.length > 0 && (
-            <>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 8 }}>
+          </>)}
+          {tab === "failed" && tabJobs.length > 0 && (<>
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                 onClick={async () => {
                   for (const job of tabJobs) {
@@ -796,7 +719,88 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
                 }}>
                 {t("common:actions.clearAll")}
               </button>
+          </>)}
+        </div>
+      </div>
+
+      {/* Pending tab */}
+      {tab === "pending" && (
+        <>
+          {selectedJobIds.size > 0 && (
+            <QueueControlPanel
+              selectedCount={selectedJobIds.size}
+              onMoveTop={() => handleBulkMove("top")}
+              onMoveUp={() => handleBulkMove("up")}
+              onMoveDown={() => handleBulkMove("down")}
+              onMoveBottom={() => handleBulkMove("bottom")}
+              onChangeVideoPreset={handleBulkVideoPreset}
+              onChangeAudioPreset={handleBulkAudioPreset}
+              defaultEncoder={encodingDefaults?.default_encoder}
+              onChangePriority={async (priority: number) => {
+                await bulkUpdateJobSettings({ job_ids: selectedIds, priority });
+                toast(t("queue:toasts.prioritySet", { priority: t(`queue:priority.${["normal", "high", "highest"][priority]}`) }));
+                load();
+              }}
+              onIgnore={handleBulkIgnore}
+              onRemove={handleBulkRemove}
+              onSelectAll={() => setSelectedJobIds(new Set(pendingIds))}
+              onDeselectAll={deselectAll}
+            />
+          )}
+          {tabJobs.length > 0 && (
+            <>
+              <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
+                {pendingRowEls}
+              </div>
+            </>
+          )}
+          {tabJobs.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+              {(initialLoading || tabLoading) ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <div className="spinner" style={{ width: 18, height: 18 }} />
+                  <span>{t("queue:loadingQueue")}</span>
+                </div>
+              ) : (appliedSearch ? t("queue:empty.pendingSearch", { search: appliedSearch }) : t("queue:empty.pending"))}
             </div>
+          )}
+        </>
+      )}
+
+      {/* Completed tab */}
+      {tab === "completed" && (
+        <>
+          {tabJobs.length > 0 && (
+            <>
+              <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
+                {completedRowEls}
+              </div>
+              {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+              {loadingMore && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
+                  <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
+                </div>
+              )}
+            </>
+          )}
+          {tabJobs.length === 0 && (
+            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+              {(initialLoading || tabLoading) ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <div className="spinner" style={{ width: 18, height: 18 }} />
+                  <span>{t("queue:empty.loadingCompleted")}</span>
+                </div>
+              ) : (appliedSearch ? t("queue:empty.completedSearch", { search: appliedSearch }) : t("queue:empty.completed"))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Failed tab */}
+      {tab === "failed" && (
+        <>
+          {tabJobs.length > 0 && (
+            <>
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
               {failedRowEls}
             </div>
