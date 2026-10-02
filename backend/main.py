@@ -360,7 +360,10 @@ app = FastAPI(title="Shrinkerr", lifespan=lifespan)
 # Coded errors (ApiError) render {detail, code, params} so the UI can
 # translate them; plain HTTPException keeps FastAPI's default {detail}.
 from backend.api_errors import ApiError, api_error_handler
+from backend.compression import SelectiveGZipMiddleware
 app.add_exception_handler(ApiError, api_error_handler)
+# gzip JSON/text responses (v0.9.139) — see backend/compression.py.
+app.add_middleware(SelectiveGZipMiddleware)
 
 # Auth settings cache (replaces old _api_key_cache)
 _auth_cache: dict = {"settings": None, "checked_at": 0}

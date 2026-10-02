@@ -517,6 +517,15 @@ async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 
     return await _queue.get_all_jobs(limit=limit, offset=offset)
 
 
+@router.get("/ids")
+async def list_job_ids(status: str, search: str = ""):
+    """Ordered job ids for one status tab (v0.9.139) — the Queue page polls
+    this instead of re-downloading thousands of pending rows."""
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    return await _queue.get_job_ids_by_status(status, search=search)
+
+
 @router.get("/stats")
 async def get_stats():
     if _queue is None:

@@ -521,19 +521,36 @@ class JobQueue:
         finally:
             await db.close()
 
+    @staticmethod
+    def _status_query(select: str, status: str, search: str) -> tuple[str, list]:
+        """Shared WHERE/ORDER for a status tab, so the full list and the
+        id-only poll (get_job_ids_by_status) can never sort differently."""
+        order = "completed_at DESC" if status == "completed" else "priority DESC, queue_order ASC"
+        sql = f"SELECT {select} FROM jobs WHERE status = ?"
+        params: list = [status]
+        if search:
+            # Case-insensitive filename substring match. LIKE '%x%' can't use
+            # an index, but the status index narrows the scan first.
+            sql += " AND file_path LIKE ? ESCAPE '\\'"
+            params.append("%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
+        return sql + f" ORDER BY {order}", params
+
+    async def get_job_ids_by_status(self, status: str, search: str = "") -> list[int]:
+        """Ordered ids only (v0.9.139): lets the Queue page notice what changed
+        in a large pending list without re-downloading every row."""
+        db = await self._connect()
+        try:
+            sql, params = self._status_query("id", status, search)
+            async with db.execute(sql, params) as cur:
+                return [r[0] for r in await cur.fetchall()]
+        finally:
+            await db.close()
+
     async def get_jobs_by_status(self, status: str, limit: int = 0, offset: int = 0, search: str = "") -> list[dict]:
         db = await self._connect()
         try:
             cols = await _list_select_cols(db)
-            order = "completed_at DESC" if status == "completed" else "priority DESC, queue_order ASC"
-            sql = f"SELECT {cols} FROM jobs WHERE status = ?"
-            params: list = [status]
-            if search:
-                # Case-insensitive filename substring match. LIKE '%x%' can't use
-                # an index, but the status index narrows the scan first.
-                sql += " AND file_path LIKE ? ESCAPE '\\'"
-                params.append("%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
-            sql += f" ORDER BY {order}"
+            sql, params = self._status_query(cols, status, search)
             if limit > 0:
                 sql += " LIMIT ? OFFSET ?"
                 params += [limit, offset]

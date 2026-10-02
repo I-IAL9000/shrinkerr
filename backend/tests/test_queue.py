@@ -223,3 +223,27 @@ async def test_reap_orphaned_running(test_db):
     assert orphan_id in pending    # orphaned running row → requeued
     assert live_id in running       # spared: a live task owns it
     assert fresh_id in running      # spared: within the grace window
+
+
+@pytest.mark.asyncio
+async def test_get_job_ids_by_status_matches_list_order_and_search(test_db):
+    """v0.9.139: the Queue page polls just the ordered pending ids and only
+    re-downloads the full list when ids were added or reordered — so the id
+    list must use exactly the same filter and order as get_jobs_by_status."""
+    q = JobQueue(test_db)
+    a = await q.add_job("/tv/Alpha S01E01.mkv", "convert", encoder="nvenc")
+    b = await q.add_job("/tv/Beta S01E01.mkv", "convert", encoder="nvenc")
+    c = await q.add_job("/tv/Alpha S01E02.mkv", "convert", encoder="nvenc")
+    await q.add_job("/tv/Done.mkv", "convert", encoder="nvenc")
+    db = await q._connect()
+    try:
+        await db.execute("UPDATE jobs SET priority = 2 WHERE id = ?", (c,))
+        await db.execute("UPDATE jobs SET status = 'completed' WHERE file_path = '/tv/Done.mkv'")
+        await db.commit()
+    finally:
+        await db.close()
+
+    rows = await q.get_jobs_by_status("pending")
+    ids = await q.get_job_ids_by_status("pending")
+    assert ids == [r["id"] for r in rows] == [c, a, b]  # priority first, then queue order
+    assert await q.get_job_ids_by_status("pending", search="alpha") == [c, a]

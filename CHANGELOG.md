@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.139] — 2026-10-02
+
+### Changed
+- **Faster Queue page with large queues, and smaller downloads everywhere.** Responses are now gzip-compressed (a 5,000-job pending list went from 4.3 MB to 104 KB, the app bundle from 1.5 MB to 410 KB), and the pending list is only re-downloaded when jobs are added or reordered.
+
 ## [0.9.138] — 2026-10-02
 
 ### Fixed

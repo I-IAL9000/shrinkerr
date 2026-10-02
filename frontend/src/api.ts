@@ -300,6 +300,10 @@ export const getJobs = (status?: string, limit?: number, offset?: number, search
   const qs = params.toString();
   return apiFetch<any[]>(`/jobs/${qs ? `?${qs}` : ""}`);
 };
+// Ordered ids for one status tab (v0.9.139) — cheap change detection for
+// the Queue page's large pending list.
+export const getJobIds = (status: string, search?: string) =>
+  apiFetch<number[]>(`/jobs/ids?${new URLSearchParams({ status, ...(search ? { search } : {}) })}`);
 export const getJobStats = () => apiFetch<any>("/jobs/stats");
 export const getStatsSummary = () => apiFetch<any>("/stats/summary");
 export const getStatsTimeline = (days: number = 30) => apiFetch<any>(`/stats/timeline?days=${days}`);

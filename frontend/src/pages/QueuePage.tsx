@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import VirtualJobList from "../components/VirtualJobList";
-import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
+import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
@@ -156,20 +156,26 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     const searchAtStart = appliedSearch;
     const genAtStart = loadGen.current;
     if (tabAtStart === "pending") {
-      // The pending list can be thousands of jobs; re-downloading it every 10s
-      // was most of the page's steady-state cost. Reload it only when the
-      // count changed (jobs started/added/removed), plus a 60s safety refresh
-      // for reorders made from another browser. v0.9.138.
+      // The pending list can be thousands of jobs, so the poll fetches only
+      // its ordered ids. Jobs that left the queue (started, finished,
+      // removed) are dropped locally; the full list is re-downloaded only
+      // when ids were added or reordered, plus a 60s safety refresh for
+      // per-job setting edits made elsewhere. v0.9.138/v0.9.139.
       try {
-        const [s, runningData] = await Promise.all([getJobStats(), getJobs("running")]);
+        const [s, runningData, ids] = await Promise.all([
+          getJobStats(), getJobs("running"), getJobIds("pending", searchAtStart),
+        ]);
         if (genAtStart !== loadGen.current) return;
-        if (s.pending !== tabCountRef.current || Date.now() - lastFullLoadRef.current > 60000) {
-          load();
-          return;
-        }
+        if (Date.now() - lastFullLoadRef.current > 60000) { load(); return; }
+        const current = jobsRef.current;
+        const idSet = new Set(ids);
+        const kept = current.filter(j => j.status === "pending" && idSet.has(j.id));
+        const sameOrder = kept.length === ids.length && kept.every((j, k) => j.id === ids[k]);
+        if (!sameOrder) { load(); return; }
         setStats(s);
+        tabCountRef.current = s.pending;
         const running = parseJobs(runningData);
-        setJobs(prev => [...running, ...prev.filter(j => j.status !== "running")]);
+        setJobs([...running, ...current.filter(j => j.status !== "running" && j.status !== "pending"), ...kept]);
       } catch {}
       return;
     }
