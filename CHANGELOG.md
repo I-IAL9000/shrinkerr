@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.138] — 2026-10-02
+
+### Fixed
+- **Queue page no longer freezes with thousands of jobs.** Lists now render only the rows on screen (5,000 pending jobs: ~400 page elements instead of ~58,000), the pending list is re-downloaded only when it changes, and the Completed/Failed tabs stopped fetching the entire pending queue; also, browsers now pick up a new Shrinkerr version without a hard refresh.
+
 ## [0.9.137] — 2026-09-26
 
 ### Changed

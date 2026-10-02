@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
+import VirtualJobList from "../components/VirtualJobList";
 import { getJobs, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
 import JobCard from "../components/JobCard";
@@ -75,6 +76,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   // completions/failures arrived and merge them in. v0.9.136.
   const tabCountRef = useRef<number | null>(null);
   const loadingMoreRef = useRef(false);
+  const lastFullLoadRef = useRef(0);
 
   const load = async (force = false) => {
     // A poll already in flight must not block a tab switch. Tab changes pass
@@ -101,13 +103,17 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       // Ensure pending jobs are available for spinner cards
       if (tabAtStart !== "pending" && runningData.length === 0 && s.pending > 0) {
         try {
-          const pendingData = await getJobs("pending", 0, 10);
+          // First 10 only. This was getJobs("pending", 0, 10) — limit 0
+          // (= no limit) at offset 10 — which downloaded the ENTIRE pending
+          // queue on every completed/failed load while idle. v0.9.138.
+          const pendingData = await getJobs("pending", 10);
           allJobs.push(...parseJobs(pendingData));
         } catch {}
       }
       if (myGen !== loadGen.current) return;
       setJobs(allJobs);
-      tabCountRef.current = tabAtStart === "pending" ? null : (s as any)[tabAtStart] ?? null;
+      tabCountRef.current = (s as any)[tabAtStart] ?? null;
+      lastFullLoadRef.current = Date.now();
       setTabOffset(tabData.length);
       setTabHasMore(tabAtStart !== "pending" && tabData.length === PAGE_SIZE);
       setInitialLoading(false);
@@ -146,10 +152,27 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   // re-fetch the newest page and splice it over the top — pre-v0.9.136 new
   // completions never appeared until a manual reload.
   const pollRefresh = async () => {
-    if (tab === "pending") { load(); return; }
     const tabAtStart = tab;
     const searchAtStart = appliedSearch;
     const genAtStart = loadGen.current;
+    if (tabAtStart === "pending") {
+      // The pending list can be thousands of jobs; re-downloading it every 10s
+      // was most of the page's steady-state cost. Reload it only when the
+      // count changed (jobs started/added/removed), plus a 60s safety refresh
+      // for reorders made from another browser. v0.9.138.
+      try {
+        const [s, runningData] = await Promise.all([getJobStats(), getJobs("running")]);
+        if (genAtStart !== loadGen.current) return;
+        if (s.pending !== tabCountRef.current || Date.now() - lastFullLoadRef.current > 60000) {
+          load();
+          return;
+        }
+        setStats(s);
+        const running = parseJobs(runningData);
+        setJobs(prev => [...running, ...prev.filter(j => j.status !== "running")]);
+      } catch {}
+      return;
+    }
     try {
       const [s, runningData] = await Promise.all([getJobStats(), getJobs("running")]);
       const count = (s as any)[tabAtStart] ?? null;
@@ -374,18 +397,22 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     }
   }, [running.map(j => j.file_path).join(",")]);
 
-  // The row lists are memoized so they aren't rebuilt on every job_progress
-  // WebSocket tick (which re-renders this component via the jobProgressMap
-  // prop). Without this, a large pending/completed list — e.g. ~1K fast
-  // audio/sub cleanup jobs firing rapid progress — re-creates every row
-  // element many times/second and pegs the main thread for the whole batch,
-  // freezing the queue page. Deps deliberately exclude jobProgressMap; the
-  // handlers close only over state that IS a dep (tab-stable load, etc.).
-  // MUST stay above the early return below — these are hooks. v0.9.88/v0.9.90.
-  const pendingRowEls = useMemo(() => (
-    tab !== "pending" ? null : tabJobs.map((job, i) => (
+  // Row renderers for the virtualized lists (v0.9.138). Only rows in view are
+  // mounted, so a job_progress WebSocket tick (which re-renders this page via
+  // jobProgressMap) or a selection/drag change costs ~a screenful of
+  // JobListItem memo checks instead of one per job. The v0.9.88/v0.9.90
+  // useMemo'd full row arrays this replaces still froze Firefox at ~5K jobs.
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const toggleExpanded = (id: number) => setExpandedIds(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const renderPendingRow = (i: number) => {
+    const job = tabJobs[i];
+    return (
       <div
-        key={job.id}
         draggable
         onDragStart={() => handleDragStart(i)}
         onDragOver={(e) => handleDragOver(e, i)}
@@ -411,32 +438,33 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           encodingDefaults={encodingDefaults}
         />
       </div>
-    ))
-  ), [tab, tabJobs, selectedJobIds, dragIdx, dropIdx, encodingDefaults, t]);
+    );
+  };
 
-  const completedRowEls = useMemo(() => (
-    tab !== "completed" ? null : tabJobs.map((job) => (
-      <JobListItem key={job.id} job={job}
-        onCancel={() => {}}
-        onRemove={(id) => { removeJob(id).then(() => load()); }}
-      />
-    ))
-  ), [tab, tabJobs]);
+  const renderCompletedRow = (i: number) => (
+    <JobListItem job={tabJobs[i]}
+      expanded={expandedIds.has(tabJobs[i].id)}
+      onToggleExpand={toggleExpanded}
+      onCancel={() => {}}
+      onRemove={(id) => { removeJob(id).then(() => load()); }}
+    />
+  );
 
-  const failedRowEls = useMemo(() => (
-    tab !== "failed" ? null : tabJobs.map((job) => (
-      <JobListItem key={job.id} job={job}
-        onCancel={(id) => { cancelJob(id).then(() => load()); }}
-        onRetry={(id) => {
-          retryJob(id).then(res => {
-            load();
-            if (res.message) toast(res.message, "success");
-          });
-        }}
-        onRemove={(id) => { removeJob(id).then(() => load()); }}
-      />
-    ))
-  ), [tab, tabJobs]);
+  const renderFailedRow = (i: number) => (
+    <JobListItem job={tabJobs[i]}
+      expanded={expandedIds.has(tabJobs[i].id)}
+      onToggleExpand={toggleExpanded}
+      onCancel={(id) => { cancelJob(id).then(() => load()); }}
+      onRetry={(id) => {
+        retryJob(id).then(res => {
+          load();
+          if (res.message) toast(res.message, "success");
+        });
+      }}
+      onRemove={(id) => { removeJob(id).then(() => load()); }}
+    />
+  );
+  const jobKey = (i: number) => tabJobs[i].id;
 
   if (initialLoading) {
     return (
@@ -750,7 +778,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           {tabJobs.length > 0 && (
             <>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {pendingRowEls}
+                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderPendingRow} />
               </div>
             </>
           )}
@@ -773,7 +801,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           {tabJobs.length > 0 && (
             <>
               <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-                {completedRowEls}
+                <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderCompletedRow} />
               </div>
               {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
               {loadingMore && (
@@ -802,7 +830,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           {tabJobs.length > 0 && (
             <>
             <div style={{ background: "var(--bg-primary)", borderRadius: 6, overflow: "hidden" }}>
-              {failedRowEls}
+              <VirtualJobList count={tabJobs.length} getKey={jobKey} renderRow={renderFailedRow} />
             </div>
             {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
             {loadingMore && (

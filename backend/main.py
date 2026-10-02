@@ -874,8 +874,11 @@ if frontend_dist.exists():
         file_path = frontend_dist / full_path
         if full_path and file_path.is_file():
             return FileResponse(file_path)
-        # Otherwise serve index.html for SPA routing
-        return FileResponse(frontend_dist / "index.html")
+        # Otherwise serve index.html for SPA routing. no-cache = always
+        # revalidate: without it browsers heuristically cached index.html, so
+        # after an update they kept loading the OLD hashed bundle until a hard
+        # refresh. Hashed /assets files stay cacheable. v0.9.138.
+        return FileResponse(frontend_dist / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":

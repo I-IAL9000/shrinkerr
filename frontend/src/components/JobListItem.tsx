@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
 import { getJobLog } from "../api";
@@ -16,6 +16,11 @@ interface JobListItemProps {
   checked?: boolean;
   onCheck?: (e: { shiftKey: boolean }) => void;
   encodingDefaults?: any;
+  // Controlled expansion (v0.9.138). The Queue page virtualizes its lists, so
+  // rows unmount when scrolled away — it owns the expanded set so a row is
+  // still open when you scroll back. Omitted = local state, as before.
+  expanded?: boolean;
+  onToggleExpand?: (id: number) => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -36,9 +41,10 @@ const iconBtnStyle: React.CSSProperties = {
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
 
-function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common"]);
-  const [expanded, setExpanded] = useState(false);
+  const [expandedLocal, setExpandedLocal] = useState(false);
+  const expanded = expandedProp ?? expandedLocal;
   const [logData, setLogData] = useState<any>(null);
   const [logLoading, setLogLoading] = useState(false);
   const [showFullLog, setShowFullLog] = useState(false);
@@ -60,23 +66,27 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
 
   const canExpand = job.status === "failed" || job.status === "completed";
 
-  const handleExpand = async () => {
+  const handleExpand = () => {
     if (!canExpand) return;
-    const next = !expanded;
-    setExpanded(next);
-    // Load conversion log on first expand for completed AND failed jobs.
-    // Failed jobs show error_log + ffmpeg_command + ffmpeg_log so the user
-    // can diagnose the failure without docker exec'ing into the container.
-    // v0.4.8+.
-    if (next && (job.status === "completed" || job.status === "failed") && !logData) {
-      setLogLoading(true);
-      try {
-        const data = await getJobLog(job.id);
-        setLogData(data);
-      } catch { /* ignore */ }
-      setLogLoading(false);
-    }
+    if (onToggleExpand) onToggleExpand(job.id);
+    else setExpandedLocal(v => !v);
   };
+
+  // Load conversion log on first expand for completed AND failed jobs.
+  // Failed jobs show error_log + ffmpeg_command + ffmpeg_log so the user
+  // can diagnose the failure without docker exec'ing into the container.
+  // v0.4.8+. Runs on mount too, so a row that was open when it scrolled
+  // out of a virtualized list reloads its log when it comes back.
+  useEffect(() => {
+    if (!expanded || logData || !(job.status === "completed" || job.status === "failed")) return;
+    let cancelled = false;
+    setLogLoading(true);
+    getJobLog(job.id)
+      .then(data => { if (!cancelled) setLogData(data); })
+      .catch(() => { /* ignore */ })
+      .finally(() => { if (!cancelled) setLogLoading(false); });
+    return () => { cancelled = true; };
+  }, [expanded, job.id, job.status]);
 
   return (
     <div>
@@ -654,6 +664,7 @@ const JobListItem = memo(JobListItemImpl, (prev, next) => {
   if (prev.job !== next.job && !shallowJobEqual(prev.job, next.job)) return false;
   if (prev.checked !== next.checked) return false;
   if (prev.encodingDefaults !== next.encodingDefaults) return false;
+  if (prev.expanded !== next.expanded) return false;
   // We intentionally ignore callback identity — parent recreates them on every
   // render but their behavior is stable. If a callback changes semantics the
   // parent also re-renders; stale closures aren't a concern here because the
