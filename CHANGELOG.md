@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.140] — 2026-10-03
+
+### Added
+- **Running-job cards show encode speed** next to fps (e.g. "150 fps · 6.3x" — how many times faster than real time); audio/subtitle cleanup jobs now show their speed as "85x" instead of mislabelling it as fps.
+
 ## [0.9.139] — 2026-10-02
 
 ### Changed

@@ -110,6 +110,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
           </span>
         )}
         {progress.fps && <span>{progress.fps.toFixed(0)} fps</span>}
+        {progress.speed ? <span>{progress.speed.toFixed(1)}x</span> : null}
         {progress.eta && <span>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span>}
         {progress.node_name && (
           <span style={{ color: "var(--text-muted)" }}>{t("queue:card.onNode", { node: progress.node_name })}</span>

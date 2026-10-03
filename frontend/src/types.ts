@@ -198,6 +198,8 @@ export interface JobProgress {
   file_name: string;
   progress: number;
   fps: number | null;
+  // Encode speed as a multiple of real time (v0.9.140): 8.4 → "8.4x".
+  speed?: number | null;
   eta: number | null;
   step: string;
   // v0.9.132 message codes for the step label.

@@ -1499,6 +1499,26 @@ def rename_external_subtitles(original_path: str, new_stem: str) -> None:
                 print(f"[CONVERT] Failed to rename subtitle {f.name}: {exc}", flush=True)
 
 
+_SPEED_RE = re.compile(r'speed=\s*(\d+(?:\.\d+)?)x')
+
+
+def encode_speed(line: str, fps: Optional[float], source_fps: float) -> Optional[float]:
+    """Encode speed as a multiple of real time (8.4 → "8.4x"), rounded to 0.1.
+
+    Encoder fps / source fps when both are known. ffmpeg's own `speed=` is
+    time/wall-clock, so it sags whenever the muxer's `time=` stalls (see the
+    frame-ratio fallback in parse_ffmpeg_progress); it's only the fallback for
+    sources whose frame rate wasn't probed. None until there's a real number.
+    v0.9.140.
+    """
+    if fps and source_fps > 0:
+        return round(fps / source_fps, 1)
+    m = _SPEED_RE.search(line)
+    if m and float(m.group(1)) > 0:
+        return round(float(m.group(1)), 1)
+    return None
+
+
 def parse_ffmpeg_progress(
     line: str,
     duration: float,
@@ -2899,6 +2919,7 @@ async def convert_file(
                             total_frames=progress_total_frames,
                         )
                         if parsed:
+                            parsed["speed"] = encode_speed(line, parsed.get("fps"), source_video_fps)
                             await progress_callback(**parsed)
 
             await asyncio.wait_for(proc.wait(), timeout=live_settings.get("ffmpeg_timeout", 21600))

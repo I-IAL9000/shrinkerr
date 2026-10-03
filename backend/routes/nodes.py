@@ -176,6 +176,7 @@ class ProgressReport(BaseModel):
     fps: float | None = None
     eta_seconds: int | None = None
     step: str = "converting"
+    speed: float | None = None  # v0.9.140; absent from older workers
 
 
 class CompletionReport(BaseModel):
@@ -548,6 +549,7 @@ async def report_progress(req: ProgressReport, request: Request):
         "file_name": file_name,
         "progress": req.progress,
         "fps": req.fps,
+        "speed": req.speed,
         "eta": req.eta_seconds,
         "step": req.step,
         **step_code(req.step),

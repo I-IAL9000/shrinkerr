@@ -155,6 +155,7 @@ class ConnectionManager:
         node_id: Optional[str] = None,
         step_key: Optional[str] = None,
         step_params: Optional[dict] = None,
+        speed: Optional[float] = None,
     ) -> None:
         # `step` stays the English label; `step_key`/`step_params` let the UI
         # translate it (t(`serverJobs:${step_key}`)). Derived from STEP_KEYS when
@@ -180,6 +181,9 @@ class ConnectionManager:
             "fps": fps,
             "eta": eta,
             "step": step,
+            # Encode speed as a multiple of real time (v0.9.140); None
+            # outside the encode/remux pass itself.
+            "speed": speed,
             "jobs_completed": jobs_completed,
             "jobs_total": jobs_total,
             "total_saved": total_saved,

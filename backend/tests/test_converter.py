@@ -516,3 +516,15 @@ def test_looks_like_blank_video_real_encode_kept():
     assert _looks_like_blank_video(tiny_short, 30.0) is False
     # No muxing summary in the log -> can't tell -> not flagged.
     assert _looks_like_blank_video(["frame= 100 fps=25"], 7232.7) is False
+
+
+def test_encode_speed_from_fps_and_source_rate():
+    """v0.9.140: running-job cards show encode speed ("8.4x"). Derived from
+    encoder fps / source fps — ffmpeg's own speed= freezes when the muxer's
+    time= stalls — falling back to speed= when the source rate is unknown."""
+    from backend.converter import encode_speed
+    line = "frame= 3000 fps=150 q=28.0 size=  10240KiB time=00:02:05.12 bitrate= 670.6kbits/s speed=6.26x"
+    assert encode_speed(line, 150.0, 23.976) == 6.3
+    assert encode_speed(line, 150.0, 0.0) == 6.3  # ffmpeg's speed=, rounded
+    assert encode_speed("frame= 10 fps=0.0 q=0.0 size=0KiB time=N/A speed=N/A", 0.0, 0.0) is None
+    assert encode_speed("frame= 10 fps=12 time=N/A speed=N/A", None, 0.0) is None

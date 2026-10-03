@@ -1853,7 +1853,7 @@ class QueueWorker:
             # so even a 30-second WAL stall costs at most a 30-second pause
             # per job rather than every-progress-line locking.
             _last_db_write = [0.0]
-            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None):
+            async def progress_cb(progress: float, fps=None, eta_seconds=None, step=None, speed=None):
                 now = time.monotonic()
                 is_terminal = progress >= 99.99
                 # Only persist fps during the encoding phase. The same
@@ -1874,6 +1874,7 @@ class QueueWorker:
                     file_name=file_name,
                     progress=progress,
                     fps=fps,
+                    speed=speed,
                     eta=eta_seconds,
                     step=step or "converting",
                     jobs_completed=jobs_completed,
@@ -2471,7 +2472,11 @@ class QueueWorker:
                         job_id=job_id,
                         file_name=file_name,
                         progress=progress,
-                        fps=speed,
+                        # Remux reports ffmpeg's speed= (a multiple of real
+                        # time); pre-v0.9.140 it was sent as fps and shown as
+                        # e.g. "85 fps".
+                        fps=None,
+                        speed=round(speed, 1) if speed else None,
                         eta=eta_seconds,
                         step="removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else "reordering audio")),
                         jobs_completed=jobs_completed,
