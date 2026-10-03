@@ -15,7 +15,7 @@
     "audioHeading": "Pistas de audio:",
     "noAudio": "No se detectaron pistas de audio",
     "totalSavings": "Ahorro total est.: ~{{size}} GB",
-    "detectedApply": "{{lang}} detectado → convertir a MKV para aplicarlo",
+    "detectedApply": "{{lang}} pendiente → remuxar a MKV para aplicarlo",
     "detectNoteTitle": "Por qué la detección automática no asignó un idioma",
     "setLanguageManually": "Asignar idioma manualmente",
     "settingLanguage": "Asignando idioma a la pista… (los archivos mp4 se remuxan, puede tardar un poco)"
@@ -59,7 +59,7 @@
     "detectTitle": "Ejecutar la detección de idioma en las pistas de audio y subtítulos de texto con idioma desconocido (und) de este archivo",
     "remuxApply": "Remuxar a MKV (aplicar idioma)",
     "convertApply": "Convertir a MKV (aplicar idioma)",
-    "remuxApplyTitle": "Remuxar a MKV (copia de flujo, sin recodificar) para aplicar el idioma detectado; este contenedor no puede guardarlo directamente",
+    "remuxApplyTitle": "Remuxar a MKV (copia de flujo, sin recodificar) para aplicar el idioma pendiente; no se pudo escribir directamente en este archivo",
     "convertApplyTitle": "Convertir este disco a MKV; el idioma se detecta y aplica durante la conversión",
     "requesting": "Solicitando…",
     "redownloadCorrupt": "Volver a descargar (archivo dañado)",

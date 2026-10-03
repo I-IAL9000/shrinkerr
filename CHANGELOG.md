@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.143] — 2026-10-03
+
+### Fixed
+- **A language that couldn't be written into an MP4/MKV can now be applied with a quick remux.** The "Remux to MKV (apply language)" button only appeared for AVI-type files, so those files could only be fixed by a full conversion; the Scanner's savings label also now shows the selected encoder's settings.
+
 ## [0.9.142] — 2026-10-03
 
 ### Changed

@@ -13,6 +13,7 @@ import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
 import RenameModal from "../components/RenameModal";
 import type { ScannedFile, ScanProgress } from "../types";
+import { encoderSettingsLabel } from "../utils/encoderLabel";
 
 // Module-level cache for tree data
 let _cachedFolders: FolderInfo[] | null = null;
@@ -1482,7 +1483,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       ) : (
         <>
           <StatsCards {...stats} settingsLabel={encodingSettings
-            ? `${encodingSettings.nvenc_preset?.toUpperCase() || "P6"} / CQ ${encodingSettings.nvenc_cq ?? 20}`
+            ? encoderSettingsLabel(encodingSettings.default_encoder, encodingSettings)
             : undefined
           } />
           {/* Filter toggle + active filter indicator */}

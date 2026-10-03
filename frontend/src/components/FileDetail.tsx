@@ -200,17 +200,19 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
   // remux to mkv; disc structures need a full conversion (which detects +
   // stamps during the encode). Offer the appropriate one.
   const _ext = file.file_path.slice(file.file_path.lastIndexOf(".")).toLowerCase();
-  // v0.9.54: .m4v/.m4a included — ffmpeg's ipod muxer can't write language in
-  // place, so they take the same remux-to-mkv path as AVI (matches backend
-  // _UNTAGGABLE_CONTAINERS).
-  const isUntaggableFlat = [".avi", ".mpg", ".mpeg", ".wmv", ".flv", ".asf", ".vob", ".m4v", ".m4a"].includes(_ext);
   const isDisc = /\/VIDEO_TS\/|\/BDMV\/|VIDEO_TS\.IFO$|index\.bdmv$/i.test(file.file_path);
   const hasPendingDetected = audioTracks.some(t => (t as any).detected_language && isUnd(t.language))
     || subtitleTracks.some(t => (t as any).detected_language && isUnd(t.language));
-  const showApplyViaConvert = (isUntaggableFlat && hasPendingDetected) || (isDisc && hasUndTracks);
+  // v0.9.143: offer the remux for ANY flat file with a pending language, not
+  // just untaggable containers. Since v0.9.47 a language that couldn't be
+  // written in place is kept pending regardless of container (e.g. an .mp4
+  // the in-place write failed on), but the button only appeared for AVI-type
+  // files — so an .mp4/.mkv was left with "convert to MKV" as the only way.
+  const canRemuxApply = hasPendingDetected && !isDisc;
+  const showApplyViaConvert = canRemuxApply || (isDisc && hasUndTracks);
 
   const handleApplyLanguage = async () => {
-    const remux = isUntaggableFlat && !isDisc;
+    const remux = canRemuxApply;
     const ok = await confirm({
       message: remux
         ? t("fileDetail:applyLanguage.remuxMessage", { ext: _ext })
@@ -386,7 +388,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
               <button
                 type="button"
                 onClick={handleApplyLanguage}
-                title={isUntaggableFlat
+                title={canRemuxApply
                   ? t("fileDetail:actions.remuxApplyTitle")
                   : t("fileDetail:actions.convertApplyTitle")}
                 style={{
@@ -402,7 +404,7 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                   gap: 6,
                 }}
               >
-                {isUntaggableFlat && !isDisc ? t("fileDetail:actions.remuxApply") : t("fileDetail:actions.convertApply")}
+                {canRemuxApply ? t("fileDetail:actions.remuxApply") : t("fileDetail:actions.convertApply")}
               </button>
             )}
             <button

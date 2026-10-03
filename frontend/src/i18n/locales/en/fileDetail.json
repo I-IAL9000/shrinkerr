@@ -15,7 +15,7 @@
     "audioHeading": "Audio tracks:",
     "noAudio": "No audio tracks detected",
     "totalSavings": "Total est. savings: ~{{size}} GB",
-    "detectedApply": "{{lang}} detected → convert to MKV to apply",
+    "detectedApply": "{{lang}} pending → remux to MKV to apply",
     "detectNoteTitle": "Why auto-detection didn't set a language",
     "setLanguageManually": "Set language manually",
     "settingLanguage": "Setting track language… (mp4 files are remuxed, this can take a moment)"
@@ -59,7 +59,7 @@
     "detectTitle": "Run language detection on this file's unknown (und) audio and text-subtitle tracks",
     "remuxApply": "Remux to MKV (apply language)",
     "convertApply": "Convert to MKV (apply language)",
-    "remuxApplyTitle": "Remux to MKV (stream copy, no re-encode) to apply the detected language — this container can't store it in place",
+    "remuxApplyTitle": "Remux to MKV (stream copy, no re-encode) to apply the pending language — it couldn't be written to this file in place",
     "convertApplyTitle": "Convert this disc to MKV; the language is detected and applied during the conversion",
     "requesting": "Requesting…",
     "redownloadCorrupt": "Re-download (corrupt file)",
