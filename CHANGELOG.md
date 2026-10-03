@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.146] — 2026-10-03
+
+### Fixed
+- **Writing a track language could send the original file to the NAS recycle bin.** On some SMB shares, replacing a file in place moves the old one to the recycle bin and then fails; Shrinkerr now never replaces a file in place — it moves the original aside first and restores it if anything fails. **If you saw "Permission denied" language errors before, check your share's recycle bin for the originals.**
+
 ## [0.9.145] — 2026-10-03
 
 ### Fixed

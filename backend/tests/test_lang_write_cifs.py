@@ -92,3 +92,43 @@ def test_file_in_use_leaves_everything_untouched(tmp_path, monkeypatch, capsys):
     assert f.read_bytes() == original_bytes
     assert [p.name for p in tmp_path.iterdir()] == [f.name]
     assert "may be in use" in capsys.readouterr().out
+
+
+def test_never_renames_onto_an_existing_file(tmp_path, monkeypatch):
+    """v0.9.146: on the user's NAS a rename ONTO an existing file sent the
+    original to the share's recycle bin and then failed — losing it. The
+    writer must only ever rename into a name that is currently free."""
+    f = tmp_path / "Movie (2018).mp4"
+    _make_mp4(f)
+
+    def no_replace(*a, **k):
+        raise AssertionError("os.replace (rename-over-existing) must not be used")
+    monkeypatch.setattr(ld.os, "replace", no_replace)
+    real_rename = os.rename
+    def checked_rename(src, dst):
+        assert not os.path.exists(dst), f"rename onto existing file: {dst}"
+        return real_rename(src, dst)
+    monkeypatch.setattr(ld.os, "rename", checked_rename)
+
+    assert asyncio.run(ld.apply_track_languages_to_file(str(f), ["ice"], [])) is True
+    assert _audio_lang(f) == "ice"
+    assert [p.name for p in tmp_path.iterdir()] == [f.name]
+
+
+def test_leftover_in_staging_dir_is_never_touched(tmp_path, monkeypatch):
+    """A same-named file already in .shrinkerr-replacing (e.g. stranded by a
+    crash) must be neither overwritten nor deleted."""
+    f = tmp_path / "Movie (2018).mp4"
+    _make_mp4(f)
+    stage = tmp_path / ".shrinkerr-replacing"
+    stage.mkdir()
+    (stage / f.name).write_bytes(b"stranded original")
+    real_rename = os.rename
+    def checked_rename(src, dst):
+        assert not os.path.exists(dst), f"rename onto existing file: {dst}"
+        return real_rename(src, dst)
+    monkeypatch.setattr(ld.os, "rename", checked_rename)
+
+    assert asyncio.run(ld.apply_track_languages_to_file(str(f), ["ice"], [])) is True
+    assert (stage / f.name).read_bytes() == b"stranded original"
+    assert _audio_lang(f) == "ice"

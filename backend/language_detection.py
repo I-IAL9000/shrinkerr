@@ -779,24 +779,28 @@ async def _verify_written(file_path: str, audio_langs, sub_langs, *, retries: in
 def _replace_original(new_path: str, file_path: str) -> None:
     """Put `new_path` in place of `file_path`, discarding the original.
 
-    Atomic os.replace first. CIFS/SMB shares can refuse a rename ONTO an
-    existing file with EACCES (seen on the user's NUC, v0.9.145), so fall
-    back to staging: move the original into a hidden `.shrinkerr-replacing`
-    subdir, rename the new file into place, then delete the staged original.
-    If placing the new file fails the original is moved back and the error
-    re-raised — the caller then keeps the language pending. Same staging the
-    conversion/remux finalizers use (v0.9.126/127).
+    NEVER renames onto an existing file. On the user's NAS (SMB share with a
+    recycle bin) a rename-over-existing (os.replace) moved the original into
+    the recycle bin and THEN failed with EACCES — the original was gone and
+    the language only "pending" (v0.9.146; v0.9.145 still tried os.replace
+    first). So, as the conversion/remux finalizers do (v0.9.126/127): move
+    the original into a hidden `.shrinkerr-replacing` subdir, rename the new
+    file into the now-free name, then delete the staged original. If placing
+    the new file fails, the original is moved back and the error re-raised —
+    the caller keeps the language pending.
     """
     import os
-    try:
-        os.replace(new_path, file_path)
-        return
-    except PermissionError:
-        pass
     parent = os.path.dirname(file_path) or "."
     stage_dir = os.path.join(parent, ".shrinkerr-replacing")
     os.makedirs(stage_dir, exist_ok=True)
+    # Keep the real name (easy manual recovery) but never collide with a
+    # leftover from an earlier crash — that could itself be a stranded
+    # original, so it's neither overwritten nor deleted.
     staged = os.path.join(stage_dir, os.path.basename(file_path))
+    n = 1
+    while os.path.exists(staged):
+        staged = os.path.join(stage_dir, f"{os.path.basename(file_path)}.{n}")
+        n += 1
     try:
         # Refused too when the file is open on the share (e.g. playing in
         # Plex) — then nothing has changed and the caller keeps it pending.

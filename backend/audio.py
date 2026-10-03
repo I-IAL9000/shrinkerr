@@ -457,12 +457,13 @@ async def remux_audio(
             # v0.9.127.
             stage_dir = p.parent / ".shrinkerr-replacing"
             stage_dir.mkdir(exist_ok=True)
+            # Never delete or overwrite a same-named leftover here — it
+            # may be an original stranded by an earlier crash. v0.9.146.
             staged = stage_dir / p.name
-            try:
-                if staged.exists() or staged.is_symlink():
-                    staged.unlink()
-            except OSError:
-                pass
+            _n = 1
+            while staged.exists() or staged.is_symlink():
+                staged = stage_dir / f"{p.name}.{_n}"
+                _n += 1
             p.rename(staged)
             try:
                 temp.rename(final_path)
