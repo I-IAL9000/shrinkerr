@@ -212,3 +212,31 @@ def test_external_sub_is_readable_garbage(tmp_path):
     srt = tmp_path / "Movie.eng.srt"
     srt.write_bytes(bytes(range(256)) * 8)
     assert asyncio.run(_external_sub_is_readable(str(srt))) is False
+
+
+def test_matching_is_quiet_and_vobsub_pairing_uses_siblings(tmp_path, capsys, monkeypatch):
+    """v0.9.144: detect_external_subtitles logged 2-4 lines per title at INFO
+    on every call, and the watcher re-checks every sub-containing folder each
+    cycle — that flooded the log every few minutes. Per-file detail is now
+    debug-only, and the VobSub partner check uses the already-listed siblings
+    instead of a stat() per file over CIFS."""
+    from pathlib import Path
+    from backend.scanner import detect_external_subtitles
+
+    video = tmp_path / "Movie (2001) 1080p.mkv"
+    for name in ("Movie (2001) 1080p.mkv", "Movie (2001) 1080p.eng.srt",
+                 "Movie (2001) 1080p.eng.idx", "Movie (2001) 1080p.eng.sub",
+                 "Orphan.idx"):
+        (tmp_path / name).write_bytes(b"x")
+    siblings = list(tmp_path.iterdir())
+
+    calls = []
+    real_exists = Path.exists
+    monkeypatch.setattr(Path, "exists", lambda self: calls.append(self) or real_exists(self))
+
+    found = detect_external_subtitles(str(video), siblings=siblings)
+
+    assert sorted(Path(s["external_path"]).name for s in found) == [
+        "Movie (2001) 1080p.eng.idx", "Movie (2001) 1080p.eng.srt"]
+    assert capsys.readouterr().out == ""
+    assert calls == []  # pairing resolved from the sibling list, no disk stats

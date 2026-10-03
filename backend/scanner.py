@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -899,6 +900,13 @@ def merge_external_subs(
     return True, new_subs, has_external, has_removable
 
 
+# Per-file external-sub matching detail (v0.9.144). Debug-level: the watcher
+# re-checks every sub-containing folder each cycle, and logging 2-4 lines per
+# title at INFO flooded the log every few minutes. Changes are still logged
+# by the watcher ("[WATCHER] External subs updated for N title(s)").
+_ext_log = logging.getLogger("shrinkerr.scanner.ext_subs")
+
+
 def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) -> list[dict]:
     """Detect external subtitle files alongside a video file.
 
@@ -948,21 +956,22 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
     # subviewer-format text — both unsafe to feed in blindly), and drop
     # any `.sub` whose `.idx` partner exists (the `.idx` will represent
     # the pair). Same for `.idx` without `.sub`. v0.3.46+.
-    available_stems_lower = {f.stem.lower(): f for f in siblings}
+    # v0.9.144: resolve partners from the already-listed siblings rather than
+    # a stat() per file — over CIFS that was a network round-trip each, on
+    # every watcher cycle.
+    sibling_names = {f.name for f in siblings}
     filtered: list[Path] = []
     for f in sub_files:
         ext = f.suffix.lower()
         if ext == ".sub":
             # Skip — the `.idx` partner (if it exists) will represent the pair.
             # If no `.idx` partner exists, this is an orphan we can't safely use.
-            partner = f.parent / (f.stem + ".idx")
-            if not partner.exists():
-                print(f"[EXT-SUBS]   Skip '{f.name}' — VobSub `.sub` without paired `.idx`", flush=True)
+            if f.stem + ".idx" not in sibling_names:
+                _ext_log.debug("[EXT-SUBS]   Skip '%s' — VobSub `.sub` without paired `.idx`", f.name)
             continue
         if ext == ".idx":
-            partner = f.parent / (f.stem + ".sub")
-            if not partner.exists():
-                print(f"[EXT-SUBS]   Skip '{f.name}' — VobSub `.idx` without paired `.sub`", flush=True)
+            if f.stem + ".sub" not in sibling_names:
+                _ext_log.debug("[EXT-SUBS]   Skip '%s' — VobSub `.idx` without paired `.sub`", f.name)
                 continue
         filtered.append(f)
     sub_files = filtered
@@ -977,7 +986,8 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
     ep_match = _re.search(r"[Ss](\d{1,2})[Ee](\d{1,3})", video_stem)
     video_ep_key = f"s{int(ep_match.group(1)):02d}e{int(ep_match.group(2)):02d}" if ep_match else None
 
-    print(f"[EXT-SUBS] {video.name}: {len(sub_files)} sub file(s), {len(video_files)} video file(s) in folder", flush=True)
+    _ext_log.debug("[EXT-SUBS] %s: %d sub file(s), %d video file(s) in folder",
+                   video.name, len(sub_files), len(video_files))
 
     for f in sub_files:
         fname = f.name
@@ -998,9 +1008,9 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
             match_reason = "single-video"
 
         if not match_reason:
-            print(f"[EXT-SUBS]   Skip '{fname}' — no match (stem/episode/single)", flush=True)
+            _ext_log.debug("[EXT-SUBS]   Skip '%s' — no match (stem/episode/single)", fname)
             continue
-        print(f"[EXT-SUBS]   Match '{fname}' via {match_reason}", flush=True)
+        _ext_log.debug("[EXT-SUBS]   Match '%s' via %s", fname, match_reason)
         # Don't match the video file itself
         if f == video:
             continue

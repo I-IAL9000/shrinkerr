@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.144] — 2026-10-03
+
+### Fixed
+- **The log is no longer flooded with `[EXT-SUBS]` lines every few minutes.** Per-file external-subtitle matching detail is now debug-only (the watcher still logs when subtitles actually change), and VobSub pairing no longer makes an extra disk check per file.
+
 ## [0.9.143] — 2026-10-03
 
 ### Fixed
