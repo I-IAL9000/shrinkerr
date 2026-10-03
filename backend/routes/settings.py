@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
 from backend.models import MediaDir, SettingsUpdate
+from backend.scanner import DEFAULT_SOURCE_CODECS
 
 BACKUP_DIR = Path(DB_PATH).parent / "backups"
 
@@ -107,7 +108,7 @@ _ENCODING_DEFAULTS = {
     "lang_detect_sub_min": "0.7",
     "target_codec": "hevc",
     "target_resolution": "copy",
-    "source_codecs": '["h264", "mpeg2", "mpeg4", "vc1"]',
+    "source_codecs": json.dumps(DEFAULT_SOURCE_CODECS),
     "sub_cleanup_enabled": "true",
     "sub_keep_languages": '[]',
     "sub_keep_unknown": "true",
@@ -554,10 +555,10 @@ async def get_encoding_settings():
         result["always_keep_languages"] = []
     try:
         result["source_codecs"] = json.loads(
-            merged.get("source_codecs", '["h264"]')
+            merged.get("source_codecs") or json.dumps(DEFAULT_SOURCE_CODECS)
         )
     except (json.JSONDecodeError, ValueError):
-        result["source_codecs"] = ["h264"]
+        result["source_codecs"] = list(DEFAULT_SOURCE_CODECS)
     try:
         result["sub_keep_languages"] = json.loads(
             merged.get("sub_keep_languages", '[]')

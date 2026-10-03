@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.147] — 2026-10-03
+
+### Fixed
+- **.mpg/.mpeg, .wmv, .flv, .webm and .asf files are now picked up by the scanner and watcher** (they were silently ignored). **If auto-queue is on, existing files of these types will be queued as they're discovered.** Also, a never-saved "Convert from" setting now means H.264/MPEG-2/MPEG-4/VC-1 everywhere — scans, the watcher and *arr webhooks disagreed.
+
 ## [0.9.146] — 2026-10-03
 
 ### Fixed

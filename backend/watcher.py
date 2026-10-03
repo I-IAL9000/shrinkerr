@@ -211,7 +211,8 @@ class FileWatcher:
         # auto-discovered via filesystem watching never got a `convert`
         # job even though they were in the user's source_codecs list.
         # HEVC was unaffected (not in default source_codecs either way).
-        source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+        from backend.scanner import DEFAULT_SOURCE_CODECS
+        source_codecs = list(DEFAULT_SOURCE_CODECS)
         # v0.6.7: load global NVENC CQ once per cycle to match the scanner
         # / queue-estimate's CQ-calibrated savings curve. Pre-v0.6.7 this
         # path used a flat 0.30 default that disagreed with the modal.

@@ -878,6 +878,7 @@ async def init_db():
             ) as cur:
                 already_run = await cur.fetchone() is not None
             if not already_run:
+                from backend.scanner import DEFAULT_SOURCE_CODECS
                 async with db.execute(
                     "SELECT value FROM settings WHERE key = 'source_codecs'"
                 ) as cur:
@@ -887,9 +888,9 @@ async def init_db():
                         import json as _json
                         source_codecs = _json.loads(row[0])
                     except Exception:
-                        source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+                        source_codecs = list(DEFAULT_SOURCE_CODECS)
                 else:
-                    source_codecs = ["h264", "mpeg2", "mpeg4", "vc1"]
+                    source_codecs = list(DEFAULT_SOURCE_CODECS)
                 from backend.scanner import recompute_needs_conversion
                 flipped = await recompute_needs_conversion(db, source_codecs)
                 await db.execute(

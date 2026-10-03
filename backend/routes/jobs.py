@@ -966,7 +966,8 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     from backend.media_paths import load_media_dirs, is_in_any, _resolve
 
     # Load source codecs and default encoder from settings
-    source_codecs = ["h264"]
+    from backend.scanner import DEFAULT_SOURCE_CODECS
+    source_codecs = list(DEFAULT_SOURCE_CODECS)
     default_encoder = "nvenc"
     try:
         async with connect_db() as _db:

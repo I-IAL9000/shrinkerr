@@ -87,7 +87,8 @@ async def webhook_queue(request: WebhookQueueRequest):
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
     # Load source codecs from settings
-    source_codecs = ["h264"]
+    from backend.scanner import DEFAULT_SOURCE_CODECS
+    source_codecs = list(DEFAULT_SOURCE_CODECS)
     try:
         async with connect_db() as db:
             async with db.execute("SELECT value FROM settings WHERE key = 'source_codecs'") as cur:

@@ -473,6 +473,13 @@ def is_x265(codec: str) -> bool:
     return c in ("h265", "x265", "hevc")
 
 
+# Default "Convert from" codecs when the setting was never saved (v0.9.147).
+# One constant for every reader — the full scan, add-by-path and the *arr
+# webhooks used ["h264"] while Settings, the watcher and the startup recompute
+# used this list, so the watcher would flag an MPEG-2 file and the next full
+# scan would un-flag it.
+DEFAULT_SOURCE_CODECS = ["h264", "mpeg2", "mpeg4", "vc1"]
+
 # Map settings source_codecs values to ffprobe codec names
 CODEC_FAMILIES = {
     "h264": ("h264", "x264", "avc", "avc1"),
@@ -978,7 +985,8 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
     if not sub_files:
         return results
 
-    video_files = [f for f in siblings if f.suffix.lower() in {".mkv", ".mp4", ".avi", ".mov", ".ts", ".m4v", ".webm"}]
+    _video_exts = {e.lower() for e in settings.video_extensions}
+    video_files = [f for f in siblings if f.suffix.lower() in _video_exts]
     only_one_video = len(video_files) == 1
 
     # Extract S##E## pattern from the video filename for TV episode matching
@@ -1464,7 +1472,7 @@ async def scan_directory(
                             # user-configured video extensions)
 
     # Load configured source codecs from DB
-    source_codecs = ["h264"]  # default
+    source_codecs = list(DEFAULT_SOURCE_CODECS)
     # v0.6.7: also load the user's global NVENC CQ once per scan so the
     # video-conversion savings estimate matches what the encoder will
     # actually do. Was hardcoded to a flat 0.30 reduction pre-v0.6.7.

@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     ignore_unknown_tracks: bool = True
     ffprobe_timeout: int = 30
     ffmpeg_timeout: int = 21600
-    video_extensions: list[str] = [".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts"]
+    # v0.9.147: + MPEG program streams and other legacy containers, which
+    # the rest of Shrinkerr already handles (untaggable-container language
+    # flow, MPEG-2/WMV source codecs) but the scanner never picked up.
+    # .vob is deliberately absent: DVD folders are scanned as discs.
+    video_extensions: list[str] = [".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts",
+                                   ".mpg", ".mpeg", ".wmv", ".flv", ".webm", ".asf"]
 
     class Config:
         env_prefix = _CURRENT_ENV_PREFIX
