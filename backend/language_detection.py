@@ -776,6 +776,50 @@ async def _verify_written(file_path: str, audio_langs, sub_langs, *, retries: in
     return _languages_present(pa, audio_langs) and _languages_present(ps, sub_langs)
 
 
+def _replace_original(new_path: str, file_path: str) -> None:
+    """Put `new_path` in place of `file_path`, discarding the original.
+
+    Atomic os.replace first. CIFS/SMB shares can refuse a rename ONTO an
+    existing file with EACCES (seen on the user's NUC, v0.9.145), so fall
+    back to staging: move the original into a hidden `.shrinkerr-replacing`
+    subdir, rename the new file into place, then delete the staged original.
+    If placing the new file fails the original is moved back and the error
+    re-raised — the caller then keeps the language pending. Same staging the
+    conversion/remux finalizers use (v0.9.126/127).
+    """
+    import os
+    try:
+        os.replace(new_path, file_path)
+        return
+    except PermissionError:
+        pass
+    parent = os.path.dirname(file_path) or "."
+    stage_dir = os.path.join(parent, ".shrinkerr-replacing")
+    os.makedirs(stage_dir, exist_ok=True)
+    staged = os.path.join(stage_dir, os.path.basename(file_path))
+    try:
+        # Refused too when the file is open on the share (e.g. playing in
+        # Plex) — then nothing has changed and the caller keeps it pending.
+        os.rename(file_path, staged)
+        try:
+            os.rename(new_path, file_path)
+        except OSError:
+            try:
+                os.rename(staged, file_path)
+            except OSError:
+                print(f"[LANG-DETECT] CRITICAL: could not restore original from {staged}", flush=True)
+            raise
+        try:
+            os.unlink(staged)
+        except OSError as exc:
+            print(f"[LANG-DETECT] could not remove replaced original {staged}: {exc}", flush=True)
+    finally:
+        try:
+            os.rmdir(stage_dir)  # only if now empty
+        except OSError:
+            pass
+
+
 async def apply_track_languages_to_file(
     file_path: str,
     audio_langs: list[str | None],
@@ -893,11 +937,14 @@ async def apply_track_languages_to_file(
             print(f"[LANG-DETECT] remux tags not confirmed present; kept und: {file_path}", flush=True)
             os.unlink(tmp)
             return False
-        os.replace(tmp, file_path)  # atomic on same filesystem
+        _replace_original(tmp, file_path)
         print(f"[LANG-DETECT] Wrote language tags via remux: {file_path}", flush=True)
         return True
     except Exception as exc:
-        print(f"[LANG-DETECT] metadata remux error for {file_path}: {exc}", flush=True)
+        hint = (" — the file may be in use (e.g. playing in Plex); the language "
+                "stays pending, try again later or use Remux to MKV"
+                if isinstance(exc, PermissionError) else "")
+        print(f"[LANG-DETECT] metadata remux error for {file_path}: {exc}{hint}", flush=True)
         try:
             os.unlink(tmp)
         except OSError:

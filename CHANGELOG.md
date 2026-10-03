@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.145] — 2026-10-03
+
+### Fixed
+- **Setting a track language on an MP4 (or other non-MKV) on an SMB/CIFS share no longer fails with "Permission denied"** when the share refuses to replace the file in place; if the file is in use (e.g. playing in Plex) it's left untouched, the language stays pending, and the log says to try again later.
+
 ## [0.9.144] — 2026-10-03
 
 ### Fixed
