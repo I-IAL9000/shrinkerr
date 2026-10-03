@@ -89,6 +89,26 @@ const inputStyle: React.CSSProperties = {
 
 const labelStyle = { color: "var(--text-muted)", fontSize: 13, marginBottom: 6 };
 const helpStyle = { fontSize: 12, color: "var(--text-muted)", marginTop: 4, paddingLeft: 0 };
+
+// Conversion Guide section (v0.9.142): `encoders` = which default encoders it
+// applies to; sections without cols/rows are text-only.
+type GuideSection = { encoders: string[]; title: string; desc?: string; cols?: string[]; rows?: string[][]; note?: string };
+
+// VideoToolbox q:v → quality / typical savings, measured on an M1 Pro
+// (ffmpeg 9.0.2): two 45 s excerpts each from a 1080p WEB talk show and a
+// grainy 1080p Blu-ray film, VMAF-scored with Shrinkerr's own normalisation.
+// Avg VMAF (worst excerpt) / savings: q40 87.0 (77.4) / 82%, q45 88.8 / 76%,
+// q50 90.5 / 68%, q55 92.1 (84.5) / 53%, q60 92.6 / 41%, q65 93.5 / 23%,
+// q70 95.0 / −16% (output larger than the source). libx265 medium CRF 22 on
+// the same excerpts: 93.3 / 63%, at ~8–10× the encode time.
+// [q:v range ("50", "40-45", "70+"), guide.cells key, savings].
+const VT_GUIDE_ROWS: [string, string, string][] = [
+  ["40-45", "noticeableLoss", "75-80%"],
+  ["50", "good", "65-70%"],
+  ["55-60", "veryGood", "40-55%"],
+  ["65", "excellent", "20-25%"],
+  ["70+", "overkill", "≤ 0%"],
+];
 const sectionStyle = { background: "var(--bg-card)", padding: 20, borderRadius: 6, marginBottom: 12 };
 
 
@@ -245,6 +265,8 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [encoding, setEncoding] = useState<any>(null);
+  // Encoder the Conversion Guide describes (v0.9.142).
+  const guideEncoder: string = encoding?.default_encoder || "nvenc";
   // Encoder caps from /api/stats/encoder-caps. Drives which options the
   // default-encoder dropdown surfaces. Null while loading; once loaded,
   // missing encoders won't appear. v0.3.68+.
@@ -1460,9 +1482,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             }}>
               <h4 style={{ color: "white", marginBottom: 12, fontSize: 14 }}>{t("settingsMedia:video.guide.title")}</h4>
 
-              {[
+              {/* v0.9.142: the guide follows the selected encoder — each
+                  section lists the encoders it applies to. Pre-v0.9.142 it
+                  always showed the NVENC + libx265 tables. */}
+              {([
                 // ── NVENC (GPU) ────────────────────────────────────────
                 {
+                  encoders: ["nvenc"],
                   title: t("settingsMedia:video.guide.nvencPresets.title"),
                   desc: t("settingsMedia:video.guide.nvencPresets.desc"),
                   cols: [t("settingsMedia:video.guide.cols.preset"), t("settingsMedia:video.guide.cols.speed"), t("settingsMedia:video.guide.cols.qualitySize")],
@@ -1476,6 +1502,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   note: t("settingsMedia:video.guide.nvencPresets.note"),
                 },
                 {
+                  encoders: ["nvenc"],
                   title: t("settingsMedia:video.guide.nvencCombos.title"),
                   cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
@@ -1488,6 +1515,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 },
                 // ── libx265 (CPU) ──────────────────────────────────────
                 {
+                  encoders: ["libx265"],
                   title: t("settingsMedia:video.guide.x265Presets.title"),
                   desc: t("settingsMedia:video.guide.x265Presets.desc"),
                   cols: [t("settingsMedia:video.guide.cols.preset"), t("settingsMedia:video.guide.cols.speed1080p"), t("settingsMedia:video.guide.cols.qualitySize")],
@@ -1504,6 +1532,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   note: t("settingsMedia:video.guide.x265Presets.note"),
                 },
                 {
+                  encoders: ["libx265"],
                   title: t("settingsMedia:video.guide.x265Combos.title"),
                   cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
@@ -1516,6 +1545,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 },
                 // ── Shared quality target ──────────────────────────────
                 {
+                  encoders: ["nvenc", "libx265"],
                   title: t("settingsMedia:video.guide.cqCrf.title"),
                   desc: t("settingsMedia:video.guide.cqCrf.desc"),
                   cols: ["CQ/CRF", t("settingsMedia:video.guide.cols.quality"), t("settingsMedia:video.guide.cols.savings")],
@@ -1527,10 +1557,31 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     ["27-30", t("settingsMedia:video.guide.cells.noticeableLoss"), "60%+"],
                   ],
                 },
-              ].map((section) => (
+                // ── Apple VideoToolbox ─────────────────────────────────
+                {
+                  encoders: ["videotoolbox"],
+                  title: t("settingsMedia:video.guide.vtQuality.title"),
+                  desc: t("settingsMedia:video.guide.vtQuality.desc"),
+                  cols: ["q:v", t("settingsMedia:video.guide.cols.quality"), t("settingsMedia:video.guide.cols.savings")],
+                  rows: VT_GUIDE_ROWS.map(([q, cell, savings]) => [q, t(`settingsMedia:video.guide.cells.${cell}`), savings]),
+                  note: t("settingsMedia:video.guide.vtQuality.note"),
+                },
+                // ── Intel QSV / VAAPI: no measurements, so guidance only ──
+                {
+                  encoders: ["qsv"],
+                  title: t("settingsMedia:video.guide.qsv.title"),
+                  desc: t("settingsMedia:video.guide.qsv.desc"),
+                },
+                {
+                  encoders: ["vaapi"],
+                  title: t("settingsMedia:video.guide.vaapi.title"),
+                  desc: t("settingsMedia:video.guide.vaapi.desc"),
+                },
+              ] as GuideSection[]).filter(section => section.encoders.includes(guideEncoder)).map((section) => (
                 <div key={section.title} style={{ marginBottom: 16 }}>
                   <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{section.title}</div>
                   {section.desc && <p>{section.desc}</p>}
+                  {section.cols && section.rows && (
                   <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", marginTop: 8, tableLayout: "fixed" }}>
                     <colgroup>
                       <col style={{ width: "30%" }} />
@@ -1554,6 +1605,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       ))}
                     </tbody>
                   </table>
+                  )}
                   {section.note && (
                     <p style={{ marginTop: 6, fontSize: 11, fontStyle: "italic" }}>{section.note}</p>
                   )}
@@ -1564,13 +1616,30 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:video.guide.tipsTitle")}</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
                   <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.sources" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.grain" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.animation" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencVsX265" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.x265Scaling" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencScaling" components={{ b: <strong />, em: <em /> }} /></li>
+                  {/* Grain/animation tips speak in CQ/CRF terms (lower = better);
+                      VideoToolbox's scale runs the other way. */}
+                  {guideEncoder !== "videotoolbox" ? (<>
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.grain" components={{ b: <strong />, em: <em /> }} /></li>
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.animation" components={{ b: <strong />, em: <em /> }} /></li>
+                  </>) : (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.vtGrain" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
+                  {(guideEncoder === "nvenc" || guideEncoder === "libx265") && (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencVsX265" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
+                  {guideEncoder === "libx265" && (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.x265Scaling" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
+                  {guideEncoder === "nvenc" && (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.nvencScaling" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
+                  {guideEncoder === "videotoolbox" && (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.vtVsX265" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
                   <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.testEncode" components={{ b: <strong />, em: <em /> }} /></li>
-                  <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.mixedFleets" components={{ b: <strong />, em: <em /> }} /></li>
+                  {(guideEncoder === "nvenc" || guideEncoder === "libx265") && (
+                    <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.mixedFleets" components={{ b: <strong />, em: <em /> }} /></li>
+                  )}
                 </ul>
               </div>
 
@@ -1582,7 +1651,34 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   // The "Current" summary reads from whichever encoder's
                   // settings are active so users who switch default_encoder
                   // see the right values + description.
-                  const isCpu = encoding.default_encoder === "libx265";
+                  if (guideEncoder === "videotoolbox") {
+                    const q: number = encoding.videotoolbox_quality ?? 55;
+                    // Last row starting at or below q (rows ascend); none below 40.
+                    const row = [...VT_GUIDE_ROWS].reverse().find(([range]) => q >= parseInt(range));
+                    return (
+                      <>
+                        <strong style={{ color: "var(--success)" }}>
+                          {t("settingsMedia:video.guide.current.videotoolbox", { q })}
+                        </strong>
+                        {row && <span> — {t(`settingsMedia:video.guide.cells.${row[1]}`)}, {t("settingsMedia:video.guide.current.vtSavings", { savings: row[2] })}</span>}
+                      </>
+                    );
+                  }
+                  if (guideEncoder === "qsv") {
+                    return (
+                      <strong style={{ color: "var(--success)" }}>
+                        {t("settingsMedia:video.guide.current.qsv", { preset: encoding.qsv_preset || "medium", q: encoding.qsv_cq ?? 22 })}
+                      </strong>
+                    );
+                  }
+                  if (guideEncoder === "vaapi") {
+                    return (
+                      <strong style={{ color: "var(--success)" }}>
+                        {t("settingsMedia:video.guide.current.vaapi", { qp: encoding.vaapi_qp ?? 22, level: encoding.vaapi_compression_level ?? 4 })}
+                      </strong>
+                    );
+                  }
+                  const isCpu = guideEncoder === "libx265";
                   if (isCpu) {
                     const preset: string = encoding.libx265_preset || "medium";
                     const crf: number = encoding.libx265_crf ?? 20;

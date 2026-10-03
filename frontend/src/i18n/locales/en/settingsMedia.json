@@ -142,7 +142,7 @@
       "notDetected": "VideoToolbox decode not detected on this host."
     },
     "videotoolboxQuality": "VideoToolbox Quality (q:v)",
-    "videotoolboxQualityHelp": "Constant quality from 1 to 100 — <b>higher = better quality, larger files</b> (the reverse of CQ/CRF). <b>55</b> is roughly libx265 CRF 22 in size and quality; <b>60-65</b> for near-transparent output, <b>45-50</b> for bigger savings. No presets: speed is fixed by the hardware.",
+    "videotoolboxQualityHelp": "Constant quality from 1 to 100: <b>higher = better quality, larger files</b> (the reverse of CQ/CRF). <b>55</b> averaged VMAF ~92 with ~50% savings on real 1080p test sources; <b>45–50</b> saves 65–75% but grainy films show visible loss; <b>60–65</b> looks better but saves much less, and above ~65 files can come out larger than the source. No presets: speed is fixed by the hardware.",
     "smart": {
       "title": "Smart Encoding",
       "contentType": "Content type detection",
@@ -251,7 +251,9 @@
         "x265Scaling": "<b>libx265 preset scaling:</b> each step slower roughly doubles encode time. Going from `fast` to `slow` is 4×, `fast` to `veryslow` is 20×+. Know your patience budget before picking.",
         "nvencScaling": "<b>NVENC preset scaling:</b> minimal — p7 is only ~5× slower than p1 on the same card, and the quality gap is small. Default p3-p5 is usually the right answer.",
         "testEncode": "<b>Try a test encode first:</b> the Estimate modal's <em>Test encode</em> button runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.",
-        "mixedFleets": "<b>Mixed fleets:</b> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above."
+        "mixedFleets": "<b>Mixed fleets:</b> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above.",
+        "vtVsX265": "<b>VideoToolbox vs libx265:</b> on the same test sources, libx265 CRF 22 (medium) saved ~63% at VMAF ~93; VideoToolbox needs q:v ~65 for that quality and then saves only ~20–25%. In exchange it encodes ~8–10× faster. Above q:v ~65, files can come out larger than the source (Shrinkerr discards those).",
+        "vtGrain": "<b>Grain-heavy content</b> is much harder for VideoToolbox: at the same q:v, the grainy film test scenes scored ~8 VMAF points lower than the talk show (84.5 vs 93 at q:v 55). Use 60+ for grainy films, or libx265 if you want both quality and small files."
       },
       "current": {
         "x265": "Current: libx265 {{preset}} / CRF {{crf}}",
@@ -261,7 +263,24 @@
         "greatQuality": "Great quality with good space savings",
         "goodSolid": "Good quality, solid compression",
         "goodAggressive": "Good quality, aggressive compression",
-        "maxCompression": "Maximum compression, some quality tradeoff"
+        "maxCompression": "Maximum compression, some quality tradeoff",
+        "videotoolbox": "Current: VideoToolbox q:v {{q}}",
+        "vtSavings": "typically {{savings}} smaller",
+        "qsv": "Current: QSV {{preset}} / Q {{q}}",
+        "vaapi": "Current: VAAPI QP {{qp}} (compression level {{level}})"
+      },
+      "vtQuality": {
+        "title": "VideoToolbox quality (q:v)",
+        "desc": "VideoToolbox has no presets: speed is fixed by the Mac's media engine. Quality is one value from 1 to 100 where higher = better quality and larger files (the reverse of CQ/CRF).",
+        "note": "Measured on an M1 Pro with two real 1080p sources (a WEB talk show and a grainy Blu-ray film), VMAF-scored the same way Shrinkerr does. Savings vary a lot by source."
+      },
+      "qsv": {
+        "title": "Intel Quick Sync (QSV)",
+        "desc": "Presets run veryfast → veryslow: slower presets compress a little better at the cost of speed. Quality (global_quality) works like NVENC's CQ: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 good quality with real savings. No measured tables for QSV yet: run a test encode from the Estimate dialog to calibrate on your own files."
+      },
+      "vaapi": {
+        "title": "VAAPI (Intel / AMD)",
+        "desc": "QP is a constant quantizer: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 trades quality for size sensibly. Compression level (0–7) is driver-specific analysis depth; lower usually means smaller files at some speed cost. On Intel hardware QSV is usually the better choice. No measured tables for VAAPI yet: run a test encode to calibrate."
       }
     }
   },

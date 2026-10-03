@@ -119,9 +119,13 @@ Default Encoder. On a fresh install it's selected for you.
 
 - **Quality** is a constant-quality value from 1 to 100 where **higher
   means better quality and larger files** (the reverse of CQ/CRF).
-  The default, 55, came out roughly equal to libx265 CRF 22 in size and
-  SSIM on an M1 Pro. Use 60–65 for near-transparent output and 45–50 for
-  bigger savings. There are no presets; speed is set by the hardware.
+  On real 1080p sources (a WEB talk show and a grainy Blu-ray film, M1
+  Pro), the default 55 averaged VMAF ~92 with ~50% savings; 45–50 saves
+  65–75% but shows loss on grainy films; 60–65 looks better but saves much
+  less, and above ~65 files can come out larger than the source. libx265
+  CRF 22 is both smaller and slightly better than q:v 55 but ~8–10× slower.
+  Settings → Video's Conversion Guide has the full table. There are no
+  presets; speed is set by the hardware.
 - **Use VideoToolbox for decode** (on by default) decodes H.264 and HEVC
   sources on the Mac's media engine. Other codecs (MPEG-2, VC-1, …) are
   decoded in software automatically.

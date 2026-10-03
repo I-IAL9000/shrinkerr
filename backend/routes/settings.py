@@ -40,8 +40,9 @@ _ENCODING_DEFAULTS = {
     "vaapi_qp": "22",
     "vaapi_compression_level": "4",
     # Apple VideoToolbox (hevc_videotoolbox): constant quality -q:v, 1–100,
-    # HIGHER = better (opposite of CQ/CRF). 55 ≈ libx265 CRF 22 in size and
-    # SSIM on an M1 Pro test clip. v0.9.133.
+    # HIGHER = better (opposite of CQ/CRF). 55 averaged VMAF ~92 / ~50%
+    # savings on real 1080p sources (M1 Pro; see VT_GUIDE_ROWS in the
+    # frontend's SettingsPage). v0.9.133.
     "videotoolbox_quality": "55",
     # v0.5.7: hardware decode. Native pairs default on; cross-bus opt-in.
     "nvenc_hw_decode": "true",

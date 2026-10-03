@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.142] — 2026-10-03
+
+### Changed
+- **The Conversion Guide in Settings now follows the selected encoder**, with a measured VideoToolbox quality/savings table, QSV and VAAPI guidance, and a correct "Current" summary; VideoToolbox quality help now reflects real-footage tests (q:v 55 ≈ VMAF 92, ~50% smaller).
+
 ## [0.9.141] — 2026-10-03
 
 ### Fixed
