@@ -200,6 +200,8 @@ export interface JobProgress {
   fps: number | null;
   // Encode speed as a multiple of real time (v0.9.140): 8.4 → "8.4x".
   speed?: number | null;
+  // Encoder actually running (v0.9.141); may differ from the job's tag.
+  encoder?: string | null;
   eta: number | null;
   step: string;
   // v0.9.132 message codes for the step label.

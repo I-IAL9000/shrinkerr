@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.141] — 2026-10-03
+
+### Fixed
+- **Job cards and details show the right encoder settings.** VideoToolbox, QSV and VAAPI jobs (and jobs a node switched to another encoder) were labelled with NVENC's "P6 / CQ 20"; they now show e.g. "q:v 55", "Medium / Q 22" or "QP 22".
+
 ## [0.9.140] — 2026-10-03
 
 ### Added

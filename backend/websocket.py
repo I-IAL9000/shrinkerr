@@ -156,6 +156,7 @@ class ConnectionManager:
         step_key: Optional[str] = None,
         step_params: Optional[dict] = None,
         speed: Optional[float] = None,
+        encoder: Optional[str] = None,
     ) -> None:
         # `step` stays the English label; `step_key`/`step_params` let the UI
         # translate it (t(`serverJobs:${step_key}`)). Derived from STEP_KEYS when
@@ -184,6 +185,9 @@ class ConnectionManager:
             # Encode speed as a multiple of real time (v0.9.140); None
             # outside the encode/remux pass itself.
             "speed": speed,
+            # Encoder actually running (v0.9.141) — can differ from the job's
+            # tagged encoder when the node swapped it (resolve_node_encoder).
+            "encoder": encoder,
             "jobs_completed": jobs_completed,
             "jobs_total": jobs_total,
             "total_saved": total_saved,

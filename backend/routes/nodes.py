@@ -177,6 +177,7 @@ class ProgressReport(BaseModel):
     eta_seconds: int | None = None
     step: str = "converting"
     speed: float | None = None  # v0.9.140; absent from older workers
+    encoder: str | None = None  # v0.9.141: encoder the worker actually runs
 
 
 class CompletionReport(BaseModel):
@@ -550,6 +551,7 @@ async def report_progress(req: ProgressReport, request: Request):
         "progress": req.progress,
         "fps": req.fps,
         "speed": req.speed,
+        "encoder": req.encoder,
         "eta": req.eta_seconds,
         "step": req.step,
         **step_code(req.step),

@@ -1875,6 +1875,7 @@ class QueueWorker:
                     progress=progress,
                     fps=fps,
                     speed=speed,
+                    encoder=encoder,
                     eta=eta_seconds,
                     step=step or "converting",
                     jobs_completed=jobs_completed,

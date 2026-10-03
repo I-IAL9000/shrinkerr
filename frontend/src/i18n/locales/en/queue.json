@@ -155,6 +155,7 @@
     "details": {
       "encoder": "Encoder:",
       "preset": "Preset:",
+      "settings": "Settings:",
       "encodeTime": "Encode time:",
       "type": "Type:",
       "total": "Total:",

@@ -24,11 +24,8 @@ interface JobCardProps {
   progress: JobProgress;
   jobIndex?: number;
   fileSize?: number;
-  nvencPreset?: string | null;
-  nvencCq?: number | null;
-  encoder?: string | null;
-  libx265Preset?: string | null;
-  libx265Crf?: number | null;
+  // Encoder settings label, e.g. "P6 / CQ 20" or "q:v 55" (utils/encoderLabel).
+  encoderLabel?: string | null;
   jobType?: string | null;
   audioCodec?: string | null;
   audioBitrate?: number | null;
@@ -40,7 +37,7 @@ interface JobCardProps {
   onCancel?: () => void;
 }
 
-function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encoder, libx265Preset, libx265Crf, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
+function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audioCodec, audioBitrate, audioTracksToRemove, subtitleTracksToRemove, removedTrackLangs, losslessCodec, losslessBitrate, onCancel }: JobCardProps) {
   const { t } = useTranslation(["queue", "common"]);
   const confirm = useConfirm();
   return (
@@ -83,13 +80,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, nvencPreset, nvencCq, encod
       </div>
       <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6, flexWrap: "wrap" }}>
         <span>{progress.step === "vmaf analysis" ? t("queue:card.analyzingQuality") : jobStep(progress)}</span>
-        {(jobType === "convert" || jobType === "combined") && (
-          encoder === "libx265" ? (
-            <span>{libx265Preset || "medium"} / CRF {libx265Crf ?? 20}</span>
-          ) : nvencPreset ? (
-            <span>{nvencPreset.toUpperCase()} / CQ {nvencCq}</span>
-          ) : null
-        )}
+        {(jobType === "convert" || jobType === "combined") && encoderLabel && <span>{encoderLabel}</span>}
         {audioCodec && audioCodec !== "copy" && (jobType === "audio" || jobType === "combined") && (
           <span>{t("queue:card.audio", { codec: audioCodec.toUpperCase(), bitrate: audioBitrate })}</span>
         )}
@@ -128,11 +119,7 @@ const JobCard = memo(JobCardImpl, (prev, next) => {
   if (prev.progress !== next.progress) return false;
   if (prev.jobIndex !== next.jobIndex) return false;
   if (prev.fileSize !== next.fileSize) return false;
-  if (prev.nvencPreset !== next.nvencPreset) return false;
-  if (prev.nvencCq !== next.nvencCq) return false;
-  if (prev.encoder !== next.encoder) return false;
-  if (prev.libx265Preset !== next.libx265Preset) return false;
-  if (prev.libx265Crf !== next.libx265Crf) return false;
+  if (prev.encoderLabel !== next.encoderLabel) return false;
   if (prev.jobType !== next.jobType) return false;
   if (prev.audioCodec !== next.audioCodec) return false;
   if (prev.audioBitrate !== next.audioBitrate) return false;

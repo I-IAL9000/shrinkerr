@@ -273,14 +273,16 @@ class ServerClient:
                               progress: float, fps: float | None = None,
                               eta_seconds: int | None = None,
                               step: str = "converting",
-                              speed: float | None = None) -> bool:
+                              speed: float | None = None,
+                              encoder: str | None = None) -> bool:
         """Report progress. Returns True if job was cancelled."""
         resp = await self._post_node("/api/nodes/report-progress", {
             "node_id": node_id, "job_id": job_id,
             "progress": progress, "fps": fps,
             "eta_seconds": eta_seconds, "step": step,
-            # v0.9.140; an older server just ignores the extra field.
+            # v0.9.140/141; an older server just ignores the extra fields.
             "speed": speed,
+            "encoder": encoder,
         })
         resp.raise_for_status()
         return resp.json().get("cancelled", False)
@@ -365,6 +367,9 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
     import time as _time_pcb
     _PROGRESS_REPORT_INTERVAL = 2.0
     _last_report_at = 0.0
+    # Encoder this worker actually runs, reported with progress so the
+    # server's running card labels it right (v0.9.141). Set once resolved.
+    current_encoder: str | None = None
 
     async def progress_cb(progress: float = 0, fps=None, eta_seconds=None, step=None, speed=None):
         nonlocal cancel_flag, _last_report_at
@@ -376,6 +381,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         try:
             cancelled = await client.report_progress(
                 node_id, job_id, progress, fps, eta_seconds, step or "converting", speed,
+                current_encoder,
             )
             if cancelled and not cancel_flag:
                 cancel_flag = True
@@ -419,6 +425,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                     error_params={"encoder": job_encoder},
                 )
                 return
+            current_encoder = encoder
 
             # Per-job nvenc settings first, then server globals (for jobs
             # that deferred to live settings at encode time and so stored

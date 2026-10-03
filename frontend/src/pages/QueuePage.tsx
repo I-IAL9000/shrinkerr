@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
+import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
 import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
 import { fmtNum } from "../fmt";
@@ -566,11 +567,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           <JobCard key={job.id} progress={progress}
             jobIndex={runIndex}
             fileSize={job.original_size}
-            nvencPreset={job.nvenc_preset || encodingDefaults?.nvenc_preset || "p6"}
-            nvencCq={job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}
-            encoder={job.encoder || encodingDefaults?.default_encoder || "nvenc"}
-            libx265Preset={job.libx265_preset || encodingDefaults?.libx265_preset || "medium"}
-            libx265Crf={job.libx265_crf ?? encodingDefaults?.libx265_crf ?? 20}
+            // The encoder the node actually runs (it may have swapped the
+            // job's encoder for one it has — v0.9.134), else the job's own.
+            encoderLabel={encoderSettingsLabel(
+              progress.encoder || job.encoder || encodingDefaults?.default_encoder,
+              jobEncoderSettings(job, encodingDefaults),
+            )}
             jobType={job.job_type}
             audioCodec={job.audio_codec || encodingDefaults?.audio_codec || "copy"}
             audioBitrate={job.audio_bitrate ?? encodingDefaults?.audio_bitrate ?? 128}

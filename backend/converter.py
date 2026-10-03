@@ -3283,6 +3283,14 @@ async def convert_file(
                 "preset": nvenc_preset,
                 "cq": cq,
                 "crf": crf,
+                # Every encoder's own settings (v0.9.141) so the job details can
+                # label libx265/QSV/VAAPI/VideoToolbox runs correctly instead of
+                # showing NVENC's preset/CQ for all of them.
+                "libx265_preset": libx265_preset,
+                "qsv_preset": qsv_preset,
+                "qsv_cq": qsv_cq,
+                "vaapi_qp": vaapi_qp,
+                "videotoolbox_quality": videotoolbox_quality,
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "target_resolution": target_resolution,
@@ -3743,6 +3751,14 @@ async def convert_file(
                 "preset": nvenc_preset,
                 "cq": cq,
                 "crf": crf,
+                # Every encoder's own settings (v0.9.141) so the job details can
+                # label libx265/QSV/VAAPI/VideoToolbox runs correctly instead of
+                # showing NVENC's preset/CQ for all of them.
+                "libx265_preset": libx265_preset,
+                "qsv_preset": qsv_preset,
+                "qsv_cq": qsv_cq,
+                "vaapi_qp": vaapi_qp,
+                "videotoolbox_quality": videotoolbox_quality,
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "target_resolution": target_resolution,
@@ -3971,6 +3987,14 @@ async def convert_file(
             "preset": nvenc_preset,
             "cq": cq,
             "crf": crf,
+            # Every encoder's own settings (v0.9.141) so the job details can
+            # label libx265/QSV/VAAPI/VideoToolbox runs correctly instead of
+            # showing NVENC's preset/CQ for all of them.
+            "libx265_preset": libx265_preset,
+            "qsv_preset": qsv_preset,
+            "qsv_cq": qsv_cq,
+            "vaapi_qp": vaapi_qp,
+            "videotoolbox_quality": videotoolbox_quality,
             "audio_codec": audio_codec,
             "audio_bitrate": audio_bitrate,
             # Audio conversion details for the Completed-tab job report

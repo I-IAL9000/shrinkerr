@@ -5,6 +5,7 @@ import { getJobLog } from "../api";
 import { vmafColor, vmafLabel } from "../utils/vmaf";
 import { jobErrorHeadline } from "../i18n/server";
 import { fmtDateTime } from "../fmt";
+import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 
 interface JobListItemProps {
   job: Job;
@@ -241,10 +242,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               stream-copy remux — don't imply a re-encode that isn't happening. */}
           {job.job_type !== "audio" && (
           <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
-            {(job.encoder === "libx265" || (!job.encoder && encodingDefaults?.default_encoder === "libx265"))
-              ? `${(job.libx265_preset || encodingDefaults?.libx265_preset || "medium").charAt(0).toUpperCase() + (job.libx265_preset || encodingDefaults?.libx265_preset || "medium").slice(1)} / CRF ${job.libx265_crf ?? encodingDefaults?.libx265_crf ?? 20}`
-              : `${(job.nvenc_preset || encodingDefaults?.nvenc_preset || "P6").toUpperCase()} / CQ ${job.nvenc_cq ?? encodingDefaults?.nvenc_cq ?? 20}`
-            }
+            {encoderSettingsLabel(job.encoder || encodingDefaults?.default_encoder, jobEncoderSettings(job, encodingDefaults))}
           </span>
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
@@ -463,15 +461,27 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               {logData.encoding_stats?.encoder && (
                 <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encoder")} <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.encoder}</strong></span>
               )}
-              {logData.encoding_stats?.preset && (
-                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.preset")} <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.preset.toUpperCase()}</strong></span>
-              )}
-              {logData.encoding_stats?.cq != null && (
-                <span style={{ color: "var(--text-muted)" }}>CQ: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.cq}</strong></span>
-              )}
-              {logData.encoding_stats?.crf != null && logData.encoding_stats?.encoder === "libx265" && (
-                <span style={{ color: "var(--text-muted)" }}>CRF: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.crf}</strong></span>
-              )}
+              {logData.encoding_stats && "videotoolbox_quality" in logData.encoding_stats ? (
+                // v0.9.141+: stats carry every encoder's own settings.
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.settings")} <strong style={{ color: "var(--text-secondary)" }}>{encoderSettingsLabel(logData.encoding_stats.encoder, {
+                  ...logData.encoding_stats,
+                  nvenc_preset: logData.encoding_stats.preset,
+                  nvenc_cq: logData.encoding_stats.cq,
+                  libx265_crf: logData.encoding_stats.crf,
+                })}</strong></span>
+              ) : (<>
+                {/* Older jobs recorded only NVENC's preset/CQ (+ CRF): show
+                    them only for NVENC runs, where they're the real values. */}
+                {logData.encoding_stats?.preset && (logData.encoding_stats.encoder || "nvenc") === "nvenc" && (
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.preset")} <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.preset.toUpperCase()}</strong></span>
+                )}
+                {logData.encoding_stats?.cq != null && (logData.encoding_stats.encoder || "nvenc") === "nvenc" && (
+                  <span style={{ color: "var(--text-muted)" }}>CQ: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.cq}</strong></span>
+                )}
+                {logData.encoding_stats?.crf != null && logData.encoding_stats?.encoder === "libx265" && (
+                  <span style={{ color: "var(--text-muted)" }}>CRF: <strong style={{ color: "var(--text-secondary)" }}>{logData.encoding_stats.crf}</strong></span>
+                )}
+              </>)}
               {logData.encoding_stats?.encode_seconds > 0 && (
                 <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encodeTime")} <strong style={{ color: "var(--text-secondary)" }}>{formatDuration("2000-01-01T00:00:00", new Date(new Date("2000-01-01T00:00:00").getTime() + logData.encoding_stats.encode_seconds * 1000).toISOString())}</strong></span>
               )}
