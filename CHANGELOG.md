@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.148] — 2026-10-04
+
+### Fixed
+- **Converted BR-DISK / DVD-R files now get a resolution in their name** (e.g. "Movie (1985) 1080p Bluray … h265"), and widescreen discs (1920×800) are labelled 1080p instead of 720p.
+
 ## [0.9.147] — 2026-10-03
 
 ### Fixed

@@ -528,3 +528,47 @@ def test_encode_speed_from_fps_and_source_rate():
     assert encode_speed(line, 150.0, 0.0) == 6.3  # ffmpeg's speed=, rounded
     assert encode_speed("frame= 10 fps=0.0 q=0.0 size=0KiB time=N/A speed=N/A", 0.0, 0.0) is None
     assert encode_speed("frame= 10 fps=12 time=N/A speed=N/A", None, 0.0) is None
+
+
+def test_disc_tier_source_without_resolution_gets_one():
+    """v0.9.148: Radarr names BR-DISK quality without a resolution, so a
+    converted "Movie (1985) BR-DISK EAC3 2.0 AVC-GRP.mkv" came out as
+    "Movie (1985) Bluray EAC3 2.0 h265-GRP.mkv". Insert the real one."""
+    from backend.converter import get_output_path
+    out = get_output_path("/m/The Bride (1985) BR-DISK EAC3 2.0 AVC-UNTOUCHED.mkv",
+                          encoder="nvenc", source_width=1920, source_height=1080)
+    assert out.endswith("/The Bride (1985) 1080p Bluray EAC3 2.0 h265-UNTOUCHED.mkv")
+    # Scope film: 1920x800 is still 1080p, not 720p.
+    out = get_output_path("/m/Dead Tone (2007) BR-DISK -DiYHDHome.m2ts",
+                          encoder="nvenc", source_width=1920, source_height=800)
+    assert out.endswith("/Dead Tone (2007) 1080p Bluray -DiYHDHome.mkv")
+    # Downscaling: the target wins.
+    out = get_output_path("/m/Movie (2001) BR-DISK DTS 5.1 AVC-GRP.mkv", encoder="nvenc",
+                          target_resolution="720p", source_width=1920, source_height=1080)
+    assert " 720p Bluray " in out
+    # DVD tier.
+    out = get_output_path("/m/Old Film (1970) DVD-R AC3 2.0 MPEG2-GRP.mkv",
+                          encoder="libx265", source_width=720, source_height=576)
+    assert " 576p DVDRip " in out
+
+
+def test_resolution_not_added_when_present_or_not_a_disc_tier():
+    from backend.converter import get_output_path
+    # Already has one: untouched.
+    out = get_output_path("/m/Movie (2001) 1080p BR-DISK AVC-GRP.mkv", encoder="nvenc",
+                          source_width=1920, source_height=1080)
+    assert out.endswith("/Movie (2001) 1080p Bluray h265-GRP.mkv")
+    # Ordinary release without a resolution: naming left as it was.
+    out = get_output_path("/m/Movie (2001) WEBDL AAC 2.0 x264-GRP.mkv", encoder="nvenc",
+                          source_width=1920, source_height=1080)
+    assert out.endswith("/Movie (2001) WEBDL AAC 2.0 h265-GRP.mkv")
+
+
+def test_resolution_label_uses_width_for_scope_films():
+    from backend.converter import resolution_label
+    assert resolution_label(1920, 800) == "1080p"
+    assert resolution_label(3840, 1600) == "2160p"
+    assert resolution_label(1280, 536) == "720p"
+    assert resolution_label(720, 576) == "576p"
+    assert resolution_label(720, 480) == "480p"
+    assert resolution_label(0, 1080) == "1080p"  # width unknown: height alone

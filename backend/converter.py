@@ -1214,6 +1214,28 @@ async def _is_media_dir_root(candidate: Path) -> bool:
     return False
 
 
+def resolution_label(width: int | None, height: int | None) -> str:
+    """Scene resolution token for a video of the given size (v0.9.148).
+
+    Uses width as well as height: a 1920x800 scope film is 1080p and a
+    3840x1600 one is 2160p — by height alone they read as 720p / 1080p.
+    """
+    w, h = int(width or 0), int(height or 0)
+    if w >= 3200 or h >= 2000:
+        return "2160p"
+    if w >= 1800 or h >= 1000:
+        return "1080p"
+    if w >= 1200 or h >= 700:
+        return "720p"
+    if h >= 560:
+        return "576p"  # PAL DVD typical
+    return "480p"      # NTSC DVD typical
+
+
+_RESOLUTION_TOKEN_RE = re.compile(r"\b(?:2160p|1080p|1080i|720p|576p|480p|4k|uhd)\b", re.IGNORECASE)
+_DISC_TIER_RE = re.compile(r"\bBR[\s._-]?DISK\b|\bBD[\s._-]?(?:25|50|100)\b|\bDVD[\s._-]?(?:R|5|9)\b", re.IGNORECASE)
+
+
 async def build_disc_output_filename(
     disc_marker_path: str,
     disc_type: str,
@@ -1290,17 +1312,7 @@ async def build_disc_output_filename(
     if target_resolution and target_resolution != "copy":
         res = target_resolution
     else:
-        h = int(probe_data.get("video_height") or 0)
-        if h >= 2000:
-            res = "2160p"
-        elif h >= 1000:
-            res = "1080p"
-        elif h >= 700:
-            res = "720p"
-        elif h >= 560:
-            res = "576p"  # PAL DVD typical
-        else:
-            res = "480p"  # NTSC DVD typical
+        res = resolution_label(probe_data.get("video_width"), probe_data.get("video_height"))
 
     source_quality = "Bluray" if disc_type == "bdmv" else "DVDRip"
 
@@ -1336,6 +1348,8 @@ def get_output_path(
     suffix: str = "",
     encoder: str | None = None,
     target_resolution: str | None = None,
+    source_width: int | None = None,
+    source_height: int | None = None,
 ) -> str:
     """Return the final output path: rename codec tag, normalise source
     quality, optionally rewrite the resolution tag, add suffix, and
@@ -1354,6 +1368,16 @@ def get_output_path(
     """
     p = Path(input_path)
     new_stem = rename_source_to_target_codec(p.stem, encoder=encoder)
+    # v0.9.148: Radarr names disc-tier qualities (BR-DISK, DVD-R) without a
+    # resolution, so the converted Bluray/DVDRip had none either. When the
+    # source was disc-tier and carries no resolution, insert the real one
+    # in front of the source tag the line below produces.
+    m = _DISC_TIER_RE.search(new_stem)
+    add_res = None
+    if m and not _RESOLUTION_TOKEN_RE.search(new_stem) and (source_height or target_resolution):
+        add_res = (target_resolution if target_resolution and target_resolution != "copy"
+                   else resolution_label(source_width, source_height))
+        new_stem = new_stem[:m.start()] + add_res + " " + new_stem[m.start():]
     # v0.5.18: normalize disc-tier source tags (BR-DISK→Bluray, DVD-R→DVDRip)
     # since the re-encoded file is no longer a disc rip.
     new_stem = rename_source_quality_in_filename(new_stem)
@@ -2297,6 +2321,8 @@ async def convert_file(
         final_path = get_output_path(
             input_path, suffix=filename_suffix, encoder=encoder,
             target_resolution=target_resolution,
+            source_width=(probe_data or {}).get("video_width"),
+            source_height=(probe_data or {}).get("video_height"),
         )
         temp_path = get_temp_path(input_path)
 

@@ -1549,7 +1549,10 @@ async def scan_directory(
     #   - libx265 output → `x265` in the filename
     #   - NVENC   output → `h265`
     # so we check BOTH possibilities, not just `x265`.
-    from backend.converter import rename_source_to_target_codec, rename_source_quality_in_filename
+    from backend.converter import (
+        rename_source_to_target_codec, rename_source_quality_in_filename,
+        _DISC_TIER_RE, _RESOLUTION_TOKEN_RE,
+    )
     all_paths_set = {str(f) for f in all_files}
     skip_paths: set[str] = set()
     for f in all_files:
@@ -1603,17 +1606,26 @@ async def scan_directory(
         name = f.name
         candidates: set[str] = set()
         for encoder in ("libx265", "nvenc"):
-            renamed = rename_source_to_target_codec(name, encoder=encoder)
-            # v0.5.18: match get_output_path()'s rename chain so disc-tier
-            # source siblings (e.g. "X.BR-DISK.x264.mkv" → "X.Bluray.x265.mkv")
-            # are correctly detected and the source gets skip-flagged.
-            renamed = rename_source_quality_in_filename(renamed)
-            if renamed != name:
-                # The conversion pipeline always writes .mkv regardless of
-                # source container, so match the HEVC sibling with that
-                # extension explicitly.
-                stem_only = renamed.rsplit(".", 1)[0] if "." in renamed else renamed
-                candidates.add(str(f.parent / f"{stem_only}.mkv"))
+            base = rename_source_to_target_codec(name, encoder=encoder)
+            # v0.9.148: get_output_path inserts a resolution in front of a
+            # disc-tier tag that had none ("X BR-DISK AVC" → "X 1080p Bluray
+            # h265"). The height isn't known before probing, so try each.
+            variants = [base]
+            m = _DISC_TIER_RE.search(base)
+            if m and not _RESOLUTION_TOKEN_RE.search(base):
+                variants += [base[:m.start()] + r + " " + base[m.start():]
+                             for r in ("2160p", "1080p", "720p", "576p", "480p")]
+            for renamed in variants:
+                # v0.5.18: match get_output_path()'s rename chain so disc-tier
+                # source siblings (e.g. "X.BR-DISK.x264.mkv" → "X.Bluray.x265.mkv")
+                # are correctly detected and the source gets skip-flagged.
+                renamed = rename_source_quality_in_filename(renamed)
+                if renamed != name:
+                    # The conversion pipeline always writes .mkv regardless of
+                    # source container, so match the HEVC sibling with that
+                    # extension explicitly.
+                    stem_only = renamed.rsplit(".", 1)[0] if "." in renamed else renamed
+                    candidates.add(str(f.parent / f"{stem_only}.mkv"))
         hits = [c for c in candidates if c in all_paths_set and str(f) != c]
         if hits:
             skip_paths.add(str(f))
