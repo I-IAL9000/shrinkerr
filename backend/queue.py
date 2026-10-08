@@ -901,6 +901,164 @@ async def _cleanup_expired_backups():
         print(f"[BACKUP] Cleaned up {deleted} expired backup(s) (older than {days} days)", flush=True)
 
 
+async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
+                                     current_file_path: str) -> None:
+    """Point a job and its scan_results row at the output that replaced
+    `file_path` (now at `current_file_path`): new path, size, codec, and the
+    re-probed tracks sorted again. Shared by the local worker and remote-node
+    completions, which never updated the row (H7, v0.10.0)."""
+    from backend.scanner import probe_file
+    _queue = JobQueue(db_path)
+    import json as _json
+    new_size = await _async_getsize(current_file_path)
+
+    # Re-probe the converted file to get fresh audio / subtitle track info.
+    # Stream indices, track counts, and codecs have changed. We also
+    # re-classify tracks (keep/locked) so the UI shows correct checkboxes
+    # and future "add to queue" knows which tracks to remove.
+    new_audio_json = None
+    new_sub_json = None
+    new_has_removable_audio = 0
+    new_has_removable_subs = 0
+    new_lossless = 0
+    new_has_und = None
+    try:
+        from backend.scanner import (
+            classify_audio_tracks, classify_subtitle_tracks,
+            classification_native, _is_cleanup_enabled,
+            languages_match,
+        )
+        from backend.converter import is_lossless_audio
+        fresh = await probe_file(current_file_path)
+        if fresh:
+            raw_audio = fresh.get("audio_tracks") or []
+            raw_subs = fresh.get("subtitle_tracks") or []
+            # A TMDB / manual native from scan_results wins; a
+            # stored guess was made from the source's tracks.
+            stored_nl, stored_src = None, None
+            try:
+                db_nl = await _queue._connect()
+                try:
+                    async with db_nl.execute(
+                        "SELECT native_language, language_source FROM scan_results WHERE file_path = ?",
+                        (file_path,),
+                    ) as cur:
+                        nl_row = await cur.fetchone()
+                    if nl_row:
+                        stored_nl, stored_src = nl_row["native_language"], nl_row["language_source"]
+                finally:
+                    await db_nl.close()
+            except Exception:
+                pass
+            native_lang = classification_native(stored_nl, stored_src, raw_audio)
+            classified_audio = classify_audio_tracks(
+                raw_audio, native_lang, fresh.get("duration", 0),
+            )
+            classified_subs = classify_subtitle_tracks(raw_subs, native_lang)
+            new_audio_json = _json.dumps([t.model_dump() for t in classified_audio])
+            new_sub_json = _json.dumps([t.model_dump() for t in classified_subs])
+            # Flag includes both removable tracks AND reorder-needed (if enabled)
+            needs_reorder = False
+            if _is_cleanup_enabled("reorder_native_audio") and len(classified_audio) > 1 and native_lang and native_lang.lower() != "und":
+                first_lang = (classified_audio[0].language or "").lower()
+                needs_reorder = not languages_match(first_lang, native_lang.lower())
+            new_has_removable_audio = 1 if (any(not t.keep for t in classified_audio) or needs_reorder) else 0
+            new_has_removable_subs = 1 if any(not t.keep for t in classified_subs) else 0
+            new_lossless = 1 if any(
+                is_lossless_audio(t.codec, getattr(t, "profile", ""))
+                for t in classified_audio
+            ) else 0
+            # v0.9.25: keep has_und_tracks_flag in sync with the
+            # re-probed tracks — otherwise a converted title whose
+            # output still has und tracks kept a stale flag and
+            # vanished from the Unknown-language filter.
+            new_has_und = 1 if any(
+                (t.language or "und").lower() == "und"
+                for t in list(classified_audio) + list(classified_subs)
+            ) else 0
+    except Exception as exc:
+        print(f"[WORKER] Re-probe after conversion failed (non-fatal): {exc}", flush=True)
+
+    try:
+        db_path = await _queue._connect()
+        try:
+            await db_path.execute(
+                "UPDATE jobs SET file_path = ? WHERE id = ?",
+                (current_file_path, job_id),
+            )
+            # Watcher race: a separate file-watcher tick may
+            # have already inserted a scan_results row at
+            # current_file_path when it spotted the
+            # post-rename file appear on disk. Without this
+            # delete, the file_path UPDATE below trips the
+            # UNIQUE(scan_results.file_path) constraint and
+            # the worker's authoritative post-conversion
+            # state never lands. Worker's data is fresher
+            # (just-probed audio tracks, encoded size,
+            # converted flag) than the watcher's bare
+            # insert, so wipe the watcher row first.
+            # v0.3.130+.
+            if current_file_path != file_path:
+                await db_path.execute(
+                    "DELETE FROM scan_results WHERE file_path = ?",
+                    (current_file_path,),
+                )
+            # Build the scan_results update based on what we have.
+            # `new_detected_at = NULL` is what actually clears
+            # the user-visible NEW badge — scan.py:1221 derives
+            # `is_new` from `new_detected_at > 24h cutoff`, not
+            # from the `is_new` column. Pre-v0.3.136 we cleared
+            # the wrong column; converted files added by Sonarr
+            # within the last 24h kept showing as NEW because
+            # their new_detected_at timestamp from the original
+            # h264 row was preserved through the rename UPDATE.
+            # v0.3.136+.
+            update_cols = [
+                "file_path = ?",
+                "video_codec = 'hevc'",
+                "needs_conversion = 0",
+                "converted = 1",
+                "is_new = 0",
+                "new_detected_at = NULL",
+                # The output is always a single file, never a disc.
+                # This row may have started as a disc-marker row
+                # (disc_type='bdmv'/'dvd'); clear it so the file
+                # doesn't keep showing a disc badge and so the
+                # display-name logic doesn't fall back to the
+                # category-dir name. v0.9.4.
+                "disc_type = NULL",
+            ]
+            update_params: list = [current_file_path]
+            if new_size is not None:
+                update_cols.append("file_size = ?")
+                update_params.append(new_size)
+            if new_audio_json is not None:
+                update_cols.append("audio_tracks_json = ?")
+                update_params.append(new_audio_json)
+                update_cols.append("has_removable_tracks_flag = ?")
+                update_params.append(new_has_removable_audio)
+                update_cols.append("has_lossless_audio_flag = ?")
+                update_params.append(new_lossless)
+            if new_sub_json is not None:
+                update_cols.append("subtitle_tracks_json = ?")
+                update_params.append(new_sub_json)
+                update_cols.append("has_removable_subs_flag = ?")
+                update_params.append(new_has_removable_subs)
+            if new_has_und is not None:
+                update_cols.append("has_und_tracks_flag = ?")
+                update_params.append(new_has_und)
+            update_params.append(file_path)  # WHERE
+            await db_path.execute(
+                f"UPDATE scan_results SET {', '.join(update_cols)} WHERE file_path = ?",
+                update_params,
+            )
+            await db_path.commit()
+        finally:
+            await db_path.close()
+    except Exception as exc:
+        print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
+
+
 class QueueWorker:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -2128,154 +2286,7 @@ class QueueWorker:
             )
             if output_replaced_source:
                 self._finalized_jobs.add(job_id)
-                import json as _json
-                new_size = await _async_getsize(current_file_path)
-
-                # Re-probe the converted file to get fresh audio / subtitle track info.
-                # Stream indices, track counts, and codecs have changed. We also
-                # re-classify tracks (keep/locked) so the UI shows correct checkboxes
-                # and future "add to queue" knows which tracks to remove.
-                new_audio_json = None
-                new_sub_json = None
-                new_has_removable_audio = 0
-                new_has_removable_subs = 0
-                new_lossless = 0
-                new_has_und = None
-                try:
-                    from backend.scanner import (
-                        classify_audio_tracks, classify_subtitle_tracks,
-                        classification_native, _is_cleanup_enabled,
-                        languages_match,
-                    )
-                    from backend.converter import is_lossless_audio
-                    fresh = await probe_file(current_file_path)
-                    if fresh:
-                        raw_audio = fresh.get("audio_tracks") or []
-                        raw_subs = fresh.get("subtitle_tracks") or []
-                        # A TMDB / manual native from scan_results wins; a
-                        # stored guess was made from the source's tracks.
-                        stored_nl, stored_src = None, None
-                        try:
-                            db_nl = await self._db()
-                            try:
-                                async with db_nl.execute(
-                                    "SELECT native_language, language_source FROM scan_results WHERE file_path = ?",
-                                    (file_path,),
-                                ) as cur:
-                                    nl_row = await cur.fetchone()
-                                if nl_row:
-                                    stored_nl, stored_src = nl_row["native_language"], nl_row["language_source"]
-                            finally:
-                                await db_nl.close()
-                        except Exception:
-                            pass
-                        native_lang = classification_native(stored_nl, stored_src, raw_audio)
-                        classified_audio = classify_audio_tracks(
-                            raw_audio, native_lang, fresh.get("duration", 0),
-                        )
-                        classified_subs = classify_subtitle_tracks(raw_subs, native_lang)
-                        new_audio_json = _json.dumps([t.model_dump() for t in classified_audio])
-                        new_sub_json = _json.dumps([t.model_dump() for t in classified_subs])
-                        # Flag includes both removable tracks AND reorder-needed (if enabled)
-                        needs_reorder = False
-                        if _is_cleanup_enabled("reorder_native_audio") and len(classified_audio) > 1 and native_lang and native_lang.lower() != "und":
-                            first_lang = (classified_audio[0].language or "").lower()
-                            needs_reorder = not languages_match(first_lang, native_lang.lower())
-                        new_has_removable_audio = 1 if (any(not t.keep for t in classified_audio) or needs_reorder) else 0
-                        new_has_removable_subs = 1 if any(not t.keep for t in classified_subs) else 0
-                        new_lossless = 1 if any(
-                            is_lossless_audio(t.codec, getattr(t, "profile", ""))
-                            for t in classified_audio
-                        ) else 0
-                        # v0.9.25: keep has_und_tracks_flag in sync with the
-                        # re-probed tracks — otherwise a converted title whose
-                        # output still has und tracks kept a stale flag and
-                        # vanished from the Unknown-language filter.
-                        new_has_und = 1 if any(
-                            (t.language or "und").lower() == "und"
-                            for t in list(classified_audio) + list(classified_subs)
-                        ) else 0
-                except Exception as exc:
-                    print(f"[WORKER] Re-probe after conversion failed (non-fatal): {exc}", flush=True)
-
-                try:
-                    db_path = await self.queue._connect()
-                    try:
-                        await db_path.execute(
-                            "UPDATE jobs SET file_path = ? WHERE id = ?",
-                            (current_file_path, job_id),
-                        )
-                        # Watcher race: a separate file-watcher tick may
-                        # have already inserted a scan_results row at
-                        # current_file_path when it spotted the
-                        # post-rename file appear on disk. Without this
-                        # delete, the file_path UPDATE below trips the
-                        # UNIQUE(scan_results.file_path) constraint and
-                        # the worker's authoritative post-conversion
-                        # state never lands. Worker's data is fresher
-                        # (just-probed audio tracks, encoded size,
-                        # converted flag) than the watcher's bare
-                        # insert, so wipe the watcher row first.
-                        # v0.3.130+.
-                        if current_file_path != file_path:
-                            await db_path.execute(
-                                "DELETE FROM scan_results WHERE file_path = ?",
-                                (current_file_path,),
-                            )
-                        # Build the scan_results update based on what we have.
-                        # `new_detected_at = NULL` is what actually clears
-                        # the user-visible NEW badge — scan.py:1221 derives
-                        # `is_new` from `new_detected_at > 24h cutoff`, not
-                        # from the `is_new` column. Pre-v0.3.136 we cleared
-                        # the wrong column; converted files added by Sonarr
-                        # within the last 24h kept showing as NEW because
-                        # their new_detected_at timestamp from the original
-                        # h264 row was preserved through the rename UPDATE.
-                        # v0.3.136+.
-                        update_cols = [
-                            "file_path = ?",
-                            "video_codec = 'hevc'",
-                            "needs_conversion = 0",
-                            "converted = 1",
-                            "is_new = 0",
-                            "new_detected_at = NULL",
-                            # The output is always a single file, never a disc.
-                            # This row may have started as a disc-marker row
-                            # (disc_type='bdmv'/'dvd'); clear it so the file
-                            # doesn't keep showing a disc badge and so the
-                            # display-name logic doesn't fall back to the
-                            # category-dir name. v0.9.4.
-                            "disc_type = NULL",
-                        ]
-                        update_params: list = [current_file_path]
-                        if new_size is not None:
-                            update_cols.append("file_size = ?")
-                            update_params.append(new_size)
-                        if new_audio_json is not None:
-                            update_cols.append("audio_tracks_json = ?")
-                            update_params.append(new_audio_json)
-                            update_cols.append("has_removable_tracks_flag = ?")
-                            update_params.append(new_has_removable_audio)
-                            update_cols.append("has_lossless_audio_flag = ?")
-                            update_params.append(new_lossless)
-                        if new_sub_json is not None:
-                            update_cols.append("subtitle_tracks_json = ?")
-                            update_params.append(new_sub_json)
-                            update_cols.append("has_removable_subs_flag = ?")
-                            update_params.append(new_has_removable_subs)
-                        if new_has_und is not None:
-                            update_cols.append("has_und_tracks_flag = ?")
-                            update_params.append(new_has_und)
-                        update_params.append(file_path)  # WHERE
-                        await db_path.execute(
-                            f"UPDATE scan_results SET {', '.join(update_cols)} WHERE file_path = ?",
-                            update_params,
-                        )
-                        await db_path.commit()
-                    finally:
-                        await db_path.close()
-                except Exception as exc:
-                    print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
+                await refresh_converted_scan_row(self.db_path, job_id, file_path, current_file_path)
 
             # Always record the pre-rename source path so the VMAF
             # re-measure pass can find this job as a candidate even when

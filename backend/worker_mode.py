@@ -295,7 +295,8 @@ class ServerClient:
                               ffmpeg_command: str | None = None,
                               encoding_stats: dict | None = None,
                               error_key: str | None = None,
-                              error_params: dict | None = None) -> dict:
+                              error_params: dict | None = None,
+                              replaced_source: bool | None = None) -> dict:
         resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
@@ -303,6 +304,7 @@ class ServerClient:
             "error_key": error_key, "error_params": error_params,
             "vmaf_score": vmaf_score, "backup_path": backup_path,
             "ffmpeg_command": ffmpeg_command, "encoding_stats": encoding_stats,
+            "replaced_source": replaced_source,
         })
         resp.raise_for_status()
         return resp.json()
@@ -407,6 +409,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         space_saved = 0
         current_file_path = file_path
         result = None
+        replaced_source = False  # did an output replace the original? (v0.10.0)
 
         if job_type in ("convert", "combined"):
             # Use job's encoder if this worker supports it; otherwise fall back
@@ -499,8 +502,11 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "libx265_use_nvdec": bool(job.get("libx265_use_nvdec", False)),
                 "videotoolbox_quality": int(job.get("videotoolbox_quality") or 55),
                 "videotoolbox_hw_decode": bool(job.get("videotoolbox_hw_decode", True)),
-                "trash_original_after_conversion": False,
-                "backup_original_days": 0,
+                # What happens to originals comes from the server (v0.10.0):
+                # hard-coding "no backup, no trash" deleted them permanently.
+                "trash_original_after_conversion": bool(job.get("trash_original_after_conversion", False)),
+                "backup_original_days": int(job.get("backup_original_days") or 0),
+                "backup_folder": job.get("backup_folder") or "",
             }
 
             # For combined jobs, parse track removal lists and pass them through
@@ -546,6 +552,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
 
             space_saved = result.get("space_saved", 0)
             current_file_path = result.get("output_path", file_path)
+            replaced_source = not (result.get("vmaf_rejected") or result.get("skipped_larger"))
 
         # Audio/subtitle track removal — only "audio" jobs need the separate remux pass.
         # "combined" jobs already applied the removals inline during conversion.
@@ -578,6 +585,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                                                  error_params=audio_result.get("error_params"))
                     return
                 space_saved += audio_result.get("space_saved", 0)
+                replaced_source = True
                 if audio_result.get("output_path"):
                     current_file_path = audio_result["output_path"]
 
@@ -591,6 +599,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             backup_path=result.get("backup_path") if result else None,
             ffmpeg_command=result.get("ffmpeg_command") if result else None,
             encoding_stats=result.get("encoding_stats") if result else None,
+            replaced_source=replaced_source,
         )
 
     except Exception as exc:

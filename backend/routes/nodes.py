@@ -194,6 +194,9 @@ class CompletionReport(BaseModel):
     # i18n code for a Shrinkerr-authored `error` headline (older workers omit it)
     error_key: str | None = None
     error_params: dict | None = None
+    # False when the encode was thrown away (VMAF / larger) and the original
+    # is untouched; older workers omit it (v0.10.0).
+    replaced_source: bool | None = None
 
 
 class MetricsReport(BaseModel):
@@ -360,8 +363,10 @@ async def request_job(req: RequestJobBody, request: Request):
     # Find next pending job.
     db = await connect_db()
     try:
+        # Health checks run on the server: workers had no handler for them and
+        # reported them as passed without checking anything (v0.10.0).
         async with db.execute(
-            f"SELECT * FROM jobs WHERE status = 'pending' {affinity_filter} "
+            f"SELECT * FROM jobs WHERE status = 'pending' AND job_type != 'health_check' {affinity_filter} "
             f"ORDER BY priority DESC, queue_order ASC LIMIT 1",
             affinity_params,
         ) as cur:
@@ -397,7 +402,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf', "
             "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq', "
             "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec', "
-            "              'videotoolbox_quality', 'videotoolbox_hw_decode')"
+            "              'videotoolbox_quality', 'videotoolbox_hw_decode', "
+            "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -405,6 +411,24 @@ async def request_job(req: RequestJobBody, request: Request):
     assigned["vmaf_analysis_enabled"] = (
         srv_settings.get("vmaf_analysis_enabled", "true").lower() == "true"
     )
+    # What happens to originals: workers hard-coded "no backup, no trash", so
+    # they deleted originals permanently whatever the server said (v0.10.0).
+    try:
+        assigned["backup_original_days"] = int(srv_settings.get("backup_original_days") or 0)
+    except (TypeError, ValueError):
+        assigned["backup_original_days"] = 0
+    assigned["trash_original_after_conversion"] = (
+        (srv_settings.get("trash_original_after_conversion") or "false").lower() == "true"
+    )
+    # A custom backup folder must exist on the worker too: translate it, and
+    # fall back to the folder beside each file when no mapping covers it.
+    backup_folder = (srv_settings.get("backup_folder") or "").strip()
+    if backup_folder:
+        worker_folder = await nm.translate_path(backup_folder, req.node_id, "to_worker")
+        if worker_folder == backup_folder and (node.get("path_mappings_override") or node.get("path_mappings")):
+            worker_folder = ""
+        backup_folder = worker_folder
+    assigned["backup_folder"] = backup_folder
     try:
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
@@ -660,6 +684,25 @@ async def report_complete(req: CompletionReport, request: Request):
             job = await cur.fetchone()
     finally:
         await db.close()
+
+    # H7 (v0.10.0): point the job and its Scanner row at the output, as the
+    # local worker does — a remote conversion left the row describing the
+    # original, so it showed as needing conversion with stale track data.
+    if req.success and job and output_path:
+        source_path = job["file_path"]
+        replaced = (req.replaced_source if req.replaced_source is not None
+                    else output_path != source_path or req.space_saved > 0)
+        if replaced:
+            import backend.database as _database
+            from backend.queue import refresh_converted_scan_row
+            await refresh_converted_scan_row(_database.DB_PATH, req.job_id, source_path, output_path)
+            db = await connect_db()
+            try:
+                await db.execute("UPDATE jobs SET original_file_path = ? WHERE id = ?",
+                                 (source_path, req.job_id))
+                await db.commit()
+            finally:
+                await db.close()
 
     # Update node stats (only counts successes, tracks consecutive failures)
     await nm.complete_job_on_node(
