@@ -327,9 +327,7 @@
       "title": "Audio Conversion",
       "codec": "Audio Codec",
       "bitrate": "Audio Bitrate",
-      "bitrateHelp": "Higher bitrate = better audio quality, larger files. <b>128 kbps:</b> Good for stereo. <b>256 kbps:</b> Good for 5.1 surround. <b>384-640 kbps:</b> High quality surround.",
-      "downmix": "Downmix surround to stereo",
-      "downmixHelp": "Convert 5.1/7.1 surround to stereo. Saves space but loses surround channels."
+      "bitrateHelp": "Higher bitrate = better audio quality, larger files. <b>128 kbps:</b> Good for stereo. <b>256 kbps:</b> Good for 5.1 surround. <b>384-640 kbps:</b> High quality surround."
     },
     "lossless": {
       "label": "Auto-convert lossless audio",

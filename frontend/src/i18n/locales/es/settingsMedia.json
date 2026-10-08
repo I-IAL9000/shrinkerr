@@ -331,9 +331,7 @@
       "title": "Conversión de audio",
       "codec": "Códec de audio",
       "bitrate": "Tasa de bits de audio",
-      "bitrateHelp": "Mayor tasa de bits = mejor calidad de audio y archivos más grandes. <b>128 kbps:</b> buena para estéreo. <b>256 kbps:</b> buena para sonido envolvente 5.1. <b>384-640 kbps:</b> envolvente de alta calidad.",
-      "downmix": "Reducir el sonido envolvente a estéreo",
-      "downmixHelp": "Convierte el sonido envolvente 5.1/7.1 a estéreo. Ahorra espacio, pero se pierden los canales envolventes."
+      "bitrateHelp": "Mayor tasa de bits = mejor calidad de audio y archivos más grandes. <b>128 kbps:</b> buena para estéreo. <b>256 kbps:</b> buena para sonido envolvente 5.1. <b>384-640 kbps:</b> envolvente de alta calidad."
     },
     "lossless": {
       "label": "Convertir automáticamente el audio sin pérdida",

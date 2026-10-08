@@ -1936,19 +1936,6 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         <Trans i18nKey="settingsMedia:audio.conversion.bitrateHelp" components={{ b: <strong /> }} />
                       </div>
                     </div>
-
-                    <div>
-                      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                        <input type="checkbox" checked={encoding.audio_downmix || false}
-                          readOnly
-                          onClick={() => setEncoding({ ...encoding, audio_downmix: !encoding.audio_downmix })}
-                          style={{ flexShrink: 0 }} />
-                        <span style={labelStyle}>{t("settingsMedia:audio.conversion.downmix")}</span>
-                      </label>
-                      <div style={{ ...helpStyle, paddingLeft: 26 }}>
-                        {t("settingsMedia:audio.conversion.downmixHelp")}
-                      </div>
-                    </div>
                   </>
                 )}
 

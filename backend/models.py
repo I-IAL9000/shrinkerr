@@ -232,7 +232,6 @@ class SettingsUpdate(BaseModel):
     sub_keep_unknown: Optional[bool] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
-    audio_downmix: Optional[bool] = None
     auto_queue_new: Optional[bool] = None
     auto_queue_priority: Optional[Any] = None
     auto_convert_lossless: Optional[bool] = None

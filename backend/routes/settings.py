@@ -115,7 +115,6 @@ _ENCODING_DEFAULTS = {
     "sub_keep_unknown": "true",
     "audio_codec": "copy",
     "audio_bitrate": "128",
-    "audio_downmix": "false",
     "auto_queue_new": "false",
     "auto_queue_priority": "0",
     "auto_convert_lossless": "false",
@@ -534,7 +533,6 @@ async def get_encoding_settings():
         "target_resolution": merged.get("target_resolution", "copy"),
         "audio_codec": merged.get("audio_codec", "copy"),
         "audio_bitrate": int(merged.get("audio_bitrate", 128)),
-        "audio_downmix": merged.get("audio_downmix", "false").lower() == "true",
         "auto_queue_new": merged.get("auto_queue_new", "false").lower() == "true",
         "auto_convert_lossless": merged.get("auto_convert_lossless", "false").lower() == "true",
         "lossless_target_codec": merged.get("lossless_target_codec", "eac3"),
@@ -978,8 +976,6 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["audio_codec"] = update.audio_codec
         if update.audio_bitrate is not None:
             updates["audio_bitrate"] = str(update.audio_bitrate)
-        if update.audio_downmix is not None:
-            updates["audio_downmix"] = "true" if update.audio_downmix else "false"
         if update.auto_queue_new is not None:
             updates["auto_queue_new"] = "true" if update.auto_queue_new else "false"
         if update.auto_queue_priority is not None:
