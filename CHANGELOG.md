@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A job could be picked up by the local worker and a remote node at the same time, with two encoders racing to replace the same original; a job is now claimed by exactly one.
 - A database hiccup after a conversion had replaced the original put the job back in the queue, so it re-encoded the converted file; such jobs now finish as completed.
 - A file whose streams couldn't be read when its conversion started (e.g. a stalled NAS) was converted without its subtitles; the job now fails and keeps the original.
-- **A conversion that kept the file's name left the Scanner with its old track list**, so a later cleanup could remove the wrong (or the only) audio track; tracks are now re-read after every job and sorted against the TMDB/manual original language, not a stale guess.
+- **A conversion that kept the file's name left the Scanner with its old track list**, so a later cleanup could remove the wrong (or the only) audio track; tracks are now re-read after every job and sorted against the TMDB/manual original language, not a stale guess (if the file can't be read right then, its track list is cleared until the next scan instead of kept).
 - A Blu-ray/DVD rip in a release subfolder now converts into the movie folder, named after the movie instead of the release (no doubled tech tags), and leftover CERTIFICATE / AACS (and empty AUDIO_TS / JACKET_P) folders are removed with the disc. Anything else in the release folder — subtitles, an .nfo, other files — is left alone; the folder itself is removed only once it's empty.
 
 ## [0.9.157] — 2026-10-08

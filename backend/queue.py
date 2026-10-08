@@ -981,6 +981,11 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
         )
         from backend.converter import is_lossless_audio
         fresh = await probe_file(current_file_path)
+        for _ in range(2):  # a stalled mount often answers a moment later
+            if fresh:
+                break
+            await asyncio.sleep(5)
+            fresh = await probe_file(current_file_path)
         if fresh:
             raw_audio = fresh.get("audio_tracks") or []
             raw_subs = fresh.get("subtitle_tracks") or []
@@ -1029,6 +1034,16 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             ) else 0
     except Exception as exc:
         print(f"[WORKER] Re-probe after conversion failed (non-fatal): {exc}", flush=True)
+    if new_audio_json is None:
+        # The row's tracks describe the source; their stream indexes are
+        # wrong for the output, and a cleanup queued from them removes the
+        # wrong — or the only — track. Clear them until the next scan
+        # probes the file again (v0.10.0).
+        print(f"[WORKER] Could not re-probe {current_file_path}; its track list is cleared until the next scan",
+              flush=True)
+        new_audio_json = new_sub_json = "[]"
+        new_has_removable_audio = new_has_removable_subs = new_lossless = 0
+        new_has_und = 0
 
     try:
         db_path = await _queue._connect()
@@ -2768,6 +2783,11 @@ class QueueWorker:
                             _is_cleanup_enabled as _ric, languages_match as _rlm,
                         )
                         _rp = await _rpf(_new_out, detect_und_subs=False)
+                        for _ in range(2):  # a stalled mount often answers a moment later
+                            if _rp:
+                                break
+                            await asyncio.sleep(5)
+                            _rp = await _rpf(_new_out, detect_und_subs=False)
                         # Stat the NAS file before opening the write transaction
                         # (a CIFS stall here used to hold the DB lock). v0.9.149
                         _new_sz = await _async_getsize(_new_out) if _rp else None
@@ -2816,6 +2836,16 @@ class QueueWorker:
                                 if _path_changed:
                                     _cols += ["video_codec = ?"]
                                     _params += [_rp.get("video_codec", "")]
+                            else:
+                                # The stored tracks are the source's: stale
+                                # indexes would steer the next cleanup at the
+                                # wrong tracks. Clear them until a scan
+                                # re-probes the file (v0.10.0).
+                                print(f"[WORKER] Could not re-probe {_new_out}; its track list is cleared "
+                                      f"until the next scan", flush=True)
+                                _cols += ["audio_tracks_json = '[]'", "subtitle_tracks_json = '[]'",
+                                          "has_und_tracks_flag = 0", "has_removable_tracks_flag = 0",
+                                          "has_removable_subs_flag = 0"]
                             if _cols:
                                 _params.append(_old_path)
                                 await db_r.execute(
