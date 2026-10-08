@@ -78,3 +78,26 @@ async def test_sweep_expires_folders_as_well_as_files(test_db, tmp_path, monkeyp
     await queue_mod._cleanup_expired_backups()
 
     assert sorted(p.name for p in backups.iterdir()) == ["new.mkv"]
+
+
+@pytest.mark.asyncio
+async def test_delete_backups_by_age_works(test_db, tmp_path, monkeypatch):
+    """F8: "Delete backups" (all / by age) called list_backups(), which a later
+    route function of the same name had replaced, and always failed."""
+    pytest.importorskip("apscheduler")
+    import backend.routes.settings as settings_route
+    monkeypatch.setattr(settings_route, "DB_PATH", test_db)
+    media = tmp_path / "media"
+    backups = media / "Movie (2009)" / ".shrinkerr_backup"
+    backups.mkdir(parents=True)
+    (backups / "old.mkv").write_bytes(b"x")
+    (backups / "new.mkv").write_bytes(b"x")
+    _age(backups / "old.mkv")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path) VALUES (?)", (str(media),))
+        await db.commit()
+
+    res = await settings_route.delete_backups(settings_route.DeleteBackupsRequest(older_than_days=7))
+
+    assert res["deleted"] == 1
+    assert sorted(p.name for p in backups.iterdir()) == ["new.mkv"]

@@ -1994,8 +1994,10 @@ async def create_backup():
 
 
 @router.get("/backup/list")
-async def list_backups():
-    """List all backup zip files."""
+async def list_db_backups():
+    """List all backup zip files. (Named apart from list_backups above, which
+    delete_backups calls — sharing the name made that call reach this one and
+    "Delete backups" always failed, v0.10.0.)"""
     backups = []
     for f in _list_backup_files():
         stat = f.stat()

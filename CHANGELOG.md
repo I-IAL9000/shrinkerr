@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
 - **A conversion whose source read stalled could replace the original with a truncated output**; outputs shorter than the source are now rejected and the original kept.
+- "Delete backups" (all, or older than N days) works again — it always failed.
 - **"Also rename folders" could rename the wrong folder**: an episode without a season folder renamed its show folder to "Season 01" (and the folder above after the show), and a movie in a shared folder renamed the whole folder. Folders are now only renamed when their role is clear, and the rest of a batch follows renamed folders instead of failing.
 - **Remote workers deleted originals permanently** even with "keep originals" or trash turned on; they now follow the server's setting. A remote conversion also updates the Scanner row (it kept showing as needing conversion), and health checks are no longer handed to workers that skipped them.
 - "Clear done" in the Queue asks before deleting the job history (lifetime space saved, Undo and the converted badges come from it).
