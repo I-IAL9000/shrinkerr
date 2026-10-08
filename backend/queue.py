@@ -813,8 +813,9 @@ _last_backup_cleanup = 0.0  # Throttle: at most once per hour
 
 
 async def _cleanup_expired_backups():
-    """Delete backup files older than backup_original_days. Runs at most once per hour."""
+    """Delete backups older than backup_original_days. Runs at most once per hour."""
     import os
+    import shutil
     import time
 
     global _last_backup_cleanup
@@ -854,13 +855,20 @@ async def _cleanup_expired_backups():
         if not os.path.isdir(backup_dir):
             return
         for entry in os.scandir(backup_dir):
-            if entry.is_file():
-                try:
-                    if entry.stat().st_mtime < cutoff:
-                        os.unlink(entry.path)
-                        deleted += 1
-                except OSError:
-                    pass
+            try:
+                if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
+                    continue
+                # Disc backups are folders (BDMV/, VIDEO_TS/, a release
+                # folder); pre-v0.10.0 only files expired, so they never did.
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path)
+                elif entry.is_file(follow_symlinks=False):
+                    os.unlink(entry.path)
+                else:
+                    continue
+                deleted += 1
+            except OSError:
+                pass
         # Remove dir if empty
         try:
             if not any(os.scandir(backup_dir)):
@@ -868,21 +876,26 @@ async def _cleanup_expired_backups():
         except OSError:
             pass
 
-    # Clean custom backup folder
-    if custom_folder and os.path.isdir(custom_folder):
-        for entry in os.scandir(custom_folder):
-            if entry.is_dir():
-                cleanup_dir(entry.path)
+    def sweep():
+        # Clean custom backup folder
+        if custom_folder and os.path.isdir(custom_folder):
+            for entry in os.scandir(custom_folder):
+                if entry.is_dir():
+                    cleanup_dir(entry.path)
 
-    # Clean both .shrinkerr_backup (new) and .squeezarr_backup (legacy) in
-    # media dirs so expired backups get cleaned up regardless of which name
-    # created them.
-    _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
-    for media_dir in media_dirs:
-        for root, dirs, _files in os.walk(media_dir):
-            for backup_name in _BACKUP_DIRNAMES & set(dirs):
-                cleanup_dir(os.path.join(root, backup_name))
-            dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
+        # Clean both .shrinkerr_backup (new) and .squeezarr_backup (legacy) in
+        # media dirs so expired backups get cleaned up regardless of which name
+        # created them.
+        _BACKUP_DIRNAMES = {".shrinkerr_backup", ".squeezarr_backup"}
+        for media_dir in media_dirs:
+            for root, dirs, _files in os.walk(media_dir):
+                for backup_name in _BACKUP_DIRNAMES & set(dirs):
+                    cleanup_dir(os.path.join(root, backup_name))
+                dirs[:] = [d for d in dirs if d not in _BACKUP_DIRNAMES]
+
+    # Walks every media dir and may delete whole disc folders: off the event
+    # loop, where a stalled NAS mount would freeze the app (v0.10.0).
+    await asyncio.to_thread(sweep)
 
     if deleted > 0:
         print(f"[BACKUP] Cleaned up {deleted} expired backup(s) (older than {days} days)", flush=True)

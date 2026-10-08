@@ -1437,6 +1437,14 @@ async def build_disc_output_filename(
     return str(out)
 
 
+def _move_into_backup(src: str, dst: str) -> None:
+    """Move an original into the backup folder, dated now: retention expiry
+    goes by mtime, and the move keeps the source's — a file downloaded long
+    ago lost its backup to the next sweep (H3, v0.10.0)."""
+    shutil.move(src, dst)
+    os.utime(dst)
+
+
 async def _dispose_disc_source(
     marker: Path, home: Path, disc_type: str,
     backup_days, use_trash: bool, backup_folder: str,
@@ -1476,7 +1484,7 @@ async def _dispose_disc_source(
                 raise OSError(
                     f"Refusing to move into backup path — destination is a symlink: {backup_path}"
                 )
-            await asyncio.to_thread(shutil.move, str(unit), str(backup_path))  # v0.9.32: off-loop
+            await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
             print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
             return str(backup_path)
         if use_trash:
@@ -4026,7 +4034,7 @@ async def convert_file(
                     raise OSError(
                         f"Refusing to rename into backup path — destination is a symlink: {backup_path}"
                     )
-                await asyncio.to_thread(shutil.move, str(src), str(backup_path))  # v0.9.32: off-loop
+                await asyncio.to_thread(_move_into_backup, str(src), str(backup_path))  # v0.9.32: off-loop
                 result_backup_path = str(backup_path)
                 print(f"[CONVERT] Original backed up to: {backup_path}", flush=True)
             elif use_trash:
@@ -4061,7 +4069,7 @@ async def convert_file(
                     raise OSError(
                         f"Refusing to move into backup path — destination is a symlink: {backup_path}"
                     )
-                await asyncio.to_thread(shutil.move, str(iso_source), str(backup_path))  # v0.9.32: off-loop (cross-fs copy)
+                await asyncio.to_thread(_move_into_backup, str(iso_source), str(backup_path))  # v0.9.32: off-loop (cross-fs copy)
                 result_backup_path = str(backup_path)
                 print(f"[CONVERT] ISO backed up to: {backup_path}", flush=True)
             elif use_trash:
