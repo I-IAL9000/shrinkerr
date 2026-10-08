@@ -2496,6 +2496,100 @@ def _looks_like_blank_video(log_lines: list[str], duration_s: float) -> bool:
     return video_kbps < 50.0
 
 
+async def external_subs_to_merge(source_path: str) -> list[dict] | None:
+    """Sidecar subtitles (.srt/.ass beside the video) to mux into the output,
+    when "Merge external subtitles" is on: the kept external tracks of the
+    file's Scanner row that exist and ffmpeg can read. None when there's
+    nothing to merge. Shared by conversions and audio/subtitle cleanups —
+    a cleanup rewrites the file too, but never merged them (v0.10.0)."""
+    external_sub_files: list[dict] | None = None
+    try:
+        from backend.scanner import _is_cleanup_enabled
+        from backend.scanner import is_hidden_sidecar as _is_hidden_sidecar
+        # v0.5.21: explicit default=False matches the UI's `?? false`
+        # rendering. Pre-v0.5.21 missing-row fallback was True, so
+        # external subs got merged even when the UI showed the toggle
+        # off (which always did because saves were silently dropped).
+        if _is_cleanup_enabled("merge_external_subs", default=False):
+            import aiosqlite as _aiosqlite
+            from backend.database import DB_PATH as _DB_PATH
+            db_es = await _aiosqlite.connect(_DB_PATH)
+            db_es.row_factory = _aiosqlite.Row
+            try:
+                async with db_es.execute(
+                    "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+                    (source_path,),
+                ) as cur:
+                    row_es = await cur.fetchone()
+                if row_es and row_es["subtitle_tracks_json"]:
+                    import json as _json
+                    all_sub_tracks = _json.loads(row_es["subtitle_tracks_json"])
+                    ext_subs_to_merge = [
+                        t for t in all_sub_tracks
+                        if t.get("external") and t.get("keep", True) and t.get("external_path")
+                    ]
+                    if ext_subs_to_merge:
+                        _sub_candidates = [
+                            {"path": t["external_path"], "codec": t.get("codec", "subrip"),
+                             "language": t.get("language", "und"), "forced": t.get("forced", False)}
+                            for t in ext_subs_to_merge
+                            if os.path.exists(t["external_path"])
+                            # v0.7.34: skip macOS AppleDouble / hidden
+                            # companions (`._<name>.srt`, `.foo.idx`).
+                            # v0.7.33 fixed detect_external_subtitles for
+                            # NEW scans, but external subs are merged from
+                            # STORED scan_results.subtitle_tracks_json —
+                            # rows scanned pre-v0.7.33 still carry the bad
+                            # `._` paths, and feeding one to ffmpeg as -i
+                            # fails the whole conversion (exit 183/234).
+                            # Guarding at the point of use covers every
+                            # stale row without requiring a re-scan.
+                            and not _is_hidden_sidecar(t["external_path"])
+                        ]
+                        # v0.9.114: a real-looking sidecar (e.g. `.eng.srt`)
+                        # can pass the name/existence guards but still be
+                        # unreadable by ffmpeg (empty / mis-encoded / not a
+                        # subtitle) — as -i it aborts the encode with exit
+                        # 183 "Invalid data found". Probe each and drop the
+                        # bad ones so one corrupt .srt can't fail the job.
+                        external_sub_files = []
+                        for _sc in _sub_candidates:
+                            if await _external_sub_is_readable(_sc["path"]):
+                                external_sub_files.append(_sc)
+                            else:
+                                print(f"[SUBS] Skipping unreadable external subtitle: {_sc['path']}", flush=True)
+                        if external_sub_files:
+                            print(f"[SUBS] Will merge {len(external_sub_files)} external subtitle file(s)", flush=True)
+            finally:
+                await db_es.close()
+    except Exception as exc:
+        print(f"[SUBS] External sub loading failed (non-fatal): {exc}", flush=True)
+    return external_sub_files
+
+
+def delete_merged_external_subs(external_sub_files: list[dict] | None) -> None:
+    """Delete sidecar subtitles that were muxed into the output, when
+    "Delete external subtitles after merging" is on."""
+    if not external_sub_files:
+        return
+    try:
+        from backend.scanner import _is_cleanup_enabled as _ice
+        # v0.5.21: explicit default=False to match UI default and
+        # avoid silent file deletion on missing-row installs.
+        if not _ice("delete_external_subs_after_merge", default=False):
+            return
+    except Exception:
+        return
+    for es in external_sub_files:
+        try:
+            p = Path(es["path"])
+            if p.exists():
+                p.unlink()
+                print(f"[SUBS] Deleted merged external sub: {p.name}", flush=True)
+        except Exception as exc:
+            print(f"[SUBS] Failed to delete external sub {es['path']}: {exc}", flush=True)
+
+
 async def _external_sub_is_readable(path: str) -> bool:
     """True if ffmpeg can open `path` as a subtitle input.
 
@@ -3039,68 +3133,7 @@ async def convert_file(
             print(f"[CONVERT] Pre-strip done — main encode runs on {prestrip_path}", flush=True)
 
     # Load external subtitle files to merge (if the setting is enabled)
-    external_sub_files: list[dict] | None = None
-    try:
-        from backend.scanner import _is_cleanup_enabled
-        from backend.scanner import is_hidden_sidecar as _is_hidden_sidecar
-        # v0.5.21: explicit default=False matches the UI's `?? false`
-        # rendering. Pre-v0.5.21 missing-row fallback was True, so
-        # external subs got merged even when the UI showed the toggle
-        # off (which always did because saves were silently dropped).
-        if _is_cleanup_enabled("merge_external_subs", default=False):
-            import aiosqlite as _aiosqlite
-            from backend.database import DB_PATH as _DB_PATH
-            db_es = await _aiosqlite.connect(_DB_PATH)
-            db_es.row_factory = _aiosqlite.Row
-            try:
-                async with db_es.execute(
-                    "SELECT subtitle_tracks_json FROM scan_results WHERE file_path = ?",
-                    (input_path,),
-                ) as cur:
-                    row_es = await cur.fetchone()
-                if row_es and row_es["subtitle_tracks_json"]:
-                    import json as _json
-                    all_sub_tracks = _json.loads(row_es["subtitle_tracks_json"])
-                    ext_subs_to_merge = [
-                        t for t in all_sub_tracks
-                        if t.get("external") and t.get("keep", True) and t.get("external_path")
-                    ]
-                    if ext_subs_to_merge:
-                        _sub_candidates = [
-                            {"path": t["external_path"], "codec": t.get("codec", "subrip"),
-                             "language": t.get("language", "und"), "forced": t.get("forced", False)}
-                            for t in ext_subs_to_merge
-                            if os.path.exists(t["external_path"])
-                            # v0.7.34: skip macOS AppleDouble / hidden
-                            # companions (`._<name>.srt`, `.foo.idx`).
-                            # v0.7.33 fixed detect_external_subtitles for
-                            # NEW scans, but external subs are merged from
-                            # STORED scan_results.subtitle_tracks_json —
-                            # rows scanned pre-v0.7.33 still carry the bad
-                            # `._` paths, and feeding one to ffmpeg as -i
-                            # fails the whole conversion (exit 183/234).
-                            # Guarding at the point of use covers every
-                            # stale row without requiring a re-scan.
-                            and not _is_hidden_sidecar(t["external_path"])
-                        ]
-                        # v0.9.114: a real-looking sidecar (e.g. `.eng.srt`)
-                        # can pass the name/existence guards but still be
-                        # unreadable by ffmpeg (empty / mis-encoded / not a
-                        # subtitle) — as -i it aborts the encode with exit
-                        # 183 "Invalid data found". Probe each and drop the
-                        # bad ones so one corrupt .srt can't fail the job.
-                        external_sub_files = []
-                        for _sc in _sub_candidates:
-                            if await _external_sub_is_readable(_sc["path"]):
-                                external_sub_files.append(_sc)
-                            else:
-                                print(f"[CONVERT] Skipping unreadable external subtitle: {_sc['path']}", flush=True)
-                        if external_sub_files:
-                            print(f"[CONVERT] Will merge {len(external_sub_files)} external subtitle file(s)", flush=True)
-            finally:
-                await db_es.close()
-    except Exception as exc:
-        print(f"[CONVERT] External sub loading failed (non-fatal): {exc}", flush=True)
+    external_sub_files = await external_subs_to_merge(input_path)
 
     # v0.5.6: thread cap from live settings (0 = ffmpeg auto).
     try:
@@ -4405,25 +4438,7 @@ async def convert_file(
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
     # Handle external subtitle files after successful conversion
-    _should_delete_ext_subs = False
-    if external_sub_files:
-        try:
-            from backend.scanner import _is_cleanup_enabled as _ice
-            # v0.5.21: explicit default=False to match UI default and
-            # avoid silent file deletion on missing-row installs.
-            _should_delete_ext_subs = _ice("delete_external_subs_after_merge", default=False)
-        except Exception:
-            pass
-    if external_sub_files and _should_delete_ext_subs:
-        # Delete external subs that were merged into the output
-        for es in external_sub_files:
-            try:
-                p = Path(es["path"])
-                if p.exists():
-                    p.unlink()
-                    print(f"[CONVERT] Deleted merged external sub: {p.name}", flush=True)
-            except Exception as exc:
-                print(f"[CONVERT] Failed to delete external sub {es['path']}: {exc}", flush=True)
+    delete_merged_external_subs(external_sub_files)
 
     # Rename remaining external subtitle files to match the new filename
     final_stem = Path(final_path).stem

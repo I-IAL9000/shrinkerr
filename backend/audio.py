@@ -295,10 +295,15 @@ async def remux_audio(
     # supported"). One quick ffprobe per remux — negligible cost vs.
     # the whole-file copy that follows.
     sub_codecs = await _probe_subtitle_stream_codecs(input_path)
+    # Sidecar subtitles go into the file here too when "Merge external
+    # subtitles" is on — only conversions merged them (v0.10.0).
+    from backend.converter import delete_merged_external_subs, external_subs_to_merge
+    ext_subs = await external_subs_to_merge(input_path)
 
     cmd = build_remux_cmd(
         input_path, temp_path, keep_audio_indices,
         keep_subtitle_indices=keep_subtitle_indices,
+        external_subtitle_files=ext_subs or None,
         subtitle_stream_codecs=sub_codecs or None,
         audio_languages=audio_languages,
     )
@@ -560,6 +565,7 @@ async def remux_audio(
         print(f"  Original: {p} (exists={p.exists()})  Temp: {temp} (exists={temp.exists()})", flush=True)
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc), "source_intact": p.exists()}
 
+    delete_merged_external_subs(ext_subs)
     elapsed = time.monotonic() - remux_start
     print(f"[REMUX] Done: saved {space_saved} bytes", flush=True)
     return {
