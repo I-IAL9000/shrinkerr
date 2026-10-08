@@ -873,6 +873,10 @@ async def _cleanup_expired_backups():
     from backend.media_paths import backup_folder_conflict
 
     deleted = 0
+    # The one-time re-date only counts as done once it reached every backup:
+    # one skipped (an unmounted share, a refused utime) would be deleted by
+    # the next sweep.
+    redate_complete = True
 
     def is_disc_backup(entry) -> bool:
         # BDMV/, CERTIFICATE/, VIDEO_TS/ … or a folder holding one (a
@@ -882,7 +886,7 @@ async def _cleanup_expired_backups():
             os.path.isdir(os.path.join(entry.path, d)) for d in ("BDMV", "VIDEO_TS"))
 
     def cleanup_dir(backup_dir: str):
-        nonlocal deleted
+        nonlocal deleted, redate_complete
         if not os.path.isdir(backup_dir):
             return
         for entry in os.scandir(backup_dir):
@@ -895,7 +899,10 @@ async def _cleanup_expired_backups():
                     # first sweep would have deleted them all at once.
                     # Give the ones already there a full retention period.
                     if redate:
-                        os.utime(entry.path)
+                        try:
+                            os.utime(entry.path)
+                        except OSError:
+                            redate_complete = False
                         continue
                 if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
                     continue
@@ -916,6 +923,11 @@ async def _cleanup_expired_backups():
             pass
 
     def sweep():
+        nonlocal redate_complete
+        if custom_folder and not os.path.isdir(custom_folder):
+            redate_complete = False
+        if any(not os.path.isdir(d) for d in media_dirs):
+            redate_complete = False
         # Clean custom backup folder — unless it overlaps the library, where
         # "old files in its folders" are the media (v0.10.0).
         conflict = backup_folder_conflict(custom_folder, media_dirs) if custom_folder else None
@@ -940,7 +952,7 @@ async def _cleanup_expired_backups():
     # Walks every media dir and may delete whole disc folders: off the event
     # loop, where a stalled NAS mount would freeze the app (v0.10.0).
     await asyncio.to_thread(sweep)
-    if redate:
+    if redate and redate_complete:
         db = await aiosqlite.connect(DB_PATH)
         try:
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('disc_backups_redated', '1')")

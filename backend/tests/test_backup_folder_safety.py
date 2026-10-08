@@ -173,3 +173,22 @@ async def test_delete_backups_only_deletes_backups(test_db, tmp_path, monkeypatc
     res = await route.delete_backups(route.DeleteBackupsRequest(paths=[]))  # "Delete all"
     assert res["deleted"] == 1
     assert movie.exists() and not backup.exists()
+
+
+@pytest.mark.asyncio
+async def test_redating_waits_for_an_unmounted_media_folder(test_db, tmp_path, sweep):
+    media = tmp_path / "media"
+    backups = media / "Movie (2009)" / ".shrinkerr_backup"
+    _old_file(backups / "BDMV" / "index.bdmv")
+    _age(backups / "BDMV")
+    await _settings(test_db, media, backup_original_days=7)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path) VALUES (?)", (str(tmp_path / "unmounted"),))
+        await db.commit()
+
+    await sweep()
+
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT 1 FROM settings WHERE key = 'disc_backups_redated'") as cur:
+            assert await cur.fetchone() is None
+    assert (backups / "BDMV" / "index.bdmv").exists()
