@@ -57,6 +57,30 @@ def _disc_marker_path(folder: Path, disc_type: str) -> Path:
     return folder / "VIDEO_TS" / "VIDEO_TS.IFO"
 
 
+def _disc_converted_output(marker: Path) -> Optional[Path]:
+    """The converted .mkv of a folder disc, if one exists (v0.10.0).
+
+    A conversion lands in converter.disc_output_home (the disc's folder, or
+    the movie folder for a release folder inside it), named after that folder
+    without [tt…] tags, then the resolution and "Bluray" / "DVDRip". Prefix-
+    matched because the rest depends on probe data that can drift between
+    scans. Outputs made before v0.10.0 sit beside the disc, so look there too.
+    """
+    from backend.converter import _ID_TAG_RE, disc_output_home
+    disc_root = marker.parent.parent
+    token = "bluray" if marker.name.lower() == "index.bdmv" else "dvdrip"
+    for folder in dict.fromkeys((disc_output_home(disc_root), disc_root)):
+        base = _ID_TAG_RE.sub("", folder.name).strip()
+        try:
+            for sibling in folder.iterdir():
+                if (sibling.suffix.lower() == ".mkv" and sibling.stem.startswith(base)
+                        and token in sibling.stem.lower()):
+                    return sibling
+        except OSError:
+            pass
+    return None
+
+
 def _disc_total_size(folder: Path, disc_type: str) -> int:
     """Sum bytes of all media-payload files in the disc structure.
     DVD → all `*.VOB` files under VIDEO_TS/; BDMV → all `*.m2ts` under
@@ -1571,51 +1595,18 @@ async def scan_directory(
     all_paths_set = {str(f) for f in all_files}
     skip_paths: set[str] = set()
     for f in all_files:
-        # v0.6.0: disc-marker sibling detection. For a disc item, the
-        # converted output is in the PARENT folder of VIDEO_TS/ or
-        # BDMV/ (one level up from the marker's parent). We prefix-match
-        # on the parent-folder name + DVDRip/Bluray token because the
-        # full constructed name depends on probe-time data (resolution,
-        # audio codec, channels) that can drift between scans.
-        if f.name.lower() == "video_ts.ifo" and f.parent.name.lower() == "video_ts":
-            disc_root = f.parent.parent
-            disc_root_name = disc_root.name
-            try:
-                for sibling in disc_root.iterdir():
-                    if sibling.suffix.lower() != ".mkv":
-                        continue
-                    if not sibling.stem.startswith(disc_root_name):
-                        continue
-                    if "dvdrip" in sibling.stem.lower():
-                        skip_paths.add(str(f))
-                        print(
-                            f"[SCANNER] Skipping DVD (converted version exists: "
-                            f"{sibling.name}): {disc_root_name}",
-                            flush=True,
-                        )
-                        break
-            except OSError:
-                pass
-            continue
-        if f.name.lower() == "index.bdmv" and f.parent.name.lower() == "bdmv":
-            disc_root = f.parent.parent
-            disc_root_name = disc_root.name
-            try:
-                for sibling in disc_root.iterdir():
-                    if sibling.suffix.lower() != ".mkv":
-                        continue
-                    if not sibling.stem.startswith(disc_root_name):
-                        continue
-                    if "bluray" in sibling.stem.lower():
-                        skip_paths.add(str(f))
-                        print(
-                            f"[SCANNER] Skipping Blu-ray (converted version exists: "
-                            f"{sibling.name}): {disc_root_name}",
-                            flush=True,
-                        )
-                        break
-            except OSError:
-                pass
+        # v0.6.0: disc-marker sibling detection — skip a disc whose
+        # converted output already exists (see _disc_converted_output).
+        if ((f.name.lower() == "video_ts.ifo" and f.parent.name.lower() == "video_ts")
+                or (f.name.lower() == "index.bdmv" and f.parent.name.lower() == "bdmv")):
+            converted = _disc_converted_output(f)
+            if converted:
+                skip_paths.add(str(f))
+                print(
+                    f"[SCANNER] Skipping disc (converted version exists: "
+                    f"{converted.name}): {f.parent.parent.name}",
+                    flush=True,
+                )
             continue
 
         name = f.name

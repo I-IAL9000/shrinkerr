@@ -1273,6 +1273,62 @@ def resolution_label(width: int | None, height: int | None) -> str:
 _RESOLUTION_TOKEN_RE = re.compile(r"\b(?:2160p|1080p|1080i|720p|576p|480p|4k|uhd)\b", re.IGNORECASE)
 _DISC_TIER_RE = re.compile(r"\bBR[\s._-]?DISK\b|\bBD[\s._-]?(?:25|50|100)\b|\bDVD[\s._-]?(?:R|5|9)\b", re.IGNORECASE)
 
+# Metadata-ID tags ([tt1234567], [imdb-tt..], [tmdb-..], {tvdb-..}) plus the
+# whitespace before them. They belong on the folder (per *arr convention), not
+# in a converted disc's filename. v0.6.8+.
+_ID_TAG_RE = re.compile(r"\s*[\[\{](?:tt\d+|(?:imdb|tmdb|tvdb)[-:][a-zA-Z0-9]+)[\]\}]")
+_YEAR_RE = re.compile(r"\(\d{4}\)")
+# The folders a disc rip consists of; the first holds the video. v0.10.0.
+_DISC_DIRS = {
+    "bdmv": ("BDMV", "CERTIFICATE", "AACS"),
+    "dvd": ("VIDEO_TS", "AUDIO_TS", "JACKET_P"),
+}
+_ALL_DISC_DIRS = {d for dirs in _DISC_DIRS.values() for d in dirs}
+
+
+def _title_words(name: str) -> list[str]:
+    return re.findall(r"[^\W_]+", name.casefold())
+
+
+def disc_output_home(disc_root: Path) -> Path:
+    """Folder a converted folder disc's .mkv goes in (v0.10.0).
+
+    Usually the disc root, the folder holding BDMV/ or VIDEO_TS/. Radarr
+    imports a BR-DISK as a release folder inside the movie folder
+    ("Movie (2009) [tt1]/Movie (2009) 1080p MLP 5.1 VC-1/BDMV"); then the
+    output belongs in the movie folder, named after the movie, and the
+    release folder is disposed of with the disc. Recognised when the parent's
+    name has a year, the disc root's name starts with the parent's title, the
+    disc root holds nothing but the disc, and it's the only disc in the parent
+    (several would produce the same output name).
+    """
+    from backend.config import settings
+    parent = disc_root.parent
+    title = _ID_TAG_RE.sub("", parent.name)
+    words = _title_words(_YEAR_RE.sub("", title))
+    if not _YEAR_RE.search(title) or not words or _title_words(disc_root.name)[:len(words)] != words:
+        return disc_root
+    video_exts = {e.lower() for e in settings.video_extensions}
+    try:
+        for entry in disc_root.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir() and entry.name.upper() not in _ALL_DISC_DIRS:
+                return disc_root
+            if entry.suffix.lower() in video_exts:
+                return disc_root
+        for entry in parent.iterdir():
+            if entry == disc_root or entry.name.startswith("."):
+                continue
+            if entry.suffix.lower() == ".iso":
+                return disc_root
+            if entry.is_dir() and (entry.name.upper() in _ALL_DISC_DIRS
+                                   or (entry / "BDMV").is_dir() or (entry / "VIDEO_TS").is_dir()):
+                return disc_root
+    except OSError:
+        return disc_root
+    return parent
+
 
 async def build_disc_output_filename(
     disc_marker_path: str,
@@ -1287,7 +1343,8 @@ async def build_disc_output_filename(
     files go through `rename_source_to_target_codec` etc), so the name
     is BUILT from the parent folder name + probe-derived tokens
     (resolution / source-quality / audio codec / channels / encoder
-    tag). Output lands in the parent folder of VIDEO_TS/ or BDMV/.
+    tag). Output lands in the parent folder of VIDEO_TS/ or BDMV/, or in
+    the movie folder above a release folder (disc_output_home).
 
     Pattern (space-separated scene style):
       "<parent name> <resolution> <DVDRip|Bluray> [<audio codec> <channels>] <encoder>.mkv"
@@ -1312,7 +1369,6 @@ async def build_disc_output_filename(
 
     v0.6.0+.
     """
-    import re as _re
     from backend.rename import _format_channels
     p = Path(disc_marker_path)
     # v0.7.0: ISO file input — output lives in the ISO's parent dir.
@@ -1324,23 +1380,19 @@ async def build_disc_output_filename(
             base_name = p.stem
         else:
             base_name = iso_parent.name
-        output_dir = iso_parent
+        output_dir = disc_root = iso_parent
     else:
         # v0.6.0: folder-based disc — marker path is
         # .../<parent>/VIDEO_TS/VIDEO_TS.IFO or
         # .../<parent>/BDMV/index.bdmv. Strip two segments to get the
-        # disc-root (parent) folder.
-        output_dir = p.parent.parent
+        # disc-root (parent) folder. v0.10.0: a release folder inside the
+        # movie folder outputs to the movie folder (disc_output_home).
+        disc_root = p.parent.parent
+        output_dir = disc_output_home(disc_root)
         base_name = output_dir.name
-    # Strip metadata-ID tags ([tt1234567], [imdb-tt..], [tmdb-..], [tvdb-..],
-    # {tmdb-..}, {tvdb-..}) and the whitespace immediately preceding them.
     # Folder name keeps the IDs (for *arr cataloguing); only the filename
     # drops them. v0.6.8+.
-    base_name = _re.sub(
-        r"\s*[\[\{](?:tt\d+|(?:imdb|tmdb|tvdb)[-:][a-zA-Z0-9]+)[\]\}]",
-        "",
-        base_name,
-    ).strip()
+    base_name = _ID_TAG_RE.sub("", base_name).strip()
 
     # Resolution token. v0.7.24: when the encoder is downscaling, prefer
     # the target resolution over the probe-derived source height — the
@@ -1371,14 +1423,82 @@ async def build_disc_output_filename(
     codec_tag = _hevc_tag_for_encoder(encoder)
 
     # Assemble: parent name + space-separated tokens + .mkv
-    tokens = [base_name, res, source_quality]
+    tokens = [res, source_quality]
     if audio_token:
         tokens.append(audio_token)
     if channels_token:
         tokens.append(channels_token)
     tokens.append(codec_tag)
-    name = " ".join(tokens) + ".mkv"
-    return str(output_dir / name)
+    out = output_dir / (" ".join([base_name, *tokens]) + ".mkv")
+    if output_dir != disc_root and out.exists():
+        # Never replace a file already in the movie folder: keep the output
+        # beside the disc, named after its folder, as before v0.10.0.
+        out = disc_root / (" ".join([_ID_TAG_RE.sub("", disc_root.name).strip(), *tokens]) + ".mkv")
+    return str(out)
+
+
+async def _dispose_disc_source(
+    marker: Path, home: Path, disc_type: str,
+    backup_days, use_trash: bool, backup_folder: str,
+) -> str | None:
+    """Back up / trash / delete a converted folder disc once its output is
+    in place in `home`. Returns the backup path, if one was made.
+
+    The disc is BDMV/ (or VIDEO_TS/) plus the companion folders a rip
+    carries (CERTIFICATE/, AACS/ or AUDIO_TS/, JACKET_P/). When the output
+    went up to the movie folder (disc_output_home), the whole release
+    folder holding the disc is the original. v0.6.0; companions and
+    release folders v0.10.0.
+    """
+    disc_root = marker.parent.parent
+    if home != disc_root:
+        units = [disc_root]
+    else:
+        units = [marker.parent] + sorted(
+            d for d in disc_root.iterdir()
+            if d.is_dir() and d.name.upper() in _DISC_DIRS[disc_type][1:]
+        )
+
+    backup_dir = None
+    if backup_days and backup_days > 0:
+        if backup_folder:
+            backup_dir = Path(backup_folder) / home.name
+            backup_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            legacy = home / ".squeezarr_backup"
+            backup_dir = legacy if legacy.exists() else (home / ".shrinkerr_backup")
+            backup_dir.mkdir(exist_ok=True)
+
+    async def _dispose(unit: Path) -> str | None:
+        if backup_dir is not None:
+            backup_path = backup_dir / unit.name
+            if backup_path.is_symlink():
+                raise OSError(
+                    f"Refusing to move into backup path — destination is a symlink: {backup_path}"
+                )
+            await asyncio.to_thread(shutil.move, str(unit), str(backup_path))  # v0.9.32: off-loop
+            print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
+            return str(backup_path)
+        if use_trash:
+            try:
+                from send2trash import send2trash
+                await asyncio.to_thread(send2trash, str(unit))  # v0.9.32: off-loop
+                print(f"[CONVERT] Disc folder moved to trash: {unit.name}", flush=True)
+                return None
+            except Exception as trash_exc:
+                print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+        await asyncio.to_thread(shutil.rmtree, unit)  # v0.9.32: off-loop
+        print(f"[CONVERT] Removed disc folder: {unit}", flush=True)
+        return None
+
+    backup_path = await _dispose(units[0])
+    # Companion folders are tiny; failing to remove one mustn't fail the job.
+    for unit in units[1:]:
+        try:
+            await _dispose(unit)
+        except OSError as exc:
+            print(f"[CONVERT] Could not remove {unit}: {exc}", flush=True)
+    return backup_path
 
 
 def get_output_path(
@@ -3922,42 +4042,15 @@ async def convert_file(
                 iso_source.unlink()
                 print(f"[CONVERT] Removed ISO: {iso_source}", flush=True)
         elif disc_type:
-            # v0.6.0: for disc inputs the "source" is the disc subdir
-            # (VIDEO_TS/ or BDMV/), not the marker file inside it. Same
-            # three modes (backup / trash / delete) but operating on the
-            # whole folder. The subdir is never at final_path, so place the
-            # output first, then dispose it.
+            # v0.6.0: for disc inputs the "source" is the disc folder(s),
+            # not the marker file inside them (see _dispose_disc_source). The
+            # disc is never at final_path, so place the output first, then
+            # dispose it.
             temp.rename(final_path)
-            source_to_handle = Path(input_path).parent
-            if backup_days and backup_days > 0:
-                custom_backup = live_settings.get("backup_folder", "")
-                if custom_backup:
-                    backup_dir = Path(custom_backup)
-                    backup_dir = backup_dir / p.parent.parent.name
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    legacy = p.parent.parent / ".squeezarr_backup"
-                    backup_dir = legacy if legacy.exists() else (p.parent.parent / ".shrinkerr_backup")
-                    backup_dir.mkdir(exist_ok=True)
-                backup_path = backup_dir / source_to_handle.name
-                if backup_path.is_symlink():
-                    raise OSError(
-                        f"Refusing to move into backup path — destination is a symlink: {backup_path}"
-                    )
-                await asyncio.to_thread(shutil.move, str(source_to_handle), str(backup_path))  # v0.9.32: off-loop
-                result_backup_path = str(backup_path)
-                print(f"[CONVERT] Disc subdir backed up to: {backup_path}", flush=True)
-            elif use_trash:
-                try:
-                    from send2trash import send2trash
-                    await asyncio.to_thread(send2trash, str(source_to_handle))  # v0.9.32: off-loop
-                    print(f"[CONVERT] Disc subdir moved to trash: {source_to_handle.name}", flush=True)
-                except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
-            else:
-                await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
-                print(f"[CONVERT] Removed disc subdir: {source_to_handle}", flush=True)
+            result_backup_path = await _dispose_disc_source(
+                p, Path(final_path).parent, disc_type,
+                backup_days, use_trash, live_settings.get("backup_folder", ""),
+            )
         else:
             # Regular file. final_path may equal input_path (unchanged codec
             # tag), so the original occupies the target name. Move it aside
