@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
 - **A conversion whose source read stalled could replace the original with a truncated output**; outputs shorter than the source are now rejected and the original kept.
+- "Clear done" in the Queue asks before deleting the job history (lifetime space saved, Undo and the converted badges come from it).
 - **After "Select all" in the Scanner, unticking two folders re-selected the first**, so the next Trash/Ignore/Add included it; and a shift-click range in the Queue could cover the wrong jobs after the list changed.
 - **Saving one Settings section could undo another**: e.g. saving Plex wiped a TMDB key saved a moment earlier, and a Save after restoring a backup overwrote the restore. Settings now reload after every save and after a restore.
 - Turning on password login without a username and password is refused — saving any section with the box ticked used to lock everyone out.

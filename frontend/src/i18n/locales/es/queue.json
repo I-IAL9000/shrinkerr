@@ -94,6 +94,9 @@
     "rerequest_many": "¿Volver a solicitar {{count}} archivos a Sonarr/Radarr?\n\nEsto: bloqueará la versión actual, eliminará el archivo del disco e iniciará una nueva búsqueda para cada uno.",
     "rerequest_other": "¿Volver a solicitar {{count}} archivos a Sonarr/Radarr?\n\nEsto: bloqueará la versión actual, eliminará el archivo del disco e iniciará una nueva búsqueda para cada uno.",
     "rerequestLabel": "Volver a solicitar {{count}}",
+    "clearDone_one": "¿Borrar el historial de {{count}} trabajo completado, junto con los fallidos y cancelados? El espacio ahorrado total, Deshacer y las insignias de convertido dependen de este historial.",
+    "clearDone_many": "¿Borrar el historial de los {{count}} trabajos completados, junto con los fallidos y cancelados? El espacio ahorrado total, Deshacer y las insignias de convertido dependen de este historial.",
+    "clearDone_other": "¿Borrar el historial de los {{count}} trabajos completados, junto con los fallidos y cancelados? El espacio ahorrado total, Deshacer y las insignias de convertido dependen de este historial.",
     "clearFailed_one": "¿Borrar {{count}} trabajo fallido?",
     "clearFailed_many": "¿Borrar los {{count}} trabajos fallidos?",
     "clearFailed_other": "¿Borrar los {{count}} trabajos fallidos?"

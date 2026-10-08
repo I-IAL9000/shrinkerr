@@ -714,7 +714,13 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           </>)}
           {tab === "completed" && tabJobs.length > 0 && (<>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
-                  onClick={() => { clearCompleted(); load(); }}>
+                  onClick={async () => {
+                    // The history feeds lifetime space saved, Undo and the
+                    // converted badges; one click used to wipe it (v0.10.0).
+                    if (!await confirm({ message: t("queue:confirm.clearDone", { count: completedCount }), confirmLabel: t("queue:actions.clearDone"), danger: true })) return;
+                    await clearCompleted();
+                    load();
+                  }}>
                   {t("queue:actions.clearDone")}
                 </button>
           </>)}
