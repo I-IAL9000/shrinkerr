@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
@@ -587,9 +587,29 @@ async def resume_worker():
 
 
 @router.post("/cancel-current")
-async def cancel_current_job(job_id: Optional[int] = None):
+async def cancel_current_job(request: Request, job_id: Optional[int] = None):
     if _worker is None:
         raise ApiError(status_code=503, detail="Worker not initialized", code="queue.workerNotInitialized")
+    if job_id is not None:
+        db = await connect_db()
+        try:
+            async with db.execute(
+                "SELECT assigned_node_id FROM jobs WHERE id = ? AND status = 'running'", (job_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            node_id = row["assigned_node_id"] if row else None
+            if node_id and node_id != "local":
+                # Running on a remote node: its next progress report tells
+                # it to stop. This only killed local ffmpeg processes, so a
+                # remote job kept encoding (M6, v0.10.0).
+                await db.execute("UPDATE jobs SET cancel_requested = 1 WHERE id = ?", (job_id,))
+                await db.commit()
+                nm = getattr(request.app.state, "node_manager", None)
+                if nm is not None:
+                    nm.request_cancel(job_id)
+                return {"status": "cancel_requested", "job_id": job_id}
+        finally:
+            await db.close()
     cancelled_id = await _worker.cancel_current(job_id)
     if cancelled_id is None:
         return {"status": "no_job_running"}

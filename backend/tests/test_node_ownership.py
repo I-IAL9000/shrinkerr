@@ -101,3 +101,22 @@ async def test_a_completion_after_release_is_kept(test_db, node_api):
     await nodes_route.report_complete(nodes_route.CompletionReport(
         node_id="node-1", job_id=job_id, success=True, space_saved=0, replaced_source=False), request)
     assert (await _state(test_db, job_id))[0] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_job_on_a_remote_node_reaches_the_node(test_db, node_api):
+    """M6: the Queue's Cancel only killed local ffmpeg processes, so a job
+    running on a remote node kept encoding."""
+    from backend.queue import QueueWorker
+    from backend.routes.jobs import cancel_current_job, init_job_routes
+    nm, request = node_api
+    init_job_routes(QueueWorker(test_db), JobQueue(test_db))
+    job_id = await _job(test_db, "running", "node-1")
+    await _node(test_db, "node-1", 0, job_id)
+
+    res = await cancel_current_job(request, job_id)
+
+    assert res["status"] == "cancel_requested"
+    progress = await nodes_route.report_progress(nodes_route.ProgressReport(
+        node_id="node-1", job_id=job_id, progress=60), request)
+    assert progress["cancelled"] is True
