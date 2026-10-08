@@ -601,6 +601,59 @@ def _pick_main_vts_in_iso(iso) -> Optional[str]:
     return max(title_sets, key=title_sets.get)
 
 
+def dvd_iso_concat_input(iso_path: Path) -> Optional[str]:
+    """ffmpeg input for a DVD ISO's main feature: a `concat:` over the main
+    title set's VOBs, each addressed as a `subfile:` byte range of the ISO.
+
+    v0.9.152: replaces `-f dvdvideo` for ISOs. That demuxer opened title 1
+    (padding cells on some discs → "Invalid data") and reads through
+    libdvdread, which only uses UDF ("Unable to open the VMG" on an ISO
+    with a damaged UDF tree). The ISO 9660 directory locates each VOB as a
+    contiguous extent, so this matches how folder DVDs are read
+    (scanner._dvd_concat_input). Main title set = largest total VOB size,
+    menu chunks (_0) excluded. None when the ISO 9660 tree has no
+    VIDEO_TS VOBs (caller falls back to dvdvideo)."""
+    import re as _re_mod
+    try:
+        import pycdlib
+    except ImportError:
+        return None
+    iso = pycdlib.PyCdlib()
+    try:
+        iso.open(str(iso_path))
+    except Exception:
+        return None
+    try:
+        block = getattr(iso, "logical_block_size", 2048) or 2048
+        title_sets: dict[str, list[tuple[int, int, int]]] = {}
+        try:
+            children = list(iso.list_children(iso_path="/VIDEO_TS"))
+        except Exception:
+            return None
+        for child in children:
+            if child is None:
+                continue
+            try:
+                name = child.file_identifier().decode("utf-8", errors="replace").split(";", 1)[0]
+            except Exception:
+                continue
+            m = _re_mod.fullmatch(r"VTS_(\d{2})_(\d+)\.VOB", name, _re_mod.IGNORECASE)
+            if not m or int(m.group(2)) == 0:
+                continue
+            title_sets.setdefault(m.group(1), []).append(
+                (int(m.group(2)), child.extent_location() * block, child.get_data_length()))
+    finally:
+        try:
+            iso.close()
+        except Exception:
+            pass
+    if not title_sets:
+        return None
+    main = max(title_sets.values(), key=lambda vobs: sum(size for _, _, size in vobs))
+    return "concat:" + "|".join(
+        f"subfile,,start,{off},end,{off + size},,:{iso_path}" for _, off, size in sorted(main))
+
+
 def _pick_main_mpls_in_iso(iso) -> Optional[bytes]:
     """Enumerate /BDMV/PLAYLIST/*.mpls inside an open ISO, extract each
     (small files, ~1 KB), pick the one with the largest total PlayItem

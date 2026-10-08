@@ -181,12 +181,16 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     # time. Checked BEFORE folder-marker branches because an .iso file
     # never has VIDEO_TS/ or BDMV/ as its parent directory.
     if p.is_file() and p.suffix.lower() == ".iso":
-        from backend.disc_metadata import _classify_disc_iso
-        disc_type = _classify_disc_iso(p)
+        from backend.disc_metadata import _classify_disc_iso, dvd_iso_concat_input
+        disc_type = await asyncio.to_thread(_classify_disc_iso, p)
         if disc_type == "dvd":
             disc_folder = p           # ISO IS the disc — disc_folder points at the .iso file, not a dir
-            probe_input = str(p)
-            ffprobe_input_args = ["-f", "dvdvideo"]
+            # v0.9.152: read the main title's VOBs straight out of the ISO
+            # (like folder DVDs); dvdvideo is only the fallback.
+            probe_input = await asyncio.to_thread(dvd_iso_concat_input, p)
+            if not probe_input:
+                probe_input = str(p)
+                ffprobe_input_args = ["-f", "dvdvideo"]
         elif disc_type == "bdmv":
             disc_folder = p
             probe_input = f"bluray:{p}"

@@ -2509,8 +2509,13 @@ async def convert_file(
         _disc_p = Path(input_path)
         if _disc_p.is_file() and _disc_p.suffix.lower() == ".iso":
             if disc_type == "dvd":
-                encode_input_path = str(_disc_p)
-                ffmpeg_input_args = ["-f", "dvdvideo"]
+                # v0.9.152: main-title VOBs read straight out of the ISO
+                # (see disc_metadata.dvd_iso_concat_input); dvdvideo fallback.
+                from backend.disc_metadata import dvd_iso_concat_input
+                encode_input_path = await asyncio.to_thread(dvd_iso_concat_input, _disc_p)
+                if not encode_input_path:
+                    encode_input_path = str(_disc_p)
+                    ffmpeg_input_args = ["-f", "dvdvideo"]
             else:  # bdmv
                 encode_input_path = f"bluray:{_disc_p}"
             print(

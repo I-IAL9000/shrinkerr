@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.152] — 2026-10-08
+
+### Fixed
+- **DVD ISOs that never showed up in the Scanner are now picked up** — the main feature's VOBs are read straight out of the ISO (like DVD folders), so discs whose first title is padding or whose UDF directory is damaged no longer fail to probe.
+
 ## [0.9.151] — 2026-10-08
 
 ### Fixed
