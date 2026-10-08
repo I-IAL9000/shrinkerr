@@ -150,9 +150,9 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
             db.execute(
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
-                    audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, video_height,
+                    audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, probe_error, video_height,
                     has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -184,6 +184,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        END,
                        duration=excluded.duration,
                        probe_status=excluded.probe_status,
+                       probe_error=excluded.probe_error,
                        video_height=excluded.video_height,
                        has_removable_tracks_flag=excluded.has_removable_tracks_flag,
                        has_removable_subs_flag=excluded.has_removable_subs_flag,
@@ -210,6 +211,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     new_detected_at_val,
                     scanned.duration,
                     getattr(scanned, 'probe_status', 'ok'),
+                    getattr(scanned, 'probe_error', None),  # v0.9.153
                     getattr(scanned, 'video_height', 0),
                     1 if (has_removable or getattr(scanned, 'needs_audio_reorder', False)) else 0,
                     has_removable_subs,
@@ -2325,6 +2327,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "duration": dur,
         "file_mtime": row.get("file_mtime"),
         "probe_status": row.get("probe_status", "ok"),
+        "probe_error": row.get("probe_error"),
         "video_height": row.get("video_height", 0),
         "plex_watch_status": _get_watch_status(fp, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
@@ -2428,6 +2431,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "duration": dur,
         "file_mtime": row.get("file_mtime"),
         "probe_status": row.get("probe_status", "ok"),
+        "probe_error": row.get("probe_error"),
         "video_height": row.get("video_height", 0),
         "plex_watch_status": _get_watch_status(fp, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
@@ -2464,6 +2468,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     native_language, language_source, new_detected_at, converted, file_mtime, duration,
     audio_tracks_json, subtitle_tracks_json,
     COALESCE(probe_status, 'ok') as probe_status,
+    probe_error,
     COALESCE(video_height, 0) as video_height,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
     COALESCE(has_und_tracks_flag, 0) as has_und_tracks,

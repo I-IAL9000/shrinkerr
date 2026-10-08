@@ -116,5 +116,17 @@
     "nothingQueued": "No se añadió nada a la cola",
     "queueFailed": "No se pudo añadir a la cola: {{error}}"
   },
-  "unknownError": "error desconocido"
+  "unknownError": "error desconocido",
+  "unreadable": {
+    "title": {
+      "dvd": "No se puede leer esta imagen de DVD",
+      "bluray": "No se puede leer esta imagen de Blu-ray",
+      "unknown": "No se puede leer esta imagen de disco"
+    },
+    "hint": {
+      "dvd": "Abre la ISO en tu ordenador y copia su carpeta VIDEO_TS junto a ella: Shrinkerr convierte carpetas de DVD.",
+      "bluray": "Abre la ISO en tu ordenador y copia sus carpetas BDMV y CERTIFICATE junto a ella: Shrinkerr convierte carpetas de Blu-ray.",
+      "unknown": "Comprueba que la imagen se abre en tu ordenador. Si es un DVD o Blu-ray, copia su carpeta VIDEO_TS o BDMV junto a ella: Shrinkerr convierte carpetas de disco."
+    }
+  }
 }

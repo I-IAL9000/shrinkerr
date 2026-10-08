@@ -115,5 +115,17 @@
     "nothingQueued": "Nothing queued",
     "queueFailed": "Failed to queue: {{error}}"
   },
-  "unknownError": "unknown error"
+  "unknownError": "unknown error",
+  "unreadable": {
+    "title": {
+      "dvd": "This DVD image can't be read",
+      "bluray": "This Blu-ray image can't be read",
+      "unknown": "This disc image can't be read"
+    },
+    "hint": {
+      "dvd": "Open the ISO on your computer and copy its VIDEO_TS folder next to it — Shrinkerr converts DVD folders.",
+      "bluray": "Open the ISO on your computer and copy its BDMV and CERTIFICATE folders next to it — Shrinkerr converts Blu-ray folders.",
+      "unknown": "Check that the image opens on your computer. If it's a DVD or Blu-ray, copy its VIDEO_TS or BDMV folder next to it — Shrinkerr converts disc folders."
+    }
+  }
 }

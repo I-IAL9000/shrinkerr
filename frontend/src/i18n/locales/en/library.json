@@ -46,6 +46,8 @@
     "tv": "TV",
     "movie": "Movie",
     "tvUpper": "TV",
-    "movieUpper": "MOVIE"
+    "movieUpper": "MOVIE",
+    "unreadable": "Unreadable",
+    "unreadableTitle": "Disc image can't be read: {{detail}}"
   }
 }

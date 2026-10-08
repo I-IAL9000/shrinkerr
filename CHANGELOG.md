@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.153] — 2026-10-08
+
+### Added
+- **Disc images that can't be read now show up in the Scanner as "Unreadable"** with the reader's error and a workaround, instead of silently never appearing (they're also counted under Corrupt).
+
 ## [0.9.152] — 2026-10-08
 
 ### Fixed

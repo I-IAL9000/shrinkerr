@@ -6,6 +6,7 @@ import { getCodecLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
+import { unreadableReason } from "../utils/unreadable";
 
 export type SortBy = "name" | "size" | "files" | "date";
 export type SortDirection = "asc" | "desc";
@@ -476,6 +477,15 @@ const FileRow = memo(function FileRow({
               <path d="M6 12a6 6 0 0 1 6-6"/>
             </svg>
             {file.disc_type === "dvd" ? "DVD" : "Blu-ray"}
+          </span>
+        )}
+        {file.probe_status === "unreadable" && (
+          <span
+            className="codec-badge"
+            title={t("library:badges.unreadableTitle", { detail: unreadableReason(file)?.detail || "" })}
+            style={{ color: "var(--warning)", borderColor: "var(--warning)" }}
+          >
+            {t("library:badges.unreadable")}
           </span>
         )}
         {(file.health_status === "corrupt" || file.probe_status === "corrupt") && (

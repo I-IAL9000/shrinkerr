@@ -14,6 +14,7 @@ empty lists. Callers map empty → "und" at the merge step. Logs a
 
 from __future__ import annotations
 
+import os
 import struct
 from pathlib import Path
 from typing import Optional
@@ -652,6 +653,43 @@ def dvd_iso_concat_input(iso_path: Path) -> Optional[str]:
     main = max(title_sets.values(), key=lambda vobs: sum(size for _, _, size in vobs))
     return "concat:" + "|".join(
         f"subfile,,start,{off},end,{off + size},,:{iso_path}" for _, off, size in sorted(main))
+
+
+_UNREADABLE_DETAIL_MARKERS = (
+    "udfread ERROR", "bd_open", "Unable to open", "Invalid data", "error opening",
+    "padding cells", "Generic error", "Input/output error",
+)
+
+
+def diagnose_unreadable_iso(iso_path: Path) -> str:
+    """Why an ISO couldn't be probed, as JSON {"kind", "detail"} for the
+    Scanner's "Unreadable" badge (v0.9.153 — failed ISOs used to vanish
+    from the Scanner silently). kind: "dvd" | "bluray" | "unknown"; detail
+    is the reader's own error lines (technical, not translated)."""
+    import json as _json
+    import subprocess
+
+    def _errors(cmd: list[str]) -> list[str]:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                               env={**os.environ, "BD_DEBUG_MASK": "0x800"})
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return [f"{type(exc).__name__}: {exc}"]
+        lines = [ln.strip() for ln in r.stderr.splitlines()]
+        return [ln.replace(str(iso_path), "<iso>") for ln in lines
+                if any(m in ln for m in _UNREADABLE_DETAIL_MARKERS)]
+
+    kind = _classify_disc_iso(iso_path)
+    if kind == "dvd":
+        lines = _errors(["ffprobe", "-v", "error", "-f", "dvdvideo", "-i", str(iso_path)])
+    else:
+        lines = _errors(["ffprobe", "-v", "error", "-i", f"bluray:{iso_path}"])
+        bd = any("udfread" in ln or "index.bdmv" in ln or "bd_open" in ln for ln in lines)
+        kind = "bluray" if kind == "bdmv" or bd else "unknown"
+    # udfread's own errors first — they name the actual problem.
+    lines.sort(key=lambda ln: "udfread" not in ln)
+    detail = "; ".join(dict.fromkeys(lines))[:400] or "no streams found"
+    return _json.dumps({"kind": kind, "detail": detail})
 
 
 def _pick_main_mpls_in_iso(iso) -> Optional[bytes]:

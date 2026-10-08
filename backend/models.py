@@ -70,7 +70,8 @@ class ScannedFile(BaseModel):
     ignored: bool = False
     file_mtime: Optional[float] = None  # File modification time (Unix timestamp)
     duration: Optional[float] = None  # Duration in seconds (from ffprobe)
-    probe_status: str = "ok"  # "ok", "corrupt", "truncated"
+    probe_status: str = "ok"  # "ok", "corrupt", "truncated", "unreadable" (v0.9.153: disc image)
+    probe_error: Optional[str] = None  # v0.9.153: JSON {"kind", "detail"} for "unreadable"
     video_height: int = 0  # Video resolution height (e.g., 1080, 2160)
     # v0.6.0: 'dvd' / 'bdmv' / None — set when the scanner walks into a
     # VIDEO_TS/BDMV folder structure and registers the marker file as

@@ -61,6 +61,7 @@ export interface ScannedFile {
   duration: number;
   file_mtime: number | null;
   probe_status?: string;
+  probe_error?: string | null;  // v0.9.153: JSON {kind, detail} when probe_status === "unreadable"
   health_status?: "healthy" | "corrupt" | "warnings" | null;
   health_check_type?: "quick" | "thorough" | null;
   health_checked_at?: string | null;

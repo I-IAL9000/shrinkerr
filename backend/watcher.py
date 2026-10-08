@@ -65,6 +65,30 @@ def _belt_stale_trigger() -> int:
         return 1000
 
 
+async def _unreadable_iso_entry(file_path: str):
+    """Scanner row for a disc image no reader could open (v0.9.153)."""
+    import time
+    from backend.disc_metadata import diagnose_unreadable_iso
+    from backend.models import ScannedFile
+    p = Path(file_path)
+    try:
+        st = await asyncio.to_thread(p.stat)
+        size, mtime = st.st_size, clamp_future_mtime(st.st_mtime, time.time())
+    except OSError:
+        size, mtime = 0, None
+    reason = await asyncio.to_thread(diagnose_unreadable_iso, p)
+    print(f"[WATCHER] Unreadable disc image: {file_path} — {reason}", flush=True)
+    return ScannedFile(
+        file_path=file_path, file_name=p.name, folder_name=p.parent.name,
+        file_size=size, file_size_gb=round(size / (1024 ** 3), 3),
+        video_codec="unknown", needs_conversion=False, audio_tracks=[],
+        native_language="und", has_removable_tracks=False,
+        estimated_savings_bytes=0, estimated_savings_gb=0,
+        file_mtime=mtime, duration=0,
+        probe_status="unreadable", probe_error=reason,
+    )
+
+
 class FileWatcher:
     def __init__(self, db_path: str, interval_minutes: int = 5):
         self.db_path = db_path
@@ -322,6 +346,13 @@ class FileWatcher:
                     pass
 
             probe = await probe_file(file_path)
+            if probe is None and file_path.lower().endswith(".iso"):
+                # v0.9.153: an unreadable disc image used to be skipped here
+                # and never appeared anywhere. Record it as "unreadable" with
+                # the reader's error so it shows up in the Scanner.
+                results.append(await _unreadable_iso_entry(file_path))
+                new_file_paths.append(file_path)
+                continue
             if probe is None:
                 # v0.6.2: disc probes can fail silently. Surface them.
                 if "/VIDEO_TS/VIDEO_TS.IFO" in file_path or "/BDMV/index.bdmv" in file_path.lower():

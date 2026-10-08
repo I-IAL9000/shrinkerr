@@ -48,6 +48,8 @@
     "tv": "Serie",
     "movie": "Película",
     "tvUpper": "SERIE",
-    "movieUpper": "PELÍCULA"
+    "movieUpper": "PELÍCULA",
+    "unreadable": "Ilegible",
+    "unreadableTitle": "No se puede leer la imagen de disco: {{detail}}"
   }
 }

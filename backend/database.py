@@ -428,6 +428,11 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN probe_status TEXT DEFAULT 'ok'")
         except Exception:
             pass
+        # v0.9.153: why a disc image is "unreadable" (JSON {"kind", "detail"})
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN probe_error TEXT DEFAULT NULL")
+        except Exception:
+            pass
         # Migration: add vmaf_score to scan_results
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN vmaf_score REAL DEFAULT NULL")

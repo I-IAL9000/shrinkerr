@@ -1807,6 +1807,12 @@ async def scan_directory(
                 duration=0,
                 probe_status="corrupt",
             )
+            # v0.9.153: a disc image that no reader can open isn't corrupt —
+            # flag it "unreadable" with the reader's own error.
+            if Path(file_path).suffix.lower() == ".iso":
+                from backend.disc_metadata import diagnose_unreadable_iso
+                corrupt_entry.probe_status = "unreadable"
+                corrupt_entry.probe_error = await asyncio.to_thread(diagnose_unreadable_iso, Path(file_path))
             if result_callback:
                 await result_callback(corrupt_entry)
             else:

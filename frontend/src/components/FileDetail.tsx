@@ -9,6 +9,7 @@ import { vmafLabel } from "../utils/vmaf";
 import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
 import { serverText, detectNote } from "../i18n/server";
+import { unreadableReason } from "../utils/unreadable";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -250,11 +251,26 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     cursor: "pointer",
   });
 
+  const unreadable = unreadableReason(file);
+
   return (
     <div className="file-detail">
       <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
         {file.video_codec} &middot; {file.file_size_gb} GB
       </div>
+      {unreadable && (
+        <div style={{ border: "1px solid var(--warning)", borderRadius: 6, padding: "8px 10px", marginBottom: 8, fontSize: 12 }}>
+          <div style={{ fontWeight: 600, color: "var(--warning)", marginBottom: 4 }}>
+            {t(`fileDetail:unreadable.title.${unreadable.kind}`)}
+          </div>
+          {unreadable.detail && (
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--text-muted)", marginBottom: 6, wordBreak: "break-word" }}>
+              {unreadable.detail}
+            </div>
+          )}
+          <div>{t(`fileDetail:unreadable.hint.${unreadable.kind}`)}</div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 4, marginBottom: 8, borderBottom: "1px solid var(--border)" }}>
         <button style={tabBtnStyle(tab === "tracks")} onClick={() => setTab("tracks")}>{t("fileDetail:tabs.tracks")}</button>
         <button style={tabBtnStyle(tab === "history")} onClick={() => setTab("history")}>{t("fileDetail:tabs.history")}</button>
