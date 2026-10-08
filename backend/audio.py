@@ -324,8 +324,11 @@ async def remux_audio(
         all_lines: list[str] = []
         buffer = ""
         last_lines: list[str] = []
+        from backend.converter import _read_ffmpeg_output, get_live_encoding_settings
+        live = await get_live_encoding_settings()
+        deadline = time.monotonic() + live.get("ffmpeg_timeout", 21600)
         while True:
-            chunk = await proc.stderr.read(4096)
+            chunk = await _read_ffmpeg_output(proc.stderr, deadline)  # H1: times out while ffmpeg is silent too
             if not chunk:
                 break
             buffer += chunk.decode(errors="replace")
@@ -357,9 +360,7 @@ async def remux_audio(
                             speed=parsed.get("speed"),
                         )
 
-        from backend.converter import get_live_encoding_settings
-        live = await get_live_encoding_settings()
-        await asyncio.wait_for(proc.wait(), timeout=live.get("ffmpeg_timeout", 21600))
+        await asyncio.wait_for(proc.wait(), timeout=max(1.0, deadline - time.monotonic()))
 
         if proc.returncode != 0:
             try:
@@ -384,7 +385,8 @@ async def remux_audio(
     except asyncio.TimeoutError:
         try:
             proc.kill()
-        except ProcessLookupError:
+            await asyncio.wait_for(proc.wait(), timeout=10)  # reap it, unless the mount holds it
+        except (ProcessLookupError, asyncio.TimeoutError):
             pass
         try:
             Path(temp_path).unlink(missing_ok=True)

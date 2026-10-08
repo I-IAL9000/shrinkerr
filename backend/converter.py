@@ -2297,6 +2297,23 @@ def _output_is_full_length(source_duration: Optional[float],
                 and output_duration and output_duration >= source_duration * tol)
 
 
+# No output from ffmpeg for this long means it's stuck — typically reading a
+# stalled NAS mount. Progress lines normally come every second or so.
+_FFMPEG_STALL_SECONDS = 1800
+
+
+async def _read_ffmpeg_output(stream, deadline: float) -> bytes:
+    """The next chunk of ffmpeg's stderr. Raises asyncio.TimeoutError once
+    ffmpeg has been silent for _FFMPEG_STALL_SECONDS or the job's ffmpeg
+    timeout (`deadline`, monotonic) has passed. The timeout used to apply
+    only after stderr closed, so a hung ffmpeg was never stopped and held its
+    worker slot until a restart (H1, v0.10.0)."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise asyncio.TimeoutError
+    return await asyncio.wait_for(stream.read(4096), timeout=min(_FFMPEG_STALL_SECONDS, remaining))
+
+
 async def _probe_output_duration(path: str) -> Optional[float]:
     """Container duration (seconds) of a finished output file, or None.
 
@@ -3313,8 +3330,9 @@ async def convert_file(
             progress_total_frames: Optional[int] = None
             if duration > 0 and source_video_fps > 0:
                 progress_total_frames = max(1, int(duration * source_video_fps))
+            _deadline = time.monotonic() + live_settings.get("ffmpeg_timeout", 21600)
             while True:
-                chunk = await proc.stderr.read(4096)
+                chunk = await _read_ffmpeg_output(proc.stderr, _deadline)
                 if not chunk:
                     break
                 buffer += chunk.decode(errors="replace")
@@ -3353,7 +3371,7 @@ async def convert_file(
                             parsed["speed"] = encode_speed(line, parsed.get("fps"), source_video_fps)
                             await progress_callback(**parsed)
 
-            await asyncio.wait_for(proc.wait(), timeout=live_settings.get("ffmpeg_timeout", 21600))
+            await asyncio.wait_for(proc.wait(), timeout=max(1.0, _deadline - time.monotonic()))
             all_lines = local_all_lines
 
             if proc.returncode != 0:
@@ -3407,7 +3425,8 @@ async def convert_file(
         except asyncio.TimeoutError:
             try:
                 proc.kill()
-            except ProcessLookupError:
+                await asyncio.wait_for(proc.wait(), timeout=10)  # reap it, unless the mount holds it
+            except (ProcessLookupError, asyncio.TimeoutError):
                 pass
             try:
                 Path(temp_path).unlink(missing_ok=True)
