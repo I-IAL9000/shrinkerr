@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
 - **A conversion whose source read stalled could replace the original with a truncated output**; outputs shorter than the source are now rejected and the original kept.
+- **After a manual "Fix match", a rescan could mark the original-language audio for removal** whenever TMDB disagreed with the match, and Fix match itself didn't re-sort the tracks; both now sort against the matched language.
 - Undo of a Blu-ray/DVD conversion restored the disc to the wrong place (a folder named index.bdmv) after deleting the converted file; Undo now puts the disc back as it was and only removes the converted file once the original is back.
 - **"Keep originals for N days" could delete a backup minutes after it was made** (it kept the source file's old date), and disc backups — folders — never expired, so their space was never freed.
 - **A folder the NAS couldn't list during a scan (a stalled mount) had all its rows deleted**, losing manual matches and track edits; those rows are now kept until the folder can be read.

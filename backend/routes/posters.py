@@ -1832,8 +1832,23 @@ async def override_poster(req: OverrideRequest):
             (original_lang, folder, folder + "/%"),
         )
         await db.commit()
+        # SC-05 (v0.10.0): re-sort the folder's tracks against the matched
+        # native — changing only the label left them sorted against the
+        # wrong guess, with the real original-language audio marked removable.
+        resort = []
+        if original_lang:
+            from backend.routes.scan import _reclass_item
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT id, audio_tracks_json, subtitle_tracks_json, duration FROM scan_results "
+                "WHERE file_path = ? OR file_path LIKE ?", (folder, folder + "/%"),
+            ) as cur:
+                resort = [it for it in (_reclass_item(r, original_lang) for r in await cur.fetchall()) if it]
     finally:
         await db.close()
+    if resort:
+        from backend.routes.scan import _write_lang_batch
+        await _write_lang_batch(resort)
 
     return {
         "title": title,

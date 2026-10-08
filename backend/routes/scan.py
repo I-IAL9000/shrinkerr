@@ -104,23 +104,34 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
             audio_json = json.dumps([t.model_dump() for t in scanned.audio_tracks])
             sub_json = json.dumps([t.model_dump() for t in scanned.subtitle_tracks]) if scanned.subtitle_tracks else None
 
+            try:
+                _ex = db.execute(
+                    "SELECT language_source, audio_tracks_json, subtitle_tracks_json, native_language "
+                    "FROM scan_results WHERE file_path = ?", (scanned.file_path,)
+                ).fetchone()
+            except Exception:
+                _ex = None
             # v0.9.112: don't let a re-scan whose fresh TMDB lookup failed
             # (source='heuristic') overwrite an authoritative row's tracks with a
             # heuristic re-classification — it drifts against the preserved
             # native and wipes manual edits. Preserve the stored tracks when the
             # stream layout is unchanged.
-            if getattr(scanned, "language_source", "heuristic") == "heuristic":
-                try:
-                    _ex = db.execute(
-                        "SELECT language_source, audio_tracks_json, subtitle_tracks_json "
-                        "FROM scan_results WHERE file_path = ?", (scanned.file_path,)
-                    ).fetchone()
-                except Exception:
-                    _ex = None
-                if _ex:
-                    audio_json, sub_json = _maybe_preserve_authoritative_tracks(
-                        getattr(scanned, "language_source", "heuristic"),
-                        _ex[0], audio_json, sub_json, _ex[1], _ex[2])
+            _preserved = False
+            if _ex and getattr(scanned, "language_source", "heuristic") == "heuristic":
+                audio_json, sub_json = _maybe_preserve_authoritative_tracks(
+                    getattr(scanned, "language_source", "heuristic"),
+                    _ex[0], audio_json, sub_json, _ex[1], _ex[2])
+                _preserved = audio_json == _ex[1]
+            # SC-05 (v0.10.0): the upsert keeps a stored TMDB/manual native over
+            # this scan's own lookup, so sort the fresh tracks against it too —
+            # otherwise a manual match's original-language audio was marked for
+            # removal whenever TMDB disagreed (the reason it was fixed).
+            if (_ex and not _preserved and _ex[0] in AUTHORITATIVE_NATIVE_SOURCES and _ex[3]
+                    and _ex[3].lower() != (scanned.native_language or "").lower()):
+                _reclass = _reclassify_keep_flags(audio_json, sub_json, _ex[3], scanned.duration)
+                if _reclass:
+                    audio_json = _reclass[0]
+                    sub_json = _reclass[1] if sub_json is not None else None
 
             # Pre-compute flags at scan time (avoids 226K JSON parses per page
             # load) from the FINAL json — which may be the preserved stored one.
@@ -1399,7 +1410,8 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     }
 
 
-from backend.scanner import AUTHORITATIVE_NATIVE_SOURCES as _AUTHORITATIVE_NATIVE_SOURCES
+from backend.scanner import AUTHORITATIVE_NATIVE_SOURCES
+_AUTHORITATIVE_NATIVE_SOURCES = AUTHORITATIVE_NATIVE_SOURCES
 
 
 async def _classification_native(file_path: str, raw_audio: list) -> tuple[str, str]:
