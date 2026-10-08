@@ -125,3 +125,37 @@ async def test_failed_restore_keeps_the_converted_file(test_db, tmp_path, monkey
         await undo_conversion(job_id)
     assert converted.read_bytes() == b"converted"
     assert backup.read_bytes() == b"original"
+
+
+@pytest.mark.asyncio
+async def test_undo_never_takes_another_movies_disc_backup(test_db, tmp_path):
+    """A Blu-ray and a DVD of same-named folders in different libraries
+    shared a custom backup slot, and undoing the DVD moved the Blu-ray's
+    BDMV/ and CERTIFICATE/ into the DVD's folder."""
+    from backend.converter import _dispose_disc_source
+    from backend.tests.test_disc_release_folder import _bluray, _dvd
+    custom = tmp_path / "backups"
+    bd_home = tmp_path / "Movies-4K" / "Movie (2009)"
+    dvd_home = tmp_path / "Movies-SD" / "Movie (2009)"
+    bd_backup = await _dispose_disc_source(_bluray(bd_home), bd_home, "bdmv", 7, False, str(custom))
+    dvd_marker = _dvd(dvd_home)
+    dvd_backup = await _dispose_disc_source(dvd_marker, dvd_home, "dvd", 7, False, str(custom))
+    assert Path(dvd_backup).parent != Path(bd_backup).parent
+    converted = dvd_home / "Movie (2009) 480p DVDRip AC3 2.0 h265.mkv"
+    converted.write_bytes(b"converted")
+    job_id = await _job(test_db, converted, dvd_marker, Path(dvd_backup))
+
+    await undo_conversion(job_id)
+
+    assert sorted(p.name for p in dvd_home.iterdir()) == ["VIDEO_TS"]
+    assert (Path(bd_backup) / "index.bdmv").exists()
+
+
+def test_restore_only_brings_back_this_discs_companions(tmp_path):
+    from backend.routes.jobs import _restore_moves
+    slot = tmp_path / "backups" / "Movie (2009)"
+    for d in ("BDMV", "CERTIFICATE", "VIDEO_TS", "JACKET_P"):
+        (slot / d).mkdir(parents=True)
+    home = tmp_path / "Movie (2009)"
+    moves = _restore_moves(slot / "VIDEO_TS", home / "VIDEO_TS" / "VIDEO_TS.IFO")
+    assert [(a.name, b) for a, b in moves] == [("VIDEO_TS", home / "VIDEO_TS"), ("JACKET_P", home / "JACKET_P")]

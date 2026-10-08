@@ -1596,10 +1596,13 @@ def _restore_moves(backup, original) -> list:
     disc_dir = original.parent
     if backup.name != disc_dir.name:
         return [(backup, disc_dir.parent)]  # the release folder holding the disc
-    from backend.converter import _ALL_DISC_DIRS
+    from backend.converter import _DISC_DIRS
+    # Only this disc's own companions: a backup folder can also hold another
+    # disc (one made before v0.10.0 kept slots apart), whose folders must stay.
+    companions = next((dirs[1:] for dirs in _DISC_DIRS.values() if dirs[0] == disc_dir.name.upper()), ())
     moves = [(backup, disc_dir)]
     for sibling in sorted(backup.parent.iterdir()):
-        if (sibling != backup and sibling.is_dir() and sibling.name.upper() in _ALL_DISC_DIRS
+        if (sibling != backup and sibling.is_dir() and sibling.name.upper() in companions
                 and not (disc_dir.parent / sibling.name).exists()):
             moves.append((sibling, disc_dir.parent / sibling.name))
     return moves

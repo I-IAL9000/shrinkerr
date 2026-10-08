@@ -1580,10 +1580,19 @@ async def _dispose_disc_source(
         # Units keep their names (undo matches BDMV/ to the marker's
         # folder); a disc from a release folder gets a folder named after
         # it. Never move onto — or into — an earlier backup: "Disc 1"
-        # folders of different movies share a custom-folder slot.
+        # folders of different movies share a custom-folder slot. A slot
+        # holding any disc already is taken, so undo never brings back
+        # another movie's Blu-ray with this one's DVD.
+        def _taken(slot: Path) -> bool:
+            if slot.is_symlink() or (slot.exists() and not slot.is_dir()):
+                return True
+            try:
+                return any(e.name.upper() in _ALL_DISC_DIRS for e in slot.iterdir())
+            except OSError:
+                return False  # not there yet
         slot = base / disc_root.name if home != disc_root else base
         n = 0
-        while slot.is_symlink() or any(os.path.lexists(slot / u.name) for u in units):
+        while _taken(slot):
             n += 1
             slot = base / f"{disc_root.name}.{n}"
         slot.mkdir(parents=True, exist_ok=True)
