@@ -113,10 +113,13 @@ function renderInlineMarkdown(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
   return escaped
-    // Links (do first so bold/code inside link text still work)
+    // Links (do first so bold/code inside link text still work). Only
+    // http(s): a javascript: URL would run on click (v0.10.0).
     .replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;">$1</a>',
+      (_m, label, url) => /^https?:\/\//i.test(url)
+        ? `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);text-decoration:none;">${label}</a>`
+        : label,
     )
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, '<code style="background:var(--bg-primary);padding:1px 5px;border-radius:3px;font-size:11px;">$1</code>');
