@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).
+
 ### Fixed
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.

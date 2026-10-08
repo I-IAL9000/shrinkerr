@@ -531,6 +531,9 @@ async def get_dashboard():
         ) as cur:
             dismissed_row = await cur.fetchone()
             setup_dismissed = bool(dismissed_row and dismissed_row["value"] == "true")
+        async with db.execute("SELECT value FROM settings WHERE key = 'auth_enabled'") as cur:
+            auth_row = await cur.fetchone()
+            has_auth = bool(auth_row and auth_row["value"] == "true")
 
         # Storage projection — estimate future savings
         projection = None
@@ -657,6 +660,7 @@ async def get_dashboard():
                 "has_dirs": has_dirs,
                 "scan_count": scan_count,
                 "has_plex": has_plex,
+                "has_auth": has_auth,
                 "has_jobs": stats["completed"] > 0 or stats["pending"] > 0,
                 "dismissed": setup_dismissed,
             },

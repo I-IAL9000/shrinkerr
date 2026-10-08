@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
-import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
+import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup, updateEncodingSettings, login } from "../api";
 import { fmtNum } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
@@ -159,10 +159,68 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
 
 // --- Setup Wizard ---
 
-function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }) {
+const protectInputStyle: React.CSSProperties = {
+  flex: "1 1 140px", backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
+  border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12,
+  height: 32, boxSizing: "border-box",
+};
+
+// Inline username/password form for the wizard's first step (v0.10.0):
+// password protection was off by default and nothing ever asked about it.
+function ProtectForm({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation(["dashboard"]);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateEncodingSettings({ auth_enabled: true, auth_username: username, auth_password: password });
+      await login(username, password);  // stay signed in now that a password is required
+      onDone();
+    } catch (err: any) {
+      setError(t("dashboard:setup.protect.failed", { error: err?.message || "" }));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}
+      onSubmit={e => { e.preventDefault(); submit(); }}>
+      <input type="text" style={protectInputStyle} autoComplete="username"
+        placeholder={t("dashboard:setup.protect.username")} value={username}
+        onChange={e => setUsername(e.target.value)} />
+      <input type="password" style={protectInputStyle} autoComplete="new-password"
+        placeholder={t("dashboard:setup.protect.password")} value={password}
+        onChange={e => setPassword(e.target.value)} />
+      <button type="submit" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
+        disabled={busy || !username.trim() || !password}>
+        {t("dashboard:setup.protect.action")}
+      </button>
+      {error && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--danger, #e94560)" }}>{error}</div>}
+    </form>
+  );
+}
+
+function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: () => void; onChanged: () => void }) {
   const navigate = useNavigate();
   const { t } = useTranslation(["dashboard", "common"]);
-  const steps = [
+  const steps: any[] = [
+    {
+      key: "protect",
+      title: t("dashboard:setup.protect.title"),
+      description: setup.has_auth ? t("dashboard:setup.protect.descriptionDone") : t("dashboard:setup.protect.description"),
+      done: setup.has_auth,
+      recommended: true,
+      form: <ProtectForm onDone={onChanged} />,
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      ),
+    },
     {
       key: "dirs",
       title: t("dashboard:setup.dirs.title"),
@@ -220,8 +278,8 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
     },
   ];
 
-  const requiredDone = steps.filter(s => s.done && !s.optional).length;
-  const requiredTotal = steps.filter(s => !s.optional).length;
+  const requiredDone = steps.filter(s => s.done && !s.optional && !s.recommended).length;
+  const requiredTotal = steps.filter(s => !s.optional && !s.recommended).length;
 
   return (
     <div>
@@ -281,14 +339,16 @@ function SetupWizard({ setup, onDismiss }: { setup: any; onDismiss: () => void }
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
                 {step.title}
                 {step.optional && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: "normal" }}>{t("dashboard:setup.optional")}</span>}
+                {step.recommended && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: "normal" }}>{t("dashboard:setup.recommended")}</span>}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{step.description}</div>
+              {!step.done && step.form}
             </div>
 
             {/* Action button */}
-            {!step.done && (
+            {!step.done && step.action && (
               <button
-                className={i === steps.findIndex(s => !s.done) ? "btn btn-primary" : "btn btn-secondary"}
+                className={i === steps.findIndex(s => !s.done && s.action) ? "btn btn-primary" : "btn btn-secondary"}
                 style={{ fontSize: 12, padding: "6px 14px", whiteSpace: "nowrap", flexShrink: 0, alignSelf: "center" }}
                 onClick={step.action}
               >
@@ -384,7 +444,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
       await dismissSetup();
       const d = await getDashboardData();
       setDash(d);
-    }} />;
+    }} onChanged={() => { getDashboardData().then(setDash).catch(() => {}); }} />;
   }
 
   // Live status data — only the LiveConvertingCard actually uses this.

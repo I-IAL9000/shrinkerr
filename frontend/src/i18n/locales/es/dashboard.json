@@ -13,8 +13,18 @@
     "welcome": "Bienvenido a Shrinkerr",
     "intro": "Convierte tu biblioteca multimedia a x265 y reduce el tamaño de los archivos entre un 50 y un 65 % sin pérdida de calidad visible. Ahorra espacio, ancho de banda y dinero sin sacrificar calidad. Sigue estos pasos para empezar.",
     "optional": "opcional",
+    "recommended": "recomendado",
     "goToDashboard": "Ir al panel",
     "skip": "Omitir configuración — sé lo que hago",
+    "protect": {
+      "title": "Protege Shrinkerr con una contraseña",
+      "description": "Cualquiera que pueda abrir Shrinkerr puede cambiar sus ajustes y borrar archivos. Define un usuario y una contraseña, u omite este paso si solo tú puedes acceder.",
+      "descriptionDone": "La protección con contraseña está activada. Puedes cambiarla en Ajustes → Sistema → Autenticación.",
+      "username": "Usuario",
+      "password": "Contraseña",
+      "action": "Activar",
+      "failed": "No se pudo activar la protección con contraseña: {{error}}"
+    },
     "dirs": {
       "title": "Añadir directorios multimedia",
       "description": "Indica a Shrinkerr dónde están tus archivos multimedia para que pueda escanearlos.",

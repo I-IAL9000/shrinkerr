@@ -13,8 +13,18 @@
     "welcome": "Welcome to Shrinkerr",
     "intro": "Convert your media library to x265 and reduce file size by 50-65% with no visible quality loss. Save space, bandwidth & money while retaining quality. Follow these steps to get started.",
     "optional": "optional",
+    "recommended": "recommended",
     "goToDashboard": "Go to Dashboard",
     "skip": "Skip setup — I know what I'm doing",
+    "protect": {
+      "title": "Protect Shrinkerr with a password",
+      "description": "Anyone who can open Shrinkerr can change its settings and delete files. Set a username and password — or skip this if only you can reach it.",
+      "descriptionDone": "Password protection is on. You can change it in Settings → System → Authentication.",
+      "username": "Username",
+      "password": "Password",
+      "action": "Turn on",
+      "failed": "Couldn't turn on password protection: {{error}}"
+    },
     "dirs": {
       "title": "Add media directories",
       "description": "Tell Shrinkerr where your media files are stored so it can scan them.",
