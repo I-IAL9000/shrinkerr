@@ -13,13 +13,17 @@ export default function WhatsNewModal() {
   const [notes, setNotes] = useState<WhatsNew | null>(null);
   const [fullNotes, setFullNotes] = useState(false);
 
+  // `?whats-new` in the address bar previews the dialog without marking it
+  // seen — on a development build with the unreleased notes.
+  const preview = new URLSearchParams(window.location.search).has("whats-new");
+
   useEffect(() => {
-    getWhatsNew().then(n => { if (n.show) setNotes(n); }).catch(() => {});
+    getWhatsNew(preview).then(n => { if (n.show) setNotes(n); }).catch(() => {});
   }, []);
 
   const close = () => {
     setNotes(null);
-    markWhatsNewSeen().catch(() => {});
+    if (!preview) markWhatsNewSeen().catch(() => {});
   };
 
   useEffect(() => {

@@ -599,7 +599,8 @@ export interface ChangelogEntry {
   sections: Record<string, string[]>;
 }
 export type WhatsNew = { show: boolean; version: string; since: string | null; new: string[]; fixed: string[]; more_fixes: number };
-export const getWhatsNew = () => apiFetch<WhatsNew>("/stats/whats-new");
+export const getWhatsNew = (preview = false) =>
+  apiFetch<WhatsNew>(`/stats/whats-new${preview ? "?preview=true" : ""}`);
 export const markWhatsNewSeen = () => apiFetch("/stats/whats-new/seen", { method: "POST" });
 
 export const getChangelog = (limit = 0) =>

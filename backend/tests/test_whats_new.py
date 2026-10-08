@@ -90,3 +90,17 @@ async def test_not_on_development_builds(changelog, test_db):
     await _add_media_dir(test_db)
     changelog.write_text("0.10.0-dev.12+abc\n")
     assert (await stats.whats_new()) == {"show": False}
+
+
+@pytest.mark.asyncio
+async def test_preview_shows_the_unreleased_notes_on_a_dev_build(changelog, test_db):
+    changelog.write_text("0.10.0-dev.851+f1497f5\n")
+    got = await stats.whats_new(preview=True)
+    assert got["show"] and got["version"] == "0.10.0" and got["more_fixes"] == 1 and got["fixed"] == []
+
+
+@pytest.mark.asyncio
+async def test_preview_on_a_release_shows_its_notes_even_when_seen(changelog, test_db):
+    await stats.whats_new_seen()
+    got = await stats.whats_new(preview=True)
+    assert got["show"] and got["fixed"] == ["Rules on Sonarr/Radarr tags now work"]

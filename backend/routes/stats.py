@@ -915,22 +915,11 @@ def _one_liner(bullet: str) -> str:
     return text.strip().rstrip(".").strip()
 
 
-def whats_new_since(entries: list[dict], seen: str | None, current: str) -> dict:
-    """Release notes for the versions after `seen` up to `current` — only
-    `current` itself when nothing was seen yet (first run after an update
-    from a version without this feature)."""
+def _notes(entries: list[dict]) -> dict:
     new: list[str] = []
     fixed: list[str] = []
     more_fixes = 0
-    upto = _version_key(current)
-    after = _version_key(seen) if seen else None
     for entry in entries:
-        version = entry["version"]
-        if version.lower() == "unreleased":
-            continue
-        key = _version_key(version)
-        if key > upto or (after is not None and key <= after) or (after is None and key != upto):
-            continue
         for section, bullets in entry["sections"].items():
             if section in ("Added", "Changed"):
                 new += [_one_liner(b) for b in bullets]
@@ -943,12 +932,41 @@ def whats_new_since(entries: list[dict], seen: str | None, current: str) -> dict
     return {"new": new, "fixed": fixed, "more_fixes": more_fixes}
 
 
+def whats_new_since(entries: list[dict], seen: str | None, current: str) -> dict:
+    """Release notes for the versions after `seen` up to `current` — only
+    `current` itself when nothing was seen yet (first run after an update
+    from a version without this feature)."""
+    upto = _version_key(current)
+    after = _version_key(seen) if seen else None
+
+    def wanted(entry: dict) -> bool:
+        if entry["version"].lower() == "unreleased":
+            return False
+        key = _version_key(entry["version"])
+        return key <= upto and (key > after if after is not None else key == upto)
+
+    return _notes([e for e in entries if wanted(e)])
+
+
 @router.get("/whats-new")
-async def whats_new():
+async def whats_new(preview: bool = False):
     """Notes to show once after an update, or {"show": false}. Not on a
     fresh install (the setup wizard greets those) and not on development
-    builds, whose notes aren't written yet."""
+    builds, whose notes aren't written yet.
+
+    `preview` (the UI's `?whats-new`) shows them regardless: the current
+    release's notes, or on a development build the unreleased ones — what
+    the next release's dialog will say."""
     current = _get_current_version()
+    if preview:
+        dev = "-" in current
+        chosen = [e for e in _parse_changelog()
+                  if (e["version"].lower() == "unreleased") == dev
+                  and (dev or _version_key(e["version"]) == _version_key(current))]
+        notes = _notes(chosen)
+        if not (notes["new"] or notes["fixed"] or notes["more_fixes"]):
+            return {"show": False}
+        return {"show": True, "version": current.split("-")[0], "since": None, "preview": True, **notes}
     if "-" in current:
         return {"show": False}
     db = await connect_db()
