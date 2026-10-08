@@ -2417,6 +2417,14 @@ async def convert_file(
                     print(f"[CONVERT] Lossless audio detected ({', '.join(lossless_names)}), converting to {target_codec} {target_bitrate}k", flush=True)
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
+    if not probe_data:
+        # H4 (v0.10.0): without stream info the encode maps no subtitles (and
+        # treats a disc as a plain file), then replaces the original. A probe
+        # that times out on a stalled mount must fail the job instead.
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": "Failed to probe file; nothing was converted", "error_key": "errors.probeFailed",
+        }
 
     # v0.6.0: compute original_size + free-disk-space check now that
     # disc_type is known. For disc folders, the input_path points at a
@@ -3330,6 +3338,33 @@ async def convert_file(
     output_size = temp.stat().st_size
     space_saved = original_size - output_size
 
+    # H6 (v0.10.0): ffmpeg exits 0 with a short output when the source read
+    # dies mid-stream (a stalled NAS mount). Never let an output that stops
+    # early replace the original. Disc durations are estimates, so they get
+    # more slack; an unknown duration can't be checked.
+    _out_dur = await _probe_output_duration(temp_path)
+    if (duration and duration > 0 and _out_dur is not None
+            and not _output_is_full_length(duration, _out_dur, tol=0.9 if disc_type else 0.98)):
+        print(
+            f"[CONVERT] Output is {_out_dur:.0f}s but the source is {duration:.0f}s — "
+            f"the source read was probably interrupted; keeping the original",
+            flush=True,
+        )
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        if prestrip_path:
+            try: Path(prestrip_path).unlink(missing_ok=True)
+            except OSError: pass
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": (f"Output is shorter than the source ({_out_dur:.0f}s of {duration:.0f}s), so the "
+                      f"source read was probably interrupted. Original kept; retry the job."),
+            "error_key": "errors.outputTruncated",
+            "error_params": {"output": f"{_out_dur:.0f}", "source": f"{duration:.0f}"},
+        }
+
     # Sanity check: output suspiciously small (< 5% of original).
     min_expected = int(original_size * 0.05)
     _suspicious = output_size < min_expected and original_size > 10 * 1024 * 1024  # Only for files > 10MB
@@ -3339,7 +3374,6 @@ async def convert_file(
         # into HEVC. Tell a real truncation/corruption (encode stops early)
         # from a legit huge reduction by DURATION: a good re-encode keeps the
         # full runtime. Keep the output when it's full-length vs the source.
-        _out_dur = await _probe_output_duration(temp_path)
         if _output_is_full_length(duration, _out_dur):
             print(
                 f"[CONVERT] Output small ({output_size // (1024 * 1024)} MB, "

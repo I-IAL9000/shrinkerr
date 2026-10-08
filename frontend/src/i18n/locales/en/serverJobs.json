@@ -30,6 +30,7 @@
     "ffmpegExited": "ffmpeg exited with code {{code}}",
     "ffmpegTimedOut": "ffmpeg timed out",
     "outputMissing": "Output file missing or empty after conversion.",
+    "outputTruncated": "Output is shorter than the source ({{output}}s of {{source}}s), so the source read was probably interrupted. Original kept; retry the job.",
     "remuxOutputMissing": "Output file missing or empty after remux.",
     "originalLikelyCorrupt": "Original file likely corrupt — conversion produced an unusably-small output ({{outputMb}} MB from {{originalGb}} GB source). ffmpeg hit data corruption ffprobe doesn't catch upfront. Source row marked corrupt; original preserved.",
     "vmafRejected": "VMAF {{score}} is below the configured minimum of {{min}} — encode rejected, original kept.",
