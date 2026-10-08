@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from "react";
+import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
 import type { Job } from "../types";
 import { getJobLog } from "../api";
@@ -49,7 +50,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
   const [logData, setLogData] = useState<any>(null);
   const [logLoading, setLogLoading] = useState(false);
   const [showFullLog, setShowFullLog] = useState(false);
-  const fileName = job.file_path.split("/").pop() || job.file_path;
+  const fileName = displayNameForPath(job.file_path);
   const hasAudioRemoval = job.audio_tracks_to_remove && job.audio_tracks_to_remove.length > 0;
   const hasSubRemoval = job.subtitle_tracks_to_remove && job.subtitle_tracks_to_remove.length > 0;
   const typeBadge = job.job_type === "combined"

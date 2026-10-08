@@ -189,8 +189,11 @@ async def shrink_plex_posters() -> int:
     """Re-fetch cached Plex posters stored at full size (pre-v0.9.151)
     through the transcoder. Downloads happen with no DB connection open;
     each batch is then written in one short transaction. A row is only
-    replaced by a smaller image, so a failed transcode leaves it as is and
-    the pass is safe to repeat. Returns the number of posters shrunk."""
+    replaced by a smaller image, so a failed transcode leaves it as is.
+    One-shot (v0.9.154): posters Plex can't return smaller (e.g. items
+    since removed from Plex) were re-fetched and re-logged on every
+    startup, so a completed pass is recorded in settings.
+    Returns the number of posters shrunk."""
     from backend.plex import _get_plex_settings
 
     plex_url, plex_token, _ = await _get_plex_settings()
@@ -200,6 +203,9 @@ async def shrink_plex_posters() -> int:
 
     db = await aiosqlite.connect(DB_PATH)
     try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (_SHRINK_DONE_KEY,)) as cur:
+            if await cur.fetchone():
+                return 0
         async with db.execute(
             "SELECT folder_path, poster_url, LENGTH(image_data) FROM poster_cache "
             "WHERE source = 'plex' AND LENGTH(image_data) > ?", (_OVERSIZED_PLEX_POSTER,),
@@ -208,6 +214,7 @@ async def shrink_plex_posters() -> int:
     finally:
         await db.close()
     if not rows:
+        await _mark_shrink_done()
         return 0
     print(f"[POSTERS] Shrinking {len(rows)} full-size Plex posters", flush=True)
 
@@ -235,9 +242,24 @@ async def shrink_plex_posters() -> int:
         shrunk += len(done)
         old = {r[0]: r[2] for r in batch}
         saved += sum(old[f] - len(img) for f, img in done)
-    print(f"[POSTERS] Shrunk {shrunk}/{len(rows)} Plex posters, freed {saved / 1e9:.2f} GB "
-          f"(reclaimed from the database file on the next restart)", flush=True)
+    print(f"[POSTERS] Shrunk {shrunk}/{len(rows)} Plex posters, freed {saved / 1e9:.2f} GB"
+          + (" (reclaimed from the database file on the next restart)" if shrunk else "")
+          + (f"; {len(rows) - shrunk} not available smaller from Plex, kept as is" if shrunk < len(rows) else ""),
+          flush=True)
+    await _mark_shrink_done()
     return shrunk
+
+
+_SHRINK_DONE_KEY = "plex_poster_shrink_done"
+
+
+async def _mark_shrink_done() -> None:
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, 'true')", (_SHRINK_DONE_KEY,))
+        await db.commit()
+    finally:
+        await db.close()
 
 
 def _get_imdb_rating(parsed: dict) -> float | None:

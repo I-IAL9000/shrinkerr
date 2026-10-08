@@ -151,6 +151,17 @@ def _disc_display_name(file_path: Path, disc_type: Optional[str]) -> str:
     return file_path.name
 
 
+def display_name_for_path(file_path: str) -> str:
+    """Display name for a job/scan path: a folder disc's marker file
+    (.../<Title>/BDMV/index.bdmv or .../VIDEO_TS/VIDEO_TS.IFO) shows as the
+    disc folder's name; anything else (ISOs included) as its file name.
+    v0.9.154: queued Blu-ray folders showed up as "index.bdmv"."""
+    p = Path(file_path)
+    if (p.name.lower(), p.parent.name.lower()) in (("index.bdmv", "bdmv"), ("video_ts.ifo", "video_ts")):
+        return p.parent.parent.name
+    return p.name
+
+
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 

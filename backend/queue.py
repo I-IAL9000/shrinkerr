@@ -1745,7 +1745,8 @@ class QueueWorker:
         print(f"[WORKER] Job {job_id} status set to running (local)", flush=True)
 
         import os
-        file_name = os.path.basename(file_path)
+        from backend.scanner import display_name_for_path
+        file_name = display_name_for_path(file_path)
 
         # Send immediate "starting" progress so the frontend shows the card right away
         stats = await self.queue.get_stats()

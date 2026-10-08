@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
 import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
@@ -51,7 +52,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   const parseJobs = (data: any[]) =>
     (Array.isArray(data) ? data : []).map((job: any) => ({
       ...job,
-      file_name: job.file_path.split("/").pop(),
+      file_name: displayNameForPath(job.file_path),
       audio_tracks_to_remove: typeof job.audio_tracks_to_remove === "string"
         ? JSON.parse(job.audio_tracks_to_remove || "[]")
         : (job.audio_tracks_to_remove || []),

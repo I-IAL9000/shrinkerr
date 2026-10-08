@@ -146,3 +146,25 @@ async def test_compact_vacuums_only_when_much_space_is_free(test_db, monkeypatch
 
     assert await database.compact_if_bloated(min_free_bytes=1) is True
     assert os.path.getsize(test_db) < before / 2
+
+
+@pytest.mark.asyncio
+async def test_shrink_runs_once_not_on_every_startup(test_db, monkeypatch):
+    monkeypatch.setattr(posters, "DB_PATH", test_db)
+    await _seed(test_db, [("/m/Gone From Plex/", "plex", PROXY_URL, BIG)])
+    calls = []
+
+    async def plex_has_no_smaller(url, plex_url, plex_token):
+        calls.append(url)
+        return None  # item gone from Plex: transcoder and original both fail
+
+    async def fake_settings():
+        return "http://plex:32400", "tok", ""
+
+    monkeypatch.setattr(posters, "_download_image", plex_has_no_smaller)
+    import backend.plex
+    monkeypatch.setattr(backend.plex, "_get_plex_settings", fake_settings)
+
+    assert await posters.shrink_plex_posters() == 0
+    assert await posters.shrink_plex_posters() == 0
+    assert len(calls) == 1  # second startup doesn't re-fetch

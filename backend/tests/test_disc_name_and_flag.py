@@ -81,3 +81,12 @@ async def test_backfill_clears_only_stale_disc_type(tmp_path, monkeypatch):
 
     # Idempotent via sentinel.
     assert await database.backfill_stale_disc_type() == 0
+
+
+def test_display_name_for_path_names_folder_discs_by_their_folder():
+    """v0.9.154: a queued Blu-ray folder showed up as "index.bdmv"."""
+    from backend.scanner import display_name_for_path
+    assert display_name_for_path("/m/Pure Country (1992) [tt0105191]/BDMV/index.bdmv") == "Pure Country (1992) [tt0105191]"
+    assert display_name_for_path("/m/Some Film (2001)/VIDEO_TS/VIDEO_TS.IFO") == "Some Film (2001)"
+    assert display_name_for_path("/m/Film (2001)/Film (2001) DVD-R.iso") == "Film (2001) DVD-R.iso"
+    assert display_name_for_path("/m/Show/Show - S01E01.mkv") == "Show - S01E01.mkv"
