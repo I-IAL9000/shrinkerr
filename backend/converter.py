@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import shlex
 import shutil
 import time
 from pathlib import Path
@@ -163,6 +164,61 @@ RESOLUTION_MAP = {
     "720p": "1280:-2",
     "480p": "854:-2",
 }
+
+# Custom ffmpeg flags go in front of the output path (C4, v0.9.157). These
+# options would add an input or output or read/write files outside the
+# encode; Shrinkerr already passes -y.
+_FORBIDDEN_FFMPEG_OPTIONS = frozenset({
+    "-i", "-y", "-n", "-f", "-attach", "-dump_attachment", "-progress",
+    "-vstats", "-vstats_file", "-passlogfile", "-report", "-sdp_file",
+    "-filter_script", "-filter_complex_script",
+})
+# `-/opt file` reads an option's value from a file; -stats_enc_* /
+# -stats_mux_* write per-frame stats files.
+_FORBIDDEN_FFMPEG_PREFIXES = ("-/", "-stats_enc_", "-stats_mux_")
+# A path at the start of a token or of a value inside it (movie=/x, csv=/x).
+_FFMPEG_PATH_RE = re.compile(r"(?:^|[=:,'\"])(?:/|~|\.\.?/|\.\.?\\|[A-Za-z]:[\\/])")
+# A file name: after an option that takes no value (-an x.mkv) ffmpeg treats
+# it as an output, choosing the muxer from the extension.
+_FFMPEG_FILENAME_RE = re.compile(r"^[^=]*\.[A-Za-z][A-Za-z0-9]{1,3}$")
+
+
+def parse_custom_ffmpeg_flags(flags: str) -> list[str]:
+    """Split the custom ffmpeg flags setting into argv tokens (C4, v0.9.157).
+
+    Raises ValueError naming the first token that could add an input or
+    output (a bare word not following an option is an output file to
+    ffmpeg) or touch files: forbidden options, `-/opt file`, paths and
+    file names.
+    """
+    tokens = shlex.split(flags)  # ValueError on unbalanced quotes
+    after_option = False
+    for tok in tokens:
+        if tok.startswith("-"):
+            if tok.split(":", 1)[0] in _FORBIDDEN_FFMPEG_OPTIONS or tok.startswith(_FORBIDDEN_FFMPEG_PREFIXES):
+                raise ValueError(tok)
+            after_option = True
+        elif after_option and not _FFMPEG_FILENAME_RE.match(tok):
+            after_option = False
+        else:
+            raise ValueError(tok)
+        if _FFMPEG_PATH_RE.search(tok):
+            raise ValueError(tok)
+    return tokens
+
+
+_ffmpeg_cwd_path: Optional[str] = None
+
+
+def _ffmpeg_cwd() -> str:
+    """An empty private folder to run encodes in, so a relative file name in
+    the custom flags (x265 csv=, a name after a no-value option) can't land in
+    the server's working folder (C4, v0.9.157)."""
+    global _ffmpeg_cwd_path
+    if _ffmpeg_cwd_path is None or not os.path.isdir(_ffmpeg_cwd_path):
+        import tempfile
+        _ffmpeg_cwd_path = tempfile.mkdtemp(prefix="shrinkerr-ffmpeg-")
+    return _ffmpeg_cwd_path
 
 
 def _audio_codec_args(codec: str, bitrate: int) -> list[str]:
@@ -1399,7 +1455,7 @@ async def build_disc_output_filename(
     # output file IS the target resolution, not the source's. `None` /
     # `"copy"` falls through to the probe height (no scaling = source
     # label is accurate).
-    if target_resolution and target_resolution != "copy":
+    if target_resolution in RESOLUTION_MAP:  # unknown values never reach the name (v0.9.157)
         res = target_resolution
     else:
         res = resolution_label(probe_data.get("video_width"), probe_data.get("video_height"))
@@ -1532,6 +1588,13 @@ def get_output_path(
     leaves the resolution alone (no scaling means the source label
     is still accurate).
     """
+    # Settings, rules and per-job overrides reach here unchecked; only known
+    # values may shape the name, or "x/../.." would put the output in another
+    # folder (v0.9.157).
+    if target_resolution != "copy" and target_resolution not in RESOLUTION_MAP:
+        target_resolution = None
+    if suffix and any(c in suffix for c in "/\\\0"):
+        suffix = ""
     p = Path(input_path)
     new_stem = rename_source_to_target_codec(p.stem, encoder=encoder)
     # v0.9.148: Radarr names disc-tier qualities (BR-DISK, DVD-R) without a
@@ -2319,6 +2382,15 @@ async def convert_file(
         live_settings = pre_settings
     else:
         live_settings = await get_live_encoding_settings()
+    # C4 (v0.9.157): refuse flags that could write files rather than run them.
+    try:
+        custom_flags = parse_custom_ffmpeg_flags(live_settings.get("custom_ffmpeg_flags") or "")
+    except ValueError as exc:
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": f"Custom ffmpeg flags rejected at '{exc}'; fix them in Settings → System",
+            "error_key": "errors.customFlagsRejected", "error_params": {"token": str(exc)},
+        }
     filename_suffix = live_settings.get("filename_suffix", "")
     nvenc_preset = override_preset if override_preset is not None else live_settings.get("nvenc_preset", "p6")
     libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
@@ -2983,10 +3055,8 @@ async def convert_file(
             disc_audio_languages=disc_audio_languages,
         )
         # Append custom ffmpeg flags if configured (before the output path).
-        cf = live_settings.get("custom_ffmpeg_flags", "")
-        if cf.strip():
-            import shlex
-            c = c[:-1] + shlex.split(cf) + c[-1:]
+        if custom_flags:
+            c = c[:-1] + custom_flags + c[-1:]
         # During quiet hours, lower process priority.
         if nice:
             # ionice is Linux-only (util-linux); a native macOS install
@@ -3052,6 +3122,7 @@ async def convert_file(
                 *run_cmd,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=_ffmpeg_cwd(),
             )
             print(f"[CONVERT] ffmpeg started, pid={proc.pid}", flush=True)
             if proc_callback:

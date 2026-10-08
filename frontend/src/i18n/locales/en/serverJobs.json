@@ -26,6 +26,7 @@
     "probeFailed": "Failed to probe file",
     "audioCleanupOnDisc": "Audio/sub cleanup can't run on a disc image (ISO/VIDEO_TS/BDMV) — a disc must be fully converted, not stream-copied. Rescan and queue a conversion for this title to apply the cleanup.",
     "cancelledByUser": "Cancelled by user",
+    "customFlagsRejected": "Custom ffmpeg flags rejected at '{{token}}'; fix them in Settings → System",
     "notEnoughDiskSpace": "Not enough free disk space: need {{need}} bytes, have {{free}} bytes free",
     "ffmpegExited": "ffmpeg exited with code {{code}}",
     "ffmpegTimedOut": "ffmpeg timed out",

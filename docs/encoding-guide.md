@@ -261,9 +261,15 @@ different perceptual quality. When on, the estimate UI shows
 
 ## Custom ffmpeg flags
 
-Settings → Video → Advanced → "Custom ffmpeg flags". Appended after the
+Settings → System → Advanced → "Custom ffmpeg flags". Appended after the
 built-in flags. Use with care — Shrinkerr's flag stack already covers
 pixel format, container options, mapping, and so on.
+
+Because these flags reach ffmpeg's command line, changing them requires
+password auth (Settings → System → Authentication) and being signed in with
+the password rather than the API key. Shrinkerr refuses flags that add
+inputs or outputs (`-i`, `-f`, `-y`, an extra file name) or point at files
+(paths, `-progress`, `-vstats_file`, `-attach`, …).
 
 Common additions:
 - `-b:v 4M` — force a specific bitrate (overrides CQ/CRF constant-quality

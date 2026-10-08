@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A conversion that kept the file's name left the Scanner with its old track list**, so a later cleanup could remove the wrong (or the only) audio track; tracks are now re-read after every job and sorted against the TMDB/manual original language, not a stale guess.
 - A Blu-ray/DVD rip in a release subfolder now converts into the movie folder, named after the movie instead of the release (no doubled tech tags), and leftover CERTIFICATE / AACS / AUDIO_TS folders are removed with the disc.
 
+## [0.9.157] — 2026-10-08
+
+### Security
+- Custom ffmpeg flags can no longer add inputs, outputs or file names (they could overwrite files on the server), and encodes run in an empty scratch folder.
+- Custom ffmpeg flags and the post-conversion script can only be changed when signed in with the password — not with the API key alone, which is in your download-client scripts.
+- Settings import runs the same checks as saving in Settings and never imports credentials or auth settings.
+- A backup restored without signing in with the password no longer brings back its post-conversion script or custom flags.
+- Renaming only touches files and folders inside your media directories and never renames a media directory itself.
+- A target resolution or filename suffix can no longer place a converted file in another folder.
+
+### Fixed
+- The System settings page shows why a save was rejected instead of failing silently.
+
 ## [0.9.156] — 2026-10-08
 
 ### Fixed

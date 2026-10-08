@@ -78,8 +78,11 @@
   },
   "settings": {
     "backupNotFound": "Backup not found",
+    "customFlagsInvalid": "Custom ffmpeg flags can't add inputs or outputs or name files (rejected: {{token}})",
+    "customFlagsNeedAuth": "Custom ffmpeg flags can write files on this server. Enable password auth (Settings → System → Authentication) before setting them.",
     "invalidBackupName": "Invalid backup name",
     "mediaDirExists": "Directory already exists",
+    "needsPasswordLogin": "Sign in with your password, not the API key, to change this setting.",
     "notificationLanguageInvalid": "notification_language must be one of: {{languages}}",
     "pathEmpty": "{{label}} must be a non-empty string",
     "pathInSystemDir": "{{label}} is not allowed under {{dir}} (system directory)",

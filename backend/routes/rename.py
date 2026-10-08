@@ -11,7 +11,9 @@ from backend.api_errors import ApiError
 from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
+from backend.media_paths import _resolve, is_in_any, load_media_dirs
 from backend.rename import (
+    RenamePlan,
     RenameSettings,
     TOKEN_CATEGORIES,
     get_settings,
@@ -194,6 +196,22 @@ class ApplyRequest(BaseModel):
     rescan_plex: bool = True
 
 
+def _outside_media_dirs(plan: RenamePlan, media_dirs: list[str]) -> str | None:
+    """The first path the plan would touch that isn't strictly inside a media
+    dir (a media dir itself must never be renamed). F19, v0.9.157."""
+    roots = {_resolve(d) for d in media_dirs}
+    paths = [plan.old_path, plan.new_path]
+    for old, new in ((plan.old_season_folder, plan.new_season_folder),
+                     (plan.old_folder, plan.new_folder)):
+        if old and new and old != new:
+            paths += [old, new]
+    for path in paths:
+        resolved = _resolve(path)
+        if resolved in roots or not is_in_any(resolved, media_dirs):
+            return path
+    return None
+
+
 @router.post("/apply")
 async def apply_rename(req: ApplyRequest):
     """Apply renames to disk and optionally rescan *arr/Plex."""
@@ -203,6 +221,7 @@ async def apply_rename(req: ApplyRequest):
     file_paths = await _expand_folder_selections(req.file_paths)
     if not file_paths:
         return {"results": []}
+    media_dirs = await load_media_dirs()
 
     settings = await get_settings()
     if req.settings_override:
@@ -218,6 +237,11 @@ async def apply_rename(req: ApplyRequest):
             plan = await build_plan(fp, probe_map.get(fp), settings)
             if plan.reason == "noop":
                 results.append({"old_path": fp, "new_path": fp, "applied": False, "error": "No changes"})
+                continue
+            escaped = _outside_media_dirs(plan, media_dirs)
+            if escaped:
+                results.append({"old_path": fp, "new_path": fp, "applied": False,
+                                "error": f"Outside the media directories: {escaped}"})
                 continue
             result = await apply_plan(plan)
             results.append(result)
