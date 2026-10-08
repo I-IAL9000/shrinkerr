@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.149] — 2026-10-08
+
+### Fixed
+- **A busy database no longer fails a running conversion** — a timed-out progress write is now skipped instead of failing the encode (and orphaning its ffmpeg); write transactions held over 5s are logged with their source to pin down the holder.
+
 ## [0.9.148] — 2026-10-04
 
 ### Fixed

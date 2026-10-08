@@ -72,6 +72,49 @@ if not getattr(aiosqlite, "_busy_timeout_patched", False):
     aiosqlite._busy_timeout_patched = True
 
 
+# v0.9.149: log write transactions that hold the lock for a long time.
+# A conversion failed with "database is locked" after its progress write
+# waited out busy_timeout, but SQLite can't say who held the lock and nothing
+# in the logs did. Every aiosqlite call goes through Connection._execute, so
+# this notes when a connection enters a write transaction (in_transaction
+# flips on at the first INSERT/UPDATE/DELETE) and where, and logs the holder
+# when it ends (commit / rollback / close) if it ran past the threshold.
+SLOW_WRITE_TX_SECONDS = 5.0
+
+if not getattr(aiosqlite, "_slow_tx_patched", False):
+    import time as _time
+    import traceback as _traceback
+
+    _original_execute = aiosqlite.Connection._execute
+
+    def _tx_opener() -> str:
+        for f in reversed(_traceback.extract_stack()[:-2]):
+            if "/backend/" in f.filename and not f.filename.endswith("/database.py"):
+                return f"{f.filename.rsplit('/backend/', 1)[1]}:{f.lineno} ({f.name})"
+        return "unknown"
+
+    async def _timed_execute(self, fn, *args, **kwargs):
+        try:
+            return await _original_execute(self, fn, *args, **kwargs)
+        finally:
+            started = getattr(self, "_shrinkerr_tx", None)
+            try:
+                in_tx = self._conn.in_transaction
+            except Exception:  # closed connection: close() ended the transaction
+                in_tx = False
+            if in_tx and started is None:
+                self._shrinkerr_tx = (_time.monotonic(), _tx_opener())
+            elif not in_tx and started is not None:
+                self._shrinkerr_tx = None
+                held = _time.monotonic() - started[0]
+                if held >= SLOW_WRITE_TX_SECONDS:
+                    print(f"[DB] Write lock held {held:.1f}s by transaction opened at {started[1]}",
+                          flush=True)
+
+    aiosqlite.Connection._execute = _timed_execute
+    aiosqlite._slow_tx_patched = True
+
+
 def _migrate_legacy_db_filename() -> None:
     """Rename the old `squeezarr.db` to `shrinkerr.db` if needed.
 

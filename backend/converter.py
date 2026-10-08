@@ -2867,6 +2867,7 @@ async def convert_file(
         ffmpeg log to its result.
         """
         nonlocal all_lines, encode_start_time
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *run_cmd,
@@ -3018,6 +3019,14 @@ async def convert_file(
                 "ffmpeg_log": "\n".join(all_lines[-500:]),
             }}
         except Exception as exc:
+            # v0.9.149: an exception mid-encode (e.g. a progress callback's DB
+            # write timing out) must not leave ffmpeg running orphaned.
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
             try:
                 Path(temp_path).unlink(missing_ok=True)
             except OSError:

@@ -923,6 +923,18 @@ class QueueWorker:
         self._lock_requeues.pop(job_id, None)
         await self.queue.update_status(job_id, "failed", error_log=error_log)
 
+    async def _write_progress(self, job_id: int, progress: float, fps=None, eta=None) -> None:
+        """Persist live progress, best-effort. v0.9.149: a progress write that
+        outlasts busy_timeout raised "database is locked" out of the encode
+        loop and failed a healthy encode; the live view goes over the
+        websocket anyway, so a missed row update is harmless."""
+        try:
+            await self.queue.update_progress(job_id, progress, fps=fps, eta=eta)
+        except Exception as exc:
+            if not self._is_transient_db_lock(exc):
+                raise
+            print(f"[WORKER] Job {job_id}: progress write skipped ({exc})", flush=True)
+
     async def _db(self) -> aiosqlite.Connection:
         """Open a DB connection with WAL mode and busy timeout for parallel safety."""
         db = await aiosqlite.connect(self.db_path)
@@ -1867,7 +1879,7 @@ class QueueWorker:
                 # v0.3.110+.
                 persist_fps = fps if step in (None, "converting") else None
                 if is_terminal or (now - _last_db_write[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
-                    await self.queue.update_progress(job_id, progress, fps=persist_fps, eta=eta_seconds)
+                    await self._write_progress(job_id, progress, fps=persist_fps, eta=eta_seconds)
                     _last_db_write[0] = now
                 await ws_manager.send_job_progress(
                     job_id=job_id,
@@ -2467,7 +2479,7 @@ class QueueWorker:
                     now = time.monotonic()
                     is_terminal = progress >= 99.99
                     if is_terminal or (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
-                        await self.queue.update_progress(job_id, progress, eta=eta_seconds)
+                        await self._write_progress(job_id, progress, eta=eta_seconds)
                         _audio_last_db[0] = now
                     await ws_manager.send_job_progress(
                         job_id=job_id,
@@ -2534,6 +2546,9 @@ class QueueWorker:
                             _is_cleanup_enabled as _ric, languages_match as _rlm,
                         )
                         _rp = await _rpf(_new_out, detect_und_subs=False)
+                        # Stat the NAS file before opening the write transaction
+                        # (a CIFS stall here used to hold the DB lock). v0.9.149
+                        _new_sz = await _async_getsize(_new_out) if _rp else None
                         db_r = await self.queue._connect()
                         try:
                             _cols: list = []
@@ -2562,7 +2577,6 @@ class QueueWorker:
                                 _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
                                           "has_und_tracks_flag = ?", "has_removable_tracks_flag = ?",
                                           "has_removable_subs_flag = ?", "file_size = ?"]
-                                _new_sz = await _async_getsize(_new_out)
                                 _params += [
                                     _rj.dumps([t.model_dump() for t in _rat]),
                                     _rj.dumps([t.model_dump() for t in _rst]),
@@ -2717,7 +2731,7 @@ class QueueWorker:
                     total_saved=total_saved,
                 )
                 async def _hc_progress_cb(pct: float):
-                    await self.queue.update_progress(job_id, pct)
+                    await self._write_progress(job_id, pct)
                     await ws_manager.send_job_progress(
                         job_id=job_id,
                         file_name=os.path.basename(current_file_path),
