@@ -1432,7 +1432,11 @@ async def build_disc_output_filename(
     # "loose" at a media_dir root, in which case use the ISO stem.
     if p.is_file() and p.suffix.lower() == ".iso":
         iso_parent = p.parent
-        if await _is_media_dir_root(iso_parent):
+        # M4 (v0.10.0): ISOs sharing a folder (Disc 1 / Disc 2) were all
+        # named after the folder — name each after itself instead.
+        isos = [f for f in iso_parent.iterdir()
+                if f.suffix.lower() == ".iso" and not f.name.startswith(".")]
+        if len(isos) > 1 or await _is_media_dir_root(iso_parent):
             base_name = p.stem
         else:
             base_name = iso_parent.name
@@ -2571,6 +2575,16 @@ async def convert_file(
             source_height=(probe_data or {}).get("video_height"),
         )
         temp_path = get_temp_path(input_path)
+    # M4 (v0.10.0): never replace an unrelated file that already has the
+    # output's name — a second disc in the same folder, or an earlier encode
+    # (on the NAS a rename onto it also sends it to the recycle bin).
+    if os.path.abspath(final_path) != os.path.abspath(input_path) and os.path.lexists(final_path):
+        _taken = Path(final_path).name
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": f"A file named {_taken} already exists; not replacing it",
+            "error_key": "errors.outputExists", "error_params": {"name": _taken},
+        }
 
     # v0.8.0: detect languages for und audio tracks before building the
     # command, so the v0.7.29/30 metadata injection + track keep/reorder

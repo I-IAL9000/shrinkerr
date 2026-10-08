@@ -30,6 +30,7 @@
     "notEnoughDiskSpace": "Not enough free disk space: need {{need}} bytes, have {{free}} bytes free",
     "ffmpegExited": "ffmpeg exited with code {{code}}",
     "ffmpegTimedOut": "ffmpeg timed out",
+    "outputExists": "A file named {{name}} already exists; not replacing it",
     "outputMissing": "Output file missing or empty after conversion.",
     "outputTruncated": "Output is shorter than the source ({{output}}s of {{source}}s), so the source read was probably interrupted. Original kept; retry the job.",
     "remuxOutputMissing": "Output file missing or empty after remux.",
