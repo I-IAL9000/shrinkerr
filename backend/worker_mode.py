@@ -533,7 +533,10 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 subtitle_tracks_to_remove=_sub_rm if job_type == "combined" else None,
             )
 
-            if cancel_flag:
+            # A cancel that came after the output replaced the original (e.g.
+            # during VMAF, which can't be killed) is too late: report what
+            # happened, or the server lets the job run again (v0.10.0).
+            if cancel_flag and not result.get("success"):
                 print(f"[WORKER] Job {job_id} cancelled", flush=True)
                 await client.report_complete(node_id, job_id, False, error="Cancelled by user",
                                              error_key="errors.cancelledByUser")

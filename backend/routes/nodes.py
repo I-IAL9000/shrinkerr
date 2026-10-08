@@ -750,8 +750,10 @@ async def report_complete(req: CompletionReport, request: Request):
             await refresh_converted_scan_row(_database.DB_PATH, req.job_id, source_path, output_path)
             db = await connect_db()
             try:
-                await db.execute("UPDATE jobs SET original_file_path = ? WHERE id = ?",
-                                 (source_path, req.job_id))
+                # finalized_at: the output replaced the original, so neither
+                # Retry nor a restart may run this job again (H5, v0.10.0).
+                await db.execute("UPDATE jobs SET original_file_path = ?, finalized_at = ? WHERE id = ?",
+                                 (source_path, datetime.now(timezone.utc).isoformat(), req.job_id))
                 await db.commit()
             finally:
                 await db.close()

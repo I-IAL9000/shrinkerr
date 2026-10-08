@@ -51,6 +51,7 @@ async def _state(db_path, job_id):
 @pytest.mark.asyncio
 async def test_a_dead_node_is_noticed_the_same_day(test_db, node_api):
     nm, _ = node_api
+    nm._started_at -= 3600  # up for an hour
     dead = await _job(test_db, "running", "dead")
     alive = await _job(test_db, "running", "alive")
     await _node(test_db, "dead", 10, dead)
@@ -120,3 +121,76 @@ async def test_cancelling_a_job_on_a_remote_node_reaches_the_node(test_db, node_
     progress = await nodes_route.report_progress(nodes_route.ProgressReport(
         node_id="node-1", job_id=job_id, progress=60), request)
     assert progress["cancelled"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_dead_node_keeps_its_job_right_after_a_restart(test_db, node_api):
+    """Every heartbeat is old right after a restart: a server down longer
+    than the timeout gave running remote jobs to the local worker at once."""
+    from backend.nodes import NodeManager
+    job_id = await _job(test_db, "running", "node-1")
+    await _node(test_db, "node-1", 10, job_id)
+    assert await NodeManager().release_stale_assignments(stale_timeout_seconds=300) == 0
+    assert (await _state(test_db, job_id))[0] == "running"
+
+
+@pytest.mark.asyncio
+async def test_a_remote_conversion_is_finalized(test_db, node_api, tmp_path, monkeypatch):
+    import backend.queue as queue_mod
+    from backend.queue import QueueWorker
+
+    async def no_wait(_):
+        return None
+
+    monkeypatch.setattr(queue_mod.asyncio, "sleep", no_wait)  # the fake output can't be re-probed
+    from backend.api_errors import ApiError
+    from backend.routes.jobs import init_job_routes, retry_job
+    _, request = node_api
+    init_job_routes(QueueWorker(test_db), JobQueue(test_db))
+    job_id = await _job(test_db, "running", "node-1")
+    await _node(test_db, "node-1", 0, job_id)
+    out = tmp_path / "Movie (2009) x265.mkv"
+    out.write_bytes(b"x")
+    await nodes_route.report_complete(nodes_route.CompletionReport(
+        node_id="node-1", job_id=job_id, success=True, output_path=str(out), space_saved=10,
+        replaced_source=True), request)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE jobs SET status = 'failed' WHERE id = ?", (job_id,))  # say a later step failed
+        await db.commit()
+    with pytest.raises(ApiError) as exc:
+        await retry_job(job_id)
+    assert exc.value.code == "jobs.retryAlreadyReplaced"
+
+
+@pytest.mark.asyncio
+async def test_a_worker_reports_success_when_the_cancel_came_too_late(tmp_path, monkeypatch):
+    """A cancel during VMAF can't stop convert_file: it placed the output and
+    disposed of the original, then the worker reported "cancelled", and the
+    server let the job run again on the converted file."""
+    import backend.converter
+    import backend.scanner
+    from backend import worker_mode
+    from backend.tests.test_worker_audio_remux import PROBE, FakeClient
+
+    class CancellingClient(FakeClient):
+        async def report_progress(self, *a, **kw):
+            return True
+
+    src = tmp_path / "Movie (2009) h264.mkv"
+    src.write_bytes(b"x")
+    out = tmp_path / "Movie (2009) x265.mkv"
+
+    async def fake_probe(path, *a, **kw):
+        return dict(PROBE)
+
+    async def fake_convert_file(**kwargs):
+        await kwargs["progress_callback"](progress=100.0, step="VMAF analysis")
+        out.write_bytes(b"converted")
+        return {"success": True, "output_path": str(out), "space_saved": 10, "error": None}
+
+    monkeypatch.setattr(backend.scanner, "probe_file", fake_probe)
+    monkeypatch.setattr(backend.converter, "convert_file", fake_convert_file)
+    client = CancellingClient()
+    await worker_mode.execute_job(client, "node-1", {"id": 9, "file_path": str(src), "job_type": "convert",
+                                                     "encoder": "libx265"}, ["libx265"])
+    assert [(ok, kw.get("replaced_source")) for ok, kw in client.completed] == [(True, True)]

@@ -9,6 +9,7 @@ import asyncio
 import json
 import platform
 import shutil
+import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -55,6 +56,9 @@ class NodeManager:
         # memory — metrics are volatile, no reason to persist each sample to
         # disk. Shape: { node_id: { "metrics": <all-metrics dict>, "received_at": epoch } }
         self._node_metrics: dict[str, dict] = {}
+        # When this server started: nodes get one stale-timeout to heartbeat
+        # again before their jobs are released (v0.10.0).
+        self._started_at = time.monotonic()
 
     # ------------------------------------------------------------------
     # Live metrics (CPU / RAM / GPU / disk / network) — volatile
@@ -562,6 +566,11 @@ class NodeManager:
 
     async def release_stale_assignments(self, stale_timeout_seconds: int = 300) -> int:
         """Find nodes whose heartbeat is older than timeout, mark offline, release their jobs."""
+        # Right after a restart every heartbeat is old: a server down longer
+        # than the timeout handed running remote jobs to the local worker
+        # within a second, while the nodes were still encoding them (v0.10.0).
+        if time.monotonic() - self._started_at < stale_timeout_seconds:
+            return 0
         released = 0
         db = await self._db()
         try:
