@@ -12,6 +12,8 @@
     "noFilesOrResetAll": "Provide file_paths or set reset_all_corrupt=true",
     "notFound": "Job not found",
     "taskNotFound": "Task not found",
+    "undoFailed": "Could not restore the original: {{error}}",
+    "undoTargetExists": "Something already exists where the original goes: {{path}}",
     "vmafRemeasureRunning": "A VMAF re-measure pass is already running."
   },
   "media": {

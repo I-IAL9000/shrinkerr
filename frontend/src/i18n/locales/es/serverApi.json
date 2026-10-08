@@ -12,6 +12,8 @@
     "noFilesOrResetAll": "Indica file_paths o establece reset_all_corrupt=true",
     "notFound": "Trabajo no encontrado",
     "taskNotFound": "Tarea no encontrada",
+    "undoFailed": "No se pudo restaurar el original: {{error}}",
+    "undoTargetExists": "Ya existe algo donde va el original: {{path}}",
     "vmafRemeasureRunning": "Ya hay una nueva medición de VMAF en curso."
   },
   "media": {

@@ -1551,6 +1551,28 @@ async def recent_conversions(limit: int = 20):
         await db.close()
 
 
+def _restore_moves(backup, original) -> list:
+    """(from, to) renames that put a converted file's original back.
+
+    original_file_path is the file itself or, for a folder disc, the marker
+    inside it (.../BDMV/index.bdmv) — whose backup is a folder: BDMV/ (with
+    the CERTIFICATE/AACS folders backed up beside it) or a whole release
+    folder (converter._dispose_disc_source). Undo used to rename that folder
+    onto the marker path (v0.10.0)."""
+    if not backup.is_dir():
+        return [(backup, original)]
+    disc_dir = original.parent
+    if backup.name != disc_dir.name:
+        return [(backup, disc_dir.parent)]  # the release folder holding the disc
+    from backend.converter import _ALL_DISC_DIRS
+    moves = [(backup, disc_dir)]
+    for sibling in sorted(backup.parent.iterdir()):
+        if (sibling != backup and sibling.is_dir() and sibling.name.upper() in _ALL_DISC_DIRS
+                and not (disc_dir.parent / sibling.name).exists()):
+            moves.append((sibling, disc_dir.parent / sibling.name))
+    return moves
+
+
 @router.post("/{job_id}/undo")
 async def undo_conversion(job_id: int):
     """Restore original file from backup, reverting a conversion."""
@@ -1576,28 +1598,51 @@ async def undo_conversion(job_id: int):
         converted_path = job["file_path"]
         original_path = job["original_file_path"] or job["file_path"]
 
-        # Delete the converted file
-        if converted_path and os.path.exists(converted_path):
-            os.unlink(converted_path)
-            print(f"[UNDO] Deleted converted file: {converted_path}", flush=True)
-
-        # Move backup back to original location
-        dest = Path(original_path)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        Path(backup_path).rename(dest)
-        print(f"[UNDO] Restored original: {backup_path} → {original_path}", flush=True)
+        # Put the original back first and only then remove the converted file
+        # — it used to be deleted up front, so a failed restore left neither
+        # in the library (v0.10.0).
+        moves = _restore_moves(Path(backup_path), Path(original_path))
+        target = moves[0][1]
+        converted = Path(converted_path) if converted_path else None
+        in_the_way = converted is not None and converted == target and converted.exists()
+        if os.path.lexists(target) and not in_the_way:
+            raise ApiError(status_code=409, detail=f"Something already exists where the original goes: {target}",
+                           code="jobs.undoTargetExists", params={"path": str(target)})
+        aside = converted.with_name(converted.name + ".undo") if in_the_way else None
+        try:
+            if aside is not None:
+                converted.rename(aside)  # same-name conversion: free the name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            Path(backup_path).rename(target)
+        except OSError as exc:
+            if aside is not None and aside.exists() and not converted.exists():
+                aside.rename(converted)
+            raise ApiError(status_code=500, detail=f"Could not restore the original: {exc}",
+                           code="jobs.undoFailed", params={"error": str(exc)})
+        for src, dst in moves[1:]:  # CERTIFICATE / AACS / AUDIO_TS / JACKET_P
+            try:
+                src.rename(dst)
+            except OSError as exc:
+                print(f"[UNDO] Could not restore {src.name}: {exc}", flush=True)
+        print(f"[UNDO] Restored original: {backup_path} → {target}", flush=True)
+        if aside is not None:
+            aside.unlink()
+        elif converted is not None and converted.exists():
+            converted.unlink()
+        print(f"[UNDO] Deleted converted file: {converted_path}", flush=True)
 
         # Update job status
         await db.execute(
             "UPDATE jobs SET status = 'reverted' WHERE id = ?", (job_id,)
         )
 
-        # Reset scan_results for this file
+        # Reset scan_results for this file (a disc row is a disc again).
+        disc_type = {"index.bdmv": "bdmv", "video_ts.ifo": "dvd"}.get(Path(original_path).name.lower())
         await db.execute(
             """UPDATE scan_results SET converted = 0, needs_conversion = 1,
-                   video_codec = 'h264', file_path = ?, file_size = ?
+                   video_codec = 'h264', file_path = ?, file_size = ?, disc_type = ?
                WHERE file_path = ? OR file_path = ?""",
-            (original_path, os.path.getsize(original_path), converted_path, original_path),
+            (original_path, os.path.getsize(original_path), disc_type, converted_path, original_path),
         )
         await db.commit()
 
