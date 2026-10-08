@@ -2304,6 +2304,7 @@ async def _probe_output_duration(path: str) -> Optional[float]:
     (an inefficient MPEG-2 DVD/Blu-ray source shrinking >95% into HEVC keeps
     its full runtime) from a truncated/corrupt one (stops early). Lightweight —
     reads the format duration only, no stream decode. v0.9.103."""
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffprobe", "-v", "error",
@@ -2314,6 +2315,8 @@ async def _probe_output_duration(path: str) -> Optional[float]:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
         return float(out.decode().strip())
     except Exception:
+        if proc is not None and proc.returncode is None:
+            proc.kill()  # a stalled mount: don't leave ffprobe behind (v0.10.0)
         return None
 
 
@@ -3994,6 +3997,7 @@ async def convert_file(
                 # which is outside VMAF's training distribution). Only runs
                 # on suspicious scores so it doesn't slow down the 99% case.
                 if vmaf_score is not None and (vmaf_score < 80 or vmaf_uncertain):
+                    xc_proc = None
                     try:
                         import re as _re
                         # Cross-check sample: use the same window the BEST
@@ -4114,6 +4118,11 @@ async def convert_file(
                             )
                     except Exception as xc_exc:
                         print(f"[CONVERT] Quality cross-check failed: {xc_exc}", flush=True)
+                        # A timed-out cross-check was left running, holding
+                        # the GPU/CPU after the job moved on (M3, v0.10.0).
+                        if xc_proc is not None and xc_proc.returncode is None:
+                            xc_proc.kill()
+                            await xc_proc.wait()
                 # Clean up every JSON file the helper produced (primary +
                 # any retry). Old code only removed the primary, leaving
                 # /tmp full of stale `*_vmaf.json` files after a few months
