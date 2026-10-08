@@ -890,6 +890,104 @@ async def get_changelog(limit: int = 0):
     }
 
 
+# --- What's new after an update (v0.10.0) ---------------------------------
+# One-liners for the releases since the version this install last showed:
+# "New" from Added / Changed, "Fixed" from the bold (headline) Fixed /
+# Security entries; the other fixes are only counted.
+
+_WHATS_NEW_KEY = "whats_new_seen_version"
+
+
+def _version_key(version: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", version.split("-")[0])[:3]) or (0,)
+
+
+def _one_liner(bullet: str) -> str:
+    """The bold lead of a changelog bullet, or its first sentence."""
+    m = re.match(r"\*\*(.+?)\*\*", bullet)
+    text = m.group(1) if m else bullet
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = text.replace("**", "").replace("`", "")
+    if not m:
+        cut = re.search(r"(?<=[.!?])\s|\s—\s|;\s", text)
+        if cut:
+            text = text[:cut.start()]
+    return text.strip().rstrip(".").strip()
+
+
+def whats_new_since(entries: list[dict], seen: str | None, current: str) -> dict:
+    """Release notes for the versions after `seen` up to `current` — only
+    `current` itself when nothing was seen yet (first run after an update
+    from a version without this feature)."""
+    new: list[str] = []
+    fixed: list[str] = []
+    more_fixes = 0
+    upto = _version_key(current)
+    after = _version_key(seen) if seen else None
+    for entry in entries:
+        version = entry["version"]
+        if version.lower() == "unreleased":
+            continue
+        key = _version_key(version)
+        if key > upto or (after is not None and key <= after) or (after is None and key != upto):
+            continue
+        for section, bullets in entry["sections"].items():
+            if section in ("Added", "Changed"):
+                new += [_one_liner(b) for b in bullets]
+            elif section in ("Fixed", "Security", "Removed"):
+                for b in bullets:
+                    if b.startswith("**"):
+                        fixed.append(_one_liner(b))
+                    else:
+                        more_fixes += 1
+    return {"new": new, "fixed": fixed, "more_fixes": more_fixes}
+
+
+@router.get("/whats-new")
+async def whats_new():
+    """Notes to show once after an update, or {"show": false}. Not on a
+    fresh install (the setup wizard greets those) and not on development
+    builds, whose notes aren't written yet."""
+    current = _get_current_version()
+    if "-" in current:
+        return {"show": False}
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (_WHATS_NEW_KEY,)) as cur:
+            row = await cur.fetchone()
+        seen = row["value"] if row else None
+        if seen is None:
+            async with db.execute(
+                "SELECT (SELECT COUNT(*) FROM media_dirs) + (SELECT COUNT(*) FROM jobs) AS n"
+            ) as cur:
+                fresh = (await cur.fetchone())["n"] == 0
+            if fresh:
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                                 (_WHATS_NEW_KEY, current))
+                await db.commit()
+                return {"show": False}
+    finally:
+        await db.close()
+    if seen and _version_key(seen) >= _version_key(current):
+        return {"show": False}
+    notes = whats_new_since(_parse_changelog(), seen, current)
+    if not (notes["new"] or notes["fixed"] or notes["more_fixes"]):
+        return {"show": False}
+    return {"show": True, "version": current, "since": seen, **notes}
+
+
+@router.post("/whats-new/seen")
+async def whats_new_seen():
+    db = await connect_db()
+    try:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (_WHATS_NEW_KEY, _get_current_version()))
+        await db.commit()
+    finally:
+        await db.close()
+    return {"ok": True}
+
+
 async def _fetch_latest_release_tag() -> str | None:
     """Hit GitHub's releases/latest and return the tag without the leading 'v'.
 

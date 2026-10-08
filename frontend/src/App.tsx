@@ -16,6 +16,7 @@ import DesignPage from "./pages/DesignPage";
 import { useToastState, ToastProvider, ToastContainer } from "./useToast";
 import { ConfirmProvider } from "./components/ConfirmModal";
 import ChangelogModal from "./components/ChangelogModal";
+import WhatsNewModal from "./components/WhatsNewModal";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import "./theme.css";
@@ -618,6 +619,7 @@ export default function App() {
             <Route path="/design" element={<DesignPage />} />
           </Routes>
         </main>
+        <WhatsNewModal />
       </div>
     </BrowserRouter>
     </ConfirmProvider>

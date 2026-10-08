@@ -18,6 +18,17 @@
       "Security": "Security"
     }
   },
+  "whatsNew": {
+    "title": "What's new in Shrinkerr {{version}}",
+    "new": "New",
+    "fixed": "Fixed",
+    "moreFixes_one": "…and {{count}} smaller fix.",
+    "moreFixes_other": "…and {{count}} smaller fixes.",
+    "fixes_one": "{{count}} fix.",
+    "fixes_other": "{{count}} fixes.",
+    "fullNotes": "Full release notes",
+    "gotIt": "Got it"
+  },
   "folderBrowser": {
     "title": "Select Folder",
     "go": "Go",

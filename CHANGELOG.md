@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).
+- After an update, a short "What's new" dialog lists the new features and the main fixes, once.
 - **`PUID` / `PGID` / `UMASK`** (optional): the Docker images can run as your own user instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
 
 ### Fixed

@@ -598,6 +598,10 @@ export interface ChangelogEntry {
   intro: string;
   sections: Record<string, string[]>;
 }
+export type WhatsNew = { show: boolean; version: string; since: string | null; new: string[]; fixed: string[]; more_fixes: number };
+export const getWhatsNew = () => apiFetch<WhatsNew>("/stats/whats-new");
+export const markWhatsNewSeen = () => apiFetch("/stats/whats-new/seen", { method: "POST" });
+
 export const getChangelog = (limit = 0) =>
   apiFetch<{ current: string; entries: ChangelogEntry[] }>(
     `/stats/changelog${limit > 0 ? `?limit=${limit}` : ""}`,

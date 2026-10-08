@@ -16,6 +16,13 @@ These override skill defaults for the Shrinkerr repo. Read on session start.
   migration note, bold it and add one extra short sentence — not a
   paragraph. See existing v0.5.x entries for the target shape.
 
+- **The "What's new" dialog is built from the CHANGELOG** (v0.10.0): it
+  shows every Added / Changed entry, and only the Fixed / Security /
+  Removed entries that start with a **bold lead**, as one line each — the
+  bold text, or an Added entry's first sentence. So start notable fixes
+  with a short bold lead (a few words, not the whole entry); minor fixes
+  stay plain and are just counted.
+
 - **Commit messages** can be a bit longer than CHANGELOG entries (they
   document context for future archaeology) but still tight. Subject
   line under 70 chars; body, if any, explains why not what.
