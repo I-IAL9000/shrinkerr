@@ -392,18 +392,22 @@ class NodeManager:
     # Job assignment
     # ------------------------------------------------------------------
 
-    async def assign_job_to_node(self, node_id: str, job: dict) -> dict:
-        """Mark a job as running and assigned to a specific node. Returns translated job dict."""
+    async def assign_job_to_node(self, node_id: str, job: dict) -> Optional[dict]:
+        """Mark a job as running and assigned to a specific node. Returns the
+        translated job dict, or None when the job is no longer pending (the
+        local worker or another node claimed it first — H2, v0.10.0)."""
         now = datetime.now(timezone.utc).isoformat()
         job_id = job["id"]
 
         db = await self._db()
         try:
-            await db.execute(
+            cur = await db.execute(
                 "UPDATE jobs SET status = 'running', assigned_node_id = ?, assigned_at = ?, "
                 "started_at = ? WHERE id = ? AND status = 'pending'",
                 (node_id, now, now, job_id),
             )
+            if cur.rowcount == 0:
+                return None
             await db.execute(
                 "UPDATE worker_nodes SET current_job_id = ?, status = 'working' WHERE id = ?",
                 (job_id, node_id),

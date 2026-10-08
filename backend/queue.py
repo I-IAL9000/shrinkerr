@@ -575,6 +575,23 @@ class JobQueue:
         finally:
             await db.close()
 
+    async def claim_job(self, job_id: int) -> bool:
+        """Mark a pending job running for the local worker. False when it's no
+        longer pending — a remote node took it after get_next_job's SELECT,
+        and running it too would put two encoders on one file (H2, v0.10.0)."""
+        db = await self._connect()
+        try:
+            cur = await db.execute(
+                "UPDATE jobs SET status = 'running', started_at = ?, assigned_node_id = 'local', "
+                "error_log = NULL, error_key = NULL, error_params = NULL "
+                "WHERE id = ? AND status = 'pending'",
+                (_utcnow(), job_id),
+            )
+            await db.commit()
+            return cur.rowcount > 0
+        finally:
+            await db.close()
+
     async def update_status(
         self,
         job_id: int,
@@ -1488,6 +1505,14 @@ class QueueWorker:
             if job is None:
                 await asyncio.sleep(1)
                 continue
+            try:
+                claimed = await self.queue.claim_job(job["id"])
+            except Exception as exc:
+                print(f"[WORKER] Failed to claim job {job['id']} (DB may be busy): {exc}", flush=True)
+                await asyncio.sleep(2)
+                continue
+            if not claimed:
+                continue  # a remote node took it first
 
             # Spawn a worker task for this job
             job_id = job["id"]

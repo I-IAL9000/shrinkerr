@@ -376,6 +376,8 @@ async def request_job(req: RequestJobBody, request: Request):
 
     # Assign this job to the node
     assigned = await nm.assign_job_to_node(req.node_id, job)
+    if assigned is None:
+        return {"job": None}  # claimed elsewhere since the SELECT; the node polls again
     # Include the node's translate_encoder flag so the worker knows whether to
     # fall back to libx265 for nvenc jobs (vs. reject them)
     assigned["translate_encoder"] = bool(translate)
