@@ -227,3 +227,35 @@ async def test_dvd_release_folder_converts_into_the_movie_folder(test_db, tmp_pa
     assert result["success"], result.get("error")
     assert result["output_path"] == str(title / "Fast-Walking (1982) 480p DVDRip AC3 2.0 x265.mkv")
     assert [p.name for p in title.iterdir()] == ["Fast-Walking (1982) 480p DVDRip AC3 2.0 x265.mkv"]
+
+
+def _has_libvmaf() -> bool:
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        return False
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    return "libvmaf" in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not (_has_libx265() and _has_libvmaf()), reason="needs ffmpeg with libx265 and libvmaf")
+async def test_disc_conversion_is_vmaf_checked(test_db, tmp_path):
+    """VMAF was handed the disc's marker file (VIDEO_TS.IFO) as the reference,
+    errored, and the encode was accepted unchecked (v0.10.0)."""
+    import subprocess
+    from backend.converter import convert_file
+
+    title = tmp_path / "media" / "Fast-Walking (1982)"
+    marker = _dvd(title)
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=720x480:rate=30:duration=3",
+         "-f", "lavfi", "-i", "sine=duration=3", "-c:v", "mpeg2video", "-b:v", "6M",
+         "-c:a", "ac3", "-ac", "2", "-f", "vob", str(marker.parent / "VTS_01_1.VOB")],
+        check=True,
+    )
+    result = await convert_file(str(marker), "libx265", 3.0, override_libx265_preset="ultrafast")
+
+    assert result["success"], result.get("error")
+    assert result.get("vmaf_error") is None, result.get("vmaf_error")
+    assert result.get("vmaf_score") is not None

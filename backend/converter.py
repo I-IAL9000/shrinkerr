@@ -3671,7 +3671,11 @@ async def convert_file(
                 #       spot a format mismatch at a glance next time someone
                 #       reports a wrong-looking score. Cheap enough (<1s per
                 #       probe) to run unconditionally.
-                src_info = await _probe_vmaf_stream(input_path)
+                # A disc's reference is what the encoder read (concat:/bluray:
+                # input) — its marker file isn't video, so VMAF errored and
+                # the encode was accepted unchecked (v0.10.0).
+                vmaf_ref = encode_input_path if disc_type else input_path
+                src_info = await _probe_vmaf_stream(vmaf_ref)
                 dst_info = await _probe_vmaf_stream(temp_path)
                 print(f"[CONVERT] VMAF inputs — {_vmaf_probe_summary('ref', src_info)} | {_vmaf_probe_summary('dist', dst_info)}", flush=True)
 
@@ -3736,7 +3740,7 @@ async def convert_file(
                     flush=True,
                 )
                 result_primary = await _run_libvmaf_pass(
-                    input_path=input_path,
+                    input_path=vmaf_ref,
                     temp_path=temp_path,
                     seek=vmaf_seek,
                     duration=vmaf_duration,
@@ -3776,7 +3780,7 @@ async def convert_file(
                             flush=True,
                         )
                         result_alt = await _run_libvmaf_pass(
-                            input_path=input_path,
+                            input_path=vmaf_ref,
                             temp_path=temp_path,
                             seek=alt_seek,
                             duration=vmaf_duration,
