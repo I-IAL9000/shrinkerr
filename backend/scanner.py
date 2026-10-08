@@ -57,6 +57,29 @@ def _disc_marker_path(folder: Path, disc_type: str) -> Path:
     return folder / "VIDEO_TS" / "VIDEO_TS.IFO"
 
 
+# Folders a media scan never enters besides hidden ones (.shrinkerr_backup,
+# .deletedByTMM, .Trash-*): NAS recycle bins, snapshots and thumbnails.
+_SKIPPED_DIR_NAMES = frozenset({
+    "#recycle", "#snapshot", "@eaDir", "@Recycle", "@Recently-Snapshot",
+    "$RECYCLE.BIN", "System Volume Information", "lost+found",
+})
+
+
+def walk_media_dir(dir_path: str, unreadable: list[str]):
+    """os.walk for media scans, shared by the Scanner and the watcher (v0.10.0).
+
+    Skips hidden and system folders — Shrinkerr's own backups were scanned
+    and converted again (SC-06). Folders that can't be listed are appended to
+    `unreadable`: os.walk skips them silently, and on a stalled CIFS mount an
+    empty-looking folder got all its rows deleted (SC-03)."""
+    def _failed(err: OSError) -> None:
+        unreadable.append(err.filename or dir_path)
+
+    for root, dirs, files in os.walk(dir_path, onerror=_failed):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _SKIPPED_DIR_NAMES]
+        yield root, dirs, files
+
+
 def _disc_converted_output(marker: Path) -> Optional[Path]:
     """The converted .mkv of a folder disc, if one exists (v0.10.0).
 
@@ -1509,6 +1532,7 @@ async def scan_directory(
     progress_callback: Optional[Callable] = None,
     result_callback: Optional[Callable] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
+    unreadable: Optional[list[str]] = None,
 ) -> list[ScannedFile]:
     """
     Walk dir_path, probe video files, classify tracks, build ScannedFile list.
@@ -1566,7 +1590,7 @@ async def scan_directory(
 
     # Collect all candidate files first
     all_files = []
-    for root, dirs, files in os.walk(dir_path):
+    for root, dirs, files in walk_media_dir(dir_path, unreadable if unreadable is not None else []):
         root_path = Path(root)
 
         # v0.6.0: disc-folder detection. When a directory contains a

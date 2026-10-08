@@ -363,6 +363,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
         total_written = 0
         seen_paths: set[str] = set()
         completed_paths: list[str] = []
+        unreadable_dirs: list[str] = []  # SC-03: never orphan-clean under these
 
         async def progress_cb(status, current_file="", files_found=0, files_probed=0, total_files=0):
             write_progress(status, current_file, total_files, files_probed)
@@ -387,6 +388,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     progress_callback=progress_cb,
                     result_callback=result_cb,
                     cancel_check=is_cancelled,
+                    unreadable=unreadable_dirs,
                 )
                 completed_paths.append(path)
             except Exception as exc:
@@ -502,6 +504,9 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                         preserved_here = [
                             s for s in preserved_subs
                             if s.startswith(path_norm + "/")
+                        ] + [
+                            d.rstrip("/") for d in unreadable_dirs
+                            if d.rstrip("/") == path_norm or d.startswith(path_norm + "/")
                         ]
                         not_likes = ""
                         params: list = [like_pat]

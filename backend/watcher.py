@@ -9,7 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime, SUBTITLE_EXTENSIONS
+from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime, SUBTITLE_EXTENSIONS, walk_media_dir
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -1357,7 +1357,7 @@ class FileWatcher:
                 dir_p = Path(dir_path)
                 if not dir_p.exists():
                     continue
-                for root, dirs, files in os.walk(dir_path):
+                for root, dirs, files in walk_media_dir(dir_path, unreadable_dirs):
                     root_path = Path(root)
 
                     # v0.6.1: disc-folder detection — mirror scanner walk so
@@ -1400,7 +1400,11 @@ class FileWatcher:
                         sub_folder_files[root] = folder_files
             return result, sub_folder_files
 
+        unreadable_dirs: list[str] = []
         disk_files, sub_folder_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
+        if unreadable_dirs:
+            print(f"[WATCHER] Couldn't list {len(unreadable_dirs)} folder(s) this cycle; "
+                  f"keeping their rows: {sorted(unreadable_dirs)[:10]}", flush=True)
 
         new_files_all = disk_files - known_paths
 
@@ -1428,8 +1432,11 @@ class FileWatcher:
                 p == d or p.startswith(d.rstrip("/") + "/") for d in walked_dirs
             )
 
+        def _is_under_unreadable(p: str) -> bool:
+            return any(p.startswith(d.rstrip("/") + "/") for d in unreadable_dirs)
+
         raw_stale = known_paths - disk_files
-        stale_path_set = {p for p in raw_stale if _is_under_walked(p)}
+        stale_path_set = {p for p in raw_stale if _is_under_walked(p) and not _is_under_unreadable(p)}
 
         # Sanity belt #1 — global: if a single cycle would flag more than
         # half of the walked-dir rows as stale, something is wrong
