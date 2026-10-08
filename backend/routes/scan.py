@@ -452,6 +452,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     preserved_subs: set[str] = set()
                     preserved_paths: set[str] = set()
                     _unlisted = [d.rstrip("/") + "/" for d in unreadable_dirs]
+                    _media_roots = {r[0].rstrip("/") for r in db.execute("SELECT path FROM media_dirs")}
                     for path in completed_paths:
                         path_norm = path.rstrip("/")
                         like_pat = path_norm + "/%"
@@ -481,7 +482,11 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                         # walks clean, and every row under it looked stale;
                         # the per-subfolder belt below never fires on a
                         # movie library, where no folder holds 1000 files.
-                        if known_rows and len(stale_rows) > len(known_rows) // 2:
+                        # Only for media folders: a missing subfolder can't
+                        # be listed (kept above), and a folder rescan after
+                        # deleting files should drop their rows.
+                        if (path_norm in _media_roots and known_rows
+                                and len(stale_rows) > len(known_rows) // 2):
                             preserved_paths.add(path_norm)
                             print(
                                 f"[SCANNER] {path_norm!r} would lose {len(stale_rows)}/{len(known_rows)} "

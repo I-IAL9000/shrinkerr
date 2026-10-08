@@ -130,3 +130,17 @@ def test_full_scan_of_an_unmounted_share_keeps_its_rows(test_db, tmp_path):
     _scan_worker_process([str(media)], test_db, str(tmp_path / "progress.json"), str(tmp_path / "cancel"))
 
     assert asyncio.run(_rows(test_db)) == sorted(str(p) for p in rows)
+
+
+def test_rescanning_a_folder_after_deleting_its_files_drops_their_rows(test_db, tmp_path):
+    import asyncio
+    from backend.routes.scan import _scan_worker_process
+    media = tmp_path / "Movies"
+    folder = media / "Movie 1 (2009)"
+    folder.mkdir(parents=True)
+    rows = [folder / "Movie 1 (2009).mkv"]
+    asyncio.run(_seed(test_db, media, rows))
+
+    _scan_worker_process([str(folder)], test_db, str(tmp_path / "progress.json"), str(tmp_path / "cancel"))
+
+    assert asyncio.run(_rows(test_db)) == []
