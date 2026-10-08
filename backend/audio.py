@@ -473,14 +473,23 @@ async def remux_audio(
             pass
 
         def _dispose(src: Path) -> None:
-            if use_trash:
-                try:
-                    from send2trash import send2trash
-                    send2trash(str(src))
-                except Exception:
+            # Runs once the output is in place. If the original can't be
+            # removed it stays (beside the output or in .shrinkerr-replacing/)
+            # and the job still succeeded: reporting a failure got the
+            # cleaned output remuxed again on retry, by stream indexes that
+            # no longer match its tracks (v0.10.0).
+            try:
+                if use_trash:
+                    try:
+                        from send2trash import send2trash
+                        send2trash(str(src))
+                    except Exception:
+                        src.unlink()
+                else:
                     src.unlink()
-            else:
-                src.unlink()
+            except OSError as exc:
+                print(f"[REMUX] Output in place, but the original couldn't be removed and was kept at {src}: {exc}",
+                      flush=True)
 
         # Place the output BEFORE disposing the original. Order matters: the old
         # order (delete/trash original → rename temp) meant a failed rename —

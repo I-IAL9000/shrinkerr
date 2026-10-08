@@ -5,6 +5,8 @@
   },
   "jobs": {
     "backupNotFound": "Backup file not found on disk",
+    "cannotRetryStatus": "Cannot retry job with status '{{status}}'",
+    "retryAlreadyReplaced": "This job's output already replaced the original; queue a new job instead",
     "cannotUndoStatus": "Cannot undo job with status '{{status}}'",
     "invalidHealthCheckMode": "mode must be 'quick' or 'thorough'",
     "invalidPosition": "position must be top, bottom, up, or down",

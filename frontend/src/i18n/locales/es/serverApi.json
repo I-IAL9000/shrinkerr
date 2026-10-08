@@ -5,6 +5,8 @@
   },
   "jobs": {
     "backupNotFound": "No se encontró el archivo de copia de seguridad en el disco",
+    "cannotRetryStatus": "No se puede reintentar un trabajo con estado '{{status}}'",
+    "retryAlreadyReplaced": "El resultado de este trabajo ya sustituyó al original; añade un trabajo nuevo a la cola",
     "cannotUndoStatus": "No se puede deshacer un trabajo con estado '{{status}}'",
     "invalidHealthCheckMode": "mode debe ser 'quick' o 'thorough'",
     "invalidPosition": "position debe ser top, bottom, up o down",

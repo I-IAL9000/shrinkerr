@@ -601,6 +601,9 @@ async def init_db():
             ("assigned_node_id", "TEXT DEFAULT NULL"),
             ("assigned_at", "TEXT DEFAULT NULL"),
             ("cancel_requested", "INTEGER DEFAULT 0"),
+            # v0.10.0 (H5): set once the job's output replaced the original —
+            # from then on the job must never run again.
+            ("finalized_at", "TEXT DEFAULT NULL"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {ctype}")

@@ -728,7 +728,8 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                 onClick={async () => {
                   for (const job of tabJobs) {
-                    await retryJob(job.id);
+                    // One job the server won't retry mustn't stop the rest.
+                    try { await retryJob(job.id); } catch { /* left in Failed */ }
                   }
                   load();
                   toast(t("queue:toasts.retrying", { count: tabJobs.length }), "success");

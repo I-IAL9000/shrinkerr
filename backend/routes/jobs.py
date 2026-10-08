@@ -1358,12 +1358,23 @@ async def retry_job(job_id: int):
     db = await connect_db()
     try:
         async with db.execute(
-            "SELECT file_path, job_type, audio_tracks_to_remove, subtitle_tracks_to_remove "
-            "FROM jobs WHERE id = ?", (job_id,),
+            "SELECT file_path, job_type, audio_tracks_to_remove, subtitle_tracks_to_remove, "
+            "status, finalized_at FROM jobs WHERE id = ?", (job_id,),
         ) as cur:
             row = await cur.fetchone()
     finally:
         await db.close()
+
+    # Retrying a running or completed job ran it again — on a conversion, a
+    # re-encode of the already-converted file. Same for a job whose output
+    # replaced the original before a later step failed (v0.10.0).
+    if row and row["status"] not in ("failed", "cancelled"):
+        raise ApiError(status_code=400, detail=f"Cannot retry job with status '{row['status']}'",
+                       code="jobs.cannotRetryStatus", params={"status": row["status"]})
+    if row and row["finalized_at"]:
+        raise ApiError(status_code=409,
+                       detail="This job's output already replaced the original; queue a new job instead",
+                       code="jobs.retryAlreadyReplaced")
 
     if row:
         fp = row["file_path"]

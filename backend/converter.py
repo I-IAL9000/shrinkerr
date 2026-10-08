@@ -1497,12 +1497,27 @@ async def build_disc_output_filename(
     return str(out)
 
 
-def _move_into_backup(src: str, dst: str) -> None:
-    """Move an original into the backup folder, dated now: retention expiry
-    goes by mtime, and the move keeps the source's — a file downloaded long
-    ago lost its backup to the next sweep (H3, v0.10.0)."""
-    shutil.move(src, dst)
-    os.utime(dst)
+def _move_into_backup(src: str, dst: str) -> str:
+    """Move an original into the backup folder and return where it went.
+
+    Never onto an existing backup (or symlink): a rename replaces its target,
+    so an earlier backup of a same-named file was lost — on the NAS share at
+    best to its recycle bin. The backup is dated now: retention expiry goes
+    by mtime, and the move keeps the source's — a file downloaded long ago
+    lost its backup to the next sweep (H3). Re-dating is best-effort; a share
+    that refuses it mustn't fail a job whose original is already moved.
+    v0.10.0."""
+    target = Path(dst)
+    n = 0
+    while os.path.lexists(target):
+        n += 1
+        target = Path(dst).with_name(f"{Path(dst).stem}.{n}{Path(dst).suffix}")
+    shutil.move(src, str(target))
+    try:
+        os.utime(target)
+    except OSError as exc:
+        print(f"[CONVERT] Could not re-date backup {target}: {exc}", flush=True)
+    return str(target)
 
 
 # Left behind by Finder / Explorer; they don't keep a release folder alive.
@@ -1576,9 +1591,9 @@ async def _dispose_disc_source(
     async def _dispose(unit: Path) -> str | None:
         if slot is not None:
             backup_path = slot / unit.name
-            await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
+            backup_path = await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
             print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
-            return str(backup_path)
+            return backup_path
         if use_trash:
             try:
                 from send2trash import send2trash
@@ -4152,14 +4167,9 @@ async def convert_file(
                     legacy = p.parent / ".squeezarr_backup"
                     backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
                     backup_dir.mkdir(exist_ok=True)
-                backup_path = backup_dir / backup_name
-                if backup_path.is_symlink():
-                    raise OSError(
-                        f"Refusing to rename into backup path — destination is a symlink: {backup_path}"
-                    )
-                await asyncio.to_thread(_move_into_backup, str(src), str(backup_path))  # v0.9.32: off-loop
-                result_backup_path = str(backup_path)
-                print(f"[CONVERT] Original backed up to: {backup_path}", flush=True)
+                result_backup_path = await asyncio.to_thread(
+                    _move_into_backup, str(src), str(backup_dir / backup_name))  # v0.9.32: off-loop
+                print(f"[CONVERT] Original backed up to: {result_backup_path}", flush=True)
             elif use_trash:
                 try:
                     from send2trash import send2trash
@@ -4171,51 +4181,36 @@ async def convert_file(
             else:
                 src.unlink()
 
+        async def _after_placement(dispose):
+            """Dispose of the original once the output is in place. If that
+            fails, the original stays where it is (beside the output, or in
+            .shrinkerr-replacing/) and the job still succeeded: reporting a
+            failure got the output — by then the file in the library —
+            encoded again on retry. v0.10.0."""
+            try:
+                return await dispose
+            except OSError as exc:
+                print(f"[CONVERT] Output in place, but the original couldn't be removed and was kept: {exc}",
+                      flush=True)
+                return None
+
         if disc_type and Path(input_path).is_file() and Path(input_path).suffix.lower() == ".iso":
             # v0.7.0: ISO source — single file ops (unlink / trash / move).
             # Same three modes (backup / trash / delete) as folder discs
             # but operating on the .iso file directly. The .iso is never at
             # final_path, so place the output first, then dispose it.
             temp.rename(final_path)
-            iso_source = Path(input_path)
-            if backup_days and backup_days > 0:
-                custom_backup = live_settings.get("backup_folder", "")
-                if custom_backup:
-                    backup_dir = Path(custom_backup) / iso_source.parent.name
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    legacy = iso_source.parent / ".squeezarr_backup"
-                    backup_dir = legacy if legacy.exists() else (iso_source.parent / ".shrinkerr_backup")
-                    backup_dir.mkdir(exist_ok=True)
-                backup_path = backup_dir / iso_source.name
-                if backup_path.is_symlink():
-                    raise OSError(
-                        f"Refusing to move into backup path — destination is a symlink: {backup_path}"
-                    )
-                await asyncio.to_thread(_move_into_backup, str(iso_source), str(backup_path))  # v0.9.32: off-loop (cross-fs copy)
-                result_backup_path = str(backup_path)
-                print(f"[CONVERT] ISO backed up to: {backup_path}", flush=True)
-            elif use_trash:
-                try:
-                    from send2trash import send2trash
-                    await asyncio.to_thread(send2trash, str(iso_source))  # v0.9.32: off-loop
-                    print(f"[CONVERT] ISO moved to trash: {iso_source.name}", flush=True)
-                except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    iso_source.unlink()
-            else:
-                iso_source.unlink()
-                print(f"[CONVERT] Removed ISO: {iso_source}", flush=True)
+            await _after_placement(_dispose_original_file(p, p.name))
         elif disc_type:
             # v0.6.0: for disc inputs the "source" is the disc folder(s),
             # not the marker file inside them (see _dispose_disc_source). The
             # disc is never at final_path, so place the output first, then
             # dispose it.
             temp.rename(final_path)
-            result_backup_path = await _dispose_disc_source(
+            result_backup_path = await _after_placement(_dispose_disc_source(
                 p, Path(final_path).parent, disc_type,
                 backup_days, use_trash, live_settings.get("backup_folder", ""),
-            )
+            ))
         else:
             # Regular file. final_path may equal input_path (unchanged codec
             # tag), so the original occupies the target name. Move it aside
@@ -4247,7 +4242,7 @@ async def convert_file(
                     except OSError:
                         print(f"[CONVERT] CRITICAL: could not restore original from {staged}", flush=True)
                     raise
-                await _dispose_original_file(staged, p.name)
+                await _after_placement(_dispose_original_file(staged, p.name))
                 try:
                     stage_dir.rmdir()  # remove if now empty (ignore if a concurrent job shares it)
                 except OSError:
@@ -4256,7 +4251,7 @@ async def convert_file(
                 # Different target name — the original isn't in the way. Place
                 # the output first, then dispose the original.
                 temp.rename(final_path)
-                await _dispose_original_file(p, p.name)
+                await _after_placement(_dispose_original_file(p, p.name))
     except OSError as exc:
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 

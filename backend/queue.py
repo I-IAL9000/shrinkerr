@@ -439,12 +439,20 @@ class JobQueue:
         """
         db = await self._connect()
         try:
+            # A job whose output had already replaced the original is done:
+            # running it again would re-encode the converted file (H5, v0.10.0).
+            await db.execute(
+                "UPDATE jobs SET status = 'completed', completed_at = ? "
+                "WHERE status = 'running' AND finalized_at IS NOT NULL "
+                "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')",
+                (_utcnow(),),
+            )
             async with db.execute(
                 "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                 "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
                 "error_key = NULL, error_params = NULL, "
                 "assigned_node_id = NULL, assigned_at = NULL "
-                "WHERE status = 'running' "
+                "WHERE status = 'running' AND finalized_at IS NULL "
                 "AND (assigned_node_id IS NULL OR assigned_node_id = '' OR assigned_node_id = 'local')"
             ) as cur:
                 count = cur.rowcount
@@ -583,12 +591,23 @@ class JobQueue:
         try:
             cur = await db.execute(
                 "UPDATE jobs SET status = 'running', started_at = ?, assigned_node_id = 'local', "
-                "error_log = NULL, error_key = NULL, error_params = NULL "
+                "error_log = NULL, error_key = NULL, error_params = NULL, finalized_at = NULL "
                 "WHERE id = ? AND status = 'pending'",
                 (_utcnow(), job_id),
             )
             await db.commit()
             return cur.rowcount > 0
+        finally:
+            await db.close()
+
+    async def mark_finalized(self, job_id: int) -> None:
+        """Record that the job's output replaced the original (H5, v0.10.0):
+        a restart or the orphan reaper then completes the job instead of
+        running it again."""
+        db = await self._connect()
+        try:
+            await db.execute("UPDATE jobs SET finalized_at = ? WHERE id = ?", (_utcnow(), job_id))
+            await db.commit()
         finally:
             await db.close()
 
@@ -1166,6 +1185,15 @@ class QueueWorker:
                             f"now {cur_t.get('language')} {cur_t.get('codec')}")
         return None
 
+    async def _finalize(self, job_id: int) -> None:
+        """The output replaced the original: never run this job again (H5).
+        Kept in memory too, so a failed write (a locked DB) can't undo that."""
+        self._finalized_jobs.add(job_id)
+        try:
+            await self.queue.mark_finalized(job_id)
+        except Exception as exc:
+            print(f"[WORKER] Job {job_id}: could not record that it's finalized ({exc})", flush=True)
+
     async def _complete_finalized(self, job_id: int, exc: Exception) -> None:
         """A step after the output replaced the original failed (H5, v0.10.0).
         Requeueing would re-encode the converted file and a failed job invites
@@ -1274,11 +1302,15 @@ class QueueWorker:
         db = await self.queue._connect()
         try:
             async with db.execute(
-                "SELECT id, started_at FROM jobs WHERE status = 'running' "
+                "SELECT id, started_at, finalized_at FROM jobs WHERE status = 'running' "
                 "AND (assigned_node_id IS NULL OR assigned_node_id = '' "
                 "OR assigned_node_id = 'local')"
             ) as cur:
-                rows = [(r[0], r[1]) for r in await cur.fetchall()]
+                rows = []
+                for jid, started, finalized in await cur.fetchall():
+                    if finalized:
+                        self._finalized_jobs.add(jid)  # recorded by mark_finalized
+                    rows.append((jid, started))
 
             now = datetime.now(timezone.utc)
             active_ids = set(self._active_tasks.keys())  # captured just before deciding
@@ -1305,11 +1337,14 @@ class QueueWorker:
             if not orphans:
                 return 0
             ph = ",".join("?" for _ in orphans)
+            # Only rows still running: one that finished since the SELECT
+            # must not go back to pending (v0.10.0).
             await db.execute(
                 f"UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                 f"eta_seconds = NULL, started_at = NULL, error_log = NULL, "
                 f"error_key = NULL, error_params = NULL, "
-                f"assigned_node_id = NULL, assigned_at = NULL WHERE id IN ({ph})",
+                f"assigned_node_id = NULL, assigned_at = NULL "
+                f"WHERE id IN ({ph}) AND status = 'running' AND finalized_at IS NULL",
                 orphans,
             )
             await db.commit()
@@ -2317,7 +2352,7 @@ class QueueWorker:
                 result.get("vmaf_rejected") or result.get("skipped_larger")
             )
             if output_replaced_source:
-                self._finalized_jobs.add(job_id)
+                await self._finalize(job_id)
                 await refresh_converted_scan_row(self.db_path, job_id, file_path, current_file_path)
 
             # Always record the pre-rename source path so the VMAF
@@ -2702,7 +2737,7 @@ class QueueWorker:
                                                        error_params=result.get("error_params"))
                     return
                 space_saved += result.get("space_saved", 0)
-                self._finalized_jobs.add(job_id)  # H5: the remux replaced the original
+                await self._finalize(job_id)  # H5: the remux replaced the original
 
                 # v0.9.39: remux_audio always writes a .mkv and replaces the
                 # original, so on a non-mkv source (AVI) the path changes. Point
