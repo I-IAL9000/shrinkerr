@@ -209,6 +209,51 @@ def display_name_for_path(file_path: str) -> str:
     return p.name
 
 
+async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optional[str]]:
+    """What ffprobe / ffmpeg read for `file_path`: (input, args before -i,
+    disc_type). Shared by probe_file and audio language detection, which
+    handed ffmpeg a disc's marker file (index.bdmv / VIDEO_TS.IFO) and
+    never detected anything on a disc (v0.10.0).
+
+    v0.6.0: a disc-marker file (VIDEO_TS.IFO inside VIDEO_TS/, index.bdmv
+    inside BDMV/) is read through ffmpeg's `bluray:` protocol or a
+    `concat:` over the main feature's VOBs; v0.7.0: an .iso the same way
+    (v0.9.152: a DVD ISO's VOBs straight out of the image, `-f dvdvideo`
+    as the fallback). Discs get a deeper analysis window: the `concat:`
+    and `bluray:` inputs surface duration (and late streams) only after
+    enough of the stream has been read, and stream numbering must match
+    the probe's. Input is None for a DVD folder without main-feature
+    VOBs. Marker names are matched case-insensitively — case-insensitive
+    filesystems can store them with other casing after a rename/extract.
+    """
+    p = Path(file_path)
+    disc_type: Optional[str] = None
+    input_args: list[str] = []
+    if p.is_file() and p.suffix.lower() == ".iso":
+        from backend.disc_metadata import _classify_disc_iso, dvd_iso_concat_input
+        disc_type = await asyncio.to_thread(_classify_disc_iso, p)
+        if disc_type == "dvd":
+            source = await asyncio.to_thread(dvd_iso_concat_input, p)
+            if not source:
+                source = str(p)
+                input_args = ["-f", "dvdvideo"]
+        elif disc_type == "bdmv":
+            source = f"bluray:{p}"
+        else:
+            source = file_path  # not a video ISO: probed as a plain file (and likely fails)
+    elif p.name.lower() == "index.bdmv" and p.parent.name.lower() == "bdmv":
+        disc_type = "bdmv"
+        source = f"bluray:{p.parent.parent}"
+    elif p.name.lower() == "video_ts.ifo" and p.parent.name.lower() == "video_ts":
+        disc_type = "dvd"
+        source = _dvd_concat_input(p.parent.parent)
+    else:
+        source = file_path
+    if disc_type:
+        input_args = ["-analyzeduration", "200M", "-probesize", "200M", *input_args]
+    return source, input_args, disc_type
+
+
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 
@@ -229,52 +274,12 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     downstream consumers (scanner walk, converter) can branch on it.
     """
     p = Path(file_path)
-    disc_type: Optional[str] = None
-    disc_folder: Optional[Path] = None
-    ffprobe_input_args: list[str] = []  # v0.7.0: extra args before -i for disc ISO routing
-    # v0.7.0: ISO file support. If file_path is a .iso, peek inside via
-    # pycdlib to determine disc_type, then route to the appropriate
-    # ffmpeg input syntax. DVD ISO uses `-f dvdvideo -i /path.iso`,
-    # BD ISO uses `bluray:/path.iso`. No mount, no extraction at probe
-    # time. Checked BEFORE folder-marker branches because an .iso file
-    # never has VIDEO_TS/ or BDMV/ as its parent directory.
-    if p.is_file() and p.suffix.lower() == ".iso":
-        from backend.disc_metadata import _classify_disc_iso, dvd_iso_concat_input
-        disc_type = await asyncio.to_thread(_classify_disc_iso, p)
-        if disc_type == "dvd":
-            disc_folder = p           # ISO IS the disc — disc_folder points at the .iso file, not a dir
-            # v0.9.152: read the main title's VOBs straight out of the ISO
-            # (like folder DVDs); dvdvideo is only the fallback.
-            probe_input = await asyncio.to_thread(dvd_iso_concat_input, p)
-            if not probe_input:
-                probe_input = str(p)
-                ffprobe_input_args = ["-f", "dvdvideo"]
-        elif disc_type == "bdmv":
-            disc_folder = p
-            probe_input = f"bluray:{p}"
-        else:
-            # Not a video ISO — fall through to regular-file probe (will
-            # likely fail; but caller treats failures as 'corrupt' and
-            # surfaces the row).
-            probe_input = file_path
-    # v0.6.0: case-insensitive marker comparison — DVD-Video / BDMV
-    # specs mandate exact casing on the disc, but case-insensitive
-    # filesystems (macOS HFS+/APFS, Windows NTFS) can store the names
-    # with different casing after rename/extract. Matches the .lower()
-    # convention used elsewhere in this file for filename matching.
-    elif p.name.lower() == "index.bdmv" and p.parent.name.lower() == "bdmv":
-        disc_type = "bdmv"
-        disc_folder = p.parent.parent
-        probe_input = f"bluray:{disc_folder}"
-    elif p.name.lower() == "video_ts.ifo" and p.parent.name.lower() == "video_ts":
-        disc_type = "dvd"
-        disc_folder = p.parent.parent
-        probe_input = _dvd_concat_input(disc_folder)
-        if probe_input is None:
-            print(f"[PROBE] DVD probe failed: no main-feature VOBs found in {disc_folder}/VIDEO_TS/", flush=True)
-            return None
-    else:
-        probe_input = file_path
+    probe_input, ffprobe_input_args, disc_type = await media_input(file_path)
+    if disc_type and probe_input is None:
+        print(f"[PROBE] DVD probe failed: no main-feature VOBs found in {p.parent.parent}/VIDEO_TS/", flush=True)
+        return None
+    # The disc: the .iso itself, or the folder holding BDMV/ or VIDEO_TS/.
+    disc_folder: Optional[Path] = (p if p.suffix.lower() == ".iso" else p.parent.parent) if disc_type else None
     cmd = [
         "ffprobe",
         "-v", "quiet",
@@ -282,18 +287,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         "-show_streams",
         "-show_format",
     ]
-    # v0.6.2: disc inputs need a deeper analysis window for ffprobe to
-    # compute duration. The `concat:` protocol over VOBs (DVD) and the
-    # `bluray:` protocol both surface duration only after ffprobe has
-    # read enough of the stream.
-    if disc_type:
-        cmd.extend(["-analyzeduration", "200M", "-probesize", "200M"])
-    # v0.7.0: DVD ISO needs `-f dvdvideo` before `-i` so ffmpeg's
-    # demuxer treats the .iso as a DVD-Video disc image rather than a
-    # raw file. BD ISO uses the `bluray:` protocol on probe_input and
-    # needs no extra args here.
-    if ffprobe_input_args:
-        cmd.extend(ffprobe_input_args)
+    cmd.extend(ffprobe_input_args)
     cmd.extend(["-i", probe_input])
     proc = None
     try:

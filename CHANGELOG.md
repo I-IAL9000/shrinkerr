@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A track cleanup queued before Sonarr/Radarr replaced the file removed whatever now sat at those stream numbers**; jobs now check the tracks are still the ones you picked and otherwise ask for a rescan.
 - Two ISOs in one folder (Disc 1 / Disc 2) no longer get the same output name, and a conversion never replaces an unrelated file that already has its output's name.
 - Blu-ray/DVD conversions are VMAF-checked again — the check was handed the disc's marker file, errored, and the encode was accepted unchecked.
+- Spoken-language detection works on Blu-ray/DVD folders and ISOs — it read the disc's index file instead of the video, so disc audio tracks always stayed "Unknown".
 - **Language codes are compared in one spelling**: Bazarr's `.is.srt`, region-tagged tracks (de-DE) and TMDB's 2-letter codes no longer get original- or keep-language tracks marked for removal, and a one-time pass keeps tracks that were wrongly marked.
 - **After a manual "Fix match", a rescan could mark the original-language audio for removal** whenever TMDB disagreed with the match, and Fix match itself didn't re-sort the tracks; both now sort against the matched language.
 - Undo of a Blu-ray/DVD conversion restored the disc to the wrong place (a folder named index.bdmv) after deleting the converted file; Undo now puts the disc back as it was and only removes the converted file once the original is back.

@@ -243,12 +243,14 @@ def _audio_min_confidence() -> float:
     return _tuned_float("SHRINKERR_LANG_DETECT_AUDIO_MIN", "lang_detect_audio_min", 0.6)
 
 
-def _build_audio_clip_cmd(input_path: str, stream_index: int, seek: float, out_path: str) -> list[str]:
+def _build_audio_clip_cmd(input_path: str, stream_index: int, seek: float, out_path: str,
+                          input_args: list[str] | None = None) -> list[str]:
     """ffmpeg command: 30s mono 16 kHz PCM WAV from `stream_index`, seeking
     to `seek` seconds. 16 kHz mono is what Whisper expects."""
     return [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
         "-ss", str(seek),
+        *(input_args or []),
         "-i", input_path,
         "-map", f"0:{stream_index}",
         "-t", "30",
@@ -274,9 +276,15 @@ def _sample_seeks(duration: float) -> list[float]:
 async def _extract_audio_clip(input_path: str, stream_index: int, seek: float) -> str:
     """Extract a 30s clip starting at `seek` seconds to a temp WAV.
     Returns the temp path. Raises on ffmpeg failure (caller fail-opens)."""
+    # A disc is read the way probe_file reads it (its stream numbers are
+    # the probe's), not through its marker file (v0.10.0).
+    from backend.scanner import media_input
+    source, input_args, _disc = await media_input(input_path)
+    if source is None:
+        raise OSError(f"no readable video in {input_path}")
     fd, out_path = tempfile.mkstemp(suffix=".wav", prefix="shrinkerr_lang_")
     os.close(fd)
-    cmd = _build_audio_clip_cmd(input_path, stream_index, seek, out_path)
+    cmd = _build_audio_clip_cmd(source, stream_index, seek, out_path, input_args)
     proc = await asyncio.create_subprocess_exec(
         *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
     )
