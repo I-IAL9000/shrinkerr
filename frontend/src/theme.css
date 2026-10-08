@@ -613,8 +613,13 @@ input[type="checkbox"] { cursor: pointer; }
   padding: 3px 12px;
   font-size: 12px;
   cursor: pointer;
-  flex-wrap: wrap;
 }
+/* One line per row at every width; long names truncate (full name in the
+   tooltip and the file detail panel). Wrapping split a long name's row into
+   3-4 lines, and the tree's fixed 32px row slots then overlapped the next
+   row. */
+.tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row > :not(.tree-name) { flex-shrink: 0; }
 .tree-row:hover { background: rgba(255,255,255,0.03); }
 .tree-folder { color: var(--accent); }
 .tree-subfolder { color: var(--folder-show); }
@@ -791,20 +796,19 @@ input[type="checkbox"] { cursor: pointer; }
 }
 
 @media (max-width: 768px) {
-  .app-layout { flex-direction: column; }
+  /* App shell: the header spans the full width and only the content below it
+     scrolls, like desktop. When the whole window scrolled instead, the
+     scrollbar ran beside the header, and the Scanner tree / poster grid
+     (which track .main-content's scroll) only ever rendered their first
+     screen of rows. */
+  .app-layout { flex-direction: column; height: 100vh; height: 100dvh; min-height: 0; }
   .sidebar-desktop { display: none; }
-  .mobile-header { display: flex; }
-  .main-content { max-height: none; padding: 12px; overflow-y: visible; }
-  .queue-control-panel { top: calc(env(safe-area-inset-top, 0px) + 60px) !important; }
-  .file-tree-virtual { position: static !important; height: auto !important; min-height: auto !important; }
-  .file-tree-virtual > div { position: static !important; height: auto !important; }
-  .file-tree-virtual > div > div { position: static !important; }
-  .file-tree-virtual [style*="height: 32px"] { height: auto !important; min-height: 32px; }
+  .mobile-header { display: flex; flex: none; }
+  .main-content { flex: 1; min-height: 0; max-height: none; padding: 12px; overflow-y: auto; }
   .stats-grid { flex-wrap: wrap; }
   .stat-card { min-width: calc(33% - 8px); flex: 1 1 calc(33% - 8px); }
   .stat-card:nth-child(n+4) { min-width: calc(50% - 6px); flex: 1 1 calc(50% - 6px); }
   .job-row .job-filename { flex: 1 1 100% !important; word-break: break-word; }
-  .tree-row .tree-name { flex: 1 1 100%; word-break: break-word; }
 
   /* Estimate modal mobile */
   .estimate-summary-grid { grid-template-columns: 1fr !important; }

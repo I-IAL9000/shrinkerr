@@ -1352,6 +1352,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23827b9a' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
             backgroundRepeat: "no-repeat",
             backgroundPosition: "right 10px center",
+            // A native select is as wide as its longest option (a full media
+            // path), which pushed Scan off-screen on phones and at 1024px.
+            minWidth: 0, flex: "0 1 auto", textOverflow: "ellipsis",
           }}
         >
           <option value="all">{t("scanner:toolbar.allPaths")}</option>
@@ -1361,7 +1364,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <option key={d.id} value={d.path}>{d.path}</option>
             ))}
         </select>
-        <button className="btn btn-primary" onClick={handleScan} disabled={scanning} style={{ height: 36 }}>
+        <button className="btn btn-primary" onClick={handleScan} disabled={scanning} style={{ height: 36, flexShrink: 0 }}>
           {scanning ? t("scanner:toolbar.scanning") : t("scanner:toolbar.scan")}
         </button>
         {scanning && (

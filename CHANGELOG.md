@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- On narrow screens the header spans the full width and only the content below it scrolls, so the Scanner tree and poster grid now render past the first screen on phones.
+- Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
+
 ## [0.9.156] — 2026-10-08
 
 ### Fixed

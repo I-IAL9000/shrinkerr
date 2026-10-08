@@ -267,6 +267,8 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
 
   return (
     <div className="file-detail">
+      {/* Tree rows truncate long names; the full one lives here. */}
+      <div style={{ color: "var(--text-secondary)", marginBottom: 2, overflowWrap: "anywhere" }}>{file.file_name}</div>
       <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
         {file.video_codec} &middot; {file.file_size_gb} GB
       </div>

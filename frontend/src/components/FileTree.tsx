@@ -385,7 +385,7 @@ const FolderRow = memo(function FolderRow({
       <span style={{ fontSize: 10, color: "var(--text-muted)", width: 12, textAlign: "center", flexShrink: 0 }}>
         {isExpanded ? "\u25BC" : "\u25B6"}
       </span>
-      <span className={`tree-name ${colorClass}`}>
+      <span className={`tree-name ${colorClass}`} title={node.name}>
         {node.name}/
       </span>
       <MediaIdLink folderName={node.name} />
@@ -464,7 +464,7 @@ const FileRow = memo(function FileRow({
         <span style={{ fontSize: 10, color: "var(--text-muted)", width: 12, textAlign: "center", flexShrink: 0 }}>
           {expanded ? "\u25BC" : "\u25B6"}
         </span>
-        <span className="tree-name" style={{ cursor: "pointer" }}>{file.file_name}</span>
+        <span className="tree-name" style={{ cursor: "pointer" }} title={file.file_name}>{file.file_name}</span>
         <span className="tree-file-size">{file.file_size_gb} GB</span>
         <span className={`codec-badge ${codecClass}`} title={t("library:badges.videoCodec", { codec: codecLabel })} aria-label={t("library:badges.videoCodec", { codec: codecLabel })}>
           {codecLabel}
@@ -955,7 +955,12 @@ export default function FileTree({
       rafId = requestAnimationFrame(() => {
         pending = false;
         if (containerRef.current) {
-          const containerTop = containerRef.current.offsetTop;
+          // The tree's distance from the top of the scroll content. offsetTop
+          // is relative to the nearest positioned ancestor, not the scroller,
+          // so the visible window started a few rows late (a blank band
+          // above the first rendered row).
+          const containerTop = containerRef.current.getBoundingClientRect().top
+            - scrollParent.getBoundingClientRect().top + scrollParent.scrollTop;
           const scrolled = scrollParent.scrollTop;
           setScrollTop(Math.max(0, scrolled - containerTop));
         }
