@@ -65,6 +65,28 @@ def is_in_any(child_path: str, parents: list[str]) -> bool:
     return any(is_within(child_path, p) for p in parents)
 
 
+def _ancestor_that_is(path: str, target: str) -> Path | None:
+    """`path` itself, or its ancestor, that is the folder `target` — None
+    when `path` isn't inside `target`. Folders are compared by device and
+    inode as well as by name: on a case-insensitive filesystem or SMB share
+    one folder has many spellings, and "/media/movies" slipped past a
+    "/Media/Movies" check (v0.10.0)."""
+    resolved = Path(_resolve(path))
+    if is_within(path, target):
+        return Path(_resolve(target))
+    try:
+        target_stat = os.stat(target)
+    except OSError:
+        return None
+    for candidate in (resolved, *resolved.parents):
+        try:
+            if os.path.samestat(os.stat(candidate), target_stat):
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def backup_folder_conflict(folder: str, media_dirs: list[str]) -> str | None:
     """The media folder a custom backup folder overlaps, if any (v0.10.0).
 
@@ -73,10 +95,11 @@ def backup_folder_conflict(folder: str, media_dirs: list[str]) -> str | None:
     media itself. A hidden folder inside a media folder is fine — scans
     skip it, so only backups end up there."""
     for media_dir in media_dirs:
-        if is_within(media_dir, folder):  # the same folder, or the library is inside it
+        if _ancestor_that_is(media_dir, folder) is not None:  # the same folder, or the library is inside it
             return media_dir
-        if is_within(folder, media_dir):
-            rel = Path(os.path.relpath(_resolve(folder), _resolve(media_dir)))
+        inside = _ancestor_that_is(folder, media_dir)
+        if inside is not None:
+            rel = Path(_resolve(folder)).relative_to(inside)
             if not any(part.startswith(".") for part in rel.parts):
                 return media_dir
     return None

@@ -61,6 +61,19 @@ def test_backup_folder_conflict(tmp_path):
     assert backup_folder_conflict(str(tmp_path / "backups"), [str(media)]) is None
 
 
+def test_backup_folder_conflict_ignores_spelling(tmp_path):
+    """Case-insensitive filesystems and SMB shares spell one folder many ways."""
+    media = tmp_path / "Media" / "Movies"
+    media.mkdir(parents=True)
+    other = tmp_path / "media" / "movies"
+    if not other.exists():
+        pytest.skip("case-sensitive filesystem")
+    assert backup_folder_conflict(str(other), [str(media)]) == str(media)
+    assert backup_folder_conflict(str(tmp_path / "MEDIA"), [str(media)]) == str(media)
+    (media / "Film (2001)").mkdir()
+    assert backup_folder_conflict(str(other / "film (2001)"), [str(media)]) == str(media)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("where", ["media", "above"])
 async def test_sweep_leaves_a_library_used_as_backup_folder_alone(test_db, tmp_path, sweep, where):
