@@ -235,6 +235,7 @@ async def remux_audio(
     keep_subtitle_indices: list[int] | None = None,
     audio_languages: dict[int, str] | None = None,
     proc_callback: Optional[Callable] = None,
+    on_output_placed: Optional[Callable] = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -485,6 +486,15 @@ async def remux_audio(
         except Exception:
             pass
 
+        async def _placed() -> None:
+            # The output replaced the original: let the queue record that
+            # before the original is removed (v0.10.0, see convert_file).
+            if on_output_placed is not None:
+                try:
+                    await on_output_placed()
+                except Exception as exc:
+                    print(f"[REMUX] on_output_placed failed: {exc}", flush=True)
+
         def _dispose(src: Path) -> None:
             # Runs once the output is in place. If the original can't be
             # removed it stays (beside the output or in .shrinkerr-replacing/)
@@ -534,6 +544,7 @@ async def remux_audio(
                 except OSError:
                     print(f"[REMUX] CRITICAL: could not restore original from {staged}", flush=True)
                 raise
+            await _placed()
             _dispose(staged)
             try:
                 stage_dir.rmdir()  # remove if now empty
@@ -542,6 +553,7 @@ async def remux_audio(
         else:
             # Different target name (e.g. .avi→.mkv) — original isn't in the way.
             temp.rename(final_path)
+            await _placed()
             _dispose(p)
     except OSError as exc:
         print(f"[REMUX] Placement failed, original preserved: {exc}", flush=True)

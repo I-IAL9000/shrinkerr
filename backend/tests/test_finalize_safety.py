@@ -184,3 +184,69 @@ async def test_retry_only_reruns_jobs_that_never_replaced_their_original(test_db
     failed = await job("failed")
     assert (await retry_job(failed))["status"] == "pending"
     assert (await _job(test_db, failed))["status"] == "pending"
+
+
+# --- finalized as soon as the output is placed --------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not _has_libx265(), reason="needs ffmpeg with libx265")
+async def test_output_placed_is_reported_before_the_original_is_backed_up(test_db, tmp_path, monkeypatch):
+    """Backing up to another filesystem is a full copy: a restart during it
+    left the job unfinalized, and it ran again on the converted file."""
+    src = tmp_path / "Movie (2009).mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=2",
+                    "-c:v", "libx264", "-preset", "ultrafast", str(src)], check=True)
+    await _set(test_db, "INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
+    events = []
+    real_move = converter._move_into_backup
+
+    def move(a, b):
+        events.append("backup")
+        return real_move(a, b)
+
+    async def placed():
+        events.append("placed")
+
+    monkeypatch.setattr(converter, "_move_into_backup", move)
+    result = await converter.convert_file(str(src), "libx265", 2.0, override_libx265_preset="ultrafast",
+                                          on_output_placed=placed)
+    assert result["success"], result.get("error")
+    assert events == ["placed", "backup"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+async def test_remux_reports_placement_before_removing_the_original(test_db, tmp_path):
+    from backend.audio import remux_audio
+    from backend.tests.test_remux_guards import _clip
+    src = _clip(tmp_path)
+    seen = []
+
+    async def placed():
+        seen.append((tmp_path / ".shrinkerr-replacing" / src.name).exists())
+
+    result = await remux_audio(str(src), [1], duration=3.0, on_output_placed=placed)
+    assert result["success"] and seen == [True]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+async def test_the_queue_finalizes_when_the_output_is_placed(test_db, tmp_path, monkeypatch):
+    from backend.tests.test_same_name_conversion import _mkv
+    src = tmp_path / "Movie (2009).mkv"
+    _mkv(src, ["eng"])
+    queue = JobQueue(test_db)
+    job_id = await queue.add_job(str(src), "convert", encoder="libx265")
+    finalized_while_running = []
+
+    async def fake_convert_file(**kwargs):
+        await kwargs["on_output_placed"]()
+        finalized_while_running.append((await _job(test_db, job_id))["finalized_at"])
+        raise RuntimeError("the process died while backing up the original")
+
+    monkeypatch.setattr(converter, "convert_file", fake_convert_file)
+    job = next(j for j in await queue.get_all_jobs() if j["id"] == job_id)
+    await QueueWorker(test_db)._worker_task(job)
+
+    assert finalized_while_running[0]
+    assert (await _job(test_db, job_id))["status"] == "completed"

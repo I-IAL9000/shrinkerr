@@ -2545,9 +2545,15 @@ async def convert_file(
     # remux pass whose stream indices wouldn't match the converted file.
     audio_tracks_to_remove: Optional[list] = None,
     subtitle_tracks_to_remove: Optional[list] = None,
+    on_output_placed: Optional[Callable] = None,
 ) -> dict:
     """
     Convert a video file to HEVC.
+
+    `on_output_placed` (async, v0.10.0) runs the moment the output has
+    replaced the original — before the original is backed up / trashed,
+    which can take minutes — so the queue records the job as done before
+    a restart could run it again.
 
     Checks free disk space (needs at least the original file size free),
     runs ffmpeg, parses progress, verifies output, deletes original, and
@@ -4325,6 +4331,11 @@ async def convert_file(
             .shrinkerr-replacing/) and the job still succeeded: reporting a
             failure got the output — by then the file in the library —
             encoded again on retry. v0.10.0."""
+            if on_output_placed is not None:
+                try:
+                    await on_output_placed()
+                except Exception as exc:
+                    print(f"[CONVERT] on_output_placed failed: {exc}", flush=True)
             try:
                 return await dispose
             except OSError as exc:

@@ -2282,6 +2282,7 @@ class QueueWorker:
                 nice=use_nice,
                 audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,
                 subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
+                on_output_placed=lambda: self._finalize(job_id),
             )
             if not result["success"]:
                 if job_id in self._cancel_flags:
@@ -2736,6 +2737,7 @@ class QueueWorker:
                     audio_languages=_remux_audio_langs or None,
                     # v0.9.156: register the ffmpeg so Cancel can kill it.
                     proc_callback=lambda proc: self._active_procs.__setitem__(job_id, proc),
+                    on_output_placed=lambda: self._finalize(job_id),
                 )
                 if not result["success"] and job_id in self._cancel_flags:
                     await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
