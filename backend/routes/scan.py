@@ -820,6 +820,19 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
                     print(f"[SCANNER] Plex watch status synced: {result.get('watched', 0)} watched, {result.get('unwatched', 0)} unwatched", flush=True)
             except Exception as exc:
                 print(f"[SCANNER] Plex watch status sync skipped: {exc}", flush=True)
+            # The Plex sync replaces the genre / library / watch rows Jellyfin
+            # and Emby share with it; theirs were only restored by a manual
+            # sync (v0.10.0). Both return at once when not configured.
+            try:
+                from backend.jellyfin import sync_jellyfin_metadata_cache
+                await sync_jellyfin_metadata_cache()
+            except Exception as exc:
+                print(f"[SCANNER] Jellyfin metadata sync skipped: {exc}", flush=True)
+            try:
+                from backend.emby import sync_emby_metadata_cache
+                await sync_emby_metadata_cache()
+            except Exception as exc:
+                print(f"[SCANNER] Emby metadata sync skipped: {exc}", flush=True)
             try:
                 from backend.routes.posters import start_prefetch
                 await start_prefetch()

@@ -629,6 +629,13 @@ async def sync_plex_metadata_cache() -> dict:
             elif ct == "genre":
                 needed_genres.add(cv)
 
+    # Without Plex there's nothing to sync — and the cache also holds
+    # Jellyfin/Emby data, which the delete below used to wipe after every
+    # full scan (v0.10.0).
+    url, token, path_mapping = await _get_plex_settings()
+    if not url or not token:
+        return {"labels_synced": 0, "collections_synced": 0, "genres_synced": 0, "libraries_synced": 0, "watch_synced": 0}
+
     # Step 2: Fetch all data from Plex APIs (no DB held)
     now = datetime.now(timezone.utc).isoformat()
     cache_rows: list[tuple] = []  # (folder_path, metadata_type, metadata_value, synced_at)
@@ -655,8 +662,7 @@ async def sync_plex_metadata_cache() -> dict:
             cache_rows.append((folder.rstrip("/") + "/", "genre", genre, now))
             genres_count += 1
 
-    url, token, path_mapping = await _get_plex_settings()
-    if url and token and needed_libraries:
+    if needed_libraries:
         try:
             libs = await get_plex_libraries(url, token)
             for lib in libs:
@@ -684,7 +690,9 @@ async def sync_plex_metadata_cache() -> dict:
     # Step 3: Write all collected data to DB in one short transaction
     db = await connect_db()
     try:
-        await db.execute("DELETE FROM plex_metadata_cache")
+        # Jellyfin/Emby tags are theirs; genre / library / watch rows are
+        # shared, so their syncs run again right after this one.
+        await db.execute("DELETE FROM plex_metadata_cache WHERE metadata_type NOT IN ('jellyfin_tag', 'emby_tag')")
         await db.execute("DELETE FROM ignored_files WHERE reason LIKE 'encoding_rule:%'")
         for row in cache_rows:
             await db.execute(

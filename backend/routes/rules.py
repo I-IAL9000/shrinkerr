@@ -128,18 +128,19 @@ async def list_rules():
         await db.close()
 
 
+def _check_condition_types(conditions) -> None:
+    from backend.rule_resolver import CONDITION_TYPES
+    for cond in conditions or []:
+        ctype = cond.type if hasattr(cond, "type") else (cond or {}).get("type")
+        if ctype not in CONDITION_TYPES:
+            raise ApiError(400, f"Invalid match type: {ctype}", code="rules.invalidMatchType", params={"type": ctype})
+
+
 @router.post("/")
 async def create_rule(payload: RuleCreate):
     if not payload.match_conditions:
         raise ApiError(400, "At least one match condition required", code="rules.conditionRequired")
-    valid_types = (
-        "directory", "label", "collection", "genre", "library",
-        "source", "resolution", "video_codec", "audio_codec",
-        "media_type", "release_group", "arr_tag",
-    )
-    for cond in payload.match_conditions:
-        if cond.type not in valid_types:
-            raise ApiError(400, f"Invalid match type: {cond.type}", code="rules.invalidMatchType", params={"type": cond.type})
+    _check_condition_types(payload.match_conditions)
     if payload.action not in ("encode", "ignore", "skip"):
         raise ApiError(400, "action must be encode, ignore, or skip", code="rules.invalidAction")
 
@@ -209,6 +210,7 @@ async def update_rule(rule_id: int, payload: RuleUpdate):
                 pass
             elif key == "match_conditions":
                 conditions = val
+                _check_condition_types(conditions)
                 if conditions is not None:
                     # Determine match_mode: use from this update payload, or fetch existing
                     match_mode = data.get("match_mode")

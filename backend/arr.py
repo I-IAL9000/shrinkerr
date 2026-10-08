@@ -285,6 +285,66 @@ async def trigger_arr_rescan(file_path: str) -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+_tag_cache: dict = {}  # {"sonarr"|"radarr": {data: {id: label}, fetched_at: float}}
+
+
+async def _arr_items(client: httpx.AsyncClient, service: str, url: str, api_key: str) -> list[dict]:
+    """All series (Sonarr) or movies (Radarr), through the shared list cache."""
+    cache = _sonarr_cache if service == "sonarr" else _radarr_cache
+    now = time.monotonic()
+    if cache.get("data") and (now - cache.get("fetched_at", 0)) < _LIST_CACHE_TTL:
+        return cache["data"]
+    endpoint = "series" if service == "sonarr" else "movie"
+    resp = await client.get(f"{url}/api/v3/{endpoint}", headers={"X-Api-Key": api_key})
+    resp.raise_for_status()
+    cache["data"], cache["fetched_at"] = resp.json(), now
+    return cache["data"]
+
+
+async def _arr_tag_labels(client: httpx.AsyncClient, service: str, url: str, api_key: str) -> dict:
+    cached = _tag_cache.get(service) or {}
+    now = time.monotonic()
+    if cached.get("data") is not None and (now - cached.get("fetched_at", 0)) < _LIST_CACHE_TTL:
+        return cached["data"]
+    resp = await client.get(f"{url}/api/v3/tag", headers={"X-Api-Key": api_key})
+    resp.raise_for_status()
+    labels = {t["id"]: str(t.get("label", "")).lower() for t in resp.json() if "id" in t}
+    _tag_cache[service] = {"data": labels, "fetched_at": now}
+    return labels
+
+
+async def arr_tags_for_paths(file_paths: list[str]) -> dict[str, set[str]]:
+    """Lower-cased Sonarr/Radarr tag labels of the series / movie each file
+    belongs to, for rules' "Sonarr/Radarr tag" condition — offered by the
+    rule editor but never evaluated, so tag-based skip rules protected
+    nothing (v0.10.0). An unconfigured or unreachable service adds no tags."""
+    settings = await _get_arr_settings()
+    tags: dict[str, set[str]] = {fp: set() for fp in file_paths}
+    for service in ("sonarr", "radarr"):
+        url = (settings.get(f"{service}_url") or "").rstrip("/")
+        api_key = settings.get(f"{service}_api_key") or ""
+        if not url or not api_key:
+            continue
+        mapping = settings.get(f"{service}_path_mapping", "")
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                labels = await _arr_tag_labels(client, service, url, api_key)
+                items = await _arr_items(client, service, url, api_key)
+        except Exception as exc:
+            print(f"[ARR] Couldn't read {service} tags for rules: {exc}", flush=True)
+            continue
+        by_folder = {str(it.get("path", "")).rstrip("/"): it for it in items if it.get("path")}
+        for fp in file_paths:
+            check = _translate_path(fp, mapping).rstrip("/")
+            while check and check != "/":
+                item = by_folder.get(check)
+                if item:
+                    tags[fp] |= {labels[t] for t in item.get("tags") or [] if labels.get(t)}
+                    break
+                check = str(Path(check).parent)
+    return tags
+
+
 async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_key: str,
                                         arr_path: str) -> dict | None:
     """Locate the Sonarr series record whose folder contains (or equals) the given path.

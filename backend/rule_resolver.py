@@ -197,9 +197,29 @@ def _audio_codec_family_match(actual: str, expected: str) -> bool:
     return False
 
 
+# Every condition type _check_condition evaluates. Rule create / update
+# accept exactly these — creation refused seven the rule editor offers
+# (v0.10.0).
+CONDITION_TYPES = frozenset({
+    "directory", "source", "resolution", "video_codec", "audio_codec", "file_size",
+    "date_added", "media_type", "title", "release_group",
+    "label", "collection", "genre", "library", "plex_watched",
+    "jellyfin_tag", "jellyfin_watched", "emby_tag", "emby_watched",
+    "arr_tag", "nzbget_category",
+})
+# Conditions matched through plex_metadata_cache. Only Plex label /
+# collection / genre / library rules used to load it, so a watched or
+# Jellyfin/Emby tag rule on its own never matched (v0.10.0).
+_CACHE_CONDITION_TYPES = frozenset({
+    "label", "collection", "genre", "library",
+    "plex_watched", "jellyfin_watched", "emby_watched", "jellyfin_tag", "emby_tag",
+})
+
+
 def _check_condition(cond: dict, file_path: str, scan_row: dict,
                      folder_metadata: list[tuple[str, str]],
-                     extra_context: dict | None = None) -> bool:
+                     extra_context: dict | None = None,
+                     arr_tags: set[str] | frozenset = frozenset()) -> bool:
     """Check if a single condition matches a file.
 
     Args:
@@ -211,6 +231,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         folder_metadata: List of (metadata_type, metadata_value) tuples
                         from plex_metadata_cache for this file's folder hierarchy.
         extra_context: Optional dict with additional context (e.g. nzbget_category).
+        arr_tags: Lower-cased Sonarr/Radarr tags of the file's series / movie.
     """
     ctype = cond.get("type", "")
     op = cond.get("operator", "is")
@@ -349,9 +370,11 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
             return not found
         return found
 
-    # 11. Tag — requires Sonarr/Radarr API calls
-    if ctype == "tag":
-        return False
+    # 11. Sonarr/Radarr tag of the file's series / movie (looked up by
+    # resolve_rules_for_batch). Never evaluated before v0.10.0.
+    if ctype in ("arr_tag", "tag"):
+        found = value.lower() in arr_tags
+        return not found if op in ("is_not", "does_not_contain") else found
 
     # 12. Plex watched status
     # plex_watched / jellyfin_watched / emby_watched — all three media-server
@@ -440,8 +463,8 @@ async def get_skip_prefixes() -> list[str]:
                 if cond.get("type") == "directory" and cond.get("value"):
                     prefixes.append(cond["value"].rstrip("/") + "/")
 
-        # For Plex-based rules, get cached folder paths
-        plex_types = {"label", "collection", "genre", "library"}
+        # For Plex / Jellyfin / Emby metadata rules, get cached folder paths
+        plex_types = {"label", "collection", "genre", "library", "jellyfin_tag", "emby_tag"}
         has_plex_conditions = any(
             any(c.get("type") in plex_types for c in conds)
             for _, (_, conds) in ((r, _parse_rule_conditions(r)) for r in rules)
@@ -517,12 +540,15 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                     for row in await cur.fetchall():
                         scan_data[row["file_path"]] = dict(row)
 
-        # Check if any rule uses Plex metadata
-        plex_types = {"label", "collection", "genre", "library"}
+        # Check if any rule uses cached Plex / Jellyfin / Emby metadata
         has_plex_rules = any(
-            any(c.get("type") in plex_types for c in conds)
+            any(c.get("type") in _CACHE_CONDITION_TYPES for c in conds)
             for _, (_, conds) in rules_with_conds
         )
+        arr_tags: dict[str, set[str]] = {}
+        if any(c.get("type") in ("arr_tag", "tag") for _, (_, conds) in rules_with_conds for c in conds):
+            from backend.arr import arr_tags_for_paths
+            arr_tags = await arr_tags_for_paths(file_paths)
 
         # Extract unique folder paths (with trailing slash)
         folder_map: dict[str, str] = {}  # file_path -> folder_path
@@ -574,7 +600,8 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                 if not conditions:
                     continue
 
-                cond_results = [_check_condition(c, fp, scan_row, meta, extra_context) for c in conditions]
+                cond_results = [_check_condition(c, fp, scan_row, meta, extra_context, arr_tags.get(fp, frozenset()))
+                                for c in conditions]
 
                 if match_mode == "all":
                     rule_matches = all(cond_results) and len(cond_results) > 0
