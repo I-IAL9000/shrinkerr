@@ -1741,7 +1741,8 @@ async def _prestrip_subtitles(
         except asyncio.TimeoutError:
             try:
                 proc.kill()
-            except ProcessLookupError:
+                await asyncio.wait_for(proc.wait(), timeout=10)  # reap it (L2, v0.10.0)
+            except (ProcessLookupError, asyncio.TimeoutError):
                 pass
             print(f"[CONVERT] Pre-strip pass timed out — falling back to single-pass encode", flush=True)
             try:
@@ -2119,7 +2120,8 @@ async def _run_libvmaf_pass(
     except asyncio.TimeoutError:
         try:
             proc.kill()
-        except ProcessLookupError:
+            await asyncio.wait_for(proc.wait(), timeout=10)  # reap it (L2, v0.10.0)
+        except (ProcessLookupError, asyncio.TimeoutError):
             pass
         return {
             "score": None, "min": None, "max": None, "harmonic_mean": None,
