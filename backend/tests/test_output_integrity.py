@@ -50,8 +50,8 @@ def _source_runs(seconds, monkeypatch, src):
     import backend.converter as converter
     real = converter._probe_video_duration
 
-    async def probe(path):
-        return seconds if path == str(src) else await real(path)
+    async def probe(path, **kwargs):
+        return seconds if path == str(src) else await real(path, **kwargs)
 
     monkeypatch.setattr(converter, "_probe_video_duration", probe)
 
@@ -127,8 +127,45 @@ async def test_dropping_a_track_that_runs_past_the_video_is_not_truncation(tmp_p
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name, disc", [("Recording.ts", None), ("Movie.m2ts", None), ("VIDEO_TS.IFO", "dvd")])
-async def test_estimated_durations_are_not_compared(tmp_path, name, disc):
-    assert await _truncation_failure(str(tmp_path / name), str(tmp_path / "out.mkv"), 5000.0, disc, []) is None
+@pytest.mark.parametrize("output_seconds, complete", [(80.0, True), (50.0, False)])
+async def test_estimated_durations_get_slack(tmp_path, monkeypatch, name, disc, output_seconds, complete):
+    """MPEG-TS/PS and DVD lengths are estimates: a small shortfall is noise,
+    half the film missing is not."""
+    import backend.converter as converter
+
+    async def output_length(path):
+        return output_seconds
+
+    monkeypatch.setattr(converter, "_probe_output_duration", output_length)
+    got = await _truncation_failure(str(tmp_path / name), str(tmp_path / "out.mkv"), 100.0, disc, [])
+    assert (got is None) is complete
+
+
+@pytest.mark.asyncio
+async def test_a_copied_mkvmerge_duration_tag_doesnt_hide_truncation(tmp_path):
+    """mkvmerge tags streams "DURATION-eng"; ffmpeg copies that into its
+    output next to its own DURATION, so a 25 s output claimed 60 s."""
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    src, out = tmp_path / "src.mkv", tmp_path / "out.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=160x120:rate=25:duration=60",
+                    "-c:v", "mpeg4", "-metadata:s:v:0", "DURATION-eng=00:01:00.000000000", str(src)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), "-t", "25", "-c", "copy", str(out)], check=True)
+    got = await _truncation_failure(str(src), str(out), 60.0, None, [])
+    assert got and got["error_key"] == "errors.outputTruncated"
+
+
+@pytest.mark.asyncio
+async def test_a_hardware_decoder_error_is_not_a_read_error(tmp_path, monkeypatch):
+    import backend.converter as converter
+
+    async def length(path, *args, **kwargs):
+        return 100.0
+
+    monkeypatch.setattr(converter, "_probe_video_duration", length)
+    monkeypatch.setattr(converter, "_probe_output_duration", length)
+    log = ["[vist#0:0/hevc @ 0x1] Decoding error: Input/output error"]
+    assert await _truncation_failure(str(tmp_path / "a.mkv"), str(tmp_path / "b.mkv"), 100.0, None, log) is None
 
 
 @pytest.mark.asyncio
