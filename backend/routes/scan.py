@@ -252,8 +252,11 @@ async def _write_batch(db_path_or_db, batch: list, now: str, mark_new: bool = Fa
 
 
 _scan_proc = None
-_scan_progress_file = "/tmp/shrinkerr_scan_progress.json"
-_scan_cancel_file = "/tmp/shrinkerr_scan_cancel"
+# In the data folder, not world-writable /tmp under a fixed name, where any
+# local user could cancel scans or fake progress for the hung-scan reaper,
+# and two instances on one host shared them (F21, v0.10.0).
+_scan_progress_file = os.path.join(os.path.dirname(DB_PATH), "scan_progress.json")
+_scan_cancel_file = os.path.join(os.path.dirname(DB_PATH), "scan_cancel")
 
 # v0.7.32: if a scan subprocess hangs (e.g. os.walk blocked on a dead /
 # slow network mount), `proc.is_alive()` stays True forever, so the

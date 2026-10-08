@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Links in the in-app changelog only open http(s) addresses.
 - Activity search treats `%` and `_` as plain characters (they matched anything).
+- Scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 - On narrow screens the header spans the full width and only the content below it scrolls, so the Scanner tree and poster grid now render past the first screen on phones.
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
