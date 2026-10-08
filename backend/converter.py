@@ -1353,7 +1353,7 @@ def disc_output_home(disc_root: Path) -> Path:
     imports a BR-DISK as a release folder inside the movie folder
     ("Movie (2009) [tt1]/Movie (2009) 1080p MLP 5.1 VC-1/BDMV"); then the
     output belongs in the movie folder, named after the movie, and the
-    release folder is disposed of with the disc. Recognised when the parent's
+    release folder goes once the disc leaves it empty. Recognised when the parent's
     name has a year, the disc root's name starts with the parent's title, the
     disc root holds nothing but the disc, and it's the only disc in the parent
     (several would produce the same output name).
@@ -1505,6 +1505,26 @@ def _move_into_backup(src: str, dst: str) -> None:
     os.utime(dst)
 
 
+# Left behind by Finder / Explorer; they don't keep a release folder alive.
+_FOLDER_JUNK = {".ds_store", "thumbs.db", "desktop.ini"}
+
+
+def _remove_if_only_junk(folder: Path) -> None:
+    """Remove `folder` if nothing but Finder / Explorer droppings is left in
+    it. Anything else — subtitles, an .nfo, a hidden file — keeps it."""
+    try:
+        entries = list(folder.iterdir())
+        if any(e.is_dir() or not (e.name.lower() in _FOLDER_JUNK or e.name.startswith("._"))
+               for e in entries):
+            return
+        for e in entries:
+            e.unlink()
+        folder.rmdir()
+        print(f"[CONVERT] Removed emptied release folder: {folder}", flush=True)
+    except OSError:
+        pass
+
+
 async def _dispose_disc_source(
     marker: Path, home: Path, disc_type: str,
     backup_days, use_trash: bool, backup_folder: str,
@@ -1513,37 +1533,49 @@ async def _dispose_disc_source(
     in place in `home`. Returns the backup path, if one was made.
 
     The disc is BDMV/ (or VIDEO_TS/) plus the companion folders a rip
-    carries (CERTIFICATE/, AACS/ or AUDIO_TS/, JACKET_P/). When the output
-    went up to the movie folder (disc_output_home), the whole release
-    folder holding the disc is the original. v0.6.0; companions and
-    release folders v0.10.0.
+    carries: CERTIFICATE/ and AACS/, or AUDIO_TS/ and JACKET_P/ when empty
+    (a non-empty AUDIO_TS is DVD-Audio, a disc of its own). Nothing else
+    beside the disc is touched. When the output went up to the movie folder
+    (disc_output_home), the release folder that held the disc is removed
+    only if that left it empty. v0.6.0; companions and release folders
+    v0.10.0 — a first cut disposed the whole release folder, extra files
+    and all.
     """
     disc_root = marker.parent.parent
-    if home != disc_root:
-        units = [disc_root]
-    else:
-        units = [marker.parent] + sorted(
-            d for d in disc_root.iterdir()
-            if d.is_dir() and d.name.upper() in _DISC_DIRS[disc_type][1:]
-        )
+    units = [marker.parent]
+    for d in sorted(disc_root.iterdir()):
+        if d == marker.parent or d.is_symlink() or not d.is_dir():
+            continue
+        name = d.name.upper()
+        if disc_type == "bdmv" and name in ("CERTIFICATE", "AACS"):
+            units.append(d)
+        elif disc_type == "dvd" and name in ("AUDIO_TS", "JACKET_P") and not any(d.iterdir()):
+            try:
+                d.rmdir()
+            except OSError:
+                pass
 
-    backup_dir = None
+    slot = None
     if backup_days and backup_days > 0:
         if backup_folder:
-            backup_dir = Path(backup_folder) / home.name
-            backup_dir.mkdir(parents=True, exist_ok=True)
+            base = Path(backup_folder) / home.name
         else:
             legacy = home / ".squeezarr_backup"
-            backup_dir = legacy if legacy.exists() else (home / ".shrinkerr_backup")
-            backup_dir.mkdir(exist_ok=True)
+            base = legacy if legacy.exists() else (home / ".shrinkerr_backup")
+        # Units keep their names (undo matches BDMV/ to the marker's
+        # folder); a disc from a release folder gets a folder named after
+        # it. Never move onto — or into — an earlier backup: "Disc 1"
+        # folders of different movies share a custom-folder slot.
+        slot = base / disc_root.name if home != disc_root else base
+        n = 0
+        while slot.is_symlink() or any(os.path.lexists(slot / u.name) for u in units):
+            n += 1
+            slot = base / f"{disc_root.name}.{n}"
+        slot.mkdir(parents=True, exist_ok=True)
 
     async def _dispose(unit: Path) -> str | None:
-        if backup_dir is not None:
-            backup_path = backup_dir / unit.name
-            if backup_path.is_symlink():
-                raise OSError(
-                    f"Refusing to move into backup path — destination is a symlink: {backup_path}"
-                )
+        if slot is not None:
+            backup_path = slot / unit.name
             await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
             print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
             return str(backup_path)
@@ -1566,6 +1598,8 @@ async def _dispose_disc_source(
             await _dispose(unit)
         except OSError as exc:
             print(f"[CONVERT] Could not remove {unit}: {exc}", flush=True)
+    if home != disc_root:
+        await asyncio.to_thread(_remove_if_only_junk, disc_root)
     return backup_path
 
 

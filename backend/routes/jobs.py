@@ -1555,10 +1555,11 @@ def _restore_moves(backup, original) -> list:
     """(from, to) renames that put a converted file's original back.
 
     original_file_path is the file itself or, for a folder disc, the marker
-    inside it (.../BDMV/index.bdmv) — whose backup is a folder: BDMV/ (with
-    the CERTIFICATE/AACS folders backed up beside it) or a whole release
-    folder (converter._dispose_disc_source). Undo used to rename that folder
-    onto the marker path (v0.10.0)."""
+    inside it (.../BDMV/index.bdmv) — whose backup is a folder: BDMV/ with
+    the CERTIFICATE/AACS folders backed up beside it
+    (converter._dispose_disc_source), or a whole release folder (made by an
+    early v0.10.0 development build). Undo used to rename that folder onto
+    the marker path (v0.10.0)."""
     if not backup.is_dir():
         return [(backup, original)]
     disc_dir = original.parent

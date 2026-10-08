@@ -10,6 +10,7 @@ The converted file landed in the release folder, named after it ("… 1080p MLP
 5.1 VC-1 1080p Bluray AC3 5.1 h265.mkv"), CERTIFICATE was left behind, and the
 Scanner's "already converted" check never matched names with [tt…] tags.
 """
+import shutil
 from pathlib import Path
 
 import pytest
@@ -117,14 +118,56 @@ async def test_disc_in_title_folder_name_unchanged(tmp_path):
 # --- what happens to the disc after conversion ----------------------------
 
 @pytest.mark.asyncio
-async def test_delete_removes_the_whole_release_folder(tmp_path):
+async def test_delete_removes_the_emptied_release_folder(tmp_path):
     title = tmp_path / TITLE
     marker = _bluray(title / RELEASE)
+    (title / RELEASE / ".DS_Store").write_bytes(b"x")
     (title / OUTPUT).write_bytes(b"converted")
     backup = await _dispose_disc_source(marker, title, "bdmv", 0, False, "")
     assert backup is None
     assert not (title / RELEASE).exists()
     assert (title / OUTPUT).exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["delete", "backup", "trash"])
+async def test_only_the_disc_leaves_the_release_folder(tmp_path, monkeypatch, mode):
+    """The first cut disposed of the whole release folder: subtitles, an
+    .nfo, a stray .iso, hidden files went with the disc."""
+    import send2trash
+    monkeypatch.setattr(send2trash, "send2trash", lambda p: shutil.rmtree(p))
+    title = tmp_path / TITLE
+    release = title / RELEASE
+    marker = _bluray(release)
+    extras = {"Movie.en.srt": b"1", "movie.nfo": b"n", "other.iso": b"i", ".hidden": b"h", "commentary.mka": b"a"}
+    for name, data in extras.items():
+        (release / name).write_bytes(data)
+    (release / "Featurettes").mkdir()
+    await _dispose_disc_source(marker, title, "bdmv", 7 if mode == "backup" else 0, mode == "trash", "")
+    assert sorted(p.name for p in release.iterdir()) == sorted([*extras, "Featurettes"])
+    for name, data in extras.items():
+        assert (release / name).read_bytes() == data
+
+
+@pytest.mark.asyncio
+async def test_bluray_never_takes_a_video_ts_folder_along(tmp_path):
+    title = tmp_path / "Movies" / TITLE
+    marker = _bluray(title)
+    (title / "VIDEO_TS").mkdir()
+    (title / "VIDEO_TS" / "VTS_01_1.VOB").write_bytes(b"dvd")
+    await _dispose_disc_source(marker, title, "bdmv", 0, False, "")
+    assert sorted(p.name for p in title.iterdir()) == ["VIDEO_TS"]
+
+
+@pytest.mark.asyncio
+async def test_dvd_audio_ts_with_content_is_kept(tmp_path):
+    """A non-empty AUDIO_TS is DVD-Audio, not part of the DVD-Video rip."""
+    title = tmp_path / "Movies" / "Fast-Walking (1982)"
+    marker = _dvd(title)
+    (title / "AUDIO_TS" / "AUDIO_TS.IFO").write_bytes(b"DVDAUDIO")
+    await _dispose_disc_source(marker, title, "dvd", 0, False, "")
+    assert sorted(p.name for p in title.iterdir()) == ["AUDIO_TS"]
+    assert (title / "AUDIO_TS" / "AUDIO_TS.IFO").exists()
 
 
 @pytest.mark.asyncio
@@ -137,7 +180,7 @@ async def test_delete_removes_certificate_with_bdmv(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_audio_ts_with_video_ts(tmp_path):
+async def test_delete_removes_empty_audio_ts_with_video_ts(tmp_path):
     title = tmp_path / "Movies" / "Fast-Walking (1982)"
     marker = _dvd(title)
     await _dispose_disc_source(marker, title, "dvd", 0, False, "")
@@ -145,11 +188,11 @@ async def test_delete_removes_audio_ts_with_video_ts(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_backup_moves_release_folder_beside_the_output(tmp_path):
+async def test_backup_of_a_release_folder_disc(tmp_path):
     title = tmp_path / TITLE
     marker = _bluray(title / RELEASE)
     backup = await _dispose_disc_source(marker, title, "bdmv", 7, False, "")
-    assert backup == str(title / ".shrinkerr_backup" / RELEASE)
+    assert backup == str(title / ".shrinkerr_backup" / RELEASE / "BDMV")
     assert (title / ".shrinkerr_backup" / RELEASE / "CERTIFICATE" / "id.bdmv").exists()
     assert not (title / RELEASE).exists()
 
@@ -164,14 +207,36 @@ async def test_backup_keeps_certificate_with_bdmv(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_trash_sends_the_release_folder(tmp_path, monkeypatch):
+async def test_backup_never_lands_on_an_earlier_one(tmp_path):
+    """Custom backup folders are keyed by folder name: "Disc 1" of two
+    movies share a slot, and moving BDMV onto an existing BDMV/ put it
+    inside the other movie's backup."""
+    custom = tmp_path / "backups"
+    first = tmp_path / "A (2001)" / "Disc 1"
+    second = tmp_path / "B (2002)" / "Disc 1"
+    b1 = await _dispose_disc_source(_bluray(first), first, "bdmv", 7, False, str(custom))
+    b2 = await _dispose_disc_source(_bluray(second), second, "bdmv", 7, False, str(custom))
+    assert b1 == str(custom / "Disc 1" / "BDMV")
+    assert b2 == str(custom / "Disc 1" / "Disc 1.1" / "BDMV")
+    assert sorted(p.name for p in (custom / "Disc 1" / "BDMV").iterdir()) == ["STREAM", "index.bdmv"]
+    assert (custom / "Disc 1" / "Disc 1.1" / "CERTIFICATE" / "id.bdmv").exists()
+
+
+@pytest.mark.asyncio
+async def test_trash_sends_only_the_disc(tmp_path, monkeypatch):
     import send2trash
     sent = []
-    monkeypatch.setattr(send2trash, "send2trash", lambda p: sent.append(Path(p)))
+
+    def fake_trash(p):
+        sent.append(Path(p))
+        shutil.rmtree(p)
+
+    monkeypatch.setattr(send2trash, "send2trash", fake_trash)
     title = tmp_path / TITLE
     marker = _bluray(title / RELEASE)
     await _dispose_disc_source(marker, title, "bdmv", 0, True, "")
-    assert sent == [title / RELEASE]
+    assert sent == [title / RELEASE / "BDMV", title / RELEASE / "CERTIFICATE"]
+    assert not (title / RELEASE).exists()
 
 
 # --- Scanner: is this disc already converted? ------------------------------

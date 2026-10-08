@@ -47,7 +47,30 @@ async def test_undo_restores_a_disc_with_its_certificate(test_db, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_undo_restores_a_release_folder(test_db, tmp_path):
+async def test_undo_puts_a_release_folder_disc_back(test_db, tmp_path):
+    from backend.converter import _dispose_disc_source
+    title = tmp_path / "Movie (2009) [tt1]"
+    release = title / "Movie (2009) 1080p MLP 5.1 VC-1"
+    (release / "BDMV").mkdir(parents=True)
+    (release / "BDMV" / "index.bdmv").write_bytes(b"INDX0200")
+    (release / "CERTIFICATE").mkdir()
+    marker = release / "BDMV" / "index.bdmv"
+    converted = title / "Movie (2009) 1080p Bluray AC3 5.1 h265.mkv"
+    converted.write_bytes(b"converted")
+    backup = await _dispose_disc_source(marker, title, "bdmv", 7, False, "")
+    assert not release.exists()
+    job_id = await _job(test_db, converted, marker, Path(backup))
+
+    await undo_conversion(job_id)
+
+    assert marker.read_bytes() == b"INDX0200"
+    assert (release / "CERTIFICATE").is_dir()
+    assert not converted.exists()
+
+
+@pytest.mark.asyncio
+async def test_undo_restores_a_release_folder_backup(test_db, tmp_path):
+    """Backups made by early v0.10.0 development builds hold the whole release folder."""
     title = tmp_path / "Movie (2009) [tt1]"
     release = "Movie (2009) 1080p MLP 5.1 VC-1"
     backups = title / ".shrinkerr_backup"
