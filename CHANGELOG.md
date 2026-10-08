@@ -5,6 +5,11 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.150] — 2026-10-08
+
+### Fixed
+- **The weekly backup no longer freezes Shrinkerr** — zipping a large database ran on the main loop, so pages (e.g. the Queue's Completed/Failed tabs) hung for minutes while it ran.
+
 ## [0.9.149] — 2026-10-08
 
 ### Fixed

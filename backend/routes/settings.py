@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import shutil
@@ -1807,9 +1808,13 @@ async def _do_create_backup() -> dict:
         }, indent=2)
 
         # Create zip — include db under both names so old restore code still works
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(tmp_db, "shrinkerr.db")
-            zf.writestr("settings.json", settings_json)
+        # v0.9.150: off the event loop — deflating a multi-GB database took
+        # minutes and froze every request (Queue tabs hung) while it ran.
+        def _write_zip():
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(tmp_db, "shrinkerr.db")
+                zf.writestr("settings.json", settings_json)
+        await asyncio.to_thread(_write_zip)
     finally:
         if tmp_db.exists():
             tmp_db.unlink()
