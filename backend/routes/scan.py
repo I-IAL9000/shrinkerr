@@ -447,6 +447,8 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     # belt so behavior is symmetric.
                     from collections import defaultdict as _dd
                     preserved_subs: set[str] = set()
+                    preserved_paths: set[str] = set()
+                    _unlisted = [d.rstrip("/") + "/" for d in unreadable_dirs]
                     for path in completed_paths:
                         path_norm = path.rstrip("/")
                         like_pat = path_norm + "/%"
@@ -466,6 +468,25 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             "SELECT file_path FROM scan_results WHERE file_path LIKE ?",
                             (like_pat,),
                         ).fetchall()
+                        # Rows under folders that couldn't be listed are kept
+                        # anyway (SC-03); they say nothing about the rest.
+                        stale_rows = [r for r in stale_rows if not any(r[0].startswith(u) for u in _unlisted)]
+                        known_rows = [r for r in known_rows if not any(r[0].startswith(u) for u in _unlisted)]
+
+                        # v0.10.0: whole-path belt, as the watcher's. An
+                        # unmounted share leaves an empty mountpoint that
+                        # walks clean, and every row under it looked stale;
+                        # the per-subfolder belt below never fires on a
+                        # movie library, where no folder holds 1000 files.
+                        if known_rows and len(stale_rows) > len(known_rows) // 2:
+                            preserved_paths.add(path_norm)
+                            print(
+                                f"[SCANNER] {path_norm!r} would lose {len(stale_rows)}/{len(known_rows)} "
+                                f"rows this scan (>50%); preserving (likely not mounted). For legitimate "
+                                f"bulk moves, clean stale rows from the UI.",
+                                flush=True,
+                            )
+                            continue
 
                         def _first_sub(p: str, _root: str = path_norm) -> str | None:
                             if not p.startswith(_root + "/"):
@@ -509,6 +530,8 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     deleted_total = 0
                     for path in completed_paths:
                         path_norm = path.rstrip("/")
+                        if path_norm in preserved_paths:
+                            continue
                         like_pat = path_norm + "/%"
                         # Inject `AND file_path NOT LIKE '<sub>/%'` per
                         # preserved subfolder under this walked path.

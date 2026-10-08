@@ -115,3 +115,18 @@ def test_full_scan_keeps_rows_under_a_folder_it_cannot_list(test_db, tmp_path, m
     assert str(media / "Show B" / "ep1.mkv") in remaining   # couldn't be listed: kept
     assert str(gone) not in remaining                        # really gone: removed
     assert not [p for p in remaining if any(f"/{h}/" in p for h in HIDDEN)], remaining
+
+
+def test_full_scan_of_an_unmounted_share_keeps_its_rows(test_db, tmp_path):
+    """An unmounted share is an empty mountpoint: the walk "succeeds", finds
+    nothing, and every row under it was deleted (v0.10.0)."""
+    import asyncio
+    from backend.routes.scan import _scan_worker_process
+    media = tmp_path / "Movies"
+    media.mkdir()
+    rows = [media / f"Movie {i} (2009)" / f"Movie {i} (2009).mkv" for i in range(5)]
+    asyncio.run(_seed(test_db, media, rows))
+
+    _scan_worker_process([str(media)], test_db, str(tmp_path / "progress.json"), str(tmp_path / "cancel"))
+
+    assert asyncio.run(_rows(test_db)) == sorted(str(p) for p in rows)
