@@ -1995,7 +1995,15 @@ class QueueWorker:
             # info. Otherwise the UI will show the old codec badge / size / tracks
             # until a manual rescan, and any failed post-conversion step would
             # leave the row in an inconsistent half-updated state.
-            if current_file_path != file_path:
+            # v0.10.0 (C2): also when the output kept the source's name
+            # (Sonarr/Radarr naming has no codec tag) — its streams changed all
+            # the same, and stale track indices let a later cleanup remove the
+            # wrong, or the only, audio track. Not when the encode was thrown
+            # away (VMAF / larger): then the original is still there, unchanged.
+            output_replaced_source = current_file_path != file_path or not (
+                result.get("vmaf_rejected") or result.get("skipped_larger")
+            )
+            if output_replaced_source:
                 import json as _json
                 new_size = await _async_getsize(current_file_path)
 
@@ -2012,7 +2020,7 @@ class QueueWorker:
                 try:
                     from backend.scanner import (
                         classify_audio_tracks, classify_subtitle_tracks,
-                        detect_native_language, _is_cleanup_enabled,
+                        classification_native, _is_cleanup_enabled,
                         languages_match,
                     )
                     from backend.converter import is_lossless_audio
@@ -2020,22 +2028,24 @@ class QueueWorker:
                     if fresh:
                         raw_audio = fresh.get("audio_tracks") or []
                         raw_subs = fresh.get("subtitle_tracks") or []
-                        native_lang = detect_native_language(raw_audio)
-                        # Look up API-sourced native language from scan_results
+                        # A TMDB / manual native from scan_results wins; a
+                        # stored guess was made from the source's tracks.
+                        stored_nl, stored_src = None, None
                         try:
                             db_nl = await self._db()
                             try:
                                 async with db_nl.execute(
-                                    "SELECT native_language FROM scan_results WHERE file_path = ?",
+                                    "SELECT native_language, language_source FROM scan_results WHERE file_path = ?",
                                     (file_path,),
                                 ) as cur:
                                     nl_row = await cur.fetchone()
-                                if nl_row and nl_row["native_language"]:
-                                    native_lang = nl_row["native_language"]
+                                if nl_row:
+                                    stored_nl, stored_src = nl_row["native_language"], nl_row["language_source"]
                             finally:
                                 await db_nl.close()
                         except Exception:
                             pass
+                        native_lang = classification_native(stored_nl, stored_src, raw_audio)
                         classified_audio = classify_audio_tracks(
                             raw_audio, native_lang, fresh.get("duration", 0),
                         )
@@ -2551,7 +2561,7 @@ class QueueWorker:
                         import json as _rj
                         from backend.scanner import (
                             probe_file as _rpf, classify_audio_tracks as _rca,
-                            classify_subtitle_tracks as _rcs, detect_native_language as _rdnl,
+                            classify_subtitle_tracks as _rcs, classification_native as _rcn,
                             _is_cleanup_enabled as _ric, languages_match as _rlm,
                         )
                         _rp = await _rpf(_new_out, detect_und_subs=False)
@@ -2574,7 +2584,16 @@ class QueueWorker:
                                 _cols += ["file_path = ?", "converted = 1", "is_new = 0", "new_detected_at = NULL"]
                                 _params += [_new_out]
                             if _rp:
-                                _rnl = _rdnl(_rp.get("audio_tracks", []) or [])
+                                # A TMDB / manual native wins over the new track
+                                # order (the remux can put another language first).
+                                async with db_r.execute(
+                                    "SELECT native_language, language_source FROM scan_results WHERE file_path = ?",
+                                    (_old_path,),
+                                ) as _rcur:
+                                    _rrow = await _rcur.fetchone()
+                                _rnl = _rcn(_rrow["native_language"] if _rrow else None,
+                                            _rrow["language_source"] if _rrow else None,
+                                            _rp.get("audio_tracks", []) or [])
                                 _rat = _rca(_rp.get("audio_tracks", []) or [], _rnl, _rp.get("duration", 0) or 0)
                                 _rst = _rcs(_rp.get("subtitle_tracks", []) or [], _rnl)
                                 _rund = 1 if any((t.language or "und").lower() == "und" for t in list(_rat) + list(_rst)) else 0

@@ -500,6 +500,22 @@ def detect_native_language(audio_tracks: list[dict]) -> str:
     return "und"
 
 
+# Where a stored native language counts as known rather than guessed from
+# the track order (v0.9.155).
+AUTHORITATIVE_NATIVE_SOURCES = ("api", "manual", "tmdb-manual")
+
+
+def classification_native(stored_native: str | None, stored_source: str | None,
+                          audio_tracks: list[dict]) -> str:
+    """Native language to sort a file's tracks against: a TMDB / manual
+    native wins, otherwise guess from the current tracks. A stored guess is
+    not reused after the tracks changed — it was made from the old list
+    (v0.10.0)."""
+    if stored_native and (stored_source or "") in AUTHORITATIVE_NATIVE_SOURCES:
+        return stored_native
+    return detect_native_language(audio_tracks)
+
+
 def is_x264(codec: str) -> bool:
     """Return True if codec string represents H.264/AVC."""
     c = codec.lower()

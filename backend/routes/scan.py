@@ -1394,7 +1394,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     }
 
 
-_AUTHORITATIVE_NATIVE_SOURCES = ("api", "manual", "tmdb-manual")
+from backend.scanner import AUTHORITATIVE_NATIVE_SOURCES as _AUTHORITATIVE_NATIVE_SOURCES
 
 
 async def _classification_native(file_path: str, raw_audio: list) -> tuple[str, str]:
