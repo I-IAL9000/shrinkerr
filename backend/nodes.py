@@ -433,7 +433,7 @@ class NodeManager:
             )
             await db.execute(
                 "UPDATE worker_nodes SET current_job_id = NULL, "
-                "status = CASE WHEN last_heartbeat > datetime('now', '-5 minutes') THEN 'online' ELSE 'offline' END "
+                "status = CASE WHEN datetime(last_heartbeat) > datetime('now', '-5 minutes') THEN 'online' ELSE 'offline' END "
                 "WHERE id = ?",
                 (node_id,),
             )
@@ -569,7 +569,10 @@ class NodeManager:
             async with db.execute(
                 "SELECT id, current_job_id FROM worker_nodes "
                 "WHERE id != 'local' AND status IN ('online', 'working') "
-                "AND last_heartbeat < datetime('now', ?)",
+                # last_heartbeat is ISO ("2026-10-08T12:00:00+00:00"); as a
+                # string it sorts after datetime()'s "2026-10-08 11:55:00",
+                # so a dead node was only noticed once the UTC date changed.
+                "AND datetime(last_heartbeat) < datetime('now', ?)",
                 (f"-{stale_timeout_seconds} seconds",),
             ) as cur:
                 stale_nodes = await cur.fetchall()

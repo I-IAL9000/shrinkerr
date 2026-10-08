@@ -516,11 +516,57 @@ async def request_job(req: RequestJobBody, request: Request):
     return {"job": assigned}
 
 
+async def _reporting_node_owns(db, job_id: int, node_id: str, adopt: bool) -> bool:
+    """Whether `node_id` may report on `job_id` (v0.10.0): it's running there.
+    With `adopt`, also when the job was released while the node was
+    unreachable and nobody has claimed it since — the node gets it back
+    instead of the job running twice. Any node could report on any job, so
+    a node that had lost its job could mark it failed or completed under
+    whoever runs it now."""
+    async with db.execute(
+        "SELECT 1 FROM jobs WHERE id = ? AND status = 'running' AND assigned_node_id = ?",
+        (job_id, node_id),
+    ) as cur:
+        if await cur.fetchone():
+            return True
+    if not adopt:
+        return False
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    cur = await db.execute(
+        "UPDATE jobs SET status = 'running', assigned_node_id = ?, assigned_at = ?, "
+        "started_at = COALESCE(started_at, ?) "
+        "WHERE id = ? AND status = 'pending' AND assigned_node_id IS NULL",
+        (node_id, now, now, job_id),
+    )
+    await db.commit()
+    if cur.rowcount:
+        print(f"[NODES] Node '{node_id}' is still working on job {job_id}; handing it back", flush=True)
+    return cur.rowcount > 0
+
+
+async def _drop_stale_report(db, job_id: int, node_id: str, what: str) -> None:
+    print(f"[NODES] Ignoring {what} for job {job_id} from node '{node_id}': the job isn't assigned to it",
+          flush=True)
+    await db.execute("UPDATE worker_nodes SET current_job_id = NULL WHERE id = ? AND current_job_id = ?",
+                     (node_id, job_id))
+    await db.commit()
+
+
 @router.post("/report-progress")
 async def report_progress(req: ProgressReport, request: Request):
     """Worker reports job progress. Returns cancel flag."""
     await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
+
+    db = await connect_db()
+    try:
+        if not await _reporting_node_owns(db, req.job_id, req.node_id, adopt=True):
+            # Someone else has the job now (or it's finished/removed): stop.
+            await _drop_stale_report(db, req.job_id, req.node_id, "progress")
+            return {"ok": True, "cancelled": True}
+    finally:
+        await db.close()
 
     # Update job progress in DB. Only persist fps during the encoding
     # phase — workers also call /report-progress during VMAF analysis
@@ -613,7 +659,6 @@ async def report_complete(req: CompletionReport, request: Request):
     """Worker reports job completion or failure."""
     await _require_node_token(request, req.node_id)
     nm = _get_nm(request)
-    nm.clear_cancel(req.job_id)
 
     # Translate output_path back to server paths
     output_path = req.output_path
@@ -622,6 +667,13 @@ async def report_complete(req: CompletionReport, request: Request):
 
     db = await connect_db()
     try:
+        # A finished conversion is kept even when the job was released
+        # meanwhile (re-running it would encode the output); anything else
+        # from a node that no longer has the job is dropped (v0.10.0).
+        if not await _reporting_node_owns(db, req.job_id, req.node_id, adopt=req.success):
+            await _drop_stale_report(db, req.job_id, req.node_id, "a completion" if req.success else "a failure")
+            return {"ok": True, "ignored": True}
+        nm.clear_cancel(req.job_id)
         if req.success:
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc).isoformat()
