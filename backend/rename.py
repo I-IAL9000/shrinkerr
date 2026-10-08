@@ -611,6 +611,26 @@ class RenamePlan:
     reason: str = ""            # "noop" if nothing changes
 
 
+_SEASON_FOLDER_RE = re.compile(
+    r"^(?:season|series|staffel|saison|temporada|stagione|seizoen|s[äa]song|s[æa]son|sezon)"
+    r"[\s._-]*\d{1,3}$|^s\d{1,3}$|^specials$",
+    re.IGNORECASE,
+)
+
+
+def _only_video_in_folder(file_path: str) -> bool:
+    """True when `file_path` is the only video in its folder."""
+    from backend.config import settings as _settings
+    exts = {e.lower() for e in _settings.video_extensions}
+    folder = os.path.dirname(file_path)
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return False
+    videos = [n for n in names if not n.startswith(".") and os.path.splitext(n)[1].lower() in exts]
+    return videos == [os.path.basename(file_path)]
+
+
 async def build_plan(file_path: str, probe_info: Optional[dict] = None, settings: Optional[RenameSettings] = None) -> RenamePlan:
     """Compute a rename plan for a file. Returns old/new paths; caller applies."""
     if settings is None:
@@ -631,11 +651,16 @@ async def build_plan(file_path: str, probe_info: Optional[dict] = None, settings
 
     plan = RenamePlan(old_path=file_path, new_path=new_file_path)
 
-    # Folder renames (optional)
+    # Folder renames (optional). SC-02 (v0.10.0): only folders whose role is
+    # clear — a folder named like a season folder (and the show folder above
+    # it), or a folder holding just this movie. An episode sitting directly in
+    # its show folder had that folder renamed "Season 01" and the category
+    # folder above renamed after the show; a movie in a shared folder had the
+    # whole folder renamed after itself.
     if settings.rename_folders:
         if meta.media_type == "tv":
             # Season folder
-            if meta.season is not None:
+            if meta.season is not None and _SEASON_FOLDER_RE.match(os.path.basename(old_dir)):
                 old_season = old_dir
                 # The title folder is one level up
                 parent_of_season = os.path.dirname(old_season)
@@ -649,7 +674,7 @@ async def build_plan(file_path: str, probe_info: Optional[dict] = None, settings
                 if new_series_name:
                     plan.old_folder = series_folder
                     plan.new_folder = os.path.join(os.path.dirname(series_folder), new_series_name)
-        else:
+        elif _only_video_in_folder(file_path):
             # Movie folder (one level up from file)
             new_movie_folder = render_pattern(settings.movie_folder_pattern, meta, settings).strip()
             if new_movie_folder:
@@ -695,9 +720,11 @@ async def apply_plan(plan: RenamePlan) -> dict:
         result["error"] = "No changes"
         return result
 
+    # Where the file is now and which folders were renamed — also after a
+    # partial failure, so the caller can update rows that moved (v0.10.0).
+    current_path = plan.old_path
+    renamed_folders: list[tuple[str, str]] = []
     try:
-        current_path = plan.old_path
-
         # 1. File rename
         if plan.new_path != plan.old_path:
             os.makedirs(os.path.dirname(plan.new_path), exist_ok=True)
@@ -708,16 +735,19 @@ async def apply_plan(plan: RenamePlan) -> dict:
         if plan.old_season_folder and plan.new_season_folder and plan.new_season_folder != plan.old_season_folder:
             # The current file moved with the folder rename — update current_path
             _rename_no_overwrite(plan.old_season_folder, plan.new_season_folder)
+            renamed_folders.append((plan.old_season_folder, plan.new_season_folder))
             current_path = current_path.replace(plan.old_season_folder, plan.new_season_folder, 1)
 
         # 3. Series/movie folder rename
         if plan.old_folder and plan.new_folder and plan.new_folder != plan.old_folder:
             _rename_no_overwrite(plan.old_folder, plan.new_folder)
+            renamed_folders.append((plan.old_folder, plan.new_folder))
             current_path = current_path.replace(plan.old_folder, plan.new_folder, 1)
 
         result["applied"] = True
-        result["new_path"] = current_path
     except Exception as exc:
         result["error"] = str(exc)
+    result["new_path"] = current_path
+    result["renamed_folders"] = renamed_folders
 
     return result

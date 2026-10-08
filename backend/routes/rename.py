@@ -196,6 +196,18 @@ class ApplyRequest(BaseModel):
     rescan_plex: bool = True
 
 
+async def _move_rows_under(db, old_folder: str, new_folder: str) -> None:
+    """Point Scanner rows and pending jobs under a renamed folder at its new
+    path (they kept the old one and stopped matching the files)."""
+    like = old_folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
+    for table, only_pending in (("scan_results", ""), ("jobs", " AND status = 'pending'")):
+        await db.execute(
+            f"UPDATE {table} SET file_path = ? || substr(file_path, ?) "
+            f"WHERE file_path LIKE ? ESCAPE '\\'{only_pending}",
+            (new_folder, len(old_folder) + 1, like),
+        )
+
+
 def _outside_media_dirs(plan: RenamePlan, media_dirs: list[str]) -> str | None:
     """The first path the plan would touch that isn't strictly inside a media
     dir (a media dir itself must never be renamed). F19, v0.9.157."""
@@ -232,9 +244,16 @@ async def apply_rename(req: ApplyRequest):
 
     results = []
     renamed_paths = []
-    for fp in file_paths:
+    # Folders renamed earlier in this batch: later files under them have moved
+    # (they all failed "file not found" before v0.10.0).
+    moved: list[tuple[str, str]] = []
+    for original_fp in file_paths:
+        fp = original_fp
+        for old, new in moved:
+            if fp.startswith(old + "/"):
+                fp = new + fp[len(old):]
         try:
-            plan = await build_plan(fp, probe_map.get(fp), settings)
+            plan = await build_plan(fp, probe_map.get(original_fp), settings)
             if plan.reason == "noop":
                 results.append({"old_path": fp, "new_path": fp, "applied": False, "error": "No changes"})
                 continue
@@ -247,20 +266,24 @@ async def apply_rename(req: ApplyRequest):
             results.append(result)
             if result.get("applied") and result.get("new_path"):
                 renamed_paths.append((fp, result["new_path"]))
-
-                # Update scan_results with the new path so the UI reflects it
+            # Update scan_results with where the file and its folders are
+            # now (also after a partial failure) so the UI reflects it
+            try:
+                db = await connect_db()
                 try:
-                    db = await connect_db()
-                    try:
+                    if result.get("new_path") and result["new_path"] != fp:
                         await db.execute(
                             "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
                             (result["new_path"], fp),
                         )
-                        await db.commit()
-                    finally:
-                        await db.close()
-                except Exception:
-                    pass
+                    for old, new in result.get("renamed_folders") or []:
+                        moved.append((old, new))
+                        await _move_rows_under(db, old, new)
+                    await db.commit()
+                finally:
+                    await db.close()
+            except Exception as exc:
+                print(f"[RENAME] Could not update rows after renaming {fp}: {exc}", flush=True)
         except Exception as exc:
             results.append({"old_path": fp, "new_path": fp, "applied": False, "error": str(exc)})
 
