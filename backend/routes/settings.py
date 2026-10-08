@@ -11,7 +11,7 @@ import aiosqlite
 from fastapi import APIRouter, Request, UploadFile, File
 from backend.api_errors import ApiError
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from backend.database import DB_PATH, connect_db
 from backend.models import MediaDir, SettingsUpdate
@@ -818,6 +818,16 @@ async def clear_ignored():
     return {"status": "cleared"}
 
 
+async def _stored_setting(db, key: str) -> str:
+    async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
+        row = await cur.fetchone()
+    return row[0] if row and row[0] is not None else ""
+
+
+async def _password_auth_on(db) -> bool:
+    return await _stored_setting(db, "auth_enabled") == "true"
+
+
 @router.put("/encoding")
 async def update_encoding_settings(update: SettingsUpdate):
     db = await aiosqlite.connect(DB_PATH)
@@ -1033,8 +1043,37 @@ async def update_encoding_settings(update: SettingsUpdate):
             val = getattr(update, key, None)
             if val is not None:
                 updates[key] = str(val)
-        if update.custom_ffmpeg_flags is not None:
-            updates["custom_ffmpeg_flags"] = update.custom_ffmpeg_flags
+        if (update.custom_ffmpeg_flags is not None
+                and update.custom_ffmpeg_flags != await _stored_setting(db, "custom_ffmpeg_flags")):
+            # Flags reach ffmpeg's command line, where they could write files
+            # (C4): same password-auth gate as post_conversion_script, plus a
+            # check against extra inputs/outputs and file paths. Checked only
+            # on change because Settings saves send every field.
+            new_flags = update.custom_ffmpeg_flags
+            if new_flags.strip():
+                if not await _password_auth_on(db):
+                    raise ApiError(
+                        status_code=403,
+                        detail=(
+                            "Custom ffmpeg flags can write files on this server. Enable password "
+                            "auth (Settings → System → Authentication) before setting them."
+                        ),
+                        code="settings.customFlagsNeedAuth",
+                    )
+                from backend.converter import parse_custom_ffmpeg_flags
+                try:
+                    parse_custom_ffmpeg_flags(new_flags)
+                except ValueError as exc:
+                    raise ApiError(
+                        status_code=400,
+                        detail=(
+                            f"Custom ffmpeg flags can't add inputs or outputs or name files "
+                            f"(rejected: {exc})"
+                        ),
+                        code="settings.customFlagsInvalid",
+                        params={"token": str(exc)},
+                    )
+            updates["custom_ffmpeg_flags"] = new_flags
         if update.backup_folder is not None:
             # Empty string is valid (means "sprinkle .shrinkerr_backup next to
             # each file"); any non-empty value must be an absolute, existing,
@@ -1137,20 +1176,17 @@ async def update_encoding_settings(update: SettingsUpdate):
         if update.nzbget_check_radarr_tags is not None:
             updates["nzbget_check_radarr_tags"] = "true" if update.nzbget_check_radarr_tags else "false"
         # Post-conversion script
-        if update.post_conversion_script is not None:
+        if (update.post_conversion_script is not None
+                and update.post_conversion_script != await _stored_setting(db, "post_conversion_script")):
             # Arbitrary-binary-execution vector: ffmpeg-worker runs this
             # command after every successful encode. Changing it requires
             # the UI-level password login so a leaked API key alone can't
             # flip an installation into an RCE posture. Setting it empty
-            # is always allowed (disables the feature).
+            # is always allowed (disables the feature). Checked only on
+            # change: Settings saves send every field (v0.9.157).
             new_script = update.post_conversion_script
             if new_script:
-                async with db.execute(
-                    "SELECT value FROM settings WHERE key = 'auth_enabled'"
-                ) as cur:
-                    row = await cur.fetchone()
-                auth_enabled = bool(row) and (row[0] == "true")
-                if not auth_enabled:
+                if not await _password_auth_on(db):
                     raise ApiError(
                         status_code=403,
                         detail=(
@@ -1386,24 +1422,77 @@ class ImportSettingsRequest(BaseModel):
     encoding_rules: list = []
 
 
+# Never imported: credentials and auth state (exports leave them out too).
+_UNIMPORTABLE_KEYS = _SECRET_SETTINGS_KEYS | {
+    "auth_enabled", "auth_username", "auth_password", "auth_password_hash",
+}
+
+
+def _passthrough_import_keys() -> set[str]:
+    """Settings an import writes as-is: saved by their own endpoints
+    (renaming, schedule), which don't validate them either."""
+    from backend.rename import _SETTINGS_KEYS as rename_keys
+    return set(rename_keys) | {"run_hours"}
+
+
+def _settings_update_from_export(raw: dict) -> SettingsUpdate:
+    """Turn an export's text values into a SettingsUpdate. Credentials,
+    unknown keys (internal state) and values that don't parse are dropped."""
+    fields = SettingsUpdate.model_fields
+    values = {}
+    for key, value in raw.items():
+        if key in _UNIMPORTABLE_KEYS or key not in fields:
+            continue
+        annotation = str(fields[key].annotation)
+        if isinstance(value, str) and ("list[" in annotation or "dict[" in annotation):
+            try:
+                value = json.loads(value)  # stored as JSON text
+            except ValueError:
+                continue
+        try:
+            SettingsUpdate.model_validate({key: value})
+        except ValidationError:
+            continue
+        values[key] = value
+    return SettingsUpdate(**values)
+
+
 @router.post("/import")
 async def import_settings(payload: ImportSettingsRequest):
-    """Import settings from a JSON backup. Merges with existing settings."""
+    """Import settings from a JSON backup. Merges with existing settings.
+
+    F3 (v0.9.157): runs the same validation as saving in Settings — the
+    post-conversion script and custom-flag gates, path and URL checks.
+    Credentials and auth settings are never imported and a value a check
+    rejects fails the import before anything is written. Media dirs that
+    aren't valid here (missing, system dirs, `/`) are skipped.
+    """
+    update = _settings_update_from_export(payload.settings)
+    passthrough_keys = _passthrough_import_keys()
+    passthrough = {k: str(v) for k, v in payload.settings.items() if k in passthrough_keys}
+    dirs = []
+    for d in payload.media_dirs:
+        if not isinstance(d, dict):
+            continue
+        try:
+            path = _validate_filesystem_path(d.get("path", ""), label="Media directory")
+        except ApiError:
+            continue
+        dirs.append((path, d.get("label", "")))
+
+    result = await update_encoding_settings(update)
+
     db = await aiosqlite.connect(DB_PATH)
     try:
-        imported = 0
-        # Import settings
-        for key, value in payload.settings.items():
+        for key, value in passthrough.items():
             await db.execute(
                 "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (key, str(value)),
+                (key, value),
             )
-            imported += 1
-        # Import media dirs
-        for d in payload.media_dirs:
+        for path, label in dirs:
             await db.execute(
                 "INSERT OR IGNORE INTO media_dirs (path, label) VALUES (?, ?)",
-                (d.get("path", ""), d.get("label", "")),
+                (path, label),
             )
         # Import encoding rules
         from datetime import datetime, timezone
@@ -1421,7 +1510,8 @@ async def import_settings(payload: ImportSettingsRequest):
                  rule.get("audio_codec"), rule.get("audio_bitrate"), now),
             )
         await db.commit()
-        return {"status": "imported", "settings_count": imported, "dirs_count": len(payload.media_dirs), "rules_count": len(payload.encoding_rules)}
+        return {"status": "imported", "settings_count": len(result["keys"]) + len(passthrough),
+                "dirs_count": len(dirs), "rules_count": len(payload.encoding_rules)}
     finally:
         await db.close()
 

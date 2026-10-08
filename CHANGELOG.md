@@ -5,6 +5,17 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.157] — 2026-10-08
+
+### Security
+- Custom ffmpeg flags now require password auth and can't add inputs, outputs or file paths (they could overwrite files on the server).
+- Settings import runs the same checks as saving in Settings and never imports credentials or auth settings.
+- Renaming only touches files and folders inside your media directories and never renames a media directory itself.
+- A target resolution or filename suffix can no longer place a converted file in another folder.
+
+### Fixed
+- The System settings page shows why a save was rejected instead of failing silently.
+
 ## [0.9.156] — 2026-10-08
 
 ### Fixed

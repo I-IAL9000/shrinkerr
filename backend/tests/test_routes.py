@@ -4,7 +4,7 @@ from httpx import AsyncClient, ASGITransport
 
 
 @pytest_asyncio.fixture
-async def client(test_db):
+async def client(test_db, monkeypatch):
     """Create an async test client with a fresh DB."""
     from backend import main as main_module
     from backend.queue import JobQueue, QueueWorker
@@ -14,6 +14,10 @@ async def client(test_db):
 
     # Point the app at the test DB
     db_module.DB_PATH = test_db
+    # The auth middleware reads main's own DB_PATH (bound when backend.main
+    # was first imported, possibly by another test) and caches it for 60s.
+    monkeypatch.setattr(main_module, "DB_PATH", test_db)
+    monkeypatch.setitem(main_module._auth_cache, "checked_at", 0)
 
     # Re-init job routes with test-db-backed instances
     queue = JobQueue(test_db)

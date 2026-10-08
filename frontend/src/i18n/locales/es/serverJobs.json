@@ -26,6 +26,7 @@
     "probeFailed": "No se pudo analizar el archivo",
     "audioCleanupOnDisc": "La limpieza de audio/subtítulos no puede ejecutarse en una imagen de disco (ISO/VIDEO_TS/BDMV) — un disco debe convertirse por completo, no copiarse por flujo. Vuelve a escanear y pon en cola una conversión de este título para aplicar la limpieza.",
     "cancelledByUser": "Cancelado por el usuario",
+    "customFlagsRejected": "Parámetros personalizados de ffmpeg rechazados en '{{token}}'; corrígelos en Ajustes → Sistema",
     "notEnoughDiskSpace": "No hay suficiente espacio libre en disco: se necesitan {{need}} bytes y hay {{free}} bytes libres",
     "ffmpegExited": "ffmpeg terminó con el código {{code}}",
     "ffmpegTimedOut": "ffmpeg agotó el tiempo de espera",

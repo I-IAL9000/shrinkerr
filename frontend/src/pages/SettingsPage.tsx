@@ -543,7 +543,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
   const handleSaveEncoding = async () => {
     if (!encoding) return;
-    await updateEncodingSettings(encoding);
+    try {
+      await updateEncodingSettings(encoding);
+    } catch (e: any) {
+      // e.g. custom ffmpeg flags rejected — show why instead of failing silently.
+      toast(e?.message || String(e), "error");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
