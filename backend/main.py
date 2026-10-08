@@ -633,8 +633,12 @@ async def api_key_auth(request: Request, call_next):
         return await call_next(request)
 
     # Method 1: API key (constant-time compare — plain `==` leaks timing).
+    # `auth_method` lets routes require a password login for settings that
+    # can run code (v0.9.157): the API key is baked into download-client
+    # scripts and must not be enough for those.
     supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
+        request.state.auth_method = "api_key"
         return await call_next(request)
 
     # Method 2: UI session cookie — only meaningful when the user has
@@ -642,6 +646,7 @@ async def api_key_auth(request: Request, call_next):
     if password_auth_on:
         session_cookie = request.cookies.get("shrinkerr_session")
         if session_cookie and _validate_session(session_cookie, auth_settings):
+            request.state.auth_method = "session"
             return await call_next(request)
 
     # Endpoint needed auth but got none (or needed a key specifically but

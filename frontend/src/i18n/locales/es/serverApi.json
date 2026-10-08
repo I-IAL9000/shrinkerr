@@ -82,6 +82,7 @@
     "customFlagsNeedAuth": "Los parámetros personalizados de ffmpeg pueden escribir archivos en este servidor. Activa la autenticación con contraseña (Ajustes → Sistema → Autenticación) antes de configurarlos.",
     "invalidBackupName": "Nombre de copia de seguridad no válido",
     "mediaDirExists": "El directorio ya existe",
+    "needsPasswordLogin": "Inicia sesión con tu contraseña, no con la clave de API, para cambiar este ajuste.",
     "notificationLanguageInvalid": "notification_language debe ser uno de: {{languages}}",
     "pathEmpty": "{{label}} debe ser una cadena no vacía",
     "pathInSystemDir": "{{label}} no está permitido dentro de {{dir}} (directorio del sistema)",

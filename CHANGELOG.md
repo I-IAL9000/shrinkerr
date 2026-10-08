@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.9.157] — 2026-10-08
 
 ### Security
-- Custom ffmpeg flags now require password auth and can't add inputs, outputs or file paths (they could overwrite files on the server).
+- Custom ffmpeg flags can no longer add inputs, outputs or file names (they could overwrite files on the server), and encodes run in an empty scratch folder.
+- Custom ffmpeg flags and the post-conversion script can only be changed when signed in with the password — not with the API key alone, which is in your download-client scripts.
 - Settings import runs the same checks as saving in Settings and never imports credentials or auth settings.
 - Renaming only touches files and folders inside your media directories and never renames a media directory itself.
 - A target resolution or filename suffix can no longer place a converted file in another folder.

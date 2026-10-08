@@ -170,14 +170,17 @@ RESOLUTION_MAP = {
 # encode; Shrinkerr already passes -y.
 _FORBIDDEN_FFMPEG_OPTIONS = frozenset({
     "-i", "-y", "-n", "-f", "-attach", "-dump_attachment", "-progress",
-    "-vstats", "-vstats_file", "-passlogfile", "-report",
+    "-vstats", "-vstats_file", "-passlogfile", "-report", "-sdp_file",
     "-filter_script", "-filter_complex_script",
 })
+# `-/opt file` reads an option's value from a file; -stats_enc_* /
+# -stats_mux_* write per-frame stats files.
+_FORBIDDEN_FFMPEG_PREFIXES = ("-/", "-stats_enc_", "-stats_mux_")
 # A path at the start of a token or of a value inside it (movie=/x, csv=/x).
 _FFMPEG_PATH_RE = re.compile(r"(?:^|[=:,'\"])(?:/|~|\.\.?/|\.\.?\\|[A-Za-z]:[\\/])")
-# A bare filename: after an option that takes no value (-an x.mkv) ffmpeg
-# treats it as an output, choosing the muxer from the extension.
-_FFMPEG_FILENAME_RE = re.compile(r"^[\w .:-]+\.[A-Za-z][A-Za-z0-9]{1,3}$")
+# A file name: after an option that takes no value (-an x.mkv) ffmpeg treats
+# it as an output, choosing the muxer from the extension.
+_FFMPEG_FILENAME_RE = re.compile(r"^[^=]*\.[A-Za-z][A-Za-z0-9]{1,3}$")
 
 
 def parse_custom_ffmpeg_flags(flags: str) -> list[str]:
@@ -192,7 +195,7 @@ def parse_custom_ffmpeg_flags(flags: str) -> list[str]:
     after_option = False
     for tok in tokens:
         if tok.startswith("-"):
-            if tok.split(":", 1)[0] in _FORBIDDEN_FFMPEG_OPTIONS or tok.startswith("-/"):
+            if tok.split(":", 1)[0] in _FORBIDDEN_FFMPEG_OPTIONS or tok.startswith(_FORBIDDEN_FFMPEG_PREFIXES):
                 raise ValueError(tok)
             after_option = True
         elif after_option and not _FFMPEG_FILENAME_RE.match(tok):
@@ -202,6 +205,20 @@ def parse_custom_ffmpeg_flags(flags: str) -> list[str]:
         if _FFMPEG_PATH_RE.search(tok):
             raise ValueError(tok)
     return tokens
+
+
+_ffmpeg_cwd_path: Optional[str] = None
+
+
+def _ffmpeg_cwd() -> str:
+    """An empty private folder to run encodes in, so a relative file name in
+    the custom flags (x265 csv=, a name after a no-value option) can't land in
+    the server's working folder (C4, v0.9.157)."""
+    global _ffmpeg_cwd_path
+    if _ffmpeg_cwd_path is None or not os.path.isdir(_ffmpeg_cwd_path):
+        import tempfile
+        _ffmpeg_cwd_path = tempfile.mkdtemp(prefix="shrinkerr-ffmpeg-")
+    return _ffmpeg_cwd_path
 
 
 def _audio_codec_args(codec: str, bitrate: int) -> list[str]:
@@ -2969,6 +2986,7 @@ async def convert_file(
                 *run_cmd,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=_ffmpeg_cwd(),
             )
             print(f"[CONVERT] ffmpeg started, pid={proc.pid}", flush=True)
             if proc_callback:

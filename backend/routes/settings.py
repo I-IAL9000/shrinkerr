@@ -828,8 +828,24 @@ async def _password_auth_on(db) -> bool:
     return await _stored_setting(db, "auth_enabled") == "true"
 
 
+def _signed_in_with_password(request) -> bool:
+    """True when the request authenticated with the UI password session, not
+    the API key (api_key_auth in main.py records which). Settings that can
+    run code require it: the API key is baked into download-client scripts."""
+    return getattr(getattr(request, "state", None), "auth_method", None) == "session"
+
+
+def _require_password_login(request) -> None:
+    if not _signed_in_with_password(request):
+        raise ApiError(
+            status_code=403,
+            detail="Sign in with your password, not the API key, to change this setting.",
+            code="settings.needsPasswordLogin",
+        )
+
+
 @router.put("/encoding")
-async def update_encoding_settings(update: SettingsUpdate):
+async def update_encoding_settings(update: SettingsUpdate, request: Request = None):
     db = await aiosqlite.connect(DB_PATH)
     try:
         updates = {}
@@ -1060,6 +1076,7 @@ async def update_encoding_settings(update: SettingsUpdate):
                         ),
                         code="settings.customFlagsNeedAuth",
                     )
+                _require_password_login(request)
                 from backend.converter import parse_custom_ffmpeg_flags
                 try:
                     parse_custom_ffmpeg_flags(new_flags)
@@ -1196,6 +1213,7 @@ async def update_encoding_settings(update: SettingsUpdate):
                         ),
                         code="settings.postScriptNeedsAuth",
                     )
+                _require_password_login(request)
             updates["post_conversion_script"] = new_script
         if update.post_conversion_script_timeout is not None:
             updates["post_conversion_script_timeout"] = str(update.post_conversion_script_timeout)
@@ -1458,7 +1476,7 @@ def _settings_update_from_export(raw: dict) -> SettingsUpdate:
 
 
 @router.post("/import")
-async def import_settings(payload: ImportSettingsRequest):
+async def import_settings(payload: ImportSettingsRequest, request: Request = None):
     """Import settings from a JSON backup. Merges with existing settings.
 
     F3 (v0.9.157): runs the same validation as saving in Settings — the
@@ -1480,7 +1498,7 @@ async def import_settings(payload: ImportSettingsRequest):
             continue
         dirs.append((path, d.get("label", "")))
 
-    result = await update_encoding_settings(update)
+    result = await update_encoding_settings(update, request)
 
     db = await aiosqlite.connect(DB_PATH)
     try:
