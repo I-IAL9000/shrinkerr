@@ -64,7 +64,9 @@ async def test_a_test_encode_survives_a_chatty_encoder(test_db, tmp_path, monkey
     stderr blocked there, progress stopped, and the test encode hung."""
     import asyncio
     import subprocess
+    import backend.test_encode as test_encode
     from backend.test_encode import run_test_encode
+    monkeypatch.setattr(test_encode, "TEMP_DIR", tmp_path / "test-encode")
     src = tmp_path / "Clip.mkv"
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=15",
                     "-c:v", "libx264", "-preset", "ultrafast", str(src)], check=True)
@@ -75,7 +77,7 @@ async def test_a_test_encode_survives_a_chatty_encoder(test_db, tmp_path, monkey
         f"#!{sys.executable}\n"
         "import os, sys\n"
         "args = sys.argv[1:]\n"
-        "if '-progress' in args:  # the encode step: flood stderr, then finish\n"
+        "if args[-1].endswith('_enc.mkv'):  # the encode step: flood stderr, then finish\n"
         "    sys.stderr.write('x' * 300000); sys.stderr.flush()\n"
         "    print('progress=end', flush=True)\n"
         "    open(args[-1], 'wb').write(b'0' * 1000)\n"
