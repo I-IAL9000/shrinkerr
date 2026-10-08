@@ -939,6 +939,31 @@ export default function FileTree({
     return isSelected(node.path + "/");
   }, [isSelected]);
 
+  // Rows skip re-renders when only their callbacks change, so a row kept the
+  // handlers from its last visual change: after Select all, unticking A and
+  // then B re-selected A through B's stale handler, and the next Trash /
+  // Ignore included it (v0.10.0). Rows call through this ref instead, which
+  // always holds the current functions.
+  const latest = useRef({
+    onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
+    onIgnoreFile, onUnignoreFile, onDeleteFile, toggleFolder, handleFolderSelectAll,
+  });
+  latest.current = {
+    onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
+    onIgnoreFile, onUnignoreFile, onDeleteFile, toggleFolder, handleFolderSelectAll,
+  };
+  const rowHandlers = useMemo(() => ({
+    toggleSelect: (path: string, shiftKey?: boolean) => latest.current.onToggleSelect(path, shiftKey),
+    audioTracksChange: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) =>
+      latest.current.onAudioTracksChange(file, tracks, persist),
+    subTracksChange: (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) =>
+      latest.current.onSubTracksChange?.(file, tracks, persist),
+    removeFile: (path: string) => latest.current.onRemoveFile(path),
+    ignoreFile: (path: string) => latest.current.onIgnoreFile?.(path),
+    unignoreFile: (path: string) => latest.current.onUnignoreFile?.(path),
+    deleteFile: (path: string) => latest.current.onDeleteFile?.(path),
+  }), []);
+
   const visibleRows = useMemo(() => flatRows.slice(startIdx, endIdx), [flatRows, startIdx, endIdx]);
 
   // Track scroll position from the scrolling ancestor (.main-content)
@@ -1003,10 +1028,10 @@ export default function FileTree({
                     node={node}
                     depth={row.depth}
                     isExpanded={expanded.has(node.path)}
-                    onToggle={() => toggleFolder(node.path, node.isLeaf)}
+                    onToggle={() => latest.current.toggleFolder(node.path, node.isLeaf)}
                     allSelected={isFolderAllSelected(node)}
-                    onSelectAll={(sel, shift) => handleFolderSelectAll(node, sel, shift)}
-                    onIgnoreFolder={onIgnoreFile ? (path) => onIgnoreFile!(path) : undefined}
+                    onSelectAll={(sel, shift) => latest.current.handleFolderSelectAll(node, sel, shift)}
+                    onIgnoreFolder={onIgnoreFile ? rowHandlers.ignoreFile : undefined}
                     onRescanFolder={onRescanFolder}
                   />
                 </div>
@@ -1021,13 +1046,13 @@ export default function FileTree({
                     file={file}
                     selected={isSelected(file.file_path)}
                     depth={row.depth}
-                    onToggleSelect={onToggleSelect}
-                    onAudioTracksChange={onAudioTracksChange}
-                    onSubTracksChange={onSubTracksChange}
-                    onRemoveFile={onRemoveFile}
-                    onIgnoreFile={onIgnoreFile}
-                    onUnignoreFile={onUnignoreFile}
-                    onDeleteFile={onDeleteFile}
+                    onToggleSelect={rowHandlers.toggleSelect}
+                    onAudioTracksChange={rowHandlers.audioTracksChange}
+                    onSubTracksChange={onSubTracksChange ? rowHandlers.subTracksChange : undefined}
+                    onRemoveFile={rowHandlers.removeFile}
+                    onIgnoreFile={onIgnoreFile ? rowHandlers.ignoreFile : undefined}
+                    onUnignoreFile={onUnignoreFile ? rowHandlers.unignoreFile : undefined}
+                    onDeleteFile={onDeleteFile ? rowHandlers.deleteFile : undefined}
                     expanded={isFileExpanded}
                     onToggleExpand={() => {
                       setExpandedFiles(prev => {

@@ -417,6 +417,11 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     return next;
   });
 
+  // Memoized job rows keep the callbacks from their last visual change; a
+  // stale load() reloaded with the previous tab or search (v0.10.0).
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
   const renderPendingRow = (i: number) => {
     const job = tabJobs[i];
     return (
@@ -435,12 +440,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         <JobListItem job={job}
           checked={selectedJobIds.has(job.id)}
           onCheck={(e) => handleJobClick(i, job.id, e)}
-          onCancel={(id) => { cancelJob(id).then(() => load()); }}
-          onRemove={(id) => { removeJob(id).then(() => load()); }}
+          onCancel={(id) => { cancelJob(id).then(() => loadRef.current()); }}
+          onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
           onIgnore={async (id, filePath) => {
             await ignoreFile(filePath);
             await removeJob(id);
-            load();
+            loadRef.current();
             toast(t("queue:toasts.fileIgnored"));
           }}
           encodingDefaults={encodingDefaults}
@@ -454,7 +459,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       expanded={expandedIds.has(tabJobs[i].id)}
       onToggleExpand={toggleExpanded}
       onCancel={() => {}}
-      onRemove={(id) => { removeJob(id).then(() => load()); }}
+      onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
     />
   );
 
@@ -462,14 +467,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     <JobListItem job={tabJobs[i]}
       expanded={expandedIds.has(tabJobs[i].id)}
       onToggleExpand={toggleExpanded}
-      onCancel={(id) => { cancelJob(id).then(() => load()); }}
+      onCancel={(id) => { cancelJob(id).then(() => loadRef.current()); }}
       onRetry={(id) => {
         retryJob(id).then(res => {
-          load();
+          loadRef.current();
           if (res.message) toast(res.message, "success");
         });
       }}
-      onRemove={(id) => { removeJob(id).then(() => load()); }}
+      onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
     />
   );
   const jobKey = (i: number) => tabJobs[i].id;
