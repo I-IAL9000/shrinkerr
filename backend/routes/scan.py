@@ -3337,6 +3337,77 @@ async def _write_lang_batch(pending: list, retries: int = 4) -> bool:
     return False
 
 
+def _keeps_from_normalized_codes(row) -> dict | None:
+    """A _write_lang_batch item turning removals into keeps where a track only
+    looked removable because its language code was spelled differently ("is"
+    vs "ice", "de-DE" vs "ger") — or None when nothing changes. Never turns a
+    keep into a removal (SC-08, v0.10.0)."""
+    reclass = _reclassify_keep_flags(
+        row["audio_tracks_json"], row["subtitle_tracks_json"], row["native_language"], row["duration"])
+    if not reclass:
+        return None
+    try:
+        old_a = json.loads(row["audio_tracks_json"] or "[]")
+        old_s = json.loads(row["subtitle_tracks_json"] or "[]")
+    except (ValueError, TypeError):
+        return None
+    changed = False
+    for old, new in zip(old_a + old_s, json.loads(reclass[0]) + json.loads(reclass[1])):
+        if not old.get("keep", True) and new.get("keep"):
+            old["keep"] = True
+            changed = True
+    if not changed:
+        return None
+    return {
+        "rid": row["id"], "a_json": json.dumps(old_a), "s_json": json.dumps(old_s),
+        "rem_a": 1 if any(not t.get("keep", True) for t in old_a) else 0,
+        "rem_s": 1 if any(not t.get("keep", True) for t in old_s) else 0,
+        "und": 1 if any((t.get("language") or "und").lower() == "und" for t in old_a + old_s) else 0,
+    }
+
+
+async def backfill_normalized_language_keeps() -> int:
+    """One-time pass after language codes became normalized (SC-08, v0.10.0):
+    rows classified earlier can have a track marked for removal only because
+    its code was spelled differently from the native / keep language — e.g.
+    Bazarr's `.is.srt` on an Icelandic film. Turns those removals into keeps
+    and never the reverse, so it can't add removals or undo a user's choice.
+    Guarded by a settings sentinel; the JSON work runs off the event loop."""
+    from backend.database import connect_db
+    sentinel = "lang_normalized_keeps_done"
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (sentinel,)) as cur:
+            if await cur.fetchone():
+                return 0
+        async with db.execute(
+            "SELECT id, audio_tracks_json, subtitle_tracks_json, native_language, duration "
+            "FROM scan_results WHERE removed_from_list = 0 "
+            "AND (has_removable_tracks_flag = 1 OR has_removable_subs_flag = 1)"
+        ) as cur:
+            rows = await cur.fetchall()
+    finally:
+        await db.close()
+
+    pending = await asyncio.to_thread(
+        lambda: [it for it in (_keeps_from_normalized_codes(r) for r in rows) if it])
+    for i in range(0, len(pending), 500):
+        await _write_lang_batch(pending[i:i + 500])
+
+    db = await connect_db()
+    try:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'", (sentinel,))
+        await db.commit()
+    finally:
+        await db.close()
+    if pending:
+        print(f"[METADATA] Kept {len(pending)} title(s)' tracks that only looked removable "
+              f"because of how their language code was spelled", flush=True)
+    return len(pending)
+
+
 async def backfill_reclassify_authoritative_native() -> int:
     """One-time heal: rows with an authoritative native (api/manual/tmdb-manual)
     whose audio/subtitle keep-flags were computed against a stale HEURISTIC

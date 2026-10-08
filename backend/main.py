@@ -276,6 +276,13 @@ async def lifespan(app: FastAPI):
             await backfill_reclassify_authoritative_native()
         except Exception as exc:
             print(f"[STARTUP] authoritative-native reclassify skipped: {exc}", flush=True)
+        # v0.10.0: tracks marked removable only because their language code
+        # was spelled differently ("is" vs "ice") are kept again.
+        try:
+            from backend.routes.scan import backfill_normalized_language_keeps
+            await backfill_normalized_language_keeps()
+        except Exception as exc:
+            print(f"[STARTUP] language-code keep backfill skipped: {exc}", flush=True)
         # v0.9.110: warn loudly when no TMDB key is available — a self-built
         # image ships without the bundled key, so metadata silently never
         # matches. Make the reason obvious in the logs (and the UI banner).

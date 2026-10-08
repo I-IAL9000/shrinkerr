@@ -723,25 +723,57 @@ def _is_dubbed(audio_langs: list[str], native_language: str, language_source: st
     0 otherwise (incl. when the status is uncertain). See the design spec."""
     if (language_source or "") not in _DUBBED_NATIVE_SOURCES:
         return 0
-    native = (native_language or "").lower()
-    if not native or native == "und":
+    native = normalize_lang(native_language)
+    if native == "und":
         return 0
-    langs = [(l or "und").lower() for l in audio_langs]
+    langs = [normalize_lang(l) for l in audio_langs]
     if not langs:
         return 0
     if any(l == "und" for l in langs):
         return 0
-    native_equiv = LANGUAGE_EQUIVALENTS.get(native, {native})
     for l in langs:
-        if l in native_equiv or native in LANGUAGE_EQUIVALENTS.get(l, {l}):
+        if languages_match(l, native):
             return 0
     return 1
 
 
+# ISO 639-2 terminology codes → the bibliographic form MKV tags and the rest
+# of the app use.
+_ISO_T_TO_B = {
+    "sqi": "alb", "hye": "arm", "eus": "baq", "mya": "bur", "zho": "chi",
+    "ces": "cze", "nld": "dut", "fra": "fre", "kat": "geo", "deu": "ger",
+    "ell": "gre", "isl": "ice", "mkd": "mac", "mri": "mao", "msa": "may",
+    "fas": "per", "ron": "rum", "slk": "slo", "bod": "tib", "cym": "wel",
+}
+# 2-letter codes metadata.ISO_639_1_TO_2B doesn't cover (TMDB passes them
+# through), withdrawn ISO 639-1 codes, and TMDB's "xx" = no language.
+_EXTRA_2_LETTER = {
+    "kk": "kaz", "be": "bel", "uz": "uzb", "az": "aze", "la": "lat", "ky": "kir",
+    "eo": "epo", "tg": "tgk", "tk": "tuk", "ps": "pus", "ku": "kur", "so": "som",
+    "yi": "yid", "jv": "jav", "su": "sun", "ha": "hau", "yo": "yor", "ig": "ibo",
+    "sh": "hbs", "iw": "heb", "in": "ind", "ji": "yid", "mo": "rum", "xx": "und",
+}
+
+
+def normalize_lang(code: Optional[str]) -> str:
+    """One spelling per language: lower-case ISO 639-2/B with any region or
+    script dropped — "de-DE", "deu" and "de" are all "ger", "is"/"isl" are
+    "ice". Bazarr's `.is.srt`, TMDB's 2-letter codes and region-tagged MKV
+    tracks never matched the 3-letter codes elsewhere (SC-08, v0.10.0)."""
+    c = (code or "").strip().lower().replace("_", "-").split("-", 1)[0]
+    if not c:
+        return "und"
+    if len(c) == 2:
+        from backend.metadata import ISO_639_1_TO_2B
+        c = _EXTRA_2_LETTER.get(c) or ISO_639_1_TO_2B.get(c, c)
+    return _ISO_T_TO_B.get(c, c)
+
+
 def languages_match(lang1: str, lang2: str) -> bool:
-    """Check if two language codes represent the same language, accounting for variants."""
-    l1 = lang1.lower()
-    l2 = lang2.lower()
+    """Check if two language codes represent the same language, accounting for
+    spellings (normalize_lang) and variants (LANGUAGE_EQUIVALENTS)."""
+    l1 = normalize_lang(lang1)
+    l2 = normalize_lang(lang2)
     if l1 == l2:
         return True
     # Check equivalence groups
