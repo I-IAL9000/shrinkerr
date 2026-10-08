@@ -237,6 +237,11 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 
 RUN mkdir -p /app/data
 
+# Opt-in PUID / PGID / UMASK: run as that user instead of root (v0.10.0).
+COPY docker/entrypoint.sh /usr/local/bin/shrinkerr-entrypoint
+RUN chmod +x /usr/local/bin/shrinkerr-entrypoint \
+    && command -v setpriv && command -v useradd && command -v groupadd && command -v usermod
+
 EXPOSE 6680
 
 # Bundled TMDB non-commercial API key — passed in at build time from the
@@ -252,4 +257,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 
 # SHRINKERR_MODE=worker → run as a remote worker node (no server, no UI).
 # Default → run the FastAPI server + UI.
+ENTRYPOINT ["/usr/local/bin/shrinkerr-entrypoint"]
 CMD ["python3", "-m", "backend.main"]

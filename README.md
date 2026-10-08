@@ -162,6 +162,9 @@ services:
     volumes:
       - ./data:/app/data                 # Shrinkerr's SQLite DB + history
       - /srv/media:/media                # YOUR media library (read + write)
+    environment:
+      - PUID=1000                        # optional: run as this user/group instead of root,
+      - PGID=1000                        # e.g. the same as Sonarr / Radarr / Plex
     restart: unless-stopped
 ```
 
@@ -169,7 +172,7 @@ services:
 docker compose up -d
 ```
 
-Open <http://localhost:6680>. On first launch, go to **Settings → System → Authentication** and set a username and password before exposing the port beyond localhost.
+Open <http://localhost:6680>. The setup wizard asks you to set a username and password — do that before exposing the port beyond localhost (you can also do it later in **Settings → System → Authentication**).
 
 ### Option B — With NVENC (Linux + NVIDIA GPU)
 
@@ -359,6 +362,8 @@ NVENC workers need the same GPU passthrough config as the main server (`runtime:
 | `SHRINKERR_DB_PATH` | `/app/data/shrinkerr.db` | SQLite database file path |
 | `SHRINKERR_MEDIA_ROOT` | `/media` | Container-side root of the media library |
 | `SHRINKERR_MODE` | `server` | Set to `worker` to run as a remote worker node |
+| `PUID` / `PGID` | unset (root) | Run as this user / group instead of root, so the files Shrinkerr writes are owned like your other apps' (e.g. `1000`). The data folder is handed to that user on start. |
+| `UMASK` | unset | File-creation mask for the files Shrinkerr writes (e.g. `002`) |
 | `NVIDIA_VISIBLE_DEVICES` | unset | Set to `all` on NVENC variants to enable GPU passthrough |
 | `SHRINKERR_LANG_DETECT_AUDIO_MIN` | `0.6` | Min confidence to accept an audio [language detection](docs/language-detection.md) |
 | `SHRINKERR_LANG_DETECT_SUB_MIN` | `0.7` | Min confidence to accept a subtitle language detection |
