@@ -52,6 +52,6 @@
   "banner": {
     "vmafRemeasuring": "Volviendo a medir VMAF — {{done}} de {{total}}",
     "vmafStarting": "iniciando…",
-    "tmdbMissing": "<b>No hay ninguna clave de API de TMDB configurada</b>: no se pueden asociar los títulos con sus metadatos (idioma original, pósteres). <link>Añade una clave gratuita en Ajustes → Metadatos</link>."
+    "tmdbMissing": "<b>No hay ninguna clave de API de TMDB configurada</b>: no se pueden asociar los títulos con sus metadatos (idioma original, pósteres). <link>Añade una clave gratuita en Ajustes → Conexiones → API de metadatos</link>."
   }
 }

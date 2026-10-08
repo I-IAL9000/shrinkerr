@@ -171,7 +171,7 @@
       "languageApplied": "Idioma aplicado",
       "audioArrow": "audio → {{langs}}",
       "vmafRef": "100 (ref.)",
-      "vmafUncertain": "Medición VMAF dudosa: libvmaf perdió la sincronía en todas las ventanas de análisis probadas. La puntuación no es fiable; casi con seguridad la codificación se ve bien. Vuelve a medir desde Ajustes → Codificación → VMAF."
+      "vmafUncertain": "Medición VMAF dudosa: libvmaf perdió la sincronía en todas las ventanas de análisis probadas. La puntuación no es fiable; casi con seguridad la codificación se ve bien. Vuelve a medir desde Ajustes → Vídeo → VMAF."
     },
     "vmafBanner": {
       "title": "Codificación rechazada por el umbral de VMAF",

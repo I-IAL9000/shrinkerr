@@ -150,7 +150,7 @@
       "languageApplied": "Language applied",
       "audioArrow": "audio → {{langs}}",
       "vmafRef": "100 (ref)",
-      "vmafUncertain": "VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Encoding → VMAF."
+      "vmafUncertain": "VMAF measurement-suspect: libvmaf desynced on every analysis window we tried. The score is unreliable; the encode is almost certainly visually fine. Re-measure from Settings → Video → VMAF."
     },
     "vmafBanner": {
       "title": "Encode rejected by VMAF threshold",
