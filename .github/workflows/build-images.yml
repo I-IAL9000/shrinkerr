@@ -7,10 +7,16 @@
 # registry that exposes public pull counts, so mirroring there gives us
 # real download numbers (GHCR doesn't surface pull counts at all). v0.5.10+.
 #
-# Triggered on:
-#   - push to main/master  → floating tags (:latest, :edge, :nvenc, :edge-nvenc)
-#   - push of a v* tag     → versioned tags + matching floating ones
-#   - manual run via the Actions tab ("Run workflow" button)
+# Triggered on (release channels, 2026-10-08):
+#   - push to develop      → :develop, :develop-nvenc, :develop-edge,
+#                            :develop-edge-nvenc — the testing channel. VERSION
+#                            is stamped X.Y.Z-dev.<run>+<sha> so the UI shows it.
+#   - push of a vX.Y.Z tag → versioned tags + the stable floating ones
+#                            (:latest, :nvenc, :edge, :edge-nvenc). Only a
+#                            release tag moves those — pushing main doesn't.
+#   - push of a vX.Y.Z-rc.N (any "-" suffix) tag → versioned tags only; the
+#                            stable floating tags stay put.
+#   - manual run via the Actions tab ("Run workflow" button) → <branch> tags
 #
 # Four image variants are built in parallel. Two lineages × two ffmpeg builds:
 #
@@ -29,7 +35,7 @@ name: Build & publish images
 
 on:
   push:
-    branches: [main, master]
+    branches: [develop]
     tags: ['v*']
   workflow_dispatch:
     inputs:
@@ -145,9 +151,10 @@ jobs:
         id: tags
         # Produce a newline-separated list of tags for this variant. Each
         # registry base gets the same suffix expansion:
-        #   - On a tag push (v0.9.0): <base>:v0.9.0 + <base>:<suffix-floating>
-        #   - On main/master push:    <base>:<suffix>
-        #   - workflow_dispatch:      same as main/master
+        #   - Release tag (v0.10.0):    <base>:v0.10.0[-<suffix>] + <base>:<suffix-floating>
+        #   - Pre-release (v0.10.0-rc.1): <base>:v0.10.0-rc.1[-<suffix>] only
+        #   - Branch push / manual run: <base>:<branch>[-<suffix>] — never the
+        #                               stable floating tags
         # GHCR is always included. Docker Hub is added when DOCKERHUB_USERNAME
         # is configured — `docker/build-push-action` pushes each tag to its
         # respective registry (we logged into both in the prior steps).
@@ -170,12 +177,21 @@ jobs:
             if [[ "${{ github.ref_type }}" == "tag" ]]; then
               VERSION="${GITHUB_REF#refs/tags/}"
               if [[ "$SUFFIX" == "latest" ]]; then
-                TAGS+="${BASE}:${VERSION}"$'\n'"${BASE}:latest"$'\n'
+                TAGS+="${BASE}:${VERSION}"$'\n'
               else
-                TAGS+="${BASE}:${VERSION}-${SUFFIX}"$'\n'"${BASE}:${SUFFIX}"$'\n'
+                TAGS+="${BASE}:${VERSION}-${SUFFIX}"$'\n'
+              fi
+              # Only a real release moves the stable floating tags.
+              if [[ "$VERSION" != *-* ]]; then
+                TAGS+="${BASE}:${SUFFIX}"$'\n'
               fi
             else
-              TAGS+="${BASE}:${SUFFIX}"$'\n'
+              BRANCH="$(echo '${{ github.ref_name }}' | tr '/' '-' | tr '[:upper:]' '[:lower:]')"
+              if [[ "$SUFFIX" == "latest" ]]; then
+                TAGS+="${BASE}:${BRANCH}"$'\n'
+              else
+                TAGS+="${BASE}:${BRANCH}-${SUFFIX}"$'\n'
+              fi
             fi
           done
           # Trim trailing blank line for cleaner logs.
@@ -188,6 +204,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Will tag as:"
           echo "$TAGS"
+
+      - name: Stamp development version
+        # Branch builds show e.g. "0.10.0-dev.42+1a2b3c4" in the UI so a bug
+        # report says exactly which commit it came from. Release tags keep
+        # VERSION as committed.
+        if: github.ref_type != 'tag'
+        run: echo "$(cat VERSION)-dev.${{ github.run_number }}+${GITHUB_SHA::7}" > VERSION
 
       - name: Build and push
         uses: docker/build-push-action@v6

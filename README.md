@@ -134,8 +134,10 @@ Both registries publish the same tags simultaneously:
 |---|---|---|---|
 | `:latest` | linux/amd64 + linux/arm64 | libx265 (CPU only) | **Default.** Works on Mac, Windows, Linux, Raspberry Pi, ARM cloud. Pick this unless you specifically want GPU. |
 | `:edge` | linux/amd64 + linux/arm64 | libx265 (CPU only) | Same as `:latest` but with bleeding-edge ffmpeg master build. |
-| `:nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host on Linux or Windows+WSL2. ffmpeg n7.1, needs driver 525.60.13+. |
+| `:nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host on Linux or Windows+WSL2. ffmpeg n8.1, needs driver 570+. |
 | `:edge-nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host running a very recent driver. ffmpeg master, needs driver 570+. |
+
+**Release channels.** The tags above only change when a new version is released (every few weeks), so they're what most people should run. To help test what's coming next, use `:develop` / `:develop-nvenc` instead: they're rebuilt on every change and show a `-dev` version in the sidebar, so expect the occasional rough edge. Pin a version (e.g. `:v0.10.0-nvenc`) if you never want automatic changes.
 
 **All variants share the same database schema and settings format** — you can switch between them with a single `image:` line change and a `docker compose pull && docker compose up -d`. The app's runtime capability detection handles the encoder difference transparently.
 

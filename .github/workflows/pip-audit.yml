@@ -12,7 +12,7 @@ name: pip-audit
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, develop]
     paths:
       - 'requirements.txt'
       - '.github/workflows/pip-audit.yml'
