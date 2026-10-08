@@ -893,6 +893,10 @@ class QueueWorker:
         self._lock_requeues: dict[int, int] = {}
         # v0.9.108: throttle for the orphaned-running reaper (monotonic secs).
         self._last_orphan_reap: float = 0.0
+        # H5 (v0.10.0): jobs whose output has replaced the original. From then
+        # on they must never return to pending — a re-run would re-encode the
+        # already-converted file.
+        self._finalized_jobs: set[int] = set()
 
     _MAX_LOCK_REQUEUES = 5
     # v0.9.108: how often the loop reaps orphaned 'running' rows (seconds).
@@ -902,6 +906,21 @@ class QueueWorker:
     def _is_transient_db_lock(error_log) -> bool:
         msg = str(error_log or "").lower()
         return "database is locked" in msg or "database is busy" in msg
+
+    async def _complete_finalized(self, job_id: int, exc: Exception) -> None:
+        """A step after the output replaced the original failed (H5, v0.10.0).
+        Requeueing would re-encode the converted file and a failed job invites
+        the same via Retry, so mark it completed; a rescan refreshes whatever
+        bookkeeping didn't land. If even that write fails, the job stays in
+        _finalized_jobs and the orphan reaper completes it later."""
+        try:
+            await self.queue.update_status(job_id, "completed")
+            self._finalized_jobs.discard(job_id)
+            print(f"[WORKER] Job {job_id}: converted, but a later step failed ({exc}); "
+                  f"marked completed", flush=True)
+        except Exception as write_exc:
+            print(f"[WORKER] Job {job_id}: could not mark completed ({write_exc}); "
+                  f"the orphan reaper will retry", flush=True)
 
     async def _fail_or_requeue(self, job_id: int, error_log) -> None:
         """Mark a job failed — but if it failed on a *transient* DB lock, put
@@ -1017,6 +1036,13 @@ class QueueWorker:
                     except (ValueError, TypeError):
                         pass
                 orphans.append(jid)
+            # H5: a job whose output already replaced the original is done,
+            # not orphaned — requeueing it would re-encode the converted file.
+            finished = [jid for jid in orphans if jid in self._finalized_jobs]
+            orphans = [jid for jid in orphans if jid not in self._finalized_jobs]
+            for jid in finished:
+                await self.queue.update_status(jid, "completed")
+                self._finalized_jobs.discard(jid)
             if not orphans:
                 return 0
             ph = ",".join("?" for _ in orphans)
@@ -1478,6 +1504,7 @@ class QueueWorker:
         try:
             await self._process_job(job)
             self._lock_requeues.pop(job_id, None)  # v0.9.59: ran clean, reset counter
+            self._finalized_jobs.discard(job_id)
             if job_id in self._cancel_flags:
                 print(f"[WORKER] Job {job_id} was cancelled", flush=True)
             else:
@@ -1485,6 +1512,9 @@ class QueueWorker:
         except Exception as exc:
             print(f"[WORKER] Job {job_id} FAILED: {exc}", flush=True)
             import traceback; traceback.print_exc()
+            if job_id in self._finalized_jobs:
+                await self._complete_finalized(job_id, exc)
+                return
             requeued = self._is_transient_db_lock(exc) and \
                 self._lock_requeues.get(job_id, 0) < self._MAX_LOCK_REQUEUES
             try:
@@ -2004,6 +2034,7 @@ class QueueWorker:
                 result.get("vmaf_rejected") or result.get("skipped_larger")
             )
             if output_replaced_source:
+                self._finalized_jobs.add(job_id)
                 import json as _json
                 new_size = await _async_getsize(current_file_path)
 
@@ -2535,6 +2566,7 @@ class QueueWorker:
                                                        error_params=result.get("error_params"))
                     return
                 space_saved += result.get("space_saved", 0)
+                self._finalized_jobs.add(job_id)  # H5: the remux replaced the original
 
                 # v0.9.39: remux_audio always writes a .mkv and replaces the
                 # original, so on a non-mkv source (AVI) the path changes. Point

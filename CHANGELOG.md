@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
 - **A conversion whose source read stalled could replace the original with a truncated output**; outputs shorter than the source are now rejected and the original kept.
+- A database hiccup after a conversion had replaced the original put the job back in the queue, so it re-encoded the converted file; such jobs now finish as completed.
 - A file whose streams couldn't be read when its conversion started (e.g. a stalled NAS) was converted without its subtitles; the job now fails and keeps the original.
 - **A conversion that kept the file's name left the Scanner with its old track list**, so a later cleanup could remove the wrong (or the only) audio track; tracks are now re-read after every job and sorted against the TMDB/manual original language, not a stale guess.
 - A Blu-ray/DVD rip in a release subfolder now converts into the movie folder, named after the movie instead of the release (no doubled tech tags), and leftover CERTIFICATE / AACS / AUDIO_TS folders are removed with the disc.
