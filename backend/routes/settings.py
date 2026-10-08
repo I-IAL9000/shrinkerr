@@ -2004,7 +2004,7 @@ async def delete_backup(name: str):
 
 
 @router.post("/backup/restore")
-async def restore_backup(file: UploadFile = File(...)):
+async def restore_backup(request: Request, file: UploadFile = File(...)):
     """Restore from a backup zip. Replaces the current database."""
     if not file.filename or not file.filename.endswith(".zip"):
         raise ApiError(400, "Must upload a .zip file", code="settings.restoreNotZip")
@@ -2038,6 +2038,22 @@ async def restore_backup(file: UploadFile = File(...)):
                 await test_db.close()
         except Exception as exc:
             raise ApiError(400, f"Invalid database in backup: {exc}", code="settings.restoreInvalidDb", params={"error": str(exc)})
+
+        # The backup's post-conversion script and custom ffmpeg flags can run
+        # code, and the API key alone reaches this endpoint: only a password
+        # sign-in brings them back (v0.9.157).
+        if not _signed_in_with_password(request):
+            restored = await aiosqlite.connect(str(tmp_db))
+            try:
+                await restored.execute(
+                    "UPDATE settings SET value = '' "
+                    "WHERE key IN ('post_conversion_script', 'custom_ffmpeg_flags')"
+                )
+                await restored.commit()
+            finally:
+                await restored.close()
+            print("[RESTORE] Cleared the restored post-conversion script and custom ffmpeg "
+                  "flags: re-enter them signed in with the password", flush=True)
 
         # Create a safety backup of the current DB before replacing
         safety_name = f"shrinkerr_pre_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"

