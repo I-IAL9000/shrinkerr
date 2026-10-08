@@ -62,6 +62,8 @@
     "prioritySet": "Priority set to {{priority}}",
     "retrying_one": "Retrying {{count}} failed job",
     "retrying_other": "Retrying {{count}} failed jobs",
+    "retryRefused_one": "{{count}} job couldn't be retried",
+    "retryRefused_other": "{{count}} jobs couldn't be retried",
     "noFilePaths": "No file paths on these jobs",
     "rerequested_one": "Re-requested {{count}} file from Sonarr/Radarr",
     "rerequested_other": "Re-requested {{count}} files from Sonarr/Radarr",

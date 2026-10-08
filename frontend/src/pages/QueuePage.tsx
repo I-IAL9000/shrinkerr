@@ -472,7 +472,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         retryJob(id).then(res => {
           loadRef.current();
           if (res.message) toast(res.message, "success");
-        });
+        }).catch((err: Error) => toast(err.message));
       }}
       onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
     />
@@ -727,12 +727,15 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
           {tab === "failed" && tabJobs.length > 0 && (<>
               <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                 onClick={async () => {
+                  let retried = 0;
+                  let refused = 0;
                   for (const job of tabJobs) {
                     // One job the server won't retry mustn't stop the rest.
-                    try { await retryJob(job.id); } catch { /* left in Failed */ }
+                    try { await retryJob(job.id); retried++; } catch { refused++; }
                   }
                   load();
-                  toast(t("queue:toasts.retrying", { count: tabJobs.length }), "success");
+                  toast(t("queue:toasts.retrying", { count: retried }), "success");
+                  if (refused) toast(t("queue:toasts.retryRefused", { count: refused }));
                   setTab("pending");
                 }}>
                 {t("queue:actions.retryAll")}
