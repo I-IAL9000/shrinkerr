@@ -180,28 +180,40 @@ async def run_test_encode(
             stderr=asyncio.subprocess.PIPE,
         )
 
+        # Drain stderr alongside the progress on stdout: left unread, a chatty
+        # encoder filled the pipe and blocked, progress stopped, and this
+        # waited forever (M2, v0.10.0). The 600 s limit covers the whole run.
+        stderr_task = asyncio.create_task(proc.stderr.read())
+        deadline = time.monotonic() + 600
+
         # Parse progress
         encoding_fps = 0.0
-        if proc.stdout:
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                decoded = line.decode("utf-8", errors="replace").strip()
-                if decoded.startswith("out_time_us="):
-                    try:
-                        us = int(decoded.split("=")[1])
-                        pct = min(95, 30 + (us / (sample_dur * 1_000_000)) * 60)
-                        await _send_progress("encoding", pct)
-                    except (ValueError, ZeroDivisionError):
-                        pass
-                elif decoded.startswith("fps="):
-                    try:
-                        encoding_fps = float(decoded.split("=")[1])
-                    except ValueError:
-                        pass
-
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
+        try:
+            if proc.stdout:
+                while True:
+                    line = await asyncio.wait_for(proc.stdout.readline(),
+                                                  timeout=max(1.0, deadline - time.monotonic()))
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace").strip()
+                    if decoded.startswith("out_time_us="):
+                        try:
+                            us = int(decoded.split("=")[1])
+                            pct = min(95, 30 + (us / (sample_dur * 1_000_000)) * 60)
+                            await _send_progress("encoding", pct)
+                        except (ValueError, ZeroDivisionError):
+                            pass
+                    elif decoded.startswith("fps="):
+                        try:
+                            encoding_fps = float(decoded.split("=")[1])
+                        except ValueError:
+                            pass
+            await asyncio.wait_for(proc.wait(), timeout=max(1.0, deadline - time.monotonic()))
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise RuntimeError("Encoding timed out")
+        stderr = await stderr_task
         enc_time = time.time() - enc_start
 
         if proc.returncode != 0 or not enc_path.exists():
