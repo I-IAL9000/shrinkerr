@@ -456,6 +456,17 @@ async def remux_audio(
                 "source_intact": input_exists,
             }
 
+    # H6 (v0.10.0): a remux whose source read died part-way is short too.
+    from backend.converter import _truncation_failure
+    truncated = await _truncation_failure(str(p), str(temp), duration, None, all_lines)
+    if truncated:
+        print(f"[REMUX] {truncated['error']}", flush=True)
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        return {"success": False, "output_path": None, "space_saved": 0, "source_intact": p.exists(), **truncated}
+
     output_size = temp.stat().st_size
     space_saved = original_size - output_size
 

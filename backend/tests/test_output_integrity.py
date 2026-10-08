@@ -44,14 +44,25 @@ def _leftovers(folder):
     return sorted(p.name for p in folder.iterdir() if ".converting." in p.name)
 
 
+def _source_runs(seconds, monkeypatch, src):
+    """Make `src` report a longer video stream than it has, so the encode
+    stops early as it does when the read dies mid-stream."""
+    import backend.converter as converter
+    real = converter._probe_video_duration
+
+    async def probe(path):
+        return seconds if path == str(src) else await real(path)
+
+    monkeypatch.setattr(converter, "_probe_video_duration", probe)
+
+
 @pytest.mark.asyncio
 @needs_libx265
-async def test_output_shorter_than_the_source_is_rejected(test_db, tmp_path):
+async def test_output_shorter_than_the_source_is_rejected(test_db, tmp_path, monkeypatch):
     src = tmp_path / "Show - S01E01 - 1080p WEB h264.mkv"
     _clip(src, seconds=3)
     before = src.read_bytes()
-    # The source is 10 s long as far as the job knows; the encode stops at 3 s,
-    # as when the read dies mid-stream.
+    _source_runs(10.0, monkeypatch, src)
     result = await convert_file(str(src), "libx265", 10.0, override_libx265_preset="ultrafast")
     assert result["success"] is False
     assert result["error_key"] == "errors.outputTruncated"
@@ -87,3 +98,62 @@ async def test_failed_probe_keeps_the_original(test_db, tmp_path, monkeypatch):
     assert result["error_key"] == "errors.probeFailed"
     assert src.read_bytes() == before
     assert _leftovers(tmp_path) == []
+
+
+# --- what counts as truncated (v0.10.0) -------------------------------------
+
+from backend.converter import _truncation_failure  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_read_error_in_the_log_rejects_the_output(tmp_path):
+    log = ["Press [q] to stop", "[in#0/matroska @ 0x1] Error during demuxing: Input/output error"]
+    got = await _truncation_failure(str(tmp_path / "a.mkv"), str(tmp_path / "b.mkv"), 100.0, None, log)
+    assert got["error_key"] == "errors.sourceReadFailed"
+
+
+@pytest.mark.asyncio
+async def test_dropping_a_track_that_runs_past_the_video_is_not_truncation(tmp_path):
+    """The container lasts as long as its longest stream: removing a 10 s
+    audio track from a 3 s video made the output look truncated."""
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    src, out = tmp_path / "src.mkv", tmp_path / "out.mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=3",
+                    "-f", "lavfi", "-i", "sine=duration=10", "-c:v", "mpeg4", "-c:a", "aac", str(src)], check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(src), "-map", "0:v", "-c", "copy", str(out)], check=True)
+    assert await _truncation_failure(str(src), str(out), 10.0, None, []) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name, disc", [("Recording.ts", None), ("Movie.m2ts", None), ("VIDEO_TS.IFO", "dvd")])
+async def test_estimated_durations_are_not_compared(tmp_path, name, disc):
+    assert await _truncation_failure(str(tmp_path / name), str(tmp_path / "out.mkv"), 5000.0, disc, []) is None
+
+
+@pytest.mark.asyncio
+async def test_an_output_whose_length_cant_be_read_is_not_trusted(tmp_path, monkeypatch):
+    import backend.converter as converter
+
+    async def no_wait(_):
+        return None
+
+    monkeypatch.setattr(converter.asyncio, "sleep", no_wait)
+    got = await _truncation_failure(str(tmp_path / "gone.mkv"), str(tmp_path / "out.mkv"), 100.0, None, [])
+    assert got["error_key"] == "errors.outputUnverifiable"
+
+
+@pytest.mark.asyncio
+async def test_remux_that_stops_early_keeps_the_original(test_db, tmp_path, monkeypatch):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    from backend.audio import remux_audio
+    from backend.tests.test_remux_guards import _clip as _two_audio_clip
+    src = _two_audio_clip(tmp_path)
+    before = src.read_bytes()
+    _source_runs(10.0, monkeypatch, src)
+    result = await remux_audio(str(src), [1], duration=10.0)
+    assert result["success"] is False
+    assert result["error_key"] == "errors.outputTruncated"
+    assert src.read_bytes() == before
+    assert not list(tmp_path.glob("*.remuxing.mkv"))

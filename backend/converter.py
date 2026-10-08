@@ -2317,6 +2317,94 @@ async def _probe_output_duration(path: str) -> Optional[float]:
         return None
 
 
+# Containers whose duration ffprobe estimates from the bitrate or from
+# timestamps — often off by more than any tolerance, so a length comparison
+# would reject good encodes (v0.10.0).
+_ESTIMATED_DURATION_EXTS = {".ts", ".m2ts", ".mts", ".tp", ".trp", ".vob", ".mpg", ".mpeg", ".m2v"}
+# Storage errors in ffmpeg's log: the source stopped being readable part-way.
+# ffmpeg can still exit 0, having written everything up to there (v0.10.0).
+# ("Error during demuxing: Input/output error", "<file>: Stale file handle")
+_SOURCE_READ_ERROR_RE = re.compile(
+    r": (?:Input/output error|Stale file handle|Host is down|Operation timed out|Connection timed out)$")
+
+
+async def _probe_video_duration(path: str) -> Optional[float]:
+    """Duration (seconds) of the first video stream — its own, or the
+    DURATION tag MKV muxers write — or None. The container's duration is the
+    longest stream's: a subtitle or commentary track that runs past the end,
+    removed by the job, made a complete output look short (v0.10.0)."""
+    import json
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=duration:stream_tags",
+            "-of", "json", path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        stream = (json.loads(out or b"{}").get("streams") or [{}])[0]
+    except Exception:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+        return None
+    try:
+        return float(stream["duration"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    for key, value in (stream.get("tags") or {}).items():
+        m = re.fullmatch(r"(\d+):(\d\d):(\d\d(?:\.\d+)?)", str(value).strip())
+        if key.upper().startswith("DURATION") and m:
+            return int(m[1]) * 3600 + int(m[2]) * 60 + float(m[3])
+    return None
+
+
+async def _truncation_failure(source_path: str, output_path: str, source_duration: Optional[float],
+                              disc_type: Optional[str], log_lines: list[str]) -> Optional[dict]:
+    """Why an output mustn't replace its source, as failed-job fields — or
+    None when it's complete. H6, v0.10.0: when the source read dies
+    mid-stream (a stalled NAS mount) ffmpeg can exit 0 with a short output.
+
+    Compares video-stream durations where both are known, else container
+    durations; Blu-ray playlist lengths are approximate, so they get more
+    slack. Containers whose duration is only an estimate (MPEG-TS/PS, DVD
+    VOBs) can't be compared — a read error in the log still catches those.
+    An output whose length can't be read isn't trusted."""
+    read_error = next((line for line in log_lines if _SOURCE_READ_ERROR_RE.search(line)), None)
+    if read_error:
+        return {
+            "error": f"The source couldn't be read to the end ({read_error}). Original kept; retry the job.",
+            "error_key": "errors.sourceReadFailed",
+            "error_params": {"error": read_error},
+        }
+    if disc_type == "dvd" or Path(source_path).suffix.lower() in _ESTIMATED_DURATION_EXTS:
+        return None
+    src = None if disc_type else await _probe_video_duration(source_path)
+    out = await _probe_video_duration(output_path) if src else None
+    if not (src and out):
+        src = source_duration
+        if not src or src <= 0:
+            return None  # nothing to compare against
+        for attempt in range(3):
+            out = await _probe_output_duration(output_path)
+            if out is not None:
+                break
+            await asyncio.sleep(2)
+        if out is None:
+            return {
+                "error": "Couldn't read the output's length to check it's complete. Original kept; retry the job.",
+                "error_key": "errors.outputUnverifiable",
+            }
+    if _output_is_full_length(src, out, tol=0.9 if disc_type else 0.98):
+        return None
+    return {
+        "error": (f"Output is shorter than the source ({out:.0f}s of {src:.0f}s), so the "
+                  f"source read was probably interrupted. Original kept; retry the job."),
+        "error_key": "errors.outputTruncated",
+        "error_params": {"output": f"{out:.0f}", "source": f"{src:.0f}"},
+    }
+
+
 _VIDEO_MUX_SIZE_RE = re.compile(r"video:(\d+)KiB")
 
 
@@ -3480,18 +3568,10 @@ async def convert_file(
     output_size = temp.stat().st_size
     space_saved = original_size - output_size
 
-    # H6 (v0.10.0): ffmpeg exits 0 with a short output when the source read
-    # dies mid-stream (a stalled NAS mount). Never let an output that stops
-    # early replace the original. Disc durations are estimates, so they get
-    # more slack; an unknown duration can't be checked.
-    _out_dur = await _probe_output_duration(temp_path)
-    if (duration and duration > 0 and _out_dur is not None
-            and not _output_is_full_length(duration, _out_dur, tol=0.9 if disc_type else 0.98)):
-        print(
-            f"[CONVERT] Output is {_out_dur:.0f}s but the source is {duration:.0f}s — "
-            f"the source read was probably interrupted; keeping the original",
-            flush=True,
-        )
+    # H6 (v0.10.0): never let an output that stops early replace the original.
+    _truncated = await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
+    if _truncated:
+        print(f"[CONVERT] {_truncated['error']}", flush=True)
         try:
             temp.unlink()
         except OSError:
@@ -3499,13 +3579,8 @@ async def convert_file(
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
-        return {
-            "success": False, "output_path": None, "space_saved": 0,
-            "error": (f"Output is shorter than the source ({_out_dur:.0f}s of {duration:.0f}s), so the "
-                      f"source read was probably interrupted. Original kept; retry the job."),
-            "error_key": "errors.outputTruncated",
-            "error_params": {"output": f"{_out_dur:.0f}", "source": f"{duration:.0f}"},
-        }
+        return {"success": False, "output_path": None, "space_saved": 0, **_truncated}
+    _out_dur = await _probe_output_duration(temp_path)
 
     # Sanity check: output suspiciously small (< 5% of original).
     min_expected = int(original_size * 0.05)
