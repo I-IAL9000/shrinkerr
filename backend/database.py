@@ -173,6 +173,35 @@ async def connect_db() -> aiosqlite.Connection:
     await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT}")
     return db
 
+async def compact_if_bloated(min_free_bytes: int = 1024 ** 3) -> bool:
+    """VACUUM the database when a large share of it is free pages (v0.9.151:
+    shrinking full-size Plex posters freed several GB, which SQLite keeps in
+    the file — and in every backup — until a VACUUM). Run at startup, before
+    the worker and watcher start, because VACUUM needs the database to
+    itself. Only when > min_free_bytes and > 25% of the file is free."""
+    import time
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        stats = []
+        for pragma in ("page_size", "page_count", "freelist_count"):
+            async with db.execute(f"PRAGMA {pragma}") as cur:
+                stats.append((await cur.fetchone())[0])
+        page_size, pages, free = stats
+        free_bytes, total = free * page_size, pages * page_size
+        if free_bytes < min_free_bytes or free_bytes < total * 0.25:
+            return False
+        print(f"[DB] Compacting database: {free_bytes / 1e9:.2f} of {total / 1e9:.2f} GB is free "
+              f"space (this can take a minute or two)…", flush=True)
+        t = time.monotonic()
+        await db.execute("VACUUM")
+        await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        print(f"[DB] Compacted to {Path(DB_PATH).stat().st_size / 1e9:.2f} GB "
+              f"in {time.monotonic() - t:.0f}s", flush=True)
+        return True
+    finally:
+        await db.close()
+
+
 async def init_db():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     db = await get_db()

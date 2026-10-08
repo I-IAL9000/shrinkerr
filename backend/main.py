@@ -213,6 +213,13 @@ async def lifespan(app: FastAPI):
     init_logstream()
 
     await init_db()
+    # v0.9.151: reclaim free space (e.g. after shrinking full-size Plex
+    # posters) while nothing else is using the database yet.
+    try:
+        from backend.database import compact_if_bloated
+        await compact_if_bloated()
+    except Exception as exc:
+        print(f"[STARTUP] database compaction skipped: {exc}", flush=True)
     await _bootstrap_auth_defaults()
     from backend.database import backfill_daily_stats
     await backfill_daily_stats()
@@ -288,6 +295,14 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             print(f"[STARTUP] TMDB key check skipped: {exc}", flush=True)
     _asyncio.create_task(_bg_backfill_events())
+    # v0.9.151: re-fetch Plex posters cached at full size (background).
+    async def _bg_shrink_plex_posters():
+        try:
+            from backend.routes.posters import shrink_plex_posters
+            await shrink_plex_posters()
+        except Exception as exc:
+            print(f"[STARTUP] Plex poster shrink skipped: {exc}", flush=True)
+    _asyncio.create_task(_bg_shrink_plex_posters())
     # Initialize VMAF check and clean test encode temp files
     from backend.test_encode import check_vmaf_available, cleanup_temp_dir
     await check_vmaf_available()

@@ -153,20 +153,91 @@ async def _download_image(url: str, plex_url: str = "", plex_token: str = "") ->
             path = parse_qs(parsed.query).get("path", [""])[0]
             if not path or not plex_url:
                 return None
-            from urllib.parse import unquote
-            actual_url = f"{plex_url}{unquote(path)}?X-Plex-Token={plex_token}"
+            from urllib.parse import quote, unquote
+            thumb = unquote(path)
+            # v0.9.151: a Plex thumb URL returns the original artwork (avg
+            # ~0.6 MB, up to 10 MB). Ask Plex's photo transcoder for a
+            # poster-sized JPEG like TMDB's w300; the original is only a
+            # fallback for servers where the transcoder fails.
+            urls = [
+                f"{plex_url}/photo/:/transcode?width={PLEX_POSTER_WIDTH}&height={PLEX_POSTER_HEIGHT}"
+                f"&minSize=1&upscale=0&url={quote(thumb, safe='')}&X-Plex-Token={plex_token}",
+                f"{plex_url}{thumb}?X-Plex-Token={plex_token}",
+            ]
         elif url.startswith("http"):
-            actual_url = url
+            urls = [url]
         else:
             return None
 
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(actual_url)
-            if resp.status_code == 200 and len(resp.content) > 100:
-                return base64.b64encode(resp.content).decode("ascii")
+            for actual_url in urls:
+                resp = await client.get(actual_url)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    return base64.b64encode(resp.content).decode("ascii")
     except Exception:
         pass
     return None
+
+
+PLEX_POSTER_WIDTH = 300
+PLEX_POSTER_HEIGHT = 450
+# base64 size above which a cached Plex poster is an un-resized original.
+_OVERSIZED_PLEX_POSTER = 200 * 1024
+
+
+async def shrink_plex_posters() -> int:
+    """Re-fetch cached Plex posters stored at full size (pre-v0.9.151)
+    through the transcoder. Downloads happen with no DB connection open;
+    each batch is then written in one short transaction. A row is only
+    replaced by a smaller image, so a failed transcode leaves it as is and
+    the pass is safe to repeat. Returns the number of posters shrunk."""
+    from backend.plex import _get_plex_settings
+
+    plex_url, plex_token, _ = await _get_plex_settings()
+    if not plex_url or not plex_token:
+        return 0
+    plex_url = plex_url.rstrip("/")
+
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        async with db.execute(
+            "SELECT folder_path, poster_url, LENGTH(image_data) FROM poster_cache "
+            "WHERE source = 'plex' AND LENGTH(image_data) > ?", (_OVERSIZED_PLEX_POSTER,),
+        ) as cur:
+            rows = await cur.fetchall()
+    finally:
+        await db.close()
+    if not rows:
+        return 0
+    print(f"[POSTERS] Shrinking {len(rows)} full-size Plex posters", flush=True)
+
+    sem = asyncio.Semaphore(4)
+
+    async def _fetch(row):
+        async with sem:
+            img = await _download_image(row[1] or "", plex_url, plex_token)
+        return (row[0], img) if img and len(img) < row[2] else None
+
+    shrunk = saved = 0
+    for i in range(0, len(rows), 50):
+        batch = rows[i:i + 50]
+        done = [r for r in await asyncio.gather(*[_fetch(r) for r in batch]) if r]
+        if not done:
+            continue
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.executemany(
+                "UPDATE poster_cache SET image_data = ? WHERE folder_path = ?",
+                [(img, folder) for folder, img in done])
+            await db.commit()
+        finally:
+            await db.close()
+        shrunk += len(done)
+        old = {r[0]: r[2] for r in batch}
+        saved += sum(old[f] - len(img) for f, img in done)
+    print(f"[POSTERS] Shrunk {shrunk}/{len(rows)} Plex posters, freed {saved / 1e9:.2f} GB "
+          f"(reclaimed from the database file on the next restart)", flush=True)
+    return shrunk
 
 
 def _get_imdb_rating(parsed: dict) -> float | None:
