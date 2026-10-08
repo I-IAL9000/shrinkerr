@@ -2507,7 +2507,15 @@ class QueueWorker:
                     progress_callback=audio_progress_cb,
                     keep_subtitle_indices=keep_sub_indices,
                     audio_languages=_remux_audio_langs or None,
+                    # v0.9.156: register the ffmpeg so Cancel can kill it.
+                    proc_callback=lambda proc: self._active_procs.__setitem__(job_id, proc),
                 )
+                if not result["success"] and job_id in self._cancel_flags:
+                    await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
+                                                   error_key="errors.cancelledByUser")
+                    await ws_manager.send_job_complete(job_id, "cancelled", space_saved, "Cancelled by user",
+                                                       error_key="errors.cancelledByUser")
+                    return
                 if not result["success"]:
                     await self.queue.update_status(job_id, "failed", error_log=result["error"],
                                                    error_key=result.get("error_key"),

@@ -196,7 +196,8 @@
     "addFailed": "Failed to add to queue: {{error}}",
     "renameApplied": "Rename applied",
     "advSearchMatches_one": "Advanced search: {{count}} match",
-    "advSearchMatches_other": "Advanced search: {{count}} matches"
+    "advSearchMatches_other": "Advanced search: {{count}} matches",
+    "trackSaveFailed": "Couldn't save the track selection — reload the file and try again"
   },
   "confirm": {
     "trash_one": "Move {{count}} file to trash? This cannot be undone from Shrinkerr.",

@@ -34,7 +34,8 @@
     "originalLikelyCorrupt": "Probablemente el archivo original está corrupto — la conversión produjo una salida demasiado pequeña para ser útil ({{outputMb}} MB de un archivo de origen de {{originalGb}} GB). ffmpeg encontró datos corruptos que ffprobe no detecta de antemano. La entrada del archivo de origen se marcó como corrupta; se conserva el original.",
     "vmafRejected": "VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",
     "vmafBelowThreshold": "VMAF por debajo del umbral",
-    "workerEncoderUnsupported": "El nodo no puede ejecutar el codificador '{{encoder}}' y la traducción de codificador está desactivada"
+    "workerEncoderUnsupported": "El nodo no puede ejecutar el codificador '{{encoder}}' y la traducción de codificador está desactivada",
+    "wouldRemoveAllAudio": "Se ha evitado eliminar todas las pistas de audio: el archivo se quedaría sin sonido. Revisa las pistas de audio del archivo en el Escáner y vuelve a añadirlo a la cola."
   },
   "labels": {
     "healthMode": {

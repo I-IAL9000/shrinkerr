@@ -12,7 +12,7 @@ import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
 import RenameModal from "../components/RenameModal";
-import type { ScannedFile, ScanProgress } from "../types";
+import type { ScannedFile, ScanProgress, AudioTrack, SubtitleTrack } from "../types";
 import { encoderSettingsLabel } from "../utils/encoderLabel";
 
 // Module-level cache for tree data
@@ -525,45 +525,37 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     });
   };
 
-  const handleToggleTrack = (filePath: string, streamIndex: number) => {
-    // Update in loaded files cache
+  // v0.9.156: tracks arrive as the detail panel's full current list — the one
+  // the user sees. These handlers used to flip `keep` on this cache instead and
+  // save the cached list; the cache was stale after a language change or
+  // detection, so unticking two German tracks and ticking the Russian one
+  // saved (and queued) all three for removal.
+  const replaceCachedFile = (filePath: string, patch: Partial<ScannedFile>) => {
     setLoadedFiles(prev => {
       const next = new Map(prev);
       for (const [folder, files] of next) {
-        const updated = files.map(f => {
-          if (f.file_path !== filePath) return f;
-          const newTracks = f.audio_tracks.map(t =>
-            t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
-          );
-          if (f.id) {
-            updateAudioTracks(f.id, JSON.stringify(newTracks)).catch(() => {});
-          }
-          return { ...f, audio_tracks: newTracks };
-        });
-        next.set(folder, updated);
+        if (files.some(f => f.file_path === filePath)) {
+          next.set(folder, files.map(f => (f.file_path === filePath ? { ...f, ...patch } : f)));
+        }
       }
       return next;
     });
   };
 
-  const handleToggleSubTrack = (filePath: string, streamIndex: number) => {
-    setLoadedFiles(prev => {
-      const next = new Map(prev);
-      for (const [folder, files] of next) {
-        const updated = files.map(f => {
-          if (f.file_path !== filePath) return f;
-          const newTracks = (f.subtitle_tracks || []).map(t =>
-            t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
-          );
-          if (f.id) {
-            updateSubtitleTracks(f.id, JSON.stringify(newTracks)).catch(() => {});
-          }
-          return { ...f, subtitle_tracks: newTracks };
-        });
-        next.set(folder, updated);
-      }
-      return next;
-    });
+  const handleAudioTracksChange = (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => {
+    replaceCachedFile(file.file_path, { audio_tracks: tracks });
+    if (persist && file.id) {
+      updateAudioTracks(file.id, JSON.stringify(tracks))
+        .catch(() => toast(t("scanner:toasts.trackSaveFailed"), "error"));
+    }
+  };
+
+  const handleSubTracksChange = (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => {
+    replaceCachedFile(file.file_path, { subtitle_tracks: tracks });
+    if (persist && file.id) {
+      updateSubtitleTracks(file.id, JSON.stringify(tracks))
+        .catch(() => toast(t("scanner:toasts.trackSaveFailed"), "error"));
+    }
   };
 
   const handleRescanFolder = async (folderPath: string) => {
@@ -1918,8 +1910,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               search={search}
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
-              onToggleTrack={handleToggleTrack}
-              onToggleSubTrack={handleToggleSubTrack}
+              onAudioTracksChange={handleAudioTracksChange}
+              onSubTracksChange={handleSubTracksChange}
               onRemoveFile={handleRemoveFile}
               onIgnoreFile={handleIgnoreFile}
               onUnignoreFile={handleUnignoreFile}
@@ -1940,8 +1932,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               allowedPaths={advSearchResults || undefined}
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
-              onToggleTrack={handleToggleTrack}
-              onToggleSubTrack={handleToggleSubTrack}
+              onAudioTracksChange={handleAudioTracksChange}
+              onSubTracksChange={handleSubTracksChange}
               onRemoveFile={handleRemoveFile}
               onIgnoreFile={handleIgnoreFile}
               onUnignoreFile={handleUnignoreFile}

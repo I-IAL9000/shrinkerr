@@ -8,6 +8,25 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
+async def _probe_audio_stream_count(input_path: str) -> int:
+    """Number of audio streams in `input_path`, or -1 if the probe failed."""
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "quiet", "-select_streams", "a",
+            "-show_entries", "stream=index", "-of", "csv=p=0", input_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except Exception:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+        return -1
+    if proc.returncode != 0:
+        return -1
+    return len([ln for ln in stdout.decode().splitlines() if ln.strip()])
+
+
 async def _probe_subtitle_stream_codecs(input_path: str) -> dict[int, str]:
     """Return a `{stream_index: codec_name}` map for every subtitle stream
     in `input_path`. Used by remux_audio so build_remux_cmd can decide which
@@ -215,9 +234,14 @@ async def remux_audio(
     progress_callback: Optional[Callable] = None,
     keep_subtitle_indices: list[int] | None = None,
     audio_languages: dict[int, str] | None = None,
+    proc_callback: Optional[Callable] = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
+
+    `proc_callback(proc)` receives the ffmpeg process so the queue can kill it
+    on Cancel (v0.9.156 — before that, cancelling a track-removal job did
+    nothing and it ran to completion).
 
     Runs ffmpeg with stream copy (no re-encoding). Output is always .mkv.
     Verifies output, replaces original.
@@ -246,6 +270,19 @@ async def remux_audio(
             ),
             "error_key": "errors.notEnoughDiskSpace",
             "error_params": {"need": str(original_size), "free": str(stat.free)},
+        }
+
+    # v0.9.156: never strip every audio track. A queued cleanup that would
+    # (stale keep flags marked all three tracks of a film for removal)
+    # produced a silent file and replaced the original.
+    if not keep_audio_indices and await _probe_audio_stream_count(input_path) != 0:
+        return {
+            "success": False,
+            "output_path": None,
+            "space_saved": 0,
+            "error": "Refusing to remove every audio track — the file would have no sound. "
+                     "Check the file's audio tracks in the Scanner and queue it again.",
+            "error_key": "errors.wouldRemoveAllAudio",
         }
 
     temp_path = str(p.parent / (p.stem + ".remuxing.mkv"))
@@ -277,6 +314,8 @@ async def remux_audio(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        if proc_callback:
+            proc_callback(proc)
 
         # Read stderr in chunks and parse progress (ffmpeg uses \r for progress)
         remux_start = time.monotonic()

@@ -18,7 +18,8 @@
     "detectedApply": "{{lang}} pending → remux to MKV to apply",
     "detectNoteTitle": "Why auto-detection didn't set a language",
     "setLanguageManually": "Set language manually",
-    "settingLanguage": "Setting track language… (mp4 files are remuxed, this can take a moment)"
+    "settingLanguage": "Setting track language… (mp4 files are remuxed, this can take a moment)",
+    "allAudioRemoved": "All audio tracks are marked for removal — the file would have no sound. Shrinkerr won't process it like this; keep at least one track."
   },
   "subtitles": {
     "heading": "Subtitle tracks:",

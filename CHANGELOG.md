@@ -5,6 +5,12 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.156] — 2026-10-08
+
+### Fixed
+- **Ticking audio/subtitle tracks in the Scanner could save an outdated track list** (e.g. after relabeling a language), queueing the wrong tracks for removal — the panel now saves exactly what it shows.
+- Shrinkerr refuses to remove every audio track from a file (and the file panel warns when all are ticked), and Cancel now stops audio-cleanup jobs.
+
 ## [0.9.155] — 2026-10-08
 
 ### Security

@@ -13,13 +13,16 @@ import { unreadableReason } from "../utils/unreadable";
 
 interface FileDetailProps {
   file: ScannedFile;
-  onToggleTrack: (filePath: string, streamIndex: number) => void;
-  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
+  // v0.9.156: called with the panel's whole, current track list — the one the
+  // user sees. `persist` = save it (a keep toggle); false = just refresh the
+  // caller's copy (the server already stored it, e.g. set-language/detect).
+  onAudioTracksChange?: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => void;
+  onSubTracksChange?: (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => void;
 }
 
 type Tab = "tracks" | "history";
 
-export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: FileDetailProps) {
+export default function FileDetail({ file, onAudioTracksChange, onSubTracksChange }: FileDetailProps) {
   const { t } = useTranslation(["fileDetail", "common"]);
   const [fetchedAudio, setFetchedAudio] = useState<AudioTrack[]>([]);
   const [fetchedSubs, setFetchedSubs] = useState<SubtitleTrack[]>([]);
@@ -101,6 +104,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
         setFetchedAudio(r.audio_tracks || []);
         setFetchedSubs(r.subtitle_tracks || []);
         setDetected(true);
+        onAudioTracksChange?.(file, r.audio_tracks || [], false);
+        onSubTracksChange?.(file, r.subtitle_tracks || [], false);
       }
       toast(r.changed ? t("fileDetail:detect.changed")
         : t("fileDetail:detect.unchanged"), "success");
@@ -112,17 +117,22 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
     }
   };
 
-  // v0.9.50: the detail now renders the freshly-fetched tracks (fetchedAudio/
-  // Subs), so a keep-toggle must flip them locally too — the parent handler
-  // only updates the scanner cache, which this view no longer reads. Without
-  // this the checkbox looked frozen.
+  // v0.9.50: the detail renders the freshly-fetched tracks (fetchedAudio/Subs).
+  // v0.9.156: a keep toggle saves THIS list — the one on screen. The parent
+  // used to flip `keep` on its own cached copy and save that; the cache was
+  // stale after a language change, so unticking two tracks and ticking a
+  // third queued all three for removal.
   const handleToggleAudioLocal = (idx: number) => {
-    setFetchedAudio(prev => prev.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t));
-    onToggleTrack?.(file.file_path, idx);
+    const next = audioTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t);
+    setFetchedAudio(next);
+    setDetected(true);
+    onAudioTracksChange?.(file, next, true);
   };
-  const handleToggleSubLocal = (fp: string, idx: number) => {
-    setFetchedSubs(prev => prev.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t));
-    onToggleSubTrack?.(fp, idx);
+  const handleToggleSubLocal = (_fp: string, idx: number) => {
+    const next = subtitleTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t);
+    setFetchedSubs(next);
+    setDetected(true);
+    onSubTracksChange?.(file, next, true);
   };
 
   // v0.9.43: manual language override for a track detection can't resolve.
@@ -134,6 +144,8 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
       setFetchedAudio(r.audio_tracks || []);
       setFetchedSubs(r.subtitle_tracks || []);
       setDetected(true);
+      onAudioTracksChange?.(file, r.audio_tracks || [], false);
+      onSubTracksChange?.(file, r.subtitle_tracks || [], false);
       if (r.file_written) {
         toast(t("fileDetail:setLanguage.success"), "success");
       } else if (r.pending_detected) {
@@ -327,6 +339,11 @@ export default function FileDetail({ file, onToggleTrack, onToggleSubTrack }: Fi
                       />
                     ))}
                   </div>
+                  {audioTracks.every(tr => !tr.keep) && (
+                    <div role="alert" style={{ fontSize: 12, color: "var(--danger)", border: "1px solid var(--danger)", borderRadius: 4, padding: "6px 8px", margin: "6px 0" }}>
+                      {t("fileDetail:tracks.allAudioRemoved")}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div style={{ fontSize: 12, color: "var(--danger)", fontStyle: "italic", marginBottom: 6 }}>{t("fileDetail:tracks.noAudio")}</div>

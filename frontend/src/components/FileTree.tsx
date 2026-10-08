@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
-import type { ScannedFile } from "../types";
+import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getScanFiles, getScanFilesByPaths } from "../api";
 import { getCodecLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
@@ -29,8 +29,8 @@ interface FileTreeProps {
   search?: string;
   isSelected: (path: string) => boolean;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
-  onToggleTrack: (filePath: string, streamIndex: number) => void;
-  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
+  onAudioTracksChange: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => void;
+  onSubTracksChange?: (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
@@ -433,12 +433,12 @@ const FolderRow = memo(function FolderRow({
 
 const FileRow = memo(function FileRow({
   file, selected, depth, onToggleSelect, onRemoveFile, onIgnoreFile, onUnignoreFile, onDeleteFile,
-  onToggleTrack, onToggleSubTrack, expanded, onToggleExpand,
+  onAudioTracksChange, onSubTracksChange, expanded, onToggleExpand,
 }: {
   file: ScannedFile; selected: boolean; depth: number;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
-  onToggleTrack: (filePath: string, streamIndex: number) => void;
-  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
+  onAudioTracksChange: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => void;
+  onSubTracksChange?: (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
@@ -557,7 +557,7 @@ const FileRow = memo(function FileRow({
         </div>
       </div>
       {expanded && (
-        <FileDetail file={file} onToggleTrack={onToggleTrack} onToggleSubTrack={onToggleSubTrack} />
+        <FileDetail file={file} onAudioTracksChange={onAudioTracksChange} onSubTracksChange={onSubTracksChange} />
       )}
     </div>
   );
@@ -573,7 +573,7 @@ const FileRow = memo(function FileRow({
 
 export default function FileTree({
   folders, filter = "all",
-  isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
+  isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
   onFolderFilesLoaded, externalFiles, mediaDirs,
   sortBy = "name", sortDir = "asc", search = "", allowedPaths,
@@ -1017,8 +1017,8 @@ export default function FileTree({
                     selected={isSelected(file.file_path)}
                     depth={row.depth}
                     onToggleSelect={onToggleSelect}
-                    onToggleTrack={onToggleTrack}
-                    onToggleSubTrack={onToggleSubTrack}
+                    onAudioTracksChange={onAudioTracksChange}
+                    onSubTracksChange={onSubTracksChange}
                     onRemoveFile={onRemoveFile}
                     onIgnoreFile={onIgnoreFile}
                     onUnignoreFile={onUnignoreFile}

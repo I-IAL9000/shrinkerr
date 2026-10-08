@@ -217,7 +217,8 @@
     "renameApplied": "Renombrado aplicado",
     "advSearchMatches_one": "Búsqueda avanzada: {{count}} coincidencia",
     "advSearchMatches_many": "Búsqueda avanzada: {{count}} coincidencias",
-    "advSearchMatches_other": "Búsqueda avanzada: {{count}} coincidencias"
+    "advSearchMatches_other": "Búsqueda avanzada: {{count}} coincidencias",
+    "trackSaveFailed": "No se pudo guardar la selección de pistas: vuelve a cargar el archivo e inténtalo de nuevo"
   },
   "confirm": {
     "trash_one": "¿Mover {{count}} archivo a la papelera? Esto no se puede deshacer desde Shrinkerr.",

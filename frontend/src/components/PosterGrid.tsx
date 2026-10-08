@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { FolderInfo } from "./FileTree";
-import type { ScannedFile } from "../types";
+import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { resolvePosterMetadata, getFilesByTitle } from "../api";
 import { getCodecLabel } from "../codecLabels";
 import PosterCard from "./PosterCard";
@@ -45,8 +45,8 @@ interface PosterGridProps {
   allowedPaths?: Set<string>;
   isSelected: (path: string) => boolean;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
-  onToggleTrack: (filePath: string, streamIndex: number) => void;
-  onToggleSubTrack?: (filePath: string, streamIndex: number) => void;
+  onAudioTracksChange: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => void;
+  onSubTracksChange?: (file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => void;
   onRemoveFile: (filePath: string) => void;
   onIgnoreFile?: (filePath: string) => void;
   onUnignoreFile?: (filePath: string) => void;
@@ -132,7 +132,7 @@ const OVERSCAN = 3; // extra rows above/below viewport
 
 export default function PosterGrid({
   folders, filter = "all", search, allowedPaths,
-  isSelected, onToggleSelect, onToggleTrack, onToggleSubTrack, onRemoveFile,
+  isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onDeleteFile,
   onFolderFilesLoaded,
   mediaDirs,
@@ -164,31 +164,16 @@ export default function PosterGrid({
   // Wrap the track toggle handlers so we also update PosterGrid's local
   // `expandedFiles` copy. Without this, the parent's loadedFiles gets updated
   // but the local list stays stale, so the checkbox visually doesn't change.
-  const toggleAudioTrack = useCallback((filePath: string, streamIndex: number) => {
-    setExpandedFiles(prev => prev.map(f => {
-      if (f.file_path !== filePath) return f;
-      return {
-        ...f,
-        audio_tracks: f.audio_tracks.map(t =>
-          t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
-        ),
-      };
-    }));
-    onToggleTrack(filePath, streamIndex);
-  }, [onToggleTrack]);
+  // v0.9.156: the detail panel passes its full current track list.
+  const changeAudioTracks = useCallback((file: ScannedFile, tracks: AudioTrack[], persist: boolean) => {
+    setExpandedFiles(prev => prev.map(f => (f.file_path === file.file_path ? { ...f, audio_tracks: tracks } : f)));
+    onAudioTracksChange(file, tracks, persist);
+  }, [onAudioTracksChange]);
 
-  const toggleSubTrack = useCallback((filePath: string, streamIndex: number) => {
-    setExpandedFiles(prev => prev.map(f => {
-      if (f.file_path !== filePath) return f;
-      return {
-        ...f,
-        subtitle_tracks: (f.subtitle_tracks || []).map(t =>
-          t.stream_index === streamIndex ? { ...t, keep: !t.keep } : t
-        ),
-      };
-    }));
-    onToggleSubTrack?.(filePath, streamIndex);
-  }, [onToggleSubTrack]);
+  const changeSubTracks = useCallback((file: ScannedFile, tracks: SubtitleTrack[], persist: boolean) => {
+    setExpandedFiles(prev => prev.map(f => (f.file_path === file.file_path ? { ...f, subtitle_tracks: tracks } : f)));
+    onSubTracksChange?.(file, tracks, persist);
+  }, [onSubTracksChange]);
 
   // Handle poster card selection with shift-select using group visual order
   const handlePosterSelect = useCallback((groupKey: string, shiftKey?: boolean) => {
@@ -541,7 +526,7 @@ export default function PosterGrid({
                               {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }} title={t("common:actions.moveToTrash")} aria-label={t("common:actions.moveToTrash")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
                             </div>
                           </div>
-                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onToggleTrack={toggleAudioTrack} onToggleSubTrack={toggleSubTrack} />}
+                          {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onAudioTracksChange={changeAudioTracks} onSubTracksChange={changeSubTracks} />}
                         </div>
                       ))}
                     </div>

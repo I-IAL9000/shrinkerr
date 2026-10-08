@@ -34,7 +34,8 @@
     "originalLikelyCorrupt": "Original file likely corrupt — conversion produced an unusably-small output ({{outputMb}} MB from {{originalGb}} GB source). ffmpeg hit data corruption ffprobe doesn't catch upfront. Source row marked corrupt; original preserved.",
     "vmafRejected": "VMAF {{score}} is below the configured minimum of {{min}} — encode rejected, original kept.",
     "vmafBelowThreshold": "VMAF below threshold",
-    "workerEncoderUnsupported": "Worker cannot run encoder '{{encoder}}' and translation is disabled"
+    "workerEncoderUnsupported": "Worker cannot run encoder '{{encoder}}' and translation is disabled",
+    "wouldRemoveAllAudio": "Refusing to remove every audio track — the file would have no sound. Check the file's audio tracks in the Scanner and queue it again."
   },
   "labels": {
     "healthMode": {
