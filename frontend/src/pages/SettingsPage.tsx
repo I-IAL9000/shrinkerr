@@ -541,10 +541,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     loadDirs();
   };
 
+  // Every section's Save sends the whole settings object, so reload it after
+  // a save: the next one used to resend values from page load — saving Plex
+  // wiped a TMDB key saved a moment earlier (v0.10.0).
+  const saveSettings = async (payload: any) => {
+    await updateEncodingSettings(payload);
+    setEncoding(await getEncodingSettings());
+  };
+
   const handleSaveEncoding = async () => {
     if (!encoding) return;
     try {
-      await updateEncodingSettings(encoding);
+      await saveSettings(encoding);
     } catch (e: any) {
       // e.g. custom ffmpeg flags rejected — show why instead of failing silently.
       toast(e?.message || String(e), "error");
@@ -2385,7 +2393,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               className="btn btn-primary"
               style={{ marginTop: 4 }}
               onClick={async () => {
-                await updateEncodingSettings({
+                await saveSettings({
                   ...encoding,
                   tmdb_api_key: tmdbKey,
                 });
@@ -2712,7 +2720,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               className="btn btn-primary"
               style={{ marginTop: 16 }}
               onClick={async () => {
-                await updateEncodingSettings({
+                await saveSettings({
                   ...encoding,
                   plex_url: plexUrl,
                   plex_token: plexToken,
@@ -2792,7 +2800,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </div>
             <button className="btn btn-primary" style={{ marginTop: 16 }}
               onClick={async () => {
-                await updateEncodingSettings({
+                await saveSettings({
                   jellyfin_url: encoding?.jellyfin_url,
                   jellyfin_api_key: encoding?.jellyfin_api_key,
                   jellyfin_user_id: encoding?.jellyfin_user_id,
@@ -2869,7 +2877,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </div>
             <button className="btn btn-primary" style={{ marginTop: 16 }}
               onClick={async () => {
-                await updateEncodingSettings({
+                await saveSettings({
                   emby_url: encoding?.emby_url,
                   emby_api_key: encoding?.emby_api_key,
                   emby_user_id: encoding?.emby_user_id,
@@ -2946,7 +2954,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   try {
-                    await updateEncodingSettings(encoding);
+                    await saveSettings(encoding);
                     toast(t("settingsIntegrations:arr.saved"), "success");
                   } catch (err: any) { toast(t("settingsIntegrations:shared.saveFailed", { error: err.message })); }
                 }}
@@ -2954,7 +2962,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   try {
-                    await updateEncodingSettings(encoding);
+                    await saveSettings(encoding);
                     const res = await testApiKey("sonarr") as any;
                     if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Sonarr", version: res.version }), "success");
                     else toast(`Sonarr: ${res.error}`);
@@ -2964,7 +2972,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
                   try {
-                    await updateEncodingSettings(encoding);
+                    await saveSettings(encoding);
                     const res = await testApiKey("radarr") as any;
                     if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Radarr", version: res.version }), "success");
                     else toast(`Radarr: ${res.error}`);
@@ -3112,7 +3120,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
                 onClick={async () => {
-                  await updateEncodingSettings(encoding);
+                  await saveSettings(encoding);
                   toast(t("settingsIntegrations:downloaders.saved"), "success");
                 }}>{t("common:actions.save")}</button>
               <a href="/api/settings/nzbget-script" download="Shrinkerr.py" style={{ textDecoration: "none" }}>
@@ -4169,7 +4177,7 @@ volumes:
             </details>
             <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
               onClick={async () => {
-                await updateEncodingSettings({
+                await saveSettings({
                   post_conversion_script: encoding?.post_conversion_script || "",
                   post_conversion_script_timeout: encoding?.post_conversion_script_timeout || 300,
                 });
@@ -4372,7 +4380,7 @@ volumes:
                 if (encoding?.auth_username) data.auth_username = encoding.auth_username;
                 if (encoding?.auth_password) data.auth_password = encoding.auth_password;
                 if (encoding?.api_key !== undefined) data.api_key = encoding.api_key;
-                await updateEncodingSettings(data);
+                await saveSettings(data);
                 // Clear the password field after saving
                 setEncoding({ ...encoding, auth_password: "" });
                 toast(t("settingsSystem:toasts.authSaved"), "success");
@@ -4397,7 +4405,7 @@ volumes:
                 onChange={async (e) => {
                   const value = e.target.value;
                   try {
-                    await updateEncodingSettings({ notification_language: value });
+                    await saveSettings({ notification_language: value });
                     setEncoding((prev: any) => ({ ...prev, notification_language: value }));
                     toast(t("settingsSystem:toasts.notificationLanguageSaved"), "success");
                   } catch (err: any) {
@@ -4522,13 +4530,13 @@ volumes:
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
-                  await updateEncodingSettings(encoding);
+                  await saveSettings(encoding);
                   toast(t("settingsSystem:toasts.notificationsSaved"), "success");
                 }}
               >{t("settingsSystem:notifications.save")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
                 onClick={async () => {
-                  await updateEncodingSettings(encoding);
+                  await saveSettings(encoding);
                   const res = await testNotifications();
                   const results = res.results || {};
                   const ok = Object.entries(results).filter(([, v]) => v).map(([k]) => k);
@@ -4590,6 +4598,9 @@ volumes:
                             const file = new File([blob], b.name, { type: "application/zip" });
                             await restoreBackup(file);
                             toast(t("settingsSystem:toasts.backupRestored"), "success");
+                            // Reload: a Save from this page's pre-restore state
+                            // would overwrite the restored settings (v0.10.0).
+                            setTimeout(() => window.location.reload(), 1500);
                           } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
                         }}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4626,6 +4637,7 @@ volumes:
                     try {
                       await restoreBackup(file);
                       toast(t("settingsSystem:toasts.backupRestored"), "success");
+                      setTimeout(() => window.location.reload(), 1500);
                       loadBackups();
                     } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
                     e.target.value = "";

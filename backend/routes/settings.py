@@ -597,6 +597,8 @@ async def get_encoding_settings():
     # always rendered off after a page reload even when the DB had them
     # set. Plex's equivalent block at the bottom of this function got it
     # right; this corrects the omission for both Jellyfin and Emby.
+    result["jellyfin_scan_after_conversion"] = merged.get("jellyfin_scan_after_conversion", "true").lower() == "true"
+    result["jellyfin_empty_trash"] = merged.get("jellyfin_empty_trash", "false").lower() == "true"
     result["jellyfin_pause_on_stream"] = merged.get("jellyfin_pause_on_stream", "false").lower() == "true"
     result["jellyfin_pause_stream_threshold"] = int(merged.get("jellyfin_pause_stream_threshold", "1") or 1)
     result["jellyfin_pause_transcode_only"] = merged.get("jellyfin_pause_transcode_only", "false").lower() == "true"
@@ -608,6 +610,8 @@ async def get_encoding_settings():
     result["emby_user_id"] = merged.get("emby_user_id", "")
     result["emby_configured"] = bool(emby_key and merged.get("emby_url", ""))
     result["emby_path_mapping"] = merged.get("emby_path_mapping", "")
+    result["emby_scan_after_conversion"] = merged.get("emby_scan_after_conversion", "true").lower() == "true"
+    result["emby_empty_trash"] = merged.get("emby_empty_trash", "false").lower() == "true"
     result["emby_pause_on_stream"] = merged.get("emby_pause_on_stream", "false").lower() == "true"
     result["emby_pause_stream_threshold"] = int(merged.get("emby_pause_stream_threshold", "1") or 1)
     result["emby_pause_transcode_only"] = merged.get("emby_pause_transcode_only", "false").lower() == "true"
@@ -627,6 +631,13 @@ async def get_encoding_settings():
         result["vmaf_min_score"] = float(merged.get("vmaf_min_score", "0") or "0")
     except (TypeError, ValueError):
         result["vmaf_min_score"] = 0.0
+    result["content_type_detection"] = merged.get("content_type_detection", "true").lower() == "true"
+    result["resolution_aware_cq"] = merged.get("resolution_aware_cq", "false").lower() == "true"
+    for _k in ("resolution_cq_4k", "resolution_cq_1080p", "resolution_cq_720p", "resolution_cq_sd"):
+        try:
+            result[_k] = int(merged.get(_k) or _ENCODING_DEFAULTS[_k])
+        except ValueError:
+            result[_k] = int(_ENCODING_DEFAULTS[_k])
 
     # Advanced
     result["custom_ffmpeg_flags"] = merged.get("custom_ffmpeg_flags", "")
@@ -1116,10 +1127,30 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             except (TypeError, ValueError):
                 _vms = 0.0
             updates["vmaf_min_score"] = str(_vms)
+        for key in ("content_type_detection", "resolution_aware_cq"):
+            val = getattr(update, key)
+            if val is not None:
+                updates[key] = "true" if val else "false"
+        for key in ("resolution_cq_4k", "resolution_cq_1080p", "resolution_cq_720p", "resolution_cq_sd"):
+            val = getattr(update, key)
+            if val is not None:
+                updates[key] = str(max(0, min(51, int(val))))
         if update.api_key is not None and not update.api_key.startswith("****"):
             updates["api_key"] = update.api_key
         # Auth settings
         if update.auth_enabled is not None:
+            # Every section's Save sends the whole page, so a ticked box with
+            # no credentials used to switch auth on and lock everyone out
+            # (v0.10.0).
+            if update.auth_enabled and not (
+                (update.auth_username or await _stored_setting(db, "auth_username"))
+                and (update.auth_password or await _stored_setting(db, "auth_password_hash"))
+            ):
+                raise ApiError(
+                    status_code=400,
+                    detail="Set a username and password before turning on password authentication.",
+                    code="settings.authNeedsPassword",
+                )
             updates["auth_enabled"] = "true" if update.auth_enabled else "false"
         if update.auth_username is not None:
             updates["auth_username"] = update.auth_username

@@ -276,6 +276,14 @@ class SettingsUpdate(BaseModel):
     vmaf_analysis_enabled: Optional[bool] = None
     # Min VMAF score (0-100) required to accept an encode. 0 = disabled.
     vmaf_min_score: Optional[Any] = None
+    # v0.10.0: used by jobs and estimates but missing here, so Settings edits
+    # were silently dropped (FE#3).
+    content_type_detection: Optional[bool] = None
+    resolution_aware_cq: Optional[bool] = None
+    resolution_cq_4k: Optional[int] = None
+    resolution_cq_1080p: Optional[int] = None
+    resolution_cq_720p: Optional[int] = None
+    resolution_cq_sd: Optional[int] = None
     filename_suffix: Optional[str] = None
     custom_ffmpeg_flags: Optional[str] = None
     max_plex_api_calls: Optional[Any] = None
