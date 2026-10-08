@@ -57,7 +57,7 @@ Your source is probably already low-bitrate. Shrinkerr's CQ/CRF is a
 quality target, not a size target — if your source is at 2 Mbps x264
 and you ask for "transparent" HEVC, HEVC may need more bits to preserve
 the quality. Turn on the "min bitrate" conversion filter (Settings →
-Video → Conversion filters) to skip low-bitrate sources.
+Automation → Conversion Filters) to skip low-bitrate sources.
 
 **How long does a batch take?**
 Very rough 1080p ballparks:
@@ -101,7 +101,7 @@ slow at directory walks (AFP, SMB1), so first-time scans can take a
 while.
 
 **Does Shrinkerr write outside the media directories?**
-Only to `/app/data` (SQLite DB, logs, cached posters) and to the backup
+Only to `/app/data` (SQLite DB, cached posters) and to the backup
 folder if configured. If `backup_original_days = 0` and no centralized
 `backup_folder`, originals are replaced in place with no external
 writes.

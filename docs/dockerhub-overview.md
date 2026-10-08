@@ -9,9 +9,9 @@ sync it on every CI run.
 
 # Shrinkerr
 
-**Self-hosted media library transcoder** with hardware encoding, VMAF quality assurance, and a safety net for your originals.
+**Self-hosted media library transcoder** with hardware encoding, VMAF quality scoring, and a safety net for your originals.
 
-Re-encode H.264 / MPEG-2 / VC-1 / VP9 sources to HEVC, saving 40–65% disk space on a typical library. NVENC (NVIDIA) and libx265 (CPU) encoders; NVDEC / QSV / VAAPI hardware decode. VMAF auto-rejects bad encodes. Plex / Jellyfin / Emby aware (pauses on stream, refreshes libraries on completion). Sonarr / Radarr / NZBGet / SABnzbd integration with a rules engine. Distributed encoding across multiple workers.
+Re-encode H.264 / MPEG-2 / VC-1 / VP9 sources to HEVC, saving 40–65% disk space on a typical library. NVENC (NVIDIA) and libx265 (CPU) encoders; NVDEC / QSV / VAAPI hardware decode. Optional VMAF minimum score rejects low-quality encodes. Plex / Jellyfin / Emby aware (pauses on stream, refreshes libraries on completion). Sonarr / Radarr / NZBGet / SABnzbd integration with a rules engine. Distributed encoding across multiple workers.
 
 ## Image variants
 
@@ -19,7 +19,7 @@ Re-encode H.264 / MPEG-2 / VC-1 / VP9 sources to HEVC, saving 40–65% disk spac
 |---|---|---|---|
 | `:latest` | linux/amd64 + arm64 | libx265 (CPU) | **Default.** Mac, Raspberry Pi, ARM cloud, any host without an NVIDIA GPU. |
 | `:edge` | linux/amd64 + arm64 | libx265 (CPU) | Same as `:latest`, bleeding-edge ffmpeg master. |
-| `:nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host, ffmpeg n7.1, driver 525.60.13+. |
+| `:nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host, ffmpeg n8.1, driver 570+. |
 | `:edge-nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host, ffmpeg master, driver 570+. |
 
 All variants share the same DB schema and settings format — switch between them by changing one `image:` line and pulling.

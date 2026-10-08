@@ -70,9 +70,8 @@ If it fails with "command not found" or cannot connect to driver:
 - The NVIDIA Container Toolkit isn't installed on the host.
 
 If `nvidia-smi` works but NVENC test fails (`ffmpeg exited N: ...`):
-- Driver version doesn't match the image requirement. `:nvenc` needs
-  ≥525.60.13; `:edge-nvenc` needs ≥570. Upgrade the driver or swap
-  image.
+- Driver version doesn't match the image requirement. `:nvenc` and
+  `:edge-nvenc` both need ≥570. Upgrade the driver.
 - Another process is saturating the NVENC engine. Consumer NVIDIA cards
   have a concurrent-NVENC-session limit that unlocks on newer driver
   versions via the open-kernel-module driver.
@@ -176,9 +175,9 @@ find /srv/media -name "*.converting.mkv" -mtime +1 -delete
 
 ## Plex library refresh does nothing
 
-1. Plex integration is connected (Settings → Integrations → Plex shows
+1. Plex integration is connected (Settings → Connections → Plex shows
    a server name).
-2. Path mapping matches how Plex sees the files. Settings → Integrations
+2. Path mapping matches how Plex sees the files. Settings → Connections
    → Plex → Path mapping (e.g. `/media → /home/plex/media`). The
    *library refresh* call is path-specific; if Plex doesn't see the
    exact path, it does nothing.
@@ -186,8 +185,8 @@ find /srv/media -name "*.converting.mkv" -mtime +1 -delete
    Shrinkerr's call tells Plex *to* scan; if Plex is configured to
    ignore manual scan requests, nothing happens.
 
-Test manually from Shrinkerr: Settings → Integrations → Plex → "Test
-refresh". Failure here surfaces the actual HTTP error Plex returned.
+Test manually from Shrinkerr: Settings → Connections → Plex → "Test".
+Failure here surfaces the actual HTTP error Plex returned.
 
 ## Encoded file is larger than original
 
@@ -203,8 +202,8 @@ Causes:
 - Source has audio tracks Shrinkerr is copying but would compress well.
   Enable audio conversion to smaller codec (EAC3 640k → 256k, say).
 
-Unignore a file from the ignored list (Settings → Ignore list) if you
-want to retry.
+Unignore a file from the ignored list (Scanner → **Ignored** filter) if
+you want to retry.
 
 ## Queue is "running" but nothing happens
 
@@ -229,7 +228,8 @@ docker compose exec shrinkerr sqlite3 /app/data/shrinkerr.db 'PRAGMA integrity_c
 Returns `ok` when the DB is fine.
 
 **Corrupt DB:**
-- Export settings first if the UI still works (Settings → Backups).
+- Export settings first if the UI still works (**Export** at the top of
+  the Settings page).
 - Stop the container. Back up `shrinkerr.db`.
 - Move the DB out of the way: `mv shrinkerr.db shrinkerr.broken.db`.
 - Restart — a fresh DB is created.

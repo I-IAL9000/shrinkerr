@@ -95,7 +95,8 @@ refresh per affected library section at the end (see the setting below).
 
 ## Settings
 
-Both are in **Settings → Video** (shown in the audio and subtitle sections):
+These are in **Settings → Audio** (the auto-detect toggle is also shown under
+Subtitles):
 
 - **Auto-detect languages for unknown tracks before converting**
   (default **on**) — when converting a file with `und` tracks, detect audio

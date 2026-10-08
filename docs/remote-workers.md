@@ -25,7 +25,7 @@ encoding.
   is CPU-only.
 - You want encoding to happen on a gaming PC only during off-hours.
 - You want two GPU hosts running different driver versions (e.g. a
-  `:nvenc` box on driver 535 and an `:edge-nvenc` box on driver 570)
+  `:nvenc` box on driver 570 and an `:edge-nvenc` box on driver 580)
   sharing the same queue.
 
 When it's **not** worth it:

@@ -180,10 +180,11 @@ harmless redundancy on hardware paths and a real cap on libx265.
 metric. Shrinkerr can run it automatically after each encode and reject
 the output if the score is too low.
 
-**Enable:** Settings → Video → Smart Encoding → "VMAF analysis" on.
+**Enable:** Settings → Video → Smart Encoding → "VMAF analysis" (on by
+default — scoring only).
 
-**Minimum score (`vmaf_min_score`):** 0 to disable rejection (VMAF still
-runs and is reported, just never rejects). Typical values:
+**Minimum score (`vmaf_min_score`):** opt-in. The default 0 disables
+rejection (VMAF still runs and is reported, just never rejects). Typical values:
 
 | Min score | Meaning | Reject rate on typical content |
 |---|---|---|
@@ -261,7 +262,7 @@ different perceptual quality. When on, the estimate UI shows
 
 ## Custom ffmpeg flags
 
-Settings → System → Advanced → "Custom ffmpeg flags". Appended after the
+Settings → Automation → Advanced → "Custom ffmpeg flags". Appended after the
 built-in flags. Use with care — Shrinkerr's flag stack already covers
 pixel format, container options, mapping, and so on.
 

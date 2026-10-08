@@ -5,7 +5,7 @@
 **Save space, bandwidth & money while retaining quality.**
 
 [![Build & publish images](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml/badge.svg)](https://github.com/I-IAL9000/shrinkerr/actions/workflows/build-images.yml)
-![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
+[![Version](https://img.shields.io/github/v/release/I-IAL9000/shrinkerr?label=version)](https://github.com/I-IAL9000/shrinkerr/releases)
 ![Docker: multi-arch](https://img.shields.io/badge/docker-multi--arch-0db7ed?logo=docker)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
@@ -13,7 +13,7 @@
 
 ---
 
-Shrinkerr scans your media library, identifies files that are worth re-encoding, queues them up, and runs `ffmpeg` in the background — replacing each file with a smaller x265 copy only when the quality check passes. It's designed for home media servers (Plex, Jellyfin, Emby) where you want to reclaim drive space without hand-rolling ffmpeg scripts.
+Shrinkerr scans your media library, identifies files that are worth re-encoding, queues them up, and runs `ffmpeg` in the background — replacing each file with a smaller x265 copy only when the encode succeeds and actually saves space (plus an optional VMAF minimum-score check). It's designed for home media servers (Plex, Jellyfin, Emby) where you want to reclaim drive space without hand-rolling ffmpeg scripts.
 
 Typical result on a mixed TV + movies library: **50–65% smaller files** with no visible quality loss, fully automated, with originals optionally retained in a backup folder for easy rollback.
 
@@ -63,7 +63,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 
 **Automation**
 - Queue with drag-and-drop reordering, bulk apply, priority levels, and scheduling
-- Watch folders — auto-queue newly-added files in real time
+- Watch folders — auto-queue newly-added files (the watcher checks every 5 minutes)
 - NZBGet / SABnzbd post-processing scripts — auto-queue freshly-downloaded releases
 - Sonarr / Radarr integration — trigger replacement searches, upgrade searches, and missing-episode searches without leaving the UI; library refresh on completion
 - Plex / Jellyfin integration — label / collection / genre / library-based rules, watch-status sync, library refresh on completion, trash cleanup
@@ -114,7 +114,7 @@ Typical result on a mixed TV + movies library: **50–65% smaller files** with n
 - **Port 6680** free on the host (or another port of your choosing)
 - **For NVENC (optional, 5–10× faster than CPU)**:
   - NVIDIA GPU (Pascal / GTX 10xx or newer)
-  - NVIDIA driver 525.60.13+ (for `:nvenc`) or 570+ (for `:edge-nvenc`)
+  - NVIDIA driver 570+ (for both `:nvenc` and `:edge-nvenc`)
   - **Linux**: [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit)
   - **Windows**: Docker Desktop in WSL2 mode (Windows 10 21H2+ / Windows 11) with a recent NVIDIA Windows driver — nothing else to install
   - **macOS**: no NVIDIA path, but Apple's **VideoToolbox** hardware encoder is supported when Shrinkerr runs **natively (no Docker)**, as a server or as a remote worker. See [Running Shrinkerr natively on macOS](docs/native-install-mac.md). Real-world: ~30–100 fps native vs. ~1 fps via Docker.
@@ -160,7 +160,7 @@ services:
     ports:
       - "6680:6680"
     volumes:
-      - ./data:/app/data                 # Shrinkerr's SQLite DB + logs + history
+      - ./data:/app/data                 # Shrinkerr's SQLite DB + history
       - /srv/media:/media                # YOUR media library (read + write)
     restart: unless-stopped
 ```
@@ -250,7 +250,7 @@ services:
       - "110"
 ```
 
-After `docker compose down && up -d`, Settings → Encoding → Default
+After `docker compose down && up -d`, Settings → Video → Default
 Encoder will surface QSV / VAAPI options if the host hardware supports
 them. Click *Re-detect* if your existing tab opened before passthrough
 was active.
@@ -309,7 +309,7 @@ For a corrupt or low-quality file already on disk:
 
 Auto-queue freshly-downloaded releases so they start encoding the moment Sonarr/Radarr hands them off.
 
-1. Settings → Automation → **Download NZBGet script** (or SABnzbd).
+1. Settings → Connections → NZBGet / SABnzbd → **Download NZBGet Script** (or SABnzbd).
 2. Drop the downloaded script into your downloader's scripts folder.
 3. Your server URL and API key are baked in — no further config.
 
@@ -322,7 +322,7 @@ Files with nzb-assigned categories / tags you configure in the Shrinkerr UI will
 
 Offload encoding to a second machine (gaming PC, idle NUC, ARM server).
 
-1. On the main server: Settings → Nodes → **Create worker API key**.
+1. On the main server: Settings → System → Authentication → copy the **API Key**.
 2. On the worker host, deploy the same image in worker mode:
 
    ```yaml
@@ -336,7 +336,7 @@ Offload encoding to a second machine (gaming PC, idle NUC, ARM server).
          - WORKER_NAME=gaming-pc
          - CAPABILITIES=nvenc,libx265               # advertise what this box can do
          # If the worker sees the library at a different path than the server:
-         # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
+         # - PATH_MAPPINGS=[{"server":"/media","worker":"/mnt/nas"}]
        volumes:
          - /mnt/nas:/media                          # must match PATH_MAPPINGS or the server's path
        restart: unless-stopped
@@ -368,10 +368,10 @@ NVENC workers need the same GPU passthrough config as the main server (`runtime:
 | Variable | Default | Purpose |
 |---|---|---|
 | `SERVER_URL` | — | Main server URL (e.g. `http://192.168.1.10:6680`) |
-| `API_KEY` | — | Worker API key created in Settings → Nodes |
+| `API_KEY` | — | The server's API key, from Settings → System → Authentication |
 | `WORKER_NAME` | hostname | Display name on the Nodes page |
 | `CAPABILITIES` | auto-detected | Override detection: `nvenc,libx265` or just `libx265` |
-| `PATH_MAPPINGS` | `[]` | JSON list: `[["server_path", "worker_path"], …]` |
+| `PATH_MAPPINGS` | `[]` | JSON list: `[{"server": "server_path", "worker": "worker_path"}, …]` |
 | `POLL_INTERVAL` | `5` | Seconds between job polls |
 | `HEARTBEAT_INTERVAL` | `30` | Seconds between keepalive pings |
 | `METRICS_INTERVAL` | `5` | Seconds between CPU/GPU metric reports |
@@ -404,7 +404,7 @@ docker compose up -d
 
 The database migrates itself on startup — never overwrites user data, only adds new columns. If upgrading from the pre-rename era (when the app was called Squeezarr), the `squeezarr.db` file is auto-renamed to `shrinkerr.db` on first start along with its WAL sidecar files.
 
-For deterministic upgrades in production, pin to a version tag (e.g. `shrinkerr:v0.3.0-nvenc`) instead of a floating `:latest`.
+For deterministic upgrades in production, pin to a release's version tag (e.g. `shrinkerr:v0.10.0-nvenc`; releases are tagged `vX.Y.Z` and listed on the [Releases](https://github.com/I-IAL9000/shrinkerr/releases) page) instead of a floating `:latest`.
 
 ---
 
@@ -481,10 +481,10 @@ If `nvidia-smi` is missing → the toolkit didn't inject it (capabilities or run
 <details>
 <summary><b>NVENC advertised but encodes fail with "driver too old"</b></summary>
 
-- `:nvenc` ships ffmpeg n7.1 → requires NVIDIA driver **525.60.13+**
+- `:nvenc` ships ffmpeg n8.1 → requires NVIDIA driver **570.00+**
 - `:edge-nvenc` ships ffmpeg master → requires NVIDIA driver **570.00+**
 
-The Monitor page shows your current driver alongside the requirement. Either upgrade the driver or switch to the image variant that matches.
+The Monitor page shows your current driver version and the reason NVENC is off. Upgrade the driver to 570 or newer.
 
 </details>
 

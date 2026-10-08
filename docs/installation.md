@@ -35,7 +35,7 @@ pull from Docker Hub.
 | Tag | Platforms | Encoders | Use when |
 |---|---|---|---|
 | `:latest` | amd64, arm64 | libx265 (CPU) | Default for any host. Mac, Raspberry Pi, ARM cloud, Windows without GPU. |
-| `:nvenc` | amd64 | NVENC + libx265 | NVIDIA GPU host, driver 525.60.13+. |
+| `:nvenc` | amd64 | NVENC + libx265 | NVIDIA GPU host, driver 570+. |
 | `:edge` | amd64, arm64 | libx265, ffmpeg master | You want bleeding-edge ffmpeg features. |
 | `:edge-nvenc` | amd64 | NVENC + libx265, ffmpeg master | GPU + latest ffmpeg + driver 570+. |
 
@@ -55,7 +55,7 @@ services:
     ports:
       - "6680:6680"
     volumes:
-      - ./data:/app/data        # SQLite DB, logs, history, cached posters
+      - ./data:/app/data        # SQLite DB, history, cached posters
       - /srv/media:/media       # your library (rw)
     restart: unless-stopped
 ```
@@ -203,7 +203,7 @@ case you'll see `unable to find group render` and have to use the
 numeric GID instead.
 
 Then `docker compose down && docker compose up -d`, open Settings →
-Encoding, and click **Re-detect** next to the encoder dropdown. QSV
+Video, and click **Re-detect** next to the encoder dropdown. QSV
 and VAAPI options appear if `/dev/dri/renderD*` is exposed and the
 ffmpeg build has the encoders (BtbN GPL builds always do).
 
@@ -384,8 +384,9 @@ On Unraid, map the webUI port in the template to `6680` and the two volumes
    Plex / Jellyfin / Sonarr / Radarr for label-based rules and library
    sync. Settings → Video to fine-tune encoder presets. Everything here
    is optional; the app works out of the box.
-5. **Encoder choice** — Settings → Video. If you have an NVIDIA GPU
-   pick NVENC; otherwise libx265 is the default. See the
+5. **Encoder choice** — Settings → Video. On first start the default
+   encoder is set from what the host supports: NVENC if an NVIDIA GPU is
+   detected, otherwise libx265 (VideoToolbox on a native Mac). See the
    [Encoding guide](encoding-guide.md) for preset tuning.
 6. **Set an auth password** — Settings → System → Authentication. Don't
    expose the port to the internet without this.
@@ -404,7 +405,7 @@ work immediately. Reasons you might want your own key:
   `TMDB_API_KEY` as a build arg, the bundled slot is empty.
 
 Apply at <https://www.themoviedb.org/settings/api> and paste into
-Settings → Connections → TMDB. User-saved keys always win over the
+Settings → Connections → Metadata APIs. User-saved keys always win over the
 bundled one.
 
 If you're running a self-build and want to bundle your own key at
@@ -451,7 +452,7 @@ same settings format, capability detection re-runs on startup.
 
 ```bash
 docker compose down
-rm -rf ./data            # wipes the DB, logs, cached posters
+rm -rf ./data            # wipes the DB, cached posters
 docker image rm ghcr.io/i-ial9000/shrinkerr:nvenc
 ```
 

@@ -15,10 +15,10 @@ starting points that work for most people.
 ## Before your first batch
 
 1. **Back up your DB.** The only stateful thing in Shrinkerr is
-   `./data/shrinkerr.db`. Settings → Backups can export a full backup
+   `./data/shrinkerr.db`. Settings → System → Backups can export a full backup
    (DB + settings + media-dir config); do this after you've configured
    everything and before the first big run.
-2. **Set a backup folder for originals.** Settings → Video → Post-conversion.
+2. **Set a backup folder for originals.** Settings → Automation → Originals & Backups.
    - `trash_original_after_conversion = false` by default (originals
      stay put if the output is larger; see VMAF rejection).
    - `backup_original_days` > 0 keeps originals in a `.shrinkerr_backup/`
@@ -145,10 +145,10 @@ Rules are for patterns you'd otherwise apply manually over and over.
 Good candidates:
 - "My Anime folder needs different settings" → rule matching directory,
   `libx265 slow / CRF 20` override.
-- "4K releases should stay higher quality" → rule matching resolution >=
-  2160p, `CQ 24` override.
-- "Skip any file smaller than 500MB" → rule matching file size < 500MB,
-  action = skip.
+- "4K releases should stay higher quality" → rule matching resolution is
+  4K, `CQ 24` override.
+- "Skip any file smaller than 500MB" → rule matching file size less than
+  0.5 (GB), action = skip.
 - "Use x264 h265 re-encoding only on my tagged `archive-me` series in
   Sonarr" → rule matching Sonarr tag, action = encode.
 
@@ -167,5 +167,5 @@ Off by default — enable with care.
 - Dangerous to turn on during the initial backfill — a bad rule can
   fire on thousands of files before you notice. Do the backfill
   manually first.
-- Pair with a **min-bitrate filter** (Settings → Video → Conversion
-  filters → `min_bitrate_mbps`) so already-tiny files aren't re-encoded.
+- Pair with a **min-bitrate filter** (Settings → Automation → Conversion
+  Filters → `min_bitrate_mbps`) so already-tiny files aren't re-encoded.

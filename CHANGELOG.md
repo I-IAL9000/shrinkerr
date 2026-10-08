@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Links in the in-app changelog only open http(s) addresses.
+- Documentation fixes: NVIDIA driver 570+ for the NVENC images, the remote-worker `PATH_MAPPINGS` format, current Settings locations, and features that were described but don't exist.
 - Activity search treats `%` and `_` as plain characters (they matched anything).
 - Scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 - A VMAF quality cross-check that times out no longer keeps running in the background.

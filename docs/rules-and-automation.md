@@ -23,16 +23,20 @@ plus an action with optional encoder overrides.
 
 ### Conditions
 
-- **Directory** — absolute path with `is` / `starts with` / `contains` /
-  `matches regex`
-- **Source codec** — h264 / hevc / av1 / …
-- **Resolution** — exact (1080p) or range (>=1080p)
-- **File size** — MB threshold
-- **Bitrate** — Mbps threshold
-- **Audio languages present** — match on any/all of a language set
-- **Native language** — matches TMDB's original-language field
+- **Directory** — absolute path; matches files under it (prefix match)
+- **Source** — Remux / WEB-DL / WEBRip / Blu-ray / HDTV / DVD, from the file name
+- **Video codec** — h264 / hevc / av1 / …
+- **Audio codec** — contains / doesn't contain
+- **Resolution** — exact: 4K / 1080p / 720p / SD
+- **File size** — GB threshold (greater than / less than)
+- **Date added** — newer / older than (e.g. `7d`)
+- **Media type** — TV / movie
+- **Title** — file name contains / doesn't contain
+- **Release group**
 - **Plex label / collection / genre / library** — requires Plex connected
-- **Sonarr / Radarr tag** — requires the corresponding integration
+- **Jellyfin / Emby tag**, **Emby watched** — requires the corresponding integration
+- **Sonarr / Radarr tag** — the tag on the file's series / movie; requires the corresponding integration
+- **NZBGet category** — for downloads queued by the NZBGet script
 
 Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
 (AND).
@@ -54,8 +58,8 @@ Rules evaluate top-down. The first matching rule wins. Drag to reorder.
 
 Practical layout that most users arrive at:
 
-1. **Skip rules at the top** — e.g. "directory contains `/samples/`, skip".
-2. **Codec-or-quality-specific rules** — e.g. "resolution >= 4K, use p7
+1. **Skip rules at the top** — e.g. "directory `/media/Samples`, skip".
+2. **Codec-or-quality-specific rules** — e.g. "resolution is 4K, use p7
    and CQ 24" (4K gets more room).
 3. **Source-specific rules** — e.g. "directory starts with `/media/Anime`,
    use `libx265 slow / CRF 20`" (animation compresses differently).
@@ -63,10 +67,10 @@ Practical layout that most users arrive at:
 
 ## Watch folders
 
-Settings → Automation → "Watch new files". When on, new files landing in
-your media directories are scanned within seconds (inotify/FSEvents) and
-appear in the Scanner with the `NEW` badge. Pair this with **Auto-queue
-new files** to have Shrinkerr automatically queue any scan result that
+The file watcher is always on: it polls your media directories every 5
+minutes, and new files it finds appear in the Scanner with the `NEW`
+badge. Pair this with **Auto-queue new files** (Settings → Automation →
+Auto-Queue) to have Shrinkerr automatically queue any scan result that
 needs conversion.
 
 Watch folders run against the same media dirs you configured in
@@ -140,7 +144,7 @@ landing zone, not a finished library.
 
 **3. Path mappings: only when paths actually differ.**
 
-Settings → Integrations → NZBGet → Path Mappings translates the path
+Settings → Connections → NZBGet / SABnzbd → Path mappings translates the path
 the script reports into the path Shrinkerr should open. You only need
 mappings if the two containers see the same file at different paths.
 
@@ -162,7 +166,7 @@ You need a mapping when:
 ### NZBGet script installation
 
 1. Complete the prerequisites above (volume mounts + media dirs).
-2. Settings → Integrations → NZBGet — set Tags / Categories / Priority,
+2. Settings → Connections → NZBGet / SABnzbd — set Tags / Categories / Priority,
    click **Save**, then **Download NZBGet Script**.
 3. Place `Shrinkerr.py` in NZBGet's `ScriptDir` (Settings → Paths →
    ScriptDir; defaults to `/scripts` inside the official container).
@@ -176,7 +180,7 @@ You need a mapping when:
 ### SABnzbd script installation
 
 1. Complete the prerequisites above (volume mounts + media dirs).
-2. Settings → Integrations → SABnzbd, click **Download SABnzbd Script**.
+2. Settings → Connections → NZBGet / SABnzbd, click **Download SABnzbd Script**.
 3. Place `shrinkerr.py` in SABnzbd's `scripts` folder.
 4. SABnzbd → Config → Categories, set **shrinkerr.py** as the
    post-processing script for the categories you want auto-queued.
@@ -185,7 +189,7 @@ You need a mapping when:
 
 ### Shrinkerr-side options
 
-Settings → Integrations → NZBGet (same options exist for SABnzbd):
+Settings → Connections → NZBGet / SABnzbd (same options apply to SABnzbd):
 
 - **Tags** — only process downloads matching these NZBGet tags (empty =
   all)
@@ -244,13 +248,11 @@ filter is set but the Sonarr tag isn't propagated.
 
 ## Sonarr / Radarr
 
-Settings → Integrations → Sonarr / Radarr. Enter URL + API key.
+Settings → Connections → Sonarr / Radarr. Enter URL + API key.
 
 Once connected:
-- **Auto-post-conversion actions** in Settings → Integrations:
-  - **Rename via *arr** — trigger the series/movie rename after
-    conversion (so "h264" → "x265" in the filename reflects reality).
-  - **Refresh monitoring** — notify *arr of the new file.
+- **Rescan after conversion** — Shrinkerr tells Sonarr / Radarr to rescan
+  the series / movie folder so they pick up the new file.
 - **Replace / Upgrade search** buttons on any job's detail view.
 - **Missing search** for content *arr shows as missing but you know is
   actually there (a common thing after a restore from backup).
@@ -259,8 +261,8 @@ Once connected:
 
 ## Plex / Jellyfin integration
 
-**Plex** — Settings → Integrations → Plex. Use the built-in OAuth flow
-(click "Sign in with Plex") or paste a manual token + server URL.
+**Plex** — Settings → Connections → Plex. Use the built-in OAuth flow
+(click "Connect to Plex") or paste a manual token + server URL.
 
 What you get:
 - **Rule conditions on Plex label / collection / genre / library**.
@@ -273,13 +275,13 @@ What you get:
   stream (Shrinkerr on the same host would share the GPU). Configurable
   threshold, transcode-only / any-playback.
 
-**Jellyfin** — Settings → Integrations → Jellyfin. URL, API key, user ID.
+**Jellyfin** — Settings → Connections → Jellyfin. URL, API key, user ID.
 Similar feature set minus the label/collection rules (Jellyfin's
 metadata model differs); library refresh and pause-on-stream both work.
 
 ## Scheduling
 
-**Global quiet hours** (Settings → System → Quiet hours):
+**Global quiet hours** (Schedule page → Quiet Hours):
 - Enabled on/off
 - Start / end hour (24h). `22 → 8` means "quiet from 10pm to 8am".
 - Parallel-jobs override during quiet hours — e.g. drop to 1 instead of
@@ -290,9 +292,9 @@ metadata model differs); library refresh and pause-on-stream both work.
 **Per-node schedule** (Nodes → [node] → Settings → Schedule): click the
 hours the node may process jobs. Combines with global quiet hours.
 
-**Post-conversion action scheduler** (Settings → Automation): run a
-specific action at a specific time daily, like a nightly
-"re-scan Movies" or "Plex sync trash".
+**Run hours / scheduled start** (Schedule page): pick the hours the queue
+may run (it pauses automatically outside them), or schedule a one-off
+queue start.
 
 ## Batch rename
 
@@ -311,7 +313,7 @@ Two patterns — movies and TV. Preview in real time as you edit.
 
 ## Post-conversion scripts
 
-Settings → Advanced → Post-conversion script. A shell command or script
+Settings → Automation → Post-Conversion Script. A shell command or script
 path that runs after every successful encode. Environment vars
 available:
 

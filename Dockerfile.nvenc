@@ -174,7 +174,7 @@ RUN set -eux; \
 # produce an actionable error message if the runtime NVENC test fails. Read
 # by backend/nodes.py during startup-time capability detection.
 ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
-ARG NVENC_MIN_DRIVER=525.60.13
+ARG NVENC_MIN_DRIVER=570.00
 ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
 
 # Use python3.12 as default (Ubuntu 24.04's stock Python, v0.5.13+)

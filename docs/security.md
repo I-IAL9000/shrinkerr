@@ -167,8 +167,8 @@ For a production / internet-exposed deployment, on top of the defaults:
       (if you prefer password auth over raw API keys).
 - [ ] **Rotate the auto-generated API key.** The one printed at first
       launch is cryptographically random, but if you suspect the log
-      was copied somewhere untrusted, Settings → System → API Key →
-      Regenerate.
+      was copied somewhere untrusted, Settings → System → Authentication
+      → API Key → Regenerate.
 - [ ] **Bind the container port to `127.0.0.1`** unless you actually
       want LAN access directly. Put the reverse proxy in front.
 - [ ] **Enable password auth** (`auth_enabled=true`) before configuring
