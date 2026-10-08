@@ -35,6 +35,7 @@
     "outputTruncated": "La salida es más corta que el original ({{output}} s de {{source}} s): probablemente se interrumpió la lectura del archivo. Se ha conservado el original; vuelve a intentar el trabajo.",
     "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",
     "originalLikelyCorrupt": "Probablemente el archivo original está corrupto — la conversión produjo una salida demasiado pequeña para ser útil ({{outputMb}} MB de un archivo de origen de {{originalGb}} GB). ffmpeg encontró datos corruptos que ffprobe no detecta de antemano. La entrada del archivo de origen se marcó como corrupta; se conserva el original.",
+    "tracksChanged": "Las pistas del archivo han cambiado desde que se escaneó; vuelve a escanearlo y añade de nuevo la limpieza a la cola",
     "vmafRejected": "VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",
     "vmafBelowThreshold": "VMAF por debajo del umbral",
     "workerEncoderUnsupported": "El nodo no puede ejecutar el codificador '{{encoder}}' y la traducción de codificador está desactivada",

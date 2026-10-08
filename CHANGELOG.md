@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanner tree rows stay on one line (long names truncate, full name in the tooltip and file panel) instead of wrapping into overlapping rows, and the path picker no longer pushes the Scan button off-screen.
 - The sidebar version label of development builds no longer overflows the sidebar.
 - **A conversion whose source read stalled could replace the original with a truncated output**; outputs shorter than the source are now rejected and the original kept.
+- **A track cleanup queued before Sonarr/Radarr replaced the file removed whatever now sat at those stream numbers**; jobs now check the tracks are still the ones you picked and otherwise ask for a rescan.
 - Two ISOs in one folder (Disc 1 / Disc 2) no longer get the same output name, and a conversion never replaces an unrelated file that already has its output's name.
 - Blu-ray/DVD conversions are VMAF-checked again — the check was handed the disc's marker file, errored, and the encode was accepted unchecked.
 - **Language codes are compared in one spelling**: Bazarr's `.is.srt`, region-tagged tracks (de-DE) and TMDB's 2-letter codes no longer get original- or keep-language tracks marked for removal, and a one-time pass keeps tracks that were wrongly marked.

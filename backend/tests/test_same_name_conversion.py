@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg
 
 
 def _mkv(path, langs):
-    cmd = ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=2"]
+    cmd = ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25:duration=2"]
     for _ in langs:
         cmd += ["-f", "lavfi", "-i", "sine=duration=2"]
     cmd += ["-map", "0:v"]
@@ -32,7 +32,7 @@ def _mkv(path, langs):
 
 
 def _track(index, lang, keep):
-    return {"stream_index": index, "language": lang, "codec": "ac3", "channels": 6, "keep": keep}
+    return {"stream_index": index, "language": lang, "codec": "aac", "channels": 1, "keep": keep}
 
 
 async def _scan_row(db_path, path):
@@ -46,8 +46,7 @@ async def _scan_row(db_path, path):
 @pytest.mark.parametrize("outcome", ["converted", "vmaf_rejected"])
 async def test_conversion_refreshes_track_data_even_when_the_name_is_kept(test_db, tmp_path, monkeypatch, outcome):
     src = tmp_path / "Movie (2009).mkv"
-    # On disk after the job: the French track was removed, English is now stream 1.
-    _mkv(src, ["eng"])
+    _mkv(src, ["fre", "eng"])
     before = [_track(1, "fre", False), _track(2, "eng", True)]
     async with aiosqlite.connect(test_db) as db:
         await db.execute(
@@ -67,6 +66,9 @@ async def test_conversion_refreshes_track_data_even_when_the_name_is_kept(test_d
     import backend.converter as converter
 
     async def fake_convert_file(**kwargs):
+        if outcome == "converted":
+            # The output replaces the file: French removed, English now stream 1.
+            _mkv(src, ["eng"])
         return result
 
     monkeypatch.setattr(converter, "convert_file", fake_convert_file)
@@ -106,12 +108,13 @@ async def _insert_row(db_path, path, tracks, native, source):
         await db.commit()
 
 
-async def _run(db_path, path, job_type, monkeypatch, remove):
+async def _run(db_path, path, job_type, monkeypatch, remove, output_langs):
     import backend.audio as audio
     import backend.converter as converter
     done = {"success": True, "output_path": str(path), "space_saved": 1000, "error": None}
 
     async def fake(*args, **kwargs):
+        _mkv(path, output_langs)  # the job's output replaces the file
         return done
 
     monkeypatch.setattr(converter, "convert_file", fake)
@@ -130,10 +133,10 @@ async def test_stored_guess_is_not_reused_after_the_tracks_changed(test_db, tmp_
     sorting against "rus" would mark both German tracks for removal."""
     await _enable_audio_cleanup(test_db)
     src = tmp_path / "Movie (2009).mkv"
-    _mkv(src, ["ger", "ger"])  # the output
+    _mkv(src, ["rus", "ger", "ger"])
     await _insert_row(test_db, src, [_track(1, "rus", True), _track(2, "ger", False), _track(3, "ger", False)],
                       "rus", "heuristic")
-    row, tracks = await _run(test_db, src, "combined", monkeypatch, remove=[1])
+    row, tracks = await _run(test_db, src, "combined", monkeypatch, remove=[1], output_langs=["ger", "ger"])
     assert tracks == {1: ("ger", True), 2: ("ger", True)}
     assert row["has_removable_tracks_flag"] == 0
 
@@ -144,9 +147,9 @@ async def test_audio_cleanup_sorts_against_the_known_native(test_db, tmp_path, m
     English first, and guessing from track order marked German for removal."""
     await _enable_audio_cleanup(test_db)
     src = tmp_path / "Movie (2009).mkv"
-    _mkv(src, ["eng", "ger"])  # the output
+    _mkv(src, ["rus", "eng", "ger"])
     await _insert_row(test_db, src, [_track(1, "rus", False), _track(2, "eng", False), _track(3, "ger", True)],
                       "ger", "api")
-    row, tracks = await _run(test_db, src, "audio", monkeypatch, remove=[1])
+    row, tracks = await _run(test_db, src, "audio", monkeypatch, remove=[1], output_langs=["eng", "ger"])
     assert tracks[2] == ("ger", True)
     assert tracks[1] == ("eng", False)

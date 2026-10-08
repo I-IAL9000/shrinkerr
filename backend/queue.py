@@ -937,6 +937,45 @@ class QueueWorker:
         msg = str(error_log or "").lower()
         return "database is locked" in msg or "database is busy" in msg
 
+    async def _tracks_changed_since_scan(self, file_path: str, probe: dict,
+                                         audio_remove: list, sub_remove: list) -> Optional[str]:
+        """Describe the first track to remove that isn't, in the file as it is
+        now, the track the Scanner listed at that index — or None when they
+        all still match (or there's no scan row to compare with). External
+        sidecar subtitles (negative indices) aren't streams and are skipped."""
+        from backend.scanner import languages_match
+        db = await self._db()
+        try:
+            async with db.execute(
+                "SELECT audio_tracks_json, subtitle_tracks_json FROM scan_results WHERE file_path = ?",
+                (file_path,),
+            ) as cur:
+                row = await cur.fetchone()
+        finally:
+            await db.close()
+        if not row:
+            return None
+        for kind, removing, stored_json, probed in (
+            ("audio", audio_remove, row["audio_tracks_json"], probe.get("audio_tracks") or []),
+            ("subtitle", sub_remove, row["subtitle_tracks_json"], probe.get("subtitle_tracks") or []),
+        ):
+            try:
+                stored = {t.get("stream_index"): t for t in json.loads(stored_json or "[]")}
+            except (ValueError, TypeError):
+                return f"{kind} track list unreadable"
+            now = {t.get("stream_index"): t for t in probed}
+            for idx in removing:
+                if not isinstance(idx, int) or idx < 0:
+                    continue
+                was, cur_t = stored.get(idx), now.get(idx)
+                if was is None or cur_t is None:
+                    return f"{kind} stream {idx} is gone"
+                if (not languages_match(was.get("language") or "und", cur_t.get("language") or "und")
+                        or (was.get("codec") or "") != (cur_t.get("codec") or "")):
+                    return (f"{kind} stream {idx} was {was.get('language')} {was.get('codec')}, "
+                            f"now {cur_t.get('language')} {cur_t.get('codec')}")
+        return None
+
     async def _complete_finalized(self, job_id: int, exc: Exception) -> None:
         """A step after the output replaced the original failed (H5, v0.10.0).
         Requeueing would re-encode the converted file and a failed job invites
@@ -1885,6 +1924,22 @@ class QueueWorker:
             await self.queue.update_status(job_id, "failed", error_log=msg,
                                            error_key="errors.audioCleanupOnDisc")
             return
+
+        # M9 (v0.10.0): the indices to remove were chosen from the Scanner's
+        # track list. If the file changed since (an *arr upgrade, a re-mux),
+        # they point at other tracks — refuse instead of removing those.
+        if audio_tracks_to_remove or subtitle_tracks_to_remove:
+            changed = await self._tracks_changed_since_scan(
+                file_path, probe, audio_tracks_to_remove, subtitle_tracks_to_remove)
+            if changed:
+                msg = ("The file's tracks changed since it was scanned; rescan it and "
+                       "queue the cleanup again")
+                print(f"[WORKER] Job {job_id}: {msg} ({changed}): {file_path}", flush=True)
+                await self.queue.update_status(job_id, "failed", error_log=f"{msg} ({changed})",
+                                               error_key="errors.tracksChanged")
+                await ws_manager.send_job_complete(job_id, "failed", 0, msg,
+                                                   error_key="errors.tracksChanged")
+                return
 
         jobs_total = stats["total_jobs"]
         jobs_completed = stats["completed"]
