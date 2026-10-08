@@ -68,12 +68,18 @@ function VersionBadge() {
     );
   }
 
-  // Up-to-date: plain version line (original behaviour, unchanged visually).
+  // Up-to-date: plain version line. A development build's version
+  // ("0.10.0-dev.844+c55fcd3") doesn't fit the sidebar on one line, so the
+  // part after the release number goes on a second line.
+  const dash = version.current.indexOf("-");
+  const release = dash === -1 ? version.current : version.current.slice(0, dash);
+  const prerelease = dash === -1 ? null : version.current.slice(dash + 1);
   return (
     <div style={{ padding: "12px 0 24px", marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} className="version-badge">
       <img src="/favicon.svg" alt="" width="16" height="17" />
       <span style={{ fontSize: 10, color: "#5c6778" }}>
-        Shrinkerr v{version.current}
+        Shrinkerr v{release}
+        {prerelease && <><br />{prerelease}</>}
       </span>
     </div>
   );
