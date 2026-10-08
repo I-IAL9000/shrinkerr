@@ -845,10 +845,22 @@ async def _cleanup_expired_backups():
         # Get media dirs
         async with db.execute("SELECT path FROM media_dirs") as cur:
             media_dirs = [r["path"] for r in await cur.fetchall()]
+        async with db.execute("SELECT 1 FROM settings WHERE key = 'disc_backups_redated'") as cur:
+            redate = await cur.fetchone() is None
     finally:
         await db.close()
 
+    from backend.converter import _ALL_DISC_DIRS
+    from backend.media_paths import backup_folder_conflict
+
     deleted = 0
+
+    def is_disc_backup(entry) -> bool:
+        # BDMV/, CERTIFICATE/, VIDEO_TS/ … or a folder holding one (a
+        # release folder, or a "<disc>.1" slot). Nothing else in a backup
+        # folder is ours to delete wholesale.
+        return entry.name.upper() in _ALL_DISC_DIRS or any(
+            os.path.isdir(os.path.join(entry.path, d)) for d in ("BDMV", "VIDEO_TS"))
 
     def cleanup_dir(backup_dir: str):
         nonlocal deleted
@@ -856,10 +868,18 @@ async def _cleanup_expired_backups():
             return
         for entry in os.scandir(backup_dir):
             try:
+                if entry.is_dir(follow_symlinks=False):
+                    if not is_disc_backup(entry):
+                        continue
+                    # Disc backups are folders, and until v0.10.0 they
+                    # kept the disc's own (old) date and never expired: the
+                    # first sweep would have deleted them all at once.
+                    # Give the ones already there a full retention period.
+                    if redate:
+                        os.utime(entry.path)
+                        continue
                 if entry.stat(follow_symlinks=False).st_mtime >= cutoff:
                     continue
-                # Disc backups are folders (BDMV/, VIDEO_TS/, a release
-                # folder); pre-v0.10.0 only files expired, so they never did.
                 if entry.is_dir(follow_symlinks=False):
                     shutil.rmtree(entry.path)
                 elif entry.is_file(follow_symlinks=False):
@@ -877,10 +897,15 @@ async def _cleanup_expired_backups():
             pass
 
     def sweep():
-        # Clean custom backup folder
-        if custom_folder and os.path.isdir(custom_folder):
+        # Clean custom backup folder — unless it overlaps the library, where
+        # "old files in its folders" are the media (v0.10.0).
+        conflict = backup_folder_conflict(custom_folder, media_dirs) if custom_folder else None
+        if conflict:
+            print(f"[BACKUP] Not expiring backups in {custom_folder}: it overlaps media folder "
+                  f"{conflict}. Move the backup folder outside your media folders.", flush=True)
+        elif custom_folder and os.path.isdir(custom_folder):
             for entry in os.scandir(custom_folder):
-                if entry.is_dir():
+                if entry.is_dir(follow_symlinks=False):
                     cleanup_dir(entry.path)
 
         # Clean both .shrinkerr_backup (new) and .squeezarr_backup (legacy) in
@@ -896,6 +921,13 @@ async def _cleanup_expired_backups():
     # Walks every media dir and may delete whole disc folders: off the event
     # loop, where a stalled NAS mount would freeze the app (v0.10.0).
     await asyncio.to_thread(sweep)
+    if redate:
+        db = await aiosqlite.connect(DB_PATH)
+        try:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('disc_backups_redated', '1')")
+            await db.commit()
+        finally:
+            await db.close()
 
     if deleted > 0:
         print(f"[BACKUP] Cleaned up {deleted} expired backup(s) (older than {days} days)", flush=True)

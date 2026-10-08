@@ -1113,6 +1113,21 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                 updates["backup_folder"] = _validate_filesystem_path(
                     raw, label="Backup folder"
                 )
+                # Expiry deletes old files in the backup folder's folders —
+                # inside the library, those are media (v0.10.0). Checked on
+                # change so a save of other settings isn't blocked.
+                if updates["backup_folder"] != await _stored_setting(db, "backup_folder"):
+                    from backend.media_paths import backup_folder_conflict
+                    async with db.execute("SELECT path FROM media_dirs") as cur:
+                        media_dirs = [r[0] for r in await cur.fetchall()]
+                    conflict = backup_folder_conflict(updates["backup_folder"], media_dirs)
+                    if conflict:
+                        raise ApiError(
+                            status_code=400,
+                            detail=f"The backup folder can't overlap media folder {conflict}",
+                            code="settings.backupFolderInLibrary",
+                            params={"path": conflict},
+                        )
             else:
                 updates["backup_folder"] = ""
         if update.filename_suffix is not None:
@@ -1681,10 +1696,12 @@ async def list_backups():
                 except OSError:
                     pass
 
-    # Scan custom backup folder
-    if custom_folder:
+    # Scan custom backup folder — not when it overlaps the library: its
+    # files would be media, and "Delete all" deletes what's listed (v0.10.0).
+    from backend.media_paths import backup_folder_conflict
+    if custom_folder and not backup_folder_conflict(custom_folder, media_dirs):
         for entry in os.scandir(custom_folder) if os.path.isdir(custom_folder) else []:
-            if entry.is_dir():
+            if entry.is_dir(follow_symlinks=False):
                 scan_backup_dir(entry.path)
 
     # Scan both the new .shrinkerr_backup and the legacy .squeezarr_backup
@@ -1721,22 +1738,32 @@ async def delete_backups(req: DeleteBackupsRequest):
     freed = 0
 
     if req.paths:
+        from backend.media_paths import backup_folder_conflict, is_within
+        db = await connect_db()
+        try:
+            async with db.execute("SELECT value FROM settings WHERE key = 'backup_folder'") as cur:
+                row = await cur.fetchone()
+                custom = row["value"] if row else ""
+            async with db.execute("SELECT path FROM media_dirs") as cur:
+                media_dirs = [r["path"] for r in await cur.fetchall()]
+        finally:
+            await db.close()
+        if custom and backup_folder_conflict(custom, media_dirs):
+            custom = ""
         # Delete specific files
         for path in req.paths:
-            if not os.path.exists(path):
+            # Safety: only files inside a recognised backup dir (new or
+            # legacy) or the configured centralized backup folder. Checked
+            # on the resolved path: ".shrinkerr_backup/../Movie.mkv"
+            # matched a substring test (v0.10.0).
+            real = os.path.realpath(path)
+            if not os.path.isfile(real):
                 continue
-            # Safety: only delete from a recognised backup dir (new or legacy)
-            # or the configured centralized backup folder
-            if ".shrinkerr_backup" not in path and ".squeezarr_backup" not in path:
-                db = await connect_db()
-                try:
-                    async with db.execute("SELECT value FROM settings WHERE key = 'backup_folder'") as cur:
-                        row = await cur.fetchone()
-                        custom = row["value"] if row else ""
-                finally:
-                    await db.close()
-                if not custom or not path.startswith(custom):
-                    continue  # Skip — not a backup path
+            in_backup_dir = any(part in (".shrinkerr_backup", ".squeezarr_backup")
+                                for part in Path(real).parent.parts)
+            if not in_backup_dir and not (custom and is_within(real, custom)):
+                continue  # Skip — not a backup path
+            path = real
             try:
                 size = os.path.getsize(path)
                 os.unlink(path)

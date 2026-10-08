@@ -72,6 +72,7 @@ async def test_sweep_expires_folders_as_well_as_files(test_db, tmp_path, monkeyp
     _age(backups / "old.mkv")
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('disc_backups_redated', '1')")
         await db.execute("INSERT INTO media_dirs (path) VALUES (?)", (str(media),))
         await db.commit()
 

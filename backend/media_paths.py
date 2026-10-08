@@ -65,6 +65,23 @@ def is_in_any(child_path: str, parents: list[str]) -> bool:
     return any(is_within(child_path, p) for p in parents)
 
 
+def backup_folder_conflict(folder: str, media_dirs: list[str]) -> str | None:
+    """The media folder a custom backup folder overlaps, if any (v0.10.0).
+
+    Backup expiry and "Delete backups" remove old files from every folder
+    inside the backup folder: pointed at (or above) the library, that's the
+    media itself. A hidden folder inside a media folder is fine — scans
+    skip it, so only backups end up there."""
+    for media_dir in media_dirs:
+        if is_within(media_dir, folder):  # the same folder, or the library is inside it
+            return media_dir
+        if is_within(folder, media_dir):
+            rel = Path(os.path.relpath(_resolve(folder), _resolve(media_dir)))
+            if not any(part.startswith(".") for part in rel.parts):
+                return media_dir
+    return None
+
+
 async def media_dir_label_for(path: str) -> str | None:
     """Return the `media_dirs.label` for the directory `path` lives inside,
     or None if it isn't under any configured root.

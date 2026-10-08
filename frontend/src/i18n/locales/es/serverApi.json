@@ -79,6 +79,7 @@
     "unsupportedOp": "Operador '{{op}}' no admitido para la propiedad '{{property}}'"
   },
   "settings": {
+    "backupFolderInLibrary": "La carpeta de copias de seguridad no puede solaparse con la carpeta multimedia {{path}}",
     "authNeedsPassword": "Define un nombre de usuario y una contraseña antes de activar la autenticación con contraseña.",
     "backupNotFound": "Copia de seguridad no encontrada",
     "customFlagsInvalid": "Los parámetros personalizados de ffmpeg no pueden añadir entradas ni salidas ni nombrar archivos (rechazado: {{token}})",

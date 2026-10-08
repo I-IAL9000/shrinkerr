@@ -16,7 +16,11 @@ async def client(test_db, monkeypatch):
     db_module.DB_PATH = test_db
     # The auth middleware reads main's own DB_PATH (bound when backend.main
     # was first imported, possibly by another test) and caches it for 60s.
-    monkeypatch.setattr(main_module, "DB_PATH", test_db)
+    # Route modules hold their own copies too.
+    import sys
+    for name, module in list(sys.modules.items()):
+        if name.startswith("backend.") and isinstance(getattr(module, "DB_PATH", None), str):
+            monkeypatch.setattr(module, "DB_PATH", test_db)
     monkeypatch.setitem(main_module._auth_cache, "checked_at", 0)
 
     # Re-init job routes with test-db-backed instances

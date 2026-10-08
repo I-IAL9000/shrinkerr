@@ -79,6 +79,7 @@
     "unsupportedOp": "Unsupported op '{{op}}' for property '{{property}}'"
   },
   "settings": {
+    "backupFolderInLibrary": "The backup folder can't overlap media folder {{path}}",
     "authNeedsPassword": "Set a username and password before turning on password authentication.",
     "backupNotFound": "Backup not found",
     "customFlagsInvalid": "Custom ffmpeg flags can't add inputs or outputs or name files (rejected: {{token}})",
