@@ -1181,13 +1181,51 @@ def rename_source_quality_in_filename(filename: str) -> str:
     return result
 
 
+_TECH_SECTION_START_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:2160p|1080[pi]|720p|576[pi]|480[pi]|4K|UHD)(?![A-Za-z0-9])", re.IGNORECASE)
+_AUDIO_TAG_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:" + "|".join(AUDIO_FILENAME_PATTERNS) + r")(?![A-Za-z])", re.IGNORECASE)
+
+
+def _find_own_temp_variant(temp: Path) -> Optional[Path]:
+    """This job's temp output under a name the share stored differently
+    (Unicode normalization or case), or None. v0.9.155: this used to adopt
+    the newest *.converting.mkv in the folder — a parallel job's episode
+    still being encoded — rename it to this job's final name and dispose
+    this job's original."""
+    import unicodedata
+
+    def _key(name: str) -> str:
+        return unicodedata.normalize("NFC", name).casefold()
+
+    want = _key(temp.name)
+    try:
+        for f in temp.parent.glob("*.converting.mkv"):
+            try:
+                if _key(f.name) == want and f.stat().st_size > 0:
+                    return f
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return None
+
+
 def rename_audio_codec_in_filename(filename: str, new_audio_tag: str) -> str:
-    """Replace audio codec tags in a filename with the actual primary audio codec."""
-    # Build a combined pattern matching any known audio codec tag
-    combined = "|".join(AUDIO_FILENAME_PATTERNS)
-    # Only replace the first match (the primary audio codec in the filename)
-    result = re.sub(combined, new_audio_tag, filename, count=1, flags=re.IGNORECASE)
-    return result
+    """Replace the first audio codec tag in a filename with the actual primary
+    audio codec. v0.9.155: only whole tags in the technical part (after the
+    resolution tag) — matching anywhere rewrote titles on disk ("Octopussy" →
+    "OctEAC3sy", "Isaac" → "IsEAC3"). No resolution tag → left unchanged."""
+    start = _TECH_SECTION_START_RE.search(filename)
+    if not start:
+        return filename
+    head, tail = filename[:start.end()], filename[start.end():]
+
+    def _swap(m: re.Match) -> str:
+        # "DDP5.1" → "EAC3 5.1", not "EAC35.1"
+        return new_audio_tag + (" " if tail[m.end():m.end() + 1].isdigit() else "")
+
+    return head + _AUDIO_TAG_RE.sub(_swap, tail, count=1)
 
 
 async def _is_media_dir_root(candidate: Path) -> bool:
@@ -3126,24 +3164,11 @@ async def convert_file(
         final = Path(final_path)
         if final.exists() and final.stat().st_size > 0:
             return final, "already-renamed final path"
-        # 4. Scan the parent directory for any .converting.mkv file younger
-        # than when we started — ffmpeg might have written to a nearby path.
-        try:
-            parent = temp.parent
-            candidates = []
-            for f in parent.glob("*.converting.mkv"):
-                try:
-                    st = f.stat()
-                    if st.st_size > 0:
-                        candidates.append((f, st.st_size, st.st_mtime))
-                except OSError:
-                    continue
-            if candidates:
-                # Pick the most-recently-modified one.
-                candidates.sort(key=lambda x: x[2], reverse=True)
-                return candidates[0][0], f"recovered via directory scan ({candidates[0][0].name})"
-        except Exception:
-            pass
+        # 4. The share may have stored our temp name in another Unicode
+        # form or case. Never adopt a different file (v0.9.155).
+        variant = _find_own_temp_variant(temp)
+        if variant is not None:
+            return variant, f"recovered via directory scan ({variant.name})"
         return None, "no output file found"
 
     resolved, how = await _resolve_output()

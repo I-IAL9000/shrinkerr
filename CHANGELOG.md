@@ -5,6 +5,17 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.155] — 2026-10-08
+
+### Security
+- **Fixed two unauthenticated holes: a path traversal that could download any file the app can read (including its database), and a Plex image-proxy flaw that could send the Plex token to another host.** If your instance was reachable from outside your network, rotate your API key/password and Plex token.
+
+### Fixed
+- Remote workers' audio cleanup kept the tracks marked for removal and dropped the rest.
+- Setting or detecting a track's language no longer marks the native-language tracks for removal.
+- Renaming never overwrites an existing file or folder, and the post-conversion audio-tag rename no longer alters titles ("Octopussy" → "OctEAC3sy").
+- A job that can't find its own output no longer adopts another job's in-progress file.
+
 ## [0.9.154] — 2026-10-08
 
 ### Fixed

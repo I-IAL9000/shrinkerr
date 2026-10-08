@@ -1052,7 +1052,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     scan_results, return the updated tracks. Fail-open per track."""
     from backend.scanner import (
         probe_file, classify_audio_tracks, classify_subtitle_tracks,
-        detect_native_language, _extract_embedded_sub_text,
+        _extract_embedded_sub_text,
     )
     from backend.language_detection import (
         detect_audio_language, maybe_detect_subtitle_track_language, _TEXT_SUB_CODECS,
@@ -1300,7 +1300,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         return {"status": "ok", "changed": False, "file_written": False}
 
     # Re-classify + persist in the STORED schema (mirror the v0.6.5 backfill).
-    native_lang = detect_native_language(raw_audio)
+    native_lang, _ = await _classification_native(req.file_path, raw_audio)
     audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
     subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
     # v0.9.35: re-attach detected-but-unwritten languages (untaggable source).
@@ -1394,6 +1394,31 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     }
 
 
+_AUTHORITATIVE_NATIVE_SOURCES = ("api", "manual", "tmdb-manual")
+
+
+async def _classification_native(file_path: str, raw_audio: list) -> tuple[str, str]:
+    """(native_language, language_source) to sort tracks against after a
+    track's language changes. v0.9.155: both set-track-language and detection
+    re-derived the native from the FIRST audio track — native German from
+    TMDB plus a track relabeled Russian marked both German tracks for removal.
+    A TMDB / manual native wins; otherwise the track-order guess, which stays
+    labeled 'heuristic'."""
+    from backend.scanner import detect_native_language
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT native_language, language_source FROM scan_results WHERE file_path = ?",
+            (file_path,),
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    if row and row["native_language"] and (row["language_source"] or "") in _AUTHORITATIVE_NATIVE_SOURCES:
+        return row["native_language"], row["language_source"]
+    return detect_native_language(raw_audio), "heuristic"
+
+
 class SetTrackLanguageRequest(BaseModel):
     file_path: str
     track_type: str  # "audio" | "subtitle"
@@ -1409,7 +1434,6 @@ async def set_track_language(req: SetTrackLanguageRequest):
     same path auto-detection uses. External sidecar subs are renamed."""
     from backend.scanner import (
         probe_file, classify_audio_tracks, classify_subtitle_tracks,
-        detect_native_language,
     )
     from backend.language_detection import apply_track_languages_to_file, _UNTAGGABLE_CONTAINERS
     from backend.models import SubtitleTrack
@@ -1502,7 +1526,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
                     sub_detected[si] = code
                 raw_subs[j]["language"] = "und"; sub_write[j] = None
 
-    native_lang = detect_native_language(raw_audio)
+    native_lang, native_source = await _classification_native(req.file_path, raw_audio)
     audio_tracks = classify_audio_tracks(raw_audio, native_lang, duration)
     subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
     for es in stored_external_subs:
@@ -1525,10 +1549,10 @@ async def set_track_language(req: SetTrackLanguageRequest):
     try:
         await db.execute(
             "UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?, "
-            "native_language = ?, language_source = 'manual', "
+            "native_language = ?, language_source = ?, "
             "has_removable_tracks_flag = ?, has_removable_subs_flag = ?, "
             "has_und_tracks_flag = ? WHERE file_path = ?",
-            (audio_json, subtitle_json, native_lang, has_removable, has_removable_subs,
+            (audio_json, subtitle_json, native_lang, native_source, has_removable, has_removable_subs,
              _und_flag(audio_tracks, subtitle_tracks), req.file_path),
         )
         await db.commit()

@@ -572,3 +572,37 @@ def test_resolution_label_uses_width_for_scope_films():
     assert resolution_label(720, 576) == "576p"
     assert resolution_label(720, 480) == "480p"
     assert resolution_label(0, 1080) == "1080p"  # width unknown: height alone
+
+
+# v0.9.155: the audio-codec rename after conversion matched codec names
+# anywhere, so titles were rewritten on disk ("Octopussy" → "OctEAC3sy").
+@pytest.mark.parametrize("name,tag,expected", [
+    ("Octopussy (1983) 1080p BluRay DTS 5.1 x265", "EAC3", "Octopussy (1983) 1080p BluRay EAC3 5.1 x265"),
+    ("Flac Dance (2011) 1080p WEB AAC 2.0 x265", "EAC3", "Flac Dance (2011) 1080p WEB EAC3 2.0 x265"),
+    ("The Binding of Isaac (2014) 720p WEB AAC 2.0 x265", "AC3", "The Binding of Isaac (2014) 720p WEB AC3 2.0 x265"),
+    ("Show - S01E01 - Pilot - 1080p WEB DDP5.1 H.265", "EAC3", "Show - S01E01 - Pilot - 1080p WEB EAC3 5.1 H.265"),
+    ("Movie (2001) 2160p UHD BluRay TrueHD Atmos 7.1 HEVC-GRP", "EAC3", "Movie (2001) 2160p UHD BluRay EAC3 7.1 HEVC-GRP"),
+    ("Movie (2001) 1080p BluRay DTS-HD MA 5.1 x265", "AC3", "Movie (2001) 1080p BluRay AC3 5.1 x265"),
+    ("Opus Dei Story (2010) WEB AAC 2.0", "EAC3", "Opus Dei Story (2010) WEB AAC 2.0"),  # no resolution → untouched
+])
+def test_rename_audio_codec_only_touches_the_technical_part(name, tag, expected):
+    from backend.converter import rename_audio_codec_in_filename
+    assert rename_audio_codec_in_filename(name, tag) == expected
+
+
+# v0.9.155: when a job couldn't find its own temp output it adopted the newest
+# *.converting.mkv in the folder — e.g. a parallel job's in-progress episode —
+# renamed it to its own final name and disposed its own original.
+def test_temp_recovery_never_adopts_another_jobs_output(tmp_path):
+    import unicodedata
+    from backend.converter import _find_own_temp_variant
+    own = tmp_path / "Show - S01E01.converting.mkv"          # missing
+    other = tmp_path / "Show - S01E02.converting.mkv"
+    other.write_bytes(b"another job's encode in progress")
+    assert _find_own_temp_variant(own) is None
+
+    # A name the share stored in another Unicode form / case is still ours.
+    own2 = tmp_path / "Amélie (2001).converting.mkv"
+    variant = tmp_path / unicodedata.normalize("NFD", "AMÉLIE (2001).converting.mkv")
+    variant.write_bytes(b"ours")
+    assert _find_own_temp_variant(own2) == variant

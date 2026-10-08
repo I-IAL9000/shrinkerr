@@ -555,16 +555,31 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
 
             if audio_remove or sub_remove:
                 await progress_cb(progress=95, step="removing tracks")
+                # v0.9.155: remux_audio takes KEEP lists. Passing the remove
+                # lists positionally kept exactly the tracks meant to go (and
+                # sent the subtitle list as `duration`). Derive them like the
+                # server's own audio path does (queue.py), from the probe.
+                keep_audio = [t["stream_index"] for t in probe.get("audio_tracks", [])
+                              if t["stream_index"] not in audio_remove]
+                keep_subs = ([t["stream_index"] for t in probe.get("subtitle_tracks", [])
+                              if t["stream_index"] not in sub_remove] if sub_remove else None)
                 try:
                     audio_result = await remux_audio(
-                        current_file_path, audio_remove, sub_remove,
+                        current_file_path, keep_audio, duration=duration,
+                        keep_subtitle_indices=keep_subs,
                     )
-                    if audio_result.get("success"):
-                        space_saved += audio_result.get("space_saved", 0)
-                        if audio_result.get("output_path"):
-                            current_file_path = audio_result["output_path"]
                 except Exception as exc:
-                    print(f"[WORKER] Audio remux failed (non-fatal): {exc}", flush=True)
+                    audio_result = {"success": False, "error": str(exc)}
+                if not audio_result.get("success"):
+                    error = audio_result.get("error") or "Track removal failed"
+                    print(f"[WORKER] Audio remux failed: {error}", flush=True)
+                    await client.report_complete(node_id, job_id, False, error=error,
+                                                 error_key=audio_result.get("error_key"),
+                                                 error_params=audio_result.get("error_params"))
+                    return
+                space_saved += audio_result.get("space_saved", 0)
+                if audio_result.get("output_path"):
+                    current_file_path = audio_result["output_path"]
 
         print(f"[WORKER] Job {job_id} completed: saved {space_saved / (1024**3):.2f} GB", flush=True)
 

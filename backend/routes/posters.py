@@ -142,6 +142,20 @@ def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
     }
 
 
+# v0.9.155: Plex image paths are only ever item artwork like
+# /library/metadata/123/thumb/1699999999. Anything else is refused before the
+# token is attached — "@evil.example/x" made the Plex host URL userinfo and
+# sent the token to evil.example, and other paths reached any Plex endpoint.
+_PLEX_IMAGE_PATH_RE = re.compile(r"/library/metadata/\d+/[A-Za-z]+(?:/\d+)?")
+
+
+def plex_image_url(plex_url: str, path: str, plex_token: str) -> str | None:
+    """Direct Plex URL for an artwork path, or None if `path` isn't one."""
+    if not _PLEX_IMAGE_PATH_RE.fullmatch(path or ""):
+        return None
+    return f"{plex_url}{path}?X-Plex-Token={plex_token}"
+
+
 async def _download_image(url: str, plex_url: str = "", plex_token: str = "") -> str | None:
     """Download an image and return base64-encoded data. Returns None on failure."""
     import httpx
@@ -155,6 +169,9 @@ async def _download_image(url: str, plex_url: str = "", plex_token: str = "") ->
                 return None
             from urllib.parse import quote, unquote
             thumb = unquote(path)
+            original = plex_image_url(plex_url, thumb, plex_token)
+            if not original:
+                return None
             # v0.9.151: a Plex thumb URL returns the original artwork (avg
             # ~0.6 MB, up to 10 MB). Ask Plex's photo transcoder for a
             # poster-sized JPEG like TMDB's w300; the original is only a
@@ -162,7 +179,7 @@ async def _download_image(url: str, plex_url: str = "", plex_token: str = "") ->
             urls = [
                 f"{plex_url}/photo/:/transcode?width={PLEX_POSTER_WIDTH}&height={PLEX_POSTER_HEIGHT}"
                 f"&minSize=1&upscale=0&url={quote(thumb, safe='')}&X-Plex-Token={plex_token}",
-                f"{plex_url}{thumb}?X-Plex-Token={plex_token}",
+                original,
             ]
         elif url.startswith("http"):
             urls = [url]
@@ -1094,8 +1111,9 @@ async def proxy_plex_image(path: str):
     if not plex_url or not plex_token:
         raise HTTPException(status_code=503, detail="Plex not configured")
 
-    decoded_path = unquote(path)
-    image_url = f"{plex_url}{decoded_path}?X-Plex-Token={plex_token}"
+    image_url = plex_image_url(plex_url, unquote(path), plex_token)
+    if not image_url:
+        raise HTTPException(status_code=400, detail="Not a Plex artwork path")
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:

@@ -665,6 +665,19 @@ async def build_plan(file_path: str, probe_info: Optional[dict] = None, settings
     return plan
 
 
+def _rename_no_overwrite(src: str, dst: str) -> None:
+    """os.rename that refuses to replace an existing path (v0.9.155).
+
+    Two editions / CD parts / PROPERs can map to the same new name, and
+    os.rename() silently replaced the first file with the second (on the NAS
+    share the replaced file also lands in the recycle bin). A case-only
+    rename on a case-insensitive filesystem points at the same file and is
+    allowed."""
+    if os.path.lexists(dst) and not (os.path.exists(dst) and os.path.samefile(src, dst)):
+        raise FileExistsError(f"Target already exists, not overwriting: {dst}")
+    os.rename(src, dst)
+
+
 async def apply_plan(plan: RenamePlan) -> dict:
     """Execute a rename plan on disk. Returns {old, new, applied, error}.
 
@@ -688,18 +701,18 @@ async def apply_plan(plan: RenamePlan) -> dict:
         # 1. File rename
         if plan.new_path != plan.old_path:
             os.makedirs(os.path.dirname(plan.new_path), exist_ok=True)
-            os.rename(plan.old_path, plan.new_path)
+            _rename_no_overwrite(plan.old_path, plan.new_path)
             current_path = plan.new_path
 
         # 2. Season folder rename (TV only)
         if plan.old_season_folder and plan.new_season_folder and plan.new_season_folder != plan.old_season_folder:
             # The current file moved with the folder rename — update current_path
-            os.rename(plan.old_season_folder, plan.new_season_folder)
+            _rename_no_overwrite(plan.old_season_folder, plan.new_season_folder)
             current_path = current_path.replace(plan.old_season_folder, plan.new_season_folder, 1)
 
         # 3. Series/movie folder rename
         if plan.old_folder and plan.new_folder and plan.new_folder != plan.old_folder:
-            os.rename(plan.old_folder, plan.new_folder)
+            _rename_no_overwrite(plan.old_folder, plan.new_folder)
             current_path = current_path.replace(plan.old_folder, plan.new_folder, 1)
 
         result["applied"] = True

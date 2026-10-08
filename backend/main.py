@@ -888,9 +888,11 @@ if frontend_dist.exists():
     # Serve other static files from dist root (favicon, logos, etc.)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Try to serve the exact file first
-        file_path = frontend_dist / full_path
-        if full_path and file_path.is_file():
+        # Try to serve the exact file first — only from inside dist
+        # (v0.9.155: unnormalised paths served any readable file, unauthenticated).
+        from backend.spa import spa_file
+        file_path = spa_file(frontend_dist, full_path)
+        if file_path:
             return FileResponse(file_path)
         # Otherwise serve index.html for SPA routing. no-cache = always
         # revalidate: without it browsers heuristically cached index.html, so
