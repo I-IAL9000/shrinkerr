@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup, updateEncodingSettings, login } from "../api";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
 import {
@@ -20,12 +20,6 @@ const tooltipStyle = {
   labelStyle: { color: "var(--text-muted)" },
   cursor: { fill: "var(--bg-tertiary)", opacity: 0.5 },
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
-  if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
-  return `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
-}
 
 // Donut chart with optional center text
 function Donut({ segments, size = 120, hole = 0.65, centerText }: {
@@ -504,7 +498,7 @@ export default function DashboardPage() {
 
         {/* Total saved */}
         <div style={cardStyle}>
-          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{formatBytes(dash.total_saved || 0)}</div>
+          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtBytes(dash.total_saved || 0)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalSpaceSaved")}</div>
           {dash.bandwidth_pct > 0 && (
             <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{t("dashboard:cards.smallerFiles", { pct: dash.bandwidth_pct })}</div>
@@ -514,7 +508,7 @@ export default function DashboardPage() {
         {/* Disk space */}
         <div style={cardStyle}>
           <div style={{ fontSize: 28, fontWeight: "bold", color: diskColor(totalFree) }}>
-            {formatBytes(totalFree)}
+            {fmtBytes(totalFree)}
           </div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalFreeDisk")}</div>
           {(dash.disk || []).length > 0 && (
@@ -522,7 +516,7 @@ export default function DashboardPage() {
               {(dash.disk || []).map((d: any, i: number) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", color: diskColor(d.free), marginTop: 2 }}>
                   <span>{d.label}</span>
-                  <span>{formatBytes(d.free)}</span>
+                  <span>{fmtBytes(d.free)}</span>
                 </div>
               ))}
             </div>
@@ -534,7 +528,7 @@ export default function DashboardPage() {
       <div style={{ ...cardStyle, display: "flex", gap: 28, padding: "12px 20px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{t("dashboard:today.label")}</span>
         <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{formatBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{fmtBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
         {(today.avg_fps || 0) > 0 && (
           <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
         )}
@@ -612,7 +606,7 @@ export default function DashboardPage() {
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)" }}>{t("dashboard:summary.totalSaved")}</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold", fontSize: 16 }}>{formatBytes(s.total_saved)}</span>
+                  <span style={{ color: "var(--accent)", fontWeight: "bold", fontSize: 16 }}>{fmtBytes(s.total_saved)}</span>
                 </div>
               </div>
             </div>
@@ -623,7 +617,7 @@ export default function DashboardPage() {
         {dash.projection && dash.projection.projected_days > 0 && (
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 100 }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>~{formatBytes(dash.projection.projected_savings)}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>~{fmtBytes(dash.projection.projected_savings)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:projection.projectedSavings")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
@@ -631,10 +625,10 @@ export default function DashboardPage() {
                 t={t}
                 i18nKey="dashboard:projection.sentence"
                 values={{
-                  rate: formatBytes(dash.projection.avg_daily_savings),
+                  rate: fmtBytes(dash.projection.avg_daily_savings),
                   jobsPerDay: dash.projection.avg_jobs_per_day,
                   files: dash.projection.remaining_files.toLocaleString(),
-                  size: formatBytes(dash.projection.remaining_size),
+                  size: fmtBytes(dash.projection.remaining_size),
                   duration: dash.projection.projected_days > 365
                     ? t("dashboard:projection.years", { value: (dash.projection.projected_days / 365).toFixed(1) })
                     : dash.projection.projected_days > 30
@@ -886,7 +880,7 @@ export default function DashboardPage() {
                       }} />
                     </div>
                     <span style={{ width: 60, fontSize: 11, color: "var(--success)", fontWeight: "bold", textAlign: "right", flexShrink: 0 }}>
-                      {formatBytes(f.value)}
+                      {fmtBytes(f.value)}
                     </span>
                   </div>
                 ))}
@@ -915,7 +909,7 @@ export default function DashboardPage() {
                       }} />
                     </div>
                     <span style={{ fontSize: 11, color: "var(--success)", fontWeight: "bold", width: 70, textAlign: "right", flexShrink: 0 }}>
-                      {formatBytes(job.space_saved)}
+                      {fmtBytes(job.space_saved)}
                     </span>
                   </div>
                 ))}
@@ -1005,7 +999,6 @@ export default function DashboardPage() {
         {/* Cloud Storage Savings + Drives Saved */}
         {s.total_saved > 0 && (() => {
           const savedTB = s.total_saved / (1024 ** 4);
-          const savedGB = s.total_saved / (1024 ** 3);
           const cloudCosts = [
             { name: "Amazon S3", perTB: 23 },
             { name: "Google Cloud", perTB: 20 },
@@ -1027,7 +1020,7 @@ export default function DashboardPage() {
               <div style={cardStyle}>
                 <h3 style={{ ...headingStyle, marginBottom: 6 }}>{t("dashboard:cloud.title")}</h3>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>
-                  {t("dashboard:cloud.description", { tb: savedTB.toFixed(1) })}
+                  {t("dashboard:cloud.description", { size: fmtBytes(s.total_saved) })}
                 </div>
                 {cloudCosts.map(c => (
                   <div key={c.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
@@ -1042,7 +1035,7 @@ export default function DashboardPage() {
                   <Trans
                     t={t}
                     i18nKey="dashboard:drives.description"
-                    values={{ amount: savedTB >= 1 ? `${savedTB.toFixed(1)} TB` : `${savedGB.toFixed(0)} GB` }}
+                    values={{ amount: fmtBytes(s.total_saved) }}
                     components={{ strong: <strong style={{ color: "var(--text-primary)" }} /> }}
                   />
                 </div>
@@ -1092,7 +1085,7 @@ export default function DashboardPage() {
                         </span>
                         <span style={{ display: "flex", gap: 12, color: "var(--text-muted)" }}>
                           <span>{t("dashboard:efficiency.files", { count: data.count, num: fmtNum(data.count) })}</span>
-                          <span>{t("dashboard:efficiency.saved", { size: formatBytes(data.saved) })}</span>
+                          <span>{t("dashboard:efficiency.saved", { size: fmtBytes(data.saved) })}</span>
                           <span style={{ color: "var(--success)", fontWeight: 600 }}>{data.percent}%</span>
                         </span>
                       </div>
@@ -1106,7 +1099,7 @@ export default function DashboardPage() {
                         }} />
                       </div>
                       <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                        {t("dashboard:efficiency.originalToEncoded", { original: formatBytes(data.original), encoded: formatBytes(data.original - data.saved) })}
+                        {t("dashboard:efficiency.originalToEncoded", { original: fmtBytes(data.original), encoded: fmtBytes(data.original - data.saved) })}
                       </div>
                     </div>
                   );

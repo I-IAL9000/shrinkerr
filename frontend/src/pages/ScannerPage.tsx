@@ -822,7 +822,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     })) return;
     try {
       const res = await resetHealthStatus({ reset_all_corrupt: true, unignore: true });
-      toast(t("scanner:toasts.corruptCleared", { count: res.reset }) + (res.unignored ? t("scanner:toasts.corruptUnignored", { n: res.unignored }) : ""), "success");
+      toast(t("scanner:toasts.corruptCleared", { count: res.reset }) + (res.unignored ? t("scanner:toasts.corruptUnignored", { count: res.unignored }) : ""), "success");
       loadTree();
     } catch (err: any) {
       toast(t("scanner:toasts.resetFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");

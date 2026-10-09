@@ -10,7 +10,7 @@
       "manual": "coincidencia manual",
       "heuristic": "heurístico"
     },
-    "convertEstimate": "Convertir a x265 10-bit (ahorro est. ~{{size}} GB)",
+    "convertEstimate": "Convertir a x265 10-bit (ahorro est. ~{{size}})",
     "loading": "Cargando pistas...",
     "audioHeading": "Pistas de audio:",
     "noAudio": "No se detectaron pistas de audio",

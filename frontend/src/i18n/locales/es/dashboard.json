@@ -153,7 +153,7 @@
   },
   "cloud": {
     "title": "Ahorro en almacenamiento en la nube",
-    "description": "Si tu biblioteca estuviera en la nube, ahorrarías esto al mes al recuperar {{tb}} TB:",
+    "description": "Si tu biblioteca estuviera en la nube, ahorrarías esto al mes al recuperar {{size}}:",
     "perMonth": "${{amount}}/mes"
   },
   "drives": {

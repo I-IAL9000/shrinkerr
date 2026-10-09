@@ -4,13 +4,14 @@ import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import EventTimeline from "./EventTimeline";
-import { LANGUAGES } from "../utils/languages";
+import { languageOptions } from "../utils/languages";
 import { vmafLabel } from "../utils/vmaf";
 import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
 import { serverText, detectNote } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
 import { hdrLabel } from "../codecLabels";
+import { fmtBytes } from "../fmt";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -321,7 +322,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
           })()}
           {file.needs_conversion && (
             <div style={{ color: "var(--success)", marginBottom: 6 }}>
-              {t("fileDetail:tracks.convertEstimate", { size: (convSavings / (1024**3)).toFixed(1) })}
+              {t("fileDetail:tracks.convertEstimate", { size: fmtBytes(convSavings) })}
             </div>
           )}
           {loading ? (
@@ -646,7 +647,7 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
           onBlur={() => setEditing(false)}
           style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--accent)", borderRadius: 4, fontSize: 11, padding: "1px 4px" }}
         >
-          {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
+          {languageOptions().map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
         </select>
       )}
     </div>

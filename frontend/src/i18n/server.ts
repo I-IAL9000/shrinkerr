@@ -1,4 +1,5 @@
 import i18n from ".";
+import { fmtBytes } from "../fmt";
 
 // Server message codes (v0.9.132). The backend stores/sends a stable key plus
 // params next to its English text. When a key is present we translate it;
@@ -6,6 +7,16 @@ import i18n from ".";
 // key this build doesn't know) we show the server's English unchanged.
 
 type Params = Record<string, unknown> | null | undefined;
+
+// "saved {{size}}" in the UI's units and language (v0.10.0): the server's
+// `gb` param is rounded to 0.01 GB ("0.00 GB" for 3 MB), so the event's exact
+// byte count is used when it has one.
+function withSize(params: Params, bytes?: unknown): Params {
+  if (!params || params.size != null) return params;
+  const b = typeof bytes === "number" ? bytes
+    : params.gb != null ? parseFloat(String(params.gb)) * 1024 ** 3 : NaN;
+  return isFinite(b) ? { ...params, size: fmtBytes(b) } : params;
+}
 
 export function serverText(ns: string, key: string | null | undefined, params: Params, fallback: string | null | undefined): string {
   const english = fallback ?? "";
@@ -15,8 +26,8 @@ export function serverText(ns: string, key: string | null | undefined, params: P
 }
 
 /** Activity / file-history summary line. */
-export const eventSummary = (ev: { summary?: string | null; summary_key?: string | null; summary_params?: Params }) =>
-  serverText("serverEvents", ev.summary_key, ev.summary_params, ev.summary);
+export const eventSummary = (ev: { summary?: string | null; summary_key?: string | null; summary_params?: Params; details?: any }) =>
+  serverText("serverEvents", ev.summary_key, withSize(ev.summary_params, ev.details?.space_saved), ev.summary);
 
 /** Live job progress step label ("converting", "removing tracks", …). */
 export const jobStep = (p: { step?: string | null; step_key?: string | null; step_params?: Params }) =>

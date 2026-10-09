@@ -5,7 +5,7 @@ import { mergeHead } from "../utils/mergeHead";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import VirtualJobList from "../components/VirtualJobList";
 import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, cancelCurrentJob, removeJob, retryJob, clearCompleted, clearPending, ignoreFile, bulkUpdateJobSettings, bulkMoveJobs, bulkIgnoreJobs, getEncodingSettings, getTracksByPath, reorderJobs, researchFilesBulk, getNodes } from "../api";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
 import QueueControlPanel from "../components/QueueControlPanel";
@@ -701,7 +701,7 @@ export default function QueuePage() {
             borderBottom: tab === "completed" ? "2px solid var(--success)" : "2px solid transparent",
           }}
         >
-          {t("queue:tabs.completedSaved", { formatted: fmtNum(completedCount), saved: stats ? (() => { const gb = Math.max(0, stats.total_space_saved) / (1024**3); return gb >= 1000 ? (gb / 1024).toFixed(2) + " TB" : gb.toFixed(1) + " GB"; })() : "0 GB" })}
+          {t("queue:tabs.completedSaved", { formatted: fmtNum(completedCount), saved: fmtBytes(Math.max(0, stats?.total_space_saved || 0)) })}
         </button>
         {failedCount > 0 && (
           <button

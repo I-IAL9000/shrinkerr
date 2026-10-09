@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { getSystemMetrics, getNodeMetrics, type NodeMetricsEntry } from "../api";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 import { serverText } from "../i18n/server";
 import { useVisibleInterval } from "../useVisibleInterval";
 
@@ -304,7 +304,7 @@ export default function MonitorPage() {
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
                 <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>
-                  {shrinkerr?.total_saved ? `${(shrinkerr.total_saved / (1024**4)).toFixed(1)} TB` : "0"}
+                  {fmtBytes(shrinkerr?.total_saved || 0)}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:workload.totalSaved")}</div>
               </div>

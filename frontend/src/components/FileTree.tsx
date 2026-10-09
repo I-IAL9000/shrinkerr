@@ -8,6 +8,7 @@ import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
 import { naturalCompare } from "../utils/naturalCompare";
+import { fmtBytes } from "../fmt";
 
 export type SortBy = "name" | "size" | "files" | "date";
 export type SortDirection = "asc" | "desc";
@@ -391,7 +392,7 @@ const FolderRow = memo(function FolderRow({
       </span>
       <MediaIdLink folderName={node.name} />
       <span className="tree-file-size">
-        {t("library:tree.files", { count: node.agg_file_count })} &middot; {node.agg_total_size >= 1024 ** 4 ? `${(node.agg_total_size / (1024 ** 4)).toFixed(1)} TB` : `${(node.agg_total_size / (1024 ** 3)).toFixed(1)} GB`}
+        {t("library:tree.files", { count: node.agg_file_count })} &middot; {fmtBytes(node.agg_total_size)}
       </span>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
         {onRescanFolder && parseMediaId(node.name) && (

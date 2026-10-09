@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 
 interface StatsCardsProps {
   filesToConvert: number;
@@ -36,11 +36,11 @@ export default function StatsCards({ filesToConvert, audioCleanup, ignoredCount,
         </div>
       )}
       <div className="stat-card">
-        <div className="stat-value success">~{estimatedSavingsGB >= 1024 ? `${(estimatedSavingsGB / 1024).toFixed(1)} TB` : `${estimatedSavingsGB.toFixed(0)} GB`}</div>
+        <div className="stat-value success">~{fmtBytes(estimatedSavingsGB * 1024 ** 3)}</div>
         <div className="stat-label">{settingsLabel ? t("scanner:stats.estSavingsWith", { settings: settingsLabel }) : t("scanner:stats.estSavings")}</div>
       </div>
       <div className="stat-card">
-        <div className="stat-value" style={{ color: "white" }}>{totalScannedGB >= 1024 ? `${(totalScannedGB / 1024).toFixed(1)} TB` : `${totalScannedGB.toFixed(1)} GB`}</div>
+        <div className="stat-value" style={{ color: "white" }}>{fmtBytes(totalScannedGB * 1024 ** 3)}</div>
         <div className="stat-label">{t("scanner:stats.totalScanned")}</div>
       </div>
     </div>

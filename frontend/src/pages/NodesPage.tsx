@@ -5,12 +5,7 @@ import i18n from "../i18n";
 import { getNodes, removeNode, cancelNodeJob, resetNode, updateNodeSettings } from "../api";
 import type { WorkerNode } from "../types";
 import NodeSettingsModal from "../components/NodeSettingsModal";
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
-  if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
-  return `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
-}
+import { fmtBytes } from "../fmt";
 
 function fmtRelative(iso: string | null): string {
   if (!iso) return i18n.t("nodes:relative.never");
@@ -274,7 +269,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
       {/* Stats */}
       <div style={{ display: "flex", gap: 16, fontSize: 11, color: "var(--text-muted)" }}>
         <span>{t("nodes:card.completed")} <strong style={{ color: "var(--text-secondary)" }}>{node.jobs_completed.toLocaleString()}</strong></span>
-        <span>{t("nodes:card.saved")} <strong style={{ color: "var(--success)" }}>{formatBytes(node.total_space_saved)}</strong></span>
+        <span>{t("nodes:card.saved")} <strong style={{ color: "var(--success)" }}>{fmtBytes(node.total_space_saved)}</strong></span>
         <span>{t("nodes:card.parallel")} <strong style={{ color: "var(--text-secondary)" }}>{node.max_jobs}</strong></span>
       </div>
 

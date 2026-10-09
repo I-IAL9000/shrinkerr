@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { fmtBytes } from "../fmt";
 
 interface PosterCardProps {
   title: string;
@@ -12,11 +13,6 @@ interface PosterCardProps {
   isExpanded: boolean;
   mediaType?: string | null;
   onEditClick?: () => void;
-}
-
-function formatSize(bytes: number): string {
-  const gb = bytes / (1024 ** 3);
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
 }
 
 export default function PosterCard({
@@ -95,7 +91,7 @@ export default function PosterCard({
         <div className="poster-meta">
           <span>{t("library:tree.files", { count: fileCount })}</span>
           <span>&middot;</span>
-          <span>{formatSize(totalSize)}</span>
+          <span>{fmtBytes(totalSize)}</span>
         </div>
       </div>
     </div>

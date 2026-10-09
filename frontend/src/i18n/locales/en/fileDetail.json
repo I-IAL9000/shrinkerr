@@ -10,7 +10,7 @@
       "manual": "manual match",
       "heuristic": "heuristic"
     },
-    "convertEstimate": "Convert to x265 10-bit (est. save ~{{size}} GB)",
+    "convertEstimate": "Convert to x265 10-bit (est. save ~{{size}})",
     "loading": "Loading tracks...",
     "audioHeading": "Audio tracks:",
     "noAudio": "No audio tracks detected",

@@ -151,6 +151,7 @@ function fmtDate(iso: string): string {
 function fmtRelative(iso: string): string {
   try {
     const d = new Date(iso).getTime();
+    if (isNaN(d)) return "";
     const diff = (Date.now() - d) / 1000;
     if (diff < 60) return i18n.t("fileDetail:timeline.relative.seconds", { n: Math.round(diff) });
     if (diff < 3600) return i18n.t("fileDetail:timeline.relative.minutes", { n: Math.round(diff / 60) });

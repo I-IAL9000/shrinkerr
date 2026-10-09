@@ -150,7 +150,7 @@
   },
   "cloud": {
     "title": "Cloud Storage Savings",
-    "description": "If your library were in the cloud, you'd save this much per month by reclaiming {{tb}} TB:",
+    "description": "If your library were in the cloud, you'd save this much per month by reclaiming {{size}}:",
     "perMonth": "${{amount}}/mo"
   },
   "drives": {

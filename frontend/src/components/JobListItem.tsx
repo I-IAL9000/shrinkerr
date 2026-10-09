@@ -5,7 +5,8 @@ import type { Job } from "../types";
 import { getJobLog } from "../api";
 import { vmafColor, vmafLabel } from "../utils/vmaf";
 import { jobErrorHeadline } from "../i18n/server";
-import { fmtDateTime } from "../fmt";
+import { copyText } from "../utils/clipboard";
+import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 
 interface JobListItemProps {
@@ -23,19 +24,6 @@ interface JobListItemProps {
   // still open when you scroll back. Omitted = local state, as before.
   expanded?: boolean;
   onToggleExpand?: (id: number) => void;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
-  const gb = bytes / (1024 ** 3);
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
-}
-
-function formatDuration(start: string, end: string): string {
-  const s = (new Date(end).getTime() - new Date(start).getTime()) / 1000;
-  if (s < 60) return `${Math.round(s)}s`;
-  if (s < 3600) return `${Math.round(s / 60)}m ${Math.round(s % 60)}s`;
-  return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
 }
 
 const iconBtnStyle: React.CSSProperties = {
@@ -157,8 +145,8 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         {(job as any).original_size > 0 && (
           <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.4 }}>
             {job.status === "completed" && job.space_saved > 0
-              ? formatBytes((job as any).original_size - job.space_saved)
-              : formatBytes((job as any).original_size)}
+              ? fmtBytes((job as any).original_size - job.space_saved)
+              : fmtBytes((job as any).original_size)}
           </span>
         )}
         {(job as any).priority > 0 && (
@@ -187,7 +175,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           ) : (
             <>
               {job.space_saved > 0 && (
-                <span style={{ color: "var(--success)", fontSize: 11 }}>{t("queue:item.saved", { size: formatBytes(job.space_saved) })}</span>
+                <span style={{ color: "var(--success)", fontSize: 11 }}>{t("queue:item.saved", { size: fmtBytes(job.space_saved) })}</span>
               )}
               {job.space_saved <= 0 && job.error_log?.startsWith("VMAF ") ? (
                 // VMAF-rejected encodes get a distinct amber badge so the
@@ -292,21 +280,21 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
 
                 {logData.encoding_stats.input_size > 0 && <>
                   <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.size")}</span>
-                  <span style={{ color: "var(--text-secondary)" }}>{formatBytes(logData.encoding_stats.input_size)}</span>
+                  <span style={{ color: "var(--text-secondary)" }}>{fmtBytes(logData.encoding_stats.input_size)}</span>
                   {/* Negative ratio = skipped_larger (encode grew the file
                       and the original was kept). Render in a warning
                       colour with an explicit "discarded" hint so the row
                       doesn't read like a successful saving. v0.3.55+. */}
                   {logData.encoding_stats.ratio < 0 ? (
                     <span style={{ color: "#ffa94d" }}>
-                      {formatBytes(logData.encoding_stats.output_size)}{" "}
+                      {fmtBytes(logData.encoding_stats.output_size)}{" "}
                       <span style={{ opacity: 0.7 }}>
                         {t("queue:item.stats.largerDiscarded", { pct: Math.abs(logData.encoding_stats.ratio) })}
                       </span>
                     </span>
                   ) : (
                     <span style={{ color: "var(--success)" }}>
-                      {formatBytes(logData.encoding_stats.output_size)}{" "}
+                      {fmtBytes(logData.encoding_stats.output_size)}{" "}
                       <span style={{ opacity: 0.6 }}>{t("queue:item.stats.savedPct", { pct: logData.encoding_stats.ratio })}</span>
                     </span>
                   )}
@@ -484,11 +472,11 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 )}
               </>)}
               {logData.encoding_stats?.encode_seconds > 0 && (
-                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encodeTime")} <strong style={{ color: "var(--text-secondary)" }}>{formatDuration("2000-01-01T00:00:00", new Date(new Date("2000-01-01T00:00:00").getTime() + logData.encoding_stats.encode_seconds * 1000).toISOString())}</strong></span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.encodeTime")} <strong style={{ color: "var(--text-secondary)" }}>{fmtDuration(logData.encoding_stats.encode_seconds)}</strong></span>
               )}
               <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.type")} {t(`queue:item.jobTypes.${job.job_type}`, { defaultValue: job.job_type })}</span>
               {logData.started_at && logData.completed_at && (
-                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.total")} {formatDuration(logData.started_at, logData.completed_at)}</span>
+                <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.total")} {fmtDuration((new Date(logData.completed_at).getTime() - new Date(logData.started_at).getTime()) / 1000)}</span>
               )}
               {logData.started_at && <span style={{ color: "var(--text-muted)" }}>{t("queue:item.details.started")} {fmtDateTime(logData.started_at)}</span>}
             </div>
@@ -531,7 +519,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
                   <span>{t("queue:item.log.ffmpegCommand")}</span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(logData.ffmpeg_command); }}
+                    onClick={(e) => { e.stopPropagation(); copyText(logData.ffmpeg_command); }}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 2, display: "inline-flex", opacity: 0.6 }}
                     title={t("queue:item.log.copyCommand")}
                   >
@@ -617,7 +605,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 11, color: "var(--text-muted)" }}>
           <span>{t("queue:item.details.type")} {t(`queue:item.jobTypes.${job.job_type}`, { defaultValue: job.job_type })}</span>
           {job.encoder && <span>{t("queue:item.details.encoder")} {job.encoder}</span>}
-          {(job as any).original_size > 0 && <span>{t("queue:item.details.size")} {formatBytes((job as any).original_size)}</span>}
+          {(job as any).original_size > 0 && <span>{t("queue:item.details.size")} {fmtBytes((job as any).original_size)}</span>}
           {job.started_at && <span>{t("queue:item.details.started")} {fmtDateTime(job.started_at)}</span>}
           {job.completed_at && <span>{t("queue:item.details.failed")} {fmtDateTime(job.completed_at)}</span>}
         </div>

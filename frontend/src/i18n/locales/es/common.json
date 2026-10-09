@@ -46,5 +46,15 @@
     "title": "Esta página ha tenido un error",
     "reload": "Recargar",
     "unreachable": "No se pudo conectar con Shrinkerr. ¿Está en marcha?"
+  },
+  "duration": {
+    "s": "{{s}} s",
+    "ms": "{{m}} min {{s}} s",
+    "hm": "{{h}} h {{m}} min",
+    "dh": "{{d}} d {{h}} h"
+  },
+  "languages": {
+    "mul": "Varios idiomas",
+    "und": "Indeterminado"
   }
 }

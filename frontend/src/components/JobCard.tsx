@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { JobProgress } from "../types";
 import ProgressBar from "./ProgressBar";
 import { useConfirm } from "./ConfirmModal";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 import { jobStep } from "../i18n/server";
 
 function formatEta(seconds: number | null): string {
@@ -12,12 +12,6 @@ function formatEta(seconds: number | null): string {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m} min`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
-  const gb = bytes / (1024 ** 3);
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
 }
 
 interface JobCardProps {
@@ -69,7 +63,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
       <div style={{ marginBottom: 8, fontSize: 13, display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{progress.file_name}</span>
         {fileSize != null && fileSize > 0 && (
-          <span style={{ fontSize: 11, opacity: 0.5, flexShrink: 0 }}>{formatBytes(fileSize)}</span>
+          <span style={{ fontSize: 11, opacity: 0.5, flexShrink: 0 }}>{fmtBytes(fileSize)}</span>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -100,9 +94,9 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
             {t("queue:card.removingSubs", { count: subtitleTracksToRemove.length })}
           </span>
         )}
-        {progress.fps && <span>{progress.fps.toFixed(0)} fps</span>}
+        {progress.fps ? <span>{progress.fps.toFixed(0)} fps</span> : null}
         {progress.speed ? <span>{progress.speed.toFixed(1)}x</span> : null}
-        {progress.eta && <span>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span>}
+        {progress.eta ? <span>{t("queue:card.eta", { eta: formatEta(progress.eta) })}</span> : null}
         {progress.node_name && (
           <span style={{ color: "var(--text-muted)" }}>{t("queue:card.onNode", { node: progress.node_name })}</span>
         )}

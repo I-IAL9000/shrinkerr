@@ -3,14 +3,8 @@ import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
 import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
-import { fmtNum } from "../fmt";
+import { fmtNum, fmtBytes } from "../fmt";
 import { vmafColor, vmafTintBg } from "../utils/vmaf";
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 4) return `${(bytes / (1024 ** 4)).toFixed(2)} TB`;
-  if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
-  return `${(bytes / (1024 ** 2)).toFixed(0)} MB`;
-}
 
 function formatTime(seconds: number): string {
   if (seconds < 60) return i18n.t("scannerModals:time.seconds", { n: seconds });
@@ -234,7 +228,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.filesToProcess")}</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--success)" }}>~{formatBytes(estimate.estimated_savings)}</div>
+                <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--success)" }}>~{fmtBytes(estimate.estimated_savings)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estSavings", { pct: estimate.savings_pct })}</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
@@ -600,7 +594,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       {testResult && testResult.status === "complete" && (
                         <div style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <span style={{ color: "var(--text-secondary)" }}>
-                            {formatBytes(testResult.original_size)} → {formatBytes(testResult.encoded_size)}
+                            {fmtBytes(testResult.original_size)} → {fmtBytes(testResult.encoded_size)}
                           </span>
                           <span style={{
                             fontWeight: 600,

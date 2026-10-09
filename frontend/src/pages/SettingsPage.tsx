@@ -4,6 +4,7 @@ import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import { vmafColor } from "../utils/vmaf";
+import { copyText } from "../utils/clipboard";
 import {
   getMediaDirs, addMediaDir, updateMediaDir, removeMediaDir,
   getEncodingSettings, updateEncodingSettings, testApiKey, getApiKey,
@@ -25,6 +26,7 @@ import ChangelogModal from "../components/ChangelogModal";
 import { useToast } from "../useToast";
 import { useTranslation, Trans } from "react-i18next";
 import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
+import { fmtBytes } from "../fmt";
 
 // Preset ids whose label/description live in settingsMedia:options.presets.<id>.
 const PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
@@ -4092,10 +4094,9 @@ volumes:
                     alert(t("settingsSystem:automation.originals.noneFound"));
                     return;
                   }
-                  const sizeGB = (data.total_size / (1024 ** 3)).toFixed(1);
-                  if (confirm(t("settingsSystem:automation.originals.deleteAllConfirm", { count: data.total_count, size: sizeGB }))) {
+                  if (confirm(t("settingsSystem:automation.originals.deleteAllConfirm", { count: data.total_count, size: fmtBytes(data.total_size) }))) {
                     const result = await deleteBackups();
-                    alert(t("settingsSystem:automation.originals.deletedResult", { count: result.deleted, size: (result.freed / (1024 ** 3)).toFixed(1) }));
+                    alert(t("settingsSystem:automation.originals.deletedResult", { count: result.deleted, size: fmtBytes(result.freed) }));
                   }
                 }}
               >
@@ -4417,29 +4418,8 @@ volumes:
                       toast(t("settingsSystem:toasts.noApiKey"), "error");
                       return;
                     }
-                    if (navigator.clipboard?.writeText) {
-                      navigator.clipboard.writeText(text).then(() => toast(t("settingsSystem:toasts.apiKeyCopied"), "success")).catch(() => {
-                        const ta = document.createElement("textarea");
-                        ta.value = text;
-                        ta.style.position = "fixed";
-                        ta.style.opacity = "0";
-                        document.body.appendChild(ta);
-                        ta.select();
-                        document.execCommand("copy");
-                        document.body.removeChild(ta);
-                        toast(t("settingsSystem:toasts.apiKeyCopied"), "success");
-                      });
-                    } else {
-                      const ta = document.createElement("textarea");
-                      ta.value = text;
-                      ta.style.position = "fixed";
-                      ta.style.opacity = "0";
-                      document.body.appendChild(ta);
-                      ta.select();
-                      document.execCommand("copy");
-                      document.body.removeChild(ta);
-                      toast(t("settingsSystem:toasts.apiKeyCopied"), "success");
-                    }
+                    await copyText(text);
+                    toast(t("settingsSystem:toasts.apiKeyCopied"), "success");
                   }}
                   style={{
                     height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",
@@ -4697,7 +4677,7 @@ volumes:
                     <a href={downloadBackupUrl(b.name)} download style={{ color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {b.name}
                     </a>
-                    <span style={{ color: "var(--text-muted)" }}>{(b.size / (1024 * 1024)).toFixed(1)} MiB</span>
+                    <span style={{ color: "var(--text-muted)" }}>{fmtBytes(b.size)}</span>
                     <span style={{ color: "var(--text-muted)" }}>
                       {new Date(b.created_at).toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "numeric" })}
                     </span>

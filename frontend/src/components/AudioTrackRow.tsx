@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AudioTrack } from "../types";
-import { LANGUAGES } from "../utils/languages";
+import { languageOptions } from "../utils/languages";
 import { detectNote } from "../i18n/server";
+import { fmtBytes } from "../fmt";
 
 interface AudioTrackRowProps {
   track: AudioTrack;
@@ -15,7 +16,7 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
   const { t } = useTranslation(["fileDetail", "common"]);
   const [editing, setEditing] = useState(false);
   const sizeLabel = track.size_estimate_bytes
-    ? `(~${(track.size_estimate_bytes / (1024 * 1024)).toFixed(0)} MB)`
+    ? `(~${fmtBytes(track.size_estimate_bytes)})`
     : "";
 
   const channelLabel = track.channels === 6 ? "5.1" : track.channels === 8 ? "7.1" : `${track.channels}.0`;
@@ -78,7 +79,7 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
           onBlur={() => setEditing(false)}
           style={{ background: "var(--bg-tertiary)", color: "var(--text-primary)", border: "1px solid var(--accent)", borderRadius: 4, fontSize: 11, padding: "1px 4px" }}
         >
-          {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
+          {languageOptions().map((l) => <option key={l.code} value={l.code}>{l.name} ({l.code})</option>)}
         </select>
       )}
     </div>

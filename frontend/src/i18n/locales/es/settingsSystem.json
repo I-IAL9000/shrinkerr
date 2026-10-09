@@ -41,12 +41,12 @@
       "help": "Déjalo vacío para usar <code>.shrinkerr_backup</code> en la misma carpeta. Indica una ruta absoluta (p. ej. <code>/media/backups</code>) para centralizar el almacenamiento. Las copias de seguridad son necesarias para la función <b>Deshacer conversión</b>: sin ellas, las conversiones no se pueden revertir.",
       "deleteAll": "Eliminar todas las copias",
       "noneFound": "No se encontraron copias de seguridad.",
-      "deleteAllConfirm_one": "¿Eliminar {{count}} copia de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
-      "deleteAllConfirm_many": "¿Eliminar las {{count}} copias de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
-      "deleteAllConfirm_other": "¿Eliminar las {{count}} copias de seguridad ({{size}} GB)? Esta acción no se puede deshacer.",
-      "deletedResult_one": "Se eliminó {{count}} archivo; se liberaron {{size}} GB",
-      "deletedResult_many": "Se eliminaron {{count}} archivos; se liberaron {{size}} GB",
-      "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}} GB"
+      "deleteAllConfirm_one": "¿Eliminar {{count}} copia de seguridad ({{size}})? Esta acción no se puede deshacer.",
+      "deleteAllConfirm_many": "¿Eliminar las {{count}} copias de seguridad ({{size}})? Esta acción no se puede deshacer.",
+      "deleteAllConfirm_other": "¿Eliminar las {{count}} copias de seguridad ({{size}})? Esta acción no se puede deshacer.",
+      "deletedResult_one": "Se eliminó {{count}} archivo; se liberaron {{size}}",
+      "deletedResult_many": "Se eliminaron {{count}} archivos; se liberaron {{size}}",
+      "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}}"
     },
     "stability": {
       "title": "Estabilidad de archivos",
