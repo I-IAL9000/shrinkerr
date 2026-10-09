@@ -7,6 +7,7 @@ import { getCodecLabel } from "../codecLabels";
 import PosterCard from "./PosterCard";
 import FileDetail from "./FileDetail";
 import PosterFixModal from "./PosterFixModal";
+import { naturalCompare } from "../utils/naturalCompare";
 
 interface PosterMeta {
   title: string;
@@ -101,7 +102,7 @@ export function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string
     if (sortBy === "size") return a.totalSize - b.totalSize;
     if (sortBy === "files") return a.fileCount - b.fileCount;
     if (sortBy === "date") return Math.max(0, ...a.folders.map(f => f.newest_mtime)) - Math.max(0, ...b.folders.map(f => f.newest_mtime));
-    return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
+    return naturalCompare(a.title, b.title);
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;
 }
@@ -234,14 +235,23 @@ export default function PosterGrid({
   useEffect(() => {
     const scrollParent = containerRef.current?.closest(".main-content") as HTMLElement | null;
     if (!scrollParent) return;
-    const handler = () => {
+    const update = () => {
       if (containerRef.current) {
         setScrollTop(Math.max(0, scrollParent.scrollTop - containerRef.current.offsetTop));
       }
     };
+    // At most once per frame (FE#6): scroll events fire faster than that,
+    // and each one re-rendered the grid.
+    let frame = 0;
+    const handler = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; update(); });
+    };
     scrollParent.addEventListener("scroll", handler, { passive: true });
-    handler();
-    return () => scrollParent.removeEventListener("scroll", handler);
+    update();
+    return () => {
+      scrollParent.removeEventListener("scroll", handler);
+      cancelAnimationFrame(frame);
+    };
   }, [groups.length]);
 
   // Virtual scroll calculations
@@ -493,7 +503,7 @@ export default function PosterGrid({
                     if (!byFolder.has(folderName)) byFolder.set(folderName, []);
                     byFolder.get(folderName)!.push(f);
                   }
-                  const sections = Array.from(byFolder.entries()).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+                  const sections = Array.from(byFolder.entries()).sort(([a], [b]) => naturalCompare(a, b));
                   const showHeaders = sections.length > 1;
                   return sections.map(([folderName, files], sectionIdx) => (
                     <div key={folderName}>

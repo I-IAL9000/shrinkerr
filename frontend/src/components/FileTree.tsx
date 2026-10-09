@@ -7,6 +7,7 @@ import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
+import { naturalCompare } from "../utils/naturalCompare";
 
 export type SortBy = "name" | "size" | "files" | "date";
 export type SortDirection = "asc" | "desc";
@@ -209,7 +210,7 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
 // Natural-sort name comparator: digits compare numerically so
 // "Season 2" < "Season 11", not the lexicographic "Season 1" <
 // "Season 11" < "Season 2" the default localeCompare gives.
-const _nameCmp = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+const _nameCmp = naturalCompare;
 
 function sortNodes(nodes: TreeNode[], sortBy: SortBy, sortDir: SortDirection): TreeNode[] {
   const sorted = [...nodes].sort((a, b) => {

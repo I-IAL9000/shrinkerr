@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useVisibleInterval } from "../useVisibleInterval";
 import { Trans, useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { getNodes, removeNode, cancelNodeJob, resetNode, updateNodeSettings } from "../api";
@@ -44,11 +45,8 @@ export default function NodesPage() {
     }).catch(() => {}).finally(() => setLoading(false));
   };
 
-  useEffect(() => {
-    refresh();
-    const interval = setInterval(refresh, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => { refresh(); }, []);
+  useVisibleInterval(refresh, 5000);  // FE#14: not while the tab is hidden
 
   return (
     <div>

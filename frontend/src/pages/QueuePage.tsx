@@ -13,13 +13,12 @@ import { useShiftSelect } from "../useShiftSelect";
 import { useToast } from "../useToast";
 import { useVisibleInterval } from "../useVisibleInterval";
 import { useConfirm } from "../components/ConfirmModal";
-import type { Job, JobProgress } from "../types";
+import type { Job } from "../types";
+import { useJobProgressMap } from "../jobProgressStore";
 
-interface QueuePageProps {
-  jobProgressMap: Map<number, JobProgress>;
-}
-
-export default function QueuePage({ jobProgressMap }: QueuePageProps) {
+export default function QueuePage() {
+  // Re-renders this page on every progress tick; other pages don't (FE#4).
+  const jobProgressMap = useJobProgressMap();
   const { t } = useTranslation(["queue", "common"]);
   const [jobs, setJobs] = useState<Job[]>([]);
   // Latest rendered jobs, for the poll's post-await merge (its closure is stale).
@@ -286,10 +285,20 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   }, [tab, failedCount]);
 
   // For pending tab: use tabJobs when on pending tab
-  const pending = tab === "pending" ? tabJobs : jobs.filter(j => j.status === "pending");
-  // Stable memo: only recalculate when the actual IDs change
-  const pendingIdStr = pending.map((j) => j.id).join(",");
-  const pendingIds = useMemo(() => pending.map((j) => j.id), [pendingIdStr]);
+  const pending = useMemo(
+    () => (tab === "pending" ? tabJobs : jobs.filter(j => j.status === "pending")),
+    [tab, tabJobs, jobs],
+  );
+  // Stable: the same array while the IDs are the same. (It was keyed on a
+  // string of every pending ID, rebuilt on every progress tick — FE#4.)
+  const pendingIdsRef = useRef<number[]>([]);
+  const pendingIds = useMemo(() => {
+    const ids = pending.map((j) => j.id);
+    const prev = pendingIdsRef.current;
+    if (ids.length === prev.length && ids.every((id, i) => id === prev[i])) return prev;
+    pendingIdsRef.current = ids;
+    return ids;
+  }, [pending]);
   const { selected: selectedJobIds, handleClick: handleJobClick, deselectAll, setSelected: setSelectedJobIds } = useShiftSelect(pendingIds);
 
   // Clear stale selections when pending list changes — only update if something was actually removed
@@ -304,7 +313,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
       prev.forEach((id) => { if (idSet.has(id as number)) next.add(id as number); });
       return next;
     });
-  }, [pendingIdStr]);
+  }, [pendingIds]);
 
   const selectedIds = Array.from(selectedJobIds) as number[];
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties }
 import { useTranslation, Trans } from "react-i18next";
 import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
+import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import FilterBar, { filterLabel } from "../components/FilterBar";
@@ -14,6 +15,7 @@ import EstimateModal from "../components/EstimateModal";
 import RenameModal from "../components/RenameModal";
 import type { ScannedFile, ScanProgress, AudioTrack, SubtitleTrack } from "../types";
 import { encoderSettingsLabel } from "../utils/encoderLabel";
+import { useVisibleInterval } from "../useVisibleInterval";
 
 // Module-level cache for tree data
 let _cachedFolders: FolderInfo[] | null = null;
@@ -45,6 +47,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const confirm = useConfirm();
   const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [dirs, setDirs] = useState<any[]>([]);
+  // A stable array, or the poster grid re-groups and re-sorts every title on
+  // every render (FE#6).
+  const mediaDirPaths = useMemo(() => dirs.map((d: any) => d.path as string), [dirs]);
   const [selectedDir, setSelectedDir] = useState<string>("all");
   // Filter pills persist across navigations (and browser restarts) via
   // localStorage, since users typically come back to the same view they
@@ -88,7 +93,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [bulkAction, setBulkAction] = useState<string | null>(null);
   // v0.9.24: server-driven bulk-detect progress (survives navigation).
   const [detectProgress, setDetectProgress] = useState<DetectBatchProgress | null>(null);
-  const detectPollRef = useRef<number | null>(null);
+  const detectPollRef = useRef(false);  // mirrors detectPolling for start's guard
+  const [detectPolling, setDetectPolling] = useState(false);
   const detectWasActiveRef = useRef(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
@@ -228,69 +234,67 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // events so we can subscribe here without prop drilling. Debounced
   // 500 ms so a burst of file additions coalesces into one re-fetch.
   // v0.3.64+.
+  //
+  // v0.10.0 (FE#14): this replaces the idle 30 s re-fetch of the whole tree,
+  // which duplicated it. A reconnect also reloads (changes may have been
+  // missed meanwhile), and a change while the tab is hidden waits until
+  // it's shown again.
   useEffect(() => {
     let timer: number | null = null;
-    const onWsMessage = (event: Event) => {
-      const me = event as MessageEvent;
-      try {
-        const msg = JSON.parse(me.data);
-        if (msg?.type !== "scan_results_changed") return;
-      } catch { return; }
+    let stale = false;
+    const reload = () => {
       if (timer != null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         loadTree();
         refreshStats();
       }, 500);
     };
+    const onWsMessage = (event: Event) => {
+      const me = event as MessageEvent;
+      try {
+        const msg = JSON.parse(me.data);
+        if (msg?.type !== "scan_results_changed" && msg?.type !== "ws_reconnected") return;
+      } catch { return; }
+      if (document.hidden) { stale = true; return; }
+      reload();
+    };
+    const onVisibility = () => {
+      if (!document.hidden && stale) { stale = false; reload(); }
+    };
     window.addEventListener("ws-message", onWsMessage);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("ws-message", onWsMessage);
+      document.removeEventListener("visibilitychange", onVisibility);
       if (timer != null) window.clearTimeout(timer);
     };
   }, [loadTree, refreshStats]);
 
-  // While scanning, reload tree every 5s
-  useEffect(() => {
-    if (!scanning) return;
-    const interval = setInterval(async () => {
-      loadTree();
-      refreshStats();
-      try {
-        const status = await getScanStatus();
-        if (!status.scanning) {
-          setScanStarted(false);
-          onClearScanProgress?.();
-        }
-      } catch {}
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [scanning, scanStarted, loadTree]);
+  // While scanning, reload tree every 5s (only while the tab is visible:
+  // FE#14, v0.10.0 — for all of this page's polls).
+  useVisibleInterval(async () => {
+    loadTree();
+    refreshStats();
+    try {
+      const status = await getScanStatus();
+      if (!status.scanning) {
+        setScanStarted(false);
+        onClearScanProgress?.();
+      }
+    } catch {}
+  }, scanning ? 5000 : null);
 
   // Authoritative scan-running signal: poll the backend every 5s regardless of
   // WS progress, so the Scan button reflects a running scan even during the
   // (minutes-long, progress-silent) disk-discovery phase. v0.9.27.
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        const s = await getScanStatus();
-        if (alive) setBackendScanning(!!s.scanning);
-      } catch {}
-    };
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(id); };
+  const pollBackendScanning = useCallback(async () => {
+    try {
+      const s = await getScanStatus();
+      setBackendScanning(!!s.scanning);
+    } catch {}
   }, []);
-
-  // While idle, poll for updates every 30s
-  useEffect(() => {
-    if (scanning) return;
-    const interval = setInterval(() => {
-      loadTree();
-      refreshStats();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [scanning, loadTree]);
+  useEffect(() => { pollBackendScanning(); }, [pollBackendScanning]);
+  useVisibleInterval(pollBackendScanning, 5000);
 
   // Close the *arr actions dropdown when clicking outside it.
   useEffect(() => {
@@ -317,26 +321,21 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   }, [healthMenuOpen]);
 
   // Poll poster prefetch progress
-  useEffect(() => {
-    if (!posterPrefetching) return;
-    const poll = setInterval(async () => {
-      try {
-        const { getPosterPrefetchStatus } = await import("../api");
-        const s = await getPosterPrefetchStatus();
-        setPosterProgress({ total: s.total, resolved: s.resolved });
-        if (s.status === "done" || s.status.startsWith("error")) {
-          clearInterval(poll);
-          setPosterPrefetching(false);
-          if (s.status === "done") {
-            toast(t("scanner:toasts.postersFetched", { resolved: s.resolved, total: s.total }), "success");
-          } else {
-            toast(t("scanner:toasts.posterFetchError", { status: s.status }));
-          }
+  useVisibleInterval(async () => {
+    try {
+      const { getPosterPrefetchStatus } = await import("../api");
+      const s = await getPosterPrefetchStatus();
+      setPosterProgress({ total: s.total, resolved: s.resolved });
+      if (s.status === "done" || s.status.startsWith("error")) {
+        setPosterPrefetching(false);
+        if (s.status === "done") {
+          toast(t("scanner:toasts.postersFetched", { resolved: s.resolved, total: s.total }), "success");
+        } else {
+          toast(t("scanner:toasts.posterFetchError", { status: s.status }));
         }
-      } catch { /* ignore */ }
-    }, 2000);
-    return () => clearInterval(poll);
-  }, [posterPrefetching]);
+      }
+    } catch { /* ignore */ }
+  }, posterPrefetching ? 2000 : null);
 
   // When filter changes, debounce then reload.
   // Don't clear folders to [] — keep showing stale data under a "Updating..." indicator
@@ -452,7 +451,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               allFiles.push(f.file_path);
             }
           }
-          allFiles.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+          allFiles.sort(naturalCompare);
           const lastIdx = allFiles.indexOf(anchor);
           const curIdx = allFiles.indexOf(path);
           if (lastIdx !== -1 && curIdx !== -1) {
@@ -843,10 +842,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // v0.9.24: bulk detect runs server-side as a background job; we poll its
   // progress so the N/total indicator survives navigating away and back.
   const stopDetectPoll = () => {
-    if (detectPollRef.current != null) {
-      clearInterval(detectPollRef.current);
-      detectPollRef.current = null;
-    }
+    detectPollRef.current = false;
+    setDetectPolling(false);
   };
   // v0.9.42: offer to remux the titles whose language was detected but whose
   // container (AVI etc.) can't store it. Acks the backend first so it's shown
@@ -874,33 +871,35 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     // toast/confirm are app-level stable refs (same as startDetectPoll's usage).
   }, [t]);
 
-  const startDetectPoll = useCallback(() => {
-    if (detectPollRef.current != null) return;  // already polling
-    const tick = async () => {
-      let p: DetectBatchProgress;
-      try { p = await getDetectBatchStatus(); } catch { return; }
-      if (p.active) {
-        detectWasActiveRef.current = true;
-        setDetectProgress(p);
-      } else {
-        if (detectWasActiveRef.current) {
-          const msg = p.cancelled
-            ? t("scanner:toasts.detectCancelled", { changed: p.changed, done: p.done })
-            : p.total === 0
-              ? t("scanner:toasts.detectNoUnknown")
-              : t("scanner:toasts.detectDone", { changed: p.changed, total: p.total }) + (p.failed ? t("scanner:toasts.detectFailedSuffix", { n: p.failed }) : "");
-          toast(msg, (p.failed && !p.changed) ? "error" : "success");
-          loadTree();
-          offerRemuxIfPending(p);
-        }
-        detectWasActiveRef.current = false;
-        setDetectProgress(null);
-        stopDetectPoll();
+  const detectTick = useCallback(async () => {
+    let p: DetectBatchProgress;
+    try { p = await getDetectBatchStatus(); } catch { return; }
+    if (p.active) {
+      detectWasActiveRef.current = true;
+      setDetectProgress(p);
+    } else {
+      if (detectWasActiveRef.current) {
+        const msg = p.cancelled
+          ? t("scanner:toasts.detectCancelled", { changed: p.changed, done: p.done })
+          : p.total === 0
+            ? t("scanner:toasts.detectNoUnknown")
+            : t("scanner:toasts.detectDone", { changed: p.changed, total: p.total }) + (p.failed ? t("scanner:toasts.detectFailedSuffix", { n: p.failed }) : "");
+        toast(msg, (p.failed && !p.changed) ? "error" : "success");
+        loadTree();
+        offerRemuxIfPending(p);
       }
-    };
-    tick();
-    detectPollRef.current = window.setInterval(tick, 1500);
+      detectWasActiveRef.current = false;
+      setDetectProgress(null);
+      stopDetectPoll();
+    }
   }, [loadTree, offerRemuxIfPending, t]);
+  useVisibleInterval(detectTick, detectPolling ? 1500 : null);
+  const startDetectPoll = useCallback(() => {
+    if (detectPollRef.current) return;  // already polling
+    detectPollRef.current = true;
+    detectTick();
+    setDetectPolling(true);
+  }, [detectTick]);
 
   const startDetectBatch = async (paths: string[]) => {
     try {
@@ -1927,7 +1926,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
               externalFiles={loadedFiles}
-              mediaDirs={dirs.map((d: any) => d.path)}
+              mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}
               allowedPaths={advSearchResults || undefined}
@@ -1947,7 +1946,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onUnignoreFile={handleUnignoreFile}
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
-              mediaDirs={dirs.map((d: any) => d.path)}
+              mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}
             />

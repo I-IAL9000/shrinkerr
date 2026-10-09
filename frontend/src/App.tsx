@@ -20,6 +20,7 @@ import WhatsNewModal from "./components/WhatsNewModal";
 import RouteErrorBoundary from "./components/ErrorBoundary";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
+import { jobProgressStore } from "./jobProgressStore";
 import "./theme.css";
 
 function VersionBadge() {
@@ -397,7 +398,6 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
-  const [jobProgressMap, setJobProgressMap] = useState<Map<number, JobProgress>>(new Map());
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
   const { toasts, addToast } = useToastState();
@@ -443,17 +443,7 @@ export default function App() {
 
   // Drop progress entries that stopped updating (see handleWS).
   useEffect(() => {
-    const STALE_MS = 120_000;
-    const timer = setInterval(() => {
-      setJobProgressMap(prev => {
-        const now = Date.now();
-        const stale = [...prev.values()].filter(p => now - (p.received_at ?? now) > STALE_MS);
-        if (stale.length === 0) return prev;
-        const next = new Map(prev);
-        stale.forEach(p => next.delete(p.job_id));
-        return next;
-      });
-    }, 30_000);
+    const timer = setInterval(() => jobProgressStore.dropStale(120_000), 30_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -478,27 +468,13 @@ export default function App() {
 
   const handleWS = useCallback((msg: WSMessage) => {
     if (msg.type === "scan_progress") setScanProgress(msg as ScanProgress);
-    if (msg.type === "job_progress") {
-      const jp = msg as JobProgress;
-      setJobProgressMap(prev => {
-        const next = new Map(prev);
-        next.set(jp.job_id, { ...jp, received_at: Date.now() });
-        return next;
-      });
-    }
+    if (msg.type === "job_progress") jobProgressStore.set(msg as JobProgress);
     // A job can end without a job_complete reaching us (node pause requeue,
     // the orphan reaper, a WebSocket gap): its entry kept the Queue
     // "running" with a phantom card (v0.10.0). Live jobs resend progress
     // within seconds, so a reconnect starts from an empty map.
-    if (msg.type === "ws_reconnected") setJobProgressMap(new Map());
-    if (msg.type === "job_complete") {
-      const jc = msg as any;
-      setJobProgressMap(prev => {
-        const next = new Map(prev);
-        next.delete(jc.job_id);
-        return next;
-      });
-    }
+    if (msg.type === "ws_reconnected") jobProgressStore.clear();
+    if (msg.type === "job_complete") jobProgressStore.delete((msg as any).job_id);
     if (msg.type === "vmaf_remeasure_progress") {
       const m = msg as any;
       setVmafRemeasure({
@@ -651,9 +627,9 @@ export default function App() {
           )}
           <RouteErrorBoundary>
           <Routes>
-            <Route path="/" element={<DashboardPage jobProgressMap={jobProgressMap} />} />
+            <Route path="/" element={<DashboardPage />} />
             <Route path="/scanner" element={<ScannerPage scanProgress={scanProgress} onClearScanProgress={() => setScanProgress(null)} />} />
-            <Route path="/queue" element={<QueuePage jobProgressMap={jobProgressMap} />} />
+            <Route path="/queue" element={<QueuePage />} />
             <Route path="/logs" element={<LogsPage />} />
             <Route path="/nodes" element={<NodesPage />} />
             <Route path="/activity" element={<ActivityPage />} />

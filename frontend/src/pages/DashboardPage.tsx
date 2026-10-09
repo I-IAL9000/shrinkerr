@@ -9,7 +9,7 @@ import {
   LineChart, Line, AreaChart, Area, BarChart as RBarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import type { JobProgress } from "../types";
+import { useJobProgressMap } from "../jobProgressStore";
 
 const cardStyle: React.CSSProperties = { background: "var(--bg-card)", padding: 20, borderRadius: 6 };
 const headingStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: 14, marginBottom: 16 };
@@ -109,12 +109,12 @@ function MiniProgress({ progress }: { progress: number }) {
 // card, not the big Recharts surfaces below (which cost ~60% CPU in Chrome
 // when they re-render every ~500ms).
 const LiveConvertingCard = memo(function LiveConvertingCard({
-  activeJobs, jobProgressMap,
+  activeJobs,
 }: {
   activeJobs: any[];
-  jobProgressMap: Map<number, JobProgress>;
 }) {
   const { t } = useTranslation(["dashboard", "common"]);
+  const jobProgressMap = useJobProgressMap();
   const liveJobs = activeJobs.map((j: any) => {
     const ws = jobProgressMap.get(j.id);
     return { ...j, progress: ws?.progress ?? j.progress, fps: ws?.fps ?? j.fps };
@@ -384,7 +384,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
 
 // --- Dashboard (merged with Statistics) ---
 
-export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<number, JobProgress> }) {
+export default function DashboardPage() {
   const { t } = useTranslation(["dashboard", "common"]);
   const [dash, setDash] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
@@ -490,7 +490,7 @@ export default function DashboardPage({ jobProgressMap }: { jobProgressMap: Map<
       {/* Status cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
         {/* Converting — memoed, re-renders on progress ticks only */}
-        <LiveConvertingCard activeJobs={activeJobs} jobProgressMap={jobProgressMap} />
+        <LiveConvertingCard activeJobs={activeJobs} />
 
         {/* Queue depth */}
         <div style={cardStyle}>

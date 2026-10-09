@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { getSystemMetrics, getNodeMetrics, type NodeMetricsEntry } from "../api";
 import { fmtNum } from "../fmt";
 import { serverText } from "../i18n/server";
+import { useVisibleInterval } from "../useVisibleInterval";
 
 function Gauge({ value, max, label, unit, size = 100, color }: { value: number; max: number; label: string; unit?: string; size?: number; color?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
@@ -80,16 +81,24 @@ export default function MonitorPage() {
   const [nodeMetrics, setNodeMetrics] = useState<NodeMetricsEntry[]>([]);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    const load = () => {
-      getSystemMetrics().then(setMetrics).catch(() => setError(true));
-      // Node metrics are optional — no error state if none are registered.
-      getNodeMetrics().then(r => setNodeMetrics(r.nodes || [])).catch(() => setNodeMetrics([]));
-    };
-    load();
-    const interval = setInterval(load, 3000); // Refresh every 3 seconds
-    return () => clearInterval(interval);
+  // Every 3 seconds while the tab is visible, never two at once (FE#14:
+  // slow responses stacked up, and hidden tabs kept polling).
+  const inFlight = useRef(false);
+  const load = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      await Promise.all([
+        getSystemMetrics().then(setMetrics).catch(() => setError(true)),
+        // Node metrics are optional — no error state if none are registered.
+        getNodeMetrics().then(r => setNodeMetrics(r.nodes || [])).catch(() => setNodeMetrics([])),
+      ]);
+    } finally {
+      inFlight.current = false;
+    }
   }, []);
+  useEffect(() => { load(); }, [load]);
+  useVisibleInterval(load, 3000);
 
   if (error && !metrics) {
     return (

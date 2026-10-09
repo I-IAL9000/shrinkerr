@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, createContext, useContext } from "react";
+import { useState, useCallback, useMemo, useRef, createContext, useContext } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -47,8 +47,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setState(null);
   };
 
+  // A stable value (FE#5): a new object each render re-rendered every
+  // consumer — tree rows, job cards — on every progress tick.
+  const value = useMemo(() => ({ confirm }), [confirm]);
+
   return (
-    <ConfirmContext.Provider value={{ confirm }}>
+    <ConfirmContext.Provider value={value}>
       {children}
       {state && (
         <div

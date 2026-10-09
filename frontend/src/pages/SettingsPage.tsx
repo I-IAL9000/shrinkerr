@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useRef } from "react";
+import { useVisibleInterval } from "../useVisibleInterval";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
@@ -132,23 +133,18 @@ function VmafRemeasureRow() {
   const [outcome, setOutcome] = useState<{ rescued: number; unchanged: number; skipped: number } | null>(null);
 
   // Initial status fetch — poll every 5s while a pass is running so the
-  // candidate count refreshes without needing a manual reload.
-  useEffect(() => {
-    let mounted = true;
-    let pollHandle: ReturnType<typeof setInterval> | null = null;
-    const tick = async () => {
-      try {
-        const s = await getVmafRemeasureStatus();
-        if (!mounted) return;
-        setStatus({ running: s.running, candidates: s.candidates });
-      } catch {
-        // ignore — endpoint may be unavailable transiently
-      }
-    };
-    tick();
-    pollHandle = setInterval(tick, 5000);
-    return () => { mounted = false; if (pollHandle) clearInterval(pollHandle); };
-  }, []);
+  // candidate count refreshes without needing a manual reload. (v0.10.0,
+  // FE#14: it polled always, hidden tabs included.)
+  const tick = async () => {
+    try {
+      const s = await getVmafRemeasureStatus();
+      setStatus({ running: s.running, candidates: s.candidates });
+    } catch {
+      // ignore — endpoint may be unavailable transiently
+    }
+  };
+  useEffect(() => { tick(); }, []);
+  useVisibleInterval(tick, status?.running ? 5000 : null);
 
   // Listen to websocket progress events from the running task. The
   // SettingsPage doesn't currently subscribe to its own WS connection,

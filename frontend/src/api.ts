@@ -835,6 +835,7 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
       ws.onopen = () => {
         if (connectedBefore) {
           try { onMessageRef.current({ type: "ws_reconnected" }); } catch {}
+          window.dispatchEvent(new MessageEvent("ws-message", { data: JSON.stringify({ type: "ws_reconnected" }) }));
         }
         connectedBefore = true;
       };
