@@ -280,7 +280,8 @@
       "jellyfin_tag": "Etiqueta de Jellyfin",
       "emby_tag": "Etiqueta de Emby",
       "emby_watched": "Visto en Emby",
-      "nzbget_category": "Categoría de descarga"
+      "nzbget_category": "Categoría de descarga",
+      "content_type": "Tipo de contenido"
     },
     "plexOptions": {
       "label": "Etiqueta",
@@ -317,7 +318,8 @@
       "jellyfin_tag": "etiqueta jellyfin",
       "emby_tag": "etiqueta emby",
       "emby_watched": "visto emby",
-      "nzbget_category": "categoría nzbget"
+      "nzbget_category": "categoría nzbget",
+      "content_type": "tipo de contenido"
     },
     "values": {
       "selectDirectory": "Selecciona un directorio...",

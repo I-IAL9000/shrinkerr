@@ -90,14 +90,15 @@ async def webhook_queue(request: WebhookQueueRequest):
     # `async with connect_db()`, which always raised and was swallowed, so the
     # saved source codecs were never read.)
     from backend.scanner import DEFAULT_SOURCE_CODECS
-    from backend.content_detect import smart_cq_settings, smart_quality
+    from backend.content_detect import SMART_CQ_KEYS, smart_cq_settings, smart_quality
     source_codecs = list(DEFAULT_SOURCE_CODECS)
     values: dict = {}
     try:
         db = await connect_db()
         try:
             async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', 'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
+                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', "
+                + ",".join(f"'{k}'" for k in SMART_CQ_KEYS) + ")"
             ) as cur:
                 values = {r["key"]: r["value"] for r in await cur.fetchall()}
         finally:

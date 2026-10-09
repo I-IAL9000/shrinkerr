@@ -4,6 +4,7 @@ Detects content type from filename patterns (anime, grain, animation, remux)
 and recommends encoding quality settings per resolution tier.
 """
 
+import json
 import os
 import re
 
@@ -53,14 +54,57 @@ for _pat in _REMUX_PATTERNS:
 
 # ─── CQ/CRF recommendation tables ───
 
-# Per-profile, per-resolution CQ values (NVENC hevc_nvenc -cq mode)
+# Recommended per-type, per-resolution CQ (NVENC hevc_nvenc -cq; libx265
+# runs CRF_OFFSET higher). Settings → Video can change every cell
+# (content_cq_table). Reviewed in v0.10.0 — the old table gave anime,
+# animation and grain a HIGHER CQ (less quality) than everyday content:
+#   * Artifacts show most where nothing masks them. Live action's texture
+#     hides quantisation; anime and CGI animation are flat colour, smooth
+#     gradients and sharp lines, where the same CQ shows as banding and
+#     ringing. They compress so well that a little more quality costs few
+#     bytes — savings stay large.
+#   * Grain is what an encoder smooths away first: at the everyday CQ film
+#     grain turns waxy and blotchy. Keeping it takes bits, so grainy files
+#     save less.
+#   * A remux is a pristine source someone kept for its quality; a lower CQ
+#     keeps the output close to it and the saving is still big (remuxes run
+#     20-80 Mbps).
+# Resolution steps follow the resolution-aware defaults: 4K hides more,
+# 720p / SD (scaled up on the TV) show more; SD stops at 16.
 CQ_TABLE: dict[str, dict[str, int]] = {
-    "anime":     {"4k": 24, "1080p": 22, "720p": 20, "sd": 18},
-    "grain":     {"4k": 26, "1080p": 24, "720p": 22, "sd": 20},
-    "animation": {"4k": 26, "1080p": 24, "720p": 22, "sd": 20},
-    "remux":     {"4k": 22, "1080p": 20, "720p": 18, "sd": 16},
+    "anime":     {"4k": 23, "1080p": 19, "720p": 18, "sd": 16},
+    "animation": {"4k": 23, "1080p": 19, "720p": 18, "sd": 16},
+    "grain":     {"4k": 21, "1080p": 18, "720p": 17, "sd": 16},
+    "remux":     {"4k": 21, "1080p": 18, "720p": 17, "sd": 16},
     "default":   {"4k": 24, "1080p": 20, "720p": 18, "sd": 16},
 }
+CONTENT_TYPES = ("anime", "animation", "grain", "remux")
+RESOLUTION_TIERS = ("4k", "1080p", "720p", "sd")
+
+
+def content_cq_table(raw) -> dict:
+    """The per-type CQ table as Settings stores it (`content_type_cq`, JSON):
+    {type: {"enabled": bool, "4k": cq, "1080p": cq, "720p": cq, "sd": cq}}.
+    Cells are clamped to 0-51; anything missing or invalid is the recommended
+    value, so a partial or old table still works."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else {}
+        except ValueError:
+            raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    table = {}
+    for ctype in CONTENT_TYPES:
+        given = raw.get(ctype) if isinstance(raw.get(ctype), dict) else {}
+        row = {"enabled": str(given.get("enabled", True)).lower() not in ("false", "0", "no")}
+        for tier in RESOLUTION_TIERS:
+            try:
+                row[tier] = max(0, min(51, int(given[tier])))
+            except (KeyError, TypeError, ValueError):
+                row[tier] = CQ_TABLE[ctype][tier]
+        table[ctype] = row
+    return table
 
 # CRF offset: libx265 CRF is generally ~2 higher than NVENC CQ for similar quality
 CRF_OFFSET = 2
@@ -147,7 +191,13 @@ def smart_cq_settings(values: dict) -> dict:
         "resolution_aware": str(values.get("resolution_aware_cq", "false")).lower() == "true",
         "resolution_cqs": {tier: int(values.get(f"resolution_cq_{tier}") or default)
                            for tier, default in (("4k", 24), ("1080p", 20), ("720p", 18), ("sd", 16))},
+        "content_table": content_cq_table(values.get("content_type_cq")),
     }
+
+
+# Settings keys smart_cq_settings() reads, for callers that load only those.
+SMART_CQ_KEYS = ("content_type_detection", "content_type_cq", "resolution_aware_cq",
+                 "resolution_cq_4k", "resolution_cq_1080p", "resolution_cq_720p", "resolution_cq_sd")
 
 
 def smart_cq(file_path: str, width, height, settings: dict) -> tuple[int | None, str | None]:
@@ -162,8 +212,9 @@ def smart_cq(file_path: str, width, height, settings: dict) -> tuple[int | None,
     tier = resolution_tier(width, height, file_path) or "sd"
     if settings["content_detect"]:
         ctype = detect_content_type_from_path(file_path)
-        if ctype != "default":
-            return get_recommended_cq(ctype, tier), ctype
+        row = settings["content_table"].get(ctype)
+        if row and row["enabled"]:
+            return row[tier], ctype
     if settings["resolution_aware"]:
         return settings["resolution_cqs"][tier], None
     return None, None

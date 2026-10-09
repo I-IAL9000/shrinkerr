@@ -7,11 +7,12 @@ import aiosqlite
 import pytest
 import pytest_asyncio
 
-from backend.content_detect import smart_cq, smart_cq_settings, smart_quality
+from backend.content_detect import CQ_TABLE, smart_cq, smart_cq_settings, smart_quality
 
 ANIME = "/m/anime/[SubsPlease] Frieren - 01 (1080p).mkv"
 SCOPE = "/m/movies/Scope (2010)/Scope.mkv"
 PLAIN = "/m/movies/Plain (2010)/Plain.mkv"
+A = CQ_TABLE["anime"]["1080p"]   # the recommended anime CQ at 1080p
 
 
 def _settings(**values):
@@ -20,7 +21,7 @@ def _settings(**values):
 
 def test_content_type_then_resolution_then_global():
     both = _settings(content_type_detection=True, resolution_aware_cq=True, resolution_cq_1080p=21)
-    assert smart_cq(ANIME, 1920, 1080, both) == (22, "anime")        # the anime table
+    assert smart_cq(ANIME, 1920, 1080, both) == (A, "anime")        # the anime table
     assert smart_cq(SCOPE, 1920, 800, both) == (21, None)            # 1080p by width (SC-22)
     content_only = _settings(content_type_detection=True, resolution_aware_cq=False)
     assert smart_cq(PLAIN, 1920, 1080, content_only) == (None, None)  # global CQ
@@ -30,7 +31,7 @@ def test_content_type_then_resolution_then_global():
 
 def test_a_job_gets_cq_and_matching_crf():
     s = _settings(content_type_detection=True)
-    assert smart_quality(ANIME, 1920, 1080, s) == (22, 24)
+    assert smart_quality(ANIME, 1920, 1080, s) == (A, A + 2)
     assert smart_quality(PLAIN, 1920, 1080, s) == (None, None)
 
 
@@ -71,7 +72,7 @@ async def test_add_to_queue_gives_each_job_its_cq(jobs_env):
     from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
     await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=[ANIME, SCOPE, PLAIN]))
     assert await _job_quality(jobs_env) == {
-        ANIME: (22, 24),     # content type
+        ANIME: (A, A + 2),   # content type
         SCOPE: (21, 23),     # resolution-aware, 1080p
         PLAIN: (18, 20),     # resolution-aware, 720p default
     }
@@ -87,7 +88,7 @@ async def test_the_dialogs_quality_wins(jobs_env):
 @pytest.mark.asyncio
 async def test_the_estimate_shows_the_jobs_cq(jobs_env):
     from backend.routes.jobs import EstimateRequest, estimate_jobs
-    for path, cq in ((ANIME, 22), (SCOPE, 21)):
+    for path, cq in ((ANIME, A), (SCOPE, 21)):
         est = await estimate_jobs(EstimateRequest(file_paths=[path]))
         assert est["cq"] == cq, (path, est.get("cq"))
 
@@ -114,7 +115,7 @@ async def test_add_by_path_reads_its_settings(jobs_env, tmp_path, monkeypatch):
     await add_jobs_by_path(AddByPathRequest(file_paths=[str(film)]))
     async with aiosqlite.connect(jobs_env) as db:
         async with db.execute("SELECT encoder, nvenc_cq, libx265_crf FROM jobs") as cur:
-            assert await cur.fetchall() == [("libx265", 22, 24)]
+            assert await cur.fetchall() == [("libx265", A, A + 2)]
 
 
 @pytest.mark.asyncio
@@ -134,7 +135,7 @@ async def test_the_webhook_gives_jobs_their_cq(jobs_env, tmp_path, monkeypatch):
                 "audio_tracks": [], "subtitle_tracks": [], "duration": 1440, "file_size": 1}
     monkeypatch.setattr(scanner, "probe_file", fake_probe)
     await webhook_queue(WebhookQueueRequest(paths=[str(film)]))
-    assert await _job_quality(jobs_env) == {str(film): (22, 24)}
+    assert await _job_quality(jobs_env) == {str(film): (A, A + 2)}
 
 
 @pytest_asyncio.fixture
@@ -196,4 +197,4 @@ async def test_auto_queue_gives_jobs_their_cq(jobs_env):
     await FileWatcher(jobs_env)._auto_queue_new_files(
         [scanned(ANIME, 1920, 1080), scanned(SCOPE, 1920, 800)])
     q = await _job_quality(jobs_env)
-    assert q[ANIME] == (22, 24) and q[SCOPE] == (21, 23)
+    assert q[ANIME] == (A, A + 2) and q[SCOPE] == (21, 23)

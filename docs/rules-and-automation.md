@@ -33,6 +33,9 @@ plus an action with optional encoder overrides.
 - **Media type** — TV / movie
 - **Title** — file name contains / doesn't contain
 - **Release group**
+- **Content type** — anime / animation / film grain / remux / other, the same
+  file- and folder-name detection as Settings → Video → Content type
+  detection (works whether or not that setting is on)
 - **Plex label / collection / genre / library** — requires Plex connected
 - **Jellyfin / Emby tag**, **Emby watched** — requires the corresponding integration
 - **Sonarr / Radarr tag** — the tag on the file's series / movie; requires the corresponding integration

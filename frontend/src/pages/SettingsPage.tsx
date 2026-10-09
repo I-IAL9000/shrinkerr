@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
@@ -363,6 +363,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     media_type: { label: ct("types.media_type"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     title: { label: ct("types.title"), group: ct("groups.file"), operators: [op("contains"), op("does_not_contain")], valueType: "text" },
     release_group: { label: ct("types.release_group"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    content_type: { label: ct("types.content_type"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     label: { label: ct("types.label"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     collection: { label: ct("types.collection"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     genre: { label: ct("types.genre"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
@@ -1362,6 +1363,64 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={helpStyle}>
                   {t("settingsMedia:video.smart.contentTypeHelp")}
                 </div>
+
+                {/* Per-type quality (v0.10.0): recommended values, editable,
+                    a switch per type, and a shortcut to a rule for everything
+                    else (encoder, preset, resolution, audio). */}
+                {(encoding.content_type_detection === true || encoding.content_type_detection === "true") && encoding.content_type_cq && (() => {
+                  const TYPES = ["anime", "animation", "grain", "remux"] as const;
+                  const TIERS = [["4k", "4K"], ["1080p", "1080p"], ["720p", "720p"], ["sd", "SD"]] as const;
+                  const table = encoding.content_type_cq;
+                  const setCell = (ctype: string, key: string, value: any) =>
+                    setEncoding({ ...encoding, content_type_cq: { ...table, [ctype]: { ...table[ctype], [key]: value } } });
+                  const ruleFor = (ctype: string) => {
+                    setShowAddRule(true);
+                    setEditingRuleId(null);
+                    setRuleForm({ name: t(`settingsMedia:video.smart.types.${ctype}`), match_mode: "all",
+                      conditions: [{ type: "content_type", operator: "is", value: ctype }],
+                      action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "",
+                      target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
+                    setTimeout(() => document.getElementById("rule-form")?.scrollIntoView({ block: "start" }), 50);
+                  };
+                  const cell = { ...inputStyle, width: 42, height: 30, padding: "2px 4px", textAlign: "center" as const };
+                  return (
+                    <div style={{ marginTop: 10, padding: 12, background: "var(--bg-primary)", borderRadius: 4, overflowX: "auto" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "minmax(70px, 1fr) repeat(4, 44px) auto", gap: "6px 6px", alignItems: "center", minWidth: 320 }}>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsMedia:video.smart.cqTable")}</span>
+                        {TIERS.map(([, label]) => <span key={label} style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>{label}</span>)}
+                        <span />
+                        {TYPES.map(ctype => {
+                          const row = table[ctype] || {};
+                          const on = row.enabled !== false;
+                          return (
+                            <Fragment key={ctype}>
+                              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12, color: on ? "var(--text-secondary)" : "var(--text-muted)" }}>
+                                <input type="checkbox" checked={on} onChange={e => setCell(ctype, "enabled", e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                                {t(`settingsMedia:video.smart.types.${ctype}`)}
+                              </label>
+                              {TIERS.map(([tier]) => (
+                                <input key={tier} type="number" min={0} max={51} disabled={!on} style={{ ...cell, opacity: on ? 1 : 0.5 }}
+                                  value={row[tier] ?? ""}
+                                  onChange={e => setCell(ctype, tier, e.target.value === "" ? "" : parseInt(e.target.value))} />
+                              ))}
+                              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }}
+                                title={t("settingsMedia:video.smart.ruleForTitle")} onClick={() => ruleFor(ctype)}>
+                                {t("settingsMedia:video.smart.ruleFor")}
+                              </button>
+                            </Fragment>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)", flex: "1 1 240px" }}>{t("settingsMedia:video.smart.cqTableHelp")}</span>
+                        <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 10px" }}
+                          onClick={() => setEncoding({ ...encoding, content_type_cq: encoding.content_type_cq_recommended })}>
+                          {t("settingsMedia:video.smart.resetRecommended")}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* VMAF Analysis Toggle */}
                 <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, marginBottom: 8, cursor: "pointer" }}>
@@ -3322,13 +3381,15 @@ volumes:
                             directory: "#ffa94d", label: "#b680ff", collection: "#40ceff", genre: "#ff6b9d",
                             library: "#18ffa5", source: "#74c0fc", resolution: "#ffd43b", video_codec: "#e94560",
                             audio_codec: "#69db7c", file_size: "#ffa94d", media_type: "#6860fe", title: "#40ceff",
-                            release_group: "#ff6b9d", arr_tag: "#74c0fc",
+                            release_group: "#ff6b9d", arr_tag: "#74c0fc", content_type: "#b680ff",
                           };
                           const fg = condColors[c.type] || "#ccc";
                           const bg = fg + "22";
                           const display = c.type === "directory"
                             ? c.value.split("/").filter(Boolean).pop() || c.value
-                            : c.value;
+                            : c.type === "content_type"
+                              ? t(`settingsMedia:video.smart.types.${c.value}`, { defaultValue: c.value })
+                              : c.value;
                           const opLabel = c.operator === "is" ? "" : c.operator === "is_not" ? "!=" : c.operator === "contains" ? "~" : c.operator === "does_not_contain" ? "!~" : c.operator === "greater_than" ? ">" : c.operator === "less_than" ? "<" : "";
                           const suffix = c.type === "file_size" ? " GB" : "";
                           return (
@@ -3411,7 +3472,7 @@ volumes:
 
             {/* Add/Edit Rule form */}
             {showAddRule && (
-              <div style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8 }}>
+              <div id="rule-form" style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8, scrollMarginTop: 80 }}>
                 {/* Rule name */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
                   <label style={labelStyle}>{t("settingsIntegrations:rules.form.name")}</label>
@@ -3451,6 +3512,7 @@ volumes:
                             <option value="media_type">{t("settingsIntegrations:conditions.types.media_type")}</option>
                             <option value="title">{t("settingsIntegrations:conditions.types.title")}</option>
                             <option value="release_group">{t("settingsIntegrations:conditions.types.release_group")}</option>
+                            <option value="content_type">{t("settingsIntegrations:conditions.types.content_type")}</option>
                           </optgroup>
                           <optgroup label="Plex">
                             <option value="label">{t("settingsIntegrations:conditions.plexOptions.label")}</option>
@@ -3523,6 +3585,15 @@ volumes:
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               <option value="movie">{t("settingsIntegrations:conditions.values.movie")}</option>
                               <option value="tv">{t("settingsIntegrations:conditions.values.tv")}</option>
+                            </select>;
+                          }
+
+                          if (cond.type === "content_type") {
+                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
+                              {["anime", "animation", "grain", "remux", "other"].map(v => (
+                                <option key={v} value={v}>{t(`settingsMedia:video.smart.types.${v}`)}</option>
+                              ))}
                             </select>;
                           }
 

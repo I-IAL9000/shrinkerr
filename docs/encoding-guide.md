@@ -268,18 +268,36 @@ mode — useful if you're migrating from one HEVC profile to another
 Settings → Video → Smart Encoding → "Content type detection". Recognises
 the content from the file and folder names (anime release groups and tags,
 `grain`, animation studios, `remux`) and picks a CQ for that content and
-the file's resolution band:
+the file's resolution band. The recommended values:
 
 | Content | 4K | 1080p | 720p | SD |
 |---|---|---|---|---|
-| Anime | 24 | 22 | 20 | 18 |
-| Grain / film | 26 | 24 | 22 | 20 |
-| Animation | 26 | 24 | 22 | 20 |
-| Remux | 22 | 20 | 18 | 16 |
+| Anime | 23 | 19 | 18 | 16 |
+| Animation | 23 | 19 | 18 | 16 |
+| Film grain | 21 | 18 | 17 | 16 |
+| Remux | 21 | 18 | 17 | 16 |
+| *Everything else (resolution-aware)* | 24 | 20 | 18 | 16 |
 
-Anything else uses resolution-aware CQ (if on) or your global CQ. Like
-resolution-aware CQ it sets NVENC CQ / libx265 CRF only when no rule or Add
-to Queue setting does, and the estimate shows the same values.
+Why these get a little more quality than everyday content: artifacts show
+most where nothing hides them. Live action's texture masks quantisation;
+anime and CGI animation are flat colour, smooth gradients and sharp lines,
+where the same CQ shows as banding and ringing — and they compress so well
+that the extra quality costs few bytes. Film grain is the first thing an
+encoder smooths away (it turns waxy and blotchy), so keeping it costs bits
+and grainy files save less. Remuxes are pristine sources kept for their
+quality; they still shrink a lot at these values.
+
+Every cell can be changed in the table under the setting, each type can be
+switched off (it's then treated like everything else), and "Reset to
+recommended" restores the values above. Anything else uses resolution-aware
+CQ (if on) or your global CQ. Like resolution-aware CQ it sets NVENC CQ /
+libx265 CRF only when no rule or Add to Queue setting does, and the
+estimate shows the same values.
+
+For more than quality — a different encoder, preset, resolution or audio
+for one type — use an encoding rule with the **Content type** condition
+("Rule…" next to each type creates one). A rule's quality wins over the
+table.
 
 Before v0.10.0 this (and resolution-aware CQ) only changed the queue
 estimate; jobs always used the global CQ. It is on for new installs and was

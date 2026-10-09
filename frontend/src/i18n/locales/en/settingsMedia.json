@@ -155,7 +155,7 @@
     "smart": {
       "title": "Smart Encoding",
       "contentType": "Content type detection",
-      "contentTypeHelp": "Automatically detects content type from filenames (anime, grain, animation, remux) and applies optimized CQ values. Anime compresses well (CQ 22), grain needs conservative settings (CQ 24). Sets the CQ of NVENC and libx265 jobs when no encoding rule or the Add to Queue dialog sets the quality (QSV, VAAPI and VideoToolbox keep their own quality setting).",
+      "contentTypeHelp": "Recognises anime, animation, film grain and remuxes from file and folder names and gives them their own quality (CQ) below — by default a little more quality than everyday content, because artifacts show most on clean animation and grain is the first thing an encoder smooths away. Used for NVENC and libx265 jobs when no encoding rule or the Add to Queue dialog sets the quality (QSV, VAAPI and VideoToolbox keep their own quality setting).",
       "vmaf": "VMAF quality analysis",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix. It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality. When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion. Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.",
       "score": "Score",
@@ -169,7 +169,19 @@
       "minScore": "Reject encodes below a minimum VMAF score",
       "minScoreHelp": "When enabled, any encode whose measured VMAF score is below the threshold is discarded — the encoded temp file is deleted, the original is left in place, and the job is recorded as <b>rejected</b> with the score and threshold visible in the job details. Useful as a safety net against overly-aggressive CQ/CRF settings.",
       "resAware": "Resolution-aware quality",
-      "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Used for NVENC and libx265 jobs when no rule, the Add to Queue dialog or content detection sets the quality."
+      "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Used for NVENC and libx265 jobs when no rule, the Add to Queue dialog or content detection sets the quality.",
+      "cqTable": "CQ by resolution",
+      "cqTableHelp": "Lower = better quality, bigger files. libx265 uses CRF 2 higher. A type that's switched off is treated like everything else. \"Rule…\" adds an encoding rule for that type: its own encoder, preset, resolution or audio.",
+      "resetRecommended": "Reset to recommended",
+      "ruleFor": "Rule…",
+      "ruleForTitle": "Add an encoding rule for this content type (encoder, preset, resolution, audio)",
+      "types": {
+        "anime": "Anime",
+        "animation": "Animation",
+        "grain": "Film grain",
+        "remux": "Remux",
+        "other": "Other (live action)"
+      }
     },
     "vmafRemeasure": {
       "title": "Re-measure suspect VMAF scores",

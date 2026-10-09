@@ -285,6 +285,8 @@ class SettingsUpdate(BaseModel):
     resolution_cq_1080p: Optional[int] = None
     resolution_cq_720p: Optional[int] = None
     resolution_cq_sd: Optional[int] = None
+    # v0.10.0: per-content-type CQ table (content_detect.content_cq_table).
+    content_type_cq: Optional[dict] = None
     filename_suffix: Optional[str] = None
     custom_ffmpeg_flags: Optional[str] = None
     max_plex_api_calls: Optional[Any] = None

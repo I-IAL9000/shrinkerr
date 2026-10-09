@@ -273,7 +273,8 @@
       "jellyfin_tag": "Jellyfin Tag",
       "emby_tag": "Emby Tag",
       "emby_watched": "Emby Watched",
-      "nzbget_category": "Download Category"
+      "nzbget_category": "Download Category",
+      "content_type": "Content type"
     },
     "plexOptions": {
       "label": "Label",
@@ -310,7 +311,8 @@
       "jellyfin_tag": "jellyfin tag",
       "emby_tag": "emby tag",
       "emby_watched": "emby watched",
-      "nzbget_category": "nzbget category"
+      "nzbget_category": "nzbget category",
+      "content_type": "content type"
     },
     "values": {
       "selectDirectory": "Select directory...",

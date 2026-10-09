@@ -190,7 +190,7 @@ CONDITION_TYPES = frozenset({
     "date_added", "media_type", "title", "release_group",
     "label", "collection", "genre", "library", "plex_watched",
     "jellyfin_tag", "jellyfin_watched", "emby_tag", "emby_watched",
-    "arr_tag", "nzbget_category",
+    "arr_tag", "nzbget_category", "content_type",
 })
 # Conditions matched through plex_metadata_cache. Only Plex label /
 # collection / genre / library rules used to load it, so a watched or
@@ -239,6 +239,14 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
     if ctype == "resolution":
         detected = _detect_resolution(scan_row.get("video_width"), scan_row.get("video_height"), file_path)
         return _match_op(detected, op, value)
+
+    # Content type (v0.10.0): the same file/folder-name detection as Settings →
+    # Video → Content type detection, so a rule can give a type its own
+    # encoder, preset, resolution or audio. No specific signal = "other".
+    if ctype == "content_type":
+        from backend.content_detect import detect_content_type_from_path
+        detected = detect_content_type_from_path(file_path)
+        return _match_op("other" if detected == "default" else detected, op, value)
 
     # 4. Video codec — with family matching
     if ctype == "video_codec":

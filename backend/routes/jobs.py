@@ -271,11 +271,10 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     db = await connect_db()
     try:
         # Load conversion filter settings + smart encoding settings
+        from backend.content_detect import SMART_CQ_KEYS
         smart_keys = (
             'min_bitrate_mbps', 'max_bitrate_mbps', 'min_file_size_mb',
-            'content_type_detection', 'resolution_aware_cq',
-            'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd',
-            'default_encoder',
+            'default_encoder', *SMART_CQ_KEYS,
         )
         filter_settings = {}
         async with db.execute(
@@ -990,7 +989,7 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     # (v0.10.0: this used `async with connect_db()`, which always raised and
     # was swallowed, so the saved source codecs and encoder were never read.)
     from backend.scanner import DEFAULT_SOURCE_CODECS
-    from backend.content_detect import smart_cq_settings, smart_quality
+    from backend.content_detect import SMART_CQ_KEYS, smart_cq_settings, smart_quality
     source_codecs = list(DEFAULT_SOURCE_CODECS)
     default_encoder = "nvenc"
     _values: dict = {}
@@ -999,7 +998,7 @@ async def add_jobs_by_path(payload: AddByPathRequest):
         try:
             async with _db.execute(
                 "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', "
-                "'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
+                + ",".join(f"'{k}'" for k in SMART_CQ_KEYS) + ")"
             ) as _cur:
                 _values = {r["key"]: r["value"] for r in await _cur.fetchall()}
         finally:
@@ -1890,10 +1889,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
     try:
         # Load settings for smart CQ
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
-        est_keys = ('content_type_detection', 'resolution_aware_cq',
-                    'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd',
-                    'backup_original_days', 'trash_original_after_conversion',
-                    *QUALITY_KEYS)
+        from backend.content_detect import SMART_CQ_KEYS
+        est_keys = ('backup_original_days', 'trash_original_after_conversion',
+                    *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys

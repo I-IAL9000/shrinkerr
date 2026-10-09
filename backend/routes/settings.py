@@ -678,6 +678,9 @@ async def get_encoding_settings():
         result["vmaf_min_score"] = 0.0
     result["content_type_detection"] = merged.get("content_type_detection", "true").lower() == "true"
     result["resolution_aware_cq"] = merged.get("resolution_aware_cq", "false").lower() == "true"
+    from backend.content_detect import CONTENT_TYPES, CQ_TABLE, content_cq_table
+    result["content_type_cq"] = content_cq_table(merged.get("content_type_cq"))
+    result["content_type_cq_recommended"] = content_cq_table({t: {**CQ_TABLE[t], "enabled": True} for t in CONTENT_TYPES})
     for _k in ("resolution_cq_4k", "resolution_cq_1080p", "resolution_cq_720p", "resolution_cq_sd"):
         try:
             result[_k] = int(merged.get(_k) or _ENCODING_DEFAULTS[_k])
@@ -1193,6 +1196,9 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             val = getattr(update, key)
             if val is not None:
                 updates[key] = str(max(0, min(51, int(val))))
+        if update.content_type_cq is not None:
+            from backend.content_detect import content_cq_table
+            updates["content_type_cq"] = json.dumps(content_cq_table(update.content_type_cq))
         if update.api_key is not None and not update.api_key.startswith("****"):
             updates["api_key"] = update.api_key
         # Auth settings
