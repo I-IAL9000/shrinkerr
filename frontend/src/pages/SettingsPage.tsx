@@ -633,6 +633,15 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocker.state]);
 
+  // Phones: keep the current page's tab in view in the scrolling strip.
+  const stripRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const strip = stripRef.current;
+    const tab = strip?.querySelector<HTMLElement>("button.active");
+    if (!strip || !tab) return;
+    strip.scrollLeft += tab.getBoundingClientRect().left - strip.getBoundingClientRect().left - (strip.clientWidth - tab.offsetWidth) / 2;
+  }, [section]);
+
   // Settings search: open the sub-page, then find and flash the setting.
   const jumpTo = (target: SettingsSectionId, text: string) => {
     navigate(`/settings/${target}`);
@@ -722,7 +731,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
       </div>
 
       <SettingsSearch onPick={jumpTo} />
-      <nav className="settings-section-strip" aria-label={t("settingsMedia:header.title")}>
+      <nav className="settings-section-strip" ref={stripRef} aria-label={t("settingsMedia:header.title")}>
         {SETTINGS_SECTIONS.map(s => (
           <button key={s.id} type="button" aria-current={section === s.id ? "page" : undefined}
             className={section === s.id ? "active" : ""} onClick={() => navigate(`/settings/${s.id}`)}>
@@ -747,8 +756,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 // for legacy rows / older API responses.
                 const autoScan = d.auto_scan !== false && d.auto_scan !== 0;
                 return (
-                  <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
-                    <span>
+                  <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                    <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
                       {d.path}
                       {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--bg-tertiary)" }}>{d.label}</span>}
                       {!autoScan && (
@@ -758,7 +767,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         >{t("settingsMedia:directories.noScan")}</span>
                       )}
                     </span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                       <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}>
                         <input
                           type="checkbox"
@@ -3526,7 +3535,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.health.title")}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                  <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterScan")}</span>
+                  <span style={{ ...labelStyle, flex: "0 1 240px", minWidth: 0 }}>{t("settingsSystem:automation.health.afterScan")}</span>
                   <select aria-label={t("settingsSystem:automation.health.afterScan")}
                     style={{ ...inputStyle, width: 140 }}
                     value={encoding?.health_check_on_scan ?? "off"}
@@ -3552,7 +3561,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   >{t("settingsSystem:automation.health.clearPending")}</button>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                  <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterConversion")}</span>
+                  <span style={{ ...labelStyle, flex: "0 1 240px", minWidth: 0 }}>{t("settingsSystem:automation.health.afterConversion")}</span>
                   <select aria-label={t("settingsSystem:automation.health.afterConversion")}
                     style={{ ...inputStyle, width: 140 }}
                     value={encoding?.health_check_after_conversion ?? "off"}

@@ -896,7 +896,9 @@ input[type="checkbox"] { cursor: pointer; }
 @media (max-width: 768px) {
   .settings-section-strip {
     display: flex; gap: 6px; overflow-x: auto; margin: 0 -4px 16px; padding: 0 4px 4px;
+    scrollbar-width: none;
   }
+  .settings-section-strip::-webkit-scrollbar { display: none; }
   .settings-section-strip button {
     flex-shrink: 0; padding: 6px 12px; font-size: 13px; white-space: nowrap; cursor: pointer;
     color: var(--text-secondary); background: var(--bg-secondary);
