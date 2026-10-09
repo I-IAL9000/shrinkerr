@@ -1609,6 +1609,102 @@ def estimate_savings(
     )
 
 
+def folder_candidates(root_path: Path, dirs: list[str], files: list[str], extensions: set[str]) -> list[Path]:
+    """The scan candidates in one walked folder, for the Scanner and the
+    watcher alike (SC-11, v0.10.0).
+
+    v0.6.0: a folder holding VIDEO_TS/VIDEO_TS.IFO or BDMV/index.bdmv is a
+    disc: its marker file is one item and the walk doesn't descend into
+    VIDEO_TS/BDMV (their VOBs / M2TS are opaque; BDMV wins on combo discs,
+    see _classify_disc). Video files next to a disc — a converted copy, an
+    extra — are candidates too: both walkers skipped the whole folder, so
+    they never showed up. Hidden files (AppleDouble `._x.mkv`) and the
+    temp outputs of running jobs are not."""
+    out: list[Path] = []
+    disc_type = _classify_disc(root_path)
+    if disc_type:
+        marker = _disc_marker_path(root_path, disc_type)
+        if marker.is_file():
+            out.append(marker)
+        dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
+    for name in files:
+        if name.startswith(".") or ".converting." in name or ".remuxing." in name:
+            continue
+        if Path(name).suffix.lower() in extensions:
+            out.append(root_path / name)
+    return out
+
+
+def already_converted(all_files, log: bool = True) -> set[str]:
+    """Candidates skipped because their converted version is already there:
+    a source whose HEVC sibling is among `all_files`, or a disc whose output
+    exists. The watcher didn't apply these and re-added (and re-queued)
+    what a full scan skipped (SC-11, v0.10.0)."""
+    all_files = [Path(f) for f in all_files]
+    # Detect duplicate x264 / HEVC pairs — if an HEVC version of the same
+    # release already exists next to the x264 source, skip the x264. This
+    # happens when a conversion was interrupted after writing the output
+    # but before deleting the original. The HEVC output's filename tag
+    # depends on the encoder used:
+    #   - libx265 output → `x265` in the filename
+    #   - NVENC   output → `h265`
+    # so we check BOTH possibilities, not just `x265`.
+    from backend.converter import (
+        rename_source_to_target_codec, rename_source_quality_in_filename,
+        _DISC_TIER_RE, _RESOLUTION_TOKEN_RE,
+    )
+    all_paths_set = {str(f) for f in all_files}
+    skip_paths: set[str] = set()
+    for f in all_files:
+        # v0.6.0: disc-marker sibling detection — skip a disc whose
+        # converted output already exists (see _disc_converted_output).
+        if ((f.name.lower() == "video_ts.ifo" and f.parent.name.lower() == "video_ts")
+                or (f.name.lower() == "index.bdmv" and f.parent.name.lower() == "bdmv")):
+            converted = _disc_converted_output(f)
+            if converted:
+                skip_paths.add(str(f))
+                if log: print(
+                    f"[SCANNER] Skipping disc (converted version exists: "
+                    f"{converted.name}): {f.parent.parent.name}",
+                    flush=True,
+                )
+            continue
+
+        name = f.name
+        candidates: set[str] = set()
+        for encoder in ("libx265", "nvenc"):
+            base = rename_source_to_target_codec(name, encoder=encoder)
+            # v0.9.148: get_output_path inserts a resolution in front of a
+            # disc-tier tag that had none ("X BR-DISK AVC" → "X 1080p Bluray
+            # h265"). The height isn't known before probing, so try each.
+            variants = [base]
+            m = _DISC_TIER_RE.search(base)
+            if m and not _RESOLUTION_TOKEN_RE.search(base):
+                variants += [base[:m.start()] + r + " " + base[m.start():]
+                             for r in ("2160p", "1080p", "720p", "576p", "480p")]
+            for renamed in variants:
+                # v0.5.18: match get_output_path()'s rename chain so disc-tier
+                # source siblings (e.g. "X.BR-DISK.x264.mkv" → "X.Bluray.x265.mkv")
+                # are correctly detected and the source gets skip-flagged.
+                renamed = rename_source_quality_in_filename(renamed)
+                if renamed != name:
+                    # The conversion pipeline always writes .mkv regardless of
+                    # source container, so match the HEVC sibling with that
+                    # extension explicitly.
+                    stem_only = renamed.rsplit(".", 1)[0] if "." in renamed else renamed
+                    candidates.add(str(f.parent / f"{stem_only}.mkv"))
+        hits = [c for c in candidates if c in all_paths_set and str(f) != c]
+        if hits:
+            skip_paths.add(str(f))
+            if log: print(
+                f"[SCANNER] Skipping duplicate x264 (HEVC version exists: "
+                f"{Path(hits[0]).name}): {f.name}",
+                flush=True,
+            )
+
+    return skip_paths
+
+
 async def scan_directory(
     dir_path: str,
     progress_callback: Optional[Callable] = None,
@@ -1673,96 +1769,9 @@ async def scan_directory(
     # Collect all candidate files first
     all_files = []
     for root, dirs, files in walk_media_dir(dir_path, unreadable if unreadable is not None else []):
-        root_path = Path(root)
+        all_files.extend(folder_candidates(Path(root), dirs, files, extensions))
 
-        # v0.6.0: disc-folder detection. When a directory contains a
-        # VIDEO_TS/VIDEO_TS.IFO or BDMV/index.bdmv marker, register the
-        # marker file as a single scan item and skip descent into the
-        # disc subdirectory — its VOBs / M2TS are opaque to Shrinkerr.
-        # BDMV wins on combo discs (handled inside _classify_disc).
-        disc_type = _classify_disc(root_path)
-        if disc_type:
-            marker = _disc_marker_path(root_path, disc_type)
-            if marker.is_file():
-                all_files.append(marker)
-            # Don't recurse INTO VIDEO_TS/BDMV — they're internal to the disc.
-            # Mutating `dirs` in-place is the documented way to prune os.walk
-            # descent.
-            dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
-            # Skip the files-in-this-dir loop too — disc-root folders typically
-            # don't have video files alongside VIDEO_TS/BDMV, but if they did
-            # they'd be part of the disc release (subtitle sidecars, etc.) and
-            # not standalone media. They get picked up on subsequent walks of
-            # the same dir if separate (sibling MKVs etc).
-            continue
-
-        for name in files:
-            if name.startswith("."):
-                continue  # Skip hidden/dot files (macOS resource forks, etc.)
-            if Path(name).suffix.lower() in extensions:
-                all_files.append(root_path / name)
-
-    # Detect duplicate x264 / HEVC pairs — if an HEVC version of the same
-    # release already exists next to the x264 source, skip the x264. This
-    # happens when a conversion was interrupted after writing the output
-    # but before deleting the original. The HEVC output's filename tag
-    # depends on the encoder used:
-    #   - libx265 output → `x265` in the filename
-    #   - NVENC   output → `h265`
-    # so we check BOTH possibilities, not just `x265`.
-    from backend.converter import (
-        rename_source_to_target_codec, rename_source_quality_in_filename,
-        _DISC_TIER_RE, _RESOLUTION_TOKEN_RE,
-    )
-    all_paths_set = {str(f) for f in all_files}
-    skip_paths: set[str] = set()
-    for f in all_files:
-        # v0.6.0: disc-marker sibling detection — skip a disc whose
-        # converted output already exists (see _disc_converted_output).
-        if ((f.name.lower() == "video_ts.ifo" and f.parent.name.lower() == "video_ts")
-                or (f.name.lower() == "index.bdmv" and f.parent.name.lower() == "bdmv")):
-            converted = _disc_converted_output(f)
-            if converted:
-                skip_paths.add(str(f))
-                print(
-                    f"[SCANNER] Skipping disc (converted version exists: "
-                    f"{converted.name}): {f.parent.parent.name}",
-                    flush=True,
-                )
-            continue
-
-        name = f.name
-        candidates: set[str] = set()
-        for encoder in ("libx265", "nvenc"):
-            base = rename_source_to_target_codec(name, encoder=encoder)
-            # v0.9.148: get_output_path inserts a resolution in front of a
-            # disc-tier tag that had none ("X BR-DISK AVC" → "X 1080p Bluray
-            # h265"). The height isn't known before probing, so try each.
-            variants = [base]
-            m = _DISC_TIER_RE.search(base)
-            if m and not _RESOLUTION_TOKEN_RE.search(base):
-                variants += [base[:m.start()] + r + " " + base[m.start():]
-                             for r in ("2160p", "1080p", "720p", "576p", "480p")]
-            for renamed in variants:
-                # v0.5.18: match get_output_path()'s rename chain so disc-tier
-                # source siblings (e.g. "X.BR-DISK.x264.mkv" → "X.Bluray.x265.mkv")
-                # are correctly detected and the source gets skip-flagged.
-                renamed = rename_source_quality_in_filename(renamed)
-                if renamed != name:
-                    # The conversion pipeline always writes .mkv regardless of
-                    # source container, so match the HEVC sibling with that
-                    # extension explicitly.
-                    stem_only = renamed.rsplit(".", 1)[0] if "." in renamed else renamed
-                    candidates.add(str(f.parent / f"{stem_only}.mkv"))
-        hits = [c for c in candidates if c in all_paths_set and str(f) != c]
-        if hits:
-            skip_paths.add(str(f))
-            print(
-                f"[SCANNER] Skipping duplicate x264 (HEVC version exists: "
-                f"{Path(hits[0]).name}): {f.name}",
-                flush=True,
-            )
-
+    skip_paths = already_converted(all_files)
     all_files = [f for f in all_files if str(f) not in skip_paths]
     total = len(all_files)
     results: list[ScannedFile] = []

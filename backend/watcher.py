@@ -9,7 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path, clamp_future_mtime, SUBTITLE_EXTENSIONS, walk_media_dir
+from backend.scanner import _classify_disc, _disc_marker_path, already_converted, clamp_future_mtime, folder_candidates, SUBTITLE_EXTENSIONS, walk_media_dir
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -1366,45 +1366,16 @@ class FileWatcher:
                     continue
                 for root, dirs, files in walk_media_dir(dir_path, unreadable_dirs):
                     root_path = Path(root)
-
-                    # v0.6.1: disc-folder detection — mirror scanner walk so
-                    # newly-dropped VIDEO_TS/ and BDMV/ folders auto-discover.
-                    # Without this the extension filter below drops .IFO /
-                    # .VOB / .m2ts before the disc-marker pre-pass can see
-                    # them, and disc folders never get registered.
-                    disc_type = _classify_disc(root_path)
-                    if disc_type:
-                        marker = _disc_marker_path(root_path, disc_type)
-                        if marker.is_file():
-                            result.add(str(marker))
-                        dirs[:] = [d for d in dirs if d not in ("VIDEO_TS", "BDMV")]
-                        continue
-
-                    folder_files: list = []
-                    folder_has_sub = False
-                    for name in files:
-                        # Skip temp files from active conversions/remuxing
-                        if ".converting." in name or ".remuxing." in name:
-                            continue
-                        # Skip hidden / dot files. The big offender on
-                        # Mac-formatted volumes is AppleDouble companions
-                        # (`._<name>.mkv`) — same extension as the video
-                        # they shadow but contain HFS+ resource-fork data,
-                        # not video. ffprobe rightly fails on them and the
-                        # watcher used to log 200+ "probe failed" per cycle
-                        # for these. Matches scanner.py's filter so the
-                        # watcher and the initial scan agree on visibility.
-                        if name.startswith("."):
-                            continue
-                        p = Path(root) / name
-                        folder_files.append(p)
-                        suffix = Path(name).suffix.lower()
-                        if suffix in extensions:
-                            result.add(str(p))
-                        elif suffix in SUBTITLE_EXTENSIONS:
-                            folder_has_sub = True
-                    if folder_has_sub:
-                        sub_folder_files[root] = folder_files
+                    # The Scanner's own rules (SC-11): disc markers, and
+                    # video files next to a disc too.
+                    result.update(str(p) for p in folder_candidates(root_path, dirs, files, extensions))
+                    visible = [n for n in files if not n.startswith(".")
+                               and ".converting." not in n and ".remuxing." not in n]
+                    if any(Path(n).suffix.lower() in SUBTITLE_EXTENSIONS for n in visible):
+                        sub_folder_files[root] = [root_path / n for n in visible]
+            # Skip what a full scan skips — sources whose converted version
+            # is already there — or the watcher re-adds and re-queues them.
+            result -= already_converted(result, log=False)
             return result, sub_folder_files
 
         unreadable_dirs: list[str] = []
