@@ -371,6 +371,8 @@ async def add_media_dir(media_dir: MediaDir):
             raise ApiError(status_code=409, detail="Directory already exists", code="settings.mediaDirExists")
     finally:
         await db.close()
+    from backend.media_paths import invalidate_media_dir_cache
+    invalidate_media_dir_cache()
     return {
         "id": new_id, "path": resolved_path, "label": media_dir.label,
         "enabled": media_dir.enabled, "auto_scan": media_dir.auto_scan,
@@ -415,6 +417,8 @@ async def patch_media_dir(dir_id: int, body: MediaDirPatchBody):
         await db.commit()
     finally:
         await db.close()
+    from backend.media_paths import invalidate_media_dir_cache
+    invalidate_media_dir_cache()
     return {"status": "updated"}
 
 
@@ -429,6 +433,8 @@ async def delete_media_dir(dir_id: int):
         path = row["path"] if row else None
 
         await db.execute("DELETE FROM media_dirs WHERE id = ?", (dir_id,))
+        from backend.media_paths import invalidate_media_dir_cache
+        invalidate_media_dir_cache()
 
         # Also remove scan results for this directory
         if path:

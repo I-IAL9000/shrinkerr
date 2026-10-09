@@ -423,18 +423,14 @@ async def resolve_posters(req: ResolveRequest):
         from datetime import datetime as _dt, timedelta as _td, timezone as _tz
         _stale_cutoff = (_dt.now(_tz.utc) - _td(days=_PLACEHOLDER_TTL_DAYS)).isoformat()
 
-        # Pre-fetch dir labels for every requested path once — used by
-        # the type-impossible cache invalidation below. Cheap (single
-        # DB query per call) and avoids N async lookups inside the
-        # tight read loop. v0.3.112+.
-        from backend.media_paths import media_dir_label_for as _label_for_path
-        path_label_type: dict[str, str | None] = {}
-        for path in req.paths:
-            try:
-                lbl = await _label_for_path(path)
-                path_label_type[path] = _label_to_media_type(lbl)
-            except Exception:
-                path_label_type[path] = None
+        # Media folder labels for every requested path, from one cached
+        # index matched by string prefix (v0.10.0, SC-25: this opened a
+        # connection and resolved paths on the NAS once per poster). Used
+        # by the type-impossible cache invalidation and the "Other" skip.
+        from backend.media_paths import _media_dir_label_index, label_in_index
+        label_index = await _media_dir_label_index()
+        path_label: dict[str, str | None] = {p: label_in_index(p, label_index) for p in req.paths}
+        path_label_type: dict[str, str | None] = {p: _label_to_media_type(lbl) for p, lbl in path_label.items()}
 
         needs_media_type = []  # cached but missing media_type
         for path in req.paths:
@@ -546,23 +542,21 @@ async def resolve_posters(req: ResolveRequest):
 
             async def _bf_one(p: str):
                 async with sem_bf:
-                    url = result[p]["poster_url"]
                     try:
-                        img = await _download_image(url, plex_url_bf, plex_token_bf)
+                        return p, await _download_image(result[p]["poster_url"], plex_url_bf, plex_token_bf)
                     except Exception:
-                        img = None
-                    if img:
-                        try:
-                            await db.execute(
-                                "UPDATE poster_cache SET image_data = ? WHERE folder_path = ?",
-                                (img, p),
-                            )
-                            result[p]["poster_url"] = f"data:image/jpeg;base64,{img}"
-                        except Exception:
-                            pass
+                        return p, None
 
-            await asyncio.gather(*[_bf_one(p) for p in backfill_paths])
-            await db.commit()
+            # Download everything first, then write in one short transaction
+            # (v0.10.0, SC-25: each UPDATE ran between downloads with 15 s
+            # timeouts, holding the write lock across the network and
+            # blocking conversions' progress writes — "database is locked").
+            downloaded = [(p, img) for p, img in await asyncio.gather(*[_bf_one(p) for p in backfill_paths]) if img]
+            for p, img in downloaded:
+                await db.execute("UPDATE poster_cache SET image_data = ? WHERE folder_path = ?", (img, p))
+                result[p]["poster_url"] = f"data:image/jpeg;base64,{img}"
+            if downloaded:
+                await db.commit()
 
         if not uncached and not needs_media_type:
             return result
@@ -571,18 +565,16 @@ async def resolve_posters(req: ResolveRequest):
         # (v0.3.33+). Those folders contain non-cataloguable content (home
         # videos, music, lectures, misc rips) where TMDB matches would be
         # spurious — we just write a placeholder result instead.
-        from backend.media_paths import is_other_typed_dir
-        other_paths: set[str] = set()
-        for p in (uncached + needs_media_type):
-            try:
-                if await is_other_typed_dir(p):
-                    other_paths.add(p)
-            except Exception:
-                pass
+        other_paths: set[str] = {
+            p for p in (uncached + needs_media_type)
+            if (path_label.get(p) or "").strip().lower() == "other"
+        }
         if other_paths:
             for p in list(other_paths):
-                # Mark in cache so we don't re-check on every refresh.
-                parsed = parse_folder_name(p)
+                # Mark in cache so we don't re-check on every refresh. The
+                # title comes from the folder name — no listing of the folder
+                # on the NAS inside the transaction (SC-25).
+                parsed = parse_folder_name(p, walk_files=False)
                 entry = {
                     "title": parsed["title"], "year": parsed.get("year"),
                     "poster_url": None, "source": "other-skipped",
@@ -648,7 +640,8 @@ async def resolve_posters(req: ResolveRequest):
             sem = asyncio.Semaphore(3)
             async def _backfill_one(path: str):
                 async with sem:
-                    parsed = parse_folder_name(path)
+                    # Lists the folder for ids: on the NAS, so off the loop.
+                    parsed = await asyncio.to_thread(parse_folder_name, path)
                     # Whether the folder has any bracket ID — used by
                     # the dir-label and TVDB-implies-TV fallbacks below.
                     # Pre-v0.3.131 this name was referenced but never
@@ -743,7 +736,8 @@ async def resolve_posters(req: ResolveRequest):
         # full chain (Plex → IMDb find → TVDB find → title search +
         # image download). v0.3.63.
         async def _resolve_one(path: str):
-            parsed = parse_folder_name(path)
+            # Lists the folder for ids: on the NAS, so off the loop (SC-25).
+            parsed = await asyncio.to_thread(parse_folder_name, path)
             poster_url = None
             source = "placeholder"
             image_data = None

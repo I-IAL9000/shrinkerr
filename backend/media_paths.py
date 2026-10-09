@@ -17,7 +17,9 @@ the component boundary matches. That correctly rejects
 
 from __future__ import annotations
 
+import asyncio
 import os
+import time
 from pathlib import Path
 
 import aiosqlite
@@ -105,6 +107,58 @@ def backup_folder_conflict(folder: str, media_dirs: list[str]) -> str | None:
     return None
 
 
+# SC-25 / SC-26 (v0.10.0): media_dir_label_for opened a database connection
+# and resolved the path and every media folder (realpath: syscalls on the
+# NAS) on the event loop — for every file of a scan, every watcher file and
+# every poster. The folders are now loaded once (cached 15 s, and dropped
+# when one is added, edited or removed), each root resolved once in a
+# thread, and paths matched by string prefix.
+_LABEL_CACHE_TTL = 15.0
+_label_cache: dict = {"db": None, "at": 0.0, "index": []}
+
+
+def _label_index(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """(prefix ending in "/", label) for every media folder, as configured
+    and with symlinks resolved, longest first. Blocking: run in a thread."""
+    index = []
+    for path, label in rows:
+        for form in {path.rstrip("/"), _resolve(path).rstrip("/")}:
+            if form:
+                index.append((form + "/", label or ""))
+    index.sort(key=lambda pair: len(pair[0]), reverse=True)
+    return index
+
+
+def invalidate_media_dir_cache() -> None:
+    """Call after adding, editing or removing a media folder."""
+    _label_cache["at"] = 0.0
+
+
+async def _media_dir_label_index() -> list[tuple[str, str]]:
+    if _label_cache["db"] == DB_PATH and time.monotonic() - _label_cache["at"] < _LABEL_CACHE_TTL:
+        return _label_cache["index"]
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        async with db.execute("SELECT path, label FROM media_dirs") as cur:
+            rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    index = await asyncio.to_thread(_label_index, rows)
+    _label_cache.update(db=DB_PATH, at=time.monotonic(), index=index)
+    return index
+
+
+def label_in_index(path: str, index: list[tuple[str, str]]) -> str | None:
+    """The label of the media folder `path` is in (the deepest one when
+    folders are nested), or None."""
+    candidate = path if path.endswith("/") else path + "/"
+    for prefix, label in index:
+        if candidate.startswith(prefix):
+            return label or None
+    return None
+
+
 async def media_dir_label_for(path: str) -> str | None:
     """Return the `media_dirs.label` for the directory `path` lives inside,
     or None if it isn't under any configured root.
@@ -115,24 +169,7 @@ async def media_dir_label_for(path: str) -> str | None:
     the matches would be spurious and pollute scan_results with wrong
     posters / wrong original-language tags. v0.3.33+.
     """
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    try:
-        async with db.execute("SELECT path, label FROM media_dirs") as cur:
-            rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
-    finally:
-        await db.close()
-    if not rows:
-        return None
-    resolved = _resolve(path)
-    # Pick the LONGEST matching prefix in case nested media dirs are
-    # configured (e.g. /media and /media/Other) — the deeper/more-specific
-    # one wins.
-    matches = [(p, label) for (p, label) in rows if is_within(resolved, p)]
-    if not matches:
-        return None
-    matches.sort(key=lambda pair: len(_resolve(pair[0])), reverse=True)
-    return matches[0][1] or None
+    return label_in_index(path, await _media_dir_label_index())
 
 
 async def is_other_typed_dir(path: str) -> bool:

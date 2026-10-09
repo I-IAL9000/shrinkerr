@@ -96,3 +96,69 @@ async def test_disc_languages_are_read_off_the_loop_and_cached(tmp_path, monkeyp
     assert gap < 0.3                    # the 0.5 s parse didn't hold the loop
     await scanner.probe_file(str(marker))
     assert len(calls) == 1              # the second probe of the same disc is cached
+
+
+@pytest.mark.asyncio
+async def test_poster_downloads_dont_hold_the_write_lock(test_db, monkeypatch):
+    """SC-25: the poster image backfill wrote each UPDATE between downloads
+    (15 s timeouts), holding the database write lock across the network —
+    a running conversion's progress write then failed "database is locked"."""
+    import sqlite3
+    import aiosqlite
+    import backend.routes.posters as posters
+    monkeypatch.setattr(posters, "DB_PATH", test_db)
+    paths = [f"/m/movies/Film {i} (200{i})" for i in range(4)]
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (posters._V116_PURGE_FLAG,))
+        for p in paths:
+            await db.execute(
+                "INSERT INTO poster_cache (folder_path, title, year, poster_url, source, media_type, resolved_at) "
+                "VALUES (?, 'Film', '2001', 'https://image.tmdb.org/t/p/w300/x.jpg', 'tmdb', 'movie', '2026-01-01')", (p,))
+        await db.commit()
+    blocked = []
+
+    async def fake_download(url, plex_url="", plex_token=""):
+        await asyncio.sleep(0.05)
+        # Meanwhile, a conversion writes its progress (no waiting on a lock).
+        con = sqlite3.connect(test_db, timeout=0)
+        try:
+            con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('progress_probe', '1')")
+            con.commit()
+        except sqlite3.OperationalError as exc:
+            blocked.append(str(exc))
+        finally:
+            con.close()
+        return "aW1n"
+    monkeypatch.setattr(posters, "_download_image", fake_download)
+    result = await posters.resolve_posters(posters.ResolveRequest(paths=paths))
+    assert blocked == []
+    assert all(result[p]["poster_url"] == "data:image/jpeg;base64,aW1n" for p in paths)
+
+
+@pytest.mark.asyncio
+async def test_media_folder_labels_come_from_one_cached_index(test_db, tmp_path, monkeypatch):
+    """SC-25 / SC-26: the folder-type check opened a connection and resolved
+    paths on the NAS for every file."""
+    import aiosqlite
+    import backend.media_paths as media_paths
+    monkeypatch.setattr(media_paths, "DB_PATH", test_db)
+    media_paths.invalidate_media_dir_cache()
+    real = tmp_path / "real"
+    (real / "Other").mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path, label) VALUES (?, 'Movies')", (str(link),))
+        await db.execute("INSERT INTO media_dirs (path, label) VALUES (?, 'Other')", (str(link / "Other"),))
+        await db.commit()
+    connects = []
+    real_connect = media_paths.aiosqlite.connect
+    monkeypatch.setattr(media_paths.aiosqlite, "connect", lambda *a, **kw: connects.append(1) or real_connect(*a, **kw))
+    assert await media_paths.media_dir_label_for(f"{link}/Film (2001)/film.mkv") == "Movies"
+    assert await media_paths.is_other_typed_dir(f"{link}/Other/home video.mkv") is True     # deepest wins
+    assert await media_paths.media_dir_label_for(f"{real}/Film (2001)/film.mkv") == "Movies"  # resolved form
+    assert await media_paths.media_dir_label_for("/elsewhere/film.mkv") is None
+    assert len(connects) == 1  # one load for all four lookups
+    media_paths.invalidate_media_dir_cache()
+    await media_paths.media_dir_label_for(f"{link}/x.mkv")
+    assert len(connects) == 2
