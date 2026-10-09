@@ -617,6 +617,27 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_height ON scan_results(video_height) WHERE removed_from_list = 0")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_codec ON scan_results(video_codec) WHERE removed_from_list = 0")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_removed ON scan_results(removed_from_list)")
+        # F7 (v0.10.0): counts every change to the set of completed jobs, so
+        # the Scanner can keep its "converted" sets (built from every
+        # completed conversion) until one changes — whoever writes the job.
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS change_counters (name TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0)"
+        )
+        await db.execute("INSERT OR IGNORE INTO change_counters (name, n) VALUES ('completed_jobs', 0)")
+        _bump = "BEGIN UPDATE change_counters SET n = n + 1 WHERE name = 'completed_jobs'; END"
+        await db.execute(
+            "CREATE TRIGGER IF NOT EXISTS trg_completed_jobs_insert AFTER INSERT ON jobs "
+            f"WHEN NEW.status = 'completed' {_bump}"
+        )
+        await db.execute(
+            "CREATE TRIGGER IF NOT EXISTS trg_completed_jobs_delete AFTER DELETE ON jobs "
+            f"WHEN OLD.status = 'completed' {_bump}"
+        )
+        await db.execute(
+            "CREATE TRIGGER IF NOT EXISTS trg_completed_jobs_update "
+            "AFTER UPDATE OF status, job_type, file_path, original_file_path, space_saved ON jobs "
+            f"WHEN OLD.status = 'completed' OR NEW.status = 'completed' {_bump}"
+        )
         # Worker nodes for distributed transcoding
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS worker_nodes (

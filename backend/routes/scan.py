@@ -2218,6 +2218,48 @@ def _classify_type_for_path(fp: str, dir_label_index: list[tuple[str, str]] | No
     return "other"
 
 
+# F7 (v0.10.0): every completed conversion (45k+ jobs on a big install) was
+# read into the "converted" sets on every folder expand, title view and Add
+# to Queue — ~60 ms on the event loop each time. They're kept until a
+# completed job changes: triggers on `jobs` (database.py) count every such
+# change, whoever makes it. Keyed by the database file too (tests, and a
+# restored backup replaces the file in place).
+_converted_cache: dict = {"key": None, "paths": set(), "folders": set()}
+
+
+async def _converted_key(db):
+    try:
+        async with db.execute("SELECT n FROM change_counters WHERE name = 'completed_jobs'") as cur:
+            row = await cur.fetchone()
+        async with db.execute("PRAGMA database_list") as cur:
+            db_file = next((r[2] for r in await cur.fetchall() if r[1] == "main"), "")
+    except Exception:
+        return None  # e.g. a restored backup from before the counter
+    if row is None or not db_file:
+        return None
+    return db_file, os.stat(db_file).st_ino, row[0]
+
+
+async def _converted_sets(db) -> tuple[set[str], set[str]]:
+    """Paths of completed conversions that saved space (output and original),
+    and their parent folders (with trailing slash). Don't modify them."""
+    key = await _converted_key(db)
+    if key is not None and _converted_cache["key"] == key:
+        return _converted_cache["paths"], _converted_cache["folders"]
+    paths: set[str] = set()
+    folders: set[str] = set()
+    async with db.execute(
+        "SELECT file_path, original_file_path FROM jobs WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
+    ) as cur:
+        for r in await cur.fetchall():
+            for fp in (r[0], r[1]):
+                if fp:
+                    paths.add(fp)
+                    folders.add(fp.rsplit("/", 1)[0] + "/" if "/" in fp else "")
+    _converted_cache.update(key=key, paths=paths, folders=folders)
+    return paths, folders
+
+
 async def _build_enrichment_context(db) -> dict:
     """Build shared context for enriching scan results (used by results, tree, files endpoints)."""
     import bisect
@@ -2257,20 +2299,8 @@ async def _build_enrichment_context(db) -> dict:
     async with db.execute("SELECT file_path FROM jobs WHERE status IN ('pending', 'running')") as cur:
         queued_paths = {r["file_path"] for r in await cur.fetchall()}
 
-    # Converted: collect both exact paths and parent folders from jobs with savings
-    converted_paths: set[str] = set()
-    converted_folders: set[str] = set()
-    async with db.execute(
-        "SELECT file_path, original_file_path FROM jobs WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
-    ) as cur:
-        for r in await cur.fetchall():
-            fp = r["file_path"]
-            converted_paths.add(fp)
-            converted_folders.add(fp.rsplit("/", 1)[0] + "/" if "/" in fp else "")
-            if r["original_file_path"]:
-                ofp = r["original_file_path"]
-                converted_paths.add(ofp)
-                converted_folders.add(ofp.rsplit("/", 1)[0] + "/" if "/" in ofp else "")
+    # Converted: both exact paths and parent folders from jobs with savings
+    converted_paths, converted_folders = await _converted_sets(db)
 
     # Plex watch status
     watched_sorted: list[str] = []
@@ -2872,17 +2902,7 @@ async def _get_converted_folders(db) -> set[str]:
     """Return the set of parent folder paths (with trailing slash) where Shrinkerr
     has successfully converted at least one file. Used to infer that other HEVC
     files in the same folder are 'already converted'."""
-    folders: set[str] = set()
-    async with db.execute(
-        "SELECT file_path, original_file_path FROM jobs "
-        "WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
-    ) as cur:
-        rows = await cur.fetchall()
-    for row in rows:
-        for fp in (row["file_path"], row["original_file_path"]):
-            if fp and "/" in fp:
-                folders.add(fp.rsplit("/", 1)[0] + "/")
-    return folders
+    return (await _converted_sets(db))[1]
 
 
 @router.get("/tree")
