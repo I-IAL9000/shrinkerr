@@ -1,18 +1,20 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
-import DashboardPage from "./pages/DashboardPage";
-import ScannerPage from "./pages/ScannerPage";
-import QueuePage from "./pages/QueuePage";
-import LogsPage from "./pages/LogsPage";
-import ActivityPage from "./pages/ActivityPage";
-import NodesPage from "./pages/NodesPage";
-import SchedulePage from "./pages/SchedulePage";
-import SettingsPage from "./pages/SettingsPage";
-import MonitorPage from "./pages/MonitorPage";
-import DesignPage from "./pages/DesignPage";
+// Pages load on first visit (FE#30, v0.10.0): everything was one 1.5 MB
+// script, charts and all. The design-system page is for development only.
+const DashboardPage = lazy(() => import("./pages/DashboardPage"));
+const ScannerPage = lazy(() => import("./pages/ScannerPage"));
+const QueuePage = lazy(() => import("./pages/QueuePage"));
+const LogsPage = lazy(() => import("./pages/LogsPage"));
+const ActivityPage = lazy(() => import("./pages/ActivityPage"));
+const NodesPage = lazy(() => import("./pages/NodesPage"));
+const SchedulePage = lazy(() => import("./pages/SchedulePage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const MonitorPage = lazy(() => import("./pages/MonitorPage"));
+const DesignPage = import.meta.env.DEV ? lazy(() => import("./pages/DesignPage")) : null;
 import { useToastState, ToastProvider, ToastContainer } from "./useToast";
 import { ConfirmProvider } from "./components/ConfirmModal";
 import ChangelogModal from "./components/ChangelogModal";
@@ -626,6 +628,7 @@ export default function App() {
             </div>
           )}
           <RouteErrorBoundary>
+          <Suspense fallback={<div className="spinner" style={{ width: 24, height: 24, margin: 40 }} />}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/scanner" element={<ScannerPage scanProgress={scanProgress} onClearScanProgress={() => setScanProgress(null)} />} />
@@ -636,9 +639,10 @@ export default function App() {
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/monitor" element={<MonitorPage />} />
             <Route path="/settings" element={<SettingsPage theme={theme} onToggleTheme={toggleTheme} />} />
-            {/* Design-system reference page — no sidebar link; reach it directly at /design */}
-            <Route path="/design" element={<DesignPage />} />
+            {/* Design-system reference page — no sidebar link; reach it directly at /design (dev builds) */}
+            {DesignPage && <Route path="/design" element={<DesignPage />} />}
           </Routes>
+          </Suspense>
           </RouteErrorBoundary>
         </main>
         <WhatsNewModal />

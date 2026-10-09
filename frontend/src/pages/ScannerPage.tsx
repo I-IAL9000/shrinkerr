@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
+import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -189,14 +189,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     getMediaDirs().then((r: any) => setDirs(Array.isArray(r) ? r : r.dirs || []));
     getEncodingSettings().then(setEncodingSettings).catch(() => {});
     // Check if poster prefetch is already running
-    import("../api").then(({ getPosterPrefetchStatus }) => {
-      getPosterPrefetchStatus().then(s => {
-        if (s.status === "running") {
-          setPosterPrefetching(true);
-          setPosterProgress({ total: s.total, resolved: s.resolved });
-        }
-      }).catch(() => {});
-    });
+    getPosterPrefetchStatus().then(s => {
+      if (s.status === "running") {
+        setPosterPrefetching(true);
+        setPosterProgress({ total: s.total, resolved: s.resolved });
+      }
+    }).catch(() => {});
     // Load server-computed stats immediately (lightweight, <100ms)
     refreshStats();
     // Show cached tree if recent, otherwise show loading spinner
@@ -323,7 +321,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // Poll poster prefetch progress
   useVisibleInterval(async () => {
     try {
-      const { getPosterPrefetchStatus } = await import("../api");
       const s = await getPosterPrefetchStatus();
       setPosterProgress({ total: s.total, resolved: s.resolved });
       if (s.status === "done" || s.status.startsWith("error")) {
@@ -728,7 +725,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleHealthCheck = async (mode: "quick" | "thorough") => {
-    const { queueHealthChecks } = await import("../api");
     const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
     if (!paths.length && !selectAllActive) {
       toast(t("scanner:toasts.noSelection"));
@@ -760,7 +756,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleBulkArrAction = async (action: "replace" | "upgrade" | "missing") => {
-    const { arrActionBulk } = await import("../api");
 
     // Pass the raw selection through — the backend now expands folder paths
     // to their files via scan_results (for replace/upgrade) and resolves
@@ -821,7 +816,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   };
 
   const handleResetCorruptFlags = async () => {
-    const { resetHealthStatus } = await import("../api");
     if (!await confirm({
       message: t("scanner:confirm.resetCorrupt"),
       confirmLabel: t("scanner:confirm.resetCorruptLabel"),
@@ -1337,7 +1331,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
           disabled={posterPrefetching}
           onClick={async () => {
-            const { startPosterPrefetch } = await import("../api");
             await startPosterPrefetch();
             setPosterPrefetching(true);
           }}

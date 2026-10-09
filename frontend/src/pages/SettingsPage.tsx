@@ -16,6 +16,7 @@ import {
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
   getEncoderCaps, regenerateApiKey,
+  getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps,
 } from "../api";
@@ -4086,7 +4087,6 @@ volumes:
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, color: "#e94560" }}
                 onClick={async () => {
-                  const { getBackups, deleteBackups } = await import("../api");
                   const data = await getBackups();
                   if (data.total_count === 0) {
                     alert(t("settingsSystem:automation.originals.noneFound"));
@@ -4152,7 +4152,6 @@ volumes:
                 style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "rgba(233,69,96,0.4)" }}
                 onClick={async () => {
                   if (!confirm(t("settingsSystem:automation.health.clearPendingConfirm"))) return;
-                  const { clearPendingHealthChecks } = await import("../api");
                   const res = await clearPendingHealthChecks();
                   toast(t("settingsSystem:toasts.clearedPending", { count: res.deleted, formatted: res.deleted.toLocaleString() }), "success");
                 }}
