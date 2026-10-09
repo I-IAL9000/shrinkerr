@@ -143,6 +143,69 @@ class FileWatcher:
         finally:
             await db.close()
 
+    async def _carry_over_moves(self, stale_paths: set[str], new_paths: set[str]) -> dict[str, str]:
+        """Rows to move rather than delete and re-add: a file renamed or
+        moved (by Sonarr/Radarr, by hand) is a path gone and a path new in
+        the same cycle. Paired when exactly one of each has the same size and
+        extension; the row keeps its manual match, track edits, health
+        result, converted flag and ignore instead of coming back "New"
+        (SC-20, v0.10.0). Returns {old: new}."""
+        if not stale_paths or not new_paths:
+            return {}
+        db = await aiosqlite.connect(self.db_path)
+        try:
+            stale_sizes: dict[str, int] = {}
+            stale = sorted(stale_paths)
+            for i in range(0, len(stale), 900):
+                chunk = stale[i:i + 900]
+                async with db.execute(
+                    f"SELECT file_path, file_size FROM scan_results WHERE file_path IN ({','.join('?' * len(chunk))}) "
+                    "AND file_path NOT IN (SELECT file_path FROM jobs WHERE status IN ('pending', 'running'))",
+                    chunk,
+                ) as cur:
+                    stale_sizes.update({r[0]: r[1] for r in await cur.fetchall() if r[1]})
+        finally:
+            await db.close()
+
+        def _sizes() -> dict[str, int]:
+            out = {}
+            for path in new_paths:
+                try:
+                    out[path] = os.path.getsize(path)
+                except OSError:
+                    pass
+            return out
+
+        new_sizes = await asyncio.to_thread(_sizes)
+        # Only real media sizes: tiny files (disc markers, samples) collide.
+        def _key(path: str, size: int):
+            return (size, Path(path).suffix.lower()) if size >= 10 * 1024 * 1024 else None
+
+        from collections import defaultdict as _dd
+        gone, appeared = _dd(list), _dd(list)
+        for path, size in stale_sizes.items():
+            if _key(path, size):
+                gone[_key(path, size)].append(path)
+        for path, size in new_sizes.items():
+            if _key(path, size):
+                appeared[_key(path, size)].append(path)
+        moves = {gone[k][0]: appeared[k][0] for k in gone if len(gone[k]) == 1 and len(appeared.get(k, [])) == 1}
+        if not moves:
+            return {}
+
+        db = await aiosqlite.connect(self.db_path)
+        try:
+            for old, new in moves.items():
+                await db.execute("UPDATE OR IGNORE scan_results SET file_path = ? WHERE file_path = ?", (new, old))
+                await db.execute("UPDATE OR IGNORE ignored_files SET file_path = ? WHERE file_path = ?", (new, old))
+                await db.execute("UPDATE jobs SET file_path = ? WHERE file_path = ? AND status = 'pending'", (new, old))
+            await db.commit()
+        finally:
+            await db.close()
+        for old, new in moves.items():
+            print(f"[WATCHER] Moved: {old} -> {new}", flush=True)
+        return moves
+
     async def _remove_stale_entries(self, stale_paths: list[str]) -> int:
         """Remove scan_results entries for files that no longer exist on disk.
 
@@ -1415,6 +1478,9 @@ class FileWatcher:
 
         raw_stale = known_paths - disk_files
         stale_path_set = {p for p in raw_stale if _is_under_walked(p) and not _is_under_unreadable(p)}
+        # Paired with new paths below before the safety belts: a moved file
+        # still exists, so moving its row is safe whatever else vanished.
+        possibly_moved = set(stale_path_set)
 
         # Sanity belt #1 — global: if a single cycle would flag more than
         # half of the walked-dir rows as stale, something is wrong
@@ -1529,6 +1595,10 @@ class FileWatcher:
         # Collect folder-level ignores (paths ending with /) for auto-tagging new files
         ignored_folders = [p for p in ignored_paths if p.endswith("/")]
 
+        moved = await self._carry_over_moves(possibly_moved, set(new_files_all))
+        if moved:
+            stale_path_set = stale_path_set - set(moved)
+            new_files = [f for f in new_files if f not in set(moved.values())]
         removed = await self._remove_stale_entries(list(stale_path_set))
         added = await self._scan_new_files(new_files[:200], ignored_folders)
 

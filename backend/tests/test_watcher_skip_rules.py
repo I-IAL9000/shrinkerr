@@ -61,3 +61,35 @@ async def test_the_watcher_skips_what_the_scanner_skips(test_db, tmp_path):
 
     probed = sorted(Path(c.args[0]).name for c in probe.await_args_list)
     assert probed == ["Show - S01E01 - 1080p WEB x265.mkv"]
+
+
+@pytest.mark.asyncio
+async def test_a_moved_file_keeps_its_row(test_db, tmp_path):
+    """SC-20: a rename or move was a delete plus a fresh "New" row — the
+    manual match, track edits, health result and converted flag were lost."""
+    import os
+    import time
+    from backend.watcher import FileWatcher
+    media = tmp_path / "Movies"
+    old = media / "Film (2009)" / "Film (2009) 1080p WEB h264.mkv"
+    new = media / "Film (2009) [tt1]" / "Film (2009) 1080p WEB h264.mkv"
+    new.parent.mkdir(parents=True)
+    with open(new, "wb") as f:
+        f.truncate(12 * 1024 * 1024)  # sparse: a real size without the disk use
+    stamp = time.time() - 3600
+    os.utime(new, (stamp, stamp))
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)", (str(media),))
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_size, scan_timestamp, native_language, language_source, converted) "
+            "VALUES (?, ?, '2026-10-08T00:00:00', 'ice', 'manual', 1)", (str(old), 12 * 1024 * 1024))
+        await db.commit()
+
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock) as probe:
+        await FileWatcher(test_db, interval_minutes=5).check_once()
+
+    assert probe.await_count == 0  # not treated as a new file
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT file_path, native_language, language_source, converted FROM scan_results") as cur:
+            rows = await cur.fetchall()
+    assert rows == [(str(new), "ice", "manual", 1)]
