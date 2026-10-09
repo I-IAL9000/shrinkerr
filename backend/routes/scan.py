@@ -3175,40 +3175,6 @@ async def get_scan_files(folder: str, filter: str = "all"):
         await db.close()
 
 
-@router.get("/results-version")
-async def get_scan_results_version():
-    """Lightweight check: returns count + max_id so frontend can skip full re-fetch."""
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    try:
-        async with db.execute(
-            "SELECT COUNT(*) as cnt, COALESCE(MAX(id), 0) as max_id "
-            "FROM scan_results WHERE removed_from_list = 0 "
-            "AND file_path NOT LIKE '%.converting.%' "
-            "AND file_path NOT LIKE '%.remuxing.%'"
-        ) as cur:
-            row = await cur.fetchone()
-            return {"count": row["cnt"], "max_id": row["max_id"]}
-    finally:
-        await db.close()
-
-
-@router.get("/results")
-async def get_scan_results():
-    """Return scan results. Track JSON is omitted for performance — use /tracks-by-path for details."""
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    try:
-        ctx = await _build_enrichment_context(db)
-        async with db.execute(
-            f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} ORDER BY id ASC"
-        ) as cur:
-            rows = await cur.fetchall()
-            return [_enrich_row(dict(row), ctx) for row in rows]
-    finally:
-        await db.close()
-
-
 _metadata_task: asyncio.Task | None = None
 _metadata_cancel = asyncio.Event()
 

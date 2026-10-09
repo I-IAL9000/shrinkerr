@@ -108,7 +108,6 @@ export const getScanStatus = () => apiFetch<{ scanning: boolean }>("/scan/status
 export const getNewFileCount = () => apiFetch<{ count: number }>("/scan/new-count");
 export const getFailedJobCount = () => apiFetch<{ count: number }>("/jobs/failed-count");
 export const clearNewFileCount = () => apiFetch("/scan/clear-new", { method: "POST" });
-export const getScanResults = () => apiFetch<any[]>("/scan/results");
 export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
 export const getScanTree = (filter: string = "all", signal?: AbortSignal) =>
   apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
@@ -122,7 +121,6 @@ export const getScanFilesByPaths = (filePaths: string[], filter: string = "all",
     body: JSON.stringify({ file_paths: filePaths, filter }),
     signal,
   });
-export const getScanResultsVersion = () => apiFetch<{ count: number; max_id: number }>("/scan/results-version");
 export const removeScanResult = (id: number) =>
   apiFetch(`/scan/results/${id}`, { method: "DELETE" });
 export const updateAudioTracks = (id: number, audioTracksJson: string) =>
