@@ -225,6 +225,16 @@ Rationale: smaller pixels = artifacts more visible per-pixel, so push
 quality higher on lower-resolution sources. Off by default; enable if
 your library has a wide resolution mix.
 
+The band comes from the width as well as the height, so a 1920×800 scope
+film is 1080p and 3840×1600 is 4K. Files scanned before v0.10.0 have no
+stored width until the next full scan; until then their height and any
+resolution tag in the name (`1080p`, `2160p`, …) decide.
+
+The value becomes the job's NVENC CQ (libx265 gets CRF two higher) when no
+encoding rule and no Add to Queue setting sets the quality, and the queue
+estimate shows the same value. QSV, VAAPI and VideoToolbox jobs keep their
+own quality setting.
+
 ## Cross-encoder fallback settings
 
 Shrinkerr supports both encoders and can translate when a node doesn't
@@ -255,12 +265,26 @@ mode — useful if you're migrating from one HEVC profile to another
 
 ## Content-type detection
 
-Settings → Video → Smart Encoding → "Content type detection". Inspects
-the first few frames of each file during scanning to detect animation /
-cartoons and adjust the VMAF expectation: animated content compresses
-very differently from live-action, and the same CRF can produce wildly
-different perceptual quality. When on, the estimate UI shows
-`type: animation` / `live-action` per file.
+Settings → Video → Smart Encoding → "Content type detection". Recognises
+the content from the file and folder names (anime release groups and tags,
+`grain`, animation studios, `remux`) and picks a CQ for that content and
+the file's resolution band:
+
+| Content | 4K | 1080p | 720p | SD |
+|---|---|---|---|---|
+| Anime | 24 | 22 | 20 | 18 |
+| Grain / film | 26 | 24 | 22 | 20 |
+| Animation | 26 | 24 | 22 | 20 |
+| Remux | 22 | 20 | 18 | 16 |
+
+Anything else uses resolution-aware CQ (if on) or your global CQ. Like
+resolution-aware CQ it sets NVENC CQ / libx265 CRF only when no rule or Add
+to Queue setting does, and the estimate shows the same values.
+
+Before v0.10.0 this (and resolution-aware CQ) only changed the queue
+estimate; jobs always used the global CQ. It is on for new installs and was
+switched off once on installs that existed before, so their output doesn't
+change without warning — turn it on if you want it.
 
 ## Custom ffmpeg flags
 

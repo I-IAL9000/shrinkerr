@@ -668,6 +668,8 @@ class FileWatcher:
         default_encoder = settings.get("default_encoder", "nvenc")
         default_nvenc_preset = settings.get("nvenc_preset", "p6")
         default_nvenc_cq = _safe_int(settings.get("nvenc_cq", "20"), 20)
+        from backend.content_detect import smart_cq_settings, smart_quality
+        smart_settings = smart_cq_settings(settings)
         default_libx265_preset = settings.get("libx265_preset", "medium")
         default_libx265_crf = _safe_int(settings.get("libx265_crf", "20"), 20)
         default_target_res = settings.get("target_resolution", "")
@@ -716,9 +718,16 @@ class FileWatcher:
             r = rule or {}
             encoder = r.get("encoder") or default_encoder
             nvenc_preset = r.get("nvenc_preset") or default_nvenc_preset
-            nvenc_cq = r.get("nvenc_cq") if r.get("nvenc_cq") is not None else default_nvenc_cq
             libx265_preset = r.get("libx265_preset") or default_libx265_preset
-            libx265_crf = r.get("libx265_crf") if r.get("libx265_crf") is not None else default_libx265_crf
+            # Quality: the rule's, else content type detection /
+            # resolution-aware quality (v0.10.0), else the global setting.
+            if r.get("nvenc_cq") is not None or r.get("libx265_crf") is not None:
+                smart_cq, smart_crf = None, None
+            else:
+                smart_cq, smart_crf = smart_quality(
+                    scanned.file_path, scanned.video_width, scanned.video_height, smart_settings)
+            nvenc_cq = next(v for v in (r.get("nvenc_cq"), smart_cq, default_nvenc_cq) if v is not None)
+            libx265_crf = next(v for v in (r.get("libx265_crf"), smart_crf, default_libx265_crf) if v is not None)
             target_resolution = r.get("target_resolution") or default_target_res
             audio_codec = r.get("audio_codec") or default_audio_codec
             audio_bitrate = r.get("audio_bitrate") if r.get("audio_bitrate") is not None else default_audio_bitrate

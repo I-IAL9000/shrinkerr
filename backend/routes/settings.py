@@ -260,21 +260,38 @@ _V010_DEFAULTS = {"backup_original_days": ("7", "0"), "vmaf_min_score": ("88", "
                   "sub_cleanup_enabled": ("false", "true")}
 
 
+async def _is_existing_install(db) -> bool:
+    async with db.execute(
+        "SELECT (SELECT COUNT(*) FROM media_dirs) + (SELECT COUNT(*) FROM jobs) "
+        "+ (SELECT COUNT(*) FROM scan_results) AS n"
+    ) as cur:
+        return (await cur.fetchone())["n"] > 0
+
+
 async def seed_v010_defaults() -> None:
     db = await connect_db()
     try:
         async with db.execute("SELECT value FROM settings WHERE key = 'defaults_v010_seeded'") as cur:
-            if await cur.fetchone():
-                return
-        async with db.execute(
-            "SELECT (SELECT COUNT(*) FROM media_dirs) + (SELECT COUNT(*) FROM jobs) "
-            "+ (SELECT COUNT(*) FROM scan_results) AS n"
-        ) as cur:
-            existing = (await cur.fetchone())["n"] > 0
-        for key, (new_install, before) in _V010_DEFAULTS.items():
-            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-                             (key, before if existing else new_install))
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('defaults_v010_seeded', '1')")
+            seeded = await cur.fetchone()
+        existing = await _is_existing_install(db)
+        if not seeded:
+            for key, (new_install, before) in _V010_DEFAULTS.items():
+                await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                                 (key, before if existing else new_install))
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('defaults_v010_seeded', '1')")
+        # Content type detection only ever changed the queue estimate; from
+        # v0.10.0 it sets the job's CQ. It was on by default, so an existing
+        # install would suddenly encode anime / grain / remux files at the
+        # built-in CQs (remux 1080p at CQ 20). Switched off there once (its
+        # own sentinel: the group above already ran on development builds);
+        # new installs keep it on.
+        async with db.execute("SELECT value FROM settings WHERE key = 'smart_cq_default_seeded'") as cur:
+            smart_seeded = await cur.fetchone()
+        if not smart_seeded:
+            if existing:
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) "
+                                 "VALUES ('content_type_detection', 'false')")
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_cq_default_seeded', '1')")
         await db.commit()
     finally:
         await db.close()

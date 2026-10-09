@@ -146,7 +146,7 @@
     "smart": {
       "title": "Codificación inteligente",
       "contentType": "Detección del tipo de contenido",
-      "contentTypeHelp": "Detecta automáticamente el tipo de contenido a partir del nombre del archivo (anime, grano, animación, remux) y aplica valores de CQ optimizados. El anime se comprime bien (CQ 22); el grano necesita ajustes conservadores (CQ 24). Se aplica cuando ninguna regla de codificación fija un valor de CQ.",
+      "contentTypeHelp": "Detecta automáticamente el tipo de contenido a partir del nombre del archivo (anime, grano, animación, remux) y aplica valores de CQ optimizados. El anime se comprime bien (CQ 22); el grano necesita ajustes conservadores (CQ 24). Fija el CQ de los trabajos NVENC y libx265 cuando ni una regla de codificación ni el diálogo «Añadir a la cola» fijan la calidad (QSV, VAAPI y VideoToolbox mantienen su propio ajuste de calidad).",
       "vmaf": "Análisis de calidad VMAF",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) es una métrica de calidad de vídeo perceptual desarrollada por Netflix. Puntúa el vídeo codificado de 0 a 100 comparándolo con el origen y estimando cómo valoraría la calidad un espectador humano. Si está activado, Shrinkerr realiza tras la conversión una comparación VMAF precisa a nivel de fotograma entre el archivo original y el codificado. Shrinkerr solo analiza una muestra de 30 segundos (centrada en torno al 33 % del archivo), no toda la codificación, así que normalmente añade bastante menos de un minuto por trabajo en una GPU moderna y te da la seguridad de que tus ajustes de CQ producen una calidad aceptable.",
       "score": "Puntuación",
@@ -160,7 +160,7 @@
       "minScore": "Rechazar codificaciones por debajo de una puntuación VMAF mínima",
       "minScoreHelp": "Si está activado, se descarta cualquier codificación cuya puntuación VMAF medida quede por debajo del umbral: se elimina el archivo temporal codificado, se conserva el original y el trabajo se registra como <b>rechazado</b>, con la puntuación y el umbral visibles en los detalles del trabajo. Útil como red de seguridad frente a ajustes de CQ/CRF demasiado agresivos.",
       "resAware": "Calidad según la resolución",
-      "resAwareHelp": "Usa valores de CQ distintos para cada resolución. El 4K admite un CQ más alto porque el reescalado durante la reproducción oculta los artefactos. Se aplica cuando ninguna regla ni la detección de contenido fija el CQ."
+      "resAwareHelp": "Usa valores de CQ distintos para cada resolución. El 4K admite un CQ más alto porque el reescalado durante la reproducción oculta los artefactos. Se usa en los trabajos NVENC y libx265 cuando ni una regla, ni el diálogo «Añadir a la cola», ni la detección de contenido fijan la calidad."
     },
     "vmafRemeasure": {
       "title": "Volver a medir puntuaciones VMAF dudosas",

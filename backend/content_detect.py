@@ -135,3 +135,44 @@ def get_profile_summary(content_type: str) -> dict:
         "label": PROFILE_LABELS.get(content_type, content_type.title()),
         "cq_table": CQ_TABLE.get(content_type, CQ_TABLE["default"]),
     }
+
+
+# ─── Per-file CQ for jobs and the estimate ───
+
+def smart_cq_settings(values: dict) -> dict:
+    """The "Content type detection" and "Resolution-aware quality" settings,
+    parsed from settings rows (string values), for smart_cq()."""
+    return {
+        "content_detect": str(values.get("content_type_detection", "true")).lower() == "true",
+        "resolution_aware": str(values.get("resolution_aware_cq", "false")).lower() == "true",
+        "resolution_cqs": {tier: int(values.get(f"resolution_cq_{tier}") or default)
+                           for tier, default in (("4k", 24), ("1080p", 20), ("720p", 18), ("sd", 16))},
+    }
+
+
+def smart_cq(file_path: str, width, height, settings: dict) -> tuple[int | None, str | None]:
+    """(NVENC CQ, content type) that content type detection or resolution-aware
+    quality give a file, or (None, None) when neither applies and the global CQ
+    does. A rule's or Add to Queue's own CQ wins; callers check those first.
+
+    v0.10.0: only the queue estimate used these settings, so they never
+    reached an encode. Add to Queue, auto-queue and webhooks now give jobs the
+    same CQ the estimate shows."""
+    from backend.resolution import resolution_tier
+    tier = resolution_tier(width, height, file_path) or "sd"
+    if settings["content_detect"]:
+        ctype = detect_content_type_from_path(file_path)
+        if ctype != "default":
+            return get_recommended_cq(ctype, tier), ctype
+    if settings["resolution_aware"]:
+        return settings["resolution_cqs"][tier], None
+    return None, None
+
+
+def smart_quality(file_path: str, width, height, settings: dict) -> tuple[int | None, int | None]:
+    """smart_cq() as a job's (nvenc_cq, libx265_crf); libx265's CRF runs
+    CRF_OFFSET above NVENC's CQ for similar quality. (None, None) leaves the
+    job on the global settings. QSV, VAAPI and VideoToolbox have no per-job
+    quality, so they keep their own settings, as with rules."""
+    cq, _ = smart_cq(file_path, width, height, settings)
+    return (cq, cq + CRF_OFFSET) if cq is not None else (None, None)

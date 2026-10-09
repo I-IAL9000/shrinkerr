@@ -287,14 +287,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
         min_bitrate_bps = int(filter_settings.get("min_bitrate_mbps", "0")) * 1_000_000
         max_bitrate_bps = int(filter_settings.get("max_bitrate_mbps", "0")) * 1_000_000
         min_file_size_bytes = int(filter_settings.get("min_file_size_mb", "0")) * 1024 * 1024
-        content_detect_enabled = filter_settings.get("content_type_detection", "true").lower() == "true"
-        resolution_aware = filter_settings.get("resolution_aware_cq", "false").lower() == "true"
-        res_cq = {
-            "4k": int(filter_settings.get("resolution_cq_4k", "24")),
-            "1080p": int(filter_settings.get("resolution_cq_1080p", "20")),
-            "720p": int(filter_settings.get("resolution_cq_720p", "18")),
-            "sd": int(filter_settings.get("resolution_cq_sd", "16")),
-        }
+        from backend.content_detect import smart_cq_settings, smart_quality
+        smart_settings = smart_cq_settings(filter_settings)
         default_encoder = filter_settings.get("default_encoder", "nvenc")
 
         # Check if unwatched prioritization is enabled
@@ -320,7 +314,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             placeholders = ",".join("?" * len(chunk))
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
-                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height, disc_type "
+                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height, "
+                f"COALESCE(video_width, 0) as video_width, disc_type "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
             ) as cur:
@@ -444,8 +439,15 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             audio_codec = rule.get("audio_codec") if rule else None
             audio_bitrate = rule.get("audio_bitrate") if rule else None
 
-            # Use global defaults when no rule sets CQ (no auto-override)
-            # Content detection and resolution-aware CQ are informational only (shown in estimate)
+            # Content type detection / resolution-aware quality (v0.10.0):
+            # the per-file CQ the estimate shows, unless a rule or the Add to
+            # Queue dialog sets the quality. (These were estimate-only before,
+            # so jobs always ran at the global CQ.)
+            if (job_type in ("convert", "combined")
+                    and nvenc_cq is None and libx265_crf is None
+                    and payload.nvenc_cq_override is None and payload.libx265_crf_override is None):
+                nvenc_cq, libx265_crf = smart_quality(
+                    fp, row.get("video_width"), row.get("video_height"), smart_settings)
 
             # Modal encoding overrides take highest precedence
             if payload.encoder_override is not None:
@@ -985,20 +987,31 @@ async def add_jobs_by_path(payload: AddByPathRequest):
     from backend.config import settings
     from backend.media_paths import load_media_dirs, is_in_any, _resolve
 
-    # Load source codecs and default encoder from settings
+    # Load source codecs, default encoder and the per-file CQ settings.
+    # (v0.10.0: this used `async with connect_db()`, which always raised and
+    # was swallowed, so the saved source codecs and encoder were never read.)
     from backend.scanner import DEFAULT_SOURCE_CODECS
+    from backend.content_detect import smart_cq_settings, smart_quality
     source_codecs = list(DEFAULT_SOURCE_CODECS)
     default_encoder = "nvenc"
+    _values: dict = {}
     try:
-        async with connect_db() as _db:
-            async with _db.execute("SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder')") as _cur:
-                for _row in await _cur.fetchall():
-                    if _row["key"] == "source_codecs" and _row["value"]:
-                        source_codecs = json.loads(_row["value"])
-                    elif _row["key"] == "default_encoder" and _row["value"]:
-                        default_encoder = _row["value"]
+        _db = await connect_db()
+        try:
+            async with _db.execute(
+                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', "
+                "'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
+            ) as _cur:
+                _values = {r["key"]: r["value"] for r in await _cur.fetchall()}
+        finally:
+            await _db.close()
+        if _values.get("source_codecs"):
+            source_codecs = json.loads(_values["source_codecs"])
+        if _values.get("default_encoder"):
+            default_encoder = _values["default_encoder"]
     except Exception:
         pass
+    smart_settings = smart_cq_settings(_values)
 
     # Containment check — stops callers from queuing `/etc/hostname` etc.
     allowed_dirs = await load_media_dirs()
@@ -1080,6 +1093,11 @@ async def add_jobs_by_path(payload: AddByPathRequest):
         target_resolution = rule.get("target_resolution") if rule else None
         audio_codec = rule.get("audio_codec") if rule else None
         audio_bitrate = rule.get("audio_bitrate") if rule else None
+        # v0.10.0: content type detection / resolution-aware quality, unless
+        # a rule sets the quality.
+        if job_type in ("convert", "combined") and nvenc_cq is None and libx265_crf is None:
+            nvenc_cq, libx265_crf = smart_quality(
+                fp, probe.get("video_width"), probe.get("video_height"), smart_settings)
 
         job_id = await _queue.add_job(
             file_path=fp,
@@ -1779,7 +1797,7 @@ async def estimate_jobs(payload: EstimateRequest):
 
 async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.rule_resolver import resolve_rules_for_batch
-    from backend.content_detect import detect_content_type_from_path, get_recommended_cq
+    from backend.content_detect import smart_cq, smart_cq_settings
     from backend.resolution import resolution_tier
     import re
 
@@ -1857,14 +1875,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
             _enc_row = await cur.fetchone()
         default_encoder = (_enc_row["value"] if _enc_row else "nvenc").lower()
-        content_detect_on = est_settings.get("content_type_detection", "true").lower() == "true"
-        res_aware = est_settings.get("resolution_aware_cq", "false").lower() == "true"
-        res_cq_map = {
-            "4k": int(est_settings.get("resolution_cq_4k", "24")),
-            "1080p": int(est_settings.get("resolution_cq_1080p", "20")),
-            "720p": int(est_settings.get("resolution_cq_720p", "18")),
-            "sd": int(est_settings.get("resolution_cq_sd", "16")),
-        }
+        smart_settings = smart_cq_settings(est_settings)
 
         # Compute a speed factor: encoding-seconds per content-second, derived from
         # recent completed jobs (last 30 days) so a few slow CPU-encoded outliers
@@ -2092,36 +2103,20 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     else payload.libx265_crf_override
                 )
                 if file_cq is None:
-                    rule_cq = rule.get("nvenc_cq") if rule else None
+                    rule_cq = None
+                    if rule:
+                        rule_cq = rule.get("nvenc_cq") if rule.get("nvenc_cq") is not None else rule.get("libx265_crf")
                     if rule_cq is not None:
                         file_cq = rule_cq
-                    elif content_detect_on:
-                        ctype = detect_content_type_from_path(fp)
-                        # "default" classification = no specific content
-                        # signal (live-action / unrecognised release).
-                        # Fall through to the user's global CQ instead of
-                        # content-detect's hardcoded table — pre-v0.3.122
-                        # this silently overrode `nvenc_cq=27` with the
-                        # table's CQ 20 for any 1080p file that wasn't
-                        # explicitly tagged as anime/grain/animation/remux,
-                        # making the user's "default encoder CQ" setting
-                        # not actually the default. Specific
-                        # classifications still use their tuned CQ values.
-                        if ctype == "default":
-                            file_cq = (
-                                res_cq_map.get(tier, global_cq) if res_aware
-                                else global_cq
-                            )
-                        else:
-                            file_cq = get_recommended_cq(ctype, tier)
+                    else:
+                        # The same per-file CQ Add to Queue gives the job.
+                        smart, ctype = smart_cq(fp, row["video_width"], row["video_height"], smart_settings)
+                        file_cq = smart if smart is not None else global_cq
+                        if ctype:
                             # Track content profiles
                             if ctype not in content_profiles:
                                 content_profiles[ctype] = {"count": 0, "cq": file_cq}
                             content_profiles[ctype]["count"] += 1
-                    elif res_aware:
-                        file_cq = res_cq_map.get(tier, global_cq)
-                    else:
-                        file_cq = global_cq
 
                 pct = _cq_to_savings_pct(file_cq)
                 estimated_savings += int(row["file_size"] * pct)
@@ -2174,7 +2169,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "content_profiles": content_profiles,
             "resolution_breakdown": resolution_breakdown,
-            "smart_encoding": content_detect_on or res_aware,
+            "smart_encoding": smart_settings["content_detect"] or smart_settings["resolution_aware"],
         }
     finally:
         await db.close()

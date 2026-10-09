@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Safer defaults for new installs:** originals are kept 7 days, encodes scoring below VMAF 88 are rejected, and subtitles are left alone until you choose languages. Existing installs keep their settings.
 - Settings → Automation: one clear choice for originals — kept for N days, moved to the trash, or deleted.
 - **Docker images can run as your own user** (optional `PUID` / `PGID` / `UMASK`) instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
+- **Content type detection and resolution-aware CQ now set the job's quality** — they only ever changed the queue estimate. Anime, grain, animation and remux files (and each resolution band, if you turn that on) get their own CQ unless a rule or Add to Queue sets one. Content detection is on for new installs; on existing installs it starts off, so nothing changes until you turn it on.
 
 ### Fixed
 - **The API key is no longer accepted in URLs (`?api_key=`), only in the `X-Api-Key` header** — in a URL it ended up in proxy logs and browser history. If a script or dashboard widget passes it in the URL, switch it to the header. Live updates use a one-time ticket instead, and need it whenever an API key is set.
@@ -58,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Duplicate detection no longer flags episodes of different seasons, a movie's trailer, sample or CD1/CD2 parts, and a resolved duplicate is cleared.
 - **Sidecar subtitles go with the right video and keep their language**: `Saw II.eng.srt` no longer attaches to `Saw.mkv`, macOS `._` files don't hide a folder's only video, names like `.English`, `.pt-BR`, `.zh-Hans` and `.forced.en` are understood, and deleted sidecars disappear from the Scanner.
 - DVD audio and subtitle languages are matched to the right tracks (they could shift or swap when a track started later in the disc).
+- Queueing from NZBGet / SABnzbd (and add-by-path) ignored your source codecs and default encoder: the settings were never read.
 - **Widescreen films get the right resolution**: a 1920×800 film counted as 720p in rules, the Scanner's resolution filters and the queue estimate, 1280×534 as SD and 2560×1440 as 4K. Shrinkerr now stores the width and uses one classifier everywhere, so the Scanner's resolution counts always match their lists. Files scanned before this update are corrected by the next full scan.
 - **Original-language lookups by title search the right name and check the match**: discs searched "BDMV", season folders "S01" or "Staffel 1", and files directly in a media folder that folder's name, and TMDB's first result was taken even when its title differed. A rate limit is no longer remembered as "no match" for a day, and a missing TMDB key is logged once instead of once per file. Titles matched the old way are looked up again on the next scan or metadata refresh.
 - **A conversion or audio cleanup stuck on a stalled network share is now stopped** after 30 minutes without progress (or the ffmpeg timeout) instead of holding its worker slot until a restart.

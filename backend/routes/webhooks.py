@@ -86,17 +86,27 @@ async def webhook_queue(request: WebhookQueueRequest):
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
 
-    # Load source codecs from settings
+    # Load source codecs and the per-file CQ settings. (v0.10.0: this used
+    # `async with connect_db()`, which always raised and was swallowed, so the
+    # saved source codecs were never read.)
     from backend.scanner import DEFAULT_SOURCE_CODECS
+    from backend.content_detect import smart_cq_settings, smart_quality
     source_codecs = list(DEFAULT_SOURCE_CODECS)
+    values: dict = {}
     try:
-        async with connect_db() as db:
-            async with db.execute("SELECT value FROM settings WHERE key = 'source_codecs'") as cur:
-                row = await cur.fetchone()
-                if row and row[0]:
-                    source_codecs = json.loads(row[0])
+        db = await connect_db()
+        try:
+            async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
+            ) as cur:
+                values = {r["key"]: r["value"] for r in await cur.fetchall()}
+        finally:
+            await db.close()
+        if values.get("source_codecs"):
+            source_codecs = json.loads(values["source_codecs"])
     except Exception:
         pass
+    smart_settings = smart_cq_settings(values)
 
     # Refuse to operate on paths outside the configured media directories.
     # This endpoint is reachable via NZBGet/SABnzbd post-processing scripts;
@@ -159,6 +169,12 @@ async def webhook_queue(request: WebhookQueueRequest):
         else:
             continue
 
+        # v0.10.0: content type detection / resolution-aware quality.
+        nvenc_cq = libx265_crf = None
+        if job_type in ("convert", "combined"):
+            nvenc_cq, libx265_crf = smart_quality(
+                fp, probe.get("video_width"), probe.get("video_height"), smart_settings)
+
         await _queue.add_job(
             file_path=fp,
             job_type=job_type,
@@ -166,6 +182,8 @@ async def webhook_queue(request: WebhookQueueRequest):
             audio_tracks_to_remove=audio_remove,
             subtitle_tracks_to_remove=sub_remove,
             original_size=probe.get("file_size", 0),
+            nvenc_cq=nvenc_cq,
+            libx265_crf=libx265_crf,
             priority=request.priority,
             insert_next=request.insert_next,
         )
