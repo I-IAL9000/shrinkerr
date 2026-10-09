@@ -209,6 +209,24 @@ def display_name_for_path(file_path: str) -> str:
     return p.name
 
 
+# MPEG-PS stream ids of a DVD's logical streams: AC3, DTS, LPCM and MPEG
+# audio tracks 0-7; subpicture (subtitle) streams 0-31.
+_DVD_AUDIO_ID_BASES = (0x80, 0x88, 0xA0, 0x1C0)
+
+
+def _dvd_logical_index(stream_id, kind: str) -> Optional[int]:
+    try:
+        sid = int(str(stream_id), 16)
+    except (TypeError, ValueError):
+        return None
+    if kind == "audio":
+        for base in _DVD_AUDIO_ID_BASES:
+            if base <= sid < base + 8:
+                return sid - base
+        return None
+    return sid - 0x20 if 0x20 <= sid < 0x40 else None
+
+
 def hdr_format_of(stream: dict) -> Optional[str]:
     """"dv<profile>" for Dolby Vision, "hdr10" (PQ) or "hlg", else None —
     from an ffprobe stream or frame (v0.10.0)."""
@@ -421,6 +439,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
             except (ValueError, TypeError):
                 bitrate = None
             audio_tracks.append({
+                "_stream_id": stream.get("id"),  # MPEG-PS id, for DVD languages (popped below)
                 "stream_index": stream.get("index", len(audio_tracks) + 1),
                 "language": lang,
                 "codec": stream.get("codec_name", ""),
@@ -455,6 +474,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
                     except (ValueError, TypeError):
                         pass
             subtitle_tracks.append({
+                "_stream_id": stream.get("id"),
                 "stream_index": stream.get("index"),
                 "language": lang,
                 "codec": stream.get("codec_name", ""),
@@ -502,12 +522,16 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         try:
             from backend.disc_metadata import parse_disc_languages
             langs = parse_disc_languages(disc_folder, disc_type)
-            for i, t in enumerate(audio_tracks):
-                if i < len(langs["audio"]) and langs["audio"][i]:
-                    t["language"] = langs["audio"][i]
-            for i, t in enumerate(subtitle_tracks):
-                if i < len(langs["subtitle"]) and langs["subtitle"][i]:
-                    t["language"] = langs["subtitle"][i]
+            # A DVD's IFO lists languages per logical stream, but ffprobe
+            # orders streams by first appearance (and misses ones with
+            # nothing in the first 200 MB): map by MPEG-PS stream id instead
+            # of position, which shifted or swapped labels (SC-21, v0.10.0).
+            for kind, tracks in (("audio", audio_tracks), ("subtitle", subtitle_tracks)):
+                for i, t in enumerate(tracks):
+                    logical = _dvd_logical_index(t.get("_stream_id"), kind) if disc_type == "dvd" else None
+                    idx = logical if logical is not None else i
+                    if idx < len(langs[kind]) and langs[kind][idx]:
+                        t["language"] = langs[kind][idx]
             if len(audio_tracks) != len(langs["audio"]) or len(subtitle_tracks) != len(langs["subtitle"]):
                 print(
                     f"[DISC-META] count mismatch for {disc_folder}: "
@@ -517,6 +541,9 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
                 )
         except Exception as exc:
             print(f"[DISC-META] failed for {disc_folder}: {exc}", flush=True)
+
+    for t in audio_tracks + subtitle_tracks:
+        t.pop("_stream_id", None)
 
     # HDR is 10-bit or more; when the container doesn't say, the first frame
     # does (not for discs: reading into one is slow over the network).
