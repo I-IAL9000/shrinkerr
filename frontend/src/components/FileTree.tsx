@@ -578,6 +578,48 @@ const FileRow = memo(function FileRow({
 
 // ─── Main component ───
 
+// A /scan/files or /scan/files-by-paths row as a ScannedFile.
+function toScannedFile(row: any): ScannedFile {
+  return {
+    ...row,
+    // v0.6.0: prefer backend-supplied file_name (disc-aware: returns the
+    // movie folder name for VIDEO_TS.IFO / index.bdmv markers). Fall back
+    // to the basename split for legacy rows that predate the field.
+    file_name: row.file_name ?? row.file_path.split("/").pop(),
+    folder_name: row.file_path.split("/").slice(-2, -1)[0],
+    file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
+    audio_tracks: row.audio_tracks || [],
+    subtitle_tracks: row.subtitle_tracks || [],
+    has_removable_tracks: row.has_removable_tracks || false,
+    has_removable_subs: row.has_removable_subs || false,
+    estimated_savings_bytes: (() => {
+      // v0.6.7: prefer backend-supplied CQ-calibrated value; fall back
+      // to 0.65 (CQ-25 midpoint) for legacy rows not yet backfilled —
+      // still wrong but much closer than the old 0.30 flat default.
+      let s = row.video_conv_savings_bytes
+        ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
+      for (const t of (row.audio_tracks || [])) {
+        if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
+      }
+      return Math.round(s);
+    })(),
+    estimated_savings_gb: +(((row.video_conv_savings_bytes
+        ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
+      (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
+    ) / (1024**3)).toFixed(1),
+    video_conv_savings_bytes: row.video_conv_savings_bytes,
+    language_source: row.language_source || "heuristic",
+    ignored: row.ignored || false,
+    is_new: row.is_new || false,
+    queued: row.queued || false,
+    converted: row.converted || false,
+    low_bitrate: row.low_bitrate || false,
+    has_lossless_audio: row.has_lossless_audio || false,
+    duration: row.duration || 0,
+    file_mtime: row.file_mtime || null,
+  };
+}
+
 export default function FileTree({
   folders, filter = "all",
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
@@ -607,32 +649,42 @@ export default function FileTree({
   // (advanced-search auto-expand effect lives below loadFolderFiles)
   const prevAllowedSize = useRef(0);
 
+  // FE#7 (v0.10.0): loads belong to a filter "generation". A filter switch
+  // aborts the previous one's requests and ignores their answers (an older
+  // filter's files could overwrite the newer one's).
+  const loadGen = useRef(0);
+  const loadAbort = useRef(new AbortController());
+
   // Auto-expand single-child paths on first load (e.g., /media → M2T2 → TV4)
+  const defaultExpanded = (): Set<string> => {
+    // Auto-expand tree to reveal all configured media directories
+    const autoExpand = new Set<string>();
+    if (mediaDirs && mediaDirs.length > 0) {
+      // For each media dir, expand all ancestor nodes in the tree
+      for (const dir of mediaDirs) {
+        const parts = dir.replace(/^\//, "").replace(/\/$/, "").split("/");
+        let path = "";
+        // Expand ancestors only — stop before the media dir itself
+        for (let i = 0; i < parts.length - 1; i++) {
+          path = path ? `${path}/${parts[i]}` : `/${parts[i]}`;
+          autoExpand.add(path);
+        }
+      }
+    } else {
+      // Fallback: expand single-child paths
+      let node = tree;
+      while (node.children.size === 1 && !node.isLeaf) {
+        const child = Array.from(node.children.values())[0];
+        autoExpand.add(child.path);
+        node = child;
+      }
+    }
+    return autoExpand;
+  };
   const prevFolderCount = useRef(0);
   useEffect(() => {
     if (folders.length > 0 && prevFolderCount.current === 0) {
-      // Auto-expand tree to reveal all configured media directories
-      const autoExpand = new Set<string>();
-      if (mediaDirs && mediaDirs.length > 0) {
-        // For each media dir, expand all ancestor nodes in the tree
-        for (const dir of mediaDirs) {
-          const parts = dir.replace(/^\//, "").replace(/\/$/, "").split("/");
-          let path = "";
-          // Expand ancestors only — stop before the media dir itself
-          for (let i = 0; i < parts.length - 1; i++) {
-            path = path ? `${path}/${parts[i]}` : `/${parts[i]}`;
-            autoExpand.add(path);
-          }
-        }
-      } else {
-        // Fallback: expand single-child paths
-        let node = tree;
-        while (node.children.size === 1 && !node.isLeaf) {
-          const child = Array.from(node.children.values())[0];
-          autoExpand.add(child.path);
-          node = child;
-        }
-      }
+      const autoExpand = defaultExpanded();
       if (autoExpand.size > 0) {
         setExpanded(prev => {
           if (prev.size > 0) return prev; // Don't override user's expansion state
@@ -712,47 +764,12 @@ export default function FileTree({
 
   // Load files when a leaf folder is expanded
   const loadFolderFiles = useCallback(async (folderPath: string) => {
+    const gen = loadGen.current;
     setLoadingFolders(prev => new Set(prev).add(folderPath));
     try {
-      const data = await getScanFiles(folderPath, filter);
-      const parsed: ScannedFile[] = (Array.isArray(data) ? data : []).map((row: any) => ({
-        ...row,
-        // v0.6.0: prefer backend-supplied file_name (disc-aware: returns the
-        // movie folder name for VIDEO_TS.IFO / index.bdmv markers). Fall back
-        // to the basename split for legacy rows that predate the field.
-        file_name: row.file_name ?? row.file_path.split("/").pop(),
-        folder_name: row.file_path.split("/").slice(-2, -1)[0],
-        file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
-        audio_tracks: row.audio_tracks || [],
-        subtitle_tracks: row.subtitle_tracks || [],
-        has_removable_tracks: row.has_removable_tracks || false,
-        has_removable_subs: row.has_removable_subs || false,
-        estimated_savings_bytes: (() => {
-          // v0.6.7: prefer backend-supplied CQ-calibrated value; fall back
-          // to 0.65 (CQ-25 midpoint) for legacy rows not yet backfilled —
-          // still wrong but much closer than the old 0.30 flat default.
-          let s = row.video_conv_savings_bytes
-            ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
-          for (const t of (row.audio_tracks || [])) {
-            if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
-          }
-          return Math.round(s);
-        })(),
-        estimated_savings_gb: +(((row.video_conv_savings_bytes
-            ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
-          (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
-        ) / (1024**3)).toFixed(1),
-        video_conv_savings_bytes: row.video_conv_savings_bytes,
-        language_source: row.language_source || "heuristic",
-        ignored: row.ignored || false,
-        is_new: row.is_new || false,
-        queued: row.queued || false,
-        converted: row.converted || false,
-        low_bitrate: row.low_bitrate || false,
-        has_lossless_audio: row.has_lossless_audio || false,
-        duration: row.duration || 0,
-        file_mtime: row.file_mtime || null,
-      }));
+      const data = await getScanFiles(folderPath, filter, loadAbort.current.signal);
+      if (gen !== loadGen.current) return;
+      const parsed: ScannedFile[] = (Array.isArray(data) ? data : []).map(toScannedFile);
       setInternalFiles(prev => {
         const next = new Map(prev);
         next.set(folderPath, parsed);
@@ -760,7 +777,7 @@ export default function FileTree({
       });
       onFolderFilesLoaded?.(folderPath, parsed);
     } catch (err) {
-      console.error("Failed to load folder files:", err);
+      if (gen === loadGen.current) console.error("Failed to load folder files:", err);
     } finally {
       setLoadingFolders(prev => {
         const next = new Set(prev);
@@ -774,6 +791,10 @@ export default function FileTree({
   // AND fetch the matching files in ONE batch call (not N per-folder calls).
   useEffect(() => {
     if (!allowedPaths || allowedPaths.size === 0) {
+      // Search cleared: back to the default expansion. The search expanded
+      // every matching folder (up to thousands), and each later filter
+      // switch reloaded them all (FE#7).
+      if (prevAllowedSize.current > 0) setExpanded(defaultExpanded());
       prevAllowedSize.current = 0;
       return;
     }
@@ -815,59 +836,22 @@ export default function FileTree({
         for (const row of data) {
           const parts = row.file_path.split("/");
           const folder = parts.slice(0, -1).join("/");
-          const parsed: ScannedFile = {
-            ...row,
-            // v0.6.0: prefer backend-supplied disc-aware file_name (see
-            // _disc_aware_file_name in backend/routes/scan.py).
-            file_name: row.file_name ?? parts[parts.length - 1],
-            folder_name: parts[parts.length - 2],
-            file_size_gb: +(row.file_size / (1024 ** 3)).toFixed(2),
-            audio_tracks: row.audio_tracks || [],
-            subtitle_tracks: row.subtitle_tracks || [],
-            has_removable_tracks: row.has_removable_tracks || false,
-            has_removable_subs: row.has_removable_subs || false,
-            estimated_savings_bytes: (() => {
-              // v0.6.7: prefer backend-supplied CQ-calibrated value; fall
-              // back to 0.65 (CQ-25 midpoint) for legacy rows not yet
-              // backfilled.
-              let s = row.video_conv_savings_bytes
-                ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0);
-              for (const t of (row.audio_tracks || [])) {
-                if (!t.keep && !t.locked && t.size_estimate_bytes) s += t.size_estimate_bytes;
-              }
-              return Math.round(s);
-            })(),
-            estimated_savings_gb: +(((row.video_conv_savings_bytes
-                ?? (row.needs_conversion ? (row.file_size || 0) * 0.65 : 0)) +
-              (row.audio_tracks || []).filter((t: any) => !t.keep && !t.locked && t.size_estimate_bytes).reduce((s: number, t: any) => s + t.size_estimate_bytes, 0)
-            ) / (1024 ** 3)).toFixed(1),
-            video_conv_savings_bytes: row.video_conv_savings_bytes,
-            language_source: row.language_source || "heuristic",
-            ignored: row.ignored || false,
-            is_new: row.is_new || false,
-            queued: row.queued || false,
-            converted: row.converted || false,
-            low_bitrate: row.low_bitrate || false,
-            has_lossless_audio: row.has_lossless_audio || false,
-            duration: row.duration || 0,
-            file_mtime: row.file_mtime || null,
-          };
+          const parsed = toScannedFile(row);
           if (!byFolder.has(folder)) byFolder.set(folder, []);
           byFolder.get(folder)!.push(parsed);
         }
         // Merge into state in a single update
         setInternalFiles(prev => {
           const next = new Map(prev);
-          for (const [folder, files] of byFolder) {
-            next.set(folder, files);
-            onFolderFilesLoaded?.(folder, files);
-          }
+          for (const [folder, files] of byFolder) next.set(folder, files);
           // Ensure empty folders also get an entry so they show "no matching files" instead of a spinner
           for (const folder of foldersToFetch) {
             if (!byFolder.has(folder)) next.set(folder, []);
           }
           return next;
         });
+        // Not inside the updater: React may run updaters twice (FE#7).
+        for (const [folder, files] of byFolder) onFolderFilesLoaded?.(folder, files);
       } catch (err) {
         console.error("Batch file load failed:", err);
       } finally {
@@ -907,18 +891,74 @@ export default function FileTree({
     });
   }, [folderFiles, loadFolderFiles]);
 
-  // When filter changes, clear cached folder files so they reload with new filter
+  // When filter changes, clear cached folder files so they reload with new
+  // filter. FE#7 (v0.10.0): it fetched every expanded folder at once and
+  // stored each answer with its own copy of the files map (and ScannerPage
+  // its own): thousands of requests and quadratic copying after an advanced
+  // search. Now four at a time, merged into state in batches, and abandoned
+  // when the filter changes again.
   useEffect(() => {
+    loadAbort.current.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    const gen = ++loadGen.current;
+    // Reload files for currently expanded leaf folders — leaves of the
+    // folder list, and folders whose files were shown: the list is still the
+    // previous filter's here (the tree reloads after), so a folder it didn't
+    // include was left expanded and empty.
+    const leaves = new Set([...folders.map(f => f.path), ...folderFiles.keys()]);
+    const paths = [...expanded].filter(path => leaves.has(path));
     setInternalFiles(new Map());
-    // Reload files for currently expanded leaf folders
-    for (const path of expanded) {
-      // Check if this is a leaf by looking at the tree
-      const isLeaf = folders.some(f => f.path === path);
-      if (isLeaf) {
-        loadFolderFiles(path);
+    setLoadingFolders(new Set(paths));
+    if (paths.length === 0) return;
+
+    const loaded = new Map<string, ScannedFile[]>();
+    const flush = () => {
+      if (gen !== loadGen.current || loaded.size === 0) return;
+      const batch = new Map(loaded);
+      loaded.clear();
+      setInternalFiles(prev => {
+        const next = new Map(prev);
+        for (const [path, files] of batch) next.set(path, files);
+        return next;
+      });
+      setLoadingFolders(prev => {
+        const next = new Set(prev);
+        for (const path of batch.keys()) next.delete(path);
+        return next;
+      });
+      for (const [path, files] of batch) onFolderFilesLoaded?.(path, files);
+    };
+    let nextIdx = 0;
+    const worker = async () => {
+      while (nextIdx < paths.length && gen === loadGen.current) {
+        const path = paths[nextIdx++];
+        try {
+          const data = await getScanFiles(path, filter, controller.signal);
+          loaded.set(path, (Array.isArray(data) ? data : []).map(toScannedFile));
+        } catch (err) {
+          if (gen === loadGen.current) console.error("Failed to load folder files:", err);
+        }
+        if (loaded.size >= 20) flush();
       }
-    }
+    };
+    (async () => {
+      await Promise.all(Array.from({ length: Math.min(4, paths.length) }, worker));
+      flush();
+      // Folders whose request failed stop spinning.
+      if (gen === loadGen.current) {
+        setLoadingFolders(prev => {
+          const next = new Set(prev);
+          for (const path of paths) next.delete(path);
+          return next;
+        });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+
+  // Abort in-flight loads on unmount.
+  useEffect(() => () => loadAbort.current.abort(), []);
 
   // Helper: get all loaded file paths in a folder (recursive)
   const getLoadedFilesInFolder = useCallback((node: TreeNode): string[] => {

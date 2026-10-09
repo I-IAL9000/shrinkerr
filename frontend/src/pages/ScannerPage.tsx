@@ -1131,13 +1131,24 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     }
   };
 
-  // Callback when FileTree loads files for a folder
+  // Callback when FileTree loads files for a folder. Calls in the same tick
+  // are merged into one copy of the map (FE#7: one copy per folder was
+  // quadratic when thousands load together).
+  const pendingLoadedFiles = useRef<Map<string, ScannedFile[]> | null>(null);
   const handleFolderFilesLoaded = useCallback((folderPath: string, files: ScannedFile[]) => {
-    setLoadedFiles(prev => {
-      const next = new Map(prev);
-      next.set(folderPath, files);
-      return next;
-    });
+    if (!pendingLoadedFiles.current) {
+      pendingLoadedFiles.current = new Map();
+      queueMicrotask(() => {
+        const batch = pendingLoadedFiles.current!;
+        pendingLoadedFiles.current = null;
+        setLoadedFiles(prev => {
+          const next = new Map(prev);
+          for (const [path, loaded] of batch) next.set(path, loaded);
+          return next;
+        });
+      });
+    }
+    pendingLoadedFiles.current.set(folderPath, files);
   }, []);
 
   const newCount = serverStats?.counts?.new || 0;
