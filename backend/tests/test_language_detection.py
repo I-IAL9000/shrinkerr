@@ -179,15 +179,6 @@ def test_languages_present_verifies_und_reset():
     assert _languages_present(["fao", "eng"], ["und", "eng"]) is False
 
 
-def test_unknown_language_filter_includes_ignored():
-    """v0.9.26: the unknown-language filter includes ignored titles — an ignore
-    rule means 'don't convert', not 'hide that the audio is untagged'."""
-    from backend.routes.scan import _matches_single_filter
-    assert _matches_single_filter({"has_und_tracks": True, "ignored": True}, "unknown_language") is True
-    assert _matches_single_filter({"has_und_tracks": True, "ignored": False}, "unknown_language") is True
-    assert _matches_single_filter({"has_und_tracks": False, "ignored": True}, "unknown_language") is False
-
-
 # ---------------------------------------------------------------------------
 # v0.8.4: multi-position audio sampling. A weak 33% window shouldn't doom
 # detection — later windows are tried, most-confident wins, short-circuit

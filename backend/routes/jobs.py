@@ -164,87 +164,19 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
 
     file_paths = list(payload.file_paths)
 
-    # Resolve folder paths (ending with /) to actual file paths, respecting active filter.
-    # v0.5.23: chunked the OR'd LIKE clauses — see _estimate_jobs_impl for
-    # the same fix and rationale. Pre-v0.5.23 a Scanner "Select all" with
-    # 1000+ folders blew past SQLite's expression-depth limit; the query
-    # failed silently and the queue add produced 0 jobs.
-    FOLDER_CHUNK = 800
+    # Selected folders, or the whole list on "select all", through the
+    # active filter (sorted below).
+    from backend.routes.scan import _paths_matching
     folder_paths = [p for p in file_paths if p.endswith("/")]
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
-        active_filter = payload.filter or "all"
-        if active_filter != "all":
-            import aiosqlite
-            from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
-            db_resolve = await aiosqlite.connect(DB_PATH)
-            db_resolve.row_factory = aiosqlite.Row
-            try:
-                ctx = await _build_enrichment_context(db_resolve)
-                total_rows = 0
-                matched = 0
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_resolve.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        rows = await cur.fetchall()
-                    total_rows += len(rows)
-                    for row in rows:
-                        enriched = _enrich_row_minimal(dict(row), ctx)
-                        if _matches_filter(enriched, active_filter):
-                            file_paths.append(enriched["file_path"])
-                            matched += 1
-                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s): {matched}/{total_rows} files matched filter '{active_filter}'", flush=True)
-            finally:
-                await db_resolve.close()
-        else:
-            db_resolve = await connect_db()
-            try:
-                total_added = 0
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_resolve.execute(
-                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        rows = await cur.fetchall()
-                        file_paths.extend(r["file_path"] for r in rows)
-                        total_added += len(rows)
-                print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {total_added} files", flush=True)
-            finally:
-                await db_resolve.close()
+        resolved = await _paths_matching(payload.filter or "all", folder_paths)
+        print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {len(resolved)} files "
+              f"(filter '{payload.filter or 'all'}')", flush=True)
+        file_paths += resolved
     print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
-
-    # Server-side select-all: resolve file paths matching the filter
-    # NOTE: select-all also lacks an ORDER BY guarantee on the rule path
-    # below, so the post-resolution sort at the end of this block covers
-    # both folder expansion and select-all together. v0.3.61.
     if payload.select_all and not file_paths:
-        import aiosqlite
-        from backend.database import DB_PATH
-        from backend.routes.scan import (
-            _build_enrichment_context, _enrich_row, _matches_filter,
-            _SCAN_SELECT_COLS, _SCAN_WHERE,
-        )
-        sdb = await aiosqlite.connect(DB_PATH)
-        sdb.row_factory = aiosqlite.Row
-        try:
-            ctx = await _build_enrichment_context(sdb)
-            async with sdb.execute(
-                f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} ORDER BY id ASC"
-            ) as cur:
-                rows = await cur.fetchall()
-            for row in rows:
-                enriched = _enrich_row(dict(row), ctx)
-                if _matches_filter(enriched, payload.filter):
-                    file_paths.append(enriched["file_path"])
-        finally:
-            await sdb.close()
+        file_paths = await _paths_matching(payload.filter or "all")
 
     if not file_paths:
         return {"job_ids": [], "added": 0}
@@ -777,72 +709,15 @@ async def queue_health_checks(payload: HealthCheckRequest):
 
     file_paths = list(payload.file_paths)
 
-    # Resolve folder paths (same pattern used elsewhere in this file).
-    # v0.5.24: chunked OR'd LIKE clauses — see v0.5.23's add_jobs_from_scan
-    # / _estimate_jobs_impl fixes for rationale. Bulk health-check from the
-    # Scanner page's Select-all could send 1000+ folder paths and blow past
-    # SQLite's SQLITE_LIMIT_EXPR_DEPTH (default 1000), failing silently.
-    FOLDER_CHUNK = 800
+    # Selected folders, or the whole list on "select all", through the
+    # active filter.
+    from backend.routes.scan import _paths_matching
     folder_paths = [p for p in file_paths if p.endswith("/")]
     if folder_paths:
         file_paths = [p for p in file_paths if not p.endswith("/")]
-        active_filter = payload.filter or "all"
-        if active_filter != "all":
-            import aiosqlite
-            from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
-            db_r = await aiosqlite.connect(DB_PATH)
-            db_r.row_factory = aiosqlite.Row
-            try:
-                ctx = await _build_enrichment_context(db_r)
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_r.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        for row in await cur.fetchall():
-                            enriched = _enrich_row_minimal(dict(row), ctx)
-                            if _matches_filter(enriched, active_filter):
-                                file_paths.append(enriched["file_path"])
-            finally:
-                await db_r.close()
-        else:
-            db_r = await connect_db()
-            try:
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_r.execute(
-                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        file_paths.extend(r["file_path"] for r in await cur.fetchall())
-            finally:
-                await db_r.close()
-
-    # select_all path (whole library matching filter)
+        file_paths += await _paths_matching(payload.filter or "all", folder_paths)
     if payload.select_all and not file_paths:
-        import aiosqlite
-        from backend.database import DB_PATH
-        from backend.routes.scan import (
-            _build_enrichment_context, _enrich_row_minimal, _matches_filter,
-            _SCAN_SELECT_COLS, _SCAN_WHERE,
-        )
-        sdb = await aiosqlite.connect(DB_PATH)
-        sdb.row_factory = aiosqlite.Row
-        try:
-            ctx = await _build_enrichment_context(sdb)
-            async with sdb.execute(
-                f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE}"
-            ) as cur:
-                for row in await cur.fetchall():
-                    enriched = _enrich_row_minimal(dict(row), ctx)
-                    if _matches_filter(enriched, payload.filter):
-                        file_paths.append(enriched["file_path"])
-        finally:
-            await sdb.close()
+        file_paths = await _paths_matching(payload.filter or "all")
 
     if not file_paths:
         return {"added": 0, "job_ids": []}
@@ -1823,54 +1698,13 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.resolution import resolution_tier
     import re
 
-    # Resolve folder paths to actual file paths, respecting active filter.
-    # v0.5.23: chunk the OR'd LIKE clauses. With >1000 folder paths in one
-    # query, SQLite blows past `SQLITE_LIMIT_EXPR_DEPTH` (default 1000)
-    # building the OR'd expression tree — the SELECT fails silently and
-    # the estimate returns total_files=0. Same as the scan_rows IN-clause
-    # chunking on line ~1730. Bigger libraries with the Scanner page's
-    # "Select all + filter" hit this hard (1413 folder paths exhausted
-    # the depth budget).
-    FOLDER_CHUNK = 800
+    # Selected folders through the active filter.
     file_paths = list(payload.file_paths)
     folder_paths = [p for p in file_paths if p.endswith("/")]
     if folder_paths:
+        from backend.routes.scan import _paths_matching
         file_paths = [p for p in file_paths if not p.endswith("/")]
-        active_filter = payload.filter or "all"
-        if active_filter != "all":
-            import aiosqlite
-            from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
-            db_r = await aiosqlite.connect(DB_PATH)
-            db_r.row_factory = aiosqlite.Row
-            try:
-                ctx = await _build_enrichment_context(db_r)
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_r.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        for row in await cur.fetchall():
-                            enriched = _enrich_row_minimal(dict(row), ctx)
-                            if _matches_filter(enriched, active_filter):
-                                file_paths.append(enriched["file_path"])
-            finally:
-                await db_r.close()
-        else:
-            db_r = await connect_db()
-            try:
-                for i in range(0, len(folder_paths), FOLDER_CHUNK):
-                    chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
-                    async with db_r.execute(
-                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
-                        like_args,
-                    ) as cur:
-                        file_paths.extend(r["file_path"] for r in await cur.fetchall())
-            finally:
-                await db_r.close()
+        file_paths += await _paths_matching(payload.filter or "all", folder_paths)
 
     if payload.override_rules:
         rule_results = {}

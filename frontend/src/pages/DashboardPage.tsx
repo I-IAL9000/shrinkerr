@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup, updateEncodingSettings, login } from "../api";
 import { fmtNum, fmtBytes } from "../fmt";
@@ -22,8 +22,12 @@ const tooltipStyle = {
 };
 
 // Donut chart with optional center text
+// Codec labels from /stats (stats._codec_label) → Scanner filter ids.
+const CODEC_FILTERS: Record<string, string> = { "H.264": "x264", "H.265": "x265", "AV1": "av1" };
+
 function Donut({ segments, size = 120, hole = 0.65, centerText }: {
-  segments: { value: number; color: string; label: string }[];
+  /** `to`: a page the legend entry links to (e.g. the filtered Scanner). */
+  segments: { value: number; color: string; label: string; to?: string }[];
   size?: number; hole?: number; centerText?: string;
 }) {
   const total = segments.reduce((s, seg) => s + seg.value, 0);
@@ -53,7 +57,11 @@ function Donut({ segments, size = 120, hole = 0.65, centerText }: {
         {segments.filter(s => s.value > 0).map(seg => (
           <div key={seg.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
             <div style={{ width: 10, height: 10, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
-            <span style={{ color: "var(--text-muted)" }}>{seg.label}: <b style={{ color: "var(--text-secondary)" }}>{seg.value.toLocaleString()}</b></span>
+            {seg.to ? (
+              <Link to={seg.to} style={{ color: "var(--text-muted)" }}>{seg.label}: <b style={{ color: "var(--text-secondary)" }}>{seg.value.toLocaleString()}</b></Link>
+            ) : (
+              <span style={{ color: "var(--text-muted)" }}>{seg.label}: <b style={{ color: "var(--text-secondary)" }}>{seg.value.toLocaleString()}</b></span>
+            )}
           </div>
         ))}
       </div>
@@ -685,6 +693,7 @@ export default function DashboardPage() {
                 size={110}
                 segments={s.codecs.map(([label, value]: [string, number], i: number) => ({
                   value, label, color: ["var(--danger)", "var(--accent)", "var(--info)", "var(--success)", "var(--caution)"][i % 5],
+                  to: CODEC_FILTERS[label] && `/scanner?filter=${CODEC_FILTERS[label]}`,
                 }))}
                 centerText={`${s.scan_total}`}
               />

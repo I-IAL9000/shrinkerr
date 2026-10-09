@@ -5,7 +5,7 @@ Cleanup and language filters include ignored titles — an ignore rule means
 Only the conversion-oriented filters keep excluding ignored.
 """
 import sqlite3
-from backend.routes.scan import _matches_single_filter
+from backend.scan_filters import FILTERS
 from backend.resolution import RANKS, resolution_tier, sql_resolution_rank
 
 
@@ -84,65 +84,55 @@ def test_resolution_python_matches_sql():
         assert py == sql, f"drift on {p!r} {w}x{h}: py={py} sql={sql}"
 
 
+def _matches(fid, height, path, width=0):
+    """Evaluate a filter's own SQL on one row."""
+    c = sqlite3.connect(":memory:")
+    c.execute("CREATE TABLE t(file_path TEXT, video_width INT, video_height INT)")
+    c.execute("INSERT INTO t VALUES(?,?,?)", (path, width, height))
+    return bool(c.execute(f"SELECT ({FILTERS[fid].sql}) FROM t").fetchone()[0])
+
+
 def test_res_4k_filter_includes_scope_4k():
     """The res_4k filter matches a tagged scope-4K title (vh 1600), which the
     old height>=2000/height>=1400 rules under- or mis-counted."""
-    assert _matches_single_filter(
-        {"video_height": 1600, "file_path": "/m/Dune 2160p UHD BluRay.mkv"}, "res_4k") is True
-    assert _matches_single_filter(
-        {"video_height": 2160, "file_path": "/m/x.mkv"}, "res_4k") is True
-    assert _matches_single_filter(
-        {"video_height": 1440, "file_path": "/m/QHD 1440p.mkv"}, "res_4k") is False
+    assert _matches("res_4k", 1600, "/m/Dune 2160p UHD BluRay.mkv") is True
+    assert _matches("res_4k", 2160, "/m/x.mkv") is True
+    assert _matches("res_4k", 1440, "/m/QHD 1440p.mkv") is False
 
 
 def test_res_1080p_excludes_tagged_4k():
     """A tagged scope-4K row (vh 1600) must NOT also count as 1080p."""
-    assert _matches_single_filter(
-        {"video_height": 1600, "file_path": "/m/Dune 2160p UHD.mkv"}, "res_1080p") is False
-    assert _matches_single_filter(
-        {"video_height": 1080, "file_path": "/m/Movie 1080p.mkv"}, "res_1080p") is True
+    assert _matches("res_1080p", 1600, "/m/Dune 2160p UHD.mkv") is False
+    assert _matches("res_1080p", 1080, "/m/Movie 1080p.mkv") is True
 
 
 def test_res_filters_use_the_width():
-    scope = {"video_width": 1920, "video_height": 800, "file_path": "/m/Scope.mkv"}
-    assert _matches_single_filter(scope, "res_1080p") is True
-    assert _matches_single_filter(scope, "res_720p") is False
-    qhd = {"video_width": 2560, "video_height": 1440, "file_path": "/m/QHD.mkv"}
-    assert _matches_single_filter(qhd, "res_4k") is False
-    assert _matches_single_filter(qhd, "res_1080p") is True
-    small = {"video_width": 1280, "video_height": 534, "file_path": "/m/x.mkv"}
-    assert _matches_single_filter(small, "res_720p") is True
-    assert _matches_single_filter(small, "res_sd") is False
+    assert _matches("res_1080p", 800, "/m/Scope.mkv", 1920) is True
+    assert _matches("res_720p", 800, "/m/Scope.mkv", 1920) is False
+    assert _matches("res_4k", 1440, "/m/QHD.mkv", 2560) is False
+    assert _matches("res_1080p", 1440, "/m/QHD.mkv", 2560) is True
+    assert _matches("res_720p", 534, "/m/x.mkv", 1280) is True
+    assert _matches("res_sd", 534, "/m/x.mkv", 1280) is False
 
 
-def _row(**kw):
-    base = {
-        "has_removable_tracks": False, "has_und_tracks": False,
-        "has_removable_subs": False, "needs_conversion": False,
-        "low_bitrate": False, "ignored": False, "file_size": 0, "duration": 0,
-    }
-    base.update(kw)
-    return base
+def _ctx(ignored=()):
+    return {"ignored_paths": set(ignored), "ignored_folders_sorted": [],
+            "rule_exempt_paths": set(), "skip_prefixes_sorted": []}
 
 
 def test_cleanup_and_language_filters_include_ignored():
-    assert _matches_single_filter(_row(has_removable_tracks=True, ignored=True), "audio_cleanup") is True
-    assert _matches_single_filter(_row(has_und_tracks=True, ignored=True), "audio_cleanup") is True
-    assert _matches_single_filter(_row(has_removable_subs=True, ignored=True), "sub_cleanup") is True
-    assert _matches_single_filter(_row(has_und_tracks=True, ignored=True), "unknown_language") is True
-
-
-def test_cleanup_filters_still_require_the_condition():
-    # Ignored is no longer the gate, but the actual cleanup condition still is.
-    assert _matches_single_filter(_row(ignored=True), "audio_cleanup") is False
-    assert _matches_single_filter(_row(ignored=True), "sub_cleanup") is False
+    """They're SQL over the row's own flags, so the ignore list can't hide a
+    file from them (behaviour: test_filter_spec)."""
+    for fid in ("audio_cleanup", "sub_cleanup", "unknown_language"):
+        assert FILTERS[fid].sql and not FILTERS[fid].py, fid
 
 
 def test_conversion_filters_still_exclude_ignored():
-    assert _matches_single_filter(_row(needs_conversion=True, ignored=True), "needs_conversion") is False
-    assert _matches_single_filter(_row(needs_conversion=True, ignored=False), "needs_conversion") is True
-    assert _matches_single_filter(_row(low_bitrate=True, ignored=True), "low_bitrate") is False
-    assert _matches_single_filter(_row(low_bitrate=True, ignored=False), "low_bitrate") is True
+    worth = {"file_path": "/m/a.mkv", "needs_conversion": 1, "file_size": 4 * 1024**3, "duration": 3600}
+    low = {**worth, "file_size": 100 * 1024**2}
+    for fid, row in (("needs_conversion", worth), ("low_bitrate", low)):
+        assert FILTERS[fid].py(dict(row), _ctx()) is True, fid
+        assert FILTERS[fid].py(dict(row), _ctx(ignored={"/m/a.mkv"})) is False, fid
 
 
 def test_path_scope_clause_builds_fragment():
@@ -242,12 +232,8 @@ async def test_resolution_counts_match_the_filtered_lists(test_db, monkeypatch):
             "VALUES (?, 1, ?, ?, '2026-01-01')", rows)
         await db.commit()
     stats = (await scan_route.get_scan_stats())["counts"]
-    async with aiosqlite.connect(test_db) as db:
-        for f in ("res_4k", "res_1080p", "res_720p", "res_sd"):
-            frag, params, _ = scan_route._build_tree_sql_filter(f)
-            async with db.execute(f"SELECT COUNT(*) FROM scan_results WHERE 1=1 {frag}", params) as cur:
-                listed = (await cur.fetchone())[0]
-            assert stats[f] == listed, f
+    for f in ("res_4k", "res_1080p", "res_720p", "res_sd"):
+        assert stats[f] == len(await scan_route._paths_matching(f)), f
     assert (stats["res_4k"], stats["res_1080p"], stats["res_720p"], stats["res_sd"]) == (2, 3, 1, 2)
 
 

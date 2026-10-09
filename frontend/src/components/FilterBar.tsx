@@ -1,8 +1,9 @@
 import { useTranslation } from "react-i18next";
 
 interface FilterBarProps {
+  /** Filter ids; "!id" excludes. */
   activeFilters: string[];
-  onFilterToggle: (filter: string) => void;
+  onFilterToggle: (filter: string, exclude: boolean) => void;
   newCount?: number;
   counts?: Record<string, number>;
 }
@@ -79,7 +80,11 @@ for (const f of FILTERS) {
   if (!f.group) FILTER_LABELS[f.key] = f;
 }
 
-export function filterLabel(key: string, t: (k: string) => string): string | undefined {
+export function filterLabel(key: string, t: (k: string, o?: any) => string): string | undefined {
+  if (key.startsWith("!")) {
+    const label = filterLabel(key.slice(1), t);
+    return label && t("scanner:filters.notLabel", { label });
+  }
   const f = FILTER_LABELS[key];
   if (!f) return undefined;
   return f.labelKey ? t(f.labelKey) : f.label;
@@ -89,6 +94,8 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
   const { t } = useTranslation(["scanner", "common"]);
   const isAll = activeFilters.length === 0 || (activeFilters.length === 1 && activeFilters[0] === "all");
 
+  // v0.10.0: pills in a group match any of them, groups must all match, and
+  // Alt-click excludes (the server's scan_filters.py decides; see there).
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 24, alignItems: "center" }}>
       {FILTERS.map((f) => {
@@ -102,17 +109,20 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           );
         }
         const isActive = f.key === "all" ? isAll : activeFilters.includes(f.key);
+        const isExcluded = f.key !== "all" && activeFilters.includes("!" + f.key);
         const count = f.key === "new" ? newCount : counts?.[f.key];
         return (
           <button
             key={f.key}
-            className={`filter-pill ${isActive ? "active" : ""}`}
-            aria-pressed={isActive}
-            onClick={() => onFilterToggle(f.key)}
+            className={`filter-pill ${isActive ? "active" : ""} ${isExcluded ? "excluded" : ""}`}
+            aria-pressed={isActive || isExcluded}
+            title={f.key === "all" ? undefined : t("scanner:filters.excludeHint")}
+            onClick={(e) => onFilterToggle(f.key, e.altKey && f.key !== "all")}
             style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
           >
-            {f.labelKey ? t(f.labelKey) : f.label}
-            {count != null && count > 0 && (
+            <span className="filter-pill-label">{f.labelKey ? t(f.labelKey) : f.label}</span>
+            {isExcluded && <span className="sr-only">{t("scanner:filters.excluded")}</span>}
+            {count != null && (f.key !== "new" || count > 0) && (
               <span style={{
                 background: f.key === "new" ? "var(--accent)" : "rgba(104,96,254,0.3)",
                 color: f.key === "new" ? "white" : "var(--text-secondary)",
@@ -126,6 +136,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           </button>
         );
       })}
+      <span className="filter-bar-hint">{t("scanner:filters.hint")}</span>
     </div>
   );
 }

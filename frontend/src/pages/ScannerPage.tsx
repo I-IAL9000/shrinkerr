@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
@@ -59,8 +60,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // localStorage, since users typically come back to the same view they
   // were curating. The Clear pill (`filter !== "all"` branch below) is
   // the one-click reset; anything more invasive would surprise users.
-  // v0.3.78+.
+  // v0.3.78+. v0.10.0: they're also in the address (?filter=x265,!type_tv)
+  // so a view can be bookmarked or linked to, and a link wins.
+  const location = useLocation();
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<string[]>(() => {
+    const fromUrl = new URLSearchParams(location.search).get("filter");
+    if (fromUrl !== null) {
+      const list = fromUrl.split(",").map(f => f.trim()).filter(Boolean);
+      return list.length > 0 ? list : ["all"];
+    }
     try {
       const raw = localStorage.getItem("shrinkerr_scanner_filters");
       if (raw) {
@@ -72,13 +81,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     } catch { /* localStorage may throw (Safari private mode) — fall through */ }
     return ["all"];
   });
+  // Compute filter string for backend (comma-separated for multi-filter)
+  const filter = filters.length === 0 || (filters.length === 1 && filters[0] === "all") ? "all" : filters.filter(f => f !== "all").join(",");
   useEffect(() => {
     try {
       localStorage.setItem("shrinkerr_scanner_filters", JSON.stringify(filters));
     } catch { /* same reason as above */ }
-  }, [filters]);
-  // Compute filter string for backend (comma-separated for multi-filter)
-  const filter = filters.length === 0 || (filters.length === 1 && filters[0] === "all") ? "all" : filters.filter(f => f !== "all").join(",");
+    const search = filter === "all" ? "" : `?filter=${filter}`;
+    if (location.search !== search) navigate({ search }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [selectAllActive, setSelectAllActive] = useState(false);
   const [scanStarted, setScanStarted] = useState(false);
@@ -1613,17 +1625,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             <>
               <FilterBar
                 activeFilters={filters}
-                onFilterToggle={(f) => {
+                onFilterToggle={(f, exclude) => {
                   if (f === "all") {
                     setFilters(["all"]);
                   } else {
+                    // Click: include, or clear an included / excluded pill.
+                    // Alt-click: exclude, or clear an excluded one.
+                    const token = exclude ? "!" + f : f;
                     setFilters(prev => {
-                      const active = prev.filter(x => x !== "all");
-                      if (active.includes(f)) {
-                        const next = active.filter(x => x !== f);
-                        return next.length === 0 ? ["all"] : next;
-                      }
-                      return [...active, f];
+                      const off = exclude ? prev.includes(token) : prev.includes(f) || prev.includes("!" + f);
+                      const rest = prev.filter(x => x !== "all" && x !== f && x !== "!" + f);
+                      const next = off ? rest : [...rest, token];
+                      return next.length === 0 ? ["all"] : next;
                     });
                   }
                 }}

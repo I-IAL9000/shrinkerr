@@ -430,6 +430,15 @@ body {
 .filter-pill:hover { background: var(--bg-tertiary); color: var(--text-secondary); border-color: var(--border); }
 .filter-pill.active { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
 .filter-pill.active:hover { background: var(--accent-bg); border-color: var(--accent-hover); }
+/* Excluded (Alt-click), v0.10.0 */
+.filter-pill.excluded,
+.filter-pill.excluded:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.filter-pill.excluded .filter-pill-label { text-decoration: line-through; }
+.filter-bar-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 
 /* Sort / view pills */
 .sort-pill {

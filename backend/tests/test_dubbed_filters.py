@@ -17,21 +17,13 @@ async def test_dubbed_and_not_api_matched_predicates(tmp_path):
         async def sel(where):
             async with db.execute(f"SELECT file_path FROM scan_results WHERE 1=1 {where} ORDER BY file_path") as c:
                 return [r[0] for r in await c.fetchall()]
-        assert await sel("AND COALESCE(is_dubbed_flag, 0) = 1") == ["/dub.mkv"]
-        assert await sel("AND (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))") == ["/heur.mkv","/heurfail.mkv"]
+        from backend.scan_filters import FILTERS
+        assert await sel(f"AND {FILTERS['dubbed'].sql}") == ["/dub.mkv"]
+        assert await sel(f"AND {FILTERS['not_api_matched'].sql}") == ["/heur.mkv","/heurfail.mkv"]
         # tried-no-match subset
-        assert await sel("AND (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual')) AND COALESCE(tmdb_unresolved,0)=1") == ["/heurfail.mkv"]
+        assert await sel(f"AND {FILTERS['not_api_matched'].sql} AND COALESCE(tmdb_unresolved,0)=1") == ["/heurfail.mkv"]
     finally:
         await db.close()
-
-
-def test_matches_single_filter_dubbed_and_unmatched():
-    from backend.routes.scan import _matches_single_filter
-    assert _matches_single_filter({"is_dubbed_flag": 1}, "dubbed") is True
-    assert _matches_single_filter({"is_dubbed_flag": 0}, "dubbed") is False
-    assert _matches_single_filter({"language_source": "heuristic"}, "not_api_matched") is True
-    assert _matches_single_filter({"language_source": "api"}, "not_api_matched") is False
-    assert _matches_single_filter({"language_source": "manual"}, "not_api_matched") is False
 
 
 @pytest.mark.asyncio
@@ -81,12 +73,12 @@ async def test_disc_iso_predicate(tmp_path):
         await db.close()
 
 
-def test_matches_single_filter_disc_iso():
-    from backend.routes.scan import _matches_single_filter
-    assert _matches_single_filter({"disc_type": "bdmv"}, "disc_iso") is True
-    assert _matches_single_filter({"disc_type": "dvd"}, "disc_iso") is True
-    assert _matches_single_filter({"disc_type": None}, "disc_iso") is False
-    assert _matches_single_filter({}, "disc_iso") is False
+def test_disc_iso_filter():
+    import sqlite3
+    from backend.scan_filters import FILTERS
+    c = sqlite3.connect(":memory:")
+    for value, want in (("bdmv", 1), ("dvd", 1), (None, 0)):
+        assert c.execute(f"SELECT ({FILTERS['disc_iso'].sql}) FROM (SELECT ? AS disc_type)", (value,)).fetchone()[0] == want
 
 
 @pytest.mark.asyncio

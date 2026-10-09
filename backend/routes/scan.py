@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import aiosqlite
 from fastapi import APIRouter, Request
@@ -11,7 +11,11 @@ from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
-from backend.resolution import RANKS, resolution_tier, sql_resolution_rank
+from backend.scan_filters import (
+    HIGH_BITRATE, LISTED, LOW_BITRATE, PY_COLUMNS, count_all, parse_filter,
+    row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
+    build_dir_label_index as _build_dir_label_index,
+)
 from backend.scanner import scan_directory
 from backend.websocket import ws_manager
 
@@ -1837,150 +1841,21 @@ async def clear_new_count(request: Request):
 
 @router.get("/scan-stats")
 async def get_scan_stats():
-    """Lightweight endpoint returning all filter counts + summary stats server-side.
-
-    Replaces 2.37M frontend array iterations with a single SQL query.
-    """
+    """Every filter pill's count and the summary cards, from the same filter
+    definitions as the lists (backend/scan_filters.py, F23 v0.10.0)."""
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        LOW_BR = 3_000_000
-
-        # Main counts via SQL (pre-computed flags avoid JSON parsing).
+        ctx = await _build_enrichment_context(db)
+        counts, needs_conversion_bytes = await count_all(db, ctx)
         async with db.execute(
-            """SELECT
-                COUNT(*) as total,
-                SUM(needs_conversion) as needs_conversion_raw,
-                SUM(has_removable_tracks_flag) as audio_cleanup,
-                SUM(COALESCE(has_und_tracks_flag, 0)) as unknown_language,
-                SUM(COALESCE(is_dubbed_flag, 0)) as dubbed,
-                SUM(CASE WHEN language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual') THEN 1 ELSE 0 END) as not_api_matched,
-                SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual')) AND COALESCE(tmdb_unresolved,0) = 1 THEN 1 ELSE 0 END) as not_api_matched_no_tmdb,
-                SUM(CASE WHEN disc_type IS NOT NULL THEN 1 ELSE 0 END) as disc_iso,
-                SUM(has_removable_subs_flag) as sub_cleanup,
-                SUM(has_lossless_audio_flag) as lossless_audio,
-                SUM(converted) as converted,
-                SUM(CASE WHEN dup_count > 1 THEN 1 ELSE 0 END) as duplicates,
-                SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt' THEN 1 ELSE 0 END) as corrupt,
-                SUM(CASE WHEN video_codec LIKE '%264%' OR video_codec LIKE '%avc%' THEN 1 ELSE 0 END) as x264,
-                SUM(CASE WHEN video_codec LIKE '%265%' OR video_codec LIKE '%hevc%' THEN 1 ELSE 0 END) as x265,
-                SUM(CASE WHEN video_codec LIKE '%av1%' THEN 1 ELSE 0 END) as av1,
-                SUM(CASE WHEN new_detected_at > ? THEN 1 ELSE 0 END) as new_count,
-                SUM(CASE WHEN file_size > 10737418240 THEN 1 ELSE 0 END) as large_files,
-                SUM(file_size) as total_size,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 93 THEN 1 ELSE 0 END) as vmaf_excellent,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score >= 87 AND vmaf_score < 93 THEN 1 ELSE 0 END) as vmaf_good,
-                SUM(CASE WHEN vmaf_score IS NOT NULL AND vmaf_score < 87 THEN 1 ELSE 0 END) as vmaf_poor,
-                SUM(CASE WHEN converted = 1 AND vmaf_score IS NULL THEN 1 ELSE 0 END) as vmaf_pending
-            FROM scan_results WHERE removed_from_list = 0
-            AND file_path NOT LIKE '%%.converting.%%'
-            AND file_path NOT LIKE '%%.remuxing.%%'""",
-            ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),),
+            f"""SELECT SUM(file_size) AS total_size,
+                SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))
+                         AND COALESCE(tmdb_unresolved, 0) = 1 THEN 1 ELSE 0 END) AS not_api_matched_no_tmdb
+            FROM scan_results WHERE {LISTED}"""
         ) as cur:
-            row = dict(await cur.fetchone())
-
-        # Resolution counts: the same classifier as the list filters, so a
-        # chip's count and its list agree. Grouped, so each row's tier is
-        # worked out once.
-        async with db.execute(
-            f"SELECT {sql_resolution_rank()} AS res_rank, COUNT(*) AS n FROM scan_results "
-            "WHERE removed_from_list = 0 "
-            "AND file_path NOT LIKE '%.converting.%' AND file_path NOT LIKE '%.remuxing.%' "
-            "GROUP BY res_rank"
-        ) as cur:
-            res_counts = {r["res_rank"]: r["n"] for r in await cur.fetchall()}
-
-        total = row["total"] or 0
-        x264 = row["x264"] or 0
-        x265 = row["x265"] or 0
-        av1 = row["av1"] or 0
-
-        # Converted count from jobs table (same logic as dashboard)
-        async with db.execute(
-            "SELECT COUNT(*) as cnt FROM jobs WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0"
-        ) as cur:
-            converted_from_jobs = (await cur.fetchone())["cnt"] or 0
-
-        # Counts that need Python-side computation (ignored, queued, bitrate-based)
-        ignored_count = 0
-        queued_count = 0
-        needs_conversion_count = 0
-        high_bitrate_count = 0
-        low_bitrate_count = 0
-        recent_count = 0
-        watched_count = 0
-        unwatched_count = 0
-        watchlist_count = 0
-        estimated_savings = 0
-        size_small_count = 0
-        size_medium_count = 0
-        size_large_count = 0
-        src_remux_count = 0
-        src_bluray_count = 0
-        src_webdl_count = 0
-        src_hdtv_count = 0
-        src_dvd_count = 0
-        type_movie_count = 0
-        type_tv_count = 0
-        type_other_count = 0
-
-        # Media-dir label index for type classification — loaded once and
-        # reused per-row in the loop below. v0.3.76+.
-        dir_label_index: list[tuple[str, str]] = []
-        try:
-            async with db.execute("SELECT path, label FROM media_dirs WHERE enabled = 1") as cur:
-                _dir_rows = [(r["path"], r["label"] or "") for r in await cur.fetchall()]
-            dir_label_index = _build_dir_label_index(_dir_rows)
-        except Exception:
-            pass
-
-        # Load prefix data for ignore/watch checks
-        import bisect
-        ignored_paths: set[str] = set()
-        ignored_folders_raw: list[str] = []
-        rule_exempt_paths: set[str] = set()
-        async with db.execute("SELECT file_path, reason FROM ignored_files") as cur:
-            for r in await cur.fetchall():
-                p = r["file_path"]
-                reason = r["reason"] or ""
-                if reason in ("plex_label_exempt", "rule_exempt"):
-                    rule_exempt_paths.add(p)
-                    continue
-                ignored_paths.add(p)
-                if p.endswith("/"):
-                    ignored_folders_raw.append(p)
-        ignored_folders_sorted = sorted(set(ignored_folders_raw))
-
-        skip_prefixes_sorted: list[str] = []
-        try:
-            from backend.rule_resolver import get_skip_prefixes
-            raw_pf = await get_skip_prefixes()
-            if raw_pf:
-                skip_prefixes_sorted = sorted(set(raw_pf))
-        except Exception:
-            pass
-
-        queued_paths: set[str] = set()
-        async with db.execute("SELECT file_path FROM jobs WHERE status IN ('pending', 'running')") as cur:
-            queued_paths = {r["file_path"] for r in await cur.fetchall()}
-
-        watched_sorted: list[str] = []
-        unwatched_sorted: list[str] = []
-        watchlist_sorted: list[str] = []
-        try:
-            async with db.execute("SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type='watch_status'") as cur:
-                for r in await cur.fetchall():
-                    if r["metadata_value"] == "watched":
-                        watched_sorted.append(r["folder_path"])
-                    elif r["metadata_value"] == "watchlist":
-                        watchlist_sorted.append(r["folder_path"])
-                    else:
-                        unwatched_sorted.append(r["folder_path"])
-            watched_sorted.sort()
-            unwatched_sorted.sort()
-            watchlist_sorted.sort()
-        except Exception:
-            pass
+            extra = dict(await cur.fetchone())
+        counts["not_api_matched_no_tmdb"] = extra["not_api_matched_no_tmdb"] or 0
 
         # Savings estimate: the same curve and quality as the per-file and
         # Add to Queue estimates (v0.10.0: this card had its own curve, 25%
@@ -1988,243 +1863,19 @@ async def get_scan_stats():
         from backend.encoding_estimates import cq_to_savings_pct, load_effective_cq
         est_pct = cq_to_savings_pct(await load_effective_cq(db))
 
-        now_ts = datetime.now(timezone.utc).timestamp()
-        cutoff_24h = now_ts - 86400
-
-        import re as _re_mod
-        re_src = _re_mod.compile(r"blu[\-\s]?ray|bdremux|bdrip|bdmv", _re_mod.IGNORECASE)
-        # Single pass through file paths for prefix-based counts
-        async with db.execute(
-            "SELECT file_path, file_size, duration, needs_conversion, file_mtime "
-            "FROM scan_results WHERE removed_from_list = 0 "
-            "AND file_path NOT LIKE '%%.converting.%%' AND file_path NOT LIKE '%%.remuxing.%%'"
-        ) as cur:
-            async for r in cur:
-                fp = r["file_path"]
-                sz = r["file_size"] or 0
-                dur = r["duration"] or 0
-
-                # Ignored check
-                is_ignored = fp in ignored_paths
-                if not is_ignored and ignored_folders_sorted:
-                    idx = bisect.bisect_right(ignored_folders_sorted, fp) - 1
-                    if idx >= 0 and fp.startswith(ignored_folders_sorted[idx]):
-                        is_ignored = True
-                if not is_ignored:
-                    is_exempt = fp in rule_exempt_paths
-                    if not is_exempt:
-                        parent = fp.rsplit("/", 1)[0] + "/" if "/" in fp else ""
-                        while parent and not is_exempt:
-                            if parent in rule_exempt_paths:
-                                is_exempt = True
-                            elif "/" in parent.rstrip("/"):
-                                parent = parent.rstrip("/").rsplit("/", 1)[0] + "/"
-                            else:
-                                break
-                    if not is_exempt and skip_prefixes_sorted:
-                        idx = bisect.bisect_right(skip_prefixes_sorted, fp) - 1
-                        if idx >= 0 and fp.startswith(skip_prefixes_sorted[idx]):
-                            is_ignored = True
-
-                if is_ignored:
-                    ignored_count += 1
-
-                if fp in queued_paths:
-                    queued_count += 1
-
-                # Bitrate-based counts
-                bitrate = (sz * 8 / dur) if dur > 0 else 0
-                low_br = dur > 0 and bitrate < LOW_BR
-                high_br = r["needs_conversion"] and not is_ignored and dur > 0 and bitrate > 15_000_000
-
-                if r["needs_conversion"] and not low_br and not is_ignored:
-                    needs_conversion_count += 1
-                    estimated_savings += int(sz * est_pct)
-                if low_br and not is_ignored:
-                    low_bitrate_count += 1
-                if high_br:
-                    high_bitrate_count += 1
-
-                # Recent
-                mtime = r["file_mtime"]
-                if mtime and mtime > cutoff_24h:
-                    recent_count += 1
-
-                # Watch status
-                if watched_sorted:
-                    idx = bisect.bisect_right(watched_sorted, fp) - 1
-                    if idx >= 0 and fp.startswith(watched_sorted[idx]):
-                        watched_count += 1
-                if unwatched_sorted:
-                    idx = bisect.bisect_right(unwatched_sorted, fp) - 1
-                    if idx >= 0 and fp.startswith(unwatched_sorted[idx]):
-                        unwatched_count += 1
-                if watchlist_sorted:
-                    idx = bisect.bisect_right(watchlist_sorted, fp) - 1
-                    if idx >= 0 and fp.startswith(watchlist_sorted[idx]):
-                        watchlist_count += 1
-
-                # Size buckets
-                if sz < 5 * (1024 ** 3): size_small_count += 1
-                elif sz <= 10 * (1024 ** 3): size_medium_count += 1
-                else: size_large_count += 1
-
-                # Source detection
-                fn = fp.lower()
-                if "remux" in fn: src_remux_count += 1
-                elif re_src.search(fn): src_bluray_count += 1
-                elif "web-dl" in fn or "webdl" in fn or "webrip" in fn: src_webdl_count += 1
-                elif "hdtv" in fn: src_hdtv_count += 1
-                elif "dvd" in fn: src_dvd_count += 1
-
-                # Type detection — uses both filename brackets AND the
-                # containing media-dir's label. Pre-v0.3.76 only the
-                # bracket check ran, so users without `[tvdb-N]` /
-                # `[ttN]` folder naming saw all files classified as
-                # "other" even when they'd labelled their dirs in
-                # Settings → Directories. v0.3.76+.
-                dt = _classify_type_for_path(fp, dir_label_index)
-                if dt == "tv":
-                    type_tv_count += 1
-                elif dt == "movie":
-                    type_movie_count += 1
-                else:
-                    type_other_count += 1
-
         return {
-            "counts": {
-                "all": total,
-                "new": row["new_count"] or 0,
-                "needs_conversion": needs_conversion_count,
-                "large_files": row["large_files"] or 0,
-                "high_bitrate": high_bitrate_count,
-                "low_bitrate": low_bitrate_count,
-                "sub_cleanup": row["sub_cleanup"] or 0,
-                "ignored": ignored_count,
-                "duplicates": row["duplicates"] or 0,
-                "corrupt": row["corrupt"] or 0,
-                "recent": recent_count,
-                "converted": converted_from_jobs,
-                "queued": queued_count,
-                "x264": x264,
-                "x265": x265,
-                "av1": av1,
-                "misc_codec": total - x264 - x265 - av1,
-                "res_4k": res_counts.get(RANKS["4k"], 0),
-                "res_1080p": res_counts.get(RANKS["1080p"], 0),
-                "res_720p": res_counts.get(RANKS["720p"], 0),
-                "res_sd": res_counts.get(RANKS["sd"], 0),
-                "audio_cleanup": row["audio_cleanup"] or 0,
-                "unknown_language": row["unknown_language"] or 0,
-                "dubbed": row["dubbed"] or 0,
-                "not_api_matched": row["not_api_matched"] or 0,
-                "not_api_matched_no_tmdb": row["not_api_matched_no_tmdb"] or 0,
-                "disc_iso": row["disc_iso"] or 0,
-                "lossless_audio": row["lossless_audio"] or 0,
-                "lossy_audio": total - (row["lossless_audio"] or 0),
-                "plex_watched": watched_count,
-                "plex_unwatched": unwatched_count,
-                "plex_watchlist": watchlist_count,
-                "vmaf_excellent": row["vmaf_excellent"] or 0,
-                "vmaf_good": row["vmaf_good"] or 0,
-                "vmaf_poor": row["vmaf_poor"] or 0,
-                "size_small": size_small_count,
-                "size_medium": size_medium_count,
-                "size_large": size_large_count,
-                "src_remux": src_remux_count,
-                "src_bluray": src_bluray_count,
-                "src_webdl": src_webdl_count,
-                "src_hdtv": src_hdtv_count,
-                "src_dvd": src_dvd_count,
-                "type_movie": type_movie_count,
-                "type_tv": type_tv_count,
-                "type_other": type_other_count,
-            },
+            "counts": counts,
             "summary": {
-                "files_to_convert": needs_conversion_count,
-                "audio_cleanup": row["audio_cleanup"] or 0,
-                "unknown_language": row["unknown_language"] or 0,
-                "ignored_count": ignored_count,
-                "estimated_savings_bytes": estimated_savings,
-                "total_size": row["total_size"] or 0,
+                "files_to_convert": counts["needs_conversion"],
+                "audio_cleanup": counts["audio_cleanup"],
+                "unknown_language": counts["unknown_language"],
+                "ignored_count": counts["ignored"],
+                "estimated_savings_bytes": int(needs_conversion_bytes * est_pct),
+                "total_size": extra["total_size"] or 0,
             },
         }
     finally:
         await db.close()
-
-
-def _build_dir_label_index(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
-    """Sort (path, label) pairs into a prefix-match-friendly index.
-
-    Each entry's path gets a trailing slash so prefix matches don't false-
-    positive on `/media/MovieDocs` when only `/media/Movie` is configured.
-    Labels are lowercased for case-insensitive comparison. Sorted by path
-    length descending so a nested dir wins over its parent (mirrors
-    `media_dir_label_for` in backend/media_paths.py). v0.3.76+.
-    """
-    out: list[tuple[str, str]] = []
-    for path, label in rows:
-        if not path:
-            continue
-        norm = path.rstrip("/") + "/"
-        out.append((norm, (label or "").strip().lower()))
-    out.sort(key=lambda t: len(t[0]), reverse=True)
-    return out
-
-
-# Pre-compiled in-path ID detectors. v0.3.85 broadened past the
-# original `[tvdb-` / `[tt` / `[tmdb-` substring checks to also match
-# curly-brace forms (Plex), `id` suffix forms (Jellyfin), and bare
-# forms (file-level tagging without surrounding brackets). Mirrors
-# `_extract_ids` in backend/routes/posters.py — both serve the same
-# purpose of recognising user-tagged folders/files. Kept independent
-# (rather than importing) so the hot-path classifier stays in this
-# module.
-_RE_TVDB_IN_PATH = re.compile(
-    r'(?:[\[\{(]tvdb(?:id)?[-=:]?\d+[\]\})]'         # bracketed/braced
-    r'|(?<![a-z0-9])tvdb(?:id)?[-=]\d+(?![a-z0-9]))'  # bare with separator
-)
-_RE_TMDB_IN_PATH = re.compile(
-    r'(?:[\[\{(]tmdb(?:id)?[-=:]?\d+[\]\})]'
-    r'|(?<![a-z0-9])tmdb(?:id)?[-=]\d+(?![a-z0-9]))'
-)
-_RE_IMDB_IN_PATH = re.compile(
-    r'(?:[\[\{(]tt\d+[\]\})]'                          # bracketed/braced
-    r'|(?<![a-z0-9])tt\d{7,}(?![a-z0-9]))'             # bare, ≥7 digits
-)
-
-
-def _classify_type_for_path(fp: str, dir_label_index: list[tuple[str, str]] | None) -> str:
-    """Classify a file as 'movie', 'tv', or 'other'.
-
-    Resolution priority:
-      1. Bracket / brace / bare ID anywhere in the path:
-           `tvdb…` → tv;  `tmdb…` or `tt…` → movie.
-         Recognised forms (Sonarr/Radarr/Plex/Jellyfin/manual tagging):
-           [tvdb-N], [tvdbid-N], {tvdb-N}, tvdb-N, tvdbid-N
-           [tmdb-N], [tmdbid-N], {tmdb-N}, tmdb-N, tmdbid-N
-           [ttN], {ttN}, ttNNNNNNN (≥7 digits, surrounded by separators)
-         The full path is searched, so file-level tagging works
-         (`/media/Movies/Foo.tt1234567.mkv`) just as well as folder-
-         level. v0.3.85+.
-      2. Containing media directory's user-set label — "Movies" → movie,
-         "TV Shows" → tv, "Other" / unset → other.
-      3. Default to 'other'.
-    """
-    fp_lower = fp.lower()
-    if _RE_TVDB_IN_PATH.search(fp_lower):
-        return "tv"
-    if _RE_TMDB_IN_PATH.search(fp_lower) or _RE_IMDB_IN_PATH.search(fp_lower):
-        return "movie"
-    if dir_label_index:
-        for prefix, label in dir_label_index:
-            if fp.startswith(prefix):
-                if label in ("movies", "movie"):
-                    return "movie"
-                if label in ("tv shows", "tv show", "tv"):
-                    return "tv"
-                return "other"
-    return "other"
 
 
 # F7 (v0.10.0): every completed conversion (45k+ jobs on a big install) was
@@ -2274,8 +1925,8 @@ async def _build_enrichment_context(db) -> dict:
     import bisect
     from datetime import datetime, timedelta, timezone
 
-    LOW_BITRATE_THRESHOLD = 3_000_000  # 3 Mbps
-    HIGH_BITRATE_THRESHOLD = 15_000_000  # 15 Mbps
+    LOW_BITRATE_THRESHOLD = LOW_BITRATE
+    HIGH_BITRATE_THRESHOLD = HIGH_BITRATE
 
     # Ignored paths/folders
     ignored_paths: set[str] = set()
@@ -2363,57 +2014,6 @@ async def _build_enrichment_context(db) -> dict:
     }
 
 
-def _check_ignored(fp: str, ctx: dict) -> bool:
-    """Check if a file path is ignored (manual, folder-level, or rule-based)."""
-    import bisect
-    if fp in ctx["ignored_paths"]:
-        return True
-    ifs = ctx["ignored_folders_sorted"]
-    if ifs:
-        idx = bisect.bisect_right(ifs, fp) - 1
-        if idx >= 0 and fp.startswith(ifs[idx]):
-            return True
-    # Check rule exemption before skip prefixes
-    is_exempt = fp in ctx["rule_exempt_paths"]
-    if not is_exempt:
-        parent = fp.rsplit("/", 1)[0] + "/" if "/" in fp else ""
-        while parent and not is_exempt:
-            if parent in ctx["rule_exempt_paths"]:
-                is_exempt = True
-            elif "/" in parent.rstrip("/"):
-                parent = parent.rstrip("/").rsplit("/", 1)[0] + "/"
-            else:
-                break
-    if not is_exempt:
-        sps = ctx["skip_prefixes_sorted"]
-        if sps:
-            idx = bisect.bisect_right(sps, fp) - 1
-            if idx >= 0 and fp.startswith(sps[idx]):
-                return True
-    return False
-
-
-def _get_watch_status(fp: str, ctx: dict) -> str | None:
-    """Get Plex watch status via prefix matching."""
-    import bisect
-    ws = ctx["watched_sorted"]
-    if ws:
-        idx = bisect.bisect_right(ws, fp) - 1
-        if idx >= 0 and fp.startswith(ws[idx]):
-            return "watched"
-    us = ctx["unwatched_sorted"]
-    if us:
-        idx = bisect.bisect_right(us, fp) - 1
-        if idx >= 0 and fp.startswith(us[idx]):
-            return "unwatched"
-    wl = ctx.get("watchlist_sorted", [])
-    if wl:
-        idx = bisect.bisect_right(wl, fp) - 1
-        if idx >= 0 and fp.startswith(wl[idx]):
-            return "watchlist"
-    return None
-
-
 def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
     """Like _enrich_row but skips expensive json.loads on audio/subtitle track JSON.
 
@@ -2425,9 +2025,8 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
     dur = row["duration"] or 0
     disc_type = row.get("disc_type")
 
-    is_ignored = _check_ignored(fp, ctx)
-    bitrate = (sz * 8 / dur) if dur > 0 else 0
-    low_bitrate = bool(row.get("needs_conversion") and dur > 0 and bitrate < ctx["LOW_BITRATE_THRESHOLD"])
+    is_ignored = row_ignored(row, ctx)
+    low_bitrate = row_low_bitrate(row)
 
     detected_at = row.get("new_detected_at")
 
@@ -2452,10 +2051,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "ignored": is_ignored,
         "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
         "queued": fp in ctx["queued_paths"],
-        "converted": fp in ctx["converted_paths"] or (
-            not row.get("needs_conversion") and
-            (fp.rsplit("/", 1)[0] + "/" if "/" in fp else "") in ctx["converted_folders"]
-        ),
+        "converted": row_converted(row, ctx),
         "low_bitrate": low_bitrate,
         "duration": dur,
         "file_mtime": row.get("file_mtime"),
@@ -2464,7 +2060,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "video_height": row.get("video_height", 0),
         "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
-        "plex_watch_status": _get_watch_status(fp, ctx),
+        "plex_watch_status": row_watch_status(row, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
         "duplicate_group": row.get("duplicate_group"),
         "vmaf_score": row.get("vmaf_score"),
@@ -2474,7 +2070,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "health_checked_at": row.get("health_checked_at"),
         # Type filter (movie/tv/other) — combines filename-bracket detection
         # with the containing media-dir's user-set label. v0.3.76+.
-        "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
+        "dir_type": row_type(row, ctx),
         # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
         # to render disc badges and skip per-track UI that doesn't apply.
         "disc_type": disc_type,
@@ -2531,9 +2127,8 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
     dur = row["duration"] or 0
     disc_type = row.get("disc_type")
 
-    is_ignored = _check_ignored(fp, ctx)
-    bitrate = (sz * 8 / dur) if dur > 0 else 0
-    low_bitrate = bool(row.get("needs_conversion") and dur > 0 and bitrate < ctx["LOW_BITRATE_THRESHOLD"])
+    is_ignored = row_ignored(row, ctx)
+    low_bitrate = row_low_bitrate(row)
 
     detected_at = row.get("new_detected_at")
 
@@ -2558,10 +2153,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "ignored": is_ignored,
         "is_new": bool(detected_at and detected_at > ctx["cutoff_24h"]),
         "queued": fp in ctx["queued_paths"],
-        "converted": fp in ctx["converted_paths"] or (
-            not row.get("needs_conversion") and
-            (fp.rsplit("/", 1)[0] + "/" if "/" in fp else "") in ctx["converted_folders"]
-        ),
+        "converted": row_converted(row, ctx),
         "low_bitrate": low_bitrate,
         "duration": dur,
         "file_mtime": row.get("file_mtime"),
@@ -2570,7 +2162,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "video_height": row.get("video_height", 0),
         "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
-        "plex_watch_status": _get_watch_status(fp, ctx),
+        "plex_watch_status": row_watch_status(row, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
         "duplicate_group": row.get("duplicate_group"),
         "vmaf_score": row.get("vmaf_score"),
@@ -2578,18 +2170,13 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "subtitle_tracks": json.loads(row.get("subtitle_tracks_json") or "[]"),
         "language_source": row.get("language_source", "heuristic"),
         "is_dubbed_flag": row.get("is_dubbed_flag", 0),
-        # Health-check status. Without these fields, the "corrupt" filter
-        # in _matches_single_filter (which looks at health_status == 'corrupt')
-        # silently missed every file flagged corrupt by a health check rather
-        # than by a probe failure. _enrich_row_minimal had these fields from
-        # the start; _enrich_row simply forgot them. Mirrored here so the
-        # two enrichers return compatible dicts.
+        # Health-check status (the badge; the "corrupt" filter reads the row).
         "health_status": row.get("health_status"),
         "health_check_type": row.get("health_check_type"),
         "health_checked_at": row.get("health_checked_at"),
         # Type filter (movie/tv/other) — combines filename-bracket detection
         # with the containing media-dir's user-set label. v0.3.76+.
-        "dir_type": _classify_type_for_path(fp, ctx.get("dir_label_index")),
+        "dir_type": row_type(row, ctx),
         # v0.6.0: disc marker ('dvd' / 'bdmv' / None). Frontend uses this
         # to render disc badges and skip per-track UI that doesn't apply.
         "disc_type": disc_type,
@@ -2625,287 +2212,13 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
 # here by three `NOT LIKE '%...%'` tests on every row of every list query
 # (a quarter of a full listing's time); the scan writer now never stores
 # them (database.is_temp_path) and older rows are removed once at startup.
-_SCAN_WHERE = "removed_from_list = 0"
+_SCAN_WHERE = LISTED
 # The same, for queries scoped to folders by a file_path range (F6). The
 # unary "+" keeps SQLite off idx_scan_results_removed: without ANALYZE stats
 # it prefers that equality to the range, and nearly every row matches it, so
 # a folder expand read the whole table. Not for unscoped queries — it also
 # rules out the partial indexes (WHERE removed_from_list = 0).
 _SCAN_WHERE_IN_FOLDERS = "+" + _SCAN_WHERE
-
-
-def _matches_filter(enriched: dict, filter_name: str) -> bool:
-    """Check if an enriched file matches a given filter (supports comma-separated AND logic)."""
-    if filter_name == "all":
-        return True
-    # Multi-filter: comma-separated = AND logic (file must match ALL filters)
-    if "," in filter_name:
-        return all(_matches_single_filter(enriched, f.strip()) for f in filter_name.split(","))
-    return _matches_single_filter(enriched, filter_name)
-
-
-# The resolution filters and counts use the one classifier in
-# backend/resolution.py (v0.10.0, SC-22): width decides once a full scan has
-# stored it; until then the height plus the path's resolution tag (the
-# v0.9.116/117 4K rules), so scope 4K and 1920x800 films land in the right tier.
-_RES_FILTERS = ("res_4k", "res_1080p", "res_720p", "res_sd")
-
-
-def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
-    """Check if an enriched file matches a single filter."""
-    if filter_name == "all":
-        return True
-    f = enriched
-    vc = (f.get("video_codec") or "").lower()
-    vh = f.get("video_height", 0) or 0
-    HIGH_BR = 15_000_000
-    if filter_name == "new":
-        return f["is_new"]
-    if filter_name == "needs_conversion":
-        return f["needs_conversion"] and not f["low_bitrate"] and not f["ignored"]
-    if filter_name == "high_bitrate":
-        dur = f.get("duration", 0) or 0
-        return f["needs_conversion"] and not f["ignored"] and dur > 0 and (f["file_size"] * 8 / dur) > HIGH_BR
-    if filter_name == "low_bitrate":
-        return f["low_bitrate"] and not f["ignored"]
-    if filter_name == "audio_cleanup":
-        # v0.9.31: ignored titles included — ignore means "don't convert", not
-        # "don't tidy tracks". Only the conversion filters hide ignored.
-        return bool(f["has_removable_tracks"] or f.get("has_und_tracks"))
-    if filter_name == "unknown_language":
-        # v0.9.26: ignored titles ARE included here — an ignore rule means
-        # "don't convert", not "don't tell me the audio is untagged".
-        return bool(f.get("has_und_tracks"))
-    if filter_name == "dubbed":
-        return bool(enriched.get("is_dubbed_flag"))
-    if filter_name == "not_api_matched":
-        return (enriched.get("language_source") or "") not in ("api", "manual", "tmdb-manual")
-    if filter_name == "disc_iso":
-        return bool(enriched.get("disc_type"))
-    if filter_name == "sub_cleanup":
-        # v0.9.31: ignored titles included (see audio_cleanup).
-        return bool(f["has_removable_subs"])
-    if filter_name == "ignored":
-        return f["ignored"]
-    if filter_name == "converted":
-        return f["converted"]
-    if filter_name == "queued":
-        return f["queued"]
-    if filter_name == "x264":
-        return "264" in vc or "avc" in vc
-    if filter_name == "x265":
-        return "265" in vc or "hevc" in vc
-    if filter_name == "av1":
-        return "av1" in vc
-    if filter_name == "misc_codec":
-        return not ("264" in vc or "avc" in vc or "265" in vc or "hevc" in vc or "av1" in vc)
-    if filter_name == "lossless_audio":
-        return f["has_lossless_audio"]
-    if filter_name == "lossy_audio":
-        return not f["has_lossless_audio"]
-    if filter_name == "large_files":
-        return f["file_size"] > 10 * 1024**3
-    if filter_name == "duplicates":
-        return (f.get("duplicate_count") or 0) > 1
-    if filter_name == "corrupt":
-        return f.get("probe_status", "ok") != "ok" or f.get("health_status") == "corrupt"
-    if filter_name == "recent":
-        mt = f.get("file_mtime")
-        if mt:
-            import time
-            return (time.time() - mt) < 86400
-        return False
-    if filter_name in _RES_FILTERS:
-        return resolution_tier(f.get("video_width"), vh, f.get("file_path", "")) == filter_name[4:]
-    if filter_name == "plex_watched":
-        return f.get("plex_watch_status") == "watched"
-    if filter_name == "plex_unwatched":
-        return f.get("plex_watch_status") == "unwatched"
-    if filter_name == "plex_watchlist":
-        return f.get("plex_watch_status") == "watchlist"
-    # VMAF quality filters
-    vs = f.get("vmaf_score")
-    if filter_name == "vmaf_excellent":
-        return vs is not None and vs >= 93
-    if filter_name == "vmaf_good":
-        return vs is not None and 87 <= vs < 93
-    if filter_name == "vmaf_poor":
-        return vs is not None and vs < 87
-    # Size filters
-    file_size = f.get("file_size") or 0
-    if filter_name == "size_small":
-        return file_size < 5 * (1024 ** 3)
-    if filter_name == "size_medium":
-        return 5 * (1024 ** 3) <= file_size <= 10 * (1024 ** 3)
-    if filter_name == "size_large":
-        return file_size > 10 * (1024 ** 3)
-    # Source filters (match against file path)
-    fp_lower = f.get("file_path", "").lower()
-    if filter_name == "src_remux":
-        return "remux" in fp_lower
-    if filter_name == "src_bluray":
-        import re as _re
-        return bool(_re.search(r"blu[\-\s]?ray|bdrip|bdmv", fp_lower)) and "remux" not in fp_lower
-    if filter_name == "src_webdl":
-        return "web-dl" in fp_lower or "webdl" in fp_lower or "webrip" in fp_lower
-    if filter_name == "src_hdtv":
-        return "hdtv" in fp_lower
-    if filter_name == "src_dvd":
-        return "dvd" in fp_lower
-    # Type filters — combine filename-bracket detection (Sonarr/Radarr-
-    # style) with the containing media-dir's user-set label. The combined
-    # classification is precomputed in _enrich_row as `dir_type` so we
-    # don't repeat the prefix match per filter check. v0.3.76+.
-    dt = (f.get("dir_type") or "other").lower()
-    if filter_name == "type_movie":
-        return dt == "movie"
-    if filter_name == "type_tv":
-        return dt == "tv"
-    if filter_name == "type_other":
-        return dt == "other"
-    return True
-
-
-# Filters that can be pushed into SQL WHERE clauses for the tree endpoint.
-# These avoid loading+enriching every row just to discard most of them.
-def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
-    """Build a SQL WHERE fragment for a single filter token.
-
-    Returns (sql_fragment, params, python_filters_still_needed).
-    Any filter not pushed into SQL is added to python_filters_still_needed
-    and will be applied in Python after the query runs.
-    """
-    sql = ""
-    params: list = []
-    needs_python: set = set()
-
-    f = filter_name.strip()
-    if f in ("all", ""):
-        return "", [], set()
-
-    # Simple single-column filters (all have supporting indexes)
-    if f == "converted":
-        # Handled specially in the endpoint — requires folder set from jobs table
-        needs_python = {f}
-        return "", [], needs_python
-    elif f == "x264":
-        sql = "AND (LOWER(video_codec) LIKE '%264%' OR LOWER(video_codec) LIKE '%avc%')"
-    elif f == "x265":
-        sql = "AND (LOWER(video_codec) LIKE '%265%' OR LOWER(video_codec) LIKE '%hevc%')"
-    elif f == "av1":
-        sql = "AND LOWER(video_codec) LIKE '%av1%'"
-    elif f == "misc_codec":
-        sql = ("AND LOWER(video_codec) NOT LIKE '%264%' "
-               "AND LOWER(video_codec) NOT LIKE '%avc%' "
-               "AND LOWER(video_codec) NOT LIKE '%265%' "
-               "AND LOWER(video_codec) NOT LIKE '%hevc%' "
-               "AND LOWER(video_codec) NOT LIKE '%av1%'")
-    elif f in _RES_FILTERS:
-        # Same classifier as the counts and the Python filter.
-        sql = f"AND {sql_resolution_rank()} = {RANKS[f[4:]]}"
-    elif f == "large_files":
-        sql = "AND file_size > ?"
-        params.append(10 * 1024 ** 3)
-    elif f == "size_small":
-        sql = "AND file_size < ?"
-        params.append(5 * 1024 ** 3)
-    elif f == "size_medium":
-        sql = "AND file_size BETWEEN ? AND ?"
-        params.extend([5 * 1024 ** 3, 10 * 1024 ** 3])
-    elif f == "size_large":
-        sql = "AND file_size > ?"
-        params.append(10 * 1024 ** 3)
-    elif f == "duplicates":
-        sql = "AND COALESCE(dup_count, 0) > 1"
-    elif f == "lossless_audio":
-        sql = "AND COALESCE(has_lossless_audio_flag, 0) = 1"
-    elif f == "lossy_audio":
-        sql = "AND COALESCE(has_lossless_audio_flag, 0) = 0"
-    elif f == "audio_cleanup":
-        sql = "AND (COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"
-        needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31
-    elif f == "unknown_language":
-        sql = "AND COALESCE(has_und_tracks_flag, 0) = 1"
-        needs_python = {f}  # ignored NOT excluded — v0.9.26
-    elif f == "dubbed":
-        sql = "AND COALESCE(is_dubbed_flag, 0) = 1"
-    elif f == "not_api_matched":
-        sql = "AND (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))"
-    elif f == "disc_iso":
-        sql = "AND disc_type IS NOT NULL"
-    elif f == "sub_cleanup":
-        sql = "AND COALESCE(has_removable_subs_flag, 0) = 1"
-        needs_python = {f}  # ignored NOT excluded (cleanup, not conversion) — v0.9.31
-    elif f == "corrupt":
-        sql = "AND (COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt')"
-    elif f == "recent":
-        # file_mtime is a unix timestamp (seconds). 24h = 86400s.
-        import time
-        sql = "AND file_mtime > ?"
-        params.append(time.time() - 86400)
-    elif f == "vmaf_excellent":
-        sql = "AND vmaf_score IS NOT NULL AND vmaf_score >= 93"
-    elif f == "vmaf_good":
-        sql = "AND vmaf_score IS NOT NULL AND vmaf_score >= 87 AND vmaf_score < 93"
-    elif f == "vmaf_poor":
-        sql = "AND vmaf_score IS NOT NULL AND vmaf_score < 87"
-    elif f == "needs_conversion":
-        # "needs_conversion AND NOT low_bitrate AND NOT ignored" — SQL filters the base,
-        # Python removes low-bitrate + ignored exceptions
-        sql = "AND needs_conversion != 0"
-        needs_python = {f}
-    elif f == "low_bitrate":
-        # Requires duration + bitrate calc — SQL can approximate
-        sql = "AND duration > 0 AND needs_conversion != 0"
-        needs_python = {f}
-    elif f == "high_bitrate":
-        sql = "AND duration > 0 AND needs_conversion != 0"
-        needs_python = {f}
-
-    # Source filters (filename-based, case-insensitive LIKE)
-    elif f == "src_remux":
-        sql = "AND LOWER(file_path) LIKE '%remux%'"
-    elif f == "src_bluray":
-        sql = ("AND (LOWER(file_path) LIKE '%bluray%' "
-               "OR LOWER(file_path) LIKE '%blu-ray%' "
-               "OR LOWER(file_path) LIKE '%blu.ray%' "
-               "OR LOWER(file_path) LIKE '%bdrip%' "
-               "OR LOWER(file_path) LIKE '%bdmv%') "
-               "AND LOWER(file_path) NOT LIKE '%remux%'")
-    elif f == "src_webdl":
-        sql = ("AND (LOWER(file_path) LIKE '%web-dl%' "
-               "OR LOWER(file_path) LIKE '%webdl%' "
-               "OR LOWER(file_path) LIKE '%webrip%')")
-    elif f == "src_hdtv":
-        sql = "AND LOWER(file_path) LIKE '%hdtv%'"
-    elif f == "src_dvd":
-        sql = "AND LOWER(file_path) LIKE '%dvd%'"
-
-    # Type filters now fall through to Python because the classification
-    # combines filename brackets AND the containing media-dir's label
-    # (loaded into ctx.dir_label_index). Pre-v0.3.76 these were SQL LIKE
-    # patterns — `LIKE '%[tt%'` etc. — but that ignored the user's dir
-    # labels, so users without bracketed folder names saw every file
-    # classified as `other`. The Python path uses the precomputed
-    # `dir_type` field on each enriched row, so this is per-row constant
-    # time. v0.3.76+.
-
-    else:
-        # Filters that need Python enrichment (is_new, ignored, queued, plex_*,
-        # type_movie/tv/other since v0.3.76)
-        needs_python = {f}
-
-    return sql, params, needs_python
-
-
-# Filters that require the expensive enrichment context (ignored/queued/plex tables)
-_ENRICHMENT_FILTERS = {
-    "new", "ignored", "queued", "plex_watched", "plex_unwatched", "plex_watchlist",
-    "needs_conversion", "audio_cleanup", "sub_cleanup", "low_bitrate", "high_bitrate",
-    # Type filters need the dir_label_index from ctx to classify files by
-    # their containing media-dir's label (Movies/TV Shows/Other). v0.3.76+.
-    "type_movie", "type_tv", "type_other",
-}
 
 
 async def _get_converted_folders(db) -> set[str]:
@@ -2919,50 +2232,21 @@ async def _get_converted_folders(db) -> set[str]:
 async def get_scan_tree(filter: str = "all"):
     """Return folder hierarchy with aggregated counts/sizes.
 
-    Fast path: pushes simple filters (codec, resolution, size, converted, etc.) into
-    SQL, skips JSON parsing, and only builds the enrichment context when a filter
-    actually needs it (ignored/queued/plex_*).
+    Filters SQL can settle run in the query; the enrichment context is only
+    built when a filter needs it (ignored, queued, Plex, type...).
     """
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        # Build SQL WHERE + figure out which filters still need Python
-        tokens = [t.strip() for t in filter.split(",") if t.strip() and t.strip() != "all"]
-        sql_extras = []
-        sql_params: list = []
-        python_filters: set = set()
-        for tok in tokens:
-            frag, params, py = _build_tree_sql_filter(tok)
-            if frag:
-                sql_extras.append(frag)
-                sql_params.extend(params)
-            python_filters |= py
-
-        need_ctx = bool(python_filters & _ENRICHMENT_FILTERS)
-        ctx = await _build_enrichment_context(db) if need_ctx else None
-
-        # Special handling for 'converted' — requires folder set from jobs table.
-        converted_folders: set[str] | None = None
-        if "converted" in python_filters:
-            converted_folders = await _get_converted_folders(db)
-            # Narrow in SQL: only rows where converted=1 OR the file's already in target format.
-            # The Python loop below does the folder membership check for the needs_conversion=0 case.
-            sql_extras.append("AND (converted = 1 OR needs_conversion = 0)")
-            # Keep 'converted' in python_filters so the loop applies the folder check
-
-        # Minimal column set — tree aggregation only needs path/size/mtime,
-        # plus any columns still referenced by remaining python_filters.
-        cols = """id, file_path, file_size, file_mtime, video_height, video_width, video_codec,
-                  needs_conversion, converted, duration,
-                  COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
-                  COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
-                  COALESCE(has_removable_subs_flag, 0) as has_removable_subs,
-                  COALESCE(has_lossless_audio_flag, 0) as has_lossless_audio,
-                  new_detected_at"""
-        where_extra = (" " + " ".join(sql_extras)) if sql_extras else ""
-
-        query = f"SELECT {cols} FROM scan_results WHERE {_SCAN_WHERE}{where_extra}"
-        async with db.execute(query, sql_params) as cur:
+        expr = parse_filter(filter)
+        ctx = await _build_enrichment_context(db) if expr.needs_ctx else None
+        # The folder sums need path, size and mtime; the rest is what the
+        # Python filters read.
+        async with db.execute(
+            f"SELECT file_path, file_size, file_mtime, duration, needs_conversion, converted{expr.select_sql} "
+            f"FROM scan_results WHERE {_SCAN_WHERE}{expr.where_sql}",
+            [*expr.select_params, *expr.where_params],
+        ) as cur:
             rows = await cur.fetchall()
 
         # Files directly at a media root (no title folder) are grouped under
@@ -2972,96 +2256,14 @@ async def get_scan_tree(filter: str = "all"):
         async with db.execute("SELECT path FROM media_dirs") as cur:
             media_roots = {r["path"].rstrip("/") for r in await cur.fetchall()}
 
-        # Group by parent folder, applying any remaining Python filters
+        # Group by parent folder, applying the filters SQL couldn't
         folders: dict[str, dict] = {}
-        LOW_BR = ctx["LOW_BITRATE_THRESHOLD"] if ctx else 0
-        cutoff_24h = ctx["cutoff_24h"] if ctx else ""
-        HIGH_BR = 15_000_000
-
         for row in rows:
             r = dict(row)
+            if expr.needs_ctx and not expr.post_filter(r, ctx):
+                continue
             fp = r["file_path"]
             sz = r["file_size"] or 0
-            dur = r["duration"] or 0
-
-            # Python-side filter checks (only for tokens SQL couldn't handle)
-            if python_filters:
-                bitrate = (sz * 8 / dur) if dur > 0 else 0
-                low_bitrate = bool(r.get("needs_conversion") and dur > 0 and bitrate < LOW_BR)
-                is_ignored = _check_ignored(fp, ctx) if ctx else False
-                skip = False
-                for pf in python_filters:
-                    if pf == "converted":
-                        # Shrinkerr converted it directly, OR it's already in target format
-                        # AND lives in a folder where at least one file was converted
-                        if r.get("converted"):
-                            continue
-                        parent = fp.rsplit("/", 1)[0] + "/" if "/" in fp else ""
-                        if not (not r.get("needs_conversion") and converted_folders and parent in converted_folders):
-                            skip = True; break
-                        continue
-                    if pf == "new":
-                        detected_at = r.get("new_detected_at")
-                        if not (detected_at and detected_at > cutoff_24h):
-                            skip = True; break
-                    elif pf == "ignored":
-                        if not is_ignored:
-                            skip = True; break
-                    elif pf == "queued":
-                        if fp not in ctx["queued_paths"]:
-                            skip = True; break
-                    elif pf == "needs_conversion":
-                        if not (r.get("needs_conversion") and not low_bitrate and not is_ignored):
-                            skip = True; break
-                    elif pf == "low_bitrate":
-                        if not (low_bitrate and not is_ignored):
-                            skip = True; break
-                    elif pf == "high_bitrate":
-                        if not (r.get("needs_conversion") and not is_ignored and bitrate > HIGH_BR):
-                            skip = True; break
-                    elif pf == "audio_cleanup":
-                        # Mirror the SQL fragment + _matches_single_filter:
-                        # audio_cleanup also covers und tracks, so an und-only
-                        # file (no removable tracks) must still pass here.
-                        # v0.9.31: ignored titles ARE included (cleanup, not conversion).
-                        if not (r.get("has_removable_tracks") or r.get("has_und_tracks")):
-                            skip = True; break
-                    elif pf == "unknown_language":
-                        # v0.9.26: ignored titles ARE included (see _matches_single_filter).
-                        if not r.get("has_und_tracks"):
-                            skip = True; break
-                    elif pf == "sub_cleanup":
-                        # v0.9.31: ignored titles ARE included (see audio_cleanup).
-                        if not r.get("has_removable_subs"):
-                            skip = True; break
-                    elif pf == "res_4k":
-                        # v0.9.116: res_4k is now fully expressed in SQL (see
-                        # _build_tree_sql_filter); kept in sync for safety.
-                        if resolution_tier(r.get("video_width"), r.get("video_height"), fp) != "4k":
-                            skip = True; break
-                    elif pf in ("plex_watched", "plex_unwatched", "plex_watchlist"):
-                        want = pf.split("_", 1)[1]
-                        status = _get_watch_status(fp, ctx) if ctx else None
-                        if status != want:
-                            skip = True; break
-                    elif pf in ("type_movie", "type_tv", "type_other"):
-                        # The tree endpoint maintains its own hand-rolled
-                        # per-filter switch for performance — bypassing
-                        # _matches_filter. v0.3.76 added type_* to
-                        # _matches_filter and removed them from the SQL
-                        # push-down, but forgot to wire them into THIS
-                        # loop. Result: type_tv applied to a tree fetch
-                        # silently passed every row through (no elif
-                        # matched, skip=False stayed). The count and the
-                        # /scan/results-driven badges were correct, but
-                        # the tree (poster grid + file tree) ignored the
-                        # filter entirely. v0.3.79 wires them in.
-                        dt = _classify_type_for_path(fp, ctx["dir_label_index"]) if ctx else "other"
-                        want = pf.split("_", 1)[1]  # 'movie', 'tv', 'other'
-                        if dt != want:
-                            skip = True; break
-                if skip:
-                    continue
 
             parent = fp.rsplit("/", 1)[0] if "/" in fp else ""
             if parent not in folders:
@@ -3109,22 +2311,17 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
+        expr = parse_filter(filter)
         under_sql, under_params = prefix_clause([prefix.rstrip("/") + "/"])
         async with db.execute(
-            f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
+            f"""SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results
                 WHERE {_SCAN_WHERE_IN_FOLDERS}
-                  AND (file_path = ? OR {under_sql})
+                  AND (file_path = ? OR {under_sql}){expr.where_sql}
                 ORDER BY file_path ASC""",
-            (prefix, *under_params),
+            (*expr.select_params, prefix, *under_params, *expr.where_params),
         ) as cur:
-            rows = await cur.fetchall()
-
-        results = []
-        for row in rows:
-            enriched = _enrich_row(dict(row), ctx)
-            if _matches_filter(enriched, filter):
-                results.append(enriched)
-        return results
+            rows = [dict(r) for r in await cur.fetchall()]
+        return [_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx)]
     finally:
         await db.close()
 
@@ -3149,6 +2346,7 @@ async def get_scan_files_by_paths(body: _FilesByPathsBody):
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
+        expr = parse_filter(body.filter)
 
         # Chunk paths into batches of 500 to stay within SQLite variable limits
         results = []
@@ -3157,15 +2355,12 @@ async def get_scan_files_by_paths(body: _FilesByPathsBody):
             chunk = paths[i:i + 500]
             placeholders = ",".join("?" * len(chunk))
             async with db.execute(
-                f"SELECT {_SCAN_SELECT_COLS} FROM scan_results "
-                f"WHERE {_SCAN_WHERE} AND file_path IN ({placeholders})",
-                chunk,
+                f"SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results "
+                f"WHERE {_SCAN_WHERE} AND file_path IN ({placeholders}){expr.where_sql}",
+                (*expr.select_params, *chunk, *expr.where_params),
             ) as cur:
-                rows = await cur.fetchall()
-            for row in rows:
-                enriched = _enrich_row(dict(row), ctx)
-                if _matches_filter(enriched, body.filter):
-                    results.append(enriched)
+                rows = [dict(r) for r in await cur.fetchall()]
+            results.extend(_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx))
         return results
     finally:
         await db.close()
@@ -3182,6 +2377,7 @@ async def get_scan_files(folder: str, filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
+        expr = parse_filter(filter)
 
         # Direct children of the folder OR an exact file match for stray-file
         # pseudo-folders that are keyed by the file path itself.
@@ -3190,24 +2386,50 @@ async def get_scan_files(folder: str, filter: str = "all"):
         # Direct children: under the folder (an index range, F6) with no
         # further "/" after the folder's own.
         async with db.execute(
-            f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
+            f"""SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results
                 WHERE {_SCAN_WHERE_IN_FOLDERS}
                   AND (
                     file_path = ?
                     OR ({under_sql} AND instr(substr(file_path, ?), '/') = 0)
-                  )
+                  ){expr.where_sql}
                 ORDER BY file_path ASC""",
-            (folder, *under_params, len(folder_prefix) + 1),
+            (*expr.select_params, folder, *under_params, len(folder_prefix) + 1, *expr.where_params),
         ) as cur:
-            rows = await cur.fetchall()
+            rows = [dict(r) for r in await cur.fetchall()]
+        return [_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx)]
+    finally:
+        await db.close()
 
-        results = []
-        for row in rows:
-            enriched = _enrich_row(dict(row), ctx)
-            if _matches_filter(enriched, filter):
-                results.append(enriched)
 
-        return results
+async def _paths_matching(filter: str, folders: list[str] | None = None) -> list[str]:
+    """Paths in the Scanner list matching `filter`: under any of `folders`
+    (paths ending in "/"), or the whole list when None. For Add to Queue,
+    estimates and health checks on selected folders or "select all"."""
+    expr = parse_filter(filter)
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        ctx = await _build_enrichment_context(db) if expr.needs_ctx else None
+        if folders is None:
+            scopes: list = [(_SCAN_WHERE, [])]
+        else:
+            # Chunked: 1000+ folders in one query exceeded SQLite's
+            # expression-depth limit and the action did nothing (v0.5.23).
+            scopes = []
+            for i in range(0, len(folders), 800):
+                under_sql, under_params = prefix_clause(folders[i:i + 800])  # index ranges (F6)
+                scopes.append((f"{_SCAN_WHERE_IN_FOLDERS} AND ({under_sql})", under_params))
+        paths: list[str] = []
+        for where, params in scopes:
+            async with db.execute(
+                f"SELECT {PY_COLUMNS}{expr.select_sql} FROM scan_results WHERE {where}{expr.where_sql}",
+                (*expr.select_params, *params, *expr.where_params),
+            ) as cur:
+                for row in await cur.fetchall():
+                    r = dict(row)
+                    if expr.post_filter(r, ctx):
+                        paths.append(r["file_path"])
+        return paths
     finally:
         await db.close()
 

@@ -119,7 +119,11 @@
       "language": "Language:",
       "type": "Type:",
       "source": "Source:"
-    }
+    },
+    "notLabel": "not {{label}}",
+    "excluded": "(excluded)",
+    "excludeHint": "Alt-click to exclude",
+    "hint": "Pills in the same group match any of them; different groups must all match. Alt-click a pill to exclude it."
   },
   "stats": {
     "filesToConvert": "Files to convert",

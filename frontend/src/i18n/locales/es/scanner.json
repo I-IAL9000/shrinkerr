@@ -124,7 +124,11 @@
       "language": "Idioma:",
       "type": "Tipo:",
       "source": "Origen:"
-    }
+    },
+    "notLabel": "sin {{label}}",
+    "excluded": "(excluido)",
+    "excludeHint": "Alt+clic para excluir",
+    "hint": "Los filtros de un mismo grupo coinciden con cualquiera; los de grupos distintos deben cumplirse todos. Alt+clic en un filtro para excluirlo."
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",
