@@ -1,6 +1,9 @@
+import asyncio
 import json
+import os
 import re
 import shutil
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -402,6 +405,75 @@ async def get_stats_timeline(days: int = Query(default=30, ge=1, le=365)):
         await db.close()
 
 
+# F4 (v0.10.0): the dashboard (polled every 10 s) ran os.stat + disk_usage on
+# every media folder ON THE EVENT LOOP. Media folders are usually NAS mounts;
+# one that stalls froze the whole app — requests, live progress and the
+# conversion's database writes ("database is locked"). The work now runs in a
+# thread, one lookup at a time, cached for 30 s; if it takes longer than 5 s
+# the dashboard answers with the last values instead of waiting.
+_DISK_CACHE_TTL = 30.0
+_DISK_WAIT = 5.0
+_disk_cache: dict = {"at": 0.0, "dirs": None, "info": []}
+_disk_task: "asyncio.Task | None" = None
+
+
+def _disk_usage_by_volume(paths: list[str]) -> list[dict]:
+    """Free / used space per volume (one entry per device). Blocking: run in
+    a thread."""
+    seen_devices: dict[int, dict] = {}  # device_id -> info
+    for path in paths:
+        try:
+            st = os.stat(path)
+            dev = st.st_dev
+            if dev in seen_devices:
+                continue  # Same mount point, skip
+            usage = shutil.disk_usage(path)
+            # Volume name picks the physical mount/disk segment so the
+            # breakdown tells the user *which disk is low on space*.
+            # Rules (v0.3.109+):
+            #   /media/<X>/...  → <X>     (most users mount per-disk
+            #                              under /media, so the 2nd
+            #                              segment is the disk name)
+            #   anything else  → first non-empty segment of the path
+            #
+            # User-set labels are intentionally NOT used here —
+            # multiple disks often share a label like "Movies" (one
+            # per drive), which masks which physical mount the row
+            # represents. Labels still appear elsewhere in the UI.
+            parts = [p for p in path.rstrip("/").split("/") if p]
+            if len(parts) >= 2 and parts[0].lower() == "media":
+                volume_name = parts[1]
+            elif parts:
+                volume_name = parts[0]
+            else:
+                volume_name = path or "?"
+            seen_devices[dev] = {
+                "path": path,
+                "label": volume_name,
+                "total": usage.total,
+                "used": usage.used,
+                "free": usage.free,
+            }
+        except OSError:
+            pass
+    return list(seen_devices.values())
+
+
+async def _disk_info(paths: list[str]) -> list[dict]:
+    global _disk_task
+    now = time.monotonic()
+    if _disk_cache["dirs"] == paths and now - _disk_cache["at"] < _DISK_CACHE_TTL:
+        return _disk_cache["info"]
+    if _disk_task is None or _disk_task.done():
+        _disk_task = asyncio.ensure_future(asyncio.to_thread(_disk_usage_by_volume, list(paths)))
+    try:
+        info = await asyncio.wait_for(asyncio.shield(_disk_task), timeout=_DISK_WAIT)
+    except asyncio.TimeoutError:
+        return _disk_cache["info"] if _disk_cache["dirs"] == paths else []
+    _disk_cache.update(at=time.monotonic(), dirs=list(paths), info=info)
+    return info
+
+
 @router.get("/dashboard")
 async def get_dashboard():
     """Return live dashboard data."""
@@ -468,47 +540,9 @@ async def get_dashboard():
         today_stats["combined_fps"] = round(combined_fps, 0)
 
         # Disk space — deduplicate by mount point (show parent volume, not each media dir)
-        disk_info = []
-        seen_devices: dict[int, dict] = {}  # device_id -> info
         async with db.execute("SELECT path, label FROM media_dirs") as cur:
             dir_rows = await cur.fetchall()
-        for d in dir_rows:
-            try:
-                import os
-                st = os.stat(d["path"])
-                dev = st.st_dev
-                if dev in seen_devices:
-                    continue  # Same mount point, skip
-                usage = shutil.disk_usage(d["path"])
-                # Volume name picks the physical mount/disk segment so the
-                # breakdown tells the user *which disk is low on space*.
-                # Rules (v0.3.109+):
-                #   /media/<X>/...  → <X>     (most users mount per-disk
-                #                              under /media, so the 2nd
-                #                              segment is the disk name)
-                #   anything else  → first non-empty segment of the path
-                #
-                # User-set labels are intentionally NOT used here —
-                # multiple disks often share a label like "Movies" (one
-                # per drive), which masks which physical mount the row
-                # represents. Labels still appear elsewhere in the UI.
-                parts = [p for p in d["path"].rstrip("/").split("/") if p]
-                if len(parts) >= 2 and parts[0].lower() == "media":
-                    volume_name = parts[1]
-                elif parts:
-                    volume_name = parts[0]
-                else:
-                    volume_name = d["path"] or "?"
-                seen_devices[dev] = {
-                    "path": d["path"],
-                    "label": volume_name,
-                    "total": usage.total,
-                    "used": usage.used,
-                    "free": usage.free,
-                }
-            except OSError:
-                pass
-        disk_info = list(seen_devices.values())
+        disk_info = await _disk_info([d["path"] for d in dir_rows])
         total_free = sum(d["free"] for d in disk_info)
 
         # Bandwidth savings
