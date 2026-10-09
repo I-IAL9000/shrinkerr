@@ -1305,6 +1305,41 @@ async def resync_und_tracks_flag() -> int:
         await db.close()
 
 
+def is_temp_path(file_path: str) -> bool:
+    """A running job's temp output (.converting. / .remuxing.) or a macOS
+    AppleDouble file (._name): never a library file, so never a Scanner row."""
+    return ".converting." in file_path or ".remuxing." in file_path or "/._" in file_path
+
+
+async def remove_temp_scan_rows() -> int:
+    """One-time removal of temp-file rows (F18, v0.10.0). Every Scanner
+    list query filtered them out with three `NOT LIKE '%...%'` tests; the
+    scan writer now refuses them instead, so only rows from before that
+    need removing. Guarded by a settings sentinel."""
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = 'temp_scan_rows_removed'"
+        ) as cur:
+            if await cur.fetchone():
+                return 0
+        cur = await db.execute(
+            "DELETE FROM scan_results WHERE file_path LIKE '%.converting.%' "
+            "OR file_path LIKE '%.remuxing.%' OR file_path LIKE '%/._%'"
+        )
+        removed = cur.rowcount
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES ('temp_scan_rows_removed', '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'"
+        )
+        await db.commit()
+        if removed:
+            print(f"[DB] removed {removed} temp-file scan rows", flush=True)
+        return removed
+    finally:
+        await db.close()
+
+
 async def backfill_stale_disc_type() -> int:
     """One-time clear of stale disc_type on converted single-file rows.
 

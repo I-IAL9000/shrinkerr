@@ -261,6 +261,11 @@ async def lifespan(app: FastAPI):
             await backfill_stale_disc_type()
         except Exception as exc:
             print(f"[STARTUP] stale disc_type backfill skipped: {exc}", flush=True)
+        try:
+            from backend.database import remove_temp_scan_rows
+            await remove_temp_scan_rows()
+        except Exception as exc:
+            print(f"[STARTUP] temp-file scan row cleanup skipped: {exc}", flush=True)
         # v0.9.102: clamp bogus future file_mtimes (ripped media dated 2036)
         # that permanently pin titles to the top of the "Newest" sort.
         try:

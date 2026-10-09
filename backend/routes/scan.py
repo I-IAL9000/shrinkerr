@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
-from backend.database import DB_PATH, connect_db, prefix_clause
+from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
 from backend.resolution import RANKS, resolution_tier, sql_resolution_rank
 from backend.scanner import scan_directory
@@ -102,6 +102,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
         DTS_LL = {"dts-hd ma", "dts-hd hra"}
 
         for scanned in batch:
+            if is_temp_path(scanned.file_path):
+                continue  # F18: never a library file (the walkers skip them too)
             audio_json = json.dumps([t.model_dump() for t in scanned.audio_tracks])
             sub_json = json.dumps([t.model_dump() for t in scanned.subtitle_tracks]) if scanned.subtitle_tracks else None
 
@@ -2612,10 +2614,11 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(is_dubbed_flag, 0) as is_dubbed_flag,
     COALESCE(video_conv_savings_bytes, 0) as video_conv_savings_bytes"""
 
-_SCAN_WHERE = """removed_from_list = 0
-    AND file_path NOT LIKE '%%.converting.%%'
-    AND file_path NOT LIKE '%%.remuxing.%%'
-    AND file_path NOT LIKE '%%/._%%'"""
+# F18 (v0.10.0): temp outputs and AppleDouble files were also filtered out
+# here by three `NOT LIKE '%...%'` tests on every row of every list query
+# (a quarter of a full listing's time); the scan writer now never stores
+# them (database.is_temp_path) and older rows are removed once at startup.
+_SCAN_WHERE = "removed_from_list = 0"
 # The same, for queries scoped to folders by a file_path range (F6). The
 # unary "+" keeps SQLite off idx_scan_results_removed: without ANALYZE stats
 # it prefers that equality to the range, and nearly every row matches it, so
