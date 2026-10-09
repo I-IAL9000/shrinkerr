@@ -585,7 +585,17 @@ def _login_allowed(remote_ip: str) -> bool:
 # auth toggle — we always want to demand a shared secret on them.
 _AUTH_ALWAYS_REQUIRED_PREFIXES = (
     "/api/webhooks/",                   # NZBGet / SABnzbd / arr post-processing
-    "/api/nodes/",                       # remote worker registration + job pull
+    # Remote-worker registration, job pull and reports. Only these: the
+    # Nodes page and Monitor routes under /api/nodes/ follow the normal rule.
+    # With no key or password set, no remote worker can connect, so those
+    # only ever act on the local node — and demanding a key there broke the
+    # Monitor's node cards and the local node's settings on such installs
+    # (v0.10.0). test_node_auth checks this list against the node routes.
+    "/api/nodes/heartbeat",
+    "/api/nodes/request-job",
+    "/api/nodes/report-progress",
+    "/api/nodes/report-complete",
+    "/api/nodes/report-metrics",
     "/api/settings/backup/download",     # DB snapshot incl. every stored secret
     "/api/settings/backup/restore",      # replaces the DB — trivial takeover if open
     "/api/settings/nzbget-config",       # returns unmasked integration api_keys
