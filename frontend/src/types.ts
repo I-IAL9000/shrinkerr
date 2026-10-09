@@ -208,6 +208,9 @@ export interface JobProgress {
   step: string;
   // v0.9.132 message codes for the step label.
   step_key?: string | null;
+  // When this client received it (v0.10.0): entries that stop updating are
+  // dropped, since a job can end without a job_complete reaching us.
+  received_at?: number;
   step_params?: Record<string, unknown> | null;
   jobs_completed: number;
   jobs_total: number;
@@ -259,4 +262,7 @@ export type WSMessage =
   | JobComplete
   | ScanResultsChanged
   | VmafRemeasureProgress
-  | VmafRemeasureComplete;
+  | VmafRemeasureComplete
+  // Sent locally by useWebSocket when a dropped connection is back:
+  // anything sent in between (a job_complete) was missed.
+  | { type: "ws_reconnected" };

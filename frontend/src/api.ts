@@ -797,6 +797,7 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   useEffect(() => {
     let closed = false;
     let connecting = false;
+    let connectedBefore = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = async () => {
@@ -816,6 +817,12 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
       if (closed) return;
       const ws = new WebSocket(url);
       wsRef.current = ws;
+      ws.onopen = () => {
+        if (connectedBefore) {
+          try { onMessageRef.current({ type: "ws_reconnected" }); } catch {}
+        }
+        connectedBefore = true;
+      };
       ws.onmessage = (event) => {
         try {
           onMessageRef.current(JSON.parse(event.data) as WSMessage);

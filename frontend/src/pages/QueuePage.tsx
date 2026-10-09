@@ -233,8 +233,14 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
   useVisibleInterval(pollRefresh, queueStarting ? 2000 : 10000);
 
   const running = jobs.filter((j) => j.status === "running");
+  // Progress for a job the last poll didn't see running only counts while
+  // fresh (a job that just started) — older ones are ghosts of jobs that
+  // ended without a job_complete reaching us (v0.10.0).
+  const runningIds = new Set(running.map(j => j.id));
+  const liveProgressCount = [...jobProgressMap.values()].filter(p =>
+    runningIds.has(p.job_id) || Date.now() - (p.received_at ?? 0) < 15_000).length;
 
-  const hasActiveJobs = queueStarting || jobProgressMap.size > 0 || running.length > 0;
+  const hasActiveJobs = queueStarting || liveProgressCount > 0 || running.length > 0;
 
   // Clear "starting" state once every running job has WebSocket progress
   const queueStartedAt = useRef<number>(0);
@@ -387,6 +393,13 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
 
   // Fetch track data for all running jobs
   useEffect(() => {
+    // Keep only the running jobs' entries (v0.10.0: both maps grew for as
+    // long as the page stayed open).
+    const live = new Set(running.map(j => j.file_path));
+    const prune = <T,>(prev: Map<string, T>) =>
+      [...prev.keys()].every(k => live.has(k)) ? prev : new Map([...prev].filter(([k]) => live.has(k)));
+    setTrackCache(prune);
+    setLosslessCache(prune);
     for (const job of running) {
       if (!trackCache.has(job.file_path)) {
         getTracksByPath(job.file_path).then((data) => {
@@ -624,7 +637,7 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
         // 1. Queue is initially starting, OR
         // 2. We have fewer active jobs than available capacity and there
         //    are pending jobs that could actually be dispatched.
-        const queueIsRunning = running.length > 0 || jobProgressMap.size > 0;
+        const queueIsRunning = running.length > 0 || liveProgressCount > 0;
         const showPlaceholders = queueStarting || (queueIsRunning && hasPending && totalActive < effectiveCapacity);
         if (showPlaceholders) {
           const slotsNeeded = Math.max(0, effectiveCapacity - totalActive);

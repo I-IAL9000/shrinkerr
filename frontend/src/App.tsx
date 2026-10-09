@@ -440,6 +440,22 @@ export default function App() {
     return () => { document.removeEventListener("input", handler); };
   }, []);
 
+  // Drop progress entries that stopped updating (see handleWS).
+  useEffect(() => {
+    const STALE_MS = 120_000;
+    const timer = setInterval(() => {
+      setJobProgressMap(prev => {
+        const now = Date.now();
+        const stale = [...prev.values()].filter(p => now - (p.received_at ?? now) > STALE_MS);
+        if (stale.length === 0) return prev;
+        const next = new Map(prev);
+        stale.forEach(p => next.delete(p.job_id));
+        return next;
+      });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
   const handleWS = useCallback((msg: WSMessage) => {
@@ -448,10 +464,15 @@ export default function App() {
       const jp = msg as JobProgress;
       setJobProgressMap(prev => {
         const next = new Map(prev);
-        next.set(jp.job_id, jp);
+        next.set(jp.job_id, { ...jp, received_at: Date.now() });
         return next;
       });
     }
+    // A job can end without a job_complete reaching us (node pause requeue,
+    // the orphan reaper, a WebSocket gap): its entry kept the Queue
+    // "running" with a phantom card (v0.10.0). Live jobs resend progress
+    // within seconds, so a reconnect starts from an empty map.
+    if (msg.type === "ws_reconnected") setJobProgressMap(new Map());
     if (msg.type === "job_complete") {
       const jc = msg as any;
       setJobProgressMap(prev => {
