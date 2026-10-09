@@ -399,6 +399,9 @@ class FileWatcher:
             # a convert, not a no-op audio cleanup.
             if probe.get("disc_type"):
                 needs_conversion = True
+            from backend.scanner import is_dolby_vision
+            if is_dolby_vision(probe.get("hdr_format")):
+                needs_conversion = False  # v0.10.0: never re-encoded
             audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
             raw_subs = probe.get("subtitle_tracks", [])
             subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
@@ -478,6 +481,10 @@ class FileWatcher:
                 file_mtime=file_mtime,
                 duration=duration,
                 disc_type=disc_type_val,  # v0.6.0
+                # The watcher never set the height (SC-14): its rows read as
+                # SD to the 4K filter and rules until a full scan.
+                video_height=probe.get("video_height", 0),
+                hdr_format=probe.get("hdr_format"),  # v0.10.0
             )
             results.append(scanned)
             new_file_paths.append(file_path)

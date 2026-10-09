@@ -38,6 +38,7 @@ export interface ScannedFile {
   file_size: number;
   file_size_gb: number;
   video_codec: string;
+  hdr_format?: string | null;  // v0.10.0: "hdr10" / "hlg" / "dv<profile>"
   needs_conversion: boolean;
   audio_tracks: AudioTrack[];
   subtitle_tracks: SubtitleTrack[];

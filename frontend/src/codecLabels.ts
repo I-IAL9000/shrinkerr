@@ -13,3 +13,10 @@ export function getCodecLabel(videoCodec: string, needsConversion: boolean): str
   const codec = (videoCodec || "").toLowerCase();
   return CODEC_LABELS[codec] || codec.toUpperCase() || (needsConversion ? "x264" : "x265");
 }
+
+/** "HDR10" / "HLG" / "DV 8" for a file's hdr_format (v0.10.0). */
+export function hdrLabel(hdr: string | null | undefined): string | null {
+  if (!hdr) return null;
+  if (hdr.startsWith("dv")) return hdr.length > 2 ? `DV ${hdr.slice(2)}` : "DV";
+  return hdr.toUpperCase();
+}

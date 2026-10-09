@@ -652,6 +652,11 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN has_und_tracks_flag INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.10.0: HDR10 / HLG / Dolby Vision ("dv<profile>"), from the probe.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN hdr_format TEXT DEFAULT NULL")
+        except Exception:
+            pass
         # Migration: per-node configuration (pause, affinity, translation, schedule)
         for col, ctype in [
             ("paused", "INTEGER DEFAULT 0"),                    # 0/1 — per-node pause

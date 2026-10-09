@@ -346,20 +346,22 @@ async def test_recompute_needs_conversion_works_without_row_factory(tmp_path):
     try:
         await db.execute(
             "CREATE TABLE scan_results (file_path TEXT, video_codec TEXT, "
-            "needs_conversion INTEGER, converted INTEGER, disc_type TEXT)"
+            "needs_conversion INTEGER, converted INTEGER, disc_type TEXT, hdr_format TEXT)"
         )
-        await db.execute("INSERT INTO scan_results VALUES ('/a.mkv','h264',0,0,NULL)")
-        await db.execute("INSERT INTO scan_results VALUES ('/b.mkv','hevc',0,0,NULL)")
-        await db.execute("INSERT INTO scan_results VALUES ('/c.mkv','h264',0,1,NULL)")  # converted → skipped
+        await db.execute("INSERT INTO scan_results VALUES ('/a.mkv','h264',0,0,NULL,NULL)")
+        await db.execute("INSERT INTO scan_results VALUES ('/b.mkv','hevc',0,0,NULL,NULL)")
+        await db.execute("INSERT INTO scan_results VALUES ('/c.mkv','h264',0,1,NULL,NULL)")  # converted → skipped
         # v0.9.120: a disc (bdmv) always needs conversion even though its probed
         # codec ('hevc' here) isn't in source_codecs — must NOT stay cleanup-only.
-        await db.execute("INSERT INTO scan_results VALUES ('/d.iso','hevc',0,0,'bdmv')")
+        await db.execute("INSERT INTO scan_results VALUES ('/d.iso','hevc',0,0,'bdmv',NULL)")
+        # v0.10.0: Dolby Vision never does.
+        await db.execute("INSERT INTO scan_results VALUES ('/e.mkv','h264',1,0,NULL,'dv5')")
         await db.commit()
         flipped = await recompute_needs_conversion(db, ["h264"])
-        assert flipped == 2  # /a.mkv (codec) and /d.iso (disc)
+        assert flipped == 3  # /a.mkv (codec), /d.iso (disc), /e.mkv (Dolby Vision)
         async with db.execute("SELECT file_path, needs_conversion FROM scan_results ORDER BY file_path") as cur:
             got = {r[0]: r[1] for r in await cur.fetchall()}
-        assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0, "/d.iso": 1}
+        assert got == {"/a.mkv": 1, "/b.mkv": 0, "/c.mkv": 0, "/d.iso": 1, "/e.mkv": 0}
     finally:
         await db.close()
 

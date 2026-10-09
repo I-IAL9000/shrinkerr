@@ -209,6 +209,52 @@ def display_name_for_path(file_path: str) -> str:
     return p.name
 
 
+def hdr_format_of(stream: dict) -> Optional[str]:
+    """"dv<profile>" for Dolby Vision, "hdr10" (PQ) or "hlg", else None —
+    from an ffprobe stream or frame (v0.10.0)."""
+    for side in stream.get("side_data_list") or []:
+        kind = (side.get("side_data_type") or "").lower()
+        if "dovi configuration" in kind:
+            profile = side.get("dv_profile")
+            return f"dv{profile}" if profile is not None else "dv"
+        if "dolby vision" in kind:  # RPU data on a frame
+            return "dv"
+    transfer = (stream.get("color_transfer") or "").lower()
+    if transfer == "smpte2084":
+        return "hdr10"
+    if transfer == "arib-std-b67":
+        return "hlg"
+    return None
+
+
+def is_dolby_vision(hdr_format: Optional[str]) -> bool:
+    """Dolby Vision isn't re-encoded: profile 5 turns purple and green, and
+    every profile loses its Dolby Vision layer (v0.10.0)."""
+    return bool(hdr_format and hdr_format.startswith("dv"))
+
+
+async def first_frame_info(source: str, input_args: Optional[list[str]] = None) -> Optional[dict]:
+    """ffprobe of the first video frame (pix_fmt, colour, side data), or
+    None. Files whose container doesn't carry the HDR signalling only show
+    it in the bitstream."""
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "error", *(input_args or []), "-select_streams", "v:0",
+            "-read_intervals", "%+#1", "-show_frames",
+            "-show_entries", "frame=pix_fmt,color_transfer,color_primaries,side_data_list",
+            "-of", "json", source,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        frames = json.loads(out or b"{}").get("frames") or []
+        return frames[0] if frames else None
+    except Exception:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+        return None
+
+
 async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optional[str]]:
     """What ffprobe / ffmpeg read for `file_path`: (input, args before -i,
     disc_type). Shared by probe_file and audio language detection, which
@@ -336,6 +382,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     video_width = 0
     video_height = 0
     video_fps: float = 0.0
+    hdr_format: Optional[str] = None
     audio_tracks = []
     subtitle_tracks = []
 
@@ -348,6 +395,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
             # → 8-bit out). Captured here once at probe time so every
             # consumer downstream sees the same value.
             video_pix_fmt = stream.get("pix_fmt", "") or ""
+            hdr_format = hdr_format_of(stream)
             video_width = stream.get("width", 0) or 0
             video_height = stream.get("height", 0) or 0
             # Frame rate: prefer r_frame_rate ("24000/1001" → 23.976),
@@ -470,9 +518,17 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         except Exception as exc:
             print(f"[DISC-META] failed for {disc_folder}: {exc}", flush=True)
 
+    # HDR is 10-bit or more; when the container doesn't say, the first frame
+    # does (not for discs: reading into one is slow over the network).
+    if hdr_format is None and not disc_type and ("10" in video_pix_fmt or "12" in video_pix_fmt):
+        frame = await first_frame_info(probe_input, ffprobe_input_args)
+        if frame:
+            hdr_format = hdr_format_of(frame)
+
     result = {
         "video_codec": video_codec,
         "video_pix_fmt": video_pix_fmt,
+        "hdr_format": hdr_format,
         "video_width": video_width,
         "video_height": video_height,
         "video_fps": video_fps,
@@ -615,7 +671,7 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
     # actually flip — cheaper than blanket UPDATE.
     flipped = 0
     async with db.execute(
-        "SELECT file_path, video_codec, needs_conversion, disc_type FROM scan_results "
+        "SELECT file_path, video_codec, needs_conversion, disc_type, hdr_format FROM scan_results "
         "WHERE converted = 0"
     ) as cur:
         rows = await cur.fetchall()
@@ -626,12 +682,12 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
     # SELECT fixes the column order, so positional access is unambiguous and
     # works under any row_factory.
     for row in rows:
-        file_path, video_codec, needs_conversion, disc_type = row[0], row[1], row[2], row[3]
+        file_path, video_codec, needs_conversion, disc_type, hdr_format = row[0], row[1], row[2], row[3], row[4]
         vc = (video_codec or "").lower()
         # v0.9.120: discs always need conversion regardless of the (often blank)
         # probed codec — mirror the scan-time rule so a settings recompute
-        # doesn't flip them back to cleanup-only.
-        should_convert = 1 if (disc_type or vc in codec_names) else 0
+        # doesn't flip them back to cleanup-only. Dolby Vision never does.
+        should_convert = 1 if (disc_type or vc in codec_names) and not is_dolby_vision(hdr_format) else 0
         if int(needs_conversion or 0) != should_convert:
             await db.execute(
                 "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
@@ -1927,6 +1983,8 @@ async def scan_directory(
         # must go through the convert path. Force it.
         if probe.get("disc_type"):
             needs_conversion = True
+        if is_dolby_vision(probe.get("hdr_format")):
+            needs_conversion = False
         audio_tracks = classify_audio_tracks(raw_tracks, native_lang, duration)
         raw_subs = probe.get("subtitle_tracks", [])
         subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
@@ -2013,6 +2071,7 @@ async def scan_directory(
             duration=duration,
             probe_status="ok",
             video_height=probe.get("video_height", 0),
+            hdr_format=probe.get("hdr_format"),
             disc_type=disc_type_val,  # v0.6.0
         )
         if result_callback:

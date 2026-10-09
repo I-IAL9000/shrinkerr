@@ -10,6 +10,7 @@ import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
 import { serverText, detectNote } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
+import { hdrLabel } from "../codecLabels";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -23,7 +24,7 @@ interface FileDetailProps {
 type Tab = "tracks" | "history";
 
 export default function FileDetail({ file, onAudioTracksChange, onSubTracksChange }: FileDetailProps) {
-  const { t } = useTranslation(["fileDetail", "common"]);
+  const { t } = useTranslation(["fileDetail", "library", "common"]);
   const [fetchedAudio, setFetchedAudio] = useState<AudioTrack[]>([]);
   const [fetchedSubs, setFetchedSubs] = useState<SubtitleTrack[]>([]);
   const [loading, setLoading] = useState(!file.audio_tracks?.length);
@@ -270,8 +271,11 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
       {/* Tree rows truncate long names; the full one lives here. */}
       <div style={{ color: "var(--text-secondary)", marginBottom: 2, overflowWrap: "anywhere" }}>{file.file_name}</div>
       <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
-        {file.video_codec} &middot; {file.file_size_gb} GB
+        {file.video_codec}{file.hdr_format && <> &middot; {hdrLabel(file.hdr_format)}</>} &middot; {file.file_size_gb} GB
       </div>
+      {file.hdr_format?.startsWith("dv") && (
+        <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 4 }}>{t("library:badges.dolbyVision")}</div>
+      )}
       {unreadable && (
         <div style={{ border: "1px solid var(--warning)", borderRadius: 6, padding: "8px 10px", marginBottom: 8, fontSize: 12 }}>
           <div style={{ fontWeight: 600, color: "var(--warning)", marginBottom: 4 }}>

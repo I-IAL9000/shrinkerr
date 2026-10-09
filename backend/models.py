@@ -73,6 +73,7 @@ class ScannedFile(BaseModel):
     probe_status: str = "ok"  # "ok", "corrupt", "truncated", "unreadable" (v0.9.153: disc image)
     probe_error: Optional[str] = None  # v0.9.153: JSON {"kind", "detail"} for "unreadable"
     video_height: int = 0  # Video resolution height (e.g., 1080, 2160)
+    hdr_format: Optional[str] = None  # v0.10.0: "hdr10" / "hlg" / "dv<profile>" (scanner.hdr_format_of)
     # v0.6.0: 'dvd' / 'bdmv' / None — set when the scanner walks into a
     # VIDEO_TS/BDMV folder structure and registers the marker file as
     # a single scan item instead of recursing into the disc payload.

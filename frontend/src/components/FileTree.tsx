@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getScanFiles, getScanFilesByPaths } from "../api";
-import { getCodecLabel } from "../codecLabels";
+import { getCodecLabel, hdrLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
@@ -469,6 +469,12 @@ const FileRow = memo(function FileRow({
         <span className={`codec-badge ${codecClass}`} title={t("library:badges.videoCodec", { codec: codecLabel })} aria-label={t("library:badges.videoCodec", { codec: codecLabel })}>
           {codecLabel}
         </span>
+        {file.hdr_format && (
+          <span className="codec-badge" style={{ color: "var(--accent)", border: "1px solid var(--accent)" }}
+            title={file.hdr_format.startsWith("dv") ? t("library:badges.dolbyVision") : t("library:badges.hdr", { format: hdrLabel(file.hdr_format) })}>
+            {hdrLabel(file.hdr_format)}
+          </span>
+        )}
         {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
           <span className={`codec-badge ${codecClass}`} style={{ gap: 4 }} title={file.disc_type === "dvd" ? t("library:badges.dvdFolder") : t("library:badges.blurayFolder")}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

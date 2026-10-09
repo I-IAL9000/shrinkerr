@@ -36,6 +36,8 @@
     "videoCodec": "Códec de vídeo: {{codec}}",
     "dvdFolder": "Carpeta de disco DVD-Video",
     "blurayFolder": "Carpeta de disco Blu-ray",
+    "hdr": "Vídeo {{format}}: se convierte conservando el HDR",
+    "dolbyVision": "Dolby Vision: no se convierte, perdería Dolby Vision o sus colores",
     "corrupt": "Corrupto",
     "corruptWithType": "Corrupto (comprobación {{type}})",
     "healthyWithType": "Correcto ({{type}})",

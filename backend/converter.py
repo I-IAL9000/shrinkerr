@@ -2411,6 +2411,26 @@ async def _probe_video_duration(path: str, exact_tag_only: bool = False) -> Opti
     return None
 
 
+async def _hdr_failure(source_hdr: Optional[str], output_path: str) -> Optional[dict]:
+    """Why an HDR source's output mustn't replace it, or None. The output
+    must still be HDR (PQ / HLG transfer) and at least 10-bit — an encoder
+    or ffmpeg build that drops the signalling leaves washed-out colours
+    (v0.10.0)."""
+    if source_hdr not in ("hdr10", "hlg"):
+        return None
+    from backend.scanner import first_frame_info, hdr_format_of
+    frame = await first_frame_info(output_path)
+    kept = frame is not None and hdr_format_of(frame) == source_hdr
+    ten_bit = frame is not None and any(d in (frame.get("pix_fmt") or "") for d in ("10", "12"))
+    if kept and ten_bit:
+        return None
+    return {
+        "error": f"The {source_hdr.upper()} source lost its HDR in the encode. Original kept.",
+        "error_key": "errors.hdrLost",
+        "error_params": {"format": source_hdr.upper()},
+    }
+
+
 async def _truncation_failure(source_path: str, output_path: str, source_duration: Optional[float],
                               disc_type: Optional[str], log_lines: list[str]) -> Optional[dict]:
     """Why an output mustn't replace its source, as failed-job fields — or
@@ -2800,6 +2820,24 @@ async def convert_file(
         return {
             "success": False, "output_path": None, "space_saved": 0,
             "error": "Failed to probe file; nothing was converted", "error_key": "errors.probeFailed",
+        }
+
+    # v0.10.0: HDR guardrails. Dolby Vision is never re-encoded (profile 5
+    # turns purple and green; the others lose Dolby Vision). Quick Sync and
+    # VAAPI encode 8-bit here, which bands HDR.
+    from backend.scanner import is_dolby_vision
+    source_hdr = probe_data.get("hdr_format")
+    if is_dolby_vision(source_hdr):
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": "Dolby Vision video isn't re-encoded: it would lose Dolby Vision or its colours. Nothing was converted.",
+            "error_key": "errors.dolbyVisionSkipped",
+        }
+    if source_hdr and encoder in ("qsv", "vaapi"):
+        return {
+            "success": False, "output_path": None, "space_saved": 0,
+            "error": f"HDR video needs a 10-bit encoder; {encoder} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox. Nothing was converted.",
+            "error_key": "errors.hdrNeeds10Bit", "error_params": {"encoder": encoder},
         }
 
     # v0.6.0: compute original_size + free-disk-space check now that
@@ -3665,7 +3703,8 @@ async def convert_file(
     space_saved = original_size - output_size
 
     # H6 (v0.10.0): never let an output that stops early replace the original.
-    _truncated = await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
+    _truncated = (await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
+                  or await _hdr_failure(source_hdr, temp_path))
     if _truncated:
         print(f"[CONVERT] {_truncated['error']}", flush=True)
         try:

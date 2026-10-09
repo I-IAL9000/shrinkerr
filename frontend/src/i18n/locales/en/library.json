@@ -34,6 +34,8 @@
     "videoCodec": "Video codec: {{codec}}",
     "dvdFolder": "DVD-Video disc folder",
     "blurayFolder": "Blu-ray disc folder",
+    "hdr": "{{format}} video: converted with its HDR kept",
+    "dolbyVision": "Dolby Vision: not converted, it would lose Dolby Vision or its colours",
     "corrupt": "Corrupt",
     "corruptWithType": "Corrupt ({{type}} check)",
     "healthyWithType": "Healthy ({{type}})",

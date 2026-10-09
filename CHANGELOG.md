@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).
 - After an update, a short "What's new" dialog lists the new features and the main fixes, once.
+- The Scanner shows HDR10 / HLG / Dolby Vision badges.
 - **Docker images can run as your own user** (optional `PUID` / `PGID` / `UMASK`) instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
 
 ### Fixed
+- **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.
 - Documentation fixes: NVIDIA driver 570+ for the NVENC images, the remote-worker `PATH_MAPPINGS` format, current Settings locations, and features that were described but don't exist.
