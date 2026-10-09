@@ -9,6 +9,7 @@ import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
 import { naturalCompare } from "../utils/naturalCompare";
 import { fmtBytes } from "../fmt";
+import { pressable } from "../utils/a11y";
 
 export type SortBy = "name" | "size" | "files" | "date";
 export type SortDirection = "asc" | "desc";
@@ -395,10 +396,11 @@ const FolderRow = memo(function FolderRow({
   const colorClass = hasMediaId ? "tree-season" : isFlat ? "tree-season" : depth === 0 ? "tree-folder" : depth === 1 ? "tree-subfolder" : "tree-season";
 
   return (
-    <div className="tree-row" onClick={onToggle} style={{ paddingLeft: depth * 16 }}>
+    <div className="tree-row" onClick={onToggle} {...pressable(onToggle, { expanded: isExpanded })} style={{ paddingLeft: depth * 16 }}>
       <input
         type="checkbox"
         checked={allSelected}
+        aria-label={t("library:tree.selectItem", { name: node.name })}
         readOnly
         onClick={(e) => { e.stopPropagation(); onSelectAll(!allSelected, e.shiftKey); }}
         style={{ marginRight: 4 }}
@@ -428,7 +430,7 @@ const FolderRow = memo(function FolderRow({
           </button>
         )}
         {onIgnoreFolder && (
-          <button
+          <button aria-label={t("library:tree.ignoreFolderTitle", { name: node.name })}
             onClick={async (e) => {
               e.stopPropagation();
               if (await confirm({ message: t("library:tree.ignoreFolderConfirm", { count: node.agg_file_count, name: node.name }), confirmLabel: t("library:tree.ignoreAll"), danger: true })) {
@@ -474,10 +476,11 @@ const FileRow = memo(function FileRow({
 
   return (
     <div style={{ paddingLeft: depth * 16 }}>
-      <div className="tree-row" onClick={onToggleExpand}>
+      <div className="tree-row" onClick={onToggleExpand} {...pressable(onToggleExpand, { expanded })}>
         <input
           type="checkbox"
           checked={selected}
+          aria-label={t("library:tree.selectItem", { name: file.file_name })}
           readOnly
           onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }}
           style={{ marginRight: 4 }}

@@ -8,6 +8,8 @@ import PosterCard from "./PosterCard";
 import FileDetail from "./FileDetail";
 import PosterFixModal from "./PosterFixModal";
 import { naturalCompare } from "../utils/naturalCompare";
+import { pressable } from "../utils/a11y";
+import { fmtBytes } from "../fmt";
 
 interface PosterMeta {
   title: string;
@@ -161,6 +163,11 @@ export default function PosterGrid({
   const lastClickedGroup = useRef<string | null>(null);
 
   const groups = useMemo(() => sortGroups(groupFolders(folders, mediaRoots), sortBy, sortDir), [folders, mediaRoots, sortBy, sortDir]);
+  const toggleFileDetail = (path: string) => setExpandedFileDetails(prev => {
+    const n = new Set(prev);
+    if (n.has(path)) n.delete(path); else n.add(path);
+    return n;
+  });
 
   // Wrap the track toggle handlers so we also update PosterGrid's local
   // `expandedFiles` copy. Without this, the parent's loadedFiles gets updated
@@ -512,10 +519,10 @@ export default function PosterGrid({
                       )}
                       {files.map((file) => (
                         <div key={file.file_path}>
-                          <div className="tree-row" onClick={() => setExpandedFileDetails(prev => { const n = new Set(prev); if (n.has(file.file_path)) n.delete(file.file_path); else n.add(file.file_path); return n; })} style={{ cursor: "pointer", padding: "3px 0", fontSize: 12 }}>
-                            <input type="checkbox" checked={isSelected(file.file_path)} readOnly onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }} style={{ marginRight: 6 }} />
+                          <div className="tree-row" {...pressable(() => toggleFileDetail(file.file_path), { expanded: expandedFileDetails.has(file.file_path) })} onClick={() => toggleFileDetail(file.file_path)} style={{ cursor: "pointer", padding: "3px 0", fontSize: 12 }}>
+                            <input type="checkbox" checked={isSelected(file.file_path)} aria-label={t("library:tree.selectItem", { name: file.file_name })} readOnly onClick={(e) => { e.stopPropagation(); onToggleSelect(file.file_path, e.shiftKey); }} style={{ marginRight: 6 }} />
                             <span style={{ flex: 1 }}>{expandedFileDetails.has(file.file_path) ? "\u25BC" : "\u25B6"} {file.file_name}</span>
-                            <span className="tree-file-size" style={{ marginLeft: "auto", flexShrink: 0 }}>{file.file_size_gb} GB</span>
+                            <span className="tree-file-size" style={{ marginLeft: "auto", flexShrink: 0 }}>{fmtBytes(file.file_size)}</span>
                             <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0 }}>{getCodecLabel(file.video_codec, file.needs_conversion)}</span>
                             {(file.disc_type === "dvd" || file.disc_type === "bdmv") && (
                               <span className={`codec-badge ${file.needs_conversion ? "x264" : "x265"}`} style={{ flexShrink: 0, gap: 4 }} title={file.disc_type === "dvd" ? t("library:badges.dvdFolder") : t("library:badges.blurayFolder")}>

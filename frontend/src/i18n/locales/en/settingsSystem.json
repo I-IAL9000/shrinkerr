@@ -161,13 +161,14 @@
       "dashboard": "Dashboard",
       "scanner": "Scanner",
       "queue": "Queue",
-      "statistics": "Statistics",
       "logs": "Logs",
       "schedule": "Schedule",
       "settings": "Settings",
-      "startPause": "Start / Pause queue"
+      "startPause": "Start / Pause queue",
+      "monitor": "Monitor"
     },
-    "note": "Shortcuts are disabled when typing in input fields."
+    "note": "Not while typing in a field or while a dialog is open. Saved in this browser.",
+    "enabled": "Use keyboard shortcuts"
   },
   "updates": {
     "title": "Updates",

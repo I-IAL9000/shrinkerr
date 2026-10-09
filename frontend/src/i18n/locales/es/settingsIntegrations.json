@@ -253,7 +253,8 @@
       "updated": "Regla actualizada",
       "created": "Regla creada",
       "saveFailed": "No se pudo guardar la regla"
-    }
+    },
+    "moveRule": "Mover la regla {{n}} (flechas arriba y abajo)"
   },
   "conditions": {
     "groups": {

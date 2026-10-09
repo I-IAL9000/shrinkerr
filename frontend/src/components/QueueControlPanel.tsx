@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import ActionMenu from "./ActionMenu";
 
 interface QueueControlPanelProps {
   selectedCount: number;
@@ -108,8 +108,6 @@ export default function QueueControlPanel({
   defaultEncoder = "nvenc",
 }: QueueControlPanelProps) {
   const { t } = useTranslation(["queue", "common"]);
-  const [videoValue, setVideoValue] = useState("");
-  const [audioValue, setAudioValue] = useState("");
   const VIDEO_PRESETS = defaultEncoder === "libx265" ? LIBX265_VIDEO_PRESETS : NVENC_VIDEO_PRESETS;
 
   return (
@@ -195,62 +193,32 @@ export default function QueueControlPanel({
       {/* Divider */}
       <span style={{ width: 1, height: 18, background: "var(--border)" }} />
 
-      {/* Video preset */}
-      <select
-        value={videoValue}
-        onChange={(e) => {
-          const idx = Number(e.target.value);
-          if (isNaN(idx)) return;
-          const p = VIDEO_PRESETS[idx];
-          onChangeVideoPreset(p.preset, p.cq);
-          setVideoValue("");
-        }}
-        style={selectStyle}
-      >
-        <option value="">{t("queue:panel.videoPresetPlaceholder")}</option>
-        {VIDEO_PRESETS.map((p, i) => (
-          <option key={i} value={i}>
-            {`${t(`queue:panel.videoPresets.${p.nameKey}`)} — ${p.detail}`}
-          </option>
-        ))}
-      </select>
-
-      {/* Audio preset */}
-      <select
-        value={audioValue}
-        onChange={(e) => {
-          const idx = Number(e.target.value);
-          if (isNaN(idx)) return;
-          const p = AUDIO_PRESETS[idx];
-          onChangeAudioPreset(p.codec, p.bitrate);
-          setAudioValue("");
-        }}
-        style={selectStyle}
-      >
-        <option value="">{t("queue:panel.audioPresetPlaceholder")}</option>
-        {AUDIO_PRESETS.map((p, i) => (
-          <option key={i} value={i}>
-            {(p.labelKey ? t(`queue:panel.audioPresets.${p.labelKey}`) : p.label)
-              + (p.noteKey ? ` (${t(`queue:panel.audioPresets.${p.noteKey}`)})` : "")}
-          </option>
-        ))}
-      </select>
-
-      {/* Priority */}
-      <select
-        onChange={(e) => {
-          const val = Number(e.target.value);
-          if (!isNaN(val)) onChangePriority(val);
-          (e.target as HTMLSelectElement).value = "";
-        }}
-        defaultValue=""
-        style={selectStyle}
-      >
-        <option value="">{t("queue:panel.priorityPlaceholder")}</option>
-        {PRIORITIES.map(p => (
-          <option key={p.value} value={p.value}>{t(`queue:priority.${p.labelKey}`)}</option>
-        ))}
-      </select>
+      {/* Video preset / audio preset / priority: menus, not selects (FE#28) */}
+      <ActionMenu
+        label={t("queue:panel.videoPresetPlaceholder")}
+        buttonStyle={selectStyle}
+        items={VIDEO_PRESETS.map(p => ({
+          label: `${t(`queue:panel.videoPresets.${p.nameKey}`)} — ${p.detail}`,
+          onSelect: () => onChangeVideoPreset(p.preset, p.cq),
+        }))}
+      />
+      <ActionMenu
+        label={t("queue:panel.audioPresetPlaceholder")}
+        buttonStyle={selectStyle}
+        items={AUDIO_PRESETS.map(p => ({
+          label: (p.labelKey ? t(`queue:panel.audioPresets.${p.labelKey}`) : p.label)
+            + (p.noteKey ? ` (${t(`queue:panel.audioPresets.${p.noteKey}`)})` : ""),
+          onSelect: () => onChangeAudioPreset(p.codec, p.bitrate),
+        }))}
+      />
+      <ActionMenu
+        label={t("queue:panel.priorityPlaceholder")}
+        buttonStyle={selectStyle}
+        items={PRIORITIES.map(p => ({
+          label: t(`queue:priority.${p.labelKey}`),
+          onSelect: () => onChangePriority(p.value),
+        }))}
+      />
 
       {/* Divider */}
       <span style={{ width: 1, height: 18, background: "var(--border)" }} />

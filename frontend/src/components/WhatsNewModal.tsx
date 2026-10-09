@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { getWhatsNew, markWhatsNewSeen, type WhatsNew } from "../api";
 import ChangelogModal from "./ChangelogModal";
@@ -26,12 +27,8 @@ export default function WhatsNewModal() {
     if (!preview) markWhatsNewSeen().catch(() => {});
   };
 
-  useEffect(() => {
-    if (!notes) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [notes]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, close, t("dialogs:whatsNew.title", { version: notes?.version ?? "" }), !!notes && !fullNotes);
 
   if (fullNotes) {
     return <ChangelogModal open onClose={() => setFullNotes(false)} showLatestOnly={false} />;
@@ -59,7 +56,7 @@ export default function WhatsNewModal() {
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div style={{
+      <div ref={panelRef} {...dialog} style={{
         background: "var(--bg-primary)", border: "1px solid var(--border)", borderRadius: 8,
         width: "100%", maxWidth: 560, maxHeight: "90vh", display: "flex", flexDirection: "column",
       }}>

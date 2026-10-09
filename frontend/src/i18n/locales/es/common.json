@@ -56,5 +56,19 @@
   "languages": {
     "mul": "Varios idiomas",
     "und": "Indeterminado"
+  },
+  "labels": {
+    "value": "Valor",
+    "operator": "Operador",
+    "field": "Campo",
+    "match": "Coincidencia",
+    "conditionType": "Tipo de condición",
+    "unit": "Unidad",
+    "mediaFolder": "Carpeta de medios",
+    "eventType": "Tipo de evento",
+    "logSource": "Origen del registro",
+    "folderType": "Tipo de carpeta",
+    "streams": "Reproducciones que pausan la codificación",
+    "bitrate": "Tasa de bits"
   }
 }

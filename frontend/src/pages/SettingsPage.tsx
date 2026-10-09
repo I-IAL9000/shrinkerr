@@ -5,6 +5,7 @@ import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import { vmafColor } from "../utils/vmaf";
 import { copyText } from "../utils/clipboard";
+import { shortcutsEnabled, setShortcutsEnabled } from "../shortcuts";
 import type { ThemePref } from "../App";
 import {
   getMediaDirs, addMediaDir, updateMediaDir, removeMediaDir,
@@ -28,6 +29,7 @@ import { useToast } from "../useToast";
 import { useTranslation, Trans } from "react-i18next";
 import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
 import { fmtBytes } from "../fmt";
+import { pressable } from "../utils/a11y";
 
 // Preset ids whose label/description live in settingsMedia:options.presets.<id>.
 const PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
@@ -250,6 +252,7 @@ function VmafRemeasureRow() {
 export default function SettingsPage({ themePref, onThemeChange }: { themePref: ThemePref; onThemeChange: (pref: ThemePref) => void }) {
   const toast = useToast();
   const { t, i18n } = useTranslation(["settings", "common"]);
+  const [shortcutsOn, setShortcutsOn] = useState(shortcutsEnabled);
   const pageRef = useRef<HTMLDivElement>(null);
   // Paint slider fills inside this page only. See useRangeFill.ts for why
   // this replaced the old document-body MutationObserver.
@@ -582,6 +585,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     setLangSearch("");
   };
 
+  const addSubLanguage = (code: string) => {
+    if (!(encoding.sub_keep_languages || []).includes(code)) {
+      setEncoding({ ...encoding, sub_keep_languages: [...(encoding.sub_keep_languages || []), code] });
+    }
+    setSubLangSearch("");
+  };
+
   const removeLanguage = (code: string) => {
     setEncoding({ ...encoding, always_keep_languages: keepLangs.filter((l: string) => l !== code) });
   };
@@ -627,7 +637,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   toast(t("settingsMedia:header.importSuccess", { settings: res.settings_count, dirs: res.dirs_count, rules: res.rules_count }), "success");
                   window.location.reload();
                 } catch (err: any) {
-                  toast(t("settingsMedia:header.importFailed", { error: err.message }));
+                  toast(t("settingsMedia:header.importFailed", { error: err.message }), "error");
                 }
               }}
             />
@@ -686,7 +696,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     />
                     {t("settingsMedia:directories.scan")}
                   </label>
-                  <button onClick={() => handleRemoveDir(d.id)}
+                  <button aria-label={`${t("common:actions.remove")} ${d.path}`} onClick={() => handleRemoveDir(d.id)}
                     style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>&times;</button>
                 </span>
               </div>
@@ -702,9 +712,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             </svg>
             {t("settingsMedia:directories.browse")}
           </button>
-          <input placeholder={t("settingsMedia:directories.pathPlaceholder")} value={newPath} onChange={(e) => setNewPath(e.target.value)}
+          <input aria-label={t("settingsMedia:directories.pathPlaceholder")} placeholder={t("settingsMedia:directories.pathPlaceholder")} value={newPath} onChange={(e) => setNewPath(e.target.value)}
             style={{ ...inputStyle, flex: "1 1 200px", minWidth: 150 }} />
-          <select value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+          <select aria-label={t("common:labels.folderType")} value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
             style={{ ...inputStyle, width: 140 }}>
             <option value="">{t("settingsMedia:directories.typeOptional")}</option>
             <option value="Movies">{t("settingsMedia:directories.types.movies")}</option>
@@ -760,7 +770,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     {encoderCapsRefreshing ? t("settingsMedia:video.detecting") : t("settingsMedia:video.redetect")}
                   </button>
                 </div>
-                <select value={encoding.default_encoder}
+                <select aria-label={t("settingsMedia:video.defaultEncoder")} value={encoding.default_encoder}
                   onChange={(e) => setEncoding({ ...encoding, default_encoder: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {/* Always include nvenc + libx265 as options regardless of
@@ -843,7 +853,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* Target Codec */}
               <div>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.targetCodec")}</div>
-                <select value={encoding.target_codec || "hevc"}
+                <select aria-label={t("settingsMedia:video.targetCodec")} value={encoding.target_codec || "hevc"}
                   onChange={(e) => setEncoding({ ...encoding, target_codec: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {TARGET_CODECS.map(c => (
@@ -861,7 +871,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <span style={labelStyle}>{t("settingsMedia:video.parallelJobs")}</span>
                   <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding?.parallel_jobs ?? 8}</span>
                 </div>
-                <input type="range" min={1} max={16} value={encoding?.parallel_jobs ?? 8}
+                <input type="range" aria-label={t("settingsMedia:video.parallelJobs")} min={1} max={16} value={encoding?.parallel_jobs ?? 8}
                   onChange={(e) => setEncoding({ ...encoding, parallel_jobs: parseInt(e.target.value) })}
                   style={{ width: "100%", accentColor: "var(--accent)" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -880,7 +890,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     {(encoding?.ffmpeg_threads ?? 0) === 0 ? t("settingsMedia:video.auto") : encoding?.ffmpeg_threads}
                   </span>
                 </div>
-                <input type="range" min={0} max={16} value={encoding?.ffmpeg_threads ?? 0}
+                <input type="range" aria-label={t("settingsMedia:video.ffmpegThreads")} min={0} max={16} value={encoding?.ffmpeg_threads ?? 0}
                   onChange={(e) => setEncoding({ ...encoding, ffmpeg_threads: parseInt(e.target.value) })}
                   style={{ width: "100%", accentColor: "var(--accent)" }} />
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -894,7 +904,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* Target Resolution */}
               <div>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.targetResolution")}</div>
-                <select value={encoding.target_resolution || "copy"}
+                <select aria-label={t("settingsMedia:video.targetResolution")} value={encoding.target_resolution || "copy"}
                   onChange={(e) => setEncoding({ ...encoding, target_resolution: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {RESOLUTION_OPTIONS.map(r => (
@@ -963,7 +973,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   {/* v0.5.9: NVENC bit-depth choice */}
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ ...labelStyle, marginBottom: 6 }}>{t("settingsMedia:video.bitDepth.label")}</div>
-                    <select value={encoding?.nvenc_bit_depth || "10bit"}
+                    <select aria-label={t("settingsMedia:video.bitDepth.label")} value={encoding?.nvenc_bit_depth || "10bit"}
                       onChange={e => setEncoding({ ...encoding, nvenc_bit_depth: e.target.value })}
                       style={{ ...inputStyle, width: "100%", maxWidth: 360 }}>
                       <option value="10bit">{t("settingsMedia:video.bitDepth.10bit")}</option>
@@ -981,7 +991,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.nvencPreset")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
                     </div>
-                    <input type="range" min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
+                    <input type="range" aria-label={t("settingsMedia:video.nvencPreset")} min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_preset: `p${e.target.value}` })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -999,7 +1009,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.nvencCq")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
                     </div>
-                    <input type="range" min={15} max={40} value={encoding.nvenc_cq}
+                    <input type="range" aria-label={t("settingsMedia:video.nvencCq")} min={15} max={40} value={encoding.nvenc_cq}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1021,7 +1031,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                       <div style={{ flex: 1 }}>
                         <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
-                        <select
+                        <select aria-label={t("settingsMedia:video.preset")}
                           value={encoding.nvenc_cpu_fallback_preset || ""}
                           onChange={(e) => setEncoding({ ...encoding, nvenc_cpu_fallback_preset: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}
@@ -1038,7 +1048,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           type="number"
                           min={15}
                           max={40}
-                          placeholder={t("settingsMedia:video.autoPlaceholder")}
+                          aria-label={t("settingsMedia:video.autoPlaceholder")} placeholder={t("settingsMedia:video.autoPlaceholder")}
                           value={encoding.nvenc_cpu_fallback_crf ?? ""}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -1082,7 +1092,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.cpuPreset")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.libx265_preset || "medium"}</span>
                     </div>
-                    <select value={encoding.libx265_preset || "medium"}
+                    <select aria-label={t("settingsMedia:video.cpuPreset")} value={encoding.libx265_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, libx265_preset: e.target.value })}
                       style={{ ...inputStyle, width: "100%" }}>
                       <option value="ultrafast">{t("settingsMedia:video.presetNames.ultrafast")}</option>
@@ -1106,7 +1116,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.crf")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
                     </div>
-                    <input type="range" min={15} max={28} value={encoding.libx265_crf}
+                    <input type="range" aria-label={t("settingsMedia:video.crf")} min={15} max={28} value={encoding.libx265_crf}
                       onChange={(e) => setEncoding({ ...encoding, libx265_crf: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1128,7 +1138,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
                       <div style={{ flex: 1 }}>
                         <div style={labelStyle}>{t("settingsMedia:video.preset")}</div>
-                        <select
+                        <select aria-label={t("settingsMedia:video.preset")}
                           value={encoding.libx265_gpu_fallback_preset || ""}
                           onChange={(e) => setEncoding({ ...encoding, libx265_gpu_fallback_preset: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}
@@ -1145,7 +1155,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           type="number"
                           min={15}
                           max={40}
-                          placeholder={t("settingsMedia:video.autoPlaceholder")}
+                          aria-label={t("settingsMedia:video.autoPlaceholder")} placeholder={t("settingsMedia:video.autoPlaceholder")}
                           value={encoding.libx265_gpu_fallback_cq ?? ""}
                           onChange={(e) => {
                             const v = e.target.value;
@@ -1191,7 +1201,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.qsvPreset")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.qsv_preset || "medium"}</span>
                     </div>
-                    <select value={encoding.qsv_preset || "medium"}
+                    <select aria-label={t("settingsMedia:video.qsvPreset")} value={encoding.qsv_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, qsv_preset: e.target.value })}
                       style={{ ...inputStyle, width: "100%" }}>
                       <option value="veryfast">{t("settingsMedia:video.presetNames.veryfast")}</option>
@@ -1212,7 +1222,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.qsvQuality")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.qsv_cq ?? 22}</span>
                     </div>
-                    <input type="range" min={15} max={32} value={encoding.qsv_cq ?? 22}
+                    <input type="range" aria-label={t("settingsMedia:video.qsvQuality")} min={15} max={32} value={encoding.qsv_cq ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, qsv_cq: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1276,7 +1286,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.vaapiCompression")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.vaapi_compression_level ?? 4}</span>
                     </div>
-                    <input type="range" min={0} max={7} value={encoding.vaapi_compression_level ?? 4}
+                    <input type="range" aria-label={t("settingsMedia:video.vaapiCompression")} min={0} max={7} value={encoding.vaapi_compression_level ?? 4}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_compression_level: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1292,7 +1302,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.vaapiQp")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.vaapi_qp ?? 22}</span>
                     </div>
-                    <input type="range" min={15} max={32} value={encoding.vaapi_qp ?? 22}
+                    <input type="range" aria-label={t("settingsMedia:video.vaapiQp")} min={15} max={32} value={encoding.vaapi_qp ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_qp: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1335,7 +1345,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       <span style={labelStyle}>{t("settingsMedia:video.videotoolboxQuality")}</span>
                       <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.videotoolbox_quality ?? 55}</span>
                     </div>
-                    <input type="range" min={30} max={85} value={encoding.videotoolbox_quality ?? 55}
+                    <input type="range" aria-label={t("settingsMedia:video.videotoolboxQuality")} min={30} max={85} value={encoding.videotoolbox_quality ?? 55}
                       onChange={(e) => setEncoding({ ...encoding, videotoolbox_quality: parseInt(e.target.value) })}
                       style={{ width: "100%", accentColor: "var(--accent)" }} />
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
@@ -1486,7 +1496,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       {enabled && (
                         <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
                           <input
-                            type="range"
+                            type="range" aria-label={t("settingsMedia:video.smart.minScore")}
                             min={60}
                             max={100}
                             step={1}
@@ -1539,7 +1549,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     ] as const).map(([label, key, def]) => (
                       <>
                         <span key={`l-${key}`} style={{ fontSize: 12, color: "var(--text-muted)" }}>{label}</span>
-                        <input key={`r-${key}`} type="range" min={15} max={40}
+                        <input key={`r-${key}`} type="range" aria-label={label} min={15} max={40}
                           value={encoding[key] ?? def}
                           onChange={(e) => setEncoding({ ...encoding, [key]: parseInt(e.target.value) })}
                           style={{ width: "100%", accentColor: "var(--accent)" }} />
@@ -1861,7 +1871,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
                         {known ? `${langName(code)} (${code})` : code}
-                        <button onClick={() => removeLanguage(code)} style={{
+                        <button aria-label={`${t("common:actions.remove")} ${code}`} onClick={() => removeLanguage(code)} style={{
                           background: "none", border: "none", color: "var(--text-muted)",
                           cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1,
                         }}>&times;</button>
@@ -1872,8 +1882,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ position: "relative" }}>
                   <input
                     placeholder={t("settingsMedia:audio.searchPlaceholder")}
+                    aria-label={t("settingsMedia:audio.searchPlaceholder")}
                     value={langSearch}
                     onChange={(e) => setLangSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter" && filteredLangs[0]) { e.preventDefault(); addLanguage(filteredLangs[0].code); } }}
                     style={{ ...inputStyle, width: "100%" }}
                   />
                   {filteredLangs.length > 0 && (
@@ -1883,7 +1895,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       borderRadius: 4, maxHeight: 200, overflowY: "auto",
                     }}>
                       {filteredLangs.map(l => (
-                        <div key={l.code} onClick={() => addLanguage(l.code)} style={{
+                        <div key={l.code} onClick={() => addLanguage(l.code)} {...pressable(() => addLanguage(l.code))} style={{
                           padding: "8px 12px", cursor: "pointer", fontSize: 13,
                           color: "var(--text-secondary)", borderBottom: "1px solid var(--bg-card)",
                         }}
@@ -1960,7 +1972,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* v0.9.18: language-detection tuning (model + confidence gates) */}
               <div style={{ marginTop: 14 }}>
                 <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.model.label")}</div>
-                <select value={encoding.lang_detect_whisper_model || "tiny"}
+                <select aria-label={t("settingsMedia:audio.model.label")} value={encoding.lang_detect_whisper_model || "tiny"}
                   onChange={(e) => setEncoding({ ...encoding, lang_detect_whisper_model: e.target.value })}
                   style={{ ...inputStyle, width: "100%" }}>
                   {["tiny", "base", "small", "medium", "large-v3"].map(m => (
@@ -1997,7 +2009,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
 
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.conversion.codec")}</div>
-                  <select value={encoding.audio_codec || "copy"}
+                  <select aria-label={t("settingsMedia:audio.conversion.codec")} value={encoding.audio_codec || "copy"}
                     onChange={(e) => setEncoding({ ...encoding, audio_codec: e.target.value })}
                     style={{ ...inputStyle, width: "100%" }}>
                     {AUDIO_CODECS.map(c => (
@@ -2016,7 +2028,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         <span style={labelStyle}>{t("settingsMedia:audio.conversion.bitrate")}</span>
                         <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.audio_bitrate || 128} kbps</span>
                       </div>
-                      <input type="range" min={64} max={640} step={32}
+                      <input type="range" aria-label={t("settingsMedia:audio.conversion.bitrate")} min={64} max={640} step={32}
                         value={encoding.audio_bitrate || 128}
                         onChange={(e) => setEncoding({ ...encoding, audio_bitrate: parseInt(e.target.value) })}
                         style={{ width: "100%", accentColor: "var(--accent)" }} />
@@ -2047,7 +2059,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ paddingLeft: 26, marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
                       <div>
                         <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.lossless.targetCodec")}</div>
-                        <select value={encoding.lossless_target_codec || "eac3"}
+                        <select aria-label={t("settingsMedia:audio.lossless.targetCodec")} value={encoding.lossless_target_codec || "eac3"}
                           onChange={(e) => setEncoding({ ...encoding, lossless_target_codec: e.target.value })}
                           style={{ ...inputStyle, width: "100%" }}>
                           {AUDIO_CODECS.filter(c => c.value !== "copy" && c.value !== "flac").map(c => (
@@ -2060,7 +2072,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <span style={labelStyle}>{t("settingsMedia:audio.lossless.targetBitrate")}</span>
                           <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.lossless_target_bitrate || 640} kbps</span>
                         </div>
-                        <input type="range" min={128} max={640} step={32}
+                        <input type="range" aria-label={t("settingsMedia:audio.lossless.targetBitrate")} min={128} max={640} step={32}
                           value={encoding.lossless_target_bitrate || 640}
                           onChange={(e) => setEncoding({ ...encoding, lossless_target_bitrate: parseInt(e.target.value) })}
                           style={{ width: "100%", accentColor: "var(--accent)" }} />
@@ -2208,7 +2220,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
                         {known ? `${langName(code)} (${code})` : code}
-                        <button onClick={() => {
+                        <button aria-label={`${t("common:actions.remove")} ${code}`} onClick={() => {
                           setEncoding({ ...encoding, sub_keep_languages: (encoding.sub_keep_languages || []).filter((c: string) => c !== code) });
                         }} style={{
                           background: "none", border: "none", color: "var(--text-muted)",
@@ -2220,8 +2232,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 </div>
                 <div style={{ position: "relative" }}>
                   <input
-                    placeholder={t("settingsMedia:subtitles.searchPlaceholder")}
+                    aria-label={t("settingsMedia:subtitles.searchPlaceholder")} placeholder={t("settingsMedia:subtitles.searchPlaceholder")}
                     value={subLangSearch}
+                    onKeyDown={(e) => { if (e.key === "Enter" && subFilteredLangs[0]) { e.preventDefault(); addSubLanguage(subFilteredLangs[0].code); } }}
                     onChange={(e) => setSubLangSearch(e.target.value)}
                     style={{ ...inputStyle, width: "100%" }}
                   />
@@ -2232,12 +2245,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       borderRadius: 4, maxHeight: 200, overflowY: "auto",
                     }}>
                       {subFilteredLangs.map(l => (
-                        <div key={l.code} onClick={() => {
-                          if (!(encoding.sub_keep_languages || []).includes(l.code)) {
-                            setEncoding({ ...encoding, sub_keep_languages: [...(encoding.sub_keep_languages || []), l.code] });
-                          }
-                          setSubLangSearch("");
-                        }} style={{
+                        <div key={l.code} onClick={() => addSubLanguage(l.code)} {...pressable(() => addSubLanguage(l.code))} style={{
                           padding: "8px 12px", cursor: "pointer", fontSize: 13,
                           color: "var(--text-secondary)", borderBottom: "1px solid var(--bg-card)",
                         }}
@@ -2403,7 +2411,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     type={showTmdbKey ? "text" : "password"}
                     value={tmdbKey}
                     onChange={(e) => setTmdbKey(e.target.value)}
-                    placeholder={t("settingsIntegrations:tmdb.keyPlaceholder")}
+                    aria-label={t("settingsIntegrations:tmdb.keyPlaceholder")} placeholder={t("settingsIntegrations:tmdb.keyPlaceholder")}
                     style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
                   />
                   <button
@@ -2703,7 +2711,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   type="text"
                   value={plexUrl}
                   onChange={(e) => setPlexUrl(e.target.value)}
-                  placeholder="http://192.168.0.103:32400"
+                  aria-label="http://192.168.0.103:32400" placeholder="http://192.168.0.103:32400"
                   style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
                 />
 
@@ -2717,7 +2725,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       type={showPlexToken ? "text" : "password"}
                       value={plexToken}
                       onChange={(e) => setPlexToken(e.target.value)}
-                      placeholder={t("settingsIntegrations:plex.tokenPlaceholder")}
+                      aria-label={t("settingsIntegrations:plex.tokenPlaceholder")} placeholder={t("settingsIntegrations:plex.tokenPlaceholder")}
                       style={{ ...inputStyle, width: "100%", paddingRight: 36 }}
                     />
                     <button onClick={() => setShowPlexToken(!showPlexToken)} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
@@ -2759,7 +2767,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 type="text"
                 value={plexPathMapping}
                 onChange={(e) => setPlexPathMapping(e.target.value)}
-                placeholder="/media=/srv/media"
+                aria-label="/media=/srv/media" placeholder="/media=/srv/media"
                 style={{ ...inputStyle, width: "100%", marginTop: 4 }}
               />
               <div style={helpStyle}>
@@ -2825,13 +2833,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:jellyfin.url")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="http://192.168.0.103:8096" placeholder="http://192.168.0.103:8096"
                   value={encoding?.jellyfin_url || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_url: e.target.value })} />
               </div>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:jellyfin.apiKeyPlaceholder")}
+                <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:jellyfin.apiKeyPlaceholder")} placeholder={t("settingsIntegrations:jellyfin.apiKeyPlaceholder")}
                   type="password"
                   value={encoding?.jellyfin_api_key || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_api_key: e.target.value })} />
@@ -2840,7 +2848,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.userIdOptional")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:shared.autoDetected")}
+                <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:shared.autoDetected")} placeholder={t("settingsIntegrations:shared.autoDetected")}
                   value={encoding?.jellyfin_user_id || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_user_id: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -2849,7 +2857,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               </div>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/mnt/media" placeholder="/media=/mnt/media"
                   value={encoding?.jellyfin_path_mapping || ""}
                   onChange={(e) => setEncoding({ ...encoding, jellyfin_path_mapping: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -2863,8 +2871,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   try {
                     const r = await testApiKey("jellyfin");
                     if (r.success) toast(t("settingsIntegrations:shared.connectedLibraries", { name: (r as any).server_name || "Jellyfin", count: (r as any).library_count || 0 }), "success");
-                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"));
-                  } catch { toast(t("settingsIntegrations:shared.connectionFailed")); }
+                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"), "error");
+                  } catch { toast(t("settingsIntegrations:shared.connectionFailed"), "error"); }
                 }}>{t("settingsIntegrations:shared.testConnection")}</button>
               {encoding?.jellyfin_configured && (
                 <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
@@ -2902,13 +2910,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:emby.url")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="http://192.168.0.103:8096"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="http://192.168.0.103:8096" placeholder="http://192.168.0.103:8096"
                   value={encoding?.emby_url || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_url: e.target.value })} />
               </div>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:emby.apiKeyPlaceholder")}
+                <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:emby.apiKeyPlaceholder")} placeholder={t("settingsIntegrations:emby.apiKeyPlaceholder")}
                   type="password"
                   value={encoding?.emby_api_key || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_api_key: e.target.value })} />
@@ -2917,7 +2925,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.userIdOptional")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:shared.autoDetected")}
+                <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:shared.autoDetected")} placeholder={t("settingsIntegrations:shared.autoDetected")}
                   value={encoding?.emby_user_id || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_user_id: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -2926,7 +2934,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               </div>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/mnt/media"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/mnt/media" placeholder="/media=/mnt/media"
                   value={encoding?.emby_path_mapping || ""}
                   onChange={(e) => setEncoding({ ...encoding, emby_path_mapping: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -2940,8 +2948,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   try {
                     const r = await testApiKey("emby");
                     if (r.success) toast(t("settingsIntegrations:shared.connectedLibraries", { name: (r as any).server_name || "Emby", count: (r as any).library_count || 0 }), "success");
-                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"));
-                  } catch { toast(t("settingsIntegrations:shared.connectionFailed")); }
+                    else toast(r.error || t("settingsIntegrations:shared.connectionFailed"), "error");
+                  } catch { toast(t("settingsIntegrations:shared.connectionFailed"), "error"); }
                 }}>{t("settingsIntegrations:shared.testConnection")}</button>
               {encoding?.emby_configured && (
                 <span style={{ fontSize: 11, color: "var(--success)", display: "flex", alignItems: "center", gap: 4 }}>
@@ -2983,19 +2991,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:8989"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="http://localhost:8989" placeholder="http://localhost:8989"
                       value={encoding?.sonarr_url || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_url: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:arr.sonarrKeyPlaceholder")}
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:arr.sonarrKeyPlaceholder")} placeholder={t("settingsIntegrations:arr.sonarrKeyPlaceholder")}
                       value={encoding?.sonarr_api_key || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_api_key: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media=/  (container=sonarr)"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/  (container=sonarr)" placeholder="/media=/  (container=sonarr)"
                       value={encoding?.sonarr_path_mapping || ""}
                       onChange={e => setEncoding({ ...encoding, sonarr_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
@@ -3010,19 +3018,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="http://localhost:7878"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="http://localhost:7878" placeholder="http://localhost:7878"
                       value={encoding?.radarr_url || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_url: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:shared.apiKey")}</label>
-                    <input type="password" style={{ ...inputStyle, width: "100%" }} placeholder={t("settingsIntegrations:arr.radarrKeyPlaceholder")}
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:arr.radarrKeyPlaceholder")} placeholder={t("settingsIntegrations:arr.radarrKeyPlaceholder")}
                       value={encoding?.radarr_api_key || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_api_key: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="/media/Movies=/  (container=radarr)"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="/media/Movies=/  (container=radarr)" placeholder="/media/Movies=/  (container=radarr)"
                       value={encoding?.radarr_path_mapping || ""}
                       onChange={e => setEncoding({ ...encoding, radarr_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
@@ -3038,7 +3046,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   try {
                     await saveSettings(encoding);
                     toast(t("settingsIntegrations:arr.saved"), "success");
-                  } catch (err: any) { toast(t("settingsIntegrations:shared.saveFailed", { error: err.message })); }
+                  } catch (err: any) { toast(t("settingsIntegrations:shared.saveFailed", { error: err.message }), "error"); }
                 }}
               >{t("common:actions.save")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
@@ -3047,8 +3055,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     await saveSettings(encoding);
                     const res = await testApiKey("sonarr") as any;
                     if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Sonarr", version: res.version }), "success");
-                    else toast(`Sonarr: ${res.error}`);
-                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Sonarr", error: err.message })); }
+                    else toast(`Sonarr: ${res.error}`, "error");
+                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Sonarr", error: err.message }), "error"); }
                 }}
               >{t("settingsIntegrations:arr.testSonarr")}</button>
               <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
@@ -3057,8 +3065,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     await saveSettings(encoding);
                     const res = await testApiKey("radarr") as any;
                     if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Radarr", version: res.version }), "success");
-                    else toast(`Radarr: ${res.error}`);
-                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Radarr", error: err.message })); }
+                    else toast(`Radarr: ${res.error}`, "error");
+                  } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Radarr", error: err.message }), "error"); }
                 }}
               >{t("settingsIntegrations:arr.testRadarr")}</button>
             </div>
@@ -3086,11 +3094,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {(encoding?.nzbget_tags || []).map((tag: string) => (
                   <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
                     {tag}
-                    <button onClick={() => setEncoding({ ...encoding, nzbget_tags: (encoding?.nzbget_tags || []).filter((t: string) => t !== tag) })}
+                    <button aria-label={`${t("common:actions.remove")} ${tag}`} onClick={() => setEncoding({ ...encoding, nzbget_tags: (encoding?.nzbget_tags || []).filter((t: string) => t !== tag) })}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
                   </span>
                 ))}
-                <input type="text" placeholder={t("settingsIntegrations:downloaders.addTag")}
+                <input type="text" aria-label={t("settingsIntegrations:downloaders.addTag")} placeholder={t("settingsIntegrations:downloaders.addTag")}
                   style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 100, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
@@ -3112,11 +3120,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {(encoding?.nzbget_categories || []).map((cat: string) => (
                   <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
                     {cat}
-                    <button onClick={() => setEncoding({ ...encoding, nzbget_categories: (encoding?.nzbget_categories || []).filter((c: string) => c !== cat) })}
+                    <button aria-label={`${t("common:actions.remove")} ${cat}`} onClick={() => setEncoding({ ...encoding, nzbget_categories: (encoding?.nzbget_categories || []).filter((c: string) => c !== cat) })}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
                   </span>
                 ))}
-                <input type="text" placeholder={t("settingsIntegrations:downloaders.addCategory")}
+                <input type="text" aria-label={t("settingsIntegrations:downloaders.addCategory")} placeholder={t("settingsIntegrations:downloaders.addCategory")}
                   style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, width: 120, padding: "4px 10px", fontSize: 12, outline: "none", height: "auto" }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.target as HTMLInputElement).value.trim()) {
@@ -3138,7 +3146,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
                   <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
-                    <input type="text" value={m.from || ""} placeholder="/Downloads/completed/TV"
+                    <input type="text" value={m.from || ""} aria-label="/Downloads/completed/TV" placeholder="/Downloads/completed/TV"
                       style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
                       onChange={(e) => {
                         const mappings = [...(encoding?.nzbget_path_mappings || [])];
@@ -3146,14 +3154,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         setEncoding({ ...encoding, nzbget_path_mappings: mappings });
                       }} />
                     <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
-                    <input type="text" value={m.to || ""} placeholder="/downloads/tv"
+                    <input type="text" value={m.to || ""} aria-label="/downloads/tv" placeholder="/downloads/tv"
                       style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
                       onChange={(e) => {
                         const mappings = [...(encoding?.nzbget_path_mappings || [])];
                         mappings[i] = { ...mappings[i], to: e.target.value };
                         setEncoding({ ...encoding, nzbget_path_mappings: mappings });
                       }} />
-                    <button onClick={() => {
+                    <button aria-label={t("common:actions.remove")} onClick={() => {
                       const mappings = (encoding?.nzbget_path_mappings || []).filter((_: any, j: number) => j !== i);
                       setEncoding({ ...encoding, nzbget_path_mappings: mappings });
                     }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>&times;</button>
@@ -3170,7 +3178,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 16 }}>
               <div>
                 <div style={labelStyle}>{t("settingsIntegrations:downloaders.priority")}</div>
-                <select value={encoding?.nzbget_priority || "High"}
+                <select aria-label={t("settingsIntegrations:downloaders.priority")} value={encoding?.nzbget_priority || "High"}
                   onChange={(e) => setEncoding({ ...encoding, nzbget_priority: e.target.value })}
                   style={{ ...inputStyle, width: 140 }}>
                   <option value="Normal">{t("settingsIntegrations:priorities.normal")}</option>
@@ -3313,7 +3321,7 @@ volumes:
                         if (res.libraries_synced) parts.push(t("settingsIntegrations:rules.sync.libraries", { count: res.libraries_synced }));
                         if (res.watch_synced) parts.push(t("settingsIntegrations:rules.sync.watch", { count: res.watch_synced }));
                         toast(t("settingsIntegrations:rules.synced", { parts: parts.join(", ") || t("settingsIntegrations:rules.noChanges") }), "success");
-                      } catch (err: any) { toast(err.message || t("settingsIntegrations:rules.syncFailed")); }
+                      } catch (err: any) { toast(err.message || t("settingsIntegrations:rules.syncFailed"), "error"); }
                       setRuleSyncing(false);
                     }}
                   >
@@ -3364,7 +3372,23 @@ volumes:
                         cursor: "grab",
                       }}>
                       {/* Drag handle + priority + toggle + name */}
-                      <span style={{ cursor: "grab", opacity: 0.3, fontSize: 14, flexShrink: 0 }} title={t("settingsIntegrations:rules.dragToReorder")}>&#x2807;</span>
+                      <button
+                        type="button"
+                        className="rule-drag-handle"
+                        title={t("settingsIntegrations:rules.dragToReorder")}
+                        aria-label={t("settingsIntegrations:rules.moveRule", { n: idx + 1 })}
+                        onKeyDown={async (e) => {
+                          // The keyboard way to reorder (FE#25): drag was the only one.
+                          const to = e.key === "ArrowUp" ? idx - 1 : e.key === "ArrowDown" ? idx + 1 : -1;
+                          if (to < 0 || to >= rules.length) return;
+                          e.preventDefault();
+                          const ids = rules.map(r => r.id);
+                          const [moved] = ids.splice(idx, 1);
+                          ids.splice(to, 0, moved);
+                          await reorderEncodingRules(ids);
+                          loadRules();
+                        }}
+                      >&#x2807;</button>
                       <span style={{ color: "var(--text-muted)", fontSize: 11 }}>#{idx + 1}</span>
                       <input type="checkbox" checked={!!rule.enabled}
                         onChange={async () => {
@@ -3450,7 +3474,7 @@ volumes:
                           }}
                           title={t("settingsIntegrations:rules.edit")}
                         >&#9998;</button>
-                        <button style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 2, fontSize: 12 }}
+                        <button aria-label={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 2, fontSize: 12 }}
                           onClick={async () => {
                             await deleteEncodingRule(rule.id);
                             loadRules();
@@ -3476,7 +3500,7 @@ volumes:
                 {/* Rule name */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
                   <label style={labelStyle}>{t("settingsIntegrations:rules.form.name")}</label>
-                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} placeholder={t("settingsIntegrations:rules.form.namePlaceholder")}
+                  <input style={{ ...inputStyle, width: 300 }} value={ruleForm.name} aria-label={t("settingsIntegrations:rules.form.namePlaceholder")} placeholder={t("settingsIntegrations:rules.form.namePlaceholder")}
                     onChange={e => setRuleForm({ ...ruleForm, name: e.target.value })} />
                 </div>
 
@@ -3484,7 +3508,7 @@ volumes:
                 <div style={{ marginBottom: 12 }}>
                   <label style={labelStyle}>{t("settingsIntegrations:rules.form.matchConditions")}</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, marginBottom: 12 }}>
-                    <select value={ruleForm.match_mode} onChange={e => setRuleForm({...ruleForm, match_mode: e.target.value})}
+                    <select aria-label={t("common:labels.match")} value={ruleForm.match_mode} onChange={e => setRuleForm({...ruleForm, match_mode: e.target.value})}
                       style={{ ...inputStyle, width: 260, fontWeight: 500 }}>
                       <option value="any">{t("settingsIntegrations:rules.form.matchAny")}</option>
                       <option value="all">{t("settingsIntegrations:rules.form.matchAll")}</option>
@@ -3498,7 +3522,7 @@ volumes:
                     {ruleForm.conditions.map((cond, condIdx) => (
                       <div key={condIdx} style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         {/* Type */}
-                        <select value={cond.type} onChange={e => updateConditionType(condIdx, e.target.value)} style={{ ...inputStyle, width: 160 }}>
+                        <select aria-label={t("common:labels.conditionType")} value={cond.type} onChange={e => updateConditionType(condIdx, e.target.value)} style={{ ...inputStyle, width: 160 }}>
                           <optgroup label={t("settingsIntegrations:conditions.groups.path")}>
                             <option value="directory">{t("settingsIntegrations:conditions.types.directory")}</option>
                           </optgroup>
@@ -3535,7 +3559,7 @@ volumes:
                           </optgroup>
                         </select>
                         {/* Operator */}
-                        <select value={cond.operator} onChange={e => updateConditionOperator(condIdx, e.target.value)} style={{ ...inputStyle, width: 140 }}>
+                        <select aria-label={t("common:labels.operator")} value={cond.operator} onChange={e => updateConditionOperator(condIdx, e.target.value)} style={{ ...inputStyle, width: 140 }}>
                           {(CONDITION_TYPES[cond.type]?.operators || []).map(op => (
                             <option key={op.value} value={op.value}>{op.label}</option>
                           ))}
@@ -3546,42 +3570,42 @@ volumes:
                           if (!ct) return null;
 
                           if (cond.type === "directory") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.selectDirectory")}</option>
                               {dirs.map(d => <option key={d.path} value={d.path}>{d.label ? `${d.label} (${d.path})` : d.path}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "source") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.sources || []).map((s: string) => <option key={s} value={s}>{s}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "resolution") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.resolutions || []).map((r: string) => <option key={r} value={r}>{r}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "video_codec") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.video_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "audio_codec") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(condOpts.audio_codecs || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "media_type") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               <option value="movie">{t("settingsIntegrations:conditions.values.movie")}</option>
                               <option value="tv">{t("settingsIntegrations:conditions.values.tv")}</option>
@@ -3589,7 +3613,7 @@ volumes:
                           }
 
                           if (cond.type === "content_type") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {["anime", "animation", "grain", "remux", "other"].map(v => (
                                 <option key={v} value={v}>{t(`settingsMedia:video.smart.types.${v}`)}</option>
@@ -3599,74 +3623,74 @@ volumes:
 
                           if (cond.type === "release_group") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                 <option value="">{t("settingsIntegrations:conditions.values.selectOrType")}</option>
                                 {(condOpts.release_groups || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeGroupName")}
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeGroupName")} placeholder={t("settingsIntegrations:conditions.values.typeGroupName")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
 
                           if (cond.type === "label") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                 <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                 {(plexOpts.labels || []).map((l: string) => <option key={l} value={l}>{l}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
 
                           if (cond.type === "collection") {
                             return <div style={{ display: "flex", gap: 6, flex: 1 }}>
-                              <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                              <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                 <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                 {(plexOpts.collections || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                               </select>
-                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
+                              <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.typeManually")} placeholder={t("settingsIntegrations:conditions.values.typeManually")}
                                 onChange={e => updateConditionValue(condIdx, e.target.value)} />
                             </div>;
                           }
 
                           if (cond.type === "genre") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(plexOpts.genres || []).map((g: string) => <option key={g} value={g}>{g}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "library") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               {(plexOpts.libraries || []).map((l: any) => <option key={l.title} value={l.title}>{l.title}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "arr_tag") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.arr_tags || []).map((t: any) => <option key={`${t.source}-${t.label}`} value={t.label}>{t.label} ({t.source})</option>)}
                             </select>;
                           }
 
                           if (cond.type === "jellyfin_tag") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.jellyfin_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "emby_tag") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.selectTag")}</option>
                               {(condOpts.emby_tags || []).map((t: string) => <option key={t} value={t}>{t}</option>)}
                             </select>;
                           }
 
                           if (cond.type === "emby_watched") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                               <option value="true">{t("settingsIntegrations:conditions.values.watched")}</option>
                               <option value="false">{t("settingsIntegrations:conditions.values.unwatched")}</option>
@@ -3674,7 +3698,7 @@ volumes:
                           }
 
                           if (cond.type === "nzbget_category") {
-                            return <select style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                            return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                               <option value="">{t("settingsIntegrations:conditions.values.selectCategory")}</option>
                               {(condOpts.nzbget_categories || []).map((c: string) => <option key={c} value={c}>{c}</option>)}
                             </select>;
@@ -3689,10 +3713,10 @@ volumes:
                             return (
                               <div style={{ display: "flex", gap: 6, flex: 1 }}>
                                 <input style={{ ...inputStyle, width: 80 }}
-                                       type="number" min="1" placeholder="24"
+                                       type="number" min="1" aria-label="24" placeholder="24"
                                        value={num}
                                        onChange={e => setBoth(e.target.value, unit)} />
-                                <select style={{ ...inputStyle, width: 110 }}
+                                <select aria-label={t("common:labels.unit")} style={{ ...inputStyle, width: 110 }}
                                         value={unit}
                                         onChange={e => setBoth(num, e.target.value)}>
                                   <option value="h">{t("settingsIntegrations:conditions.values.hours")}</option>
@@ -3705,16 +3729,16 @@ volumes:
 
                           if (ct.valueType === "number") {
                             return <input type="number" step="0.1" style={{ ...inputStyle, flex: 1 }} value={cond.value}
-                              placeholder={t("settingsIntegrations:conditions.values.sizePlaceholder")} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
+                              aria-label={t("settingsIntegrations:conditions.values.sizePlaceholder")} placeholder={t("settingsIntegrations:conditions.values.sizePlaceholder")} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                           }
 
                           // Default: text input
-                          return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} placeholder={t("settingsIntegrations:conditions.values.enterValue")}
+                          return <input style={{ ...inputStyle, flex: 1 }} value={cond.value} aria-label={t("settingsIntegrations:conditions.values.enterValue")} placeholder={t("settingsIntegrations:conditions.values.enterValue")}
                             onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                         })()}
                         {/* Remove button */}
                         {ruleForm.conditions.length > 1 && (
-                          <button style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 14, padding: 2 }}
+                          <button aria-label={t("settingsIntegrations:conditions.values.removeCondition")} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 14, padding: 2 }}
                             onClick={() => {
                               const updated = ruleForm.conditions.filter((_, i) => i !== condIdx);
                               setRuleForm({ ...ruleForm, conditions: updated });
@@ -3729,7 +3753,7 @@ volumes:
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
                     <div>
                       <label style={labelStyle}>{t("settingsIntegrations:rules.form.action")}</label>
-                      <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.action}
+                      <select aria-label={t("settingsIntegrations:rules.form.action")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.action}
                         onChange={e => setRuleForm({ ...ruleForm, action: e.target.value })}>
                         <option value="encode">{t("settingsIntegrations:rules.form.actions.encode")}</option>
                         <option value="ignore">{t("settingsIntegrations:rules.form.actions.ignore")}</option>
@@ -3739,7 +3763,7 @@ volumes:
                     {ruleForm.action === "encode" && <>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:rules.form.encoder")}</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
+                        <select aria-label={t("settingsIntegrations:rules.form.encoder")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.encoder}
                           onChange={e => setRuleForm({ ...ruleForm, encoder: e.target.value })}>
                           <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                           {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
@@ -3764,13 +3788,13 @@ volumes:
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:rules.form.preset")}</label>
                         {ruleForm.encoder === "libx265" ? (
-                          <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.libx265_preset}
+                          <select aria-label={t("settingsIntegrations:rules.form.preset")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.libx265_preset}
                             onChange={e => setRuleForm({ ...ruleForm, libx265_preset: e.target.value })}>
                             <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                             {["ultrafast","superfast","veryfast","faster","fast","medium","slow","slower","veryslow"].map(p => <option key={p} value={p}>{p}</option>)}
                           </select>
                         ) : (
-                          <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
+                          <select aria-label={t("settingsIntegrations:rules.form.preset")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_preset}
                             onChange={e => setRuleForm({ ...ruleForm, nvenc_preset: e.target.value })}>
                             <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                             {["p1","p2","p3","p4","p5","p6","p7"].map(p => <option key={p} value={p}>{p.toUpperCase()}</option>)}
@@ -3781,7 +3805,7 @@ volumes:
                         <label style={labelStyle}>{ruleForm.encoder === "libx265" ? "CRF" : "CQ"}</label>
                         <input type="number" style={{ ...inputStyle, width: "100%" }}
                           value={ruleForm.encoder === "libx265" ? ruleForm.libx265_crf : ruleForm.nvenc_cq}
-                          placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
+                          aria-label={t("settingsIntegrations:rules.form.default")} placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={ruleForm.encoder === "libx265" ? 28 : 40}
                           onChange={e => {
                             if (ruleForm.encoder === "libx265") {
                               setRuleForm({ ...ruleForm, libx265_crf: e.target.value });
@@ -3794,7 +3818,7 @@ volumes:
                       </>}
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:rules.form.resolution")}</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}
+                        <select aria-label={t("settingsIntegrations:rules.form.resolution")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.target_resolution}
                           onChange={e => setRuleForm({ ...ruleForm, target_resolution: e.target.value })}>
                           <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                           <option value="copy">{t("settingsMedia:options.resolutions.copy.label")}</option>
@@ -3807,7 +3831,7 @@ volumes:
                     {ruleForm.action !== "skip" && <>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:rules.form.audioCodec")}</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_codec}
+                        <select aria-label={t("settingsIntegrations:rules.form.audioCodec")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_codec}
                           onChange={e => setRuleForm({ ...ruleForm, audio_codec: e.target.value })}>
                           <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                           <option value="copy">{t("settingsIntegrations:rules.form.copyNoConversion")}</option>
@@ -3820,7 +3844,7 @@ volumes:
                       </div>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:rules.form.audioBitrate")}</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_bitrate}
+                        <select aria-label={t("settingsIntegrations:rules.form.audioBitrate")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.audio_bitrate}
                           onChange={e => setRuleForm({ ...ruleForm, audio_bitrate: e.target.value })}>
                           <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
                           <option value="640">{t("settingsIntegrations:rules.form.bitrates.640")}</option>
@@ -3833,7 +3857,7 @@ volumes:
                     {ruleForm.action !== "skip" && (
                       <div>
                         <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsIntegrations:rules.form.queuePriority")}</label>
-                        <select style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
+                        <select aria-label={t("settingsIntegrations:rules.form.queuePriority")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.queue_priority}
                           onChange={e => setRuleForm({ ...ruleForm, queue_priority: e.target.value })}>
                           <option value="">{t("settingsIntegrations:rules.form.default")}</option>
                           <option value="0">{t("settingsIntegrations:priorities.normal")}</option>
@@ -3908,7 +3932,7 @@ volumes:
                         // Small delay to let DB commit, then reload
                         setTimeout(loadRules, 200);
                       } catch (err: any) {
-                        toast(err.message || t("settingsIntegrations:rules.toasts.saveFailed"));
+                        toast(err.message || t("settingsIntegrations:rules.toasts.saveFailed"), "error");
                       }
                     }}
                   >
@@ -3947,7 +3971,7 @@ volumes:
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 16,
                           opacity: encoding?.auto_queue_new ? 1 : 0.5 }}>
               <span style={labelStyle}>{t("settingsSystem:automation.autoQueue.priority")}</span>
-              <select style={{ ...inputStyle, width: 130 }}
+              <select aria-label={t("settingsSystem:automation.autoQueue.priority")} style={{ ...inputStyle, width: 130 }}
                 value={String(encoding?.auto_queue_priority ?? 0)}
                 disabled={!encoding?.auto_queue_new}
                 onChange={e => setEncoding({
@@ -3999,7 +4023,7 @@ volumes:
                 <input type="text" style={{ ...inputStyle, flex: "1 1 200px", maxWidth: 300 }}
                   value={encoding?.filename_suffix ?? ""}
                   onChange={e => setEncoding({ ...encoding, filename_suffix: e.target.value })}
-                  placeholder={t("settingsSystem:automation.filename.suffixPlaceholder")} />
+                  aria-label={t("settingsSystem:automation.filename.suffixPlaceholder")} placeholder={t("settingsSystem:automation.filename.suffixPlaceholder")} />
                 {!encoding?.filename_suffix && (
                   <button className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}
                     onClick={() => setEncoding({ ...encoding, filename_suffix: "-Shrinkerr" })}>
@@ -4065,7 +4089,7 @@ volumes:
               <input type="text" style={{ ...inputStyle, flex: 1 }}
                 value={encoding?.backup_folder ?? ""}
                 onChange={e => setEncoding({ ...encoding, backup_folder: e.target.value })}
-                placeholder={t("settingsSystem:automation.originals.backupFolderPlaceholder")} />
+                aria-label={t("settingsSystem:automation.originals.backupFolderPlaceholder")} placeholder={t("settingsSystem:automation.originals.backupFolderPlaceholder")} />
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap", flexShrink: 0 }}
@@ -4135,7 +4159,7 @@ volumes:
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
               <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterScan")}</span>
-              <select
+              <select aria-label={t("settingsSystem:automation.health.afterScan")}
                 style={{ ...inputStyle, width: 140 }}
                 value={encoding?.health_check_on_scan ?? "off"}
                 onChange={e => setEncoding({ ...encoding, health_check_on_scan: e.target.value })}
@@ -4161,7 +4185,7 @@ volumes:
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
               <span style={{ ...labelStyle, flex: "0 0 240px" }}>{t("settingsSystem:automation.health.afterConversion")}</span>
-              <select
+              <select aria-label={t("settingsSystem:automation.health.afterConversion")}
                 style={{ ...inputStyle, width: 140 }}
                 value={encoding?.health_check_after_conversion ?? "off"}
                 onChange={e => setEncoding({ ...encoding, health_check_after_conversion: e.target.value })}
@@ -4182,7 +4206,7 @@ volumes:
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 300px" }}>
                   <label style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("settingsSystem:automation.advanced.customFlags")}</label>
                   <input type="text" style={{ ...inputStyle, width: "100%" }}
-                    placeholder={t("settingsSystem:automation.advanced.customFlagsPlaceholder")}
+                    aria-label={t("settingsSystem:automation.advanced.customFlagsPlaceholder")} placeholder={t("settingsSystem:automation.advanced.customFlagsPlaceholder")}
                     value={encoding?.custom_ffmpeg_flags ?? ""}
                     onChange={e => setEncoding({ ...encoding, custom_ffmpeg_flags: e.target.value })} />
                 </div>
@@ -4256,7 +4280,7 @@ volumes:
               <input type="text" style={{ ...inputStyle, width: "100%", maxWidth: 500 }}
                 value={encoding?.post_conversion_script || ""}
                 onChange={e => setEncoding({ ...encoding, post_conversion_script: e.target.value })}
-                placeholder="/path/to/script.sh" />
+                aria-label="/path/to/script.sh" placeholder="/path/to/script.sh" />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                 {t("settingsSystem:script.pathHelp")}
               </div>
@@ -4352,7 +4376,7 @@ volumes:
                 value={encoding?.auth_username || ""}
                 disabled={!encoding?.auth_enabled}
                 onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
-                placeholder="admin" />
+                aria-label="admin" placeholder="admin" />
             </div>
             <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
               <div style={labelStyle}>{t("settingsSystem:auth.password")}</div>
@@ -4360,7 +4384,7 @@ volumes:
                 value={encoding?.auth_password || ""}
                 disabled={!encoding?.auth_enabled}
                 onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
-                placeholder={t("settingsSystem:auth.passwordPlaceholder")} />
+                aria-label={t("settingsSystem:auth.passwordPlaceholder")} placeholder={t("settingsSystem:auth.passwordPlaceholder")} />
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("settingsSystem:auth.passwordHelp")}</div>
             </div>
 
@@ -4547,7 +4571,7 @@ volumes:
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Discord</div>
                 <label style={labelStyle}>{t("settingsSystem:notifications.webhookUrl")}</label>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="https://discord.com/api/webhooks/..."
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="https://discord.com/api/webhooks/..." placeholder="https://discord.com/api/webhooks/..."
                   value={encoding?.discord_webhook_url || ""}
                   onChange={e => setEncoding({ ...encoding, discord_webhook_url: e.target.value })} />
               </div>
@@ -4558,13 +4582,13 @@ volumes:
                 <div style={{ display: "flex", gap: 8 }}>
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>{t("settingsSystem:notifications.botToken")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="123456:ABC-DEF..."
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="123456:ABC-DEF..." placeholder="123456:ABC-DEF..."
                       value={encoding?.telegram_bot_token || ""}
                       onChange={e => setEncoding({ ...encoding, telegram_bot_token: e.target.value })} />
                   </div>
                   <div style={{ flex: 1 }}>
                     <label style={labelStyle}>{t("settingsSystem:notifications.chatId")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="-100123456789"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="-100123456789" placeholder="-100123456789"
                       value={encoding?.telegram_chat_id || ""}
                       onChange={e => setEncoding({ ...encoding, telegram_chat_id: e.target.value })} />
                   </div>
@@ -4577,13 +4601,13 @@ volumes:
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 8 }}>
                   <div>
                     <label style={labelStyle}>{t("settingsSystem:notifications.smtpHost")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="smtp.gmail.com"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="smtp.gmail.com" placeholder="smtp.gmail.com"
                       value={encoding?.smtp_host || ""}
                       onChange={e => setEncoding({ ...encoding, smtp_host: e.target.value })} />
                   </div>
                   <div>
                     <label style={labelStyle}>{t("settingsSystem:notifications.port")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} placeholder="587"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label="587" placeholder="587"
                       value={encoding?.smtp_port || "587"}
                       onChange={e => setEncoding({ ...encoding, smtp_port: e.target.value })} />
                   </div>
@@ -4603,7 +4627,7 @@ volumes:
                   </div>
                 </div>
                 <label style={labelStyle}>{t("settingsSystem:notifications.sendTo")}</label>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="you@email.com"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="you@email.com" placeholder="you@email.com"
                   value={encoding?.email_to || ""}
                   onChange={e => setEncoding({ ...encoding, email_to: e.target.value })} />
               </div>
@@ -4612,7 +4636,7 @@ volumes:
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>{t("settingsSystem:notifications.genericWebhook")}</div>
                 <label style={labelStyle}>{t("settingsSystem:notifications.genericWebhookUrl")}</label>
-                <input style={{ ...inputStyle, width: "100%" }} placeholder="https://your-server.com/webhook"
+                <input style={{ ...inputStyle, width: "100%" }} aria-label="https://your-server.com/webhook" placeholder="https://your-server.com/webhook"
                   value={encoding?.webhook_url || ""}
                   onChange={e => setEncoding({ ...encoding, webhook_url: e.target.value })} />
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -4636,7 +4660,7 @@ volumes:
                   const ok = Object.entries(results).filter(([, v]) => v).map(([k]) => k);
                   const fail = Object.entries(results).filter(([, v]) => !v).map(([k]) => k);
                   if (ok.length > 0) toast(t("settingsSystem:toasts.testSent", { providers: ok.join(", ") }), "success");
-                  if (fail.length > 0) toast(t("settingsSystem:toasts.testFailed", { providers: fail.join(", ") }));
+                  if (fail.length > 0) toast(t("settingsSystem:toasts.testFailed", { providers: fail.join(", ") }), "error");
                   if (ok.length === 0 && fail.length === 0) toast(t("settingsSystem:toasts.noProviders"));
                 }}
               >{t("settingsSystem:notifications.test")}</button>
@@ -4655,7 +4679,7 @@ volumes:
                     await createBackup();
                     toast(t("settingsSystem:toasts.backupCreated"), "success");
                     loadBackups();
-                  } catch { toast(t("settingsSystem:toasts.backupFailed")); }
+                  } catch { toast(t("settingsSystem:toasts.backupFailed"), "error"); }
                   setBackupCreating(false);
                 }}>
                 {backupCreating ? t("settingsSystem:backups.creating") : t("settingsSystem:backups.create")}
@@ -4695,7 +4719,7 @@ volumes:
                             // Reload: a Save from this page's pre-restore state
                             // would overwrite the restored settings (v0.10.0).
                             setTimeout(() => window.location.reload(), 1500);
-                          } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
+                          } catch { toast(t("settingsSystem:toasts.restoreFailed"), "error"); }
                         }}>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
@@ -4710,7 +4734,7 @@ volumes:
                             await deleteBackup(b.name);
                             loadBackups();
                             toast(t("settingsSystem:toasts.backupDeleted"));
-                          } catch { toast(t("settingsSystem:toasts.deleteFailed")); }
+                          } catch { toast(t("settingsSystem:toasts.deleteFailed"), "error"); }
                         }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -4733,7 +4757,7 @@ volumes:
                       toast(t("settingsSystem:toasts.backupRestored"), "success");
                       setTimeout(() => window.location.reload(), 1500);
                       loadBackups();
-                    } catch { toast(t("settingsSystem:toasts.restoreFailed")); }
+                    } catch { toast(t("settingsSystem:toasts.restoreFailed"), "error"); }
                     e.target.value = "";
                   }} />
                 <span style={{ border: "1px solid var(--border)", padding: "4px 10px", borderRadius: 4, cursor: "pointer" }}>
@@ -4790,12 +4814,20 @@ volumes:
           {/* Keyboard Shortcuts */}
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:shortcuts.title")}</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", marginBottom: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={shortcutsOn}
+                onChange={(e) => { setShortcutsEnabled(e.target.checked); setShortcutsOn(e.target.checked); }}
+              />
+              {t("settingsSystem:shortcuts.enabled")}
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, opacity: shortcutsOn ? 1 : 0.5 }}>
               {[
                 ["D", t("settingsSystem:shortcuts.actions.dashboard")],
                 ["S", t("settingsSystem:shortcuts.actions.scanner")],
                 ["Q", t("settingsSystem:shortcuts.actions.queue")],
-                ["T", t("settingsSystem:shortcuts.actions.statistics")],
+                ["M", t("settingsSystem:shortcuts.actions.monitor")],
                 ["L", t("settingsSystem:shortcuts.actions.logs")],
                 ["H", t("settingsSystem:shortcuts.actions.schedule")],
                 ["E", t("settingsSystem:shortcuts.actions.settings")],

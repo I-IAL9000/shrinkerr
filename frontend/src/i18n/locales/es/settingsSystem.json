@@ -163,13 +163,14 @@
       "dashboard": "Panel",
       "scanner": "Escáner",
       "queue": "Cola",
-      "statistics": "Estadísticas",
       "logs": "Registros",
       "schedule": "Programación",
       "settings": "Ajustes",
-      "startPause": "Iniciar / pausar la cola"
+      "startPause": "Iniciar / pausar la cola",
+      "monitor": "Monitor"
     },
-    "note": "Los atajos se desactivan mientras escribes en campos de texto."
+    "note": "No mientras escribes en un campo o hay un diálogo abierto. Se guarda en este navegador.",
+    "enabled": "Usar atajos de teclado"
   },
   "updates": {
     "title": "Actualizaciones",

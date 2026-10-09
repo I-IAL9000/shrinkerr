@@ -113,7 +113,7 @@ export default function RenamingSettings() {
       setSettings(updated);
       toast(t("settingsRenaming:toast.saved"), "success");
     } catch (e: any) {
-      toast(e?.message || t("settingsRenaming:toast.saveFailed"));
+      toast(e?.message || t("settingsRenaming:toast.saveFailed"), "error");
     } finally {
       setSaving(false);
     }
@@ -232,7 +232,7 @@ export default function RenamingSettings() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div>
             <div style={labelStyle}>{t("settingsRenaming:formatting.separator")}</div>
-            <select style={selectStyle} value={settings.separator} onChange={e => update({ separator: e.target.value as any })}>
+            <select aria-label={t("settingsRenaming:formatting.separator")} style={selectStyle} value={settings.separator} onChange={e => update({ separator: e.target.value as any })}>
               <option value="space">{t("settingsRenaming:formatting.separators.space")}</option>
               <option value="dot">{t("settingsRenaming:formatting.separators.dot")}</option>
               <option value="dash">{t("settingsRenaming:formatting.separators.dash")}</option>
@@ -241,7 +241,7 @@ export default function RenamingSettings() {
           </div>
           <div>
             <div style={labelStyle}>{t("settingsRenaming:formatting.case")}</div>
-            <select style={selectStyle} value={settings.case_mode} onChange={e => update({ case_mode: e.target.value as any })}>
+            <select aria-label={t("settingsRenaming:formatting.case")} style={selectStyle} value={settings.case_mode} onChange={e => update({ case_mode: e.target.value as any })}>
               <option value="default">{t("settingsRenaming:formatting.cases.default")}</option>
               <option value="lower">{t("settingsRenaming:formatting.cases.lower")}</option>
               <option value="upper">{t("settingsRenaming:formatting.cases.upper")}</option>

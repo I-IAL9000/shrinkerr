@@ -36,6 +36,7 @@
     "go": "Ir",
     "noSubdirectories": "No hay subcarpetas",
     "selected": "Seleccionada:",
-    "select": "Seleccionar"
+    "select": "Seleccionar",
+    "up": "Subir una carpeta"
   }
 }

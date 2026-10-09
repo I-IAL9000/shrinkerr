@@ -71,7 +71,7 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
         </button>
       )}
       {onSetLanguage && editing && (
-        <select
+        <select aria-label={t("fileDetail:tracks.setLanguageManually")}
           autoFocus
           defaultValue={(track.language || "und").toLowerCase()}
           onClick={(e) => e.stopPropagation()}

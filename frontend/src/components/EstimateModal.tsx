@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
 import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
@@ -98,6 +99,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
   // correctly on first open.
   const modalRef = useRef<HTMLDivElement>(null);
   useRangeFill(modalRef);
+  const dialog = useDialog(modalRef, onCancel, t("scannerModals:estimate.title"));
 
   // Connect WebSocket on mount for test encode progress (must be open before test starts)
   useEffect(() => {
@@ -183,7 +185,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex",
       alignItems: "center", justifyContent: "center", zIndex: 1000,
     }} onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div ref={modalRef} style={{
+      <div ref={modalRef} {...dialog} style={{
         background: "var(--bg-card)", borderRadius: 8, padding: "20px", width: "95%", maxWidth: 620,
         maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box" as const,
         border: "1px solid var(--border)",
@@ -410,7 +412,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {/* Encoder */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.encoder")}</label>
-                    <select value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
+                    <select aria-label={t("scannerModals:overrides.encoder")} value={encoder ?? ""} onChange={e => { setEncoder(e.target.value || null); setPreset(null); }}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">{t("scannerModals:overrides.auto")}</option>
                       {(encoderCaps?.nvenc ?? true) && <option value="nvenc">NVENC (NVIDIA GPU)</option>}
@@ -430,9 +432,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}</label>
                     <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
                       <input type="range" min={15} max={40} value={cqSlider ?? cq ?? (estimate?.cq || 20)}
+                        aria-label={t("scannerModals:overrides.quality", { mode: isCpu ? "CRF" : "CQ" })}
                         onChange={e => setCqSlider(Number(e.target.value))}
                         onMouseUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
                         onTouchEnd={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
+                        // FE#23: arrow-key changes were shown but never applied.
+                        onKeyUp={e => { const v = Number((e.target as HTMLInputElement).value); setCq(v); setCqSlider(null); }}
                         style={{ flex: 1, accentColor: "var(--accent)" }} />
                       <span style={{ fontSize: 12, color: (cqSlider ?? cq) !== null ? "white" : "var(--text-muted)", fontWeight: 600, width: 24, textAlign: "center" }}>
                         {cqSlider ?? cq ?? (estimate?.cq || 20)}
@@ -452,7 +457,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {!isHwHevc && (
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.preset")}</label>
-                    <select value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
+                    <select aria-label={t("scannerModals:overrides.preset")} value={preset ?? ""} onChange={e => setPreset(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">{t("scannerModals:overrides.auto")}</option>
                       {isCpu ? (
@@ -476,7 +481,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {/* Audio Codec */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.audio")}</label>
-                    <select value={audioCdc ?? ""} onChange={e => setAudioCdc(e.target.value || null)}
+                    <select aria-label={t("scannerModals:overrides.audio")} value={audioCdc ?? ""} onChange={e => setAudioCdc(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">{t("scannerModals:overrides.auto")}</option>
                       <option value="copy">{t("scannerModals:overrides.audioCopy")}</option>
@@ -486,7 +491,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                       <option value="opus">Opus</option>
                     </select>
                     {audioCdc && audioCdc !== "copy" && (
-                      <select value={audioBr ?? ""} onChange={e => setAudioBr(e.target.value ? Number(e.target.value) : null)}
+                      <select aria-label={t("common:labels.bitrate")} value={audioBr ?? ""} onChange={e => setAudioBr(e.target.value ? Number(e.target.value) : null)}
                         style={{ width: 80, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                         <option value="">{t("scannerModals:overrides.auto")}</option>
                         <option value="96">96k</option>
@@ -502,7 +507,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   {/* Resolution */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <label style={{ fontSize: 12, color: "var(--text-muted)", width: 80, flexShrink: 0 }}>{t("scannerModals:overrides.resolution")}</label>
-                    <select value={resolution ?? ""} onChange={e => setResolution(e.target.value || null)}
+                    <select aria-label={t("scannerModals:overrides.resolution")} value={resolution ?? ""} onChange={e => setResolution(e.target.value || null)}
                       style={{ flex: 1, backgroundColor: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", padding: "4px 8px", borderRadius: 4, fontSize: 12 }}>
                       <option value="">{t("scannerModals:overrides.autoKeepOriginal")}</option>
                       <option value="1080p">1080p</option>

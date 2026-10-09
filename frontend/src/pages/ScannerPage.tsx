@@ -332,7 +332,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         if (s.status === "done") {
           toast(t("scanner:toasts.postersFetched", { resolved: s.resolved, total: s.total }), "success");
         } else {
-          toast(t("scanner:toasts.posterFetchError", { status: s.status }));
+          toast(t("scanner:toasts.posterFetchError", { status: s.status }), "error");
         }
       }
     } catch { /* ignore */ }
@@ -582,7 +582,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
     } catch (err: any) {
-      toast(t("scanner:toasts.deleteFailed", { error: err.message }));
+      toast(t("scanner:toasts.deleteFailed", { error: err.message }), "error");
     }
   };
 
@@ -755,7 +755,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         toast(t("scanner:toasts.healthNothingToCheck"));
       }
     } catch (err: any) {
-      toast(t("scanner:toasts.healthQueueFailed", { error: err.message || t("scanner:toasts.unknownError") }));
+      toast(t("scanner:toasts.healthQueueFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");
     }
   };
 
@@ -1123,7 +1123,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       loadTree();
       refreshStats();
     } catch (err: any) {
-      toast(t("scanner:toasts.addFailed", { error: err.message || t("scanner:toasts.unknownError") }));
+      toast(t("scanner:toasts.addFailed", { error: err.message || t("scanner:toasts.unknownError") }), "error");
     } finally {
       setAddingToQueueCount(null);
     }
@@ -1267,11 +1267,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
         </svg>
-        <input type="text" placeholder={t("scanner:toolbar.searchPlaceholder")} value={searchInput}
+        <input type="text" aria-label={t("scanner:toolbar.searchPlaceholder")} placeholder={t("scanner:toolbar.searchPlaceholder")} value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           style={{ width: "100%", padding: "6px 12px 6px 30px", fontSize: 12, lineHeight: "1.4", background: "var(--bg-card)", color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 16, outline: "none", boxSizing: "border-box" as const }} />
         {searchInput && (
-          <button onClick={() => { setSearchInput(""); setSearch(""); }}
+          <button aria-label={t("common:actions.clearSearch")} onClick={() => { setSearchInput(""); setSearch(""); }}
             style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>&times;</button>
         )}
       </div>
@@ -1310,6 +1310,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
           <button key={val}
             className={`sort-pill ${sortBy === val ? "active" : ""}`}
+            aria-pressed={sortBy === val}
             onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
             {t(labelKey)} {sortBy === val && (sortDir === "asc"
               ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
@@ -1375,7 +1376,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   return (
     <div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 24 }}>
-        <select
+        <select aria-label={t("common:labels.mediaFolder")}
           value={selectedDir}
           onChange={(e) => setSelectedDir(e.target.value)}
           style={{

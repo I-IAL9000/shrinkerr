@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialog } from "../useDialog";
 import { Trans, useTranslation } from "react-i18next";
 import { getChangelog, getUpstreamChangelog, getVersion, type ChangelogEntry } from "../api";
 import ChangelogEntryView from "./ChangelogEntry";
@@ -26,6 +27,8 @@ export default function ChangelogModal({
   showLatestOnly?: boolean;
 }) {
   const { t } = useTranslation(["dialogs", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onClose, t("dialogs:changelog.releaseNotes"), open);
   const [entries, setEntries] = useState<ChangelogEntry[] | null>(null);
   const [current, setCurrent] = useState<string>("");
   // Latest version reported by the backend at the time the modal opened.
@@ -77,14 +80,6 @@ export default function ChangelogModal({
     return () => { cancelled = true; };
   }, [open, showLatestOnly]);
 
-  // Close on Escape.
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   const repoUrl = "https://github.com/I-IAL9000/shrinkerr";
@@ -105,6 +100,8 @@ export default function ChangelogModal({
       }}
     >
       <div
+        ref={panelRef}
+        {...dialog}
         style={{
           background: "var(--bg-primary)",
           border: "1px solid var(--border)",

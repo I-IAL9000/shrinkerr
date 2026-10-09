@@ -505,7 +505,7 @@ export default function QueuePage() {
         retryJob(id).then(res => {
           loadRef.current();
           if (res.message) toast(res.message, "success");
-        }).catch((err: Error) => toast(err.message));
+        }).catch((err: Error) => toast(err.message, "error"));
       }}
       onRemove={(id) => { removeJob(id).then(() => loadRef.current()); }}
     />
@@ -680,8 +680,10 @@ export default function QueuePage() {
       })()}
 
       {/* Tabs */}
-      <div className="queue-tabs" style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+      <div className="queue-tabs" role="tablist" style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
         <button
+          role="tab"
+          aria-selected={tab === "pending"}
           onClick={() => setTab("pending")}
           style={{
             padding: "10px 20px", fontSize: 13, cursor: "pointer",
@@ -693,6 +695,8 @@ export default function QueuePage() {
           {t("queue:tabs.pendingRemaining", { count: pendingCount, formatted: fmtNum(pendingCount) })}
         </button>
         <button
+          role="tab"
+          aria-selected={tab === "completed"}
           onClick={() => setTab("completed")}
           style={{
             padding: "10px 20px", fontSize: 13, cursor: "pointer",
@@ -705,6 +709,8 @@ export default function QueuePage() {
         </button>
         {failedCount > 0 && (
           <button
+            role="tab"
+            aria-selected={tab === "failed"}
             onClick={() => setTab("failed")}
             style={{
               padding: "10px 20px", fontSize: 13, cursor: "pointer",
@@ -804,7 +810,7 @@ export default function QueuePage() {
                     await removeJob(job.id);
                   }
                   load();
-                  toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }));
+                  toast(t("queue:toasts.clearedFailed", { count: tabJobs.length }), "error");
                   setTab("pending");
                 }}>
                 {t("common:actions.clearAll")}

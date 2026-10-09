@@ -34,6 +34,7 @@
     "go": "Go",
     "noSubdirectories": "No subdirectories",
     "selected": "Selected:",
-    "select": "Select"
+    "select": "Select",
+    "up": "Up one folder"
   }
 }

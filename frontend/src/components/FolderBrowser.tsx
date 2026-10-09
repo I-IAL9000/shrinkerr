@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { browseDirectory } from "../api";
+import { pressable } from "../utils/a11y";
 
 interface FolderBrowserProps {
   isOpen: boolean;
@@ -11,6 +13,8 @@ interface FolderBrowserProps {
 
 export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect, onCancel }: FolderBrowserProps) {
   const { t } = useTranslation(["dialogs", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onCancel, t("dialogs:folderBrowser.title"), isOpen);
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [dirs, setDirs] = useState<{ name: string; path: string }[]>([]);
@@ -53,8 +57,8 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
       background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
       display: "flex", alignItems: "center", justifyContent: "center",
     }} onClick={onCancel}>
-      <div style={{
-        background: "var(--bg-card)", borderRadius: 8, width: 560, maxHeight: "80vh",
+      <div ref={panelRef} {...dialog} style={{
+        background: "var(--bg-card)", borderRadius: 8, width: 560, maxWidth: "calc(100vw - 24px)", maxHeight: "80vh",
         display: "flex", flexDirection: "column", border: "1px solid var(--border)",
       }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -63,7 +67,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <span style={{ color: "white", fontWeight: "bold", fontSize: 15 }}>{t("dialogs:folderBrowser.title")}</span>
-          <button onClick={onCancel} style={{
+          <button onClick={onCancel} aria-label={t("common:actions.close")} style={{
             background: "none", border: "none", color: "var(--text-muted)",
             cursor: "pointer", fontSize: 18, lineHeight: 1,
           }}>&times;</button>
@@ -81,7 +85,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
                 background: "var(--bg-primary)", color: "var(--text-secondary)",
                 border: "1px solid var(--border)", borderRadius: 4,
               }}
-              placeholder="/path/to/media"
+              aria-label="/path/to/media" placeholder="/path/to/media"
             />
             <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "8px 12px" }}>{t("dialogs:folderBrowser.go")}</button>
           </div>
@@ -106,6 +110,8 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
               {parentPath && (
                 <div
                   onClick={() => navigate(parentPath)}
+                  {...pressable(() => navigate(parentPath))}
+                  aria-label={t("dialogs:folderBrowser.up")}
                   style={{
                     display: "flex", alignItems: "center", gap: 10, padding: "10px 8px",
                     cursor: "pointer", borderBottom: "1px solid var(--border)",
@@ -125,6 +131,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
                 <div
                   key={dir.path}
                   onClick={() => navigate(dir.path)}
+                  {...pressable(() => navigate(dir.path))}
                   style={{
                     display: "flex", alignItems: "center", gap: 10, padding: "10px 8px",
                     cursor: "pointer", borderBottom: "1px solid var(--border)",

@@ -147,7 +147,7 @@ export default function LogsPage() {
         </h2>
 
         {/* Source filter */}
-        <select
+        <select aria-label={t("common:labels.logSource")}
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
           style={{
@@ -170,7 +170,7 @@ export default function LogsPage() {
         {/* Search */}
         <input
           type="text"
-          placeholder={t("logs:searchPlaceholder")}
+          aria-label={t("logs:searchPlaceholder")} placeholder={t("logs:searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{

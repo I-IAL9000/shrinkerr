@@ -56,5 +56,19 @@
   "languages": {
     "mul": "Multiple languages",
     "und": "Undetermined"
+  },
+  "labels": {
+    "value": "Value",
+    "operator": "Operator",
+    "field": "Field",
+    "match": "Match",
+    "conditionType": "Condition type",
+    "unit": "Unit",
+    "mediaFolder": "Media folder",
+    "eventType": "Event type",
+    "logSource": "Log source",
+    "folderType": "Folder type",
+    "streams": "Streams that pause encoding",
+    "bitrate": "Bitrate"
   }
 }

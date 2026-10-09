@@ -14,7 +14,8 @@
     "trashConfirm": "Move this file to trash?\n\n{{name}}",
     "loadingFiles": "Loading files...",
     "noMatches": "No files match the current filter.",
-    "noFiles": "No files scanned yet. Run a scan to get started."
+    "noFiles": "No files scanned yet. Run a scan to get started.",
+    "selectItem": "Select {{name}}"
   },
   "poster": {
     "fixMatchTitle": "Fix TMDB match",

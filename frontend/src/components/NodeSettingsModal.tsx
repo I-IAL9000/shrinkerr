@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { useDialog } from "../useDialog";
 import { Trans, useTranslation } from "react-i18next";
 import { updateNodeSettings, rotateNodeToken } from "../api";
 import type { WorkerNode, NodeSettings } from "../types";
@@ -27,6 +28,8 @@ const CQ_CRF_TABLE: { nvenc_preset: string; libx265_preset: string; nvenc_cq: nu
 
 export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
   const { t } = useTranslation(["nodes", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onClose, t("nodes:settings.title"));
   const [settings, setSettings] = useState<NodeSettings>({
     paused: node.paused ?? false,
     max_jobs: node.max_jobs ?? 1,
@@ -108,6 +111,8 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
     }} onClick={onClose}>
       <div
+        ref={panelRef}
+        {...dialog}
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8,
@@ -121,7 +126,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
             <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{t("nodes:settings.title")}</span>
             <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{node.name}</span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 18 }}>×</button>
+          <button onClick={onClose} aria-label={t("common:actions.close")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 18 }}>×</button>
         </div>
 
         <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -160,7 +165,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
           {/* Job affinity */}
           <section>
             <Label title={t("nodes:settings.affinity.title")} hint={t("nodes:settings.affinity.hint")} />
-            <select
+            <select aria-label={t("nodes:settings.affinity.title")}
               value={settings.job_affinity ?? "any"}
               onChange={e => setSettings({ ...settings, job_affinity: e.target.value as any })}
               style={{
@@ -318,7 +323,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                     <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input
                         type="text"
-                        placeholder="/server/path"
+                        aria-label="/server/path" placeholder="/server/path"
                         value={row.server}
                         onChange={e => {
                           const next = [...overrideRows];
@@ -336,7 +341,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
                       <input
                         type="text"
-                        placeholder="/worker/path"
+                        aria-label="/worker/path" placeholder="/worker/path"
                         value={row.worker}
                         onChange={e => {
                           const next = [...overrideRows];
@@ -351,7 +356,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                           borderRadius: 4, color: "var(--text-primary)",
                         }}
                       />
-                      <button
+                      <button aria-label={t("common:actions.remove")}
                         onClick={() => {
                           setOverrideRows(overrideRows.filter((_, idx) => idx !== i));
                           markOverrideTouched();

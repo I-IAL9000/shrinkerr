@@ -8,6 +8,7 @@ import { jobErrorHeadline } from "../i18n/server";
 import { copyText } from "../utils/clipboard";
 import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
+import { pressable } from "../utils/a11y";
 
 interface JobListItemProps {
   job: Job;
@@ -80,7 +81,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
 
   return (
     <div>
-    <div className="job-row" onClick={canExpand ? handleExpand : undefined} style={canExpand ? { cursor: "pointer" } : undefined}>
+    <div className="job-row" onClick={canExpand ? handleExpand : undefined} {...(canExpand ? pressable(handleExpand, { expanded }) : {})} style={canExpand ? { cursor: "pointer" } : undefined}>
       {job.status === "completed" && (() => {
         // Priority order (worst → best):
         //   1. health_status === "corrupt"  → red triangle
@@ -204,7 +205,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               </svg>
             </button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
+          <button aria-label={t("common:actions.remove")} onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
             style={{ ...iconBtnStyle, color: "var(--text-muted)", marginLeft: 4 }}
             title={t("common:actions.remove")}>
             &times;
@@ -217,7 +218,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             <button className="btn btn-secondary" style={{ fontSize: 11, padding: "2px 8px" }}
               onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>{t("common:actions.retry")}</button>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
+          <button aria-label={t("common:actions.remove")} onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
             style={{ ...iconBtnStyle, color: "var(--danger)", marginLeft: 8 }}
             title={t("common:actions.remove")}>
             &times;
@@ -236,13 +237,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
             {onIgnore && (
-              <button onClick={() => onIgnore(job.id, job.file_path)}
+              <button aria-label={t("queue:item.ignoreFile")} onClick={() => onIgnore(job.id, job.file_path)}
                 style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
                 title={t("queue:item.ignoreFile")}>
                 &#x2298;
               </button>
             )}
-            <button onClick={() => onCancel(job.id)}
+            <button aria-label={t("queue:item.removeFromQueue")} onClick={() => onCancel(job.id)}
               style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
               title={t("queue:item.removeFromQueue")}>
               &times;

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { advancedSearch, getSearchProperties, type SearchProperty, type SearchPredicate } from "../api";
 import { serverText } from "../i18n/server";
@@ -58,6 +59,8 @@ interface Props {
 
 export default function AdvancedSearchModal({ initial, onApply, onClose }: Props) {
   const { t } = useTranslation(["scannerModals", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onClose, t("scannerModals:search.title"));
   const [props, setProps] = useState<Record<string, SearchProperty>>({});
   const [predicates, setPredicates] = useState<SearchPredicate[]>(
     initial.length ? initial : [{ property: "video_codec", op: "eq", value: "" }],
@@ -151,7 +154,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
 
     if (prop.type === "bool") {
       return (
-        <select
+        <select aria-label={t("common:labels.value")}
           value={String(pred.value ?? "true")}
           onChange={e => updatePred(i, { value: e.target.value === "true" })}
           style={selectStyle}
@@ -172,7 +175,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
               ? pred.value.split(",").map(s => s.trim()).filter(Boolean)
               : []);
         return (
-          <select
+          <select aria-label={t("common:labels.value")}
             multiple
             value={selected}
             onChange={e => {
@@ -190,7 +193,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
         );
       }
       return (
-        <select
+        <select aria-label={t("common:labels.value")}
           value={pred.value ?? ""}
           onChange={e => updatePred(i, { value: e.target.value })}
           style={{ ...selectStyle, minWidth: 140 }}
@@ -212,7 +215,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             type={prop.type === "number" ? "number" : "text"}
             value={pred.value ?? ""}
             onChange={e => updatePred(i, { value: e.target.value })}
-            placeholder={t("scannerModals:search.min")}
+            aria-label={t("scannerModals:search.min")} placeholder={t("scannerModals:search.min")}
             style={{ ...inputStyle, width: 80 }}
           />
           <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{t("scannerModals:search.betweenAnd")}</span>
@@ -220,7 +223,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             type={prop.type === "number" ? "number" : "text"}
             value={pred.value2 ?? ""}
             onChange={e => updatePred(i, { value2: e.target.value })}
-            placeholder={t("scannerModals:search.max")}
+            aria-label={t("scannerModals:search.max")} placeholder={t("scannerModals:search.max")}
             style={{ ...inputStyle, width: 80 }}
           />
         </span>
@@ -233,7 +236,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
           type="text"
           value={pred.value ?? ""}
           onChange={e => updatePred(i, { value: e.target.value })}
-          placeholder={pred.op === "in" ? t("scannerModals:search.commaSeparated") : "..."}
+          aria-label={pred.op === "in" ? t("scannerModals:search.commaSeparated") : "..."} placeholder={pred.op === "in" ? t("scannerModals:search.commaSeparated") : "..."}
           style={{ ...inputStyle, minWidth: 180 }}
         />
       );
@@ -244,7 +247,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
         type={prop.type === "number" ? "number" : "text"}
         value={pred.value ?? ""}
         onChange={e => updatePred(i, { value: e.target.value })}
-        placeholder={prop.examples?.[0] != null ? t("scannerModals:search.example", { example: prop.examples[0] }) : ""}
+        aria-label={prop.examples?.[0] != null ? t("scannerModals:search.example", { example: prop.examples[0] }) : ""} placeholder={prop.examples?.[0] != null ? t("scannerModals:search.example", { example: prop.examples[0] }) : ""}
         list={`prop-examples-${pred.property}`}
         style={{ ...inputStyle, minWidth: 140 }}
       />
@@ -253,10 +256,10 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
 
   return (
     <div style={overlayStyle} onClick={onClose}>
-      <div style={modalStyle} onClick={e => e.stopPropagation()}>
+      <div ref={panelRef} {...dialog} style={modalStyle} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h2 style={{ color: "var(--text-primary)", fontSize: 18, margin: 0 }}>{t("scannerModals:search.title")}</h2>
-          <button onClick={onClose} style={closeBtnStyle}>&times;</button>
+          <button onClick={onClose} aria-label={t("common:actions.close")} style={closeBtnStyle}>&times;</button>
         </div>
 
         {savedViews.length > 0 && (
@@ -266,7 +269,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
               {savedViews.map(v => (
                 <span key={v.name} style={{ display: "inline-flex", gap: 4, alignItems: "center", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "3px 4px 3px 10px", fontSize: 11 }}>
                   <button onClick={() => loadView(v)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", fontSize: 11 }}>{v.name}</button>
-                  <button onClick={() => deleteView(v.name)} title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "0 4px" }}>&times;</button>
+                  <button aria-label={t("common:actions.delete")} onClick={() => deleteView(v.name)} title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "0 4px" }}>&times;</button>
                 </span>
               ))}
             </div>
@@ -275,7 +278,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("scannerModals:search.filesMatching")}</span>
-          <select
+          <select aria-label={t("common:labels.match")}
             value={matchMode}
             onChange={e => { setMatchMode(e.target.value as "all" | "any"); setPreviewCount(null); }}
             style={{ ...selectStyle, width: 170 }}
@@ -291,14 +294,14 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             return (
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", padding: 6, background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 4 }}>
                 {i > 0 && <span style={{ fontSize: 11, color: matchMode === "any" ? "var(--warning)" : "var(--text-muted)", fontWeight: 600, paddingRight: 4 }}>{matchMode === "any" ? t("scannerModals:search.or") : t("scannerModals:search.and")}</span>}
-                <select value={pred.property} onChange={e => updatePred(i, { property: e.target.value, op: props[e.target.value]?.ops?.[0] || "eq", value: defaultValueForProp(e.target.value), value2: undefined })} style={{ ...selectStyle, minWidth: 200 }}>
+                <select aria-label={t("common:labels.field")} value={pred.property} onChange={e => updatePred(i, { property: e.target.value, op: props[e.target.value]?.ops?.[0] || "eq", value: defaultValueForProp(e.target.value), value2: undefined })} style={{ ...selectStyle, minWidth: 200 }}>
                   {Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0])).map(([group, items]) => (
                     <optgroup key={group} label={group}>
                       {items.map(([key, , label]) => <option key={key} value={key}>{label}</option>)}
                     </optgroup>
                   ))}
                 </select>
-                <select value={pred.op} onChange={e => updatePred(i, { op: e.target.value })} style={{ ...selectStyle, width: 110 }}>
+                <select aria-label={t("common:labels.operator")} value={pred.op} onChange={e => updatePred(i, { op: e.target.value })} style={{ ...selectStyle, width: 110 }}>
                   {(prop?.ops || []).map(op => <option key={op} value={op}>{OP_SYMBOLS[op] ?? (OP_WORDS.has(op) ? t(`scannerModals:operators.${op}`) : op)}</option>)}
                 </select>
                 {renderValueInput(pred, i)}
@@ -307,7 +310,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
                     {prop.examples.map(ex => <option key={String(ex)} value={String(ex)} />)}
                   </datalist>
                 )}
-                <button onClick={() => removeRow(i)} title={t("common:actions.remove")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>&times;</button>
+                <button aria-label={t("common:actions.remove")} onClick={() => removeRow(i)} title={t("common:actions.remove")} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14 }}>&times;</button>
               </div>
             );
           })}
@@ -320,7 +323,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             type="text"
             value={newViewName}
             onChange={e => setNewViewName(e.target.value)}
-            placeholder={t("scannerModals:search.saveViewPlaceholder")}
+            aria-label={t("scannerModals:search.saveViewPlaceholder")} placeholder={t("scannerModals:search.saveViewPlaceholder")}
             style={{ ...inputStyle, flex: "1 1 200px", maxWidth: 260 }}
             onKeyDown={e => { if (e.key === "Enter") saveView(); }}
           />

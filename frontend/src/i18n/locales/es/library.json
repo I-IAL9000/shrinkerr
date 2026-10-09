@@ -16,7 +16,8 @@
     "trashConfirm": "¿Mover este archivo a la papelera?\n\n{{name}}",
     "loadingFiles": "Cargando archivos...",
     "noMatches": "Ningún archivo coincide con el filtro actual.",
-    "noFiles": "Aún no hay archivos escaneados. Ejecuta un escaneo para empezar."
+    "noFiles": "Aún no hay archivos escaneados. Ejecuta un escaneo para empezar.",
+    "selectItem": "Seleccionar {{name}}"
   },
   "poster": {
     "fixMatchTitle": "Corregir coincidencia de TMDB",

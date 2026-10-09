@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { previewRename, applyRename } from "../api";
 import type { RenamePlan } from "../api";
@@ -11,6 +12,8 @@ interface Props {
 
 export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
   const { t } = useTranslation(["scannerModals", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onClose, t("scannerModals:rename.title"));
   const [plans, setPlans] = useState<RenamePlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
@@ -58,6 +61,8 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
       }}
     >
       <div
+        ref={panelRef}
+        {...dialog}
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8,
@@ -72,7 +77,7 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
               {loading ? t("scannerModals:rename.resolvingMetadata") : `${t("scannerModals:rename.willChange", { count: changedPlans.length })} · ${t("scannerModals:rename.alreadyMatch", { count: noopCount })}`}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
+          <button onClick={onClose} aria-label={t("common:actions.close")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
         </div>
 
         <div style={{ padding: 14, overflow: "auto", flex: 1 }}>

@@ -23,6 +23,8 @@ import RouteErrorBoundary from "./components/ErrorBoundary";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import { jobProgressStore } from "./jobProgressStore";
+import { dialogOpen } from "./useDialog";
+import { shortcutsEnabled } from "./shortcuts";
 
 export type ThemePref = "system" | "light" | "dark";
 import "./theme.css";
@@ -269,6 +271,10 @@ function KeyboardShortcuts({ onToggleQueue }: { onToggleQueue: () => void }) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Off when switched off, and while a dialog is open: a letter navigated
+      // away underneath it, and its action then ran for a page that had
+      // unmounted (FE#8, v0.10.0).
+      if (!shortcutsEnabled() || dialogOpen()) return;
       // Ignore when typing in inputs, textareas, selects, or contentEditable
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement)?.isContentEditable) return;
@@ -354,7 +360,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 20 }}>{t("nav:login.subtitle")}</div>
         <input
           type="text"
-          placeholder={t("nav:login.username")}
+          aria-label={t("nav:login.username")} placeholder={t("nav:login.username")}
           value={username}
           onChange={e => { setUsername(e.target.value); setError(""); }}
           onKeyDown={e => { if (e.key === "Enter") document.getElementById("sq-pw")?.focus(); }}
@@ -369,7 +375,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
         <input
           id="sq-pw"
           type="password"
-          placeholder={t("nav:login.password")}
+          aria-label={t("nav:login.password")} placeholder={t("nav:login.password")}
           value={password}
           onChange={e => { setPassword(e.target.value); setError(""); }}
           onKeyDown={e => { if (e.key === "Enter") handleLogin(); }}
@@ -404,7 +410,7 @@ export default function App() {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
-  const { toasts, addToast } = useToastState();
+  const { toasts, addToast, dismiss: dismissToast } = useToastState();
   // Theme: System (follows the OS), Light or Dark (v0.10.0). A browser with
   // no saved choice follows the OS; a saved Light / Dark is kept (the legacy
   // squeezarr_theme key too). Saved only when chosen — it used to be written
@@ -564,7 +570,7 @@ export default function App() {
           }
         } catch { /* ignore */ }
       }} />
-      <ToastContainer toasts={toasts} />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <div className="app-layout">
         {/* Desktop sidebar */}
         <aside className="sidebar sidebar-desktop">

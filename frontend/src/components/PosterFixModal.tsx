@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { searchTMDB, overridePoster } from "../api";
 import type { TMDBSearchResult } from "../api";
@@ -13,6 +14,8 @@ interface Props {
 
 export default function PosterFixModal({ folderPath, currentTitle, currentYear, onClose, onFixed }: Props) {
   const { t } = useTranslation(["library", "common"]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dialog = useDialog(panelRef, onClose, t("library:fix.title"));
   const [query, setQuery] = useState(currentTitle);
   const [year, setYear] = useState(currentYear || "");
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
@@ -65,6 +68,8 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
       }}
     >
       <div
+        ref={panelRef}
+        {...dialog}
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 8,
@@ -80,7 +85,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
               {folderPath}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
+          <button onClick={onClose} aria-label={t("common:actions.close")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: 20 }}>×</button>
         </div>
 
         {/* Search bar */}
@@ -90,7 +95,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-            placeholder={t("library:fix.titlePlaceholder")}
+            aria-label={t("library:fix.titlePlaceholder")} placeholder={t("library:fix.titlePlaceholder")}
             style={{
               flex: 1, padding: "6px 10px", fontSize: 13,
               background: "var(--bg-primary)", border: "1px solid var(--border)",
@@ -102,7 +107,7 @@ export default function PosterFixModal({ folderPath, currentTitle, currentYear, 
             value={year}
             onChange={e => setYear(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") doSearch(); }}
-            placeholder={t("library:fix.yearPlaceholder")}
+            aria-label={t("library:fix.yearPlaceholder")} placeholder={t("library:fix.yearPlaceholder")}
             style={{
               width: 80, padding: "6px 10px", fontSize: 13,
               background: "var(--bg-primary)", border: "1px solid var(--border)",

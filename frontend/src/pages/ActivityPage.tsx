@@ -65,7 +65,7 @@ export default function ActivityPage() {
         background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6,
         padding: "10px 12px", marginBottom: 16,
       }}>
-        <select
+        <select aria-label={t("common:labels.eventType")}
           value={eventType}
           onChange={e => setEventType(e.target.value)}
           style={{ backgroundColor: "var(--bg-primary)", color: "var(--text-primary)", border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12 }}
@@ -81,7 +81,7 @@ export default function ActivityPage() {
         >
           <input
             type="text"
-            placeholder={t("activity:searchPlaceholder")}
+            aria-label={t("activity:searchPlaceholder")} placeholder={t("activity:searchPlaceholder")}
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{

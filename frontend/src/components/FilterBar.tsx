@@ -107,6 +107,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           <button
             key={f.key}
             className={`filter-pill ${isActive ? "active" : ""}`}
+            aria-pressed={isActive}
             onClick={() => onFilterToggle(f.key)}
             style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
           >

@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { fmtBytes } from "../fmt";
+import { pressable } from "../utils/a11y";
 
 interface PosterCardProps {
   title: string;
@@ -24,6 +25,8 @@ export default function PosterCard({
     <div
       className={`poster-card ${isSelected ? "selected" : ""} ${isExpanded ? "expanded" : ""}`}
       onClick={onClick}
+      {...pressable(onClick, { expanded: isExpanded })}
+      aria-label={year ? `${title} (${year})` : title}
     >
       <div className="poster-img-wrap">
         {posterUrl ? (
@@ -47,6 +50,7 @@ export default function PosterCard({
           <input
             type="checkbox"
             checked={isSelected}
+            aria-label={t("library:tree.selectItem", { name: title })}
             readOnly
             style={{ accentColor: "var(--accent)", width: 16, height: 16, cursor: "pointer" }}
           />
@@ -75,6 +79,7 @@ export default function PosterCard({
           <button
             className="poster-edit-btn"
             title={t("library:poster.fixMatchTitle")}
+            aria-label={t("library:poster.fixMatchTitle")}
             onClick={(e) => { e.stopPropagation(); onEditClick(); }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

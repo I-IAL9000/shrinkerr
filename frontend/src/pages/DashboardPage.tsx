@@ -184,10 +184,10 @@ function ProtectForm({ onDone }: { onDone: () => void }) {
     <form style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}
       onSubmit={e => { e.preventDefault(); submit(); }}>
       <input type="text" style={protectInputStyle} autoComplete="username"
-        placeholder={t("dashboard:setup.protect.username")} value={username}
+        aria-label={t("dashboard:setup.protect.username")} placeholder={t("dashboard:setup.protect.username")} value={username}
         onChange={e => setUsername(e.target.value)} />
       <input type="password" style={protectInputStyle} autoComplete="new-password"
-        placeholder={t("dashboard:setup.protect.password")} value={password}
+        aria-label={t("dashboard:setup.protect.password")} placeholder={t("dashboard:setup.protect.password")} value={password}
         onChange={e => setPassword(e.target.value)} />
       <button type="submit" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
         disabled={busy || !username.trim() || !password}>

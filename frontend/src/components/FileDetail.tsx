@@ -639,7 +639,7 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
         </button>
       )}
       {onSetLanguage && editing && (
-        <select
+        <select aria-label={t("fileDetail:tracks.setLanguageManually")}
           autoFocus
           defaultValue={(track.language || "und").toLowerCase()}
           onClick={(e) => e.stopPropagation()}

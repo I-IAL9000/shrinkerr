@@ -209,6 +209,17 @@ export default function SchedulePage() {
             {activeHours.map((active, i) => (
               <div
                 key={i}
+                role="checkbox"
+                aria-checked={active}
+                aria-label={formatHour(i)}
+                aria-disabled={!runHoursEnabled}
+                tabIndex={runHoursEnabled ? 0 : -1}
+                onKeyDown={(e) => {
+                  // The keyboard way to set hours (FE#25): drag was the only one.
+                  if (!runHoursEnabled || (e.key !== " " && e.key !== "Enter")) return;
+                  e.preventDefault();
+                  toggleHour(i, !active);
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   if (!runHoursEnabled) return;
@@ -307,14 +318,14 @@ export default function SchedulePage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 16 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.startHour")}</label>
-              <select style={inputStyle} value={quietStart} disabled={!quietEnabled}
+              <select aria-label={t("schedule:quiet.startHour")} style={inputStyle} value={quietStart} disabled={!quietEnabled}
                 onChange={e => setQuietStart(Number(e.target.value))}>
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i}:00</option>)}
               </select>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:quiet.endHour")}</label>
-              <select style={inputStyle} value={quietEnd} disabled={!quietEnabled}
+              <select aria-label={t("schedule:quiet.endHour")} style={inputStyle} value={quietEnd} disabled={!quietEnabled}
                 onChange={e => setQuietEnd(Number(e.target.value))}>
                 {Array.from({ length: 24 }, (_, i) => <option key={i} value={i}>{i}:00</option>)}
               </select>
@@ -390,7 +401,7 @@ export default function SchedulePage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
-                <select style={inputStyle} disabled={!plexPauseEnabled}
+                <select aria-label={t("common:labels.streams")} style={inputStyle} disabled={!plexPauseEnabled}
                   value={plexPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setPlexPauseTranscodeOnly(e.target.value === "transcode")}>
                   <option value="transcode">{t("schedule:streams.optionTranscode")}</option>
@@ -429,7 +440,7 @@ export default function SchedulePage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
-                <select style={inputStyle} disabled={!jellyfinPauseEnabled}
+                <select aria-label={t("common:labels.streams")} style={inputStyle} disabled={!jellyfinPauseEnabled}
                   value={jellyfinPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setJellyfinPauseTranscodeOnly(e.target.value === "transcode")}>
                   <option value="transcode">{t("schedule:streams.optionTranscode")}</option>
@@ -468,7 +479,7 @@ export default function SchedulePage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:streams.countOnly")}</label>
-                <select style={inputStyle} disabled={!embyPauseEnabled}
+                <select aria-label={t("common:labels.streams")} style={inputStyle} disabled={!embyPauseEnabled}
                   value={embyPauseTranscodeOnly ? "transcode" : "all"}
                   onChange={e => setEmbyPauseTranscodeOnly(e.target.value === "transcode")}>
                   <option value="transcode">{t("schedule:streams.optionTranscode")}</option>

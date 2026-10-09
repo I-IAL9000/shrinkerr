@@ -707,15 +707,22 @@ input[type="checkbox"] { cursor: pointer; }
   display: flex; flex-direction: column; gap: 8px;
 }
 .toast {
+  display: flex; align-items: flex-start; gap: 10px;
   background: var(--bg-card); color: var(--text-secondary);
   border: 1px solid var(--border); border-left: 3px solid var(--accent);
   padding: 10px 16px; border-radius: var(--radius-sm);
-  font-size: 13px; min-width: 220px;
+  font-size: 13px; min-width: 220px; max-width: calc(100vw - 32px);
   animation: toast-in 0.2s ease-out;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 .toast.success { border-left-color: var(--success); }
-.toast.error { border-left-color: var(--danger, #e74c3c); }
+.toast.error { border-left-color: var(--danger); }
+.toast > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-close {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 2px; margin: -2px -6px 0 0;
+}
+.toast-close:hover { color: var(--text-primary); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(40px); }
   to { opacity: 1; transform: translateX(0); }
@@ -821,6 +828,21 @@ input[type="checkbox"] { cursor: pointer; }
   --text-dim: #8a8a99;   /* timestamps: 5.5:1 */
   background: var(--bg-primary);
   color-scheme: dark;
+}
+
+/* ActionMenu items */
+.action-menu-item {
+  background: none; border: none; border-radius: 4px; text-align: left; white-space: nowrap;
+  padding: 6px 10px; font-size: 12px; color: var(--text-secondary); cursor: pointer;
+}
+.action-menu-item:hover, .action-menu-item:focus-visible { background: var(--bg-tertiary); color: var(--text-primary); }
+
+/* Keyboard focus (FE#25, v0.10.0): there was no focus style at all. */
+:focus-visible { outline: 2px solid var(--accent-text) !important; outline-offset: 1px; }
+.poster-card:focus-within .poster-edit-btn, .poster-card:focus-within .poster-checkbox { opacity: 1; }
+.rule-drag-handle {
+  background: none; border: none; color: var(--text-muted); cursor: grab;
+  font-size: 14px; flex-shrink: 0; padding: 0 2px; line-height: 1;
 }
 
 /* Monitor detail grid */
