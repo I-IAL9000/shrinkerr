@@ -1780,6 +1780,9 @@ class EstimateRequest(BaseModel):
     file_paths: list[str]
     override_rules: bool = False
     filter: str = "all"
+    # v0.10.0: the Add to Queue dialog's encoder (None = the default), for
+    # the "what will happen" panel.
+    encoder: str | None = None
     # Encoding overrides (same as queue request)
     nvenc_cq_override: int | None = None
     libx265_crf_override: int | None = None
@@ -1889,6 +1892,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         est_keys = ('content_type_detection', 'resolution_aware_cq',
                     'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd',
+                    'backup_original_days', 'trash_original_after_conversion',
                     *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
@@ -1998,6 +2002,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         by_source = {}
         content_profiles: dict[str, dict] = {}
         resolution_breakdown = {"4k": 0, "1080p": 0, "720p": 0, "sd": 0}
+        removals: dict[str, dict[str, int]] = {"audio": {}, "subtitles": {}}
         skipped = 0
         ignored_count = 0
         # Per-file CQ values actually used in the savings calculation. The
@@ -2098,6 +2103,13 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             total_files += 1
             total_size += row["file_size"]
             by_type[jt] = by_type.get(jt, 0) + 1
+            # Tracks this job removes, by language (the "what will happen" panel).
+            for kind, track_list in (("audio", tracks if has_audio else []),
+                                     ("subtitles", stracks if has_subs else [])):
+                for t in track_list:
+                    if not t.get("keep", True) and not t.get("locked", False):
+                        lang = (t.get("language") or "und").lower()
+                        removals[kind][lang] = removals[kind].get(lang, 0) + 1
 
             # Per-file time estimate — pick speed factor based on target encoder
             file_dur = float(row.get("duration") or 0)
@@ -2189,11 +2201,36 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         else:
             representative_cq = global_cq
 
+        # "What will happen" (v0.10.0): what becomes of the originals and which
+        # encoder this server will actually run (an NVENC default on a host
+        # without NVIDIA runs on its best encoder instead).
+        import asyncio
+        from backend.encoder_caps import detect_encoders, resolve_node_encoder
+        requested = (payload.encoder or est_settings.get("default_encoder") or "nvenc").lower()
+        try:
+            caps = (await asyncio.to_thread(detect_encoders)).available
+            runs_here = resolve_node_encoder(requested, caps) or requested
+        except Exception:
+            runs_here = requested
+        try:
+            backup_days = int(est_settings.get("backup_original_days") or 0)
+        except ValueError:
+            backup_days = 0
+        if backup_days > 0:
+            originals = {"action": "keep", "days": backup_days}
+        elif str(est_settings.get("trash_original_after_conversion", "false")).lower() == "true":
+            originals = {"action": "trash"}
+        else:
+            originals = {"action": "delete"}
+
         return {
             "total_selected": len(file_paths),
             "total_files": total_files,
             "total_size": total_size,
             "estimated_savings": estimated_savings,
+            "removals": removals,
+            "originals": originals,
+            "encoder": {"requested": requested, "runs_here": runs_here},
             "estimated_time_seconds": round(est_time_seconds),
             "by_type": by_type,
             "by_source": by_source,

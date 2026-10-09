@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
+import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
@@ -1072,7 +1072,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     setEstimateHasIgnored(hasIgnored);
   };
 
-  const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any) => {
+  const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any, start: boolean = false) => {
     if (!estimatePaths) return;
     // Snapshot the count before clearing estimatePaths — drives the
     // in-flight overlay's "Adding N items to queue…" copy. We can't
@@ -1102,6 +1102,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       setSelectAllActive(false);
       setSelectedPaths(new Set());
       const skippedExisting = result.skipped_existing ?? 0;
+      // "Add & start" (v0.10.0): start the queue once the jobs are in.
+      if (start && (result.added > 0 || skippedExisting > 0)) {
+        await startQueue();
+        toast(t("queue:toasts.queueStarted"), "success");
+      }
       if (result.added > 0) {
         const priorityLabel = priority > 0 ? t(priority === 1 ? "scanner:toasts.priorityHigh" : "scanner:toasts.priorityHighest") : "";
         const dupsNote = skippedExisting > 0 ? t("scanner:toasts.alreadyQueuedNote", { n: skippedExisting }) : "";

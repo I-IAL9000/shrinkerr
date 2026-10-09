@@ -32,7 +32,20 @@
     },
     "failed": "Failed to estimate",
     "unknownError": "Unknown error",
-    "addToQueue": "Add {{num}} to Queue"
+    "addToQueue": "Add {{num}} to Queue",
+    "addAndStart": "Add & start",
+    "whatHappens": {
+      "title": "What will happen",
+      "encoder": "Encodes with {{encoder}}",
+      "encoderSwapped": "Encodes with {{runs}} ({{requested}} isn't available on this server)",
+      "originalsKeep_one": "Originals are kept for {{count}} day, so you can undo",
+      "originalsKeep_other": "Originals are kept for {{count}} days, so you can undo",
+      "originalsTrash": "Originals go to the trash",
+      "originalsDelete": "Originals are deleted once the new file is in place",
+      "audioRemoved": "Audio tracks removed: {{list}}",
+      "subsRemoved": "Subtitles removed: {{list}}",
+      "nothingRemoved": "No audio or subtitle tracks are removed"
+    }
   },
   "overrides": {
     "encodingSettings": "Encoding Settings",

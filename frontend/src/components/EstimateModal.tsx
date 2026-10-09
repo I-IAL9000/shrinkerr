@@ -60,7 +60,7 @@ interface EstimateModalProps {
   filePaths: string[];
   hasIgnoredFiles?: boolean;
   activeFilter?: string;
-  onConfirm: (priority: number, overrideRules: boolean, encodingOverrides?: EncodingOverrides) => void;
+  onConfirm: (priority: number, overrideRules: boolean, encodingOverrides?: EncodingOverrides, start?: boolean) => void;
   onCancel: () => void;
 }
 
@@ -155,6 +155,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
     }
     if (forceReencode) overrides.force_reencode = true;
     if (activeFilter && activeFilter !== "all") overrides.filter = activeFilter;
+    if (encoder) overrides.encoder = encoder;
     estimateJobs(filePaths, overrideRules, overrides).then(data => {
       setEstimate(data);
       setLoading(false);
@@ -163,7 +164,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
       setEstimate({ total_files: 0, error: err?.message || t("scannerModals:estimate.unknownError") });
       setLoading(false);
     });
-  }, [overrideRules, cq, forceReencode, isCpu]);
+  }, [overrideRules, cq, forceReencode, isCpu, encoder]);
   const buildOverrides = (): EncodingOverrides | undefined => {
     const o: EncodingOverrides = {};
     if (encoder !== null) o.encoder = encoder;
@@ -329,6 +330,48 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 </label>
               </div>
             )}
+
+            {/* What will happen (v0.10.0): which encoder runs, what becomes of
+                the originals, which tracks are removed — before anything is
+                queued. */}
+            {estimate.total_files > 0 && estimate.encoder && (() => {
+              // Tracks use ISO 639-2/B codes ("fre", "ger"); the catalog names
+              // those "(alt)", so look up the 639-2/T name instead.
+              const B_TO_T: Record<string, string> = { fre: "fra", ger: "deu", chi: "zho", cze: "ces", dut: "nld", gre: "ell", ice: "isl", per: "fas", rum: "ron", slo: "slk", wel: "cym", arm: "hye", baq: "eus", bur: "mya", geo: "kat", mac: "mkd", mao: "mri", may: "msa", alb: "sqi", tib: "bod" };
+              const langName = (code: string) => t(`settingsMedia:languages.${B_TO_T[code] || code}`, { defaultValue: code });
+              const trackList = (by: Record<string, number>) => Object.entries(by)
+                .sort((a, b) => b[1] - a[1])
+                .map(([code, n]) => n > 1 ? `${langName(code)} ×${n}` : langName(code))
+                .join(", ");
+              const audio = estimate.removals?.audio || {};
+              const subs = estimate.removals?.subtitles || {};
+              const enc = estimate.encoder;
+              const encName = (e: string) => t(`settingsMedia:video.encoderNames.${e}`, { defaultValue: e });
+              const orig = estimate.originals || {};
+              const rows: React.ReactNode[] = [
+                enc.runs_here !== enc.requested
+                  ? t("scannerModals:estimate.whatHappens.encoderSwapped", { runs: encName(enc.runs_here), requested: encName(enc.requested) })
+                  : t("scannerModals:estimate.whatHappens.encoder", { encoder: encName(enc.runs_here) }),
+                orig.action === "keep"
+                  ? t("scannerModals:estimate.whatHappens.originalsKeep", { count: orig.days })
+                  : orig.action === "trash"
+                    ? t("scannerModals:estimate.whatHappens.originalsTrash")
+                    : t("scannerModals:estimate.whatHappens.originalsDelete"),
+              ];
+              if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackList(audio) }));
+              if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackList(subs) }));
+              if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
+              return (
+                <div style={{ background: "var(--bg-primary)", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.whatHappens.title")}</div>
+                  <ul style={{ margin: 0, paddingLeft: 16, display: "flex", flexDirection: "column", gap: 3 }}>
+                    {rows.map((r, i) => (
+                      <li key={i} style={{ fontSize: 12, color: orig.action === "delete" && i === 1 ? "var(--warning)" : "var(--text-secondary)" }}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
 
             {/* Priority selector */}
             <div style={{ marginBottom: 16 }}>
@@ -603,6 +646,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }} onClick={onCancel}>
             {t("common:actions.cancel")}
+          </button>
+          <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}
+            disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
+            onClick={() => onConfirm(priority, overrideRules, buildOverrides(), true)}
+          >
+            {t("scannerModals:estimate.addAndStart")}
           </button>
           <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}

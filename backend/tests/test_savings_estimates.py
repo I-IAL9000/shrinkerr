@@ -67,3 +67,28 @@ async def test_a_libx265_default_estimates_from_its_crf(env):
         await db.commit()
     card, modal = await _both(env)
     assert card == modal == int(GB * cq_to_savings_pct(23))
+
+
+@pytest.mark.asyncio
+async def test_the_estimate_says_what_will_happen(env, monkeypatch):
+    """The Add to Queue "what will happen" panel: tracks removed by language,
+    what becomes of the originals, and the encoder this server will run."""
+    import json
+    import backend.encoder_caps as encoder_caps
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+
+    class Caps:
+        available = ["libx265", "qsv"]
+    monkeypatch.setattr(encoder_caps, "detect_encoders", lambda *a, **kw: Caps())
+    audio = [{"language": "eng", "keep": True}, {"language": "fre", "keep": False},
+             {"language": "fre", "keep": False}, {"language": "ger", "keep": False, "locked": True}]
+    subs = [{"language": "spa", "keep": False}]
+    async with aiosqlite.connect(env) as db:
+        await db.execute("UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?",
+                         (json.dumps(audio), json.dumps(subs)))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
+        await db.commit()
+    est = await estimate_jobs(EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"], encoder="nvenc"))
+    assert est["removals"] == {"audio": {"fre": 2}, "subtitles": {"spa": 1}}  # a locked track stays
+    assert est["originals"] == {"action": "keep", "days": 7}
+    assert est["encoder"] == {"requested": "nvenc", "runs_here": "qsv"}

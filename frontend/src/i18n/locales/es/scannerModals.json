@@ -33,7 +33,21 @@
     },
     "failed": "No se pudo calcular la estimación",
     "unknownError": "Error desconocido",
-    "addToQueue": "Añadir {{num}} a la cola"
+    "addToQueue": "Añadir {{num}} a la cola",
+    "addAndStart": "Añadir e iniciar",
+    "whatHappens": {
+      "title": "Qué va a pasar",
+      "encoder": "Codifica con {{encoder}}",
+      "encoderSwapped": "Codifica con {{runs}} ({{requested}} no está disponible en este servidor)",
+      "originalsKeep_one": "Los originales se guardan {{count}} día, así que puedes deshacerlo",
+      "originalsKeep_many": "Los originales se guardan {{count}} días, así que puedes deshacerlo",
+      "originalsKeep_other": "Los originales se guardan {{count}} días, así que puedes deshacerlo",
+      "originalsTrash": "Los originales van a la papelera",
+      "originalsDelete": "Los originales se eliminan cuando el archivo nuevo está en su sitio",
+      "audioRemoved": "Pistas de audio eliminadas: {{list}}",
+      "subsRemoved": "Subtítulos eliminados: {{list}}",
+      "nothingRemoved": "No se elimina ninguna pista de audio ni de subtítulos"
+    }
   },
   "overrides": {
     "encodingSettings": "Configuración de codificación",

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Scanner shows HDR10 / HLG / Dolby Vision badges.
 - **Safer defaults for new installs:** originals are kept 7 days, encodes scoring below VMAF 88 are rejected, and subtitles are left alone until you choose languages. Existing installs keep their settings.
 - Settings → Automation: one clear choice for originals — kept for N days, moved to the trash, or deleted.
+- **Add to Queue shows what will happen** before anything is queued: the encoder that will actually run, what becomes of the originals (kept N days, trashed or deleted), and which audio and subtitle tracks are removed, by language. An **Add & start** button queues and starts in one go.
 - **Docker images can run as your own user** (optional `PUID` / `PGID` / `UMASK`) instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
 - **Content type detection and resolution-aware CQ now set the job's quality** — they only ever changed the queue estimate. Anime, grain, animation and remux files (and each resolution band, if you turn that on) get their own CQ unless a rule or Add to Queue sets one. Content detection is on for new installs; on existing installs it starts off, so nothing changes until you turn it on.
 
