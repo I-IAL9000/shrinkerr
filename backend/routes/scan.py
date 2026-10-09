@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
-from backend.database import DB_PATH, connect_db
+from backend.database import DB_PATH, connect_db, prefix_clause
 from backend.models import ScanRequest
 from backend.resolution import RANKS, resolution_tier, sql_resolution_rank
 from backend.scanner import scan_directory
@@ -510,22 +510,22 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     _media_roots = {r[0].rstrip("/") for r in db.execute("SELECT path FROM media_dirs")}
                     for path in completed_paths:
                         path_norm = path.rstrip("/")
-                        like_pat = path_norm + "/%"
+                        under_sql, under_params = prefix_clause([path_norm + "/"])
 
                         # The "would be deleted" set (same filter the
                         # DELETE below uses), and the full known set.
                         stale_rows = db.execute(
-                            """SELECT file_path FROM scan_results
-                               WHERE file_path LIKE ?
+                            f"""SELECT file_path FROM scan_results
+                               WHERE {under_sql}
                                  AND file_path NOT IN (SELECT file_path FROM _seen_paths)
                                  AND file_path NOT IN (
                                      SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
                                  )""",
-                            (like_pat,),
+                            under_params,
                         ).fetchall()
                         known_rows = db.execute(
-                            "SELECT file_path FROM scan_results WHERE file_path LIKE ?",
-                            (like_pat,),
+                            f"SELECT file_path FROM scan_results WHERE {under_sql}",
+                            under_params,
                         ).fetchall()
                         # Rows under folders that couldn't be listed are kept
                         # anyway (SC-03); they say nothing about the rest.
@@ -595,9 +595,9 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                         path_norm = path.rstrip("/")
                         if path_norm in preserved_paths:
                             continue
-                        like_pat = path_norm + "/%"
-                        # Inject `AND file_path NOT LIKE '<sub>/%'` per
-                        # preserved subfolder under this walked path.
+                        under_sql, under_params = prefix_clause([path_norm + "/"])
+                        # Inject `AND NOT (<sub>/ range)` per preserved
+                        # subfolder under this walked path.
                         preserved_here = [
                             s for s in preserved_subs
                             if s.startswith(path_norm + "/")
@@ -606,13 +606,14 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             if d.rstrip("/") == path_norm or d.startswith(path_norm + "/")
                         ]
                         not_likes = ""
-                        params: list = [like_pat]
+                        params: list = list(under_params)
                         for s in preserved_here:
-                            not_likes += " AND file_path NOT LIKE ?"
-                            params.append(s + "/%")
+                            keep_sql, keep_params = prefix_clause([s + "/"])
+                            not_likes += f" AND NOT {keep_sql}"
+                            params += keep_params
                         cur = db.execute(
                             f"""DELETE FROM scan_results
-                               WHERE file_path LIKE ?{not_likes}
+                               WHERE {under_sql}{not_likes}
                                  AND file_path NOT IN (SELECT file_path FROM _seen_paths)
                                  AND file_path NOT IN (
                                      SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
@@ -649,8 +650,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                 # skipped sweep is redone by the next full scan.
                 db.execute("PRAGMA busy_timeout=10000")
                 try:
-                    _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
-                    _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
+                    _scope, _scope_params = prefix_clause([p.rstrip("/") + "/" for p in completed_paths])
                     cur = db.execute(
                         f"""UPDATE scan_results SET converted = 1
                            WHERE converted = 0 AND ({_scope}) AND (
@@ -688,12 +688,11 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                 # skipped sweep is redone by the next full scan.
                 db.execute("PRAGMA busy_timeout=10000")
                 try:
-                    _scope = " OR ".join("file_path LIKE ?" for _ in completed_paths)
-                    _scope_params = [p.rstrip("/") + "/%" for p in completed_paths]
+                    _scope, _scope_params = prefix_clause([p.rstrip("/") + "/" for p in completed_paths])
                     # Reset dup counts within the walked paths
                     db.execute(
                         f"UPDATE scan_results SET dup_count = 0, dup_group = NULL "
-                        f"WHERE removed_from_list = 0 AND ({_scope})",
+                        f"WHERE +removed_from_list = 0 AND ({_scope})",
                         _scope_params,
                     )
 
@@ -701,7 +700,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     # Group by parent folder — if a movie folder has 2+ video files, they're duplicates
                     rows = db.execute(
                         f"""SELECT file_path FROM scan_results
-                           WHERE removed_from_list = 0
+                           WHERE +removed_from_list = 0
                              AND file_path NOT LIKE '%.converting.%'
                              AND file_path NOT LIKE '%.remuxing.%'
                              AND ({_scope})""",
@@ -732,7 +731,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
 
 
 def _path_scope_clause(paths: list[str]) -> tuple[str, list[str]]:
-    """Build an SQL `(file_path LIKE ? OR ...)` fragment + params that scopes a
+    """Build an SQL `((file_path >= ? AND file_path < ?) OR ...)` fragment + params that scopes a
     query to files under the given folder paths (recursively). Empty paths →
     ('0', []) which matches nothing.
 
@@ -742,9 +741,7 @@ def _path_scope_clause(paths: list[str]) -> tuple[str, list[str]]:
     hundreds of unrelated files)."""
     if not paths:
         return "0", []
-    frag = "(" + " OR ".join("file_path LIKE ?" for _ in paths) + ")"
-    params = [p.rstrip("/") + "/%" for p in paths]
-    return frag, params
+    return prefix_clause([p.rstrip("/") + "/" for p in paths])
 
 
 async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
@@ -894,7 +891,7 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
                     _scope_frag, _scope_params = _path_scope_clause(paths)
                     async with db_hc.execute(
                         "SELECT file_path FROM scan_results "
-                        "WHERE removed_from_list = 0 AND health_status IS NULL "
+                        "WHERE +removed_from_list = 0 AND +health_status IS NULL "
                         "AND COALESCE(probe_status, 'ok') = 'ok' "
                         "AND new_detected_at IS NOT NULL "
                         "AND new_detected_at > datetime('now', '-1 day') "
@@ -1679,12 +1676,13 @@ async def _expand_paths_for_detection(paths: list[str]) -> list[str]:
         db = await connect_db()
         try:
             for folder in folders:
+                under_sql, under_params = prefix_clause([folder])
                 async with db.execute(
                     "SELECT file_path FROM scan_results "
-                    "WHERE file_path LIKE ? AND removed_from_list = 0 "
+                    f"WHERE {under_sql} AND +removed_from_list = 0 "
                     "AND COALESCE(has_und_tracks_flag, 0) = 1 "
                     "ORDER BY file_path",
-                    (folder + "%",),
+                    under_params,
                 ) as cur:
                     async for row in cur:
                         fp = row["file_path"]
@@ -2588,6 +2586,12 @@ _SCAN_WHERE = """removed_from_list = 0
     AND file_path NOT LIKE '%%.converting.%%'
     AND file_path NOT LIKE '%%.remuxing.%%'
     AND file_path NOT LIKE '%%/._%%'"""
+# The same, for queries scoped to folders by a file_path range (F6). The
+# unary "+" keeps SQLite off idx_scan_results_removed: without ANALYZE stats
+# it prefers that equality to the range, and nearly every row matches it, so
+# a folder expand read the whole table. Not for unscoped queries — it also
+# rules out the partial indexes (WHERE removed_from_list = 0).
+_SCAN_WHERE_IN_FOLDERS = "+" + _SCAN_WHERE
 
 
 def _matches_filter(enriched: dict, filter_name: str) -> bool:
@@ -3075,13 +3079,13 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
-        title_prefix = prefix.rstrip("/") + "/"
+        under_sql, under_params = prefix_clause([prefix.rstrip("/") + "/"])
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
-                WHERE {_SCAN_WHERE}
-                  AND (file_path = ? OR file_path LIKE ?)
+                WHERE {_SCAN_WHERE_IN_FOLDERS}
+                  AND (file_path = ? OR {under_sql})
                 ORDER BY file_path ASC""",
-            (prefix, title_prefix + "%"),
+            (prefix, *under_params),
         ) as cur:
             rows = await cur.fetchall()
 
@@ -3152,15 +3156,18 @@ async def get_scan_files(folder: str, filter: str = "all"):
         # Direct children of the folder OR an exact file match for stray-file
         # pseudo-folders that are keyed by the file path itself.
         folder_prefix = folder.rstrip("/") + "/"
+        under_sql, under_params = prefix_clause([folder_prefix])
+        # Direct children: under the folder (an index range, F6) with no
+        # further "/" after the folder's own.
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS} FROM scan_results
-                WHERE {_SCAN_WHERE}
+                WHERE {_SCAN_WHERE_IN_FOLDERS}
                   AND (
                     file_path = ?
-                    OR (file_path LIKE ? AND file_path NOT LIKE ?)
+                    OR ({under_sql} AND instr(substr(file_path, ?), '/') = 0)
                   )
                 ORDER BY file_path ASC""",
-            (folder, folder_prefix + "%", folder_prefix + "%/%"),
+            (folder, *under_params, len(folder_prefix) + 1),
         ) as cur:
             rows = await cur.fetchall()
 

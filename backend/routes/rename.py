@@ -89,10 +89,12 @@ async def _expand_folder_selections(paths: list[str]) -> list[str]:
                 folder_prefixes.append(p)
             else:
                 file_paths.add(p)
+        from backend.database import prefix_clause
         for prefix in folder_prefixes:
+            under_sql, under_params = prefix_clause([prefix])
             async with db.execute(
-                "SELECT file_path FROM scan_results WHERE file_path LIKE ? AND removed_from_list = 0",
-                (prefix + "%",),
+                f"SELECT file_path FROM scan_results WHERE {under_sql} AND +removed_from_list = 0",
+                under_params,
             ) as cur:
                 rows = await cur.fetchall()
             for row in rows:
@@ -199,12 +201,13 @@ class ApplyRequest(BaseModel):
 async def _move_rows_under(db, old_folder: str, new_folder: str) -> None:
     """Point Scanner rows and pending jobs under a renamed folder at its new
     path (they kept the old one and stopped matching the files)."""
-    like = old_folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%"
+    from backend.database import prefix_clause
+    under_sql, under_params = prefix_clause([old_folder + "/"])
     for table, only_pending in (("scan_results", ""), ("jobs", " AND status = 'pending'")):
         await db.execute(
             f"UPDATE {table} SET file_path = ? || substr(file_path, ?) "
-            f"WHERE file_path LIKE ? ESCAPE '\\'{only_pending}",
-            (new_folder, len(old_folder) + 1, like),
+            f"WHERE {under_sql}{only_pending}",
+            (new_folder, len(old_folder) + 1, *under_params),
         )
 
 

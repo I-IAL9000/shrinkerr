@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.api_errors import ApiError
 from pydantic import BaseModel
 
-from backend.database import connect_db
+from backend.database import connect_db, prefix_clause
 from backend.queue import JobQueue, QueueWorker
 
 router = APIRouter(prefix="/api/jobs")
@@ -177,7 +177,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
             db_resolve = await aiosqlite.connect(DB_PATH)
             db_resolve.row_factory = aiosqlite.Row
             try:
@@ -186,10 +186,9 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 matched = 0
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_resolve.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
                         like_args,
                     ) as cur:
                         rows = await cur.fetchall()
@@ -208,10 +207,9 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 total_added = 0
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_resolve.execute(
-                        f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
                         like_args,
                     ) as cur:
                         rows = await cur.fetchall()
@@ -792,17 +790,16 @@ async def queue_health_checks(payload: HealthCheckRequest):
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
             db_r = await aiosqlite.connect(DB_PATH)
             db_r.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_r)
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_r.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
                         like_args,
                     ) as cur:
                         for row in await cur.fetchall():
@@ -816,10 +813,9 @@ async def queue_health_checks(payload: HealthCheckRequest):
             try:
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_r.execute(
-                        f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
                         like_args,
                     ) as cur:
                         file_paths.extend(r["file_path"] for r in await cur.fetchall())
@@ -1149,9 +1145,11 @@ async def start_test_encode(payload: TestEncodeRequest):
     if test_file.endswith("/"):
         db_t = await connect_db()
         try:
+            under_sql, under_params = prefix_clause([test_file])
             async with db_t.execute(
-                "SELECT file_path FROM scan_results WHERE file_path LIKE ? AND removed_from_list = 0 ORDER BY file_size DESC LIMIT 1",
-                (test_file + "%",),
+                f"SELECT file_path FROM scan_results WHERE {under_sql} "
+                "AND +removed_from_list = 0 ORDER BY file_size DESC LIMIT 1",
+                under_params,
             ) as cur:
                 row = await cur.fetchone()
                 if row:
@@ -1846,17 +1844,16 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         if active_filter != "all":
             import aiosqlite
             from backend.database import DB_PATH
-            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE
+            from backend.routes.scan import _build_enrichment_context, _enrich_row_minimal, _matches_filter, _SCAN_SELECT_COLS, _SCAN_WHERE_IN_FOLDERS
             db_r = await aiosqlite.connect(DB_PATH)
             db_r.row_factory = aiosqlite.Row
             try:
                 ctx = await _build_enrichment_context(db_r)
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_r.execute(
-                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE} AND ({like_clause})",
+                        f"SELECT {_SCAN_SELECT_COLS} FROM scan_results WHERE {_SCAN_WHERE_IN_FOLDERS} AND ({like_clause})",
                         like_args,
                     ) as cur:
                         for row in await cur.fetchall():
@@ -1870,10 +1867,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             try:
                 for i in range(0, len(folder_paths), FOLDER_CHUNK):
                     chunk = folder_paths[i:i + FOLDER_CHUNK]
-                    like_clause = " OR ".join(["file_path LIKE ?" for _ in chunk])
-                    like_args = [fp + "%" for fp in chunk]
+                    like_clause, like_args = prefix_clause(chunk)  # index ranges (F6)
                     async with db_r.execute(
-                        f"SELECT file_path FROM scan_results WHERE removed_from_list = 0 AND ({like_clause})",
+                        f"SELECT file_path FROM scan_results WHERE +removed_from_list = 0 AND ({like_clause})",
                         like_args,
                     ) as cur:
                         file_paths.extend(r["file_path"] for r in await cur.fetchall())

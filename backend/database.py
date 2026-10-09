@@ -165,6 +165,41 @@ async def get_db() -> aiosqlite.Connection:
     return db
 
 
+def prefix_range(prefix: str) -> tuple[str, str]:
+    """(low, high) such that low <= s < high exactly when s starts with
+    `prefix`, in SQLite's BINARY order (code point order).
+
+    F6 (v0.10.0): `file_path LIKE 'prefix%'` can never use the file_path
+    index — LIKE is case-insensitive and the index is BINARY — so every
+    folder-scoped query (a Scanner folder expand, Add to Queue on folders,
+    the estimate, rescans) scanned the whole table. A range does use it. It
+    is also exact: `%` and `_` in a folder name were wildcards to LIKE.
+
+    Write the query's other indexed equalities as `+removed_from_list = 0`:
+    without ANALYZE stats SQLite prefers any equality over a range, and
+    removed_from_list = 0 is true for nearly every row."""
+    last = ord(prefix[-1]) + 1
+    if 0xD800 <= last <= 0xDFFF:  # never produce a lone surrogate
+        last = 0xE000
+    return prefix, prefix[:-1] + chr(last)
+
+
+def prefix_clause(prefixes, column: str = "file_path") -> tuple[str, list]:
+    """SQL matching rows whose `column` starts with any of `prefixes`
+    (OR'ed index ranges), and its parameters. No prefixes matches nothing."""
+    parts: list[str] = []
+    params: list = []
+    for prefix in prefixes:
+        if not prefix:
+            return "1", []
+        low, high = prefix_range(prefix)
+        parts.append(f"({column} >= ? AND {column} < ?)")
+        params += [low, high]
+    if not parts:
+        return "0", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
 async def connect_db() -> aiosqlite.Connection:
     """Open a DB connection with WAL mode and busy timeout. Use this instead of aiosqlite.connect(DB_PATH)."""
     db = await aiosqlite.connect(DB_PATH)

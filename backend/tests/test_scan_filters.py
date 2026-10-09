@@ -150,8 +150,8 @@ def test_path_scope_clause_builds_fragment():
     folder path; empty paths match nothing."""
     from backend.routes.scan import _path_scope_clause
     frag, params = _path_scope_clause(["/media/Movies/HD 2020", "/media/TV1/TV1/"])
-    assert frag == "(file_path LIKE ? OR file_path LIKE ?)"
-    assert params == ["/media/Movies/HD 2020/%", "/media/TV1/TV1/%"]
+    assert frag == "((file_path >= ? AND file_path < ?) OR (file_path >= ? AND file_path < ?))"
+    assert params == ["/media/Movies/HD 2020/", "/media/Movies/HD 20200", "/media/TV1/TV1/", "/media/TV1/TV10"]
     assert _path_scope_clause([]) == ("0", [])
 
 

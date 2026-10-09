@@ -823,10 +823,11 @@ class FileWatcher:
                 media_dirs = [row[0] for row in rows]
 
             scanned = set()
+            from backend.database import prefix_clause
             for d in media_dirs:
+                under_sql, under_params = prefix_clause([d.rstrip("/") + "/"])
                 async with db.execute(
-                    "SELECT 1 FROM scan_results WHERE file_path LIKE ? LIMIT 1",
-                    (d.rstrip("/") + "/%",),
+                    f"SELECT 1 FROM scan_results WHERE {under_sql} LIMIT 1", under_params,
                 ) as cur:
                     if await cur.fetchone():
                         scanned.add(d)

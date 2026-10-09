@@ -124,10 +124,12 @@ async def _expand_folder_paths(paths: list[str]) -> list[str]:
         for folder in folders:
             # scan_results file_path is the full absolute path; folders end
             # with "/" and every file inside starts with that prefix.
+            from backend.database import prefix_clause
+            under_sql, under_params = prefix_clause([folder])
             async with db.execute(
                 "SELECT file_path FROM scan_results "
-                "WHERE file_path LIKE ? AND removed_from_list = 0",
-                (folder + "%",),
+                f"WHERE {under_sql} AND +removed_from_list = 0",
+                under_params,
             ) as cur:
                 async for row in cur:
                     fp = row["file_path"]

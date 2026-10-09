@@ -438,10 +438,9 @@ async def delete_media_dir(dir_id: int):
 
         # Also remove scan results for this directory
         if path:
-            await db.execute(
-                "DELETE FROM scan_results WHERE file_path LIKE ?",
-                (path.rstrip("/") + "/%",),
-            )
+            from backend.database import prefix_clause
+            under_sql, under_params = prefix_clause([path.rstrip("/") + "/"])
+            await db.execute(f"DELETE FROM scan_results WHERE {under_sql}", under_params)
 
         await db.commit()
     finally:
@@ -808,10 +807,9 @@ async def ignore_file(req: IgnoreFileRequest):
         # Remove pending jobs for ignored files
         if req.file_path.endswith("/"):
             # Folder ignore — remove all pending jobs under this folder
-            await db.execute(
-                "DELETE FROM jobs WHERE status = 'pending' AND file_path LIKE ?",
-                (req.file_path + "%",),
-            )
+            from backend.database import prefix_clause
+            under_sql, under_params = prefix_clause([req.file_path])
+            await db.execute(f"DELETE FROM jobs WHERE status = 'pending' AND {under_sql}", under_params)
         else:
             await db.execute(
                 "DELETE FROM jobs WHERE status = 'pending' AND file_path = ?",

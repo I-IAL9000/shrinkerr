@@ -1825,12 +1825,14 @@ async def override_poster(req: OverrideRequest):
         # `<file>/%` prefix would otherwise match nothing → update skipped →
         # the item stayed 'heuristic' after matching).
         folder = req.folder_path.rstrip("/")
+        from backend.database import prefix_clause
+        under_sql, under_params = prefix_clause([folder + "/"])
         await db.execute(
             "UPDATE scan_results SET "
             "native_language = COALESCE(?, native_language), "
             "language_source = 'tmdb-manual' "
-            "WHERE file_path = ? OR file_path LIKE ?",
-            (original_lang, folder, folder + "/%"),
+            f"WHERE file_path = ? OR {under_sql}",
+            (original_lang, folder, *under_params),
         )
         await db.commit()
         # SC-05 (v0.10.0): re-sort the folder's tracks against the matched
@@ -1842,7 +1844,7 @@ async def override_poster(req: OverrideRequest):
             db.row_factory = aiosqlite.Row
             async with db.execute(
                 "SELECT id, audio_tracks_json, subtitle_tracks_json, duration FROM scan_results "
-                "WHERE file_path = ? OR file_path LIKE ?", (folder, folder + "/%"),
+                f"WHERE file_path = ? OR {under_sql}", (folder, *under_params),
             ) as cur:
                 resort = [it for it in (_reclass_item(r, original_lang) for r in await cur.fetchall()) if it]
     finally:
