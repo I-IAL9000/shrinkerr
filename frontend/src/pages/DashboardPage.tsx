@@ -482,7 +482,7 @@ export default function DashboardPage() {
       {/* ===== LIVE STATUS ===== */}
 
       {/* Status cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 12 }}>
         {/* Converting — memoed, re-renders on progress ticks only */}
         <LiveConvertingCard activeJobs={activeJobs} />
 
@@ -562,7 +562,7 @@ export default function DashboardPage() {
 
         {/* Processing Results donut + Summary card */}
         {totalCompleted > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:results.title")}</h3>
               <Donut
@@ -647,7 +647,7 @@ export default function DashboardPage() {
 
         {/* Conversion Status + Audio Cleanup Status */}
         {s.scan_total > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:conversion.title")}</h3>
               <Donut
@@ -677,7 +677,7 @@ export default function DashboardPage() {
         {/* ===== LIBRARY BREAKDOWN ===== */}
 
         {/* Video Codecs donut + Avg Reduction by Source bars */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
           {s.scan_total > 0 && (
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:library.videoCodecs")}</h3>
@@ -712,7 +712,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Source Types donut + Resolution donut */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
           <div style={cardStyle}>
             <h3 style={headingStyle}>{t("dashboard:library.sourceTypes")}</h3>
             <Donut
@@ -751,7 +751,7 @@ export default function DashboardPage() {
             { tier: "poor"      as const, count: poor      },
           ];
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
               <div style={cardStyle}>
                 <h3 style={headingStyle}>{t("dashboard:vmaf.scores")}</h3>
                 <Donut
@@ -794,7 +794,7 @@ export default function DashboardPage() {
           <h3 style={{ color: "var(--text-primary)", fontSize: 16, margin: "12px 0 4px" }}>{t("dashboard:trends.title")}</h3>
 
           {/* Row 1: Cumulative Space Saved + Avg FPS per Job */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(400px, 100%), 1fr))", gap: 12 }}>
             <div style={{ ...cardStyle, minHeight: 250 }}>
               <h3 style={headingStyle}>{t("dashboard:trends.cumulativeSaved")}</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -823,7 +823,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Row 2: Daily Space Saved + Daily Conversions */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(400px, 100%), 1fr))", gap: 12 }}>
             <div style={{ ...cardStyle, minHeight: 250 }}>
               <h3 style={headingStyle}>{t("dashboard:trends.dailySaved")}</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -855,7 +855,7 @@ export default function DashboardPage() {
         {/* ===== DEEP DIVE ===== */}
 
         {/* File Size Distribution + Saved by Library */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
           {(s.size_distribution || []).length > 0 && (
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:deepDive.sizeDistribution")}</h3>
@@ -933,7 +933,7 @@ export default function DashboardPage() {
 
         {/* Native Languages donut + Audio Track Languages bars */}
         {s.scan_total > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:languages.native")}</h3>
               <Donut
@@ -959,7 +959,7 @@ export default function DashboardPage() {
 
         {/* Audio Track Removal + Tracks by Language */}
         {(s.audio_tracks_deleted > 0 || s.tracks_marked_removal > 0) && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
             <div style={cardStyle}>
               <h3 style={headingStyle}>{t("dashboard:audioRemoval.title")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1016,7 +1016,7 @@ export default function DashboardPage() {
             { name: "IronWolf 20TB", size: 20, price: 569.99 },
           ];
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(350px, 100%), 1fr))", gap: 12 }}>
               <div style={cardStyle}>
                 <h3 style={{ ...headingStyle, marginBottom: 6 }}>{t("dashboard:cloud.title")}</h3>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 12 }}>

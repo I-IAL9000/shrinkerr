@@ -41,6 +41,8 @@ interface FileTreeProps {
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
   externalFiles?: Map<string, ScannedFile[]>;
   mediaDirs?: string[];
+  // Media folder path → its label, for the tree's top-level rows.
+  mediaDirLabels?: Record<string, string>;
   sortBy?: SortBy;
   sortDir?: SortDirection;
   allowedPaths?: Set<string>;
@@ -63,29 +65,46 @@ interface TreeNode {
   isLeaf: boolean; // true = directly contains files
 }
 
-function buildTreeFromFolders(folders: FolderInfo[]): TreeNode {
+// U3 (v0.10.0): the tree starts at the media folders — one top-level row
+// each, named by its label — instead of the filesystem root, where every
+// path segment above them (mnt/user/data/media/…) was a level to click
+// through and indent past. Node paths stay the real paths. Folders outside
+// every media folder keep their full-path tree.
+function buildTreeFromFolders(folders: FolderInfo[], mediaRoots: { path: string; name: string }[] = []): TreeNode {
   const root: TreeNode = {
     name: "root", path: "", children: new Map(),
     file_count: 0, total_size: 0, newest_mtime: 0,
     agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
     isLeaf: false,
   };
+  const newNode = (name: string, path: string): TreeNode => ({
+    name, path, children: new Map(),
+    file_count: 0, total_size: 0, newest_mtime: 0,
+    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
+    isLeaf: false,
+  });
+  // Longest first, so a media folder inside another gets its own row.
+  const roots = mediaRoots
+    .map(r => ({ path: r.path.replace(/\/+$/, ""), name: r.name }))
+    .filter(r => r.path)
+    .sort((a, b) => b.path.length - a.path.length);
 
   for (const folder of folders) {
     if (folder.is_file) continue; // poster-only synthetic entry; not a real folder
-    const parts = folder.path.split("/").filter(Boolean);
+    const mediaRoot = roots.find(r => folder.path === r.path || folder.path.startsWith(r.path + "/"));
     let node = root;
+    let base = "";
+    if (mediaRoot) {
+      // Keyed by the full path: two media folders can share a name.
+      if (!root.children.has(mediaRoot.path)) root.children.set(mediaRoot.path, newNode(mediaRoot.name, mediaRoot.path));
+      node = root.children.get(mediaRoot.path)!;
+      base = mediaRoot.path;
+    }
+    const parts = folder.path.slice(base.length).split("/").filter(Boolean);
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
       if (!node.children.has(part)) {
-        node.children.set(part, {
-          name: part,
-          path: "/" + parts.slice(0, i + 1).join("/"),
-          children: new Map(),
-          file_count: 0, total_size: 0, newest_mtime: 0,
-          agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
-          isLeaf: false,
-        });
+        node.children.set(part, newNode(part, base + "/" + parts.slice(0, i + 1).join("/")));
       }
       node = node.children.get(part)!;
     }
@@ -625,7 +644,7 @@ export default function FileTree({
   folders, filter = "all",
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
-  onFolderFilesLoaded, externalFiles, mediaDirs,
+  onFolderFilesLoaded, externalFiles, mediaDirs, mediaDirLabels,
   sortBy = "name", sortDir = "asc", search = "", allowedPaths,
 }: FileTreeProps) {
   const { t } = useTranslation(["library", "common"]);
@@ -643,8 +662,13 @@ export default function FileTree({
 
   // Build tree from server-provided folder data — memoized so scroll doesn't rebuild it
   const tree = useMemo(
-    () => isFiltered ? buildFlatTitleTree(folders) : buildTreeFromFolders(folders),
-    [folders, isFiltered],
+    () => isFiltered
+      ? buildFlatTitleTree(folders)
+      : buildTreeFromFolders(folders, (mediaDirs || []).map(path => ({
+          path,
+          name: mediaDirLabels?.[path] || path.replace(/\/+$/, "").split("/").pop() || path,
+        }))),
+    [folders, isFiltered, mediaDirs, mediaDirLabels],
   );
 
   // (advanced-search auto-expand effect lives below loadFolderFiles)
@@ -658,27 +682,14 @@ export default function FileTree({
 
   // Auto-expand single-child paths on first load (e.g., /media → M2T2 → TV4)
   const defaultExpanded = (): Set<string> => {
-    // Auto-expand tree to reveal all configured media directories
+    // Open single-child chains from the top: a lone media folder (the tree
+    // starts at the media folders, U3) and any single folder inside it.
     const autoExpand = new Set<string>();
-    if (mediaDirs && mediaDirs.length > 0) {
-      // For each media dir, expand all ancestor nodes in the tree
-      for (const dir of mediaDirs) {
-        const parts = dir.replace(/^\//, "").replace(/\/$/, "").split("/");
-        let path = "";
-        // Expand ancestors only — stop before the media dir itself
-        for (let i = 0; i < parts.length - 1; i++) {
-          path = path ? `${path}/${parts[i]}` : `/${parts[i]}`;
-          autoExpand.add(path);
-        }
-      }
-    } else {
-      // Fallback: expand single-child paths
-      let node = tree;
-      while (node.children.size === 1 && !node.isLeaf) {
-        const child = Array.from(node.children.values())[0];
-        autoExpand.add(child.path);
-        node = child;
-      }
+    let node = tree;
+    while (node.children.size === 1 && !node.isLeaf) {
+      const child = Array.from(node.children.values())[0];
+      autoExpand.add(child.path);
+      node = child;
     }
     return autoExpand;
   };

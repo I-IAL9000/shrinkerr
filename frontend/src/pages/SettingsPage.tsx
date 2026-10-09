@@ -2975,7 +2975,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
               {t("settingsIntegrations:arr.intro")}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 16, marginBottom: 16 }}>
               {/* Sonarr */}
               <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 10 }}>Sonarr</div>

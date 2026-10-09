@@ -32,7 +32,8 @@
     "name": "A-Z",
     "size": "Size",
     "files": "Files",
-    "date": "Date"
+    "date": "Date",
+    "reverse": "Reverse order"
   },
   "selection": {
     "selected_one": "{{count}} selected",

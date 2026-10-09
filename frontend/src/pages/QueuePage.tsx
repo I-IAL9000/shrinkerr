@@ -680,7 +680,7 @@ export default function QueuePage() {
       })()}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
+      <div className="queue-tabs" style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "1px solid var(--border)" }}>
         <button
           onClick={() => setTab("pending")}
           style={{

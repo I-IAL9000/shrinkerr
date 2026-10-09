@@ -32,7 +32,8 @@
     "name": "A-Z",
     "size": "Tamaño",
     "files": "Archivos",
-    "date": "Fecha"
+    "date": "Fecha",
+    "reverse": "Invertir el orden"
   },
   "selection": {
     "selected_one": "{{count}} seleccionado",

@@ -184,9 +184,10 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
         return (
           <div
             key={ev.id}
+            className={compact ? undefined : "event-row"}
             style={{
               display: "grid",
-              gridTemplateColumns: compact ? "20px 1fr auto" : "22px 110px 1fr auto",
+              gridTemplateColumns: compact ? "20px 1fr auto" : undefined,
               alignItems: "center",
               gap: 8,
               fontSize: compact ? 11 : 12,
@@ -196,13 +197,13 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
               border: "1px solid var(--border)",
             }}
           >
-            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+            <span className="event-icon" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
               <EventIcon type={ev.event_type} color={meta.color} size={compact ? 13 : 14} />
             </span>
             {!compact && (
-              <span style={{ color: meta.color, fontWeight: 600, fontSize: 11 }}>{meta.label}</span>
+              <span className="event-label" style={{ color: meta.color, fontWeight: 600, fontSize: 11 }}>{meta.label}</span>
             )}
-            <span style={{ color: "var(--text-secondary)" }}>
+            <span className="event-text" style={{ color: "var(--text-secondary)", minWidth: 0 }}>
               {eventSummary(ev)}
               {showFilePath && (
                 <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
@@ -210,7 +211,7 @@ export default function EventTimeline({ events, compact = false, showFilePath = 
                 </div>
               )}
             </span>
-            <span title={fmtDate(ev.occurred_at)} style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+            <span className="event-time" title={fmtDate(ev.occurred_at)} style={{ fontSize: 10, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
               {compact ? fmtRelative(ev.occurred_at) : fmtDate(ev.occurred_at)}
             </span>
           </div>

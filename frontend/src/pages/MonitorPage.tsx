@@ -330,7 +330,7 @@ export default function MonitorPage() {
                 {t("monitor:nodes.reporting", { reporting, total: remote.length })}
               </span>
             </h3>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 12 }}>
               {remote.map(n => <NodeMetricCard key={n.node_id} entry={n} />)}
             </div>
           </>

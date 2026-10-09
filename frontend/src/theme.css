@@ -761,6 +761,42 @@ input[type="checkbox"] { cursor: pointer; }
 }
 .mobile-menu .version-badge { margin-top: 8px; padding: 8px 16px; }
 
+/* Activity / file-history event rows. On phones the text gets its own line
+   (U5, v0.10.0): beside the type and time column it was ~60 px wide and each
+   row wrapped every few characters. */
+.event-row { grid-template-columns: 22px 110px 1fr auto; }
+@media (max-width: 600px) {
+  .event-row {
+    grid-template-columns: 22px 1fr auto;
+    grid-template-areas: "icon label time" "text text text";
+    row-gap: 4px;
+  }
+  .event-row > .event-icon { grid-area: icon; }
+  .event-row > .event-label { grid-area: label; }
+  .event-row > .event-text { grid-area: text; }
+  .event-row > .event-time { grid-area: time; }
+}
+
+/* Scanner sort: pills on wide screens, a dropdown below 1100 px (U7). */
+.sort-pills { display: contents; }
+.sort-compact { display: none; align-items: center; gap: 4px; }
+.sort-select {
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: 12px;
+}
+@media (max-width: 1100px) {
+  .sort-pills { display: none; }
+  .sort-compact { display: inline-flex; }
+}
+
+/* Queue tabs stay on one line (U8): on phones the labels wrapped. */
+.queue-tabs { overflow-x: auto; scrollbar-width: none; }
+.queue-tabs::-webkit-scrollbar { display: none; }
+.queue-tabs > button { white-space: nowrap; flex: none; }
+@media (max-width: 600px) {
+  .queue-tabs > button { padding: 8px 10px !important; font-size: 12px !important; }
+}
+
 /* Monitor detail grid */
 .monitor-detail-grid { grid-template-columns: repeat(2, 1fr); }
 @media (min-width: 1400px) {

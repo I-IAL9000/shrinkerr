@@ -50,6 +50,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // A stable array, or the poster grid re-groups and re-sorts every title on
   // every render (FE#6).
   const mediaDirPaths = useMemo(() => dirs.map((d: any) => d.path as string), [dirs]);
+  const mediaDirLabels = useMemo(
+    () => Object.fromEntries(dirs.filter((d: any) => d.label).map((d: any) => [d.path as string, d.label as string])),
+    [dirs],
+  );
   const [selectedDir, setSelectedDir] = useState<string>("all");
   // Filter pills persist across navigations (and browser restarts) via
   // localStorage, since users typically come back to the same view they
@@ -1299,17 +1303,41 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         )}
       </button>
       <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-      <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
-      {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
-        <button key={val}
-          className={`sort-pill ${sortBy === val ? "active" : ""}`}
-          onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
-          {t(labelKey)} {sortBy === val && (sortDir === "asc"
-            ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
-            : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
-          )}
+      {/* U7 (v0.10.0): below 1100 px the sort pills become a dropdown —
+          they wrapped the toolbar onto extra lines. */}
+      <span className="sort-pills">
+        <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
+        {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
+          <button key={val}
+            className={`sort-pill ${sortBy === val ? "active" : ""}`}
+            onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
+            {t(labelKey)} {sortBy === val && (sortDir === "asc"
+              ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+              : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
+            )}
+          </button>
+        ))}
+      </span>
+      <span className="sort-compact">
+        <select
+          className="sort-select"
+          aria-label={t("scanner:sort.label")}
+          value={sortBy}
+          onChange={(e) => { const val = e.target.value as typeof sortBy; setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); }}
+        >
+          {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
+            <option key={val} value={val}>{t(labelKey)}</option>
+          ))}
+        </select>
+        <button
+          className="sort-pill active"
+          aria-label={t("scanner:sort.reverse")}
+          title={t("scanner:sort.reverse")}
+          onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
+        >
+          {sortDir === "asc" ? "\u2191" : "\u2193"}
         </button>
-      ))}
+      </span>
       {/* View toggle */}
       <span style={{ width: 1, height: 16, background: "var(--border)" }} />
       <button
@@ -1931,6 +1959,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onFolderFilesLoaded={handleFolderFilesLoaded}
               externalFiles={loadedFiles}
               mediaDirs={mediaDirPaths}
+              mediaDirLabels={mediaDirLabels}
               sortBy={sortBy}
               sortDir={sortDir}
               allowedPaths={advSearchResults || undefined}
