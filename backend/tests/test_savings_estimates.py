@@ -92,3 +92,36 @@ async def test_the_estimate_says_what_will_happen(env, monkeypatch):
     assert est["removals"] == {"audio": {"fre": 2}, "subtitles": {"spa": 1}}  # a locked track stays
     assert est["originals"] == {"action": "keep", "days": 7}
     assert est["encoder"] == {"requested": "nvenc", "runs_here": "qsv"}
+
+
+@pytest.mark.asyncio
+async def test_time_estimates_use_each_encoders_recent_speed(env):
+    """F13 (v0.10.0): one pass over recent conversions gives both encoders'
+    speeds (it walked the whole job history once per encoder)."""
+    import json
+    from backend.routes.jobs import EstimateRequest, estimate_jobs
+    async with aiosqlite.connect(env) as db:
+        for i, (encoder, ratio) in enumerate([("hevc_nvenc", 0.1)] * 3 + [("libx265", 0.5)] * 3 + [("qsv", 2.0)]):
+            path = f"/m/Done/{i}.mkv"
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, duration, scan_timestamp) "
+                "VALUES (?, 1, 600, '2026-01-01')", (path,))
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, encoder, encoding_stats, created_at, completed_at) "
+                "VALUES (?, 'convert', 'completed', ?, ?, '2026-10-01', ?)",
+                (path, encoder, json.dumps({"encode_seconds": 600 * ratio, "duration": 600}), f"2026-10-0{i + 1}"))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('parallel_jobs', '1')")
+        await db.commit()
+
+    async def seconds(encoder):
+        est = await estimate_jobs(EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"], encoder=encoder))
+        return est["estimated_time_seconds"]
+
+    async with aiosqlite.connect(env) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('default_encoder', 'nvenc')")
+        await db.commit()
+    assert await seconds("nvenc") == 60     # 600 s of video at 0.1
+    async with aiosqlite.connect(env) as db:
+        await db.execute("UPDATE settings SET value = 'libx265' WHERE key = 'default_encoder'")
+        await db.commit()
+    assert await seconds("libx265") == 300  # at 0.5

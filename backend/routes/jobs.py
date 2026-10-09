@@ -1930,57 +1930,67 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             n = len(s)
             return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
 
-        async def _speed_factor_for(encoder_filter: str) -> float:
+        def _ratio(r) -> float:
+            """Encoding-seconds per content-second of one completed job, or 0."""
             # Prefer jobs.encoding_stats JSON which contains the actual ffmpeg
             # encode_seconds + duration (no post-processing overhead in it).
             # Fall back to started_at/completed_at elapsed time if stats are missing.
+            enc_secs: float = 0.0
+            dur: float = 0.0
+            raw_stats = r["encoding_stats"]
+            if raw_stats:
+                try:
+                    st = json.loads(raw_stats)
+                    enc_secs = float(st.get("encode_seconds") or 0)
+                    dur = float(st.get("duration") or 0)
+                except Exception:
+                    pass
+            if enc_secs <= 0 or dur <= 0:
+                try:
+                    if r["started_at"] and r["completed_at"]:
+                        t0 = datetime.fromisoformat(r["started_at"])
+                        t1 = datetime.fromisoformat(r["completed_at"])
+                        enc_secs = (t1 - t0).total_seconds()
+                        dur = float(r["duration"] or 0)
+                except Exception:
+                    pass
+            return enc_secs / dur if enc_secs > 0 and dur > 0 else 0.0
+
+        # F13 (v0.10.0): one pass over the most recent completed conversions.
+        # This ran once per encoder over the whole history, which it walked to
+        # the end whenever an encoder had fewer than 50 usable jobs — always
+        # the case for the one you don't use: ~115 ms each on 94k jobs.
+        _families = {
+            "nvenc": ("nvenc", "hevc_nvenc"),
+            "libx265": ("libx265", "x265", "cpu"),
+        }
+        _ratios: dict[str, list[float]] = {f: [] for f in _families}
+        try:
             async with db.execute(
-                "SELECT j.encoding_stats, j.started_at, j.completed_at, sr.duration "
-                "FROM jobs j JOIN scan_results sr ON sr.file_path = j.file_path "
-                f"WHERE j.status = 'completed' "
-                f"  AND j.job_type IN ('convert', 'combined') "
-                f"  AND {encoder_filter} "
-                "ORDER BY j.completed_at DESC LIMIT 100"
+                "SELECT LOWER(j.encoder) AS encoder, j.encoding_stats, j.started_at, j.completed_at, sr.duration "
+                "FROM (SELECT encoder, encoding_stats, started_at, completed_at, file_path FROM jobs "
+                "      WHERE status = 'completed' AND job_type IN ('convert', 'combined') "
+                "      ORDER BY completed_at DESC LIMIT 2000) j "
+                "JOIN scan_results sr ON sr.file_path = j.file_path "
+                "ORDER BY j.completed_at DESC"
             ) as cur:
-                rows = await cur.fetchall()
-            ratios: list[float] = []
-            for r in rows:
-                enc_secs: float = 0.0
-                dur: float = 0.0
-                # Try encoding_stats JSON first (most accurate)
-                raw_stats = r["encoding_stats"]
-                if raw_stats:
-                    try:
-                        st = json.loads(raw_stats)
-                        enc_secs = float(st.get("encode_seconds") or 0)
-                        dur = float(st.get("duration") or 0)
-                    except Exception:
-                        pass
-                # Fallback: elapsed time from started_at/completed_at
-                if enc_secs <= 0 or dur <= 0:
-                    try:
-                        if r["started_at"] and r["completed_at"]:
-                            t0 = datetime.fromisoformat(r["started_at"])
-                            t1 = datetime.fromisoformat(r["completed_at"])
-                            enc_secs = (t1 - t0).total_seconds()
-                            dur = float(r["duration"] or 0)
-                    except Exception:
-                        pass
-                if enc_secs > 0 and dur > 0:
-                    ratios.append(enc_secs / dur)
-                if len(ratios) >= 50:
-                    break  # 50 data points is plenty
-            med = _median(ratios)
+                for r in await cur.fetchall():
+                    family = next((f for f, names in _families.items() if r["encoder"] in names), None)
+                    if family is None or len(_ratios[family]) >= 50:  # 50 data points is plenty
+                        continue
+                    ratio = _ratio(r)
+                    if ratio > 0:
+                        _ratios[family].append(ratio)
+        except Exception as exc:
+            print(f"[ESTIMATE] Speed factor query failed (using defaults): {exc}", flush=True)
+
+        def _speed_factor(family: str) -> float:
+            med = _median(_ratios[family])
             # Clamp: [0.02 (50x realtime), 3.0 (3x slower than realtime)]
             return max(0.02, min(3.0, med)) if med > 0 else 0.0
 
-        try:
-            nvenc_speed = await _speed_factor_for("LOWER(j.encoder) IN ('nvenc', 'hevc_nvenc')")
-            libx265_speed = await _speed_factor_for("LOWER(j.encoder) IN ('libx265', 'x265', 'cpu')")
-        except Exception as exc:
-            print(f"[ESTIMATE] Speed factor query failed (using defaults): {exc}", flush=True)
-            nvenc_speed = 0.0
-            libx265_speed = 0.0
+        nvenc_speed = _speed_factor("nvenc")
+        libx265_speed = _speed_factor("libx265")
 
         # Fallbacks: typical realistic defaults
         if nvenc_speed == 0.0:
