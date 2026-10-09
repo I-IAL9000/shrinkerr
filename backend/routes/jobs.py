@@ -1858,8 +1858,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
     db = await connect_db()
     try:
         # Load settings for smart CQ
-        est_keys = ('nvenc_cq', 'content_type_detection', 'resolution_aware_cq',
-                     'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')
+        from backend.encoding_estimates import QUALITY_KEYS, effective_cq
+        est_keys = ('content_type_detection', 'resolution_aware_cq',
+                    'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd',
+                    *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' for _ in est_keys)})", est_keys
@@ -1868,6 +1870,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 est_settings[row["key"]] = row["value"]
 
         global_cq = int(est_settings.get("nvenc_cq", "20"))
+        # Savings at the global setting use the default encoder's quality on
+        # the CQ scale (v0.10.0: it was always the NVENC CQ).
+        global_savings_cq = effective_cq(est_settings)
 
         # Read default encoder for per-file time estimate
         async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
@@ -2100,6 +2105,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     if payload.nvenc_cq_override is not None
                     else payload.libx265_crf_override
                 )
+                savings_cq = None
                 if file_cq is None:
                     rule_cq = None
                     if rule:
@@ -2110,13 +2116,15 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                         # The same per-file CQ Add to Queue gives the job.
                         smart, ctype = smart_cq(fp, row["video_width"], row["video_height"], smart_settings)
                         file_cq = smart if smart is not None else global_cq
+                        if smart is None:
+                            savings_cq = global_savings_cq
                         if ctype:
                             # Track content profiles
                             if ctype not in content_profiles:
                                 content_profiles[ctype] = {"count": 0, "cq": file_cq}
                             content_profiles[ctype]["count"] += 1
 
-                pct = _cq_to_savings_pct(file_cq)
+                pct = _cq_to_savings_pct(savings_cq if savings_cq is not None else file_cq)
                 estimated_savings += int(row["file_size"] * pct)
                 file_cqs.append(file_cq)
 

@@ -15,7 +15,7 @@
 
 Shrinkerr scans your media library, identifies files that are worth re-encoding, queues them up, and runs `ffmpeg` in the background — replacing each file with a smaller x265 copy only when the encode succeeds and actually saves space (plus an optional VMAF minimum-score check). It's designed for home media servers (Plex, Jellyfin, Emby) where you want to reclaim drive space without hand-rolling ffmpeg scripts.
 
-Typical result on a mixed TV + movies library: **50–65% smaller files** with no visible quality loss, fully automated, with originals optionally retained in a backup folder for easy rollback.
+Typical result on a mixed TV + movies library: **40–65% smaller files** with no visible quality loss, fully automated, with originals optionally retained in a backup folder for easy rollback.
 
 <div align="center">
 

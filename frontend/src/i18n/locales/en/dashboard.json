@@ -11,7 +11,7 @@
   },
   "setup": {
     "welcome": "Welcome to Shrinkerr",
-    "intro": "Convert your media library to x265 and reduce file size by 50-65% with no visible quality loss. Save space, bandwidth & money while retaining quality. Follow these steps to get started.",
+    "intro": "Convert your media library to x265 and reduce file size by 40-65% with no visible quality loss. Save space, bandwidth & money while retaining quality. Follow these steps to get started.",
     "optional": "optional",
     "recommended": "recommended",
     "goToDashboard": "Go to Dashboard",

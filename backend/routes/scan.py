@@ -1964,18 +1964,11 @@ async def get_scan_stats():
         except Exception:
             pass
 
-        # Get CQ for savings estimation
-        async with db.execute("SELECT value FROM settings WHERE key='nvenc_cq'") as cur:
-            cq_row = await cur.fetchone()
-            cq_val = int(cq_row["value"]) if cq_row else 20
-        if cq_val <= 15: est_pct = 0.10
-        elif cq_val <= 18: est_pct = 0.15
-        elif cq_val <= 20: est_pct = 0.25
-        elif cq_val <= 22: est_pct = 0.35
-        elif cq_val <= 24: est_pct = 0.45
-        elif cq_val <= 26: est_pct = 0.55
-        elif cq_val <= 28: est_pct = 0.60
-        else: est_pct = 0.65
+        # Savings estimate: the same curve and quality as the per-file and
+        # Add to Queue estimates (v0.10.0: this card had its own curve, 25%
+        # at CQ 20 where the estimate said 45%).
+        from backend.encoding_estimates import cq_to_savings_pct, load_effective_cq
+        est_pct = cq_to_savings_pct(await load_effective_cq(db))
 
         now_ts = datetime.now(timezone.utc).timestamp()
         cutoff_24h = now_ts - 86400

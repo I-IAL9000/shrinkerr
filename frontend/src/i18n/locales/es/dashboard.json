@@ -11,7 +11,7 @@
   },
   "setup": {
     "welcome": "Bienvenido a Shrinkerr",
-    "intro": "Convierte tu biblioteca multimedia a x265 y reduce el tamaño de los archivos entre un 50 y un 65 % sin pérdida de calidad visible. Ahorra espacio, ancho de banda y dinero sin sacrificar calidad. Sigue estos pasos para empezar.",
+    "intro": "Convierte tu biblioteca multimedia a x265 y reduce el tamaño de los archivos entre un 40 y un 65 % sin pérdida de calidad visible. Ahorra espacio, ancho de banda y dinero sin sacrificar calidad. Sigue estos pasos para empezar.",
     "optional": "opcional",
     "recommended": "recomendado",
     "goToDashboard": "Ir al panel",

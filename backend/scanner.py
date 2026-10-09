@@ -1854,13 +1854,9 @@ async def scan_directory(
                 _row = await _cur.fetchone()
                 if _row and _row[0]:
                     source_codecs = _json.loads(_row[0])
-            async with _db.execute("SELECT value FROM settings WHERE key = 'nvenc_cq'") as _cur:
-                _cqrow = await _cur.fetchone()
-                if _cqrow and _cqrow[0]:
-                    try:
-                        global_cq = int(_cqrow[0])
-                    except (TypeError, ValueError):
-                        pass
+            # v0.10.0: the default encoder's quality, not always NVENC's.
+            from backend.encoding_estimates import load_effective_cq
+            global_cq = await load_effective_cq(_db)
         finally:
             await _db.close()
     except Exception:

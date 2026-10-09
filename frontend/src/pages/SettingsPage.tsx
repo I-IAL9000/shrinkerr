@@ -1539,11 +1539,13 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   title: t("settingsMedia:video.guide.nvencCombos.title"),
                   cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    [t("settingsMedia:video.guide.cells.maxQuality"), "p7 / CQ 20", "20-30%"],
-                    [t("settingsMedia:video.guide.cells.qualityFirst"), "p6 / CQ 21", "25-35%"],
-                    [t("settingsMedia:video.guide.cells.balanced"), "p5 / CQ 23", "35-45%"],
-                    [t("settingsMedia:video.guide.cells.spaceSaver"), "p4 / CQ 25", "45-55%"],
-                    [t("settingsMedia:video.guide.cells.maxCompression"), "p3 / CQ 27", "55-65%"],
+                    // Savings columns: the same curve the estimates use
+                    // (backend/encoding_estimates.py; libx265 CRF ≈ CQ + 2).
+                    [t("settingsMedia:video.guide.cells.maxQuality"), "p7 / CQ 20", "~45%"],
+                    [t("settingsMedia:video.guide.cells.qualityFirst"), "p6 / CQ 21", "~50%"],
+                    [t("settingsMedia:video.guide.cells.balanced"), "p5 / CQ 23", "~55%"],
+                    [t("settingsMedia:video.guide.cells.spaceSaver"), "p4 / CQ 25", "~65%"],
+                    [t("settingsMedia:video.guide.cells.maxCompression"), "p3 / CQ 27", "~75%"],
                   ],
                 },
                 // ── libx265 (CPU) ──────────────────────────────────────
@@ -1569,11 +1571,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   title: t("settingsMedia:video.guide.x265Combos.title"),
                   cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    [t("settingsMedia:video.guide.cells.maxQuality"), "slow / CRF 18", "25-35%"],
-                    [t("settingsMedia:video.guide.cells.qualityFirst"), "medium / CRF 20", "35-45%"],
-                    [t("settingsMedia:video.guide.cells.balanced"), "fast / CRF 23", "45-55%"],
-                    [t("settingsMedia:video.guide.cells.spaceSaver"), "veryfast / CRF 25", "55-65%"],
-                    [t("settingsMedia:video.guide.cells.maxThroughput"), "superfast / CRF 26", "60-70%"],
+                    [t("settingsMedia:video.guide.cells.maxQuality"), "slow / CRF 18", "~35%"],
+                    [t("settingsMedia:video.guide.cells.qualityFirst"), "medium / CRF 20", "~35%"],
+                    [t("settingsMedia:video.guide.cells.balanced"), "fast / CRF 23", "~50%"],
+                    [t("settingsMedia:video.guide.cells.spaceSaver"), "veryfast / CRF 25", "~55%"],
+                    [t("settingsMedia:video.guide.cells.maxThroughput"), "superfast / CRF 26", "~60%"],
                   ],
                 },
                 // ── Shared quality target ──────────────────────────────
@@ -1583,11 +1585,11 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   desc: t("settingsMedia:video.guide.cqCrf.desc"),
                   cols: ["CQ/CRF", t("settingsMedia:video.guide.cols.quality"), t("settingsMedia:video.guide.cols.savings")],
                   rows: [
-                    ["15-18", t("settingsMedia:video.guide.cells.overkill"), "5-15%"],
-                    ["19-20", t("settingsMedia:video.guide.cells.transparent"), "20-30%"],
-                    ["21-23", t("settingsMedia:video.guide.cells.excellent"), "30-45%"],
-                    ["24-26", t("settingsMedia:video.guide.cells.good"), "45-60%"],
-                    ["27-30", t("settingsMedia:video.guide.cells.noticeableLoss"), "60%+"],
+                    ["15-18", t("settingsMedia:video.guide.cells.overkill"), "25-35%"],
+                    ["19-20", t("settingsMedia:video.guide.cells.transparent"), "~45%"],
+                    ["21-23", t("settingsMedia:video.guide.cells.excellent"), "50-55%"],
+                    ["24-26", t("settingsMedia:video.guide.cells.good"), "60-70%"],
+                    ["27-30", t("settingsMedia:video.guide.cells.noticeableLoss"), "75%+"],
                   ],
                 },
                 // ── Apple VideoToolbox ─────────────────────────────────

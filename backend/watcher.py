@@ -314,15 +314,9 @@ class FileWatcher:
                     row = await cur.fetchone()
                     if row and row[0]:
                         source_codecs = _json.loads(row[0])
-                async with db3.execute(
-                    "SELECT value FROM settings WHERE key = 'nvenc_cq'"
-                ) as cur:
-                    cqrow = await cur.fetchone()
-                    if cqrow and cqrow[0]:
-                        try:
-                            global_cq = int(cqrow[0])
-                        except (TypeError, ValueError):
-                            pass
+                # v0.10.0: the default encoder's quality, not always NVENC's.
+                from backend.encoding_estimates import load_effective_cq
+                global_cq = await load_effective_cq(db3)
             finally:
                 await db3.close()
         except Exception:
