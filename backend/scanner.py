@@ -1074,6 +1074,51 @@ def merge_external_subs(
 _ext_log = logging.getLogger("shrinkerr.scanner.ext_subs")
 
 
+_SIDECAR_FLAGS = {"forced": "forced", "sdh": "sdh", "hi": "sdh", "cc": "sdh"}
+
+
+def _sidecar_language(token: str) -> Optional[str]:
+    """A language from one dot-separated part of a sidecar name: a code,
+    with any region or script ("pt-BR", "es-419", "zh-Hans"), or a name
+    ("English", "Português")."""
+    base = token.lower().replace("_", "-").split("-", 1)[0]
+    if base in _KNOWN_LANG_CODES or base in _EXTRA_SIDECAR_CODES:
+        return normalize_lang(base)
+    if len(base) == 2:
+        from backend.metadata import ISO_639_1_TO_2B
+        if base in ISO_639_1_TO_2B:
+            return normalize_lang(base)
+    if len(base) > 3:  # a name, not a code
+        from backend.language_detection import detect_language_from_title
+        named = detect_language_from_title(token)
+        if named:
+            return normalize_lang(named)
+    return None
+
+
+# 3-letter codes media names use that aren't in the common set above.
+_EXTRA_SIDECAR_CODES = {"fil", "tgl", "zht", "zhs", "gle", "wel", "cym", "baq", "eus", "glg", "per", "fas"}
+
+
+def sidecar_tags(sub_stem: str) -> tuple[str, bool, bool]:
+    """(language, forced, sdh) from a sidecar's name, reading its last few
+    dot-separated parts in either order: "Movie.en.forced", "Movie.forced.en",
+    "Movie.English", "Movie.pt-BR.sdh". Full names, region tags and a
+    flag before the language were read as unknown (SC-17, v0.10.0)."""
+    language, forced, sdh = "und", False, False
+    parts = sub_stem.split(".")
+    tags = parts[1:][-3:] if len(parts) > 1 else parts  # "English.srt" is all tag
+    for part in reversed(tags):
+        flag = _SIDECAR_FLAGS.get(part.lower())
+        if flag == "forced":
+            forced = True
+        elif flag == "sdh":
+            sdh = True
+        elif language == "und":
+            language = _sidecar_language(part) or "und"
+    return language, forced, sdh
+
+
 def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) -> list[dict]:
     """Detect external subtitle files alongside a video file.
 
@@ -1146,7 +1191,8 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
         return results
 
     _video_exts = {e.lower() for e in settings.video_extensions}
-    video_files = [f for f in siblings if f.suffix.lower() in _video_exts]
+    # AppleDouble `._Movie.mkv` isn't a second video (SC-17, v0.10.0).
+    video_files = [f for f in siblings if f.suffix.lower() in _video_exts and not is_hidden_sidecar(f.name)]
     only_one_video = len(video_files) == 1
 
     # Extract S##E## pattern from the video filename for TV episode matching
@@ -1161,8 +1207,9 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
         fname = f.name
         match_reason = None
 
-        # Strategy 1: full stem match
-        if fname.lower().startswith(video_stem.lower()):
+        # Strategy 1: full stem match, up to a dot — "Saw II.eng.srt" isn't
+        # "Saw.mkv"'s (SC-17, v0.10.0)
+        if fname.lower().startswith(video_stem.lower() + "."):
             match_reason = "stem"
         # Strategy 2: same episode key
         elif video_ep_key:
@@ -1189,24 +1236,8 @@ def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) 
         # For single-video match: "subs.eng.forced.srt" → stem "subs.eng.forced" → "eng" + forced
         sub_stem = f.stem  # e.g. "Movie.eng.forced" or "Show.S01E01.eng"
 
-        language = "und"
-        forced = False
-        sdh = False
-        title_parts = []
-
-        # Try the end of the sub stem (matches stem-match case): .eng[.forced|.sdh]?
-        if True:
-            m = _EXT_SUB_LANG_RE.search(sub_stem)
-            if m:
-                lang_candidate = m.group(1).lower()
-                if lang_candidate in _KNOWN_LANG_CODES:
-                    language = lang_candidate
-                flag = (m.group(2) or "").lower()
-                if flag == "forced":
-                    forced = True
-                elif flag in ("sdh", "hi", "cc"):
-                    sdh = True
-                    title_parts.append(flag.upper())
+        language, forced, sdh = sidecar_tags(sub_stem)
+        title_parts = ["SDH"] if sdh else []
 
         codec = _EXT_CODEC_MAP.get(f.suffix.lower(), "subrip")
 

@@ -1627,8 +1627,20 @@ class FileWatcher:
             await self._refresh_metadata_for_files(new_paths)
 
         # v0.9.107: auto-detect sidecar subs added next to already-known videos
-        # (no manual folder rescan needed). Scoped to folders that gained subs.
+        # (no manual folder rescan needed). Scoped to folders that gained subs —
+        # and (SC-17, v0.10.0) to walked folders whose rows still list sidecars
+        # that are gone: they never came back, so the tracks stayed forever.
         try:
+            db_ext = await aiosqlite.connect(self.db_path)
+            try:
+                async with db_ext.execute(
+                    "SELECT file_path FROM scan_results WHERE has_external_subs_flag = 1"
+                ) as cur:
+                    for (vp,) in await cur.fetchall():
+                        if vp in disk_files:
+                            sub_folder_files.setdefault(os.path.dirname(vp), [])
+            finally:
+                await db_ext.close()
             sub_updated = await self._reconcile_external_subs(sub_folder_files, known_paths)
             if sub_updated:
                 try:
