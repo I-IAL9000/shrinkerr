@@ -295,6 +295,12 @@ def scan_is_actively_running() -> bool:
     global _scan_task, _scan_proc
     if _scan_task is None or _scan_task.done():
         return False
+    # The scan subprocess has finished and the task is in its post-scan
+    # health check (each check has its own timeout): a quiet progress file
+    # there is not a hang. SC-19 (v0.10.0): the check was reaped as a "hung
+    # scan" after 15 minutes and the UI showed the scan as cancelled.
+    if _scan_proc is not None and not _scan_proc.is_alive():
+        return True
 
     # A task exists and isn't done. Decide whether it's live or hung by
     # the freshness of the progress file (the worker rewrites it per
@@ -790,7 +796,7 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
                 # Signal the subprocess to stop
                 with open(_scan_cancel_file, "w") as f:
                     f.write("cancel")
-                proc.join(timeout=10)
+                await asyncio.to_thread(proc.join, 10)  # not on the loop (SC-19)
                 if proc.is_alive():
                     proc.kill()
                 break
@@ -975,7 +981,12 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
     except asyncio.CancelledError:
         with open(_scan_cancel_file, "w") as f:
             f.write("cancel")
-        proc.join(timeout=10)
+        # In a thread (SC-19): joining here blocked the loop for up to 10 s.
+        # Shielded so the join finishes even though this task is cancelled.
+        try:
+            await asyncio.shield(asyncio.to_thread(proc.join, 10))
+        except asyncio.CancelledError:
+            pass
         if proc.is_alive():
             proc.kill()
         await ws_manager.send_scan_progress(status="cancelled", current_file="", total=0, probed=0)

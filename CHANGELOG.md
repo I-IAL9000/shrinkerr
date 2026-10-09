@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Fewer freezes and "database is locked" errors on NAS storage**: the Dashboard's disk-space card no longer reads the media mounts on the app's main thread (a stalled mount froze everything every 10 seconds), and neither does reading a Blu-ray / DVD's track languages and size (done at every disc probe, now also remembered per disc). Poster lookups no longer hold the database while they download images or list folders on the NAS, and the watcher, renames, language-tag writes, trashing a file and Plex library lookups no longer touch the NAS from the main thread either.
+- The health check that runs after a scan is no longer cancelled as a "hung scan" after 15 minutes (the Scanner showed the scan as cancelled and the watcher skipped its cycles meanwhile).
 - **The API key is no longer accepted in URLs (`?api_key=`), only in the `X-Api-Key` header** — in a URL it ended up in proxy logs and browser history. If a script or dashboard widget passes it in the URL, switch it to the header. Live updates use a one-time ticket instead, and need it whenever an API key is set.
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
