@@ -69,7 +69,13 @@
     "logSource": "Origen del registro",
     "folderType": "Tipo de carpeta",
     "streams": "Reproducciones que pausan la codificación",
-    "bitrate": "Tasa de bits"
+    "bitrate": "Tasa de bits",
+    "amount": "Cantidad",
+    "folderPath": "Ruta de la carpeta",
+    "downloadClientPath": "Ruta en el cliente de descargas",
+    "shrinkerrPath": "Ruta en Shrinkerr",
+    "serverPath": "Ruta en el servidor",
+    "workerPath": "Ruta en el trabajador"
   },
   "settingsSearch": {
     "placeholder": "Buscar ajustes",

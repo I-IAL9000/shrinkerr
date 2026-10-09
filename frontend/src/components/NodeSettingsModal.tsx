@@ -323,7 +323,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                     <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input
                         type="text"
-                        aria-label="/server/path" placeholder="/server/path"
+                        aria-label={t("common:labels.serverPath")} placeholder="/server/path"
                         value={row.server}
                         onChange={e => {
                           const next = [...overrideRows];
@@ -341,7 +341,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                       <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
                       <input
                         type="text"
-                        aria-label="/worker/path" placeholder="/worker/path"
+                        aria-label={t("common:labels.workerPath")} placeholder="/worker/path"
                         value={row.worker}
                         onChange={e => {
                           const next = [...overrideRows];

@@ -69,7 +69,13 @@
     "logSource": "Log source",
     "folderType": "Folder type",
     "streams": "Streams that pause encoding",
-    "bitrate": "Bitrate"
+    "bitrate": "Bitrate",
+    "amount": "Amount",
+    "folderPath": "Folder path",
+    "downloadClientPath": "Path on the download client",
+    "shrinkerrPath": "Path in Shrinkerr",
+    "serverPath": "Path on the server",
+    "workerPath": "Path on the worker"
   },
   "settingsSearch": {
     "placeholder": "Search settings",

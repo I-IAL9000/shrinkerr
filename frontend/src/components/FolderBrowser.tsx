@@ -85,7 +85,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
                 background: "var(--bg-primary)", color: "var(--text-secondary)",
                 border: "1px solid var(--border)", borderRadius: 4,
               }}
-              aria-label="/path/to/media" placeholder="/path/to/media"
+              aria-label={t("common:labels.folderPath")} placeholder="/path/to/media"
             />
             <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "8px 12px" }}>{t("dialogs:folderBrowser.go")}</button>
           </div>

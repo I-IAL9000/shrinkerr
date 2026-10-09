@@ -2779,7 +2779,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       type="text"
                       value={encoding.plex_url || ""}
                       onChange={(e) => setEncoding({ ...encoding, plex_url: e.target.value })}
-                      aria-label="http://192.168.0.103:32400" placeholder="http://192.168.0.103:32400"
+                      aria-label={t("settingsIntegrations:plex.serverUrl")} placeholder="http://192.168.0.103:32400"
                       style={{ ...inputStyle, width: "100%", marginBottom: 12 }}
                     />
 
@@ -2835,7 +2835,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     type="text"
                     value={encoding.plex_path_mapping || ""}
                     onChange={(e) => setEncoding({ ...encoding, plex_path_mapping: e.target.value })}
-                    aria-label="/media=/srv/media" placeholder="/media=/srv/media"
+                    aria-label={t("settingsIntegrations:plex.pathMapping")} placeholder="/media=/srv/media"
                     style={{ ...inputStyle, width: "100%", marginTop: 4 }}
                   />
                   <div style={helpStyle}>
@@ -2884,7 +2884,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:jellyfin.url")}</div>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="http://192.168.0.103:8096" placeholder="http://192.168.0.103:8096"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:jellyfin.url")} placeholder="http://192.168.0.103:8096"
                       value={encoding?.jellyfin_url || ""}
                       onChange={(e) => setEncoding({ ...encoding, jellyfin_url: e.target.value })} />
                   </div>
@@ -2908,7 +2908,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/mnt/media" placeholder="/media=/mnt/media"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={`Jellyfin ${t("settingsIntegrations:shared.pathMapping")}`} placeholder="/media=/mnt/media"
                       value={encoding?.jellyfin_path_mapping || ""}
                       onChange={(e) => setEncoding({ ...encoding, jellyfin_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -2950,7 +2950,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:emby.url")}</div>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="http://192.168.0.103:8096" placeholder="http://192.168.0.103:8096"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsIntegrations:emby.url")} placeholder="http://192.168.0.103:8096"
                       value={encoding?.emby_url || ""}
                       onChange={(e) => setEncoding({ ...encoding, emby_url: e.target.value })} />
                   </div>
@@ -2974,7 +2974,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                   <div>
                     <div style={labelStyle}>{t("settingsIntegrations:shared.pathMapping")}</div>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/mnt/media" placeholder="/media=/mnt/media"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={`Emby ${t("settingsIntegrations:shared.pathMapping")}`} placeholder="/media=/mnt/media"
                       value={encoding?.emby_path_mapping || ""}
                       onChange={(e) => setEncoding({ ...encoding, emby_path_mapping: e.target.value })} />
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -3020,7 +3020,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="http://localhost:8989" placeholder="http://localhost:8989"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={`Sonarr ${t("settingsIntegrations:shared.url")}`} placeholder="http://localhost:8989"
                           value={encoding?.sonarr_url || ""}
                           onChange={e => setEncoding({ ...encoding, sonarr_url: e.target.value })} />
                       </div>
@@ -3032,7 +3032,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       </div>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="/media=/  (container=sonarr)" placeholder="/media=/  (container=sonarr)"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={`Sonarr ${t("settingsIntegrations:arr.pathMapping")}`} placeholder="/media=/  (container=sonarr)"
                           value={encoding?.sonarr_path_mapping || ""}
                           onChange={e => setEncoding({ ...encoding, sonarr_path_mapping: e.target.value })} />
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
@@ -3047,7 +3047,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:shared.url")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="http://localhost:7878" placeholder="http://localhost:7878"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={`Radarr ${t("settingsIntegrations:shared.url")}`} placeholder="http://localhost:7878"
                           value={encoding?.radarr_url || ""}
                           onChange={e => setEncoding({ ...encoding, radarr_url: e.target.value })} />
                       </div>
@@ -3059,7 +3059,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       </div>
                       <div>
                         <label style={labelStyle}>{t("settingsIntegrations:arr.pathMapping")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="/media/Movies=/  (container=radarr)" placeholder="/media/Movies=/  (container=radarr)"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={`Radarr ${t("settingsIntegrations:arr.pathMapping")}`} placeholder="/media/Movies=/  (container=radarr)"
                           value={encoding?.radarr_path_mapping || ""}
                           onChange={e => setEncoding({ ...encoding, radarr_path_mapping: e.target.value })} />
                         <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
@@ -3167,7 +3167,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
                     {(encoding?.nzbget_path_mappings || []).map((m: any, i: number) => (
                       <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
-                        <input type="text" value={m.from || ""} aria-label="/Downloads/completed/TV" placeholder="/Downloads/completed/TV"
+                        <input type="text" value={m.from || ""} aria-label={t("common:labels.downloadClientPath")} placeholder="/Downloads/completed/TV"
                           style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
                           onChange={(e) => {
                             const mappings = [...(encoding?.nzbget_path_mappings || [])];
@@ -3175,7 +3175,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             setEncoding({ ...encoding, nzbget_path_mappings: mappings });
                           }} />
                         <span style={{ color: "var(--text-muted)", fontSize: 12 }}>→</span>
-                        <input type="text" value={m.to || ""} aria-label="/downloads/tv" placeholder="/downloads/tv"
+                        <input type="text" value={m.to || ""} aria-label={t("common:labels.shrinkerrPath")} placeholder="/downloads/tv"
                           style={{ ...inputStyle, flex: 1, minWidth: 0, padding: "4px 8px", fontSize: 12 }}
                           onChange={(e) => {
                             const mappings = [...(encoding?.nzbget_path_mappings || [])];
@@ -3644,7 +3644,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <input type="text" style={{ ...inputStyle, width: "100%", maxWidth: 500 }}
                     value={encoding?.post_conversion_script || ""}
                     onChange={e => setEncoding({ ...encoding, post_conversion_script: e.target.value })}
-                    aria-label="/path/to/script.sh" placeholder="/path/to/script.sh" />
+                    aria-label={t("settingsSystem:script.path")} placeholder="/path/to/script.sh" />
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                     {t("settingsSystem:script.pathHelp")}
                   </div>
@@ -4094,7 +4094,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 return (
                                   <div style={{ display: "flex", gap: 6, flex: 1 }}>
                                     <input style={{ ...inputStyle, width: 80 }}
-                                           type="number" min="1" aria-label="24" placeholder="24"
+                                           type="number" min="1" aria-label={t("common:labels.amount")} placeholder="24"
                                            value={num}
                                            onChange={e => setBoth(e.target.value, unit)} />
                                     <select aria-label={t("common:labels.unit")} style={{ ...inputStyle, width: 110 }}
@@ -4399,7 +4399,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Discord</div>
                     <label style={labelStyle}>{t("settingsSystem:notifications.webhookUrl")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="https://discord.com/api/webhooks/..." placeholder="https://discord.com/api/webhooks/..."
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={`Discord ${t("settingsSystem:notifications.webhookUrl")}`} placeholder="https://discord.com/api/webhooks/..."
                       value={encoding?.discord_webhook_url || ""}
                       onChange={e => setEncoding({ ...encoding, discord_webhook_url: e.target.value })} />
                   </div>
@@ -4410,13 +4410,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "flex", gap: 8 }}>
                       <div style={{ flex: 1 }}>
                         <label style={labelStyle}>{t("settingsSystem:notifications.botToken")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="123456:ABC-DEF..." placeholder="123456:ABC-DEF..."
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.botToken")} placeholder="123456:ABC-DEF..."
                           value={encoding?.telegram_bot_token || ""}
                           onChange={e => setEncoding({ ...encoding, telegram_bot_token: e.target.value })} />
                       </div>
                       <div style={{ flex: 1 }}>
                         <label style={labelStyle}>{t("settingsSystem:notifications.chatId")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="-100123456789" placeholder="-100123456789"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.chatId")} placeholder="-100123456789"
                           value={encoding?.telegram_chat_id || ""}
                           onChange={e => setEncoding({ ...encoding, telegram_chat_id: e.target.value })} />
                       </div>
@@ -4429,13 +4429,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 8 }}>
                       <div>
                         <label style={labelStyle}>{t("settingsSystem:notifications.smtpHost")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="smtp.gmail.com" placeholder="smtp.gmail.com"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.smtpHost")} placeholder="smtp.gmail.com"
                           value={encoding?.smtp_host || ""}
                           onChange={e => setEncoding({ ...encoding, smtp_host: e.target.value })} />
                       </div>
                       <div>
                         <label style={labelStyle}>{t("settingsSystem:notifications.port")}</label>
-                        <input style={{ ...inputStyle, width: "100%" }} aria-label="587" placeholder="587"
+                        <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.port")} placeholder="587"
                           value={encoding?.smtp_port || "587"}
                           onChange={e => setEncoding({ ...encoding, smtp_port: e.target.value })} />
                       </div>
@@ -4455,7 +4455,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       </div>
                     </div>
                     <label style={labelStyle}>{t("settingsSystem:notifications.sendTo")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="you@email.com" placeholder="you@email.com"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.sendTo")} placeholder="you@email.com"
                       value={encoding?.email_to || ""}
                       onChange={e => setEncoding({ ...encoding, email_to: e.target.value })} />
                   </div>
@@ -4464,7 +4464,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>{t("settingsSystem:notifications.genericWebhook")}</div>
                     <label style={labelStyle}>{t("settingsSystem:notifications.genericWebhookUrl")}</label>
-                    <input style={{ ...inputStyle, width: "100%" }} aria-label="https://your-server.com/webhook" placeholder="https://your-server.com/webhook"
+                    <input style={{ ...inputStyle, width: "100%" }} aria-label={t("settingsSystem:notifications.genericWebhookUrl")} placeholder="https://your-server.com/webhook"
                       value={encoding?.webhook_url || ""}
                       onChange={e => setEncoding({ ...encoding, webhook_url: e.target.value })} />
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
@@ -4545,7 +4545,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     value={encoding?.auth_username || ""}
                     disabled={!encoding?.auth_enabled}
                     onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
-                    aria-label="admin" placeholder="admin" />
+                    aria-label={t("settingsSystem:auth.username")} placeholder="admin" />
                 </div>
                 <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
                   <div style={labelStyle}>{t("settingsSystem:auth.password")}</div>
