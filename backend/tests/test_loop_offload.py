@@ -220,3 +220,33 @@ async def test_the_subtitle_reconcile_runs_off_the_loop(test_db, monkeypatch, tm
     updated, gap = await _max_loop_gap(
         FileWatcher(test_db)._reconcile_external_subs({str(folder): siblings}, {video}))
     assert updated == 1 and gap < 0.2
+
+
+@pytest.mark.asyncio
+async def test_the_worker_reads_settings_once_per_pass(test_db, monkeypatch):
+    """M8: each worker-loop iteration opened a database connection per
+    setting (parallel jobs, quiet hours, stream pauses, nice, ...)."""
+    import aiosqlite
+    import backend.queue as queue_mod
+    from backend.queue import QueueWorker
+    async with aiosqlite.connect(test_db) as db:
+        for key, value in (("parallel_jobs", "3"), ("quiet_hours_parallel", "1"),
+                           ("quiet_hours_enabled", "false")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        await db.commit()
+    w = QueueWorker(test_db)
+    connects = []
+    real = queue_mod.aiosqlite.connect
+    monkeypatch.setattr(queue_mod.aiosqlite, "connect", lambda *a, **kw: connects.append(1) or real(*a, **kw))
+    assert await w._get_parallel_limit() == 3
+    assert await w._is_quiet_hours() is False
+    assert await w._get_quiet_hours_parallel() == 1
+    assert await w._should_use_nice() is False
+    assert await w._should_pause_for_plex() is False
+    assert await w._should_pause_for_jellyfin() is False
+    assert len(connects) == 1
+    async with aiosqlite.connect(test_db) as db:  # a change in Settings...
+        await db.execute("UPDATE settings SET value = '5' WHERE key = 'parallel_jobs'")
+        await db.commit()
+    w._settings_cache_at -= w._SETTINGS_TTL  # ...reaches the worker within a few seconds
+    assert await w._get_parallel_limit() == 5

@@ -510,11 +510,14 @@ async def remux_audio(
         use_trash = False
         try:
             from backend.database import DB_PATH
-            import sqlite3
-            db = sqlite3.connect(DB_PATH)
-            row = db.execute("SELECT value FROM settings WHERE key = 'trash_original_after_conversion'").fetchone()
-            db.close()
-            use_trash = row and row[0].lower() == "true"
+            import aiosqlite
+            # Async read (M10, v0.10.0): blocking sqlite3 on the event loop.
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                    "SELECT value FROM settings WHERE key = 'trash_original_after_conversion'"
+                ) as cur:
+                    row = await cur.fetchone()
+            use_trash = bool(row and row[0].lower() == "true")
         except Exception:
             pass
 

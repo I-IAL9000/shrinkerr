@@ -90,18 +90,17 @@ def _job_row(row) -> dict:
 async def _run_post_conversion_script(job_id: int, file_path: str, original_path: str, result: dict, job_data: dict):
     """Run user-configured post-conversion script with job details as env vars."""
     try:
-        import sqlite3
+        # Async read (M10, v0.10.0): a blocking sqlite3 connect here ran on the
+        # event loop after every conversion.
         from backend.config import settings as app_settings
-        db = sqlite3.connect(app_settings.db_path)
-        try:
-            cur = db.execute("SELECT value FROM settings WHERE key = 'post_conversion_script'")
-            row = cur.fetchone()
-            script = row[0] if row else ""
-            cur = db.execute("SELECT value FROM settings WHERE key = 'post_conversion_script_timeout'")
-            row = cur.fetchone()
-            timeout = int(row[0]) if row else 300
-        finally:
-            db.close()
+        async with aiosqlite.connect(app_settings.db_path) as db:
+            async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN "
+                "('post_conversion_script', 'post_conversion_script_timeout')"
+            ) as cur:
+                values = {r[0]: r[1] for r in await cur.fetchall()}
+        script = values.get("post_conversion_script") or ""
+        timeout = int(values.get("post_conversion_script_timeout") or 300)
     except Exception:
         return
 
@@ -1145,6 +1144,10 @@ class QueueWorker:
         self._running = False
         self._paused = False
         self._last_state_save: Optional[asyncio.Task] = None
+        self._settings_cache: Optional[dict] = None
+        self._settings_cache_at = 0.0
+        self._node_cache: Optional[dict] = None
+        self._node_cache_at = 0.0
         # Parallel job tracking: keyed by job_id
         self._active_procs: dict[int, asyncio.subprocess.Process] = {}
         self._active_tasks: dict[int, asyncio.Task] = {}
@@ -1268,6 +1271,28 @@ class QueueWorker:
             if not self._is_transient_db_lock(exc):
                 raise
             print(f"[WORKER] Job {job_id}: progress write skipped ({exc})", flush=True)
+
+    # M8 (v0.10.0): the worker loop and the finalizer opened a connection per
+    # setting (parallel jobs, quiet hours, three stream-pause checks, nice,
+    # health check, Plex / Jellyfin / Emby refreshes...), every iteration —
+    # under a storage stall those connect / PRAGMA / close cycles piled onto
+    # the WAL lock. Settings are now read in one query and reused for a few
+    # seconds; the local node's row likewise.
+    _SETTINGS_TTL = 5.0
+
+    async def _settings(self) -> dict:
+        """All settings rows (key -> value), cached for _SETTINGS_TTL."""
+        now = time.monotonic()
+        if self._settings_cache is not None and now - self._settings_cache_at < self._SETTINGS_TTL:
+            return self._settings_cache
+        db = await self._db()
+        try:
+            async with db.execute("SELECT key, value FROM settings") as cur:
+                values = {row[0]: row[1] for row in await cur.fetchall()}
+        finally:
+            await db.close()
+        self._settings_cache, self._settings_cache_at = values, time.monotonic()
+        return values
 
     async def _db(self) -> aiosqlite.Connection:
         """Open a DB connection with WAL mode and busy timeout for parallel safety."""
@@ -1523,29 +1548,15 @@ class QueueWorker:
     async def _get_parallel_limit(self) -> int:
         """Read parallel_jobs setting from DB."""
         try:
-            db = await self._db()
-            try:
-                async with db.execute("SELECT value FROM settings WHERE key = 'parallel_jobs'") as cur:
-                    row = await cur.fetchone()
-                    return int(row[0]) if row else 8
-            finally:
-                await db.close()
+            value = (await self._settings()).get("parallel_jobs")
+            return int(value) if value is not None else 8
         except Exception:
             return 1
 
     async def _is_quiet_hours(self) -> bool:
         """Check if we're currently in quiet hours."""
         try:
-            db = await self._db()
-            try:
-                settings = {}
-                async with db.execute(
-                    "SELECT key, value FROM settings WHERE key IN ('quiet_hours_enabled', 'quiet_hours_start', 'quiet_hours_end')"
-                ) as cur:
-                    for row in await cur.fetchall():
-                        settings[row[0]] = row[1]
-            finally:
-                await db.close()
+            settings = await self._settings()
 
             if settings.get("quiet_hours_enabled", "false").lower() != "true":
                 return False
@@ -1564,29 +1575,15 @@ class QueueWorker:
 
     async def _get_quiet_hours_parallel(self) -> int:
         try:
-            db = await self._db()
-            try:
-                async with db.execute("SELECT value FROM settings WHERE key = 'quiet_hours_parallel'") as cur:
-                    row = await cur.fetchone()
-                    return int(row[0]) if row else 1
-            finally:
-                await db.close()
+            value = (await self._settings()).get("quiet_hours_parallel")
+            return int(value) if value is not None else 1
         except Exception:
             return 1
 
     async def _should_pause_for_plex(self) -> bool:
         """Check if encoding should pause due to active Plex streams."""
         try:
-            db = await self._db()
-            try:
-                settings = {}
-                async with db.execute(
-                    "SELECT key, value FROM settings WHERE key IN ('plex_pause_on_stream', 'plex_pause_stream_threshold', 'plex_pause_transcode_only')"
-                ) as cur:
-                    for row in await cur.fetchall():
-                        settings[row[0]] = row[1]
-            finally:
-                await db.close()
+            settings = await self._settings()
 
             if settings.get("plex_pause_on_stream", "false").lower() != "true":
                 return False
@@ -1607,16 +1604,7 @@ class QueueWorker:
     async def _should_pause_for_jellyfin(self) -> bool:
         """Check if encoding should pause due to active Jellyfin streams."""
         try:
-            db = await self._db()
-            try:
-                settings = {}
-                async with db.execute(
-                    "SELECT key, value FROM settings WHERE key IN ('jellyfin_pause_on_stream', 'jellyfin_pause_stream_threshold', 'jellyfin_pause_transcode_only')"
-                ) as cur:
-                    for row in await cur.fetchall():
-                        settings[row[0]] = row[1]
-            finally:
-                await db.close()
+            settings = await self._settings()
 
             if settings.get("jellyfin_pause_on_stream", "false").lower() != "true":
                 return False
@@ -1637,16 +1625,7 @@ class QueueWorker:
     async def _should_pause_for_emby(self) -> bool:
         """Check if encoding should pause due to active Emby streams."""
         try:
-            db = await self._db()
-            try:
-                settings = {}
-                async with db.execute(
-                    "SELECT key, value FROM settings WHERE key IN ('emby_pause_on_stream', 'emby_pause_stream_threshold', 'emby_pause_transcode_only')"
-                ) as cur:
-                    for row in await cur.fetchall():
-                        settings[row[0]] = row[1]
-            finally:
-                await db.close()
+            settings = await self._settings()
 
             if settings.get("emby_pause_on_stream", "false").lower() != "true":
                 return False
@@ -1669,18 +1648,21 @@ class QueueWorker:
         if not await self._is_quiet_hours():
             return False
         try:
-            db = await self._db()
-            try:
-                async with db.execute("SELECT value FROM settings WHERE key = 'quiet_hours_nice'") as cur:
-                    row = await cur.fetchone()
-                    return row and row[0].lower() == "true"
-            finally:
-                await db.close()
+            return str((await self._settings()).get("quiet_hours_nice") or "").lower() == "true"
         except Exception:
             return False
 
     async def _get_local_node_settings(self) -> dict:
-        """Read per-node settings for the 'local' node from worker_nodes."""
+        """Per-node settings for the 'local' node from worker_nodes, cached
+        for _SETTINGS_TTL (M8)."""
+        now = time.monotonic()
+        if self._node_cache is not None and now - self._node_cache_at < self._SETTINGS_TTL:
+            return self._node_cache
+        self._node_cache = await self._read_local_node_settings()
+        self._node_cache_at = time.monotonic()
+        return self._node_cache
+
+    async def _read_local_node_settings(self) -> dict:
         try:
             db = await self._db()
             try:
@@ -3035,18 +3017,10 @@ class QueueWorker:
 
         # Inline post-conversion health check (keeps the same job card up; no re-queue)
         try:
-            db = await self._db()
-            try:
-                async with db.execute(
-                    "SELECT value FROM settings WHERE key = 'health_check_after_conversion'"
-                ) as cur:
-                    hc_row = await cur.fetchone()
-                    _hc_raw = (str(hc_row["value"]).lower() if hc_row else "off")
-                    hc_mode_post = {"true": "quick", "false": "off"}.get(_hc_raw, _hc_raw)
-                    if hc_mode_post not in ("quick", "thorough"):
-                        hc_mode_post = "off"
-            finally:
-                await db.close()
+            _hc_raw = str((await self._settings()).get("health_check_after_conversion") or "off").lower()
+            hc_mode_post = {"true": "quick", "false": "off"}.get(_hc_raw, _hc_raw)
+            if hc_mode_post not in ("quick", "thorough"):
+                hc_mode_post = "off"
 
             if hc_mode_post != "off" and await _async_exists(current_file_path):
                 from backend.health_check import run_check
@@ -3298,32 +3272,13 @@ class QueueWorker:
 
         # Trigger Plex partial scan for the converted file's folder (if enabled)
         try:
-            plex_scan_enabled = True
-            try:
-                db = await self._db()
-                try:
-                    async with db.execute("SELECT value FROM settings WHERE key = 'plex_scan_after_conversion'") as cur:
-                        row = await cur.fetchone()
-                        if row and row[0].lower() == "false":
-                            plex_scan_enabled = False
-                finally:
-                    await db.close()
-            except Exception:
-                pass
+            plex_scan_enabled = str((await self._settings()).get("plex_scan_after_conversion") or "").lower() != "false"
             from backend.plex import trigger_plex_scan, empty_plex_trash
             section_id = await trigger_plex_scan(current_file_path) if plex_scan_enabled else None
             if section_id:
                 # Only empty trash if the setting is enabled
                 try:
-                    db = await self._db()
-                    try:
-                        async with db.execute(
-                            "SELECT value FROM settings WHERE key = 'plex_empty_trash_after_scan'"
-                        ) as cur:
-                            row = await cur.fetchone()
-                            should_empty = row and row[0].lower() == "true"
-                    finally:
-                        await db.close()
+                    should_empty = str((await self._settings()).get("plex_empty_trash_after_scan") or "").lower() == "true"
                     if should_empty:
                         # Fire-and-forget — Plex's scanner is async and
                         # needs ~10-15 s to flag the just-removed file
@@ -3349,18 +3304,7 @@ class QueueWorker:
 
         # Trigger Jellyfin library refresh (if enabled)
         try:
-            jf_scan_enabled = True
-            try:
-                db = await self._db()
-                try:
-                    async with db.execute("SELECT value FROM settings WHERE key = 'jellyfin_scan_after_conversion'") as cur:
-                        row = await cur.fetchone()
-                        if row and row[0].lower() == "false":
-                            jf_scan_enabled = False
-                finally:
-                    await db.close()
-            except Exception:
-                pass
+            jf_scan_enabled = str((await self._settings()).get("jellyfin_scan_after_conversion") or "").lower() != "false"
             if jf_scan_enabled:
                 from backend.jellyfin import trigger_jellyfin_scan
                 await trigger_jellyfin_scan(current_file_path)
@@ -3369,18 +3313,7 @@ class QueueWorker:
 
         # Trigger Emby library refresh (if enabled)
         try:
-            emby_scan_enabled = True
-            try:
-                db = await self._db()
-                try:
-                    async with db.execute("SELECT value FROM settings WHERE key = 'emby_scan_after_conversion'") as cur:
-                        row = await cur.fetchone()
-                        if row and row[0].lower() == "false":
-                            emby_scan_enabled = False
-                finally:
-                    await db.close()
-            except Exception:
-                pass
+            emby_scan_enabled = str((await self._settings()).get("emby_scan_after_conversion") or "").lower() != "false"
             if emby_scan_enabled:
                 from backend.emby import trigger_emby_scan
                 await trigger_emby_scan(current_file_path)
