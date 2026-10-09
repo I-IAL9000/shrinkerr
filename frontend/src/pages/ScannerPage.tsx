@@ -1282,8 +1282,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         style={{
           display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
           background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
-          color: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
-          borderColor: advSearchPredicates.length > 0 ? "var(--accent)" : undefined,
+          color: advSearchPredicates.length > 0 ? "var(--accent-text)" : undefined,
+          borderColor: advSearchPredicates.length > 0 ? "var(--accent-text)" : undefined,
         }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1306,7 +1306,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       {/* U7 (v0.10.0): below 1100 px the sort pills become a dropdown —
           they wrapped the toolbar onto extra lines. */}
       <span className="sort-pills">
-        <span style={{ fontSize: 12, opacity: 0.5, whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
         {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
           <button key={val}
             className={`sort-pill ${sortBy === val ? "active" : ""}`}
@@ -1406,7 +1406,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         {scanning && (
           <button
             className="btn btn-secondary"
-            style={{ height: 36, color: "#e94560", borderColor: "rgba(233,69,96,0.4)" }}
+            style={{ height: 36, color: "var(--danger)", borderColor: "rgba(233,69,96,0.4)" }}
             onClick={() => {
               cancelScan().catch(() => {});
               setScanStarted(false);
@@ -1429,7 +1429,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               }}
               style={{
                 background: "none", border: "1px solid rgba(233,69,96,0.4)",
-                color: "#e94560", cursor: "pointer", borderRadius: 4,
+                color: "var(--danger)", cursor: "pointer", borderRadius: 4,
                 width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center",
               }}
               title={t("scanner:toolbar.cancelMetadataTitle")}
@@ -1462,27 +1462,27 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           )
         )}
         {scanning && (scanProgress?.status === "discovering" || !scanProgress) && (
-          <span style={{ fontSize: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {scanProgress?.current_file ? t("scanner:toolbar.discoveringIn", { folder: scanProgress.current_file.split("/").filter(Boolean).pop() }) : t("scanner:toolbar.discovering")}
           </span>
         )}
         {scanning && scanProgress && scanProgress.status !== "metadata" && scanProgress.status !== "discovering" && scanProgress.status !== "finalizing" && !scanProgress.status?.startsWith("health_check") && (
-          <span style={{ fontSize: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {t("scanner:toolbar.filesProbed", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {scanning && scanProgress?.status === "finalizing" && (
-          <span style={{ fontSize: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {t("scanner:toolbar.readingTrackMetadata", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {refreshingMetadata && scanProgress && scanProgress.status === "metadata" && (
-          <span style={{ fontSize: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {t("scanner:toolbar.metadataChecked", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
         {scanning && scanProgress && scanProgress.status?.startsWith("health_check") && (
-          <span style={{ fontSize: 12, opacity: 0.6 }}>
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {t(scanProgress.status === "health_check_thorough" ? "scanner:toolbar.healthCheckThoroughProgress" : "scanner:toolbar.healthCheckQuickProgress", { probed: fmtNum(scanProgress.probed), total: fmtNum(scanProgress.total) })}
           </span>
         )}
@@ -1500,7 +1500,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               }}
             />
           </div>
-          <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
             {t(scanProgress.status === "finalizing" ? "scanner:toolbar.readingMetadataFile" : "scanner:toolbar.probingFile", { file: scanProgress.current_file })}
           </div>
         </div>
@@ -1509,7 +1509,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("scanner:empty.loading")}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>{t("scanner:empty.loading")}</div>
         </div>
       ) : (
         <>
@@ -1524,7 +1524,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onClick={() => setFiltersOpen(!filtersOpen)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                background: filtersOpen ? "#4920f0" : "var(--bg-card)",
+                background: filtersOpen ? "var(--accent-btn)" : "var(--bg-card)",
                 color: filtersOpen ? "white" : "var(--text-muted)",
               }}
             >
@@ -1567,7 +1567,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <div className="progress-bar-track">
                 <div className="progress-bar-fill" style={{ width: `${(posterProgress.resolved / posterProgress.total) * 100}%` }} />
               </div>
-              <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                 {t("scanner:toolbar.fetchingPostersProgress", { resolved: posterProgress.resolved, total: posterProgress.total })}
               </div>
             </div>
@@ -1588,7 +1588,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               borderRadius: 6,
               fontSize: 12,
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e5a00d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--plex)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
               <span style={{ color: "var(--text-secondary)", flex: 1 }}>
@@ -1670,7 +1670,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               const allSelectedIgnored = selectedFiles.length > 0 && selectedFiles.every(f => f.ignored);
               const someSelectedIgnored = selectedFiles.some(f => f.ignored);
               return <>
-                <span style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{t("scanner:selection.selected", { count: selectedCount })}</span>
+                <span style={{ fontSize: 11, color: "var(--accent-text)", fontWeight: 600 }}>{t("scanner:selection.selected", { count: selectedCount })}</span>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
                 <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleAddToQueue}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1737,7 +1737,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                         onClick={() => { setHealthMenuOpen(false); handleHealthCheck("quick"); }}
                         style={menuItemStyle}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#6ce5b0" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}>
                           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
@@ -1749,7 +1749,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                         onClick={() => { setHealthMenuOpen(false); handleHealthCheck("thorough"); }}
                         style={menuItemStyle}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#ffa94d" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--caution)" }}>
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
@@ -1797,7 +1797,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                         onClick={() => { setArrMenuOpen(false); handleBulkArrAction("upgrade"); }}
                         style={menuItemStyle}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#6ce5b0" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--success)" }}>
                           <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
@@ -1809,7 +1809,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                         onClick={() => { setArrMenuOpen(false); handleBulkArrAction("missing"); }}
                         style={menuItemStyle}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#7cb4ff" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--info)" }}>
                           <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
@@ -1821,7 +1821,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                         onClick={() => { setArrMenuOpen(false); handleBulkArrAction("replace"); }}
                         style={menuItemStyle}
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "#e94560" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--danger)" }}>
                           <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
                         </svg>
                         <div style={{ textAlign: "left" }}>
@@ -1856,7 +1856,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   {t("common:actions.remove")}
                 </button>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "#e94560", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
+                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "var(--danger)", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                   {t("scanner:selection.trashFiles")}
                 </button>
@@ -1903,7 +1903,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
               </svg>
-              <span style={{ fontSize: 12, color: "var(--accent)" }}>
+              <span style={{ fontSize: 12, color: "var(--accent-text)" }}>
                 <Trans
                   i18nKey="scanner:advBanner.summary"
                   values={{

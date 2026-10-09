@@ -5,6 +5,7 @@ import FolderBrowser from "../components/FolderBrowser";
 import RenamingSettings from "../components/RenamingSettings";
 import { vmafColor } from "../utils/vmaf";
 import { copyText } from "../utils/clipboard";
+import type { ThemePref } from "../App";
 import {
   getMediaDirs, addMediaDir, updateMediaDir, removeMediaDir,
   getEncodingSettings, updateEncodingSettings, testApiKey, getApiKey,
@@ -246,7 +247,7 @@ function VmafRemeasureRow() {
 }
 
 
-export default function SettingsPage({ theme, onToggleTheme }: { theme: string; onToggleTheme: () => void }) {
+export default function SettingsPage({ themePref, onThemeChange }: { themePref: ThemePref; onThemeChange: (pref: ThemePref) => void }) {
   const toast = useToast();
   const { t, i18n } = useTranslation(["settings", "common"]);
   const pageRef = useRef<HTMLDivElement>(null);
@@ -661,7 +662,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
                 <span>
                   {d.path}
-                  {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--border)" }}>{d.label}</span>}
+                  {d.label && <span style={{ fontSize: 10, fontFamily: "inherit", color: "var(--text-muted)", marginLeft: 8, padding: "2px 6px", borderRadius: 3, backgroundColor: "var(--bg-tertiary)" }}>{d.label}</span>}
                   {!autoScan && (
                     <span
                       title={t("settingsMedia:directories.noScanTitle")}
@@ -691,7 +692,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               </div>
             );
           })}
-          {dirs.length === 0 && <div style={{ opacity: 0.5 }}>{t("settingsMedia:directories.empty")}</div>}
+          {dirs.length === 0 && <div style={{ color: "var(--text-muted)" }}>{t("settingsMedia:directories.empty")}</div>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button className="btn btn-secondary" onClick={() => setBrowserOpen(true)}
@@ -858,7 +859,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={labelStyle}>{t("settingsMedia:video.parallelJobs")}</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding?.parallel_jobs ?? 8}</span>
+                  <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding?.parallel_jobs ?? 8}</span>
                 </div>
                 <input type="range" min={1} max={16} value={encoding?.parallel_jobs ?? 8}
                   onChange={(e) => setEncoding({ ...encoding, parallel_jobs: parseInt(e.target.value) })}
@@ -875,7 +876,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={labelStyle}>{t("settingsMedia:video.ffmpegThreads")}</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold" }}>
+                  <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>
                     {(encoding?.ffmpeg_threads ?? 0) === 0 ? t("settingsMedia:video.auto") : encoding?.ffmpeg_threads}
                   </span>
                 </div>
@@ -978,7 +979,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.nvencPreset")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.nvenc_preset || "p6"}</span>
                     </div>
                     <input type="range" min={1} max={7} value={parseInt((encoding.nvenc_preset || "p6").replace("p", ""))}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_preset: `p${e.target.value}` })}
@@ -987,7 +988,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <span>{t("settingsMedia:video.scale.presetFastest")}</span><span>p4</span><span>{t("settingsMedia:video.scale.presetBest")}</span>
                     </div>
                     <div style={{ ...helpStyle, padding: 8, background: "var(--bg-primary)", borderRadius: 4, marginTop: 8 }}>
-                      <strong style={{ color: "var(--accent)" }}>{PRESET_IDS.includes(encoding.nvenc_preset || "p6") && t(`settingsMedia:options.presets.${encoding.nvenc_preset || "p6"}.label`)}</strong>
+                      <strong style={{ color: "var(--accent-text)" }}>{PRESET_IDS.includes(encoding.nvenc_preset || "p6") && t(`settingsMedia:options.presets.${encoding.nvenc_preset || "p6"}.label`)}</strong>
                       {" — "}{PRESET_IDS.includes(encoding.nvenc_preset || "p6") && t(`settingsMedia:options.presets.${encoding.nvenc_preset || "p6"}.desc`)}
                     </div>
                   </div>
@@ -996,7 +997,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.nvencCq")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.nvenc_cq}</span>
                     </div>
                     <input type="range" min={15} max={40} value={encoding.nvenc_cq}
                       onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
@@ -1079,7 +1080,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.cpuPreset")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_preset || "medium"}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.libx265_preset || "medium"}</span>
                     </div>
                     <select value={encoding.libx265_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, libx265_preset: e.target.value })}
@@ -1103,7 +1104,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.crf")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.libx265_crf}</span>
                     </div>
                     <input type="range" min={15} max={28} value={encoding.libx265_crf}
                       onChange={(e) => setEncoding({ ...encoding, libx265_crf: parseInt(e.target.value) })}
@@ -1188,7 +1189,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.qsvPreset")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_preset || "medium"}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.qsv_preset || "medium"}</span>
                     </div>
                     <select value={encoding.qsv_preset || "medium"}
                       onChange={(e) => setEncoding({ ...encoding, qsv_preset: e.target.value })}
@@ -1209,7 +1210,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.qsvQuality")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.qsv_cq ?? 22}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.qsv_cq ?? 22}</span>
                     </div>
                     <input type="range" min={15} max={32} value={encoding.qsv_cq ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, qsv_cq: parseInt(e.target.value) })}
@@ -1273,7 +1274,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.vaapiCompression")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_compression_level ?? 4}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.vaapi_compression_level ?? 4}</span>
                     </div>
                     <input type="range" min={0} max={7} value={encoding.vaapi_compression_level ?? 4}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_compression_level: parseInt(e.target.value) })}
@@ -1289,7 +1290,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.vaapiQp")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.vaapi_qp ?? 22}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.vaapi_qp ?? 22}</span>
                     </div>
                     <input type="range" min={15} max={32} value={encoding.vaapi_qp ?? 22}
                       onChange={(e) => setEncoding({ ...encoding, vaapi_qp: parseInt(e.target.value) })}
@@ -1332,7 +1333,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                       <span style={labelStyle}>{t("settingsMedia:video.videotoolboxQuality")}</span>
-                      <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.videotoolbox_quality ?? 55}</span>
+                      <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.videotoolbox_quality ?? 55}</span>
                     </div>
                     <input type="range" min={30} max={85} value={encoding.videotoolbox_quality ?? 55}
                       onChange={(e) => setEncoding({ ...encoding, videotoolbox_quality: parseInt(e.target.value) })}
@@ -1441,10 +1442,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   </thead>
                   <tbody>
                     {[
-                      ["93+", t("settingsMedia:video.smart.tiers.transparent"), "#18ffa5"],
-                      ["87–93", t("settingsMedia:video.smart.tiers.highQuality"), "var(--accent)"],
-                      ["80–87", t("settingsMedia:video.smart.tiers.acceptable"), "#ffa94d"],
-                      ["< 80", t("settingsMedia:video.smart.tiers.degradation"), "#e94560"],
+                      ["93+", t("settingsMedia:video.smart.tiers.transparent"), "var(--success)"],
+                      ["87–93", t("settingsMedia:video.smart.tiers.highQuality"), "var(--accent-text)"],
+                      ["80–87", t("settingsMedia:video.smart.tiers.acceptable"), "var(--caution)"],
+                      ["< 80", t("settingsMedia:video.smart.tiers.degradation"), "var(--danger)"],
                     ].map(([score, desc, color]) => (
                       <tr key={score as string} style={{ borderBottom: "1px solid var(--border)" }}>
                         <td style={{ padding: "4px 0 4px 28px", color: color as string, fontWeight: 600 }}>{score}</td>
@@ -1683,7 +1684,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 },
               ] as GuideSection[]).filter(section => section.encoders.includes(guideEncoder)).map((section) => (
                 <div key={section.title} style={{ marginBottom: 16 }}>
-                  <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{section.title}</div>
+                  <div style={{ color: "var(--accent-text)", fontWeight: "bold", marginBottom: 4 }}>{section.title}</div>
                   {section.desc && <p>{section.desc}</p>}
                   {section.cols && section.rows && (
                   <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", marginTop: 8, tableLayout: "fixed" }}>
@@ -1702,7 +1703,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <tbody>
                       {section.rows.map(([c1, c2, c3]) => (
                         <tr key={c1} style={{ borderBottom: "1px solid var(--bg-card)" }}>
-                          <td style={{ padding: "6px 8px", color: "var(--accent)" }}>{c1}</td>
+                          <td style={{ padding: "6px 8px", color: "var(--accent-text)" }}>{c1}</td>
                           <td style={{ textAlign: "center", padding: "6px 8px" }}>{c2}</td>
                           <td style={{ textAlign: "right", padding: "6px 8px", color: "var(--success)" }}>{c3}</td>
                         </tr>
@@ -1717,7 +1718,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               ))}
 
               <div style={{ marginBottom: 16 }}>
-                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:video.guide.tipsTitle")}</div>
+                <div style={{ color: "var(--accent-text)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:video.guide.tipsTitle")}</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
                   <li style={{ marginBottom: 4 }}><Trans i18nKey="settingsMedia:video.guide.tips.sources" components={{ b: <strong />, em: <em /> }} /></li>
                   {/* Grain/animation tips speak in CQ/CRF terms (lower = better);
@@ -1856,7 +1857,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     const known = ALL_LANGUAGES.includes(code);
                     return (
                       <span key={code} style={{
-                        background: "var(--border)", color: "var(--success)", padding: "4px 10px",
+                        background: "var(--bg-tertiary)", color: "var(--success)", padding: "4px 10px",
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
                         {known ? `${langName(code)} (${code})` : code}
@@ -2013,7 +2014,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                         <span style={labelStyle}>{t("settingsMedia:audio.conversion.bitrate")}</span>
-                        <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.audio_bitrate || 128} kbps</span>
+                        <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.audio_bitrate || 128} kbps</span>
                       </div>
                       <input type="range" min={64} max={640} step={32}
                         value={encoding.audio_bitrate || 128}
@@ -2057,7 +2058,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                       <div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                           <span style={labelStyle}>{t("settingsMedia:audio.lossless.targetBitrate")}</span>
-                          <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{encoding.lossless_target_bitrate || 640} kbps</span>
+                          <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{encoding.lossless_target_bitrate || 640} kbps</span>
                         </div>
                         <input type="range" min={128} max={640} step={32}
                           value={encoding.lossless_target_bitrate || 640}
@@ -2124,7 +2125,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 },
               ].map((section) => (
                 <div key={section.title} style={{ marginBottom: 16 }}>
-                  <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{section.title}</div>
+                  <div style={{ color: "var(--accent-text)", fontWeight: "bold", marginBottom: 4 }}>{section.title}</div>
                   {section.desc && <p>{section.desc}</p>}
                   <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse", marginTop: 8, tableLayout: "fixed" }}>
                     <colgroup>
@@ -2142,7 +2143,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <tbody>
                       {section.rows.map(([c1, c2, c3]) => (
                         <tr key={c1} style={{ borderBottom: "1px solid var(--bg-card)" }}>
-                          <td style={{ padding: "6px 8px", color: "var(--accent)" }}>{c1}</td>
+                          <td style={{ padding: "6px 8px", color: "var(--accent-text)" }}>{c1}</td>
                           <td style={{ textAlign: "center", padding: "6px 8px" }}>{c2}</td>
                           <td style={{ textAlign: "right", padding: "6px 8px", color: "var(--success)" }}>{c3}</td>
                         </tr>
@@ -2153,7 +2154,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               ))}
 
               <div style={{ marginBottom: 16 }}>
-                <div style={{ color: "var(--accent)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:audio.guide.tipsTitle")}</div>
+                <div style={{ color: "var(--accent-text)", fontWeight: "bold", marginBottom: 4 }}>{t("settingsMedia:audio.guide.tipsTitle")}</div>
                 <ul style={{ paddingLeft: 16, margin: 0 }}>
                   {["copy", "bluray", "lossless", "commentary", "native"].map(k => (
                     <li key={k} style={{ marginBottom: 4 }}>{t(`settingsMedia:audio.guide.tips.${k}`)}</li>
@@ -2203,7 +2204,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     const known = ALL_LANGUAGES.includes(code);
                     return (
                       <span key={code} style={{
-                        background: "var(--border)", color: "var(--success)", padding: "4px 10px",
+                        background: "var(--bg-tertiary)", color: "var(--success)", padding: "4px 10px",
                         borderRadius: 16, fontSize: 12, display: "flex", alignItems: "center", gap: 6,
                       }}>
                         {known ? `${langName(code)} (${code})` : code}
@@ -2389,7 +2390,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div style={{ ...labelStyle, marginBottom: 8 }}>
                 {t("settingsIntegrations:tmdb.apiKey")}{" "}
                 <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 11, color: "var(--accent)" }}>{t("settingsIntegrations:tmdb.getFreeKey")}</a>
+                  style={{ fontSize: 11, color: "var(--accent-text)" }}>{t("settingsIntegrations:tmdb.getFreeKey")}</a>
                 {encoding.tmdb_key_source === "bundled" && (
                   <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 400, marginLeft: 8 }}>
                     {t("settingsIntegrations:tmdb.optional")}
@@ -2451,18 +2452,18 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   <span style={{ color: "var(--success)", fontSize: 16 }}>&#10003;</span>
                 )}
                 {tmdbTest.status === "error" && (
-                  <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {tmdbTest.error}</span>
+                  <span style={{ color: "var(--danger)", fontSize: 12 }}>&#10007; {tmdbTest.error}</span>
                 )}
               </div>
               {encoding.tmdb_configured && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                   <span style={{
                     width: 8, height: 8, borderRadius: "50%", display: "inline-block",
-                    background: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent)",
+                    background: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent-text)",
                   }} />
                   <span style={{
                     fontSize: 12,
-                    color: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent)",
+                    color: encoding.tmdb_key_source === "user" ? "var(--success)" : "var(--accent-text)",
                   }}>
                     {encoding.tmdb_key_source === "user" ? t("settingsIntegrations:tmdb.connectedUser") : t("settingsIntegrations:tmdb.connectedBundled")}
                   </span>
@@ -2510,7 +2511,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500, color: "white" }}>
                     <Trans i18nKey="settingsIntegrations:plex.connectedTo" values={{ name: plexConn.server_name || "Plex" }}
-                      components={{ srv: <span style={{ color: "#e5a00d" }} /> }} />
+                      components={{ srv: <span style={{ color: "var(--plex)" }} /> }} />
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {plexConn.user?.email ? `${plexConn.user.email} · ` : ""}{plexConn.server_url}
@@ -2616,7 +2617,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                               gap: 10,
                               padding: "8px 10px",
                               borderRadius: 4,
-                              border: `1px solid ${picked ? "#e5a00d" : "var(--border)"}`,
+                              border: `1px solid ${picked ? "var(--plex)" : "var(--border)"}`,
                               background: picked ? "rgba(229,160,13,0.08)" : "transparent",
                               cursor: "pointer",
                             }}
@@ -2626,16 +2627,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                               name="plex_server_uri"
                               checked={picked}
                               onChange={() => setPlexPickedUri(conn.uri)}
-                              style={{ accentColor: "#e5a00d" }}
+                              style={{ accentColor: "var(--plex)" }}
                             />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, color: "white", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                                 <span style={{ fontWeight: 500 }}>{server.name}</span>
-                                {server.owned && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(229,160,13,0.2)", color: "#e5a00d" }}>{t("settingsIntegrations:plex.badges.owned")}</span>}
+                                {server.owned && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(229,160,13,0.2)", color: "var(--plex)" }}>{t("settingsIntegrations:plex.badges.owned")}</span>}
                                 {conn.local && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>{t("settingsIntegrations:plex.badges.local")}</span>}
-                                {conn.relay && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--border)", color: "var(--text-muted)" }}>{t("settingsIntegrations:plex.badges.relay")}</span>}
+                                {conn.relay && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-muted)" }}>{t("settingsIntegrations:plex.badges.relay")}</span>}
                                 {conn.reachable === true && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(0,200,100,0.15)", color: "var(--success)" }}>{t("settingsIntegrations:plex.badges.reachable")}</span>}
-                                {conn.reachable === false && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(231,76,60,0.2)", color: "var(--danger, #e74c3c)" }}>{t("settingsIntegrations:plex.badges.unreachable")}</span>}
+                                {conn.reachable === false && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "rgba(231,76,60,0.2)", color: "var(--danger)" }}>{t("settingsIntegrations:plex.badges.unreachable")}</span>}
                               </div>
                               <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {conn.uri}
@@ -2672,7 +2673,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             )}
 
             {plexPickerError && (
-              <div style={{ fontSize: 12, color: "var(--danger, #e74c3c)", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 12 }}>
                 {plexPickerError}
               </div>
             )}
@@ -2708,7 +2709,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <span style={labelStyle}>{t("settingsIntegrations:plex.authToken")}</span>
-                  <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent)" }}>{t("settingsIntegrations:plex.findToken")}</a>
+                  <a href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--accent-text)" }}>{t("settingsIntegrations:plex.findToken")}</a>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ position: "relative", flex: 1 }}>
@@ -2746,7 +2747,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <span style={{ color: "var(--success)", fontSize: 12 }}>&#10003; {t("settingsIntegrations:plex.testSuccess", { name: plexTest.serverName, count: plexTest.libraryCount })}</span>
                   )}
                   {plexTest.status === "error" && (
-                    <span style={{ color: "var(--danger, #e74c3c)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
+                    <span style={{ color: "var(--danger)", fontSize: 12 }}>&#10007; {plexTest.error}</span>
                   )}
                 </div>
               </div>
@@ -3083,7 +3084,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div style={labelStyle}>{t("settingsIntegrations:downloaders.tagsLabel")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_tags || []).map((tag: string) => (
-                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
+                  <span key={tag} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
                     {tag}
                     <button onClick={() => setEncoding({ ...encoding, nzbget_tags: (encoding?.nzbget_tags || []).filter((t: string) => t !== tag) })}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
@@ -3109,7 +3110,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
               <div style={labelStyle}>{t("settingsIntegrations:downloaders.categoriesLabel")}</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {(encoding?.nzbget_categories || []).map((cat: string) => (
-                  <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--border)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
+                  <span key={cat} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-tertiary)", padding: "4px 10px", borderRadius: 16, fontSize: 12, color: "var(--success)" }}>
                     {cat}
                     <button onClick={() => setEncoding({ ...encoding, nzbget_categories: (encoding?.nzbget_categories || []).filter((c: string) => c !== cat) })}
                       style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}>&times;</button>
@@ -3155,7 +3156,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                     <button onClick={() => {
                       const mappings = (encoding?.nzbget_path_mappings || []).filter((_: any, j: number) => j !== i);
                       setEncoding({ ...encoding, nzbget_path_mappings: mappings });
-                    }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>&times;</button>
+                    }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>&times;</button>
                   </div>
                 ))}
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px", alignSelf: "flex-start" }}
@@ -3286,7 +3287,7 @@ volumes:
               </div>
             </details>
             <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(104,96,254,0.1)", borderRadius: 4, fontSize: 12 }}>
-              <Trans i18nKey="settingsIntegrations:downloaders.tip" components={{ tip: <b style={{ color: "var(--accent)" }} />, b: <b /> }} />
+              <Trans i18nKey="settingsIntegrations:downloaders.tip" components={{ tip: <b style={{ color: "var(--accent-text)" }} />, b: <b /> }} />
             </div>
           </div>
 
@@ -3377,13 +3378,13 @@ volumes:
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", flex: "1 1 200px" }}>
                         {(rule.match_conditions || []).map((c: any, ci: number) => {
                           const condColors: Record<string, string> = {
-                            directory: "#ffa94d", label: "#b680ff", collection: "#40ceff", genre: "#ff6b9d",
-                            library: "#18ffa5", source: "#74c0fc", resolution: "#ffd43b", video_codec: "#e94560",
-                            audio_codec: "#69db7c", file_size: "#ffa94d", media_type: "#6860fe", title: "#40ceff",
-                            release_group: "#ff6b9d", arr_tag: "#74c0fc", content_type: "#b680ff",
+                            directory: "var(--caution)", label: "var(--accent-text)", collection: "var(--info)", genre: "var(--pink)",
+                            library: "var(--success)", source: "var(--info)", resolution: "var(--warning)", video_codec: "var(--danger)",
+                            audio_codec: "var(--success)", file_size: "var(--caution)", media_type: "var(--accent-text)", title: "var(--info)",
+                            release_group: "var(--pink)", arr_tag: "var(--info)", content_type: "var(--accent-text)",
                           };
-                          const fg = condColors[c.type] || "#ccc";
-                          const bg = fg + "22";
+                          const fg = condColors[c.type] || "var(--text-muted)";
+                          const bg = `color-mix(in srgb, ${fg} 13%, transparent)`;
                           const display = c.type === "directory"
                             ? c.value.split("/").filter(Boolean).pop() || c.value
                             : c.type === "content_type"
@@ -3407,7 +3408,7 @@ volumes:
                       <span style={{
                         fontSize: 10, padding: "1px 6px", borderRadius: 8, fontWeight: "bold", whiteSpace: "nowrap",
                         background: rule.action === "encode" ? "rgba(24,255,165,0.15)" : rule.action === "skip" ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
-                        color: rule.action === "encode" ? "#18ffa5" : rule.action === "skip" ? "#e94560" : "#ffa94d",
+                        color: rule.action === "encode" ? "var(--success)" : rule.action === "skip" ? "var(--danger)" : "var(--caution)",
                       }}>
                         {rule.action === "encode" ? t("settingsIntegrations:rules.actionBadge.encode") : rule.action === "skip" ? t("settingsIntegrations:rules.actionBadge.skip") : t("settingsIntegrations:rules.actionBadge.ignore")}
                       </span>
@@ -3425,7 +3426,7 @@ volumes:
                         </span>
                       )}
                       <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
-                        <button style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", padding: 2, fontSize: 12 }}
+                        <button style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", padding: 2, fontSize: 12 }}
                           onClick={() => {
                             setEditingRuleId(rule.id);
                             setShowAddRule(true);
@@ -3449,7 +3450,7 @@ volumes:
                           }}
                           title={t("settingsIntegrations:rules.edit")}
                         >&#9998;</button>
-                        <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, fontSize: 12 }}
+                        <button style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 2, fontSize: 12 }}
                           onClick={async () => {
                             await deleteEncodingRule(rule.id);
                             loadRules();
@@ -3464,7 +3465,7 @@ volumes:
             )}
 
             {rules.length === 0 && !showAddRule && (
-              <div style={{ textAlign: "center", padding: 20, opacity: 0.4, fontSize: 13 }}>
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 13 }}>
                 {encoding?.plex_configured ? t("settingsIntegrations:rules.emptyPlex") : t("settingsIntegrations:rules.empty")}
               </div>
             )}
@@ -3713,7 +3714,7 @@ volumes:
                         })()}
                         {/* Remove button */}
                         {ruleForm.conditions.length > 1 && (
-                          <button style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", fontSize: 14, padding: 2 }}
+                          <button style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 14, padding: 2 }}
                             onClick={() => {
                               const updated = ruleForm.conditions.filter((_, i) => i !== condIdx);
                               setRuleForm({ ...ruleForm, conditions: updated });
@@ -4087,7 +4088,7 @@ volumes:
             <div style={{ paddingLeft: 26, marginBottom: 16 }}>
               <button
                 className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, color: "#e94560" }}
+                style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, color: "var(--danger)" }}
                 onClick={async () => {
                   const data = await getBackups();
                   if (data.total_count === 0) {
@@ -4150,7 +4151,7 @@ volumes:
             <div style={{ marginBottom: 14, paddingLeft: 0 }}>
               <button
                 className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "rgba(233,69,96,0.4)" }}
+                style={{ fontSize: 11, padding: "4px 10px", color: "var(--danger)", borderColor: "rgba(233,69,96,0.4)" }}
                 onClick={async () => {
                   if (!confirm(t("settingsSystem:automation.health.clearPendingConfirm"))) return;
                   const res = await clearPendingHealthChecks();
@@ -4206,7 +4207,7 @@ volumes:
           <div style={sectionStyle}>
             <h3 style={{ color: "white", marginBottom: 12 }}>{t("settingsSystem:webhooks.title")}</h3>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              <Trans i18nKey="settingsSystem:webhooks.intro" components={{ code: <code style={{ color: "var(--accent)" }} /> }} />
+              <Trans i18nKey="settingsSystem:webhooks.intro" components={{ code: <code style={{ color: "var(--accent-text)" }} /> }} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[
@@ -4217,7 +4218,7 @@ volumes:
                 { method: "GET", path: "/api/webhooks/status", desc: t("settingsSystem:webhooks.endpoints.status") },
               ].map(ep => (
                 <div key={ep.path} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                  <span style={{ color: ep.method === "GET" ? "#40ceff" : "var(--success)", fontWeight: 600, width: 40, flexShrink: 0 }}>{ep.method}</span>
+                  <span style={{ color: ep.method === "GET" ? "var(--info)" : "var(--success)", fontWeight: 600, width: 40, flexShrink: 0 }}>{ep.method}</span>
                   <code style={{ color: "var(--text-secondary)", flex: 1 }}>{ep.path}</code>
                   <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{ep.desc}</span>
                   <button
@@ -4454,7 +4455,7 @@ volumes:
                   }}
                   style={{
                     height: 36, width: 40, display: "flex", alignItems: "center", justifyContent: "center",
-                    backgroundColor: "#e94560", border: "1px solid #e94560",
+                    backgroundColor: "var(--danger)", border: "1px solid var(--danger)",
                     borderRadius: "0 4px 4px 0", cursor: "pointer", color: "white",
                   }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -4664,7 +4665,7 @@ volumes:
               {t("settingsSystem:backups.intro")}
             </div>
             {backupList.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12, opacity: 0.6 }}>
+              <div style={{ textAlign: "center", padding: 20, color: "var(--text-muted)", fontSize: 12 }}>
                 {t("settingsSystem:backups.empty")}
               </div>
             ) : (
@@ -4674,7 +4675,7 @@ volumes:
                 </div>
                 {backupList.map(b => (
                   <div key={b.name} style={{ display: "grid", gridTemplateColumns: "1fr 100px 120px 60px", gap: 0, padding: "8px 12px", fontSize: 12, borderBottom: "1px solid var(--bg-primary)", alignItems: "center" }}>
-                    <a href={downloadBackupUrl(b.name)} download style={{ color: "var(--accent)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <a href={downloadBackupUrl(b.name)} download style={{ color: "var(--accent-text)", textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {b.name}
                     </a>
                     <span style={{ color: "var(--text-muted)" }}>{fmtBytes(b.size)}</span>
@@ -4700,7 +4701,7 @@ volumes:
                           <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/>
                         </svg>
                       </button>
-                      <button title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center", opacity: 0.6 }}
+                      <button title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 2, display: "inline-flex", alignItems: "center", opacity: 0.6 }}
                         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
                         onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
                         onClick={async () => {
@@ -4770,18 +4771,19 @@ volumes:
                   {t("settings:ui.themeHelp")}
                 </div>
               </div>
-              <button
-                className="sort-pill"
-                onClick={onToggleTheme}
-                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
-              >
-                {theme === "dark" ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                )}
-                {theme === "dark" ? t("settings:ui.lightMode") : t("settings:ui.darkMode")}
-              </button>
+              <div role="radiogroup" aria-label={t("settings:ui.theme")} style={{ display: "inline-flex", gap: 4 }}>
+                {(["system", "light", "dark"] as const).map(pref => (
+                  <button
+                    key={pref}
+                    role="radio"
+                    aria-checked={themePref === pref}
+                    className={`sort-pill ${themePref === pref ? "active" : ""}`}
+                    onClick={() => onThemeChange(pref)}
+                  >
+                    {t(`settings:ui.themes.${pref}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -4803,13 +4805,13 @@ volumes:
                   <kbd style={{
                     background: "var(--bg-primary)", border: "1px solid var(--border)",
                     borderRadius: 4, padding: "2px 8px", fontSize: 12, fontFamily: "var(--font-mono)",
-                    color: "var(--accent)", minWidth: 36, textAlign: "center", fontWeight: 600,
+                    color: "var(--accent-text)", minWidth: 36, textAlign: "center", fontWeight: 600,
                   }}>{key === "Space" ? t("settingsSystem:shortcuts.space") : key}</kbd>
                   <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{action}</span>
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, opacity: 0.6 }}>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10 }}>
               {t("settingsSystem:shortcuts.note")}
             </div>
           </div>
@@ -4829,7 +4831,7 @@ volumes:
                   v{versionInfo?.current ?? "…"}
                 </div>
                 {versionInfo?.update_available && versionInfo.latest ? (
-                  <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>
+                  <div style={{ fontSize: 12, color: "var(--accent-text)", marginTop: 4 }}>
                     <Trans i18nKey="settingsSystem:updates.availableUpstream" values={{ version: versionInfo.latest }} components={{ b: <strong /> }} />
                   </div>
                 ) : versionInfo?.latest ? (
@@ -4993,7 +4995,7 @@ volumes:
                     (e.currentTarget as HTMLAnchorElement).style.borderColor = "var(--border)";
                   }}
                 >
-                  <div style={{ flexShrink: 0, color: "var(--accent)", marginTop: 2 }}>{link.icon}</div>
+                  <div style={{ flexShrink: 0, color: "var(--accent-text)", marginTop: 2 }}>{link.icon}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
                       {link.title}
@@ -5024,7 +5026,7 @@ volumes:
                 href="https://www.themoviedb.org/"
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ color: "var(--accent)", textDecoration: "none" }}
+                style={{ color: "var(--accent-text)", textDecoration: "none" }}
               >
                 themoviedb.org ↗
               </a>

@@ -128,7 +128,7 @@ export default function ChangelogModal({
                   t={t}
                   i18nKey="dialogs:changelog.versionLine"
                   values={{ current, latest: headerLatest }}
-                  components={{ b: <strong />, accent: <strong style={{ color: "var(--accent)" }} /> }}
+                  components={{ b: <strong />, accent: <strong style={{ color: "var(--accent-text)" }} /> }}
                 />
               </div>
             )}
@@ -147,7 +147,7 @@ export default function ChangelogModal({
         <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
           {error && (
             <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 24, textAlign: "center" }}>
-              <Trans t={t} i18nKey="dialogs:changelog.loadError" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
+              <Trans t={t} i18nKey="dialogs:changelog.loadError" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-text)" }}></a> }} />
             </div>
           )}
           {!error && entries === null && (
@@ -158,7 +158,7 @@ export default function ChangelogModal({
           )}
           {!error && entries && entries.length === 0 && (
             <div style={{ color: "var(--text-muted)", fontSize: 13, padding: 24, textAlign: "center" }}>
-              <Trans t={t} i18nKey="dialogs:changelog.empty" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
+              <Trans t={t} i18nKey="dialogs:changelog.empty" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-text)" }}></a> }} />
             </div>
           )}
           {/* Visible notice when we couldn't reach GitHub and fell back to
@@ -174,7 +174,7 @@ export default function ChangelogModal({
               background: "rgba(255,169,77,0.06)",
               border: "1px solid rgba(255,169,77,0.25)",
             }}>
-              <Trans t={t} i18nKey="dialogs:changelog.localFallback" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}></a> }} />
+              <Trans t={t} i18nKey="dialogs:changelog.localFallback" components={{ link: <a href={releasesUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-text)" }}></a> }} />
             </div>
           )}
           {/* The LATEST badge lights up on the entry whose version equals

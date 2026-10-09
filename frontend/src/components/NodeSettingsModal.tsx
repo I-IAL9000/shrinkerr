@@ -191,7 +191,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
             <button
               onClick={() => setShowTable(!showTable)}
               style={{
-                marginTop: 8, fontSize: 11, color: "var(--accent)", background: "none",
+                marginTop: 8, fontSize: 11, color: "var(--accent-text)", background: "none",
                 border: "none", cursor: "pointer", padding: 0,
               }}
             >
@@ -233,7 +233,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
                 {node.has_token ? (
                   <>
-                    <span style={{ color: "var(--success, #4caf50)" }}>● {t("nodes:settings.token.active")}</span>
+                    <span style={{ color: "var(--success)" }}>● {t("nodes:settings.token.active")}</span>
                     {node.token_issued_at && (
                       <> &middot; {t("nodes:settings.token.issued", { date: fmtDateTime(node.token_issued_at) })}</>
                     )}
@@ -370,7 +370,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
                       markOverrideTouched();
                     }}
                     style={{
-                      alignSelf: "flex-start", fontSize: 11, color: "var(--accent)",
+                      alignSelf: "flex-start", fontSize: 11, color: "var(--accent-text)",
                       background: "none", border: "none", cursor: "pointer", padding: "4px 0",
                     }}
                   >{t("nodes:settings.paths.add")}</button>

@@ -491,7 +491,7 @@ const FileRow = memo(function FileRow({
           {codecLabel}
         </span>
         {file.hdr_format && (
-          <span className="codec-badge" style={{ color: "var(--accent)", border: "1px solid var(--accent)" }}
+          <span className="codec-badge" style={{ color: "var(--accent-text)", border: "1px solid var(--accent)" }}
             title={file.hdr_format.startsWith("dv") ? t("library:badges.dolbyVision") : t("library:badges.hdr", { format: hdrLabel(file.hdr_format) })}>
             {hdrLabel(file.hdr_format)}
           </span>
@@ -544,12 +544,12 @@ const FileRow = memo(function FileRow({
           <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>{t("library:badges.new")}</span>
         )}
         {file.queued && (
-          <span style={{ fontSize: 9, fontWeight: "bold", color: "var(--text-secondary)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>{t("library:badges.queued")}</span>
+          <span style={{ fontSize: 9, fontWeight: "bold", color: "var(--text-secondary)", background: "var(--bg-tertiary)", padding: "2px 6px", borderRadius: 3, display: "inline-flex", alignItems: "center" }}>{t("library:badges.queued")}</span>
         )}
         {file.ignored && onUnignoreFile && (
           <button
             onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }}
-            style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}
+            style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center" }}
             title={t("library:badges.clickToUnignore")}
           >{t("library:badges.ignored")} ✕</button>
         )}
@@ -570,7 +570,7 @@ const FileRow = memo(function FileRow({
                   onDeleteFile(file.file_path);
                 }
               }}
-              style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, opacity: 0.6 }}
+              style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 4, display: "inline-flex", alignItems: "center", borderRadius: 4, opacity: 0.6 }}
               onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
               title={t("common:actions.moveToTrash")}
@@ -1129,7 +1129,7 @@ export default function FileTree({
             return (
               <div key={`l-${row.folderPath}`} style={{ height: ROW_HEIGHT, paddingLeft: row.depth * 16, display: "flex", alignItems: "center", gap: 8 }}>
                 <div className="spinner" style={{ width: 14, height: 14 }} />
-                <span style={{ fontSize: 12, opacity: 0.5 }}>{t("library:tree.loadingFiles")}</span>
+                <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("library:tree.loadingFiles")}</span>
               </div>
             );
           })}
@@ -1137,7 +1137,7 @@ export default function FileTree({
       {/* Bottom spacer to preserve total scroll height */}
       <div style={{ height: Math.max(0, totalHeight - (rowPositions[endIdx] || totalHeight)) }} />
       {folders.length === 0 && (
-        <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+        <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
           {search || allowedPaths || (filter && filter !== "all") ? (
             <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (

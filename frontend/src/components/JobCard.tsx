@@ -39,7 +39,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <span style={{ color: "white", fontWeight: "bold" }}>{t("queue:card.now", { step: jobStep(progress) || t("queue:card.processing") })}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: "var(--accent)" }}>
+          <span style={{ color: "var(--accent-text)" }}>
             {t("queue:card.jobOf", { current: fmtNum(progress.jobs_completed + (jobIndex ?? 0) + 1), total: fmtNum(progress.jobs_total) })}
           </span>
           {onCancel && (
@@ -50,7 +50,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
               }}
               style={{
                 background: "none", border: "1px solid rgba(233,69,96,0.4)",
-                color: "#e94560", cursor: "pointer", borderRadius: 4,
+                color: "var(--danger)", cursor: "pointer", borderRadius: 4,
                 padding: "2px 8px", fontSize: 11,
               }}
               title={t("queue:card.cancelTitle")}
@@ -63,7 +63,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
       <div style={{ marginBottom: 8, fontSize: 13, display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{progress.file_name}</span>
         {fileSize != null && fileSize > 0 && (
-          <span style={{ fontSize: 11, opacity: 0.5, flexShrink: 0 }}>{fmtBytes(fileSize)}</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>{fmtBytes(fileSize)}</span>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -72,7 +72,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
           {progress.step === "vmaf analysis" ? `VMAF ${progress.progress.toFixed(0)}%` : `${progress.progress.toFixed(1)}%`}
         </span>
       </div>
-      <div style={{ display: "flex", gap: 16, fontSize: 11, opacity: 0.6, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, fontSize: 11, color: "var(--text-muted)", flexWrap: "wrap" }}>
         <span>{progress.step === "vmaf analysis" ? t("queue:card.analyzingQuality") : jobStep(progress)}</span>
         {(jobType === "convert" || jobType === "combined") && encoderLabel && <span>{encoderLabel}</span>}
         {audioCodec && audioCodec !== "copy" && (jobType === "audio" || jobType === "combined") && (
@@ -82,7 +82,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
           <span>{t("queue:card.lossless", { codec: losslessCodec.toUpperCase(), bitrate: losslessBitrate })}</span>
         )}
         {audioTracksToRemove && audioTracksToRemove.length > 0 && (
-          <span style={{ color: "#ff6b9d" }}>
+          <span style={{ color: "var(--pink)" }}>
             {t("queue:card.removingAudio", { count: audioTracksToRemove.length })}
             {removedTrackLangs && removedTrackLangs.length > 0
               ? ` (${removedTrackLangs.join(", ")})`
@@ -90,7 +90,7 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
           </span>
         )}
         {subtitleTracksToRemove && subtitleTracksToRemove.length > 0 && (
-          <span style={{ color: "#ffa94d" }}>
+          <span style={{ color: "var(--caution)" }}>
             {t("queue:card.removingSubs", { count: subtitleTracksToRemove.length })}
           </span>
         )}

@@ -91,7 +91,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 className="btn btn-primary"
                 style={{
                   fontSize: 13, padding: "6px 16px",
-                  ...(state.danger ? { background: "#e94560", borderColor: "#e94560" } : {}),
+                  ...(state.danger ? { background: "var(--danger)", borderColor: "var(--danger)" } : {}),
                 }}
               >
                 {state.confirmLabel || t("common:actions.confirm")}

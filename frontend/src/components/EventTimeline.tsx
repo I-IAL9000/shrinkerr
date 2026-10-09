@@ -12,17 +12,17 @@ interface EventMeta { color: string; label: string; }
 const EVENT_COLORS: Record<string, string> = {
   scanned:      "var(--text-muted)",
   rescanned:    "var(--text-muted)",
-  queued:       "var(--accent)",
-  started:      "var(--accent)",
+  queued:       "var(--accent-text)",
+  started:      "var(--accent-text)",
   completed:    "var(--success)",
   failed:       "var(--danger)",
   skipped:      "var(--text-muted)",
   ignored:      "var(--text-muted)",
-  unignored:    "var(--accent)",
+  unignored:    "var(--accent-text)",
   health_check: "var(--success)",
-  vmaf:         "var(--accent)",
+  vmaf:         "var(--accent-text)",
   reverted:     "var(--warning)",
-  arr_action:   "#e5a00d",
+  arr_action:   "var(--plex)",
 };
 
 // For event types whose colour depends on the outcome stored in `details`.

@@ -7,7 +7,7 @@ import { useVisibleInterval } from "../useVisibleInterval";
 
 function Gauge({ value, max, label, unit, size = 100, color }: { value: number; max: number; label: string; unit?: string; size?: number; color?: string }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  const fillColor = color || (pct > 90 ? "#e94560" : pct > 70 ? "#ffa94d" : "var(--success)");
+  const fillColor = color || (pct > 90 ? "var(--danger)" : pct > 70 ? "var(--caution)" : "var(--success)");
   // Arc from 225° to -45° (270° sweep) — ¾ circle gauge
   const cx = size / 2, cy = size * 0.44, r = size * 0.38;
   const startAngle = 225, endAngle = -45, sweep = 270;
@@ -44,9 +44,9 @@ function Gauge({ value, max, label, unit, size = 100, color }: { value: number; 
         {pct > 0 && <path d={valPath} fill="none" stroke={fillColor} strokeWidth={strokeW} strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s, stroke 0.3s" }} />}
         {/* Needle */}
         <line x1={cx} y1={cy} x2={needleTip.x} y2={needleTip.y}
-          stroke="#2d2355" strokeWidth={1.5} strokeLinecap="round"
+          stroke="var(--text-secondary)" strokeWidth={1.5} strokeLinecap="round"
           style={{ transition: "x2 0.5s, y2 0.5s" }} />
-        <circle cx={cx} cy={cy} r={size * 0.03} fill="#2d2355" />
+        <circle cx={cx} cy={cy} r={size * 0.03} fill="var(--text-secondary)" />
         {/* Center value */}
         <text x={cx} y={cy - size * 0.06} textAnchor="middle" fill={fillColor} fontSize={size * 0.18} fontWeight="bold">{Math.round(pct)}%</text>
         {/* Label */}
@@ -133,20 +133,20 @@ export default function MonitorPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 12 }}>
         {gpu && (
           <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-            <div style={{ fontSize: 24, fontWeight: "bold", color: gpu.gpu_util > 80 ? "#e94560" : gpu.gpu_util > 50 ? "#ffa94d" : "var(--success)" }}>{gpu.gpu_util}%</div>
+            <div style={{ fontSize: 24, fontWeight: "bold", color: gpu.gpu_util > 80 ? "var(--danger)" : gpu.gpu_util > 50 ? "var(--caution)" : "var(--success)" }}>{gpu.gpu_util}%</div>
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>GPU</div>
           </div>
         )}
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: cpu.cpu_percent > 80 ? "#e94560" : cpu.cpu_percent > 50 ? "#ffa94d" : "var(--success)" }}>{cpu.cpu_percent}%</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: cpu.cpu_percent > 80 ? "var(--danger)" : cpu.cpu_percent > 50 ? "var(--caution)" : "var(--success)" }}>{cpu.cpu_percent}%</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>CPU</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: memory.ram_percent > 85 ? "#e94560" : memory.ram_percent > 60 ? "#ffa94d" : "var(--success)" }}>{memory.ram_percent}%</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: memory.ram_percent > 85 ? "var(--danger)" : memory.ram_percent > 60 ? "var(--caution)" : "var(--success)" }}>{memory.ram_percent}%</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>RAM</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
+          <div style={{ fontSize: 24, fontWeight: "bold", color: "var(--accent-text)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:top.encodingJobs")}</div>
         </div>
         <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, textAlign: "center" }}>
@@ -170,13 +170,13 @@ export default function MonitorPage() {
           <MetricCard title={`GPU — ${gpu.name}`}>
             <div style={{ display: "flex", justifyContent: "space-evenly", margin: "8px 0 12px" }}>
               <Gauge value={gpu.gpu_util} max={100} label={t("monitor:gpu.utilization")} unit="%" size={110} color="var(--accent)" />
-              <Gauge value={Math.round(gpu.memory_used_mb)} max={Math.round(gpu.memory_total_mb)} label="VRAM" unit=" MB" size={110} color="#74c0fc" />
-              <Gauge value={Math.round(gpu.power_draw_w)} max={Math.round(gpu.power_limit_w)} label={t("monitor:gpu.power")} unit="W" size={110} color="#ffa94d" />
+              <Gauge value={Math.round(gpu.memory_used_mb)} max={Math.round(gpu.memory_total_mb)} label="VRAM" unit=" MB" size={110} color="var(--info)" />
+              <Gauge value={Math.round(gpu.power_draw_w)} max={Math.round(gpu.power_limit_w)} label={t("monitor:gpu.power")} unit="W" size={110} color="var(--caution)" />
             </div>
             <div style={{ marginTop: 8 }}>
-              <StatRow label={t("monitor:gpu.temperature")} value={`${gpu.temperature_c}°C`} color={gpu.temperature_c > 85 ? "#e94560" : gpu.temperature_c > 70 ? "#ffa94d" : "var(--success)"} />
-              {gpu.encoder_util != null && <StatRow label={t("monitor:gpu.encoder")} value={`${gpu.encoder_util}%`} color="#74c0fc" />}
-              {gpu.decoder_util != null && <StatRow label={t("monitor:gpu.decoder")} value={`${gpu.decoder_util}%`} color="#69db7c" />}
+              <StatRow label={t("monitor:gpu.temperature")} value={`${gpu.temperature_c}°C`} color={gpu.temperature_c > 85 ? "var(--danger)" : gpu.temperature_c > 70 ? "var(--caution)" : "var(--success)"} />
+              {gpu.encoder_util != null && <StatRow label={t("monitor:gpu.encoder")} value={`${gpu.encoder_util}%`} color="var(--info)" />}
+              {gpu.decoder_util != null && <StatRow label={t("monitor:gpu.decoder")} value={`${gpu.decoder_util}%`} color="var(--success)" />}
             </div>
             {localNode && <NodeEncodingStatus entry={localNode} />}
           </MetricCard>
@@ -219,8 +219,8 @@ export default function MonitorPage() {
         <MetricCard title={t("monitor:cpu.title", { count: cpu.cpu_count })}>
           <div style={{ display: "flex", justifyContent: "space-evenly", margin: "8px 0 12px" }}>
             <Gauge value={cpu.cpu_percent} max={100} label="CPU" unit="%" size={110} />
-            <Gauge value={memory.ram_used_gb} max={memory.ram_total_gb} label="RAM" unit=" GB" size={110} color="#74c0fc" />
-            <Gauge value={memory.swap_used_gb || 0} max={memory.ram_total_gb} label={t("monitor:cpu.swap")} unit=" GB" size={110} color={memory.swap_percent > 50 ? "#e94560" : "#ffa94d"} />
+            <Gauge value={memory.ram_used_gb} max={memory.ram_total_gb} label="RAM" unit=" GB" size={110} color="var(--info)" />
+            <Gauge value={memory.swap_used_gb || 0} max={memory.ram_total_gb} label={t("monitor:cpu.swap")} unit=" GB" size={110} color={memory.swap_percent > 50 ? "var(--danger)" : "var(--caution)"} />
           </div>
           <div style={{ marginTop: 8 }}>
             <StatRow label={t("monitor:cpu.loadAverage")} value={cpu.load_avg.map((l: number) => l.toFixed(2)).join(" / ")} />
@@ -232,7 +232,7 @@ export default function MonitorPage() {
         <MetricCard title={t("monitor:disk.title")}>
           <div style={{ display: "flex", gap: 24 }}>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{disk_io.read_mbps}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>{disk_io.read_mbps}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:disk.read")}</div>
             </div>
             <div style={{ flex: 1, textAlign: "center" }}>
@@ -250,11 +250,11 @@ export default function MonitorPage() {
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:plex.total")}</div>
             </div>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "#ffa94d" }}>{fmtNum(plex?.transcoding)}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--caution)" }}>{fmtNum(plex?.transcoding)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:plex.transcoding")}</div>
             </div>
             <div style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(plex?.direct)}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>{fmtNum(plex?.direct)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:plex.directPlay")}</div>
             </div>
           </div>
@@ -263,7 +263,7 @@ export default function MonitorPage() {
               {plex.sessions.map((s: any, i: number) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
                   <span style={{ color: "var(--text-muted)" }}>{s.user}: {s.title}</span>
-                  <span style={{ color: s.is_transcoding ? "#ffa94d" : "var(--success)", fontWeight: 500 }}>
+                  <span style={{ color: s.is_transcoding ? "var(--caution)" : "var(--success)", fontWeight: 500 }}>
                     {s.is_transcoding ? t("monitor:plex.transcoding") : t("monitor:plex.direct")}
                   </span>
                 </div>
@@ -277,7 +277,7 @@ export default function MonitorPage() {
           <MetricCard title={t("monitor:workload.title")}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>{fmtNum(shrinkerr?.running_jobs)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("common:status.running")}</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
@@ -290,7 +290,7 @@ export default function MonitorPage() {
               </div>
               {(shrinkerr?.failed_jobs || 0) > 0 && (
                 <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                  <div style={{ fontSize: 28, fontWeight: "bold", color: "#e94560" }}>{fmtNum(shrinkerr.failed_jobs)}</div>
+                  <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--danger)" }}>{fmtNum(shrinkerr.failed_jobs)}</div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("common:status.failed")}</div>
                 </div>
               )}
@@ -299,11 +299,11 @@ export default function MonitorPage() {
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:workload.liveFps")}</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "#74c0fc" }}>{shrinkerr?.lifetime_avg_fps || 0}</div>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--info)" }}>{shrinkerr?.lifetime_avg_fps || 0}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:workload.avgFps")}</div>
               </div>
               <div style={{ flex: 1, textAlign: "center", minWidth: 80 }}>
-                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>
+                <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>
                   {fmtBytes(shrinkerr?.total_saved || 0)}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("monitor:workload.totalSaved")}</div>
@@ -337,7 +337,7 @@ export default function MonitorPage() {
         );
       })()}
 
-      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 12, textAlign: "center", opacity: 0.5 }}>
+      <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 12, textAlign: "center" }}>
         {t("monitor:autoRefresh")}
       </div>
     </div>
@@ -353,9 +353,9 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
   const stale = m && entry.age_seconds !== null && (entry.age_seconds ?? 0) > 15;
 
   // Status badge color
-  const statusColor = entry.status === "working" ? "var(--accent)"
+  const statusColor = entry.status === "working" ? "var(--accent-text)"
     : entry.status === "online" ? "var(--success)"
-    : entry.status === "error" ? "#e94560"
+    : entry.status === "error" ? "var(--danger)"
     : "var(--text-muted)";
 
   return (
@@ -377,7 +377,7 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
           </div>
         </div>
         {stale && (
-          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(231,76,60,0.15)", color: "#e94560" }}>
+          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "rgba(231,76,60,0.15)", color: "var(--danger)" }}>
             {t("monitor:nodes.stale", { seconds: Math.round(entry.age_seconds ?? 0) })}
           </span>
         )}
@@ -399,7 +399,7 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
           {/* CPU + RAM gauges (always) */}
           <div style={{ display: "flex", justifyContent: "space-evenly", margin: "4px 0 10px" }}>
             <Gauge value={m.cpu.cpu_percent} max={100} label="CPU" unit="%" size={88} />
-            <Gauge value={m.memory.ram_used_gb} max={m.memory.ram_total_gb} label="RAM" unit=" GB" size={88} color="#74c0fc" />
+            <Gauge value={m.memory.ram_used_gb} max={m.memory.ram_total_gb} label="RAM" unit=" GB" size={88} color="var(--info)" />
             {m.gpu && (
               <Gauge value={m.gpu.gpu_util} max={100} label="GPU" unit="%" size={88} color="var(--accent)" />
             )}
@@ -409,14 +409,14 @@ function NodeMetricCard({ entry }: { entry: NodeMetricsEntry }) {
           {m.gpu && (
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border)" }}>
               <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>{m.gpu.name}</div>
-              <StatRow label="VRAM" value={`${Math.round(m.gpu.memory_used_mb)} / ${Math.round(m.gpu.memory_total_mb)} MB`} color="#74c0fc" />
-              <StatRow label={t("monitor:nodes.temp")} value={`${m.gpu.temperature_c}°C`} color={m.gpu.temperature_c > 85 ? "#e94560" : m.gpu.temperature_c > 70 ? "#ffa94d" : "var(--success)"} />
-              <StatRow label={t("monitor:gpu.power")} value={`${Math.round(m.gpu.power_draw_w)} / ${Math.round(m.gpu.power_limit_w)} W`} color="#ffa94d" />
+              <StatRow label="VRAM" value={`${Math.round(m.gpu.memory_used_mb)} / ${Math.round(m.gpu.memory_total_mb)} MB`} color="var(--info)" />
+              <StatRow label={t("monitor:nodes.temp")} value={`${m.gpu.temperature_c}°C`} color={m.gpu.temperature_c > 85 ? "var(--danger)" : m.gpu.temperature_c > 70 ? "var(--caution)" : "var(--success)"} />
+              <StatRow label={t("monitor:gpu.power")} value={`${Math.round(m.gpu.power_draw_w)} / ${Math.round(m.gpu.power_limit_w)} W`} color="var(--caution)" />
               {m.gpu.encoder_util != null && (
-                <StatRow label="NVENC" value={`${m.gpu.encoder_util}%`} color="#74c0fc" />
+                <StatRow label="NVENC" value={`${m.gpu.encoder_util}%`} color="var(--info)" />
               )}
               {m.gpu.decoder_util != null && (
-                <StatRow label="NVDEC" value={`${m.gpu.decoder_util}%`} color="#69db7c" />
+                <StatRow label="NVDEC" value={`${m.gpu.decoder_util}%`} color="var(--success)" />
               )}
             </div>
           )}
@@ -475,7 +475,7 @@ function NodeEncodingStatus({ entry }: { entry: NodeMetricsEntry }) {
             NVENC
           </span>
         ) : reason ? (
-          <span title={reason} style={{ color: "#ffa94d", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span title={reason} style={{ color: "var(--caution)", display: "inline-flex", alignItems: "center", gap: 4 }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
               <line x1="12" y1="9" x2="12" y2="13"/>
@@ -494,7 +494,7 @@ function NodeEncodingStatus({ entry }: { entry: NodeMetricsEntry }) {
         )}
         {/* Driver version when we have it (regardless of NVENC state — helps debug) */}
         {driver && (
-          <span style={{ marginLeft: "auto", opacity: 0.7 }}>
+          <span style={{ marginLeft: "auto", color: "var(--text-muted)" }}>
             {t("monitor:capability.driver", { version: driver })}
           </span>
         )}
@@ -503,7 +503,7 @@ function NodeEncodingStatus({ entry }: { entry: NodeMetricsEntry }) {
           blow out the card layout; keep it terse so it stays on one line
           when possible. */}
       {!hasNvenc && reason && (
-        <div style={{ marginTop: 4, fontSize: 10, color: "#ffa94d", wordBreak: "break-word", lineHeight: 1.4 }}>
+        <div style={{ marginTop: 4, fontSize: 10, color: "var(--caution)", wordBreak: "break-word", lineHeight: 1.4 }}>
           {reason}
         </div>
       )}

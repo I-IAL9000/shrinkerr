@@ -265,7 +265,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {savedViews.map(v => (
                 <span key={v.name} style={{ display: "inline-flex", gap: 4, alignItems: "center", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "3px 4px 3px 10px", fontSize: 11 }}>
-                  <button onClick={() => loadView(v)} style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 11 }}>{v.name}</button>
+                  <button onClick={() => loadView(v)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", fontSize: 11 }}>{v.name}</button>
                   <button onClick={() => deleteView(v.name)} title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "0 4px" }}>&times;</button>
                 </span>
               ))}

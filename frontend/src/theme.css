@@ -12,13 +12,23 @@
   --warning: #f59e0b;
   --text-primary: #e8ecf4;
   --text-secondary: #c8bfdf;
-  --text-muted: #827b9a;
-  --text-dim: rgba(255, 255, 255, 0.2);
+  --text-muted: #8982a0;      /* 4.9:1 on cards (#827b9a was 4.48 — just under AA) */
+  --text-dim: #858596;        /* 4.5:1 (was 20% white: 2.25:1) */
+  /* Semantic colours (v0.10.0). Components used hex literals for these —
+     dark-theme colours that landed on light backgrounds at 1.3–2.5:1.
+     Every text colour here is ≥ 4.5:1 on every background in its theme
+     (backend/tests/test_theme_contrast.py). */
+  --accent-text: #8984ff;     /* the brand accent as text: #6860fe is 4.0:1 */
+  --caution: #ffa94d;         /* orange: removals, file sizes, working */
+  --info: #40ceff;            /* cyan: fps, info badges */
+  --pink: #ff6b9d;            /* audio removed, genres */
+  --plex: #e5a00d;
+  --imdb: #f5c518;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
   --radius: 6px;
   --radius-sm: 4px;
   /* Signal colors */
-  --danger: #e94560;
+  --danger: #ea4e68;
   --danger-bg: #352129;
   --success-bg: #1e283d;
   /* Folder hierarchy */
@@ -43,15 +53,21 @@
   --accent-hover: #3c34c4;    /* deeper on hover */
   --accent-bg: rgba(80, 72, 217, 0.12);
   --accent-btn: #3c34c4;      /* dark enough to keep white text readable */
-  --success: #0f8a62;         /* darker than dark-mode #10b981 for contrast */
+  --success: #0c6e4e;         /* 4.6:1 on every light background (#0f8a62 was 3.7) */
   --success-bg: #d2ebdf;
-  --warning: #b8590a;
-  --danger: #c02448;          /* darker than #e94560 for contrast on light bg */
+  --warning: #9b4b08;         /* #b8590a was 3.5–4.3 */
+  --danger: #ba2346;
   --danger-bg: #fbdde3;
   --text-primary: #11111a;
   --text-secondary: #2b2d3a;
-  --text-muted: #5b6375;      /* 4.6:1 on --bg-primary (was #827b9a: 3.3:1 — failed AA) */
-  --text-dim: rgba(17, 17, 26, 0.35);
+  --text-muted: #5a6274;      /* 4.5:1 even on --bg-tertiary */
+  --text-dim: #5e616c;
+  --accent-text: #5048d9;
+  --caution: #974e00;
+  --info: #00688c;
+  --pink: #c40042;
+  --plex: #825b07;
+  --imdb: #775e05;
   --folder-root: #3c34c4;
   --folder-show: #5048d9;
   --folder-season: #5048d9;
@@ -61,7 +77,7 @@
   color: var(--text-primary) !important;
 }
 [data-theme="light"] body { color: var(--text-secondary); }
-[data-theme="light"] .stat-value { color: var(--accent) !important; }
+[data-theme="light"] .stat-value { color: var(--accent-text) !important; }
 [data-theme="light"] .stat-value.success { color: var(--success) !important; }
 
 /* Sidebar */
@@ -100,7 +116,7 @@
 [data-theme="light"] .tree-row:hover { background: rgba(60, 52, 196, 0.06); }
 [data-theme="light"] .tree-folder { color: var(--accent-btn); }
 [data-theme="light"] .tree-subfolder,
-[data-theme="light"] .tree-season { color: var(--accent); }
+[data-theme="light"] .tree-season { color: var(--accent-text); }
 
 /* Codec badges — pale background + colored text (mirror of dark-mode style, which
    the old light overrides were solid-color-with-white-text and felt heavy). The
@@ -255,7 +271,7 @@ body {
 }
 
 .sidebar-logo {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: bold;
   font-size: 18px;
   padding: 16px 16px 24px;
@@ -272,7 +288,7 @@ body {
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 1.35px;
-  color: #5c6778;
+  color: var(--text-muted);
   text-transform: uppercase;
 }
 
@@ -331,7 +347,7 @@ body {
   border-radius: var(--radius);
   text-align: center;
 }
-.stat-value { font-size: 24px; font-weight: bold; color: var(--accent); }
+.stat-value { font-size: 24px; font-weight: bold; color: var(--accent-text); }
 .stat-value.success { color: var(--success); }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
@@ -369,7 +385,7 @@ body {
   transition: all 0.15s;
 }
 .filter-pill:hover { background: var(--bg-tertiary); color: var(--text-secondary); border-color: var(--border); }
-.filter-pill.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.filter-pill.active { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
 .filter-pill.active:hover { background: var(--accent-bg); border-color: var(--accent-hover); }
 
 /* Sort / view pills */
@@ -621,10 +637,10 @@ input[type="checkbox"] { cursor: pointer; }
 .tree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row > :not(.tree-name) { flex-shrink: 0; }
 .tree-row:hover { background: rgba(255,255,255,0.03); }
-.tree-folder { color: var(--accent); }
+.tree-folder { color: var(--accent-text); }
 .tree-subfolder { color: var(--folder-show); }
 .tree-season { color: var(--folder-season); }
-.tree-file-size { opacity: 0.5; margin-left: auto; white-space: nowrap; }
+.tree-file-size { color: var(--text-muted); margin-left: auto; white-space: nowrap; }
 .codec-badge {
   padding: 2px 6px;
   border-radius: 3px;
@@ -795,6 +811,16 @@ input[type="checkbox"] { cursor: pointer; }
 .queue-tabs > button { white-space: nowrap; flex: none; }
 @media (max-width: 600px) {
   .queue-tabs > button { padding: 8px 10px !important; font-size: 12px !important; }
+}
+
+/* Logs: a dark terminal in both themes (v0.10.0) — its source-tag colours
+   are made for a dark background, and in light mode they were 1.3–2.5:1. */
+.log-terminal {
+  --bg-primary: #11111a;
+  --text-secondary: #c8bfdf;
+  --text-dim: #8a8a99;   /* timestamps: 5.5:1 */
+  background: var(--bg-primary);
+  color-scheme: dark;
 }
 
 /* Monitor detail grid */

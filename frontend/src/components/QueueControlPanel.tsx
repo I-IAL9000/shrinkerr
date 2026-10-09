@@ -133,7 +133,7 @@ export default function QueueControlPanel({
       }}
     >
       {/* Selection count */}
-      <span style={{ fontSize: 12, color: "var(--accent)", fontWeight: "bold", whiteSpace: "nowrap" }}>
+      <span style={{ fontSize: 12, color: "var(--accent-text)", fontWeight: "bold", whiteSpace: "nowrap" }}>
         {t("queue:panel.selected", { count: selectedCount })}
       </span>
       <button
@@ -171,22 +171,22 @@ export default function QueueControlPanel({
       {/* Move buttons */}
       <div style={{ display: "flex", gap: 2, alignItems: "center", background: "var(--bg-primary)", borderRadius: 6, padding: 2 }}>
         <button onClick={onMoveTop} style={{ ...moveBtnStyle }} title={t("queue:panel.moveTop")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="4" x2="20" y2="4"/><polyline points="12 10 6 16"/><polyline points="12 10 18 16"/><line x1="12" y1="10" x2="12" y2="20"/>
           </svg>
         </button>
         <button onClick={onMoveUp} style={{ ...moveBtnStyle }} title={t("queue:panel.moveUp")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/>
           </svg>
         </button>
         <button onClick={onMoveDown} style={{ ...moveBtnStyle }} title={t("queue:panel.moveDown")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/>
           </svg>
         </button>
         <button onClick={onMoveBottom} style={{ ...moveBtnStyle }} title={t("queue:panel.moveBottom")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a6f99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="20" x2="20" y2="20"/><polyline points="12 14 6 8"/><polyline points="12 14 18 8"/><line x1="12" y1="14" x2="12" y2="4"/>
           </svg>
         </button>
@@ -260,7 +260,7 @@ export default function QueueControlPanel({
         onClick={onIgnore}
         style={{
           ...smallBtnStyle,
-          color: "#e94560",
+          color: "var(--danger)",
           borderColor: "rgba(233, 69, 96, 0.3)",
           fontSize: 11,
         }}
@@ -273,7 +273,7 @@ export default function QueueControlPanel({
         onClick={onRemove}
         style={{
           ...smallBtnStyle,
-          color: "#e94560",
+          color: "var(--danger)",
           borderColor: "rgba(233, 69, 96, 0.3)",
           fontSize: 11,
         }}

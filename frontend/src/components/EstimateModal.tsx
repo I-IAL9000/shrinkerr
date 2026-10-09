@@ -18,7 +18,7 @@ function formatTime(seconds: number): string {
 
 // → scannerModals:estimate.priorities.*
 const PRIORITY_KEYS = ["normal", "high", "highest"];
-const PRIORITY_COLORS = ["var(--text-muted)", "#ffa94d", "#e94560"];
+const PRIORITY_COLORS = ["var(--text-muted)", "var(--caution)", "var(--danger)"];
 
 export interface EncodingOverrides {
   encoder?: string;
@@ -197,11 +197,11 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
             borderRadius: 4, padding: "10px 14px", marginBottom: 14,
             display: "flex", alignItems: "center", gap: 10,
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ffa94d" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--caution)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: "#ffa94d", fontWeight: 500 }}>{t("scannerModals:estimate.rulesWarningTitle")}</div>
+              <div style={{ fontSize: 12, color: "var(--caution)", fontWeight: 500 }}>{t("scannerModals:estimate.rulesWarningTitle")}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                 {t("scannerModals:estimate.rulesWarningHelp")}
               </div>
@@ -232,7 +232,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estSavings", { pct: estimate.savings_pct })}</div>
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--accent)" }}>~{formatTime(estimate.estimated_time_seconds)}</div>
+                <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--accent-text)" }}>~{formatTime(estimate.estimated_time_seconds)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estTime")}</div>
               </div>
             </div>
@@ -303,12 +303,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                         i18nKey="scannerModals:estimate.ignoredFiles"
                         count={estimate.ignored_files}
                         values={{ num: fmtNum(estimate.ignored_files) }}
-                        components={{ badge: <span style={{ background: "var(--border)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }} /> }}
+                        components={{ badge: <span style={{ background: "var(--bg-tertiary)", color: "var(--text-secondary)", padding: "1px 6px", borderRadius: 3, fontSize: 11 }} /> }}
                       /></span>
                     )}
                     {estimate.ignored_files > 0 && estimate.skipped_by_rules > 0 && <span> · </span>}
                     {estimate.skipped_by_rules > 0 && (
-                      <span style={{ color: "#ffa94d" }}>{t("scannerModals:estimate.skippedByRules", { num: fmtNum(estimate.skipped_by_rules) })}</span>
+                      <span style={{ color: "var(--caution)" }}>{t("scannerModals:estimate.skippedByRules", { num: fmtNum(estimate.skipped_by_rules) })}</span>
                     )}
                   </div>
                 )}
@@ -376,7 +376,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     style={{
                       padding: "5px 14px", borderRadius: 4, fontSize: 12, cursor: "pointer",
                       border: priority === i ? `1px solid ${PRIORITY_COLORS[i]}` : "1px solid var(--border)",
-                      background: priority === i ? `${PRIORITY_COLORS[i]}22` : "var(--bg-primary)",
+                      background: priority === i ? `color-mix(in srgb, ${PRIORITY_COLORS[i]} 13%, transparent)` : "var(--bg-primary)",
                       color: priority === i ? PRIORITY_COLORS[i] : "var(--text-secondary)",
                       fontWeight: priority === i ? 600 : 400,
                     }}
@@ -400,7 +400,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <polyline points="9 18 15 12 9 6"/>
                 </svg>
                 {t("scannerModals:overrides.encodingSettings")}
-                <span style={{ marginLeft: "auto", opacity: 0.5, fontSize: 11 }}>
+                <span style={{ marginLeft: "auto", color: "var(--text-muted)", fontSize: 11 }}>
                   {cq !== null || encoder !== null || preset !== null || audioCdc !== null ? t("scannerModals:overrides.custom") : t("scannerModals:overrides.defaultSettings")}
                 </span>
               </button>
@@ -586,7 +586,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           <div className="progress-bar-track" style={{ flex: 1, height: 4 }}>
                             <div className="progress-bar-fill" style={{ width: `${testProgress}%` }} />
                           </div>
-                          <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: 10, color: "var(--accent-text)", fontWeight: 600, whiteSpace: "nowrap" }}>
                             {testProgress.toFixed(0)}%
                           </span>
                         </div>
@@ -598,7 +598,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                           </span>
                           <span style={{
                             fontWeight: 600,
-                            color: testResult.ratio > 50 ? "var(--success)" : testResult.ratio > 30 ? "var(--accent)" : "var(--text-muted)",
+                            color: testResult.ratio > 50 ? "var(--success)" : testResult.ratio > 30 ? "var(--accent-text)" : "var(--text-muted)",
                           }}>
                             {t("scannerModals:test.savings", { pct: testResult.ratio })}
                           </span>
@@ -619,7 +619,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                         </div>
                       )}
                       {testResult && testResult.status === "failed" && (
-                        <span style={{ fontSize: 11, color: "#e94560" }}>
+                        <span style={{ fontSize: 11, color: "var(--danger)" }}>
                           {t("scannerModals:test.failed", { error: testResult.error?.slice(0, 80) })}
                         </span>
                       )}

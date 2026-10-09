@@ -149,7 +149,7 @@ export default function SchedulePage() {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
           <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:start.title")}</h3>
-          <label style={{ fontSize: 12, opacity: 0.5 }}>{t("schedule:start.timeLabel")}</label>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("schedule:start.timeLabel")}</label>
           <input
             type="datetime-local"
             value={inputTime}
@@ -222,12 +222,13 @@ export default function SchedulePage() {
                 }}
                 style={{
                   flex: 1, height: 36, borderRadius: 3,
-                  background: active ? "var(--accent)" : "var(--bg-primary)",
-                  opacity: active ? 0.9 : 0.3,
+                  // Unselected hours were dimmed to 30% opacity, digits and
+                  // all (1.2:1 in light mode).
+                  background: active ? "var(--accent-btn)" : "var(--bg-primary)",
                   cursor: runHoursEnabled ? "pointer" : "default",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "background 0.1s, opacity 0.1s",
-                  border: active ? "1px solid var(--accent-hover)" : "1px solid transparent",
+                  transition: "background 0.1s",
+                  border: active ? "1px solid var(--accent-hover)" : "1px solid var(--border)",
                 }}
               >
                 <span style={{

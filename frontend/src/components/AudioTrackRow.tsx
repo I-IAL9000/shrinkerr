@@ -40,18 +40,18 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
       />
       <span style={removeStyle}>{track.language}</span>
       <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
-      {track.title && <span style={{ opacity: 0.5, ...removeStyle }}>&quot;{track.title}&quot;</span>}
+      {track.title && <span style={{ color: "var(--text-muted)", ...removeStyle }}>&quot;{track.title}&quot;</span>}
       <span className="track-size" style={removeStyle}>{sizeLabel}</span>
       {/* v0.9.35: a language (detected or set by hand) that couldn't be written
           to the file in place — applied by the "Remux to MKV" action below. */}
       {track.detected_language && (track.language || "und").toLowerCase() === "und" && (
-        <span style={{ color: "var(--accent)", fontSize: "0.85em", whiteSpace: "nowrap" }}>
+        <span style={{ color: "var(--accent-text)", fontSize: "0.85em", whiteSpace: "nowrap" }}>
           {t("fileDetail:tracks.detectedApply", { lang: track.detected_language.toUpperCase() })}
         </span>
       )}
       {/* v0.9.44: why detection couldn't resolve this track. */}
       {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
-        <span style={{ color: "var(--warning)", fontSize: "0.85em", opacity: 0.8 }} title={t("fileDetail:tracks.detectNoteTitle")}>
+        <span style={{ color: "var(--warning)", fontSize: "0.85em" }} title={t("fileDetail:tracks.detectNoteTitle")}>
           {detectNote(track)}
         </span>
       )}

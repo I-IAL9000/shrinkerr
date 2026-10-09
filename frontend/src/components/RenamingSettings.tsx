@@ -155,7 +155,7 @@ export default function RenamingSettings() {
         marginTop: 4, fontSize: 11, color: "var(--text-muted)",
         fontFamily: "var(--font-mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
       }}>
-        → {previews[key as string] || <i style={{ opacity: 0.5 }}>{t("settingsRenaming:patterns.loadingPreview")}</i>}
+        → {previews[key as string] || <i style={{ color: "var(--text-muted)" }}>{t("settingsRenaming:patterns.loadingPreview")}</i>}
       </div>
     </div>
   );
@@ -165,7 +165,7 @@ export default function RenamingSettings() {
       {/* Token picker */}
       <div style={{ ...sectionStyle, position: "sticky", top: 0, zIndex: 5 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>
-          {t("settingsRenaming:tokens.heading")} <span style={{ color: "var(--accent)" }}>{
+          {t("settingsRenaming:tokens.heading")} <span style={{ color: "var(--accent-text)" }}>{
             t(`settingsRenaming:activeField.${activeField}`)
           }</span>
         </div>
@@ -190,7 +190,7 @@ export default function RenamingSettings() {
                     style={{
                       padding: "3px 8px", fontSize: 11, fontFamily: "var(--font-mono)",
                       background: "var(--bg-primary)", border: "1px solid var(--border)",
-                      borderRadius: 12, cursor: "pointer", color: "var(--accent)",
+                      borderRadius: 12, cursor: "pointer", color: "var(--accent-text)",
                     }}
                   >{`{${tok.token}}`}</button>
                 ))}

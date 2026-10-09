@@ -8,11 +8,11 @@ import type { ChangelogEntry as ChangelogEntryData } from "../api";
  */
 const SECTION_COLOR: Record<string, string> = {
   Added: "var(--success)",
-  Changed: "var(--accent)",
-  Fixed: "#ffa94d",
+  Changed: "var(--accent-text)",
+  Fixed: "var(--caution)",
   Deprecated: "var(--text-muted)",
   Removed: "var(--text-muted)",
-  Security: "#e94560",
+  Security: "var(--danger)",
 };
 
 /**
@@ -50,7 +50,7 @@ export default function ChangelogEntryView({
         {highlight && (
           <span style={{
             fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 3,
-            background: "rgba(104,96,254,0.15)", color: "var(--accent)",
+            background: "rgba(104,96,254,0.15)", color: "var(--accent-text)",
             textTransform: "uppercase", letterSpacing: 0.5,
           }}>
             {t("dialogs:changelog.latest")}

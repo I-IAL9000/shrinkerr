@@ -97,7 +97,7 @@ export default function RenameModal({ filePaths, onClose, onApplied }: Props) {
                     <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", wordBreak: "break-all" }} title={p.old_path}>
                       {basename(p.old_path)}
                     </td>
-                    <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", wordBreak: "break-all", color: p.changed ? "var(--accent)" : "var(--text-muted)" }} title={p.new_path}>
+                    <td style={{ padding: "6px 8px", fontFamily: "var(--font-mono)", wordBreak: "break-all", color: p.changed ? "var(--accent-text)" : "var(--text-muted)" }} title={p.new_path}>
                       {p.error ? <span style={{ color: "var(--danger)" }}>{p.error}</span> : basename(p.new_path)}
                     </td>
                     <td style={{ padding: "6px 8px", fontSize: 10 }}>

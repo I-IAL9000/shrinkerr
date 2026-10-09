@@ -468,8 +468,8 @@ export default function PosterGrid({
               <div style={{ display: "flex", gap: 10, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
                 {meta?.rating != null && meta.rating > 0 && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ color: "#f5c518", fontWeight: 700 }}>IMDb</span>
-                    <span style={{ color: meta.rating >= 7 ? "var(--success)" : meta.rating >= 5 ? "#ffa94d" : "#e94560", fontWeight: 600 }}>
+                    <span style={{ color: "var(--imdb)", fontWeight: 700 }}>IMDb</span>
+                    <span style={{ color: meta.rating >= 7 ? "var(--success)" : meta.rating >= 5 ? "var(--caution)" : "var(--danger)", fontWeight: 600 }}>
                       ★ {meta.rating}
                     </span>
                   </span>
@@ -482,7 +482,7 @@ export default function PosterGrid({
                 {meta?.genres && <span>{meta.genres}</span>}
                 {meta?.country && <span>{meta.country}</span>}
                 {parentFolder && (
-                  <span style={{ marginLeft: "auto", background: "rgba(104,96,254,0.25)", color: "#c4a8ff", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
+                  <span style={{ marginLeft: "auto", background: "rgba(104,96,254,0.25)", color: "var(--accent-text)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
                     {parentFolder}
                   </span>
                 )}
@@ -529,11 +529,11 @@ export default function PosterGrid({
                             )}
                             {file.converted && <span style={{ color: "var(--success)", fontSize: 14, flexShrink: 0 }} title={t("library:badges.convertedBy")} aria-label={t("library:badges.convertedBy")}>&#x2713;</span>}
                             {file.is_new && <span style={{ fontSize: 9, fontWeight: "bold", color: "white", background: "var(--accent)", padding: "2px 6px", borderRadius: 3, flexShrink: 0 }}>{t("library:badges.new")}</span>}
-                            {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--border)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }} title={t("library:badges.clickToUnignore")} aria-label={t("library:badges.clickToUnignore")}>{t("library:badges.ignored")} ✕</button>}
+                            {file.ignored && onUnignoreFile && <button onClick={(e) => { e.stopPropagation(); onUnignoreFile(file.file_path); }} style={{ fontSize: 9, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "2px 6px", borderRadius: 3, border: "none", cursor: "pointer", flexShrink: 0 }} title={t("library:badges.clickToUnignore")} aria-label={t("library:badges.clickToUnignore")}>{t("library:badges.ignored")} ✕</button>}
                             <div style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0, marginLeft: 4 }}>
                               {!file.ignored && onIgnoreFile && <button onClick={(e) => { e.stopPropagation(); onIgnoreFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 14 }} title={t("library:tree.ignoreFile")} aria-label={t("library:tree.ignoreFile")}>&#x2298;</button>}
                               <button onClick={(e) => { e.stopPropagation(); onRemoveFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: 4, fontSize: 16 }} title={t("library:tree.removeFromList")} aria-label={t("library:tree.removeFromList")}>&times;</button>
-                              {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "#e94560", cursor: "pointer", padding: 4, opacity: 0.6 }} title={t("common:actions.moveToTrash")} aria-label={t("common:actions.moveToTrash")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
+                              {onDeleteFile && <button onClick={(e) => { e.stopPropagation(); onDeleteFile(file.file_path); }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: 4, opacity: 0.6 }} title={t("common:actions.moveToTrash")} aria-label={t("common:actions.moveToTrash")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>}
                             </div>
                           </div>
                           {expandedFileDetails.has(file.file_path) && <FileDetail file={file} onAudioTracksChange={changeAudioTracks} onSubTracksChange={changeSubTracks} />}
@@ -556,7 +556,7 @@ export default function PosterGrid({
     <div ref={containerRef} style={{ position: "relative", minHeight: totalHeight || 100 }}>
       {renderedRows}
       {folders.length === 0 && (
-        <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+        <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
           {search || allowedPaths || (filter && filter !== "all") ? (
             <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (

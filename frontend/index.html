@@ -11,6 +11,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Shrinkerr" />
     <title>Shrinkerr</title>
+    <script>
+      // The theme before the first paint (v0.10.0): the saved Light / Dark,
+      // else the operating system's setting — no dark flash in light mode.
+      try {
+        var theme = localStorage.getItem("shrinkerr_theme") || localStorage.getItem("squeezarr_theme");
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -23,6 +23,8 @@ import RouteErrorBoundary from "./components/ErrorBoundary";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import { jobProgressStore } from "./jobProgressStore";
+
+export type ThemePref = "system" | "light" | "dark";
 import "./theme.css";
 
 function VersionBadge() {
@@ -59,7 +61,7 @@ function VersionBadge() {
             <GiftIcon size={14} />
             {t("nav:version.updateAvailable")}
           </button>
-          <span style={{ fontSize: 10, color: "#5c6778" }}>
+          <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
             v{version.current} → v{version.latest}
           </span>
         </div>
@@ -82,7 +84,7 @@ function VersionBadge() {
   return (
     <div style={{ padding: "12px 0 24px", marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }} className="version-badge">
       <img src="/favicon.svg" alt="" width="16" height="17" />
-      <span style={{ fontSize: 10, color: "#5c6778" }}>
+      <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
         Shrinkerr v{release}
         {prerelease && <><br />{prerelease}</>}
       </span>
@@ -133,7 +135,7 @@ function FailedJobBadge() {
   if (count <= 0) return null;
   return (
     <span style={{
-      background: "#e94560", color: "white", fontSize: 9, fontWeight: "bold",
+      background: "var(--danger)", color: "white", fontSize: 9, fontWeight: "bold",
       padding: "1px 5px", borderRadius: 8, marginLeft: 6, verticalAlign: "middle",
     }}>
       {count}
@@ -359,7 +361,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           style={{
             width: "100%", padding: "10px 14px", marginBottom: 8,
             backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
-            border: error ? "1px solid #e94560" : "1px solid var(--border)", borderRadius: 6,
+            border: error ? "1px solid var(--danger)" : "1px solid var(--border)", borderRadius: 6,
             fontSize: 14, outline: "none", boxSizing: "border-box",
           }}
           autoFocus
@@ -374,11 +376,11 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           style={{
             width: "100%", padding: "10px 14px", marginBottom: 12,
             backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
-            border: error ? "1px solid #e94560" : "1px solid var(--border)", borderRadius: 6,
+            border: error ? "1px solid var(--danger)" : "1px solid var(--border)", borderRadius: 6,
             fontSize: 14, outline: "none", boxSizing: "border-box",
           }}
         />
-        {error && <div style={{ color: "#e94560", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+        {error && <div style={{ color: "var(--danger)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
         <button className="btn btn-primary" style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
           onClick={handleLogin} disabled={loading}>
           {loading ? t("nav:login.signingIn") : t("nav:login.signIn")}
@@ -403,19 +405,45 @@ export default function App() {
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
   const { toasts, addToast } = useToastState();
-  // Read new key first, fall back to the legacy squeezarr_theme for users
-  // upgrading from the old app name so they don't lose their theme pick.
-  const [theme, setTheme] = useState<"dark" | "light">(() =>
-    (localStorage.getItem("shrinkerr_theme") as "dark" | "light") ||
-    (localStorage.getItem("squeezarr_theme") as "dark" | "light") ||
-    "dark"
-  );
+  // Theme: System (follows the OS), Light or Dark (v0.10.0). A browser with
+  // no saved choice follows the OS; a saved Light / Dark is kept (the legacy
+  // squeezarr_theme key too). Saved only when chosen — it used to be written
+  // on every load, so "dark" is also what browsers that never chose have.
+  const [themePref, setThemePref] = useState<ThemePref>(() => {
+    try {
+      const saved = localStorage.getItem("shrinkerr_theme") || localStorage.getItem("squeezarr_theme");
+      if (saved === "dark" || saved === "light" || saved === "system") return saved;
+    } catch { /* storage unavailable */ }
+    return "system";
+  });
+  const osLight = () => !!window.matchMedia?.("(prefers-color-scheme: light)").matches;
+  const [systemLight, setSystemLight] = useState(osLight);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!mq) return;
+    const sync = () => setSystemLight(mq.matches);
+    mq.addEventListener("change", sync);
+    // Not every browser / OS reports the change while the tab is hidden.
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      mq.removeEventListener("change", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }, []);
+  const theme: "dark" | "light" = themePref === "system" ? (systemLight ? "light" : "dark") : themePref;
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("shrinkerr_theme", theme);
-    localStorage.removeItem("squeezarr_theme");  // clean up the legacy copy
   }, [theme]);
+
+  const chooseTheme = (pref: ThemePref) => {
+    setThemePref(pref);
+    setSystemLight(osLight());
+    try {
+      localStorage.setItem("shrinkerr_theme", pref);
+      localStorage.removeItem("squeezarr_theme");  // clean up the legacy copy
+    } catch { /* not saved: fine for this session */ }
+  };
 
   // Update range slider fill color via inline background gradient.
   // NOTE: We used to run a MutationObserver on document.body subtree here to
@@ -430,7 +458,7 @@ export default function App() {
       const max = parseFloat(el.max) || 100;
       const val = parseFloat(el.value) || 0;
       const pct = ((val - min) / (max - min)) * 100;
-      el.style.background = `linear-gradient(to right, #6860fe ${pct}%, #212533 ${pct}%)`;
+      el.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
       el.style.borderRadius = "3px";
     };
     const handler = (e: Event) => {
@@ -466,7 +494,6 @@ export default function App() {
     return () => window.removeEventListener("unhandledrejection", onRejection);
   }, [addToast]);
 
-  const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
   const handleWS = useCallback((msg: WSMessage) => {
     if (msg.type === "scan_progress") setScanProgress(msg as ScanProgress);
@@ -623,7 +650,7 @@ export default function App() {
             }}>
               <span style={{ color: "var(--warning)", fontWeight: 700, flexShrink: 0 }}>⚠</span>
               <div style={{ flex: 1, minWidth: 0, color: "var(--text-secondary)" }}>
-                <Trans i18nKey="nav:banner.tmdbMissing" components={{ b: <strong />, link: <NavLink to="/settings" style={{ color: "var(--accent)" }} /> }} />
+                <Trans i18nKey="nav:banner.tmdbMissing" components={{ b: <strong />, link: <NavLink to="/settings" style={{ color: "var(--accent-text)" }} /> }} />
               </div>
             </div>
           )}
@@ -638,7 +665,7 @@ export default function App() {
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/monitor" element={<MonitorPage />} />
-            <Route path="/settings" element={<SettingsPage theme={theme} onToggleTheme={toggleTheme} />} />
+            <Route path="/settings" element={<SettingsPage themePref={themePref} onThemeChange={chooseTheme} />} />
             {/* Design-system reference page — no sidebar link; reach it directly at /design (dev builds) */}
             {DesignPage && <Route path="/design" element={<DesignPage />} />}
           </Routes>

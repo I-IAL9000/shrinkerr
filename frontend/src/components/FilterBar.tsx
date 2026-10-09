@@ -97,7 +97,7 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           return (
             <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
               <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-              <span style={{ opacity: 0.4, fontSize: 12 }}>{f.labelKey ? t(f.labelKey) : f.label}</span>
+              <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{f.labelKey ? t(f.labelKey) : f.label}</span>
             </span>
           );
         }

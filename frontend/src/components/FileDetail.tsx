@@ -433,7 +433,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
                   : t("fileDetail:actions.convertApplyTitle")}
                 style={{
                   background: "transparent",
-                  color: "var(--accent)",
+                  color: "var(--accent-text)",
                   border: "1px solid var(--accent)",
                   borderRadius: 4,
                   padding: "4px 10px",
@@ -455,9 +455,9 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
                 ? t("fileDetail:actions.researchTitleCorrupt")
                 : t("fileDetail:actions.researchTitle")}
               style={{
-                background: isCorrupt ? "#e94560" : "transparent",
+                background: isCorrupt ? "var(--danger)" : "transparent",
                 color: isCorrupt ? "#fff" : "var(--text-muted)",
-                border: `1px solid ${isCorrupt ? "#e94560" : "var(--border)"}`,
+                border: `1px solid ${isCorrupt ? "var(--danger)" : "var(--border)"}`,
                 borderRadius: 4,
                 padding: "4px 10px",
                 fontSize: 11,
@@ -618,10 +618,10 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
         {track.forced && <span style={{ fontSize: 9, color: "var(--warning)", marginLeft: 4 }}>{t("fileDetail:subtitles.forced")}</span>}
       </span>
       {isExternal && basename && (
-        <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.7 }}>{basename}</span>
+        <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{basename}</span>
       )}
       {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
-        <span style={{ fontSize: 10, color: "var(--warning)", opacity: 0.8 }} title={t("fileDetail:tracks.detectNoteTitle")}>
+        <span style={{ fontSize: 10, color: "var(--warning)" }} title={t("fileDetail:tracks.detectNoteTitle")}>
           {detectNote(track)}
         </span>
       )}

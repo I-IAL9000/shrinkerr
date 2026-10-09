@@ -231,6 +231,7 @@ export default function LogsPage() {
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        className="log-terminal"
         style={{
           flex: 1,
           overflow: "auto",

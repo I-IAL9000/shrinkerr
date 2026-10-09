@@ -101,7 +101,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {isHealthCorrupt ? (
               <span
                 title={jobErrorHeadline(job) ?? job.error_log ?? t("queue:item.corruptTitle")}
-                style={{ color: "var(--danger, #e94560)", fontSize: 14, display: "inline-flex", alignItems: "center" }}
+                style={{ color: "var(--danger, var(--danger))", fontSize: 14, display: "inline-flex", alignItems: "center" }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -112,7 +112,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             ) : showAmber ? (
               <span
                 title={amberTitle}
-                style={{ color: "#ffa94d", fontSize: 14, display: "inline-flex", alignItems: "center" }}
+                style={{ color: "var(--caution)", fontSize: 14, display: "inline-flex", alignItems: "center" }}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/>
@@ -127,7 +127,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           </span>
         );
       })()}
-      {job.status === "failed" && <span style={{ color: "#e94560", width: 20, fontSize: 14 }}>{expanded ? "\u25BC" : "\u25B6"}</span>}
+      {job.status === "failed" && <span style={{ color: "var(--danger)", width: 20, fontSize: 14 }}>{expanded ? "\u25BC" : "\u25B6"}</span>}
       {job.status === "pending" && onCheck && (
         <input
           type="checkbox"
@@ -143,7 +143,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       <span className="job-filename" style={{ flex: 1, minWidth: 0 }}>
         {fileName}
         {(job as any).original_size > 0 && (
-          <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.4 }}>
+          <span style={{ marginLeft: 8, fontSize: 11, color: "var(--text-muted)" }}>
             {job.status === "completed" && job.space_saved > 0
               ? fmtBytes((job as any).original_size - job.space_saved)
               : fmtBytes((job as any).original_size)}
@@ -153,7 +153,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           <span style={{
             marginLeft: 8, fontSize: 9, padding: "1px 5px", borderRadius: 6, fontWeight: "bold",
             background: (job as any).priority >= 2 ? "rgba(233,69,96,0.15)" : "rgba(255,169,77,0.15)",
-            color: (job as any).priority >= 2 ? "#e94560" : "#ffa94d",
+            color: (job as any).priority >= 2 ? "var(--danger)" : "var(--caution)",
           }}>
             {(job as any).priority >= 2 ? t("queue:item.badgeHighest") : t("queue:item.badgeHigh")}
           </span>
@@ -184,19 +184,19 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 // the expanded view + tooltip.
                 <span
                   title={jobErrorHeadline(job) ?? job.error_log}
-                  style={{ fontSize: 11, color: "#ffa94d", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
+                  style={{ fontSize: 11, color: "var(--caution)", background: "rgba(255,169,77,0.15)", padding: "1px 6px", borderRadius: 3, fontWeight: 600 }}
                 >
                   {t("queue:item.vmafRejected")}
                 </span>
               ) : job.space_saved <= 0 ? (
-                <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--border)", padding: "1px 6px", borderRadius: 3 }}>{t("queue:item.ignored")}</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "1px 6px", borderRadius: 3 }}>{t("queue:item.ignored")}</span>
               ) : null}
             </>
           )}
           {onUndo && (job as any).backup_path && (
             <button
               onClick={(e) => { e.stopPropagation(); onUndo(job.id); }}
-              style={{ ...iconBtnStyle, color: "var(--accent)", marginLeft: 4, fontSize: 14 }}
+              style={{ ...iconBtnStyle, color: "var(--accent-text)", marginLeft: 4, fontSize: 14 }}
               title={t("queue:item.restoreOriginal")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -218,7 +218,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>{t("common:actions.retry")}</button>
           )}
           <button onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}
-            style={{ ...iconBtnStyle, color: "#e94560", marginLeft: 8 }}
+            style={{ ...iconBtnStyle, color: "var(--danger)", marginLeft: 8 }}
             title={t("common:actions.remove")}>
             &times;
           </button>
@@ -226,7 +226,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       )}
       {job.status === "pending" && (
         <>
-          <span className="job-type-badge" style={{ background: "var(--border)" }}>{typeBadge}</span>
+          <span className="job-type-badge" style={{ background: "var(--bg-tertiary)" }}>{typeBadge}</span>
           {/* v0.9.38: encoder settings are irrelevant for an audio-only
               stream-copy remux — don't imply a re-encode that isn't happening. */}
           {job.job_type !== "audio" && (
@@ -286,16 +286,16 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                       colour with an explicit "discarded" hint so the row
                       doesn't read like a successful saving. v0.3.55+. */}
                   {logData.encoding_stats.ratio < 0 ? (
-                    <span style={{ color: "#ffa94d" }}>
+                    <span style={{ color: "var(--caution)" }}>
                       {fmtBytes(logData.encoding_stats.output_size)}{" "}
-                      <span style={{ opacity: 0.7 }}>
+                      <span style={{ color: "var(--text-muted)" }}>
                         {t("queue:item.stats.largerDiscarded", { pct: Math.abs(logData.encoding_stats.ratio) })}
                       </span>
                     </span>
                   ) : (
                     <span style={{ color: "var(--success)" }}>
                       {fmtBytes(logData.encoding_stats.output_size)}{" "}
-                      <span style={{ opacity: 0.6 }}>{t("queue:item.stats.savedPct", { pct: logData.encoding_stats.ratio })}</span>
+                      <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.savedPct", { pct: logData.encoding_stats.ratio })}</span>
                     </span>
                   )}
                 </>}
@@ -352,7 +352,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                       <>
                         <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.audio")}</span>
                         <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
-                          {sources.join(" + ")} <span style={{ opacity: 0.6 }}>→</span> {targetLabel}
+                          {sources.join(" + ")} <span style={{ color: "var(--text-muted)" }}>→</span> {targetLabel}
                         </span>
                       </>
                     );
@@ -369,7 +369,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
                     {t("queue:item.stats.tracks", { count: logData.encoding_stats.audio_tracks_removed })}
                     {Array.isArray(logData.encoding_stats.removed_audio_languages) && logData.encoding_stats.removed_audio_languages.length > 0 && (
-                      <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_audio_languages.join(", ")})</span>
+                      <span style={{ color: "var(--text-muted)" }}> ({logData.encoding_stats.removed_audio_languages.join(", ")})</span>
                     )}
                   </span>
                 </>}
@@ -378,21 +378,21 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   <span style={{ color: "var(--text-muted)", gridColumn: "2 / span 2" }}>
                     {t("queue:item.stats.tracks", { count: logData.encoding_stats.subtitle_tracks_removed })}
                     {Array.isArray(logData.encoding_stats.removed_subtitle_languages) && logData.encoding_stats.removed_subtitle_languages.length > 0 && (
-                      <span style={{ opacity: 0.6 }}> ({logData.encoding_stats.removed_subtitle_languages.join(", ")})</span>
+                      <span style={{ color: "var(--text-muted)" }}> ({logData.encoding_stats.removed_subtitle_languages.join(", ")})</span>
                     )}
                   </span>
                 </>}
 
                 {Array.isArray(logData.encoding_stats.applied_audio_languages) && logData.encoding_stats.applied_audio_languages.length > 0 && <>
                   <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.languageApplied")}</span>
-                  <span style={{ color: "var(--accent)", gridColumn: "2 / span 2" }}>
+                  <span style={{ color: "var(--accent-text)", gridColumn: "2 / span 2" }}>
                     {t("queue:item.stats.audioArrow", { langs: logData.encoding_stats.applied_audio_languages.join(", ") })}
                   </span>
                 </>}
 
                 {logData.vmaf_score != null && <>
                   <span style={{ color: "var(--text-muted)" }}>VMAF</span>
-                  <span style={{ color: "var(--text-muted)", opacity: 0.5 }}>{t("queue:item.stats.vmafRef")}</span>
+                  <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafRef")}</span>
                   <span style={{
                     color: vmafColor(logData.vmaf_score),
                     fontWeight: 600,
@@ -431,13 +431,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                 border: "1px solid rgba(255,169,77,0.35)",
                 display: "flex", alignItems: "center", gap: 8,
               }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffa94d" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--caution)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                   <line x1="12" y1="9" x2="12" y2="13"/>
                   <line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: "#ffa94d" }}>{t("queue:item.vmafBanner.title")}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--caution)" }}>{t("queue:item.vmafBanner.title")}</div>
                   <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
                     {jobErrorHeadline(job) ?? job.error_log} {t("queue:item.vmafBanner.body")}
                   </div>
@@ -504,9 +504,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   try { errs = JSON.parse(job.health_errors_json); } catch { /* ignore */ }
                   if (!errs.length) return null;
                   return (
-                    <ul style={{ margin: 0, padding: "4px 0 0 18px", color: "#e94560", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
+                    <ul style={{ margin: 0, padding: "4px 0 0 18px", color: "var(--danger)", fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
                       {errs.slice(0, 8).map((e, i) => <li key={i} style={{ wordBreak: "break-word" }}>{e}</li>)}
-                      {errs.length > 8 && <li style={{ opacity: 0.6 }}>{t("queue:item.health.more", { count: errs.length - 8 })}</li>}
+                      {errs.length > 8 && <li style={{ color: "var(--text-muted)" }}>{t("queue:item.health.more", { count: errs.length - 8 })}</li>}
                     </ul>
                   );
                 })()}
@@ -543,7 +543,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
               <div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowFullLog(!showFullLog); }}
-                  style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: 0 }}
+                  style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 11, cursor: "pointer", padding: 0 }}
                 >
                   {t(showFullLog ? "queue:item.log.hideOutput" : "queue:item.log.showOutput", { count: logData.ffmpeg_log.split("\n").length })}
                 </button>
@@ -560,7 +560,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             )}
 
             {/* Full file path */}
-            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6, opacity: 0.6, wordBreak: "break-all" }}>
+            <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6, wordBreak: "break-all" }}>
               {job.file_path}
             </div>
           </>
@@ -590,10 +590,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           return (
             <>
               {headline && (
-                <div style={{ fontSize: 12, color: "#e94560", fontWeight: 600, marginBottom: detail ? 4 : 0 }}>{headline}</div>
+                <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, marginBottom: detail ? 4 : 0 }}>{headline}</div>
               )}
               {detail && (
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "#e94560", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--danger)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                   {detail}
                 </div>
               )}
@@ -609,7 +609,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           {job.started_at && <span>{t("queue:item.details.started")} {fmtDateTime(job.started_at)}</span>}
           {job.completed_at && <span>{t("queue:item.details.failed")} {fmtDateTime(job.completed_at)}</span>}
         </div>
-        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, opacity: 0.6, wordBreak: "break-all" }}>
+        <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4, wordBreak: "break-all" }}>
           {job.file_path}
         </div>
 
@@ -636,7 +636,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
             {logData.ffmpeg_log && (
               <details style={{ background: "var(--bg-card)", borderRadius: 4, padding: "6px 10px", fontSize: 11 }}>
                 <summary style={{ cursor: "pointer", color: "var(--text-secondary)", userSelect: "none" }}>
-                  {t("queue:item.log.ffmpegLog")} <span style={{ opacity: 0.5 }}>{t("queue:item.log.lastLines", { count: logData.ffmpeg_log.split("\n").length })}</span>
+                  {t("queue:item.log.ffmpegLog")} <span style={{ color: "var(--text-muted)" }}>{t("queue:item.log.lastLines", { count: logData.ffmpeg_log.split("\n").length })}</span>
                 </summary>
                 <pre style={{
                   marginTop: 6, marginBottom: 0, fontSize: 10, lineHeight: 1.45,

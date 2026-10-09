@@ -2,8 +2,11 @@
   "ui": {
     "title": "User Interface",
     "theme": "Theme",
-    "themeHelp": "Switch between dark and light mode",
-    "lightMode": "Light mode",
-    "darkMode": "Dark mode"
+    "themeHelp": "System follows your device's light or dark setting. Saved in this browser.",
+    "themes": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    }
   }
 }

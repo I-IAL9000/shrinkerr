@@ -40,7 +40,7 @@ export default function WhatsNewModal() {
 
   const section = (title: string, items: string[]) => items.length > 0 && (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
         {title}
       </div>
       <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>

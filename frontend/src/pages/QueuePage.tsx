@@ -520,7 +520,7 @@ export default function QueuePage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("queue:loadingQueue")}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>{t("queue:loadingQueue")}</div>
         </div>
       </div>
     );
@@ -557,7 +557,7 @@ export default function QueuePage() {
       {streamPauseActive && (
         <div style={{
           background: "var(--accent-soft, rgba(99, 102, 241, 0.12))",
-          border: "1px solid var(--accent, #6366f1)",
+          border: "1px solid var(--accent)",
           borderRadius: 6,
           padding: "10px 14px",
           marginBottom: 16,
@@ -686,7 +686,7 @@ export default function QueuePage() {
           style={{
             padding: "10px 20px", fontSize: 13, cursor: "pointer",
             background: "none", border: "none",
-            color: tab === "pending" ? "var(--accent)" : "var(--text-muted)",
+            color: tab === "pending" ? "var(--accent-text)" : "var(--text-muted)",
             borderBottom: tab === "pending" ? "2px solid var(--accent)" : "2px solid transparent",
           }}
         >
@@ -709,8 +709,8 @@ export default function QueuePage() {
             style={{
               padding: "10px 20px", fontSize: 13, cursor: "pointer",
               background: "none", border: "none",
-              color: tab === "failed" ? "#e94560" : "var(--text-muted)",
-              borderBottom: tab === "failed" ? "2px solid #e94560" : "2px solid transparent",
+              color: tab === "failed" ? "var(--danger)" : "var(--text-muted)",
+              borderBottom: tab === "failed" ? "2px solid var(--danger)" : "2px solid transparent",
             }}
           >
             {t("queue:tabs.failedCount", { formatted: fmtNum(failedCount) })}
@@ -778,7 +778,7 @@ export default function QueuePage() {
                 }}>
                 {t("queue:actions.retryAll")}
               </button>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", color: "#e94560", borderColor: "#e94560" }}
+              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", color: "var(--danger)", borderColor: "var(--danger)" }}
                 onClick={async () => {
                   const paths = tabJobs.map(j => j.file_path).filter(Boolean);
                   if (!paths.length) { toast(t("queue:toasts.noFilePaths"), "error"); return; }
@@ -845,7 +845,7 @@ export default function QueuePage() {
             </>
           )}
           {tabJobs.length === 0 && (
-            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />
@@ -867,14 +867,14 @@ export default function QueuePage() {
               </div>
               {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
               {loadingMore && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, color: "var(--text-muted)" }}>
                   <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
                 </div>
               )}
             </>
           )}
           {tabJobs.length === 0 && (
-            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />
@@ -896,14 +896,14 @@ export default function QueuePage() {
             </div>
             {tabHasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
             {loadingMore && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, opacity: 0.5 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, color: "var(--text-muted)" }}>
                 <div className="spinner" style={{ width: 16, height: 16 }} /> <span>{t("common:status.loadingMore")}</span>
               </div>
             )}
             </>
           )}
           {tabJobs.length === 0 && (
-            <div style={{ textAlign: "center", padding: 40, opacity: 0.5 }}>
+            <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
               {(initialLoading || tabLoading) ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
                   <div className="spinner" style={{ width: 18, height: 18 }} />

@@ -20,7 +20,7 @@ function fmtRelative(iso: string | null): string {
 
 const STATUS_DOT: Record<string, { color: string; labelKey: string }> = {
   online: { color: "var(--success)", labelKey: "nodes:status.online" },
-  working: { color: "#ffa94d", labelKey: "nodes:status.working" },
+  working: { color: "var(--caution)", labelKey: "nodes:status.working" },
   offline: { color: "var(--text-muted)", labelKey: "nodes:status.offline" },
   error: { color: "var(--danger)", labelKey: "nodes:status.suspended" },
   paused: { color: "var(--warning)", labelKey: "nodes:status.paused" },
@@ -67,8 +67,8 @@ export default function NodesPage() {
       ) : nodes.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
           <p style={{ fontSize: 14, marginBottom: 12 }}>{t("nodes:empty.title")}</p>
-          <p style={{ fontSize: 12, opacity: 0.7 }}>
-            <Trans i18nKey="nodes:empty.hint" components={{ code: <code style={{ color: "var(--accent)" }} /> }} />
+          <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            <Trans i18nKey="nodes:empty.hint" components={{ code: <code style={{ color: "var(--accent-text)" }} /> }} />
           </p>
         </div>
       ) : (
@@ -158,7 +158,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, display: "inline-block", flexShrink: 0 }} />
           <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.name}</span>
-          {isLocal && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--accent-bg)", color: "var(--accent)", fontWeight: 600, flexShrink: 0 }}>{t("nodes:card.thisServer")}</span>}
+          {isLocal && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: "var(--accent-bg)", color: "var(--accent-text)", fontWeight: 600, flexShrink: 0 }}>{t("nodes:card.thisServer")}</span>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <span style={{ fontSize: 11, color: st.color }}>{t(st.labelKey)}</span>
@@ -211,7 +211,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
             <span key={cap} style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 12, fontWeight: 600,
               background: isHardware ? "rgba(16,185,129,0.15)" : "rgba(104,96,254,0.15)",
-              color: isHardware ? "var(--success)" : "var(--accent)",
+              color: isHardware ? "var(--success)" : "var(--accent-text)",
             }}>
               {label}
             </span>
@@ -239,7 +239,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
           </span>
           <button
             className="btn btn-secondary"
-            style={{ fontSize: 10, padding: "3px 10px", color: "var(--accent)", flexShrink: 0 }}
+            style={{ fontSize: 10, padding: "3px 10px", color: "var(--accent-text)", flexShrink: 0 }}
             onClick={async () => { await resetNode(node.id); onRefresh(); }}
           >{t("nodes:card.reset")}</button>
         </div>

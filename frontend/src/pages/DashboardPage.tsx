@@ -13,7 +13,7 @@ import { useJobProgressMap } from "../jobProgressStore";
 
 const cardStyle: React.CSSProperties = { background: "var(--bg-card)", padding: 20, borderRadius: 6 };
 const headingStyle: React.CSSProperties = { color: "var(--text-primary)", fontSize: 14, marginBottom: 16 };
-const donutColors = ["#6860fe", "#6882ff", "#40ceff", "#2cf4e8", "#10B981", "#ff6b9d", "#ffa94d"];
+const donutColors = ["var(--accent)", "#6882ff", "var(--info)", "#2cf4e8", "var(--success)", "var(--pink)", "var(--caution)"];
 
 const tooltipStyle = {
   contentStyle: { background: "var(--bg-tertiary)", border: "1px solid var(--border)", borderRadius: 6, fontSize: 12 },
@@ -64,7 +64,7 @@ function Donut({ segments, size = 120, hole = 0.65, centerText }: {
 // Horizontal bar chart (renamed to avoid conflict with recharts BarChart)
 function HBarChart({ items, colors }: { items: { label: string; value: number }[]; colors?: string[] }) {
   const max = Math.max(...items.map(i => i.value), 1);
-  const defaultColors = ["#6860fe", "#7c5cff", "#6882ff", "#54a8ff", "#40ceff", "#2cf4e8", "#10B981"];
+  const defaultColors = ["var(--accent)", "#7c5cff", "#6882ff", "#54a8ff", "var(--info)", "#2cf4e8", "var(--success)"];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {items.filter(i => i.value > 0).map((item, idx) => (
@@ -91,7 +91,7 @@ function MiniProgress({ progress }: { progress: number }) {
       <div style={{
         height: "100%", borderRadius: 2,
         width: `${Math.min(100, progress)}%`,
-        background: "linear-gradient(90deg, var(--accent), #40ceff)",
+        background: "linear-gradient(90deg, var(--accent), var(--info))",
         transition: "width 0.5s",
       }} />
     </div>
@@ -118,7 +118,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
     <div style={cardStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: liveJobs.length > 0 ? 10 : 0 }}>
         <div>
-          <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent)" : "var(--text-muted)" }}>
+          <span style={{ fontSize: 28, fontWeight: "bold", color: liveJobs.length > 0 ? "var(--accent-text)" : "var(--text-muted)" }}>
             {liveJobs.length > 0 ? liveJobs.length : t("dashboard:live.idle")}
           </span>
           <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 8 }}>
@@ -126,7 +126,7 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
           </span>
         </div>
         {combinedFps > 0 && (
-          <span style={{ fontSize: 13, color: "#40ceff", fontWeight: 600 }}>{t("dashboard:live.fpsCombined", { fps: combinedFps.toFixed(0) })}</span>
+          <span style={{ fontSize: 13, color: "var(--info)", fontWeight: 600 }}>{t("dashboard:live.fpsCombined", { fps: combinedFps.toFixed(0) })}</span>
         )}
       </div>
       {liveJobs.length > 0 && (
@@ -193,7 +193,7 @@ function ProtectForm({ onDone }: { onDone: () => void }) {
         disabled={busy || !username.trim() || !password}>
         {t("dashboard:setup.protect.action")}
       </button>
-      {error && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--danger, #e94560)" }}>{error}</div>}
+      {error && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--danger, var(--danger))" }}>{error}</div>}
     </form>
   );
 }
@@ -281,7 +281,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
         <img src="/favicon.svg" alt="" width="100" height="100" style={{ marginBottom: 16 }} />
         <h1 style={{
           fontSize: 28, fontWeight: "bold", margin: "0 0 8px",
-          background: "linear-gradient(90deg, #6860fe, #5089F7)",
+          background: "linear-gradient(90deg, var(--accent), #5089F7)",
           WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
         }}>
           {t("dashboard:setup.welcome")}
@@ -296,7 +296,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
         {steps.map((step) => (
           <div key={step.key} style={{
             width: 40, height: 4, borderRadius: 2,
-            background: step.done ? "var(--accent)" : "var(--border)",
+            background: step.done ? "var(--accent-text)" : "var(--border)",
             transition: "background 0.3s",
           }} />
         ))}
@@ -316,7 +316,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
               width: 58, height: 58, borderRadius: 4, flexShrink: 0, alignSelf: "flex-start",
               display: "flex", alignItems: "center", justifyContent: "center",
               background: step.done ? "rgba(24,255,165,0.15)" : "rgba(104,96,254,0.15)",
-              color: step.done ? "#10B981" : "var(--accent)",
+              color: step.done ? "var(--success)" : "var(--accent-text)",
               fontSize: 14, fontWeight: "bold",
             }}>
               {step.done ? (
@@ -333,7 +333,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
                 {step.title}
                 {step.optional && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: "normal" }}>{t("dashboard:setup.optional")}</span>}
-                {step.recommended && <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: "normal" }}>{t("dashboard:setup.recommended")}</span>}
+                {step.recommended && <span style={{ fontSize: 10, color: "var(--accent-text)", fontWeight: "normal" }}>{t("dashboard:setup.recommended")}</span>}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{step.description}</div>
               {!step.done && step.form}
@@ -423,7 +423,7 @@ export default function DashboardPage() {
         <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>{t("dashboard:title")}</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 60 }}>
           <div className="spinner" />
-          <div style={{ marginTop: 12, fontSize: 13, opacity: 0.5 }}>{t("dashboard:loading")}</div>
+          <div style={{ marginTop: 12, fontSize: 13, color: "var(--text-muted)" }}>{t("dashboard:loading")}</div>
         </div>
       </div>
     );
@@ -445,9 +445,9 @@ export default function DashboardPage() {
   const activeJobs = dash.running_jobs || [];
   const diskColor = (free: number) => {
     const gb = free / (1024 ** 3);
-    if (gb > 100) return "#10B981";
-    if (gb > 50) return "#ffa94d";
-    return "#e94560";
+    if (gb > 100) return "var(--success)";
+    if (gb > 50) return "var(--caution)";
+    return "var(--danger)";
   };
   const totalFree = dash.total_free || 0;
   const today = dash.today || {};
@@ -491,14 +491,14 @@ export default function DashboardPage() {
           <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--text-primary)" }}>{fmtNum(dash.queue?.pending)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.pendingInQueue")}</div>
           {(dash.queue?.failed || 0) > 0 && (
-            <div style={{ fontSize: 12, color: "#e94560", marginTop: 6 }}>{t("dashboard:cards.failed", { count: dash.queue.failed, num: fmtNum(dash.queue.failed) })}</div>
+            <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 6 }}>{t("dashboard:cards.failed", { count: dash.queue.failed, num: fmtNum(dash.queue.failed) })}</div>
           )}
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>{t("dashboard:cards.completed", { count: dash.queue?.completed || 0, num: dash.queue?.completed?.toLocaleString() || 0 })}</div>
         </div>
 
         {/* Total saved */}
         <div style={cardStyle}>
-          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>{fmtBytes(dash.total_saved || 0)}</div>
+          <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>{fmtBytes(dash.total_saved || 0)}</div>
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalSpaceSaved")}</div>
           {dash.bandwidth_pct > 0 && (
             <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{t("dashboard:cards.smallerFiles", { pct: dash.bandwidth_pct })}</div>
@@ -527,13 +527,13 @@ export default function DashboardPage() {
       {/* Today's summary bar */}
       <div style={{ ...cardStyle, display: "flex", gap: 28, padding: "12px 20px", flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{t("dashboard:today.label")}</span>
-        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
+        <span style={{ fontSize: 12 }}><b style={{ color: "var(--accent-text)" }}>{fmtNum(today.jobs_completed)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.jobs")}</span></span>
         <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{fmtBytes(today.space_saved || 0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.saved")}</span></span>
         {(today.avg_fps || 0) > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--info)" }}>{today.avg_fps.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgFpsPerJob")}</span></span>
         )}
         {combinedFpsForSummary > 0 && (
-          <span style={{ fontSize: 12 }}><b style={{ color: "#40ceff" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.combinedFps")}</span></span>
+          <span style={{ fontSize: 12 }}><b style={{ color: "var(--info)" }}>{combinedFpsForSummary.toFixed(0)}</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.combinedFps")}</span></span>
         )}
         {(today.original_size || 0) > 0 && (today.space_saved || 0) > 0 && (
           <span style={{ fontSize: 12 }}><b style={{ color: "var(--success)" }}>{((today.space_saved / today.original_size) * 100).toFixed(0)}%</b> <span style={{ color: "var(--text-muted)" }}>{t("dashboard:today.avgReduction")}</span></span>
@@ -548,8 +548,8 @@ export default function DashboardPage() {
             <path d="M3 9h18" />
             <path d="M9 21V9" />
           </svg>
-          <div style={{ fontSize: 14, color: "var(--text-muted)", opacity: 0.6 }}>{t("dashboard:empty.title")}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", opacity: 0.4, marginTop: 8 }}>
+          <div style={{ fontSize: 14, color: "var(--text-muted)" }}>{t("dashboard:empty.title")}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 8 }}>
             {t("dashboard:empty.hint")}
           </div>
         </div>
@@ -567,7 +567,7 @@ export default function DashboardPage() {
               <h3 style={headingStyle}>{t("dashboard:results.title")}</h3>
               <Donut
                 segments={[
-                  { value: s.files_with_savings, color: "var(--accent)", label: t("dashboard:results.savedSpace") },
+                  { value: s.files_with_savings, color: "var(--accent-text)", label: t("dashboard:results.savedSpace") },
                   { value: s.files_no_savings, color: "var(--border)", label: t("dashboard:results.ignoredNoSavings") },
                 ]}
                 centerText={`${totalCompleted > 0 ? Math.round(s.files_with_savings / totalCompleted * 100) : 0}%`}
@@ -578,10 +578,10 @@ export default function DashboardPage() {
               <h3 style={headingStyle}>{t("dashboard:summary.title")}</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {([
-                  [t("dashboard:summary.filesWithSavings"), s.files_with_savings, "var(--accent)"],
+                  [t("dashboard:summary.filesWithSavings"), s.files_with_savings, "var(--accent-text)"],
                   [t("dashboard:summary.filesIgnored"), s.files_no_savings, "var(--text-secondary)"],
                   [t("common:status.pending"), s.pending, "var(--text-secondary)"],
-                  [t("common:status.failed"), s.failed, "#e94560"],
+                  [t("common:status.failed"), s.failed, "var(--danger)"],
                 ] as const).map(([label, val, color]) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{label}</span>
@@ -599,14 +599,14 @@ export default function DashboardPage() {
                 {s.est_remaining_hours > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:summary.estRemaining")}</span>
-                    <span style={{ color: "#ffa94d", fontWeight: "bold" }}>
+                    <span style={{ color: "var(--caution)", fontWeight: "bold" }}>
                       {s.est_remaining_hours >= 24 ? t("dashboard:summary.days", { value: (s.est_remaining_hours / 24).toFixed(1) }) : `${s.est_remaining_hours.toFixed(1)}h`}
                     </span>
                   </div>
                 )}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)" }}>{t("dashboard:summary.totalSaved")}</span>
-                  <span style={{ color: "var(--accent)", fontWeight: "bold", fontSize: 16 }}>{fmtBytes(s.total_saved)}</span>
+                  <span style={{ color: "var(--accent-text)", fontWeight: "bold", fontSize: 16 }}>{fmtBytes(s.total_saved)}</span>
                 </div>
               </div>
             </div>
@@ -617,7 +617,7 @@ export default function DashboardPage() {
         {dash.projection && dash.projection.projected_days > 0 && (
           <div style={{ ...cardStyle, display: "flex", gap: 24, alignItems: "center" }}>
             <div style={{ textAlign: "center", minWidth: 100 }}>
-              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent)" }}>~{fmtBytes(dash.projection.projected_savings)}</div>
+              <div style={{ fontSize: 28, fontWeight: "bold", color: "var(--accent-text)" }}>~{fmtBytes(dash.projection.projected_savings)}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("dashboard:projection.projectedSavings")}</div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.8 }}>
@@ -636,7 +636,7 @@ export default function DashboardPage() {
                     : t("dashboard:projection.days", { value: dash.projection.projected_days }),
                 }}
                 components={{
-                  accent: <b style={{ color: "var(--accent)" }} />,
+                  accent: <b style={{ color: "var(--accent-text)" }} />,
                   b: <b />,
                   success: <b style={{ color: "var(--success)" }} />,
                 }}
@@ -653,8 +653,8 @@ export default function DashboardPage() {
               <Donut
                 size={110}
                 segments={[
-                  { value: s.needs_conversion, color: "#e94560", label: t("dashboard:conversion.needsConverting") },
-                  { value: s.already_converted, color: "var(--accent)", label: t("dashboard:conversion.converted") },
+                  { value: s.needs_conversion, color: "var(--danger)", label: t("dashboard:conversion.needsConverting") },
+                  { value: s.already_converted, color: "var(--accent-text)", label: t("dashboard:conversion.converted") },
                 ]}
                 centerText={`${s.needs_conversion + s.already_converted > 0 ? Math.round(s.already_converted / (s.needs_conversion + s.already_converted) * 100) : 0}%`}
               />
@@ -665,8 +665,8 @@ export default function DashboardPage() {
               <Donut
                 size={110}
                 segments={[
-                  { value: s.files_needing_audio_cleanup, color: "#ffa94d", label: t("dashboard:audioCleanup.needsCleanup") },
-                  { value: s.files_audio_cleaned, color: "var(--accent)", label: t("dashboard:audioCleanup.cleaned") },
+                  { value: s.files_needing_audio_cleanup, color: "var(--caution)", label: t("dashboard:audioCleanup.needsCleanup") },
+                  { value: s.files_audio_cleaned, color: "var(--accent-text)", label: t("dashboard:audioCleanup.cleaned") },
                 ]}
                 centerText={`${s.files_audio_cleaned + s.files_needing_audio_cleanup > 0 ? Math.round(s.files_audio_cleaned / (s.files_audio_cleaned + s.files_needing_audio_cleanup) * 100) : 0}%`}
               />
@@ -684,7 +684,7 @@ export default function DashboardPage() {
               <Donut
                 size={110}
                 segments={s.codecs.map(([label, value]: [string, number], i: number) => ({
-                  value, label, color: ["#e94560", "#6860fe", "#40ceff", "#10B981", "#ffa94d"][i % 5],
+                  value, label, color: ["var(--danger)", "var(--accent)", "var(--info)", "var(--success)", "var(--caution)"][i % 5],
                 }))}
                 centerText={`${s.scan_total}`}
               />
@@ -729,7 +729,7 @@ export default function DashboardPage() {
             <Donut
               size={110}
               segments={(s.resolutions || []).map(([label, value]: [string, number], i: number) => ({
-                value, label, color: ["#6860fe", "#40ceff", "#10B981", "#ffa94d"][i % 4],
+                value, label, color: ["var(--accent)", "var(--info)", "var(--success)", "var(--caution)"][i % 4],
               }))}
               centerText={`${totalCompleted}`}
             />
@@ -773,7 +773,7 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:vmaf.average")}</span>
-                    <span style={{ color: "var(--accent)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
+                    <span style={{ color: "var(--accent-text)", fontWeight: "bold" }}>{vm.avg?.toFixed(1)}</span>
                   </div>
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                     {tierRows.map(r => (
@@ -803,7 +803,7 @@ export default function DashboardPage() {
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" TB" />
                   <Tooltip {...tooltipStyle} />
-                  <Area type="monotone" dataKey="cumulative_tb" stroke="#6860fe" fill="rgba(104,96,254,0.2)" strokeWidth={2} name={t("dashboard:trends.tbSaved")} />
+                  <Area type="monotone" dataKey="cumulative_tb" stroke="var(--accent)" fill="rgba(104,96,254,0.2)" strokeWidth={2} name={t("dashboard:trends.tbSaved")} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -816,7 +816,7 @@ export default function DashboardPage() {
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <Tooltip {...tooltipStyle} formatter={(v: any) => [t("dashboard:trends.fpsValue", { value: Math.round(v) }), t("dashboard:trends.avgFpsJobSeries")]} />
-                  <Line type="monotone" dataKey="avg_fps" stroke="#40ceff" dot={false} strokeWidth={2} name={t("dashboard:trends.avgFpsJobSeries")} connectNulls />
+                  <Line type="monotone" dataKey="avg_fps" stroke="var(--info)" dot={false} strokeWidth={2} name={t("dashboard:trends.avgFpsJobSeries")} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -832,7 +832,7 @@ export default function DashboardPage() {
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} unit=" GB" />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="saved_gb" fill="#10B981" radius={[3, 3, 0, 0]} name={t("dashboard:trends.gbSaved")} />
+                  <Bar dataKey="saved_gb" fill="var(--success)" radius={[3, 3, 0, 0]} name={t("dashboard:trends.gbSaved")} />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
@@ -845,7 +845,7 @@ export default function DashboardPage() {
                   <XAxis dataKey="date" tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <YAxis tick={{ fill: "var(--text-muted)", fontSize: 10 }} />
                   <Tooltip {...tooltipStyle} />
-                  <Bar dataKey="jobs_completed" fill="#6860fe" radius={[3, 3, 0, 0]} name={t("dashboard:trends.jobs")} />
+                  <Bar dataKey="jobs_completed" fill="var(--accent)" radius={[3, 3, 0, 0]} name={t("dashboard:trends.jobs")} />
                 </RBarChart>
               </ResponsiveContainer>
             </div>
@@ -965,11 +965,11 @@ export default function DashboardPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.removedCompleted")}</span>
-                  <span style={{ color: "#ff6b9d", fontWeight: "bold" }}>{s.audio_tracks_deleted}</span>
+                  <span style={{ color: "var(--pink)", fontWeight: "bold" }}>{s.audio_tracks_deleted}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.markedForRemoval")}</span>
-                  <span style={{ color: "#ffa94d", fontWeight: "bold" }}>{s.tracks_marked_removal}</span>
+                  <span style={{ color: "var(--caution)", fontWeight: "bold" }}>{s.tracks_marked_removal}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-muted)", fontSize: 13 }}>{t("dashboard:audioRemoval.totalScanned")}</span>
@@ -989,7 +989,7 @@ export default function DashboardPage() {
                 <h3 style={headingStyle}>{t("dashboard:audioRemoval.byLanguage")}</h3>
                 <HBarChart
                   items={s.removed_langs.map(([label, value]: [string, number]) => ({ label, value }))}
-                  colors={["#e94560", "#ff6b9d", "#ff8fb0", "#ffa94d", "#ffc078", "#ffd8a8", "#ffe8cc"]}
+                  colors={["var(--danger)", "var(--pink)", "#ff8fb0", "var(--caution)", "#ffc078", "#ffd8a8", "#ffe8cc"]}
                 />
               </div>
             )}
@@ -1049,7 +1049,7 @@ export default function DashboardPage() {
                     <div key={d.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
                       <span style={{ color: "var(--text-muted)" }}>{d.name} · ${d.price}</span>
                       <span style={{ display: "flex", gap: 12 }}>
-                        <span style={{ color: "var(--accent)", fontWeight: 600 }}>
+                        <span style={{ color: "var(--accent-text)", fontWeight: 600 }}>
                           {drivesSaved >= 1 ? t("dashboard:drives.drivesSaved", { count: Math.floor(drivesSaved) }) : t("dashboard:drives.pctOfDrive", { pct: (drivesSaved * 100).toFixed(0) })}
                         </span>
                         {moneySaved > 0 && (

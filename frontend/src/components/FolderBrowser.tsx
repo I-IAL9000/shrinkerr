@@ -92,13 +92,13 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
           </svg>
-          <span style={{ color: "var(--accent)" }}>{currentPath}</span>
+          <span style={{ color: "var(--accent-text)" }}>{currentPath}</span>
         </div>
 
         {/* Directory listing */}
         <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 12px" }}>
-          {loading && <div style={{ padding: 20, textAlign: "center", opacity: 0.5 }}>{t("common:status.loading")}</div>}
-          {error && <div style={{ padding: 12, color: "#e94560", fontSize: 12 }}>{error}</div>}
+          {loading && <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>{t("common:status.loading")}</div>}
+          {error && <div style={{ padding: 12, color: "var(--danger)", fontSize: 12 }}>{error}</div>}
 
           {!loading && (
             <div style={{ display: "flex", flexDirection: "column" }}>
@@ -141,7 +141,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
               ))}
 
               {!loading && dirs.length === 0 && !error && (
-                <div style={{ padding: 20, textAlign: "center", opacity: 0.5, fontSize: 12 }}>{t("dialogs:folderBrowser.noSubdirectories")}</div>
+                <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>{t("dialogs:folderBrowser.noSubdirectories")}</div>
               )}
             </div>
           )}
@@ -153,7 +153,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            {t("dialogs:folderBrowser.selected")} <span style={{ color: "var(--accent)" }}>{currentPath}</span>
+            {t("dialogs:folderBrowser.selected")} <span style={{ color: "var(--accent-text)" }}>{currentPath}</span>
           </span>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-secondary" onClick={onCancel} style={{ padding: "8px 16px" }}>{t("common:actions.cancel")}</button>

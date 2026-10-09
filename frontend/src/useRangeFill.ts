@@ -25,7 +25,7 @@ export function useRangeFill(containerRef: RefObject<HTMLElement | null>) {
       const max = parseFloat(el.max) || 100;
       const val = parseFloat(el.value) || 0;
       const pct = ((val - min) / (max - min)) * 100;
-      el.style.background = `linear-gradient(to right, #6860fe ${pct}%, #212533 ${pct}%)`;
+      el.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border) ${pct}%)`;
       el.style.borderRadius = "3px";
     };
 

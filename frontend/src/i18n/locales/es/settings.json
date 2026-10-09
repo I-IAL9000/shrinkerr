@@ -2,8 +2,11 @@
   "ui": {
     "title": "Interfaz de usuario",
     "theme": "Tema",
-    "themeHelp": "Cambia entre el modo oscuro y el claro",
-    "lightMode": "Modo claro",
-    "darkMode": "Modo oscuro"
+    "themeHelp": "Sistema sigue el modo claro u oscuro del dispositivo. Se guarda en este navegador.",
+    "themes": {
+      "system": "Sistema",
+      "light": "Claro",
+      "dark": "Oscuro"
+    }
   }
 }
