@@ -270,6 +270,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [encoding, setEncoding] = useState<any>(null);
+  const [encodingError, setEncodingError] = useState<string | null>(null);
   // Encoder the Conversion Guide describes (v0.9.142).
   const guideEncoder: string = encoding?.default_encoder || "nvenc";
   // Encoder caps from /api/stats/encoder-caps. Drives which options the
@@ -393,6 +394,16 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
   };
 
   const loadBackups = () => { listBackups().then(setBackupList).catch(() => {}); };
+  const loadEncoding = () => {
+    setEncodingError(null);
+    getEncodingSettings().then((enc: any) => {
+      setEncoding(enc);
+      if (enc?.tmdb_api_key) setTmdbKey(enc.tmdb_api_key);
+      if (enc?.plex_url) setPlexUrl(enc.plex_url);
+      if (enc?.plex_token) setPlexToken(enc.plex_token);
+      if (enc?.plex_path_mapping) setPlexPathMapping(enc.plex_path_mapping);
+    }).catch((err) => setEncodingError(err?.message || String(err)));
+  };
 
   useEffect(() => {
     loadDirs();
@@ -400,13 +411,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
     loadBackups();
     getConditionOptions().then(setCondOpts).catch(() => {});
     // Don't load Plex options on page load — fetched on demand when adding/editing rules
-    getEncodingSettings().then((enc: any) => {
-      setEncoding(enc);
-      if (enc?.tmdb_api_key) setTmdbKey(enc.tmdb_api_key);
-      if (enc?.plex_url) setPlexUrl(enc.plex_url);
-      if (enc?.plex_token) setPlexToken(enc.plex_token);
-      if (enc?.plex_path_mapping) setPlexPathMapping(enc.plex_path_mapping);
-    });
+    loadEncoding();
     // Hardware encoder availability — filters the dropdown so we don't
     // show qsv/vaapi options the host can't run. v0.3.68+.
     getEncoderCaps().then(setEncoderCaps).catch(() => {
@@ -715,6 +720,12 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
         />
       </div>
 
+      {!encoding && encodingError && (
+        <div style={{ ...sectionStyle, marginTop: 24, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--warning)", flex: "1 1 240px" }}>{t("settingsMedia:loadFailed", { error: encodingError })}</span>
+          <button className="btn btn-primary" onClick={loadEncoding}>{t("common:actions.retry")}</button>
+        </div>
+      )}
       {encoding && (
         <>
           <h2 id="video" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>

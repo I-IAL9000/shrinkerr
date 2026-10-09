@@ -1,4 +1,5 @@
 {
+  "loadFailed": "No se pudieron cargar los ajustes ({{error}}).",
   "header": {
     "title": "Ajustes",
     "export": "Exportar",

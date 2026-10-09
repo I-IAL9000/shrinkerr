@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
+import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 import DashboardPage from "./pages/DashboardPage";
 import ScannerPage from "./pages/ScannerPage";
@@ -17,6 +17,7 @@ import { useToastState, ToastProvider, ToastContainer } from "./useToast";
 import { ConfirmProvider } from "./components/ConfirmModal";
 import ChangelogModal from "./components/ChangelogModal";
 import WhatsNewModal from "./components/WhatsNewModal";
+import RouteErrorBoundary from "./components/ErrorBoundary";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import "./theme.css";
@@ -456,6 +457,23 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // A click whose request failed and that nobody handled (most Save buttons)
+  // used to fail silently (v0.10.0). GET failures are left to the pages —
+  // background polls fail while the server restarts.
+  useEffect(() => {
+    let last = { message: "", at: 0 };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      const err = e.reason;
+      if (!(err instanceof ApiRequestError) || err.method === "GET") return;
+      const now = Date.now();
+      if (err.message === last.message && now - last.at < 5000) return;
+      last = { message: err.message, at: now };
+      addToast(err.message, "error");
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => window.removeEventListener("unhandledrejection", onRejection);
+  }, [addToast]);
+
   const toggleTheme = () => setTheme(t => t === "dark" ? "light" : "dark");
 
   const handleWS = useCallback((msg: WSMessage) => {
@@ -631,6 +649,7 @@ export default function App() {
               </div>
             </div>
           )}
+          <RouteErrorBoundary>
           <Routes>
             <Route path="/" element={<DashboardPage jobProgressMap={jobProgressMap} />} />
             <Route path="/scanner" element={<ScannerPage scanProgress={scanProgress} onClearScanProgress={() => setScanProgress(null)} />} />
@@ -644,6 +663,7 @@ export default function App() {
             {/* Design-system reference page — no sidebar link; reach it directly at /design */}
             <Route path="/design" element={<DesignPage />} />
           </Routes>
+          </RouteErrorBoundary>
         </main>
         <WhatsNewModal />
       </div>

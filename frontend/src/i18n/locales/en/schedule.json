@@ -1,5 +1,6 @@
 {
   "title": "Schedule",
+  "loadFailed": "The schedule settings couldn't be loaded ({{error}}), so saving is off until they are.",
   "enabled": "Enabled",
   "disabled": "Disabled",
   "hour": {

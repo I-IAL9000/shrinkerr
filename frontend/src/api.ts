@@ -21,14 +21,31 @@ export function setStoredApiKey(key: string) {
   sessionStorage.removeItem("squeezarr_api_key");
 }
 
+/** An API failure, tagged with the request's method (v0.10.0): App turns an
+ *  unhandled one from a POST / PUT / PATCH / DELETE into an error toast. */
+export class ApiRequestError extends Error {
+  method: string;
+  constructor(message: string, method: string) {
+    super(message);
+    this.method = method;
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const apiKey = getStoredApiKey();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (apiKey) headers["X-Api-Key"] = apiKey;
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...headers, ...(options?.headers || {}) },
-  });
+  const method = (options?.method || "GET").toUpperCase();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...headers, ...(options?.headers || {}) },
+    });
+  } catch (err: any) {
+    // Network down / server restarting: the browser only says "Failed to fetch".
+    throw new ApiRequestError(String(i18n.t("common:errorBoundary.unreachable")), method);
+  }
   if (!res.ok) {
     // Pull the FastAPI-style `{"detail": "..."}` body so callers can
     // surface the actual server-side reason via toast. Pre-v0.3.51 the
@@ -58,7 +75,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     } catch {
       /* body wasn't JSON — fall through to status-only message */
     }
-    throw new Error(detail || `API error: ${res.status}`);
+    throw new ApiRequestError(detail || `API error: ${res.status}`, method);
   }
   return res.json();
 }

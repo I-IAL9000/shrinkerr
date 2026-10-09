@@ -41,5 +41,10 @@
     "excellent": "Excelente",
     "good": "Bueno",
     "poor": "Deficiente"
+  },
+  "errorBoundary": {
+    "title": "Esta página ha tenido un error",
+    "reload": "Recargar",
+    "unreachable": "No se pudo conectar con Shrinkerr. ¿Está en marcha?"
   }
 }

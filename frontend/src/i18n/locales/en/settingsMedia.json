@@ -1,4 +1,5 @@
 {
+  "loadFailed": "Settings couldn't be loaded ({{error}}).",
   "header": {
     "title": "Settings",
     "export": "Export",

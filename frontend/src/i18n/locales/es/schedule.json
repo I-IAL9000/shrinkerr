@@ -1,5 +1,6 @@
 {
   "title": "Programación",
+  "loadFailed": "No se pudieron cargar los ajustes de programación ({{error}}), así que guardar está desactivado hasta que se carguen.",
   "enabled": "Activado",
   "disabled": "Desactivado",
   "hour": {

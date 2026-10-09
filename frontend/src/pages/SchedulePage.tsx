@@ -39,8 +39,10 @@ export default function SchedulePage() {
   const [embyPauseThreshold, setEmbyPauseThreshold] = useState(1);
   const [embyPauseTranscodeOnly, setEmbyPauseTranscodeOnly] = useState(true);
   const toast = useToast();
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = () => {
+    setLoadError(null);
     getEncodingSettings().then((enc: any) => {
       if (enc) {
         setQuietEnabled(enc.quiet_hours_enabled ?? false);
@@ -58,7 +60,7 @@ export default function SchedulePage() {
         setEmbyPauseThreshold(enc.emby_pause_stream_threshold ?? 1);
         setEmbyPauseTranscodeOnly(enc.emby_pause_transcode_only ?? true);
       }
-    }).catch(() => {});
+    }).catch((err) => setLoadError(err?.message || String(err)));
     getSchedule().then((r: any) => {
       if (r.scheduled_start) setScheduledTime(r.scheduled_start);
       if (r.run_hours) {
@@ -76,8 +78,9 @@ export default function SchedulePage() {
           ));
         }
       }
-    });
-  }, []);
+    }).catch((err) => setLoadError(err?.message || String(err)));
+  };
+  useEffect(() => { load(); }, []);
 
   const handleSchedule = async () => {
     if (!inputTime) return;
@@ -137,6 +140,12 @@ export default function SchedulePage() {
   return (
     <div>
       <h2 style={{ color: "var(--text-primary)", fontSize: 20, marginBottom: 20 }}>{t("schedule:title")}</h2>
+      {loadError && (
+        <div style={{ background: "var(--bg-card)", padding: 14, borderRadius: 6, marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "var(--warning)", flex: "1 1 240px" }}>{t("schedule:loadFailed", { error: loadError })}</span>
+          <button className="btn btn-primary" onClick={load}>{t("common:actions.retry")}</button>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 300, background: "var(--bg-card)", padding: 20, borderRadius: 6 }}>
           <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:start.title")}</h3>
@@ -167,9 +176,9 @@ export default function SchedulePage() {
           <h3 style={{ color: "var(--text-primary)", marginBottom: 16 }}>{t("schedule:quick.title")}</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={() => { startQueue(); toast(t("schedule:quick.toastStarted"), "success"); }}>{t("schedule:quick.startNow")}</button>
+              onClick={async () => { await startQueue(); toast(t("schedule:quick.toastStarted"), "success"); }}>{t("schedule:quick.startNow")}</button>
             <button className="btn btn-secondary" style={{ textAlign: "left" }}
-              onClick={() => { pauseQueue(); toast(t("schedule:quick.toastPaused")); }}>{t("schedule:quick.pauseAfterCurrent")}</button>
+              onClick={async () => { await pauseQueue(); toast(t("schedule:quick.toastPaused")); }}>{t("schedule:quick.pauseAfterCurrent")}</button>
           </div>
         </div>
       </div>
@@ -267,7 +276,7 @@ export default function SchedulePage() {
             </div>
           )}
 
-          <button className="btn btn-primary" style={{ marginTop: 12 }}
+          <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={!!loadError}
             onClick={async () => {
               const hours = activeHours.map((v, i) => v ? i : -1).filter(i => i >= 0);
               await setRunHours({ enabled: runHoursEnabled, hours });
@@ -336,7 +345,7 @@ export default function SchedulePage() {
             </div>
           )}
 
-          <button className="btn btn-primary"
+          <button className="btn btn-primary" disabled={!!loadError}
             onClick={async () => {
               await updateEncodingSettings({
                 quiet_hours_enabled: quietEnabled,
@@ -476,7 +485,7 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        <button className="btn btn-primary"
+        <button className="btn btn-primary" disabled={!!loadError}
           onClick={async () => {
             await updateEncodingSettings({
               plex_pause_on_stream: plexPauseEnabled,

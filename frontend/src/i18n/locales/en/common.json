@@ -41,5 +41,10 @@
     "excellent": "Excellent",
     "good": "Good",
     "poor": "Poor"
+  },
+  "errorBoundary": {
+    "title": "This page ran into an error",
+    "reload": "Reload",
+    "unreachable": "Couldn't reach Shrinkerr. Is it running?"
   }
 }
