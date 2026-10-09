@@ -803,20 +803,33 @@ async def init_db():
 
         # Backfill converted flag from completed jobs that actually saved space
         # Match on file_path OR original_file_path (handles renames during conversion)
-        # Reset all first, then set only for jobs with real savings
-        await db.execute("UPDATE scan_results SET converted = 0 WHERE converted = 1")
-        await db.execute("""
-            UPDATE scan_results SET converted = 1
-            WHERE file_path IN (
-                SELECT file_path FROM jobs
-                WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
+        # F15 (v0.10.0): this reset every flag and set them again on every
+        # boot — rewriting each converted row twice. Only rows whose flag is
+        # wrong are written now, and not at all unless a completed job changed
+        # since the last run (change_counters, maintained by triggers).
+        async with db.execute("SELECT n FROM change_counters WHERE name = 'completed_jobs'") as cur:
+            _completed_version = str((await cur.fetchone())[0])
+        async with db.execute("SELECT value FROM settings WHERE key = 'converted_backfill_version'") as cur:
+            _row = await cur.fetchone()
+        if not _row or _row[0] != _completed_version:
+            _converted = """(
+                file_path IN (
+                    SELECT file_path FROM jobs
+                    WHERE status = 'completed' AND job_type IN ('convert', 'combined') AND space_saved > 0
+                )
+                OR file_path IN (
+                    SELECT original_file_path FROM jobs
+                    WHERE status = 'completed' AND job_type IN ('convert', 'combined')
+                    AND original_file_path IS NOT NULL AND space_saved > 0
+                )
+            )"""
+            await db.execute(f"UPDATE scan_results SET converted = 0 WHERE converted = 1 AND NOT {_converted}")
+            await db.execute(f"UPDATE scan_results SET converted = 1 WHERE converted = 0 AND {_converted}")
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES ('converted_backfill_version', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (_completed_version,),
             )
-            OR file_path IN (
-                SELECT original_file_path FROM jobs
-                WHERE status = 'completed' AND job_type IN ('convert', 'combined')
-                AND original_file_path IS NOT NULL AND space_saved > 0
-            )
-        """)
 
         # Backfill VMAF scores from jobs to scan_results (match by original_file_path or file_path)
         await db.execute("""
