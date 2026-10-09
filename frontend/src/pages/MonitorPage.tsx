@@ -193,7 +193,13 @@ export default function MonitorPage() {
               </div>
             ) : (
               <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
-                {t("monitor:capability.cpuOnly")}
+                {(() => {
+                  // v0.10.0: QSV / VAAPI / VideoToolbox hosts were told "CPU".
+                  const hw = ["videotoolbox", "qsv", "vaapi"].find(e => localNode.capabilities.includes(e));
+                  return hw
+                    ? t("monitor:capability.noNvidiaUsing", { encoder: t(`monitor:capability.encoderNames.${hw}`) })
+                    : t("monitor:capability.cpuOnly");
+                })()}
               </div>
             )}
             <NodeEncodingStatus entry={localNode} />

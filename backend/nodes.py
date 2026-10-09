@@ -293,8 +293,11 @@ class NodeManager:
             # Seed default_encoder based on detected local capabilities when no
             # value has ever been stored — so CPU-only boxes don't land on
             # NVENC as the default. INSERT OR IGNORE preserves any prior user choice.
+            # v0.10.0: the same order jobs are translated in, so an Intel / AMD
+            # host starts on QSV / VAAPI instead of the CPU.
+            from backend.encoder_caps import _TRANSLATE_PREFERENCE
             seed_encoder = next(
-                (e for e in ("nvenc", "videotoolbox") if e in capabilities), "libx265"
+                (e for e in _TRANSLATE_PREFERENCE if e in capabilities), "libx265"
             )
             await db.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES ('default_encoder', ?)",

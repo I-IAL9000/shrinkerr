@@ -97,7 +97,7 @@ async def webhook_queue(request: WebhookQueueRequest):
         db = await connect_db()
         try:
             async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
+                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', 'content_type_detection', 'resolution_aware_cq', 'resolution_cq_4k', 'resolution_cq_1080p', 'resolution_cq_720p', 'resolution_cq_sd')"
             ) as cur:
                 values = {r["key"]: r["value"] for r in await cur.fetchall()}
         finally:
@@ -178,7 +178,8 @@ async def webhook_queue(request: WebhookQueueRequest):
         await _queue.add_job(
             file_path=fp,
             job_type=job_type,
-            encoder="nvenc",
+            # v0.10.0: the configured default (was always "nvenc").
+            encoder=values.get("default_encoder") or "nvenc",
             audio_tracks_to_remove=audio_remove,
             subtitle_tracks_to_remove=sub_remove,
             original_size=probe.get("file_size", 0),

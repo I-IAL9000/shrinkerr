@@ -19,6 +19,12 @@
     "title": "Capacidad de codificación",
     "nvencNoStats": "NVENC está disponible: las conversiones usan la GPU. Las estadísticas de la GPU en vivo (uso / temperatura / VRAM) no están accesibles en este host porque <code>nvidia-smi</code> no puede leer el dispositivo. Causa más habitual: al NVIDIA Container Toolkit le falta la capacidad <code>utility</code>; establece <code>NVIDIA_DRIVER_CAPABILITIES=compute,video,utility</code> en el contenedor y reinícialo.",
     "cpuOnly": "No se detectó ninguna GPU NVIDIA en este host: Shrinkerr usará codificación por CPU (libx265).",
+    "noNvidiaUsing": "No hay GPU NVIDIA en este host: Shrinkerr codifica con {{encoder}}.",
+    "encoderNames": {
+      "videotoolbox": "VideoToolbox (Apple)",
+      "qsv": "Intel Quick Sync (QSV)",
+      "vaapi": "VAAPI (Intel / AMD)"
+    },
     "nvencOff": "NVENC desactivado",
     "driver": "controlador {{version}}"
   },

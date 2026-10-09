@@ -773,6 +773,20 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                   )}
                   <option value="libx265">{t("settingsMedia:video.libx265Option")}</option>
                 </select>
+                {/* v0.10.0: the saved encoder (e.g. the old NVENC default) may
+                    not exist here; jobs this server runs are then translated
+                    to its best encoder, with that encoder's quality setting. */}
+                {encoderCaps && encoding.default_encoder && !encoderCaps.available.includes(encoding.default_encoder) && (() => {
+                  const instead = ["nvenc", "videotoolbox", "qsv", "vaapi", "libx265"].find(e => encoderCaps.available.includes(e)) || "libx265";
+                  return (
+                    <div style={{ ...helpStyle, color: "var(--warning)" }}>
+                      {t("settingsMedia:video.encoderUnavailable", {
+                        encoder: t(`settingsMedia:video.encoderNames.${encoding.default_encoder}`, { defaultValue: encoding.default_encoder }),
+                        instead: t(`settingsMedia:video.encoderNames.${instead}`),
+                      })}
+                    </div>
+                  );
+                })()}
                 <div style={helpStyle}>
                   {(() => {
                     switch (encoding.default_encoder) {

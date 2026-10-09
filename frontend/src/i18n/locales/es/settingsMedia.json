@@ -33,6 +33,14 @@
     "detecting": "Detectando…",
     "redetect": "Volver a detectar",
     "libx265Option": "libx265 (CPU — software)",
+    "encoderUnavailable": "{{encoder}} no está disponible en este servidor, así que los trabajos que ejecute usan {{instead}}, con el ajuste de calidad de {{instead}}. Los workers remotos que tengan {{encoder}} lo siguen usando.",
+    "encoderNames": {
+      "nvenc": "NVENC",
+      "qsv": "Intel QSV",
+      "vaapi": "VAAPI",
+      "videotoolbox": "VideoToolbox",
+      "libx265": "libx265 (CPU)"
+    },
     "encoderHelp": {
       "nvenc": "Codificación por hardware con tu GPU NVIDIA. Rápida y de menor consumo. Archivos algo más grandes que con CPU a la misma calidad.",
       "qsv": "Codificación por hardware con Intel Quick Sync (iGPU Gen8+ hasta Arc / Battlemage). Rápida y muy eficiente energéticamente. Requiere passthrough de /dev/dri; consulta la ayuda de abajo.",
