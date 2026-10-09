@@ -47,6 +47,7 @@
   "toasts": {
     "queuePaused": "Queue paused",
     "queueStarted": "Queue started",
+    "startFailed": "Couldn't start the queue",
     "conversionCancelled": "Conversion cancelled",
     "fileIgnored": "File ignored and removed from queue",
     "moving_one": "Moving {{count}} job {{position}}",

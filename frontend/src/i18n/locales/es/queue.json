@@ -50,6 +50,7 @@
   "toasts": {
     "queuePaused": "Cola en pausa",
     "queueStarted": "Cola iniciada",
+    "startFailed": "No se pudo iniciar la cola",
     "conversionCancelled": "Conversión cancelada",
     "fileIgnored": "Archivo ignorado y quitado de la cola",
     "moving_one": "Moviendo {{count}} trabajo {{position}}",

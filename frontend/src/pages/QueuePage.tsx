@@ -256,7 +256,18 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
     if (running.length > 0 && runningWithoutProgress === 0) {
       setQueueStarting(false);
     }
-  }, [queueStarting, running, jobProgressMap]);
+    // Nothing to start (v0.10.0): the "Starting…" cards and 2 s polling
+    // stayed until a job ran, so forever with an empty queue.
+    if (running.length === 0 && (stats?.pending ?? 0) === 0) {
+      setQueueStarting(false);
+    }
+  }, [queueStarting, running, jobProgressMap, stats]);
+  // …and give up after a minute (all nodes paused, outside run hours).
+  useEffect(() => {
+    if (!queueStarting) return;
+    const timer = setTimeout(() => setQueueStarting(false), 60_000);
+    return () => clearTimeout(timer);
+  }, [queueStarting]);
 
   // Tab data is already filtered by status from the API
   // Memoized so its reference is stable across the frequent job_progress
@@ -523,7 +534,12 @@ export default function QueuePage({ jobProgressMap }: QueuePageProps) {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> {t("common:actions.pause")}
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={() => { setQueueStarting(true); startQueue().then(() => { load(); toast(t("queue:toasts.queueStarted"), "success"); }); }}>
+          <button className="btn btn-primary" onClick={() => {
+            setQueueStarting(true);
+            startQueue()
+              .then(() => { load(); toast(t("queue:toasts.queueStarted"), "success"); })
+              .catch((err) => { setQueueStarting(false); toast(err?.message || t("queue:toasts.startFailed"), "error"); });
+          }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg> {t("common:actions.start")}
           </button>
         )}
