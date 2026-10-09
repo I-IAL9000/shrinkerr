@@ -547,6 +547,7 @@ class FileWatcher:
                 # The watcher never set the height (SC-14): its rows read as
                 # SD to the 4K filter and rules until a full scan.
                 video_height=probe.get("video_height", 0),
+                video_width=probe.get("video_width", 0),  # v0.10.0
                 hdr_format=probe.get("hdr_format"),  # v0.10.0
             )
             results.append(scanned)

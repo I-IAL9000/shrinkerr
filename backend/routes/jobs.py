@@ -1779,7 +1779,8 @@ async def estimate_jobs(payload: EstimateRequest):
 
 async def _estimate_jobs_impl(payload: EstimateRequest):
     from backend.rule_resolver import resolve_rules_for_batch
-    from backend.content_detect import detect_content_type_from_path, get_resolution_tier, get_recommended_cq
+    from backend.content_detect import detect_content_type_from_path, get_recommended_cq
+    from backend.resolution import resolution_tier
     import re
 
     # Resolve folder paths to actual file paths, respecting active filter.
@@ -1994,6 +1995,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 async with db.execute(
                     f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
+                    f"COALESCE(video_width, 0) as video_width, "
                     f"COALESCE(duration, 0) as duration, native_language, disc_type "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
@@ -2072,23 +2074,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
             # Smart CQ per file for savings estimation
             if needs_conv:
-                vh = row["video_height"] or 0
-                # Use filename resolution as fallback or override if DB value seems wrong
-                fn = fp.lower()
-                if "2160p" in fn or "4k" in fn or "uhd" in fn:
-                    fn_vh = 2160
-                elif "1080p" in fn or "1080i" in fn:
-                    fn_vh = 1080
-                elif "720p" in fn:
-                    fn_vh = 720
-                elif "480p" in fn:
-                    fn_vh = 480
-                else:
-                    fn_vh = 0
-                # Trust filename if DB has no data or filename suggests higher res
-                if fn_vh > 0 and (vh == 0 or fn_vh > vh):
-                    vh = fn_vh
-                tier = get_resolution_tier(vh)
+                # The shared classifier (SC-22): width when known, else the
+                # height raised by a resolution tag in the path.
+                tier = resolution_tier(row["video_width"], row["video_height"], fp) or "sd"
                 resolution_breakdown[tier] = resolution_breakdown.get(tier, 0) + 1
 
                 # Determine effective CQ for this file. Modal override wins

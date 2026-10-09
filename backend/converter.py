@@ -1313,17 +1313,16 @@ def resolution_label(width: int | None, height: int | None) -> str:
 
     Uses width as well as height: a 1920x800 scope film is 1080p and a
     3840x1600 one is 2160p — by height alone they read as 720p / 1080p.
+    The tier comes from the shared classifier (backend/resolution.py,
+    v0.10.0) so the name agrees with the Scanner and rules.
     """
-    w, h = int(width or 0), int(height or 0)
-    if w >= 3200 or h >= 2000:
+    from backend.resolution import resolution_tier
+    tier = resolution_tier(width, height)
+    if tier == "4k":
         return "2160p"
-    if w >= 1800 or h >= 1000:
-        return "1080p"
-    if w >= 1200 or h >= 700:
-        return "720p"
-    if h >= 560:
-        return "576p"  # PAL DVD typical
-    return "480p"      # NTSC DVD typical
+    if tier in ("1080p", "720p"):
+        return tier
+    return "576p" if int(height or 0) >= 560 else "480p"  # PAL / NTSC DVD typical
 
 
 _RESOLUTION_TOKEN_RE = re.compile(r"\b(?:2160p|1080p|1080i|720p|576p|480p|4k|uhd)\b", re.IGNORECASE)

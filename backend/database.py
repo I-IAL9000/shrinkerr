@@ -423,6 +423,12 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN video_height INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.10.0 (SC-22): width too, so a 1920x800 scope film reads as 1080p.
+        # Filled in by the next full scan; until then the height decides.
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN video_width INTEGER DEFAULT 0")
+        except Exception:
+            pass
         # Migration: add probe_status column to scan_results
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN probe_status TEXT DEFAULT 'ok'")

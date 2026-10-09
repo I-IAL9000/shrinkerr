@@ -107,24 +107,6 @@ def detect_content_type_from_path(file_path: str) -> str:
     return "default"
 
 
-def get_resolution_tier(video_height: int) -> str:
-    """Map video height to resolution tier.
-
-    Args:
-        video_height: Vertical resolution in pixels (e.g., 2160, 1080, 720).
-
-    Returns:
-        One of: "4k", "1080p", "720p", "sd"
-    """
-    if video_height >= 1400:
-        return "4k"
-    if video_height >= 900:
-        return "1080p"
-    if video_height >= 600:
-        return "720p"
-    return "sd"
-
-
 def get_recommended_cq(content_type: str, resolution_tier: str) -> int:
     """Get recommended NVENC CQ value for content type + resolution.
 

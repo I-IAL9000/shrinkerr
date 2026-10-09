@@ -2138,6 +2138,7 @@ async def scan_directory(
             duration=duration,
             probe_status="ok",
             video_height=probe.get("video_height", 0),
+            video_width=probe.get("video_width", 0),
             hdr_format=probe.get("hdr_format"),
             disc_type=disc_type_val,  # v0.6.0
         )

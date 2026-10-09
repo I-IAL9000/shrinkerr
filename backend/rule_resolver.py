@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from backend.database import connect_db
+from backend.resolution import resolution_tier
 
 _AGE_UNITS = {"h": 1, "d": 24, "w": 168}
 
@@ -107,31 +108,15 @@ def _detect_source(file_path: str) -> str:
     return "Other"
 
 
-def _detect_resolution(video_height: Optional[int], file_path: str = "") -> str:
-    """Map video height to resolution label. Falls back to filename parsing."""
-    if video_height:
-        if video_height >= 1400:
-            return "4K"
-        if video_height >= 900:
-            return "1080p"
-        if video_height >= 600:
-            return "720p"
-        return "SD"
-    # Fallback: parse resolution from filename
-    if file_path:
-        from backend.media_parser import parse_media_name
-        parsed = parse_media_name(os.path.basename(file_path))
-        if parsed.resolution:
-            res = parsed.resolution.lower()
-            if res in ("2160p", "4k", "uhd"):
-                return "4K"
-            if res in ("1080p", "1080i"):
-                return "1080p"
-            if res == "720p":
-                return "720p"
-            if res == "480p":
-                return "SD"
-    return "SD"
+_RULE_RESOLUTION_LABELS = {"4k": "4K", "1080p": "1080p", "720p": "720p", "sd": "SD"}
+
+
+def _detect_resolution(video_width: Optional[int], video_height: Optional[int],
+                       file_path: str = "") -> str:
+    """Resolution label for rules, from the shared classifier (v0.10.0,
+    SC-22: by height alone a 1920x800 film was "720p" and 2560x1440 "4K").
+    A file whose size and path say nothing counts as SD, as before."""
+    return _RULE_RESOLUTION_LABELS[resolution_tier(video_width, video_height, file_path) or "sd"]
 
 
 def _detect_media_type(file_path: str) -> str:
@@ -250,9 +235,9 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         detected = _detect_source(file_path)
         return _match_op(detected, op, value)
 
-    # 3. Resolution — from scan_row video_height
+    # 3. Resolution — from scan_row video_width / video_height
     if ctype == "resolution":
-        detected = _detect_resolution(scan_row.get("video_height"), file_path)
+        detected = _detect_resolution(scan_row.get("video_width"), scan_row.get("video_height"), file_path)
         return _match_op(detected, op, value)
 
     # 4. Video codec — with family matching
@@ -533,7 +518,7 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                 chunk = file_paths[i:i + CHUNK]
                 placeholders = ",".join("?" * len(chunk))
                 async with db.execute(
-                    f"SELECT file_path, file_size, video_codec, video_height, audio_tracks_json, "
+                    f"SELECT file_path, file_size, video_codec, video_height, video_width, audio_tracks_json, "
                     f"new_detected_at FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:

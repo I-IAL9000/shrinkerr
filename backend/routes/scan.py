@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.database import DB_PATH, connect_db
 from backend.models import ScanRequest
+from backend.resolution import RANKS, resolution_tier, sql_resolution_rank
 from backend.scanner import scan_directory
 from backend.websocket import ws_manager
 
@@ -162,8 +163,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, probe_error, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format, video_width)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -206,7 +207,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        has_und_tracks_flag=excluded.has_und_tracks_flag,
                        -- is_dubbed_flag: scan native is always heuristic -> 0; recomputed by refresh/set-language
                        is_dubbed_flag=0,
-                       hdr_format=excluded.hdr_format
+                       hdr_format=excluded.hdr_format,
+                       video_width=excluded.video_width
                 """,
                 (
                     scanned.file_path,
@@ -233,6 +235,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     getattr(scanned, 'video_conv_savings_bytes', 0),  # v0.6.7
                     has_und,  # v0.8.0 language detection
                     getattr(scanned, 'hdr_format', None),  # v0.10.0
+                    getattr(scanned, 'video_width', 0),  # v0.10.0 (SC-22)
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
@@ -1826,12 +1829,8 @@ async def get_scan_stats():
         LOW_BR = 3_000_000
 
         # Main counts via SQL (pre-computed flags avoid JSON parsing).
-        # _is4k_sql is generated from the same tokens as _is_4k so the chip
-        # count and the list filters stay in lockstep (the query is
-        # parameterized, not %-formatted, so a single-% LIKE is literal).
-        _is4k_sql = _sql_is_4k("%")
         async with db.execute(
-            f"""SELECT
+            """SELECT
                 COUNT(*) as total,
                 SUM(needs_conversion) as needs_conversion_raw,
                 SUM(has_removable_tracks_flag) as audio_cleanup,
@@ -1845,10 +1844,6 @@ async def get_scan_stats():
                 SUM(converted) as converted,
                 SUM(CASE WHEN dup_count > 1 THEN 1 ELSE 0 END) as duplicates,
                 SUM(CASE WHEN COALESCE(probe_status, 'ok') != 'ok' OR health_status = 'corrupt' THEN 1 ELSE 0 END) as corrupt,
-                SUM(CASE WHEN {_is4k_sql} THEN 1 ELSE 0 END) as res_4k,
-                SUM(CASE WHEN NOT {_is4k_sql} AND video_height >= 900 AND video_height < 2000 THEN 1 ELSE 0 END) as res_1080p,
-                SUM(CASE WHEN video_height >= 600 AND video_height < 900 THEN 1 ELSE 0 END) as res_720p,
-                SUM(CASE WHEN video_height > 0 AND video_height < 600 THEN 1 ELSE 0 END) as res_sd_probed,
                 SUM(CASE WHEN video_codec LIKE '%264%' OR video_codec LIKE '%avc%' THEN 1 ELSE 0 END) as x264,
                 SUM(CASE WHEN video_codec LIKE '%265%' OR video_codec LIKE '%hevc%' THEN 1 ELSE 0 END) as x265,
                 SUM(CASE WHEN video_codec LIKE '%av1%' THEN 1 ELSE 0 END) as av1,
@@ -1865,6 +1860,17 @@ async def get_scan_stats():
             ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),),
         ) as cur:
             row = dict(await cur.fetchone())
+
+        # Resolution counts: the same classifier as the list filters, so a
+        # chip's count and its list agree. Grouped, so each row's tier is
+        # worked out once.
+        async with db.execute(
+            f"SELECT {sql_resolution_rank()} AS res_rank, COUNT(*) AS n FROM scan_results "
+            "WHERE removed_from_list = 0 "
+            "AND file_path NOT LIKE '%.converting.%' AND file_path NOT LIKE '%.remuxing.%' "
+            "GROUP BY res_rank"
+        ) as cur:
+            res_counts = {r["res_rank"]: r["n"] for r in await cur.fetchall()}
 
         total = row["total"] or 0
         x264 = row["x264"] or 0
@@ -1888,7 +1894,6 @@ async def get_scan_stats():
         unwatched_count = 0
         watchlist_count = 0
         estimated_savings = 0
-        res_sd_fallback = 0
         size_small_count = 0
         size_medium_count = 0
         size_large_count = 0
@@ -1979,7 +1984,7 @@ async def get_scan_stats():
         re_src = _re_mod.compile(r"blu[\-\s]?ray|bdremux|bdrip|bdmv", _re_mod.IGNORECASE)
         # Single pass through file paths for prefix-based counts
         async with db.execute(
-            "SELECT file_path, file_size, duration, needs_conversion, video_height, file_mtime "
+            "SELECT file_path, file_size, duration, needs_conversion, file_mtime "
             "FROM scan_results WHERE removed_from_list = 0 "
             "AND file_path NOT LIKE '%%.converting.%%' AND file_path NOT LIKE '%%.remuxing.%%'"
         ) as cur:
@@ -2033,13 +2038,6 @@ async def get_scan_stats():
                 mtime = r["file_mtime"]
                 if mtime and mtime > cutoff_24h:
                     recent_count += 1
-
-                # Resolution fallback for files without video_height
-                vh = r["video_height"] or 0
-                if vh == 0:
-                    fn = fp.lower()
-                    if not ("2160p" in fn or "4k" in fn or "uhd" in fn or "1080" in fn or "720p" in fn):
-                        res_sd_fallback += 1
 
                 # Watch status
                 if watched_sorted:
@@ -2101,10 +2099,10 @@ async def get_scan_stats():
                 "x265": x265,
                 "av1": av1,
                 "misc_codec": total - x264 - x265 - av1,
-                "res_4k": row["res_4k"] or 0,
-                "res_1080p": row["res_1080p"] or 0,
-                "res_720p": row["res_720p"] or 0,
-                "res_sd": (row["res_sd_probed"] or 0) + res_sd_fallback,
+                "res_4k": res_counts.get(RANKS["4k"], 0),
+                "res_1080p": res_counts.get(RANKS["1080p"], 0),
+                "res_720p": res_counts.get(RANKS["720p"], 0),
+                "res_sd": res_counts.get(RANKS["sd"], 0),
                 "audio_cleanup": row["audio_cleanup"] or 0,
                 "unknown_language": row["unknown_language"] or 0,
                 "dubbed": row["dubbed"] or 0,
@@ -2423,6 +2421,7 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "probe_status": row.get("probe_status", "ok"),
         "probe_error": row.get("probe_error"),
         "video_height": row.get("video_height", 0),
+        "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
         "plex_watch_status": _get_watch_status(fp, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
@@ -2528,6 +2527,7 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "probe_status": row.get("probe_status", "ok"),
         "probe_error": row.get("probe_error"),
         "video_height": row.get("video_height", 0),
+        "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
         "plex_watch_status": _get_watch_status(fp, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
@@ -2566,6 +2566,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(probe_status, 'ok') as probe_status,
     probe_error,
     COALESCE(video_height, 0) as video_height,
+    COALESCE(video_width, 0) as video_width,
     hdr_format,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
     COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
@@ -2595,36 +2596,11 @@ def _matches_filter(enriched: dict, filter_name: str) -> bool:
     return _matches_single_filter(enriched, filter_name)
 
 
-# Canonical 4K/UHD test (v0.9.116). 4K can't be identified by height alone:
-# it runs from 2160 (16:9) down to ~1392 (2.76:1 scope) as the frame widens,
-# overlapping 1440p/1080p heights — so exact-2160 (or >=2000) matching missed
-# every scope-ratio 4K title. Rule: height >= 1900 (safely above 1440p QHD) OR
-# a 2160p/UHD/4K tag in the path. Width would be exact but isn't stored.
-_RES_4K_PATH_TOKENS = ("2160p", "uhd", "4k")
-# v0.9.117: an explicit sub-4K resolution tag in the path wins over a stray
-# 4K/UHD token elsewhere in it (e.g. a "1080p" file living under a "/4K/"
-# library folder, or a UHD edition tag on a 1080p rip) — otherwise those got
-# miscounted as 4K.
-_SUB_4K_PATH_TOKENS = ("1080p", "1080i", "720p", "576p", "480p")
-
-
-def _is_4k(video_height, file_path) -> bool:
-    if (video_height or 0) >= 1900:
-        return True
-    p = (file_path or "").lower()
-    if any(t in p for t in _SUB_4K_PATH_TOKENS):
-        return False
-    return any(t in p for t in _RES_4K_PATH_TOKENS)
-
-
-def _sql_is_4k(pct: str) -> str:
-    """SQL predicate mirroring _is_4k, generated from the same token tuples so
-    the counts and the list filters can't drift. `pct` is the LIKE wildcard —
-    '%' for parameterized-but-not-%-formatted queries, '%%' for the stats
-    aggregate literal that follows the file's %%-escaping convention."""
-    yes = " OR ".join(f"LOWER(file_path) LIKE '{pct}{t}{pct}'" for t in _RES_4K_PATH_TOKENS)
-    no = "".join(f" AND LOWER(file_path) NOT LIKE '{pct}{t}{pct}'" for t in _SUB_4K_PATH_TOKENS)
-    return f"(video_height >= 1900 OR (({yes}){no}))"
+# The resolution filters and counts use the one classifier in
+# backend/resolution.py (v0.10.0, SC-22): width decides once a full scan has
+# stored it; until then the height plus the path's resolution tag (the
+# v0.9.116/117 4K rules), so scope 4K and 1920x800 films land in the right tier.
+_RES_FILTERS = ("res_4k", "res_1080p", "res_720p", "res_sd")
 
 
 def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
@@ -2691,28 +2667,8 @@ def _matches_single_filter(enriched: dict, filter_name: str) -> bool:
             import time
             return (time.time() - mt) < 86400
         return False
-    if filter_name == "res_4k":
-        return _is_4k(vh, f.get("file_path", ""))
-    if filter_name == "res_1080p":
-        if _is_4k(vh, f.get("file_path", "")):
-            return False  # scope 4K (tagged, vh<1900) belongs in res_4k, not here
-        if 900 <= vh < 1900:
-            return True
-        # 2.40:1 BluRays stored as 1920x800 have vh < 900 but filename says "1080p"
-        fn = f.get("file_path", "").lower()
-        return "1080p" in fn and vh < 1900
-    if filter_name == "res_720p":
-        if not (600 <= vh < 900):
-            return False
-        # Exclude HD-labeled files that happen to have vh < 900 due to aspect ratio
-        fn = f.get("file_path", "").lower()
-        return "1080p" not in fn and "2160p" not in fn and "4k" not in fn and "uhd" not in fn
-    if filter_name == "res_sd":
-        if not (0 < vh < 600):
-            return False
-        fn = f.get("file_path", "").lower()
-        return ("720p" not in fn and "1080p" not in fn
-                and "2160p" not in fn and "4k" not in fn and "uhd" not in fn)
+    if filter_name in _RES_FILTERS:
+        return resolution_tier(f.get("video_width"), vh, f.get("file_path", "")) == filter_name[4:]
     if filter_name == "plex_watched":
         return f.get("plex_watch_status") == "watched"
     if filter_name == "plex_unwatched":
@@ -2796,35 +2752,9 @@ def _build_tree_sql_filter(filter_name: str) -> tuple[str, list, set]:
                "AND LOWER(video_codec) NOT LIKE '%265%' "
                "AND LOWER(video_codec) NOT LIKE '%hevc%' "
                "AND LOWER(video_codec) NOT LIKE '%av1%'")
-    elif f == "res_4k":
-        # v0.9.116: 4K by height alone missed scope-ratio 4K (3840x1600 etc.).
-        # Canonical _sql_is_4k: height >= 1900 OR a 2160p/UHD/4K path tag (unless
-        # an explicit sub-4K tag is present) — fully expressed in SQL.
-        sql = "AND " + _sql_is_4k("%")
-    elif f == "res_1080p":
-        # A file is "1080p" if it's NOT 4K (tagged scope 4K excluded) AND either:
-        #   - video_height is in the 1080p range (900–1899), OR
-        #   - the filename says "1080p" and height is below 4K.
-        # This catches 2.40:1 BluRays stored as 1920x800.
-        sql = ("AND NOT " + _sql_is_4k("%") + " "
-               "AND (video_height BETWEEN 900 AND 1899 "
-               "OR (LOWER(file_path) LIKE '%1080p%' AND (video_height IS NULL OR video_height < 1900)))")
-    elif f == "res_720p":
-        # 720p range, but EXCLUDE files whose filename clearly says 1080p/2160p/4K
-        # (these are shorter-aspect HD films stored with height <900)
-        sql = ("AND video_height BETWEEN 600 AND 899 "
-               "AND LOWER(file_path) NOT LIKE '%1080p%' "
-               "AND LOWER(file_path) NOT LIKE '%2160p%' "
-               "AND LOWER(file_path) NOT LIKE '%4k%' "
-               "AND LOWER(file_path) NOT LIKE '%uhd%'")
-    elif f == "res_sd":
-        # SD: below 720p, exclude any HD-labeled files
-        sql = ("AND video_height > 0 AND video_height < 600 "
-               "AND LOWER(file_path) NOT LIKE '%720p%' "
-               "AND LOWER(file_path) NOT LIKE '%1080p%' "
-               "AND LOWER(file_path) NOT LIKE '%2160p%' "
-               "AND LOWER(file_path) NOT LIKE '%4k%' "
-               "AND LOWER(file_path) NOT LIKE '%uhd%'")
+    elif f in _RES_FILTERS:
+        # Same classifier as the counts and the Python filter.
+        sql = f"AND {sql_resolution_rank()} = {RANKS[f[4:]]}"
     elif f == "large_files":
         sql = "AND file_size > ?"
         params.append(10 * 1024 ** 3)
@@ -2984,7 +2914,7 @@ async def get_scan_tree(filter: str = "all"):
 
         # Minimal column set — tree aggregation only needs path/size/mtime,
         # plus any columns still referenced by remaining python_filters.
-        cols = """id, file_path, file_size, file_mtime, video_height, video_codec,
+        cols = """id, file_path, file_size, file_mtime, video_height, video_width, video_codec,
                   needs_conversion, converted, duration,
                   COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
                   COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
@@ -3069,7 +2999,7 @@ async def get_scan_tree(filter: str = "all"):
                     elif pf == "res_4k":
                         # v0.9.116: res_4k is now fully expressed in SQL (see
                         # _build_tree_sql_filter); kept in sync for safety.
-                        if not _is_4k(r.get("video_height"), fp):
+                        if resolution_tier(r.get("video_width"), r.get("video_height"), fp) != "4k":
                             skip = True; break
                     elif pf in ("plex_watched", "plex_unwatched", "plex_watchlist"):
                         want = pf.split("_", 1)[1]
