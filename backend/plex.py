@@ -2,6 +2,7 @@
 
 import asyncio
 import xml.etree.ElementTree as ET
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -83,14 +84,19 @@ def find_section_for_path(file_path: str, libraries: list[dict]) -> Optional[tup
 
     Returns (section_id, matched_library_path) or None.
     """
-    file_path = str(Path(file_path).resolve())
+    # Plex-side paths, compared as strings (v0.10.0, SC-26): Path.resolve()
+    # ran filesystem calls on the event loop for the file and every library
+    # path, per file — and these paths are Plex's, not this container's.
+    # Matching is on a folder boundary: "/media/Movies" no longer matches
+    # "/media/Movies2/...".
+    file_path = os.path.normpath(file_path)
     best_match = None
     best_len = 0
 
     for lib in libraries:
         for lib_path in lib["paths"]:
-            lib_path_str = str(Path(lib_path).resolve())
-            if file_path.startswith(lib_path_str + "/") or file_path.startswith(lib_path_str):
+            lib_path_str = os.path.normpath(lib_path)
+            if file_path == lib_path_str or file_path.startswith(lib_path_str.rstrip("/") + "/"):
                 if len(lib_path_str) > best_len:
                     best_match = (lib["id"], lib_path_str)
                     best_len = len(lib_path_str)

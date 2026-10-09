@@ -9,6 +9,7 @@ Default patterns match Plex's recommended structure:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import json
@@ -725,22 +726,24 @@ async def apply_plan(plan: RenamePlan) -> dict:
     current_path = plan.old_path
     renamed_folders: list[tuple[str, str]] = []
     try:
+        # File-system calls run in threads: on a stalled NAS they froze the
+        # app (SC-26, v0.10.0).
         # 1. File rename
         if plan.new_path != plan.old_path:
-            os.makedirs(os.path.dirname(plan.new_path), exist_ok=True)
-            _rename_no_overwrite(plan.old_path, plan.new_path)
+            await asyncio.to_thread(os.makedirs, os.path.dirname(plan.new_path), exist_ok=True)
+            await asyncio.to_thread(_rename_no_overwrite, plan.old_path, plan.new_path)
             current_path = plan.new_path
 
         # 2. Season folder rename (TV only)
         if plan.old_season_folder and plan.new_season_folder and plan.new_season_folder != plan.old_season_folder:
             # The current file moved with the folder rename — update current_path
-            _rename_no_overwrite(plan.old_season_folder, plan.new_season_folder)
+            await asyncio.to_thread(_rename_no_overwrite, plan.old_season_folder, plan.new_season_folder)
             renamed_folders.append((plan.old_season_folder, plan.new_season_folder))
             current_path = current_path.replace(plan.old_season_folder, plan.new_season_folder, 1)
 
         # 3. Series/movie folder rename
         if plan.old_folder and plan.new_folder and plan.new_folder != plan.old_folder:
-            _rename_no_overwrite(plan.old_folder, plan.new_folder)
+            await asyncio.to_thread(_rename_no_overwrite, plan.old_folder, plan.new_folder)
             renamed_folders.append((plan.old_folder, plan.new_folder))
             current_path = current_path.replace(plan.old_folder, plan.new_folder, 1)
 

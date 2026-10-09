@@ -22,6 +22,7 @@ async def _max_loop_gap(coro, tick=0.01):
             last = now
 
     t = asyncio.create_task(ticker())
+    await asyncio.sleep(0)  # let the ticker start before the work does
     try:
         result = await coro
     finally:
@@ -105,8 +106,11 @@ async def test_poster_downloads_dont_hold_the_write_lock(test_db, monkeypatch):
     a running conversion's progress write then failed "database is locked"."""
     import sqlite3
     import aiosqlite
+    import backend.media_paths as media_paths
     import backend.routes.posters as posters
     monkeypatch.setattr(posters, "DB_PATH", test_db)
+    monkeypatch.setattr(media_paths, "DB_PATH", test_db)
+    media_paths.invalidate_media_dir_cache()
     paths = [f"/m/movies/Film {i} (200{i})" for i in range(4)]
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (posters._V116_PURGE_FLAG,))
@@ -162,3 +166,57 @@ async def test_media_folder_labels_come_from_one_cached_index(test_db, tmp_path,
     media_paths.invalidate_media_dir_cache()
     await media_paths.media_dir_label_for(f"{link}/x.mkv")
     assert len(connects) == 2
+
+
+def test_plex_sections_match_on_a_folder_boundary():
+    """SC-26: the Plex section lookup resolve()d the file and every library
+    path on the event loop; it also matched "/media/Movies2" to a
+    "/media/Movies" library."""
+    from backend.plex import find_section_for_path
+    libs = [{"id": "1", "paths": ["/media/Movies"]}, {"id": "2", "paths": ["/media/Movies2/"]},
+            {"id": "3", "paths": ["/media"]}]
+    assert find_section_for_path("/media/Movies/Film (2001)/film.mkv", libs) == ("1", "/media/Movies")
+    assert find_section_for_path("/media/Movies2/Film/film.mkv", libs) == ("2", "/media/Movies2")
+    assert find_section_for_path("/media/TV/x.mkv", libs) == ("3", "/media")
+    assert find_section_for_path("/elsewhere/x.mkv", libs) is None
+    # No "/media/Movies2" library: its files belong to "/media", not "/media/Movies".
+    assert find_section_for_path("/media/Movies2/x.mkv", [libs[0], libs[2]]) == ("3", "/media")
+
+
+@pytest.mark.asyncio
+async def test_a_slow_rename_does_not_freeze_the_app(monkeypatch, tmp_path):
+    import backend.rename as rename
+
+    def slow_rename(src, dst):
+        time.sleep(0.3)  # an SMB share taking its time
+    monkeypatch.setattr(rename, "_rename_no_overwrite", slow_rename)
+    plan = rename.RenamePlan(old_path=str(tmp_path / "a.mkv"), new_path=str(tmp_path / "b.mkv"))
+    result, gap = await _max_loop_gap(rename.apply_plan(plan))
+    assert result["applied"] and gap < 0.2
+
+
+@pytest.mark.asyncio
+async def test_the_subtitle_reconcile_runs_off_the_loop(test_db, monkeypatch, tmp_path):
+    """SC-26: the watcher's external-subtitle reconcile is pure CPU (1.8 s
+    per cycle for 30k subbed videos) and ran on the event loop."""
+    import aiosqlite
+    import backend.scanner as scanner
+    from backend.watcher import FileWatcher
+    folder = tmp_path / "Film (2001)"
+    folder.mkdir()
+    video = str(folder / "film.mkv")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, native_language, subtitle_tracks_json, scan_timestamp) "
+                         "VALUES (?, 1, 'eng', '[]', '2026-01-01')", (video,))
+        await db.commit()
+    real = scanner.detect_external_subtitles
+
+    def slow_detect(path, siblings=None):
+        time.sleep(0.3)
+        return real(path, siblings=siblings)
+    monkeypatch.setattr(scanner, "detect_external_subtitles", slow_detect)
+    siblings = [folder / "film.mkv", folder / "film.eng.srt"]
+    (folder / "film.eng.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nhi\n")
+    updated, gap = await _max_loop_gap(
+        FileWatcher(test_db)._reconcile_external_subs({str(folder): siblings}, {video}))
+    assert updated == 1 and gap < 0.2

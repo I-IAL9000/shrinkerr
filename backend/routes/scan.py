@@ -1288,7 +1288,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
         if (es.get("language") or "und").lower() != "und":
             continue
         es_path = es.get("external_path") or ""
-        if not es_path or not os.path.isfile(es_path):
+        if not es_path or not await asyncio.to_thread(os.path.isfile, es_path):
             print(f"[LANG-DETECT] external sub missing on disk ({es_path}): stayed und", flush=True)
             continue
         codec_l = (es.get("codec") or "").lower()
@@ -1309,7 +1309,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
             new_lang = "und"
         if new_lang != "und":
             es["language"] = new_lang
-            new_path = _rename_external_sub_with_lang(es_path, new_lang)
+            new_path = await asyncio.to_thread(_rename_external_sub_with_lang, es_path, new_lang)
             if new_path:
                 es["external_path"] = new_path
                 external_renamed = True
@@ -1561,7 +1561,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
             for es in stored_external_subs:
                 if es.get("stream_index") == req.stream_index:
                     es["language"] = lang
-                    new_path = _rename_external_sub_with_lang(es.get("external_path") or "", lang)
+                    new_path = await asyncio.to_thread(_rename_external_sub_with_lang, es.get("external_path") or "", lang)
                     if new_path:
                         es["external_path"] = new_path; external_renamed = True
                     matched = True; break
@@ -3779,8 +3779,8 @@ async def delete_file_from_disk(req: DeleteFileRequest):
     # with traversal components past the DB lookups either.
     file_path = resolved_target_str
 
-    # Check file exists
-    if not os.path.isfile(file_path):
+    # Check file exists (on the NAS: in a thread, SC-26)
+    if not await asyncio.to_thread(os.path.isfile, file_path):
         # Still remove from DB even if file doesn't exist on disk
         db = await aiosqlite.connect(DB_PATH)
         try:
@@ -3793,7 +3793,7 @@ async def delete_file_from_disk(req: DeleteFileRequest):
     # Move to trash
     try:
         from send2trash import send2trash
-        send2trash(file_path)
+        await asyncio.to_thread(send2trash, file_path)  # can be a cross-device move
     except Exception as exc:
         raise ApiError(500, f"Failed to trash file: {exc}", code="scan.trashFailed", params={"error": str(exc)})
 

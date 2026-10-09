@@ -334,47 +334,52 @@ class FileWatcher:
         # sourced disc path that might land in new_files via future paths.
         from backend.scanner import _classify_disc, _disc_marker_path
 
-        new_files_disc_adjusted: list[str] = []
-        seen_discs: set[str] = set()
-        for fp in new_files:
-            p = Path(fp)
-            # v0.7.0: .iso files are disc images. Unlike folder discs
-            # (which we map to inner marker files), the ISO file itself
-            # IS the scan item. Pass through unchanged; probe_file
-            # handles ISO classification + routing.
-            if p.suffix.lower() == ".iso":
-                # explicit no-op — keep the .iso path as-is, let probe_file route
-                new_files_disc_adjusted.append(fp)
-                continue
-            # Case A: path is inside VIDEO_TS or BDMV → map to disc-root's marker
-            if any(part in ("VIDEO_TS", "BDMV") for part in p.parts):
-                # Walk up to the disc-root (the folder CONTAINING VIDEO_TS/BDMV)
-                disc_root = p
-                while disc_root.parent != disc_root:
-                    if disc_root.name in ("VIDEO_TS", "BDMV"):
-                        disc_root = disc_root.parent
-                        break
-                    disc_root = disc_root.parent
-                disc_type = _classify_disc(disc_root)
-                if disc_type:
-                    marker = str(_disc_marker_path(disc_root, disc_type))
-                    if marker not in seen_discs:
-                        new_files_disc_adjusted.append(marker)
-                        seen_discs.add(marker)
-                    continue  # drop the inner VOB/M2TS path only if mapped
-            # Case B: path is the disc-root folder itself
-            if p.is_dir():
-                disc_type = _classify_disc(p)
-                if disc_type:
-                    marker = str(_disc_marker_path(p, disc_type))
-                    if marker not in seen_discs:
-                        new_files_disc_adjusted.append(marker)
-                        seen_discs.add(marker)
+        def _map_discs(new_files: list[str]) -> list[str]:
+            # Blocking (is_dir / disc classification on the NAS): run in a
+            # thread (SC-26, v0.10.0).
+            new_files_disc_adjusted: list[str] = []
+            seen_discs: set[str] = set()
+            for fp in new_files:
+                p = Path(fp)
+                # v0.7.0: .iso files are disc images. Unlike folder discs
+                # (which we map to inner marker files), the ISO file itself
+                # IS the scan item. Pass through unchanged; probe_file
+                # handles ISO classification + routing.
+                if p.suffix.lower() == ".iso":
+                    # explicit no-op — keep the .iso path as-is, let probe_file route
+                    new_files_disc_adjusted.append(fp)
                     continue
-            # Default: regular file, pass through
-            new_files_disc_adjusted.append(fp)
+                # Case A: path is inside VIDEO_TS or BDMV → map to disc-root's marker
+                if any(part in ("VIDEO_TS", "BDMV") for part in p.parts):
+                    # Walk up to the disc-root (the folder CONTAINING VIDEO_TS/BDMV)
+                    disc_root = p
+                    while disc_root.parent != disc_root:
+                        if disc_root.name in ("VIDEO_TS", "BDMV"):
+                            disc_root = disc_root.parent
+                            break
+                        disc_root = disc_root.parent
+                    disc_type = _classify_disc(disc_root)
+                    if disc_type:
+                        marker = str(_disc_marker_path(disc_root, disc_type))
+                        if marker not in seen_discs:
+                            new_files_disc_adjusted.append(marker)
+                            seen_discs.add(marker)
+                        continue  # drop the inner VOB/M2TS path only if mapped
+                # Case B: path is the disc-root folder itself
+                if p.is_dir():
+                    disc_type = _classify_disc(p)
+                    if disc_type:
+                        marker = str(_disc_marker_path(p, disc_type))
+                        if marker not in seen_discs:
+                            new_files_disc_adjusted.append(marker)
+                            seen_discs.add(marker)
+                        continue
+                # Default: regular file, pass through
+                new_files_disc_adjusted.append(fp)
 
-        new_files = new_files_disc_adjusted
+            return new_files_disc_adjusted
+
+        new_files = await asyncio.to_thread(_map_discs, new_files)
 
         results = []
         new_file_paths = []
@@ -395,7 +400,7 @@ class FileWatcher:
             # Skip recently modified files (still being written/copied)
             if skip_age_minutes > 0:
                 try:
-                    if _file_too_recent(os.path.getmtime(file_path),
+                    if _file_too_recent(await asyncio.to_thread(os.path.getmtime, file_path),
                                         _time.time(), skip_age_minutes):
                         skipped_age += 1
                         continue
@@ -508,9 +513,9 @@ class FileWatcher:
             # into their library. v0.6.3+.
             try:
                 if disc_type_val:
-                    file_mtime = p.parent.parent.stat().st_mtime
+                    file_mtime = (await asyncio.to_thread(p.parent.parent.stat)).st_mtime
                 else:
-                    file_mtime = os.path.getmtime(file_path)
+                    file_mtime = await asyncio.to_thread(os.path.getmtime, file_path)
             except OSError:
                 file_mtime = None
             # v0.9.102: clamp a bogus future mtime (ripped media dated 2036)
@@ -877,7 +882,7 @@ class FileWatcher:
 
         updated = 0
         for fp in candidates:
-            if not _Path(fp).exists():
+            if not await asyncio.to_thread(_Path(fp).exists):
                 continue  # stale; let normal stale-removal handle it
             probe = await _probe_file(fp)
             if probe is None:
@@ -1106,7 +1111,7 @@ class FileWatcher:
 
         updated = 0
         for fp in candidates:
-            if not _Path(fp).exists():
+            if not await asyncio.to_thread(_Path(fp).exists):
                 continue  # stale; let normal stale-removal handle it
             probe = await _probe_file(fp)
             if probe is None:
@@ -1232,7 +1237,7 @@ class FileWatcher:
 
         updated = 0
         for fp in candidates:
-            if not _Path(fp).exists():
+            if not await asyncio.to_thread(_Path(fp).exists):
                 continue  # stale; let normal stale-removal handle it
             probe = await _probe_file(fp)
             if probe is None:
@@ -1343,26 +1348,33 @@ class FileWatcher:
         # v0.9.113: the previous version held a write transaction open across
         # this whole pass (UPDATE in the loop, commit only at the end) which
         # blocked running conversions' progress writes → "database is locked".
-        changes: list[tuple] = []  # (file_path, subtitle_tracks_json, has_ext, has_rem)
-        for folder, videos in by_folder.items():
-            sibs = sub_folder_files.get(folder) or []
-            for vp in videos:
-                if vp not in stored:
-                    continue
-                native, subs_json = stored[vp]
-                try:
-                    cur_subs = _json.loads(subs_json or "[]")
-                except (ValueError, TypeError):
-                    continue
-                try:
-                    cur_ext = detect_external_subtitles(vp, siblings=sibs)
-                except Exception:
-                    continue
-                changed, new_subs, has_ext, has_rem = merge_external_subs(
-                    cur_subs, native or "und", cur_ext)
-                if changed:
-                    changes.append((vp, _json.dumps(new_subs),
-                                    1 if has_ext else 0, 1 if has_rem else 0))
+        # v0.10.0 (SC-26): pure CPU — about 1.8 s per cycle for 30k subbed
+        # videos — so it runs in a thread instead of on the event loop.
+        def _compute() -> list[tuple]:
+            changes: list[tuple] = []  # (file_path, subtitle_tracks_json, has_ext, has_rem)
+            for folder, videos in by_folder.items():
+                sibs = sub_folder_files.get(folder) or []
+                for vp in videos:
+                    if vp not in stored:
+                        continue
+                    native, subs_json = stored[vp]
+                    try:
+                        cur_subs = _json.loads(subs_json or "[]")
+                    except (ValueError, TypeError):
+                        continue
+                    try:
+                        cur_ext = detect_external_subtitles(vp, siblings=sibs)
+                    except Exception:
+                        continue
+                    changed, new_subs, has_ext, has_rem = merge_external_subs(
+                        cur_subs, native or "und", cur_ext)
+                    if changed:
+                        changes.append((vp, _json.dumps(new_subs),
+                                        1 if has_ext else 0, 1 if has_rem else 0))
+
+            return changes
+
+        changes = await asyncio.to_thread(_compute)
 
         if not changes:
             return 0
@@ -1462,7 +1474,7 @@ class FileWatcher:
         # by `_remove_stale_entries`. Once gone, recovery required a full
         # rescan. The scanner's full-rescan orphan cleanup is already
         # scoped to `completed_paths`; this brings the watcher into line.
-        walked_dirs = [d for d in scanned_dirs if Path(d).exists()]
+        walked_dirs = await asyncio.to_thread(lambda: [d for d in scanned_dirs if Path(d).exists()])
         missing_dirs = [d for d in scanned_dirs if d not in walked_dirs]
         if missing_dirs:
             print(
@@ -1682,7 +1694,7 @@ class FileWatcher:
             checked: set[str] = set()
             for d in dirs:
                 try:
-                    usage = shutil.disk_usage(d)
+                    usage = await asyncio.to_thread(shutil.disk_usage, d)
                     # Avoid duplicate alerts for same mount point
                     mount_key = f"{usage.total}"
                     if mount_key in checked:

@@ -467,13 +467,18 @@ async def detect_external_vobsub_language(idx_path: str) -> tuple[str | None, fl
     user's media folder (subtile-ocr emits its .srt next to the .idx)."""
     from backend.language_detection import detect_subtitle_language
     sub_path = os.path.splitext(idx_path)[0] + ".sub"
-    if not (os.path.isfile(idx_path) and os.path.isfile(sub_path)):
+    # The pair lives on the media share: checks and the (multi-MB) copy run
+    # in a thread, not on the event loop (SC-26, v0.10.0).
+    if not await asyncio.to_thread(lambda: os.path.isfile(idx_path) and os.path.isfile(sub_path)):
         return (None, 0.0)
     workdir = tempfile.mkdtemp(prefix="shrinkerr_extvob_")
     try:
         tmp_idx = os.path.join(workdir, "sub.idx")
-        shutil.copyfile(idx_path, tmp_idx)
-        shutil.copyfile(sub_path, os.path.join(workdir, "sub.sub"))
+
+        def _copy_pair() -> None:
+            shutil.copyfile(idx_path, tmp_idx)
+            shutil.copyfile(sub_path, os.path.join(workdir, "sub.sub"))
+        await asyncio.to_thread(_copy_pair)
         loop = asyncio.get_event_loop()
         text = await loop.run_in_executor(None, _subtile_ocr_to_text, tmp_idx, _VOBSUB_LATIN_LANG)
         if text:

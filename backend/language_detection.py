@@ -910,12 +910,27 @@ async def apply_track_languages_to_file(
         return False
 
     # Non-mkv: ffmpeg -c copy remux to a temp file, then atomic replace.
+    # The temp file sits next to the original on the media share, so every
+    # file operation below runs in a thread — a stalled NAS froze the app
+    # (SC-26, v0.10.0); deleting a multi-GB temp or original over SMB alone
+    # can take seconds.
     p_dir = os.path.dirname(file_path) or "."
-    fd, tmp = tempfile.mkstemp(
-        suffix=os.path.splitext(file_path)[1] or ".mkv",
-        prefix=".shrinkerr_lang_", dir=p_dir,
-    )
-    os.close(fd)
+
+    def _make_temp() -> str:
+        fd, path = tempfile.mkstemp(
+            suffix=os.path.splitext(file_path)[1] or ".mkv",
+            prefix=".shrinkerr_lang_", dir=p_dir,
+        )
+        os.close(fd)
+        return path
+
+    def _discard(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+    tmp = await asyncio.to_thread(_make_temp)
     # Probe sub codecs so the remux can transcode matroska-incompatible subs
     # (mov_text/tx3g) to srt instead of aborting. v0.9.75.
     _sub_codecs = await _probe_sub_codecs(file_path) if any(sub_langs) else []
@@ -931,12 +946,13 @@ async def apply_track_languages_to_file(
                 f"{stderr.decode(errors='replace')[-300:]}",
                 flush=True,
             )
-            os.unlink(tmp)
+            await asyncio.to_thread(_discard, tmp)
             return False
         # Sanity: temp must be a plausible size (container copy ≈ source size).
-        if os.path.getsize(tmp) < os.path.getsize(file_path) * 0.5:
+        tmp_size, src_size = await asyncio.to_thread(lambda: (os.path.getsize(tmp), os.path.getsize(file_path)))
+        if tmp_size < src_size * 0.5:
             print(f"[LANG-DETECT] metadata remux output suspiciously small; discarding: {file_path}", flush=True)
-            os.unlink(tmp)
+            await asyncio.to_thread(_discard, tmp)
             return False
         # Verify the tags survived the remux BEFORE replacing the original — a
         # container with no per-track language field (AVI) copies fine but
@@ -947,9 +963,9 @@ async def apply_track_languages_to_file(
         # language.
         if await _verify_written(tmp, audio_langs, sub_langs) is not True:
             print(f"[LANG-DETECT] remux tags not confirmed present; kept und: {file_path}", flush=True)
-            os.unlink(tmp)
+            await asyncio.to_thread(_discard, tmp)
             return False
-        _replace_original(tmp, file_path)
+        await asyncio.to_thread(_replace_original, tmp, file_path)
         print(f"[LANG-DETECT] Wrote language tags via remux: {file_path}", flush=True)
         return True
     except Exception as exc:
@@ -957,8 +973,5 @@ async def apply_track_languages_to_file(
                 "stays pending, try again later or use Remux to MKV"
                 if isinstance(exc, PermissionError) else "")
         print(f"[LANG-DETECT] metadata remux error for {file_path}: {exc}{hint}", flush=True)
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        await asyncio.to_thread(_discard, tmp)
         return False
