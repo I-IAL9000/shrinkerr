@@ -1362,6 +1362,80 @@ def _label_to_media_type(label: str | None) -> str | None:
     return None
 
 
+def pick_tmdb_match(results: list[dict], title: str, year: str | None) -> dict | None:
+    """The TMDB search result that matches `title` (and `year`), or None.
+
+    Shared by poster matching and the original-language lookup (v0.10.0), so
+    a title gets its language from the same TMDB entry as its poster.
+
+    Pass ordering (v0.3.83+):
+
+    When the user provided a year, run year-AWARE passes only.
+    Pre-v0.3.83 the order was:
+      1) exact title + year  →  2) exact title any year  →
+      3) partial title + year
+    which silently mis-resolved e.g. "See no evil (2014)" to the
+    2006 movie of that title (the 2014 sequel is titled "See No
+    Evil 2", so step 1 missed; step 2's any-year exact match
+    picked the 2006 entry). Year-aware partial matching now
+    runs BEFORE year-blind exact matching, and we no longer fall
+    back to year-blind passes at all when a year was given —
+    better to return no match than the wrong year.
+
+    When no year was given, pure title-based passes apply
+    (preserves the long-standing behaviour for users without
+    year-tagged folders).
+    """
+    title_lower = title.lower().strip()
+
+    def _item_title(item: dict) -> str:
+        return (item.get("title") or item.get("name") or "").lower().strip()
+
+    def _item_year(item: dict) -> str:
+        return str(item.get("release_date", item.get("first_air_date", ""))[:4])
+
+    if year:
+        # 1. Exact title + exact year
+        for item in results:
+            if _item_title(item) == title_lower and _item_year(item) == year:
+                return item
+        # 2. Partial title + exact year — catches "See no evil" → "See No
+        #    Evil 2" (2014) and "Odyssey" → "The Odyssey" (2025).
+        for item in results:
+            it = _item_title(item)
+            if (title_lower in it or it in title_lower) and _item_year(item) == year:
+                return item
+        # 3. Exact title + ±1 year — covers the "TMDB has 2014, folder
+        #    has 2013" metadata-drift case without admitting the
+        #    "off by 8 years" wrong-movie cases that pre-v0.3.83
+        #    Pass 2 was admitting.
+        try:
+            target = int(year)
+            for item in results:
+                iy = _item_year(item)
+                if _item_title(item) != title_lower or not iy.isdigit():
+                    continue
+                if abs(int(iy) - target) <= 1:
+                    return item
+        except ValueError:
+            pass
+        # No year-aware match — no match rather than silently picking a
+        # wrong-year title-match.
+        return None
+
+    # No-year path: original behaviour kept.
+    # A. Exact title (any year)
+    for item in results:
+        if _item_title(item) == title_lower:
+            return item
+    # B. Partial title (any year)
+    for item in results:
+        it = _item_title(item)
+        if title_lower in it or it in title_lower:
+            return item
+    return None
+
+
 async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None):
     """Search by title+year — requires strict matching to avoid mismatches.
 
@@ -1397,20 +1471,16 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
                 params["year"] = year
         resp = await _tmdb_get(client, endpoint, params)
         if resp.status_code == 200:
-            title_lower = title.lower().strip()
             results = resp.json().get("results", [])
             # Typed endpoints don't include media_type on each item;
-            # stamp it so the downstream _match_return / _extract_tmdb_meta
-            # sees the right value.
+            # stamp it so the downstream _extract_tmdb_meta sees the right
+            # value. /search/multi returns mixed types — no post-filter here
+            # since hint is None. Caller wanted "anything".
             if media_type_hint in ("movie", "tv"):
                 for r in results:
                     r["media_type"] = media_type_hint
-            else:
-                # /search/multi returns mixed types — no post-filter
-                # here since hint is None. Caller wanted "anything".
-                pass
-
-            def _match_return(item):
+            item = pick_tmdb_match(results, title, year)
+            if item is not None:
                 mt = item.get("media_type", "movie")
                 meta = _extract_tmdb_meta(item, mt, api_key)
                 # Poster is optional — a title with no TMDB poster is still a
@@ -1419,69 +1489,6 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
                 poster = item.get("poster_path")
                 poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
                 return poster_url, "tmdb", meta
-
-            def _item_year(item: dict) -> str:
-                return str(item.get("release_date", item.get("first_air_date", ""))[:4])
-
-            # Pass ordering (v0.3.83+):
-            #
-            # When the user provided a year, run year-AWARE passes only.
-            # Pre-v0.3.83 the order was:
-            #   1) exact title + year  →  2) exact title any year  →
-            #   3) partial title + year
-            # which silently mis-resolved e.g. "See no evil (2014)" to the
-            # 2006 movie of that title (the 2014 sequel is titled "See No
-            # Evil 2", so step 1 missed; step 2's any-year exact match
-            # picked the 2006 entry). Year-aware partial matching now
-            # runs BEFORE year-blind exact matching, and we no longer fall
-            # back to year-blind passes at all when a year was given —
-            # better to return no match than the wrong year.
-            #
-            # When no year was given, pure title-based passes apply
-            # (preserves the long-standing behaviour for users without
-            # year-tagged folders).
-            if year:
-                # 1. Exact title + exact year
-                for item in results:
-                    it = (item.get("title") or item.get("name") or "").lower().strip()
-                    if it == title_lower and _item_year(item) == year:
-                        return _match_return(item)
-                # 2. Partial title + exact year — catches "See no evil" → "See No
-                #    Evil 2" (2014) and "Odyssey" → "The Odyssey" (2025).
-                for item in results:
-                    it = (item.get("title") or item.get("name") or "").lower().strip()
-                    if (title_lower in it or it in title_lower) and _item_year(item) == year:
-                        return _match_return(item)
-                # 3. Exact title + ±1 year — covers the "TMDB has 2014, folder
-                #    has 2013" metadata-drift case without admitting the
-                #    "off by 8 years" wrong-movie cases that pre-v0.3.83
-                #    Pass 2 was admitting.
-                try:
-                    target = int(year)
-                    for item in results:
-                        it = (item.get("title") or item.get("name") or "").lower().strip()
-                        iy = _item_year(item)
-                        if it != title_lower or not iy.isdigit():
-                            continue
-                        if abs(int(iy) - target) <= 1:
-                            return _match_return(item)
-                except ValueError:
-                    pass
-                # No year-aware match — return placeholder rather than
-                # silently picking a wrong-year title-match.
-                return None, "placeholder", {}
-
-            # No-year path: original behaviour kept.
-            # A. Exact title (any year)
-            for item in results:
-                it = (item.get("title") or item.get("name") or "").lower().strip()
-                if it == title_lower:
-                    return _match_return(item)
-            # B. Partial title (any year)
-            for item in results:
-                it = (item.get("title") or item.get("name") or "").lower().strip()
-                if title_lower in it or it in title_lower:
-                    return _match_return(item)
     return None, "placeholder", {}
 
 

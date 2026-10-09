@@ -290,6 +290,13 @@ async def lifespan(app: FastAPI):
             await backfill_normalized_language_keeps()
         except Exception as exc:
             print(f"[STARTUP] language-code keep backfill skipped: {exc}", flush=True)
+        # v0.10.0: languages found by an unchecked title search are looked up
+        # again with the checked one.
+        try:
+            from backend.metadata import recheck_title_matches
+            await recheck_title_matches()
+        except Exception as exc:
+            print(f"[STARTUP] title-match recheck skipped: {exc}", flush=True)
         # v0.9.110: warn loudly when no TMDB key is available — a self-built
         # image ships without the bundled key, so metadata silently never
         # matches. Make the reason obvious in the logs (and the UI banner).
