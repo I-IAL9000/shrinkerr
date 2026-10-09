@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -102,6 +104,37 @@ def _disc_converted_output(marker: Path) -> Optional[Path]:
         except OSError:
             pass
     return None
+
+
+# SC-07 (v0.10.0): a disc's languages come from its IFO / mpls / ISO —
+# pycdlib, bsdtar and libbluray, hundreds of playlists on some Blu-rays —
+# which ran ON THE EVENT LOOP at every disc probe (watcher, job start,
+# converter), freezing the app over a NAS. They now run in a thread and are
+# remembered per disc and modification time.
+_DISC_LANG_CACHE: "OrderedDict[tuple, dict]" = OrderedDict()
+_DISC_LANG_LOCK = threading.Lock()
+
+
+def _disc_languages(disc_folder: Path, disc_type: str) -> dict:
+    """parse_disc_languages(), cached per (disc, type, mtime). Blocking: run
+    in a thread."""
+    from backend.disc_metadata import parse_disc_languages
+    try:
+        mtime = os.stat(disc_folder).st_mtime
+    except OSError:
+        mtime = None
+    key = (str(disc_folder), disc_type, mtime)
+    with _DISC_LANG_LOCK:
+        hit = _DISC_LANG_CACHE.get(key)
+        if hit is not None:
+            _DISC_LANG_CACHE.move_to_end(key)
+            return hit
+    langs = parse_disc_languages(disc_folder, disc_type)
+    with _DISC_LANG_LOCK:
+        _DISC_LANG_CACHE[key] = langs
+        while len(_DISC_LANG_CACHE) > 256:
+            _DISC_LANG_CACHE.popitem(last=False)
+    return langs
 
 
 def _disc_total_size(folder: Path, disc_type: str) -> int:
@@ -293,7 +326,7 @@ async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optiona
     p = Path(file_path)
     disc_type: Optional[str] = None
     input_args: list[str] = []
-    if p.is_file() and p.suffix.lower() == ".iso":
+    if p.suffix.lower() == ".iso" and await asyncio.to_thread(p.is_file):
         from backend.disc_metadata import _classify_disc_iso, dvd_iso_concat_input
         disc_type = await asyncio.to_thread(_classify_disc_iso, p)
         if disc_type == "dvd":
@@ -310,7 +343,7 @@ async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optiona
         source = f"bluray:{p.parent.parent}"
     elif p.name.lower() == "video_ts.ifo" and p.parent.name.lower() == "video_ts":
         disc_type = "dvd"
-        source = _dvd_concat_input(p.parent.parent)
+        source = await asyncio.to_thread(_dvd_concat_input, p.parent.parent)
     else:
         source = file_path
     if disc_type:
@@ -563,8 +596,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     # errors leave tracks as "und".
     if disc_type:
         try:
-            from backend.disc_metadata import parse_disc_languages
-            langs = parse_disc_languages(disc_folder, disc_type)
+            langs = await asyncio.to_thread(_disc_languages, disc_folder, disc_type)
             # A DVD's IFO lists languages per logical stream, but ffprobe
             # orders streams by first appearance (and misses ones with
             # nothing in the first 200 MB): map by MPEG-PS stream id instead
@@ -623,15 +655,18 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         # reports only the main-title bytes (~19 GB on a 30 GB BD ISO),
         # NOT the ISO file's bytes. Stat the ISO file directly for the
         # accurate on-disk size.
-        if disc_folder is not None and disc_folder.is_dir():
-            total = _disc_total_size(disc_folder, disc_type)
-            if total > 0:
-                result["file_size"] = total
-        elif p.is_file() and p.suffix.lower() == ".iso":
-            try:
-                result["file_size"] = p.stat().st_size
-            except OSError:
-                pass
+        def _disc_size() -> int:
+            if disc_folder is not None and disc_folder.is_dir():
+                return _disc_total_size(disc_folder, disc_type)
+            if p.is_file() and p.suffix.lower() == ".iso":
+                try:
+                    return p.stat().st_size
+                except OSError:
+                    pass
+            return 0
+        total = await asyncio.to_thread(_disc_size)  # every VOB / M2TS: off the loop (SC-07)
+        if total > 0:
+            result["file_size"] = total
     return result
 
 

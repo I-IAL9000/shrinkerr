@@ -2868,7 +2868,7 @@ async def convert_file(
         if disc_type:
             from backend.scanner import _disc_total_size
             disc_root = Path(input_path).parent.parent
-            original_size = _disc_total_size(disc_root, disc_type)
+            original_size = await asyncio.to_thread(_disc_total_size, disc_root, disc_type)
             if original_size <= 0:
                 # Fall back to marker stat if disc-walk fails (defensive)
                 original_size = p.stat().st_size

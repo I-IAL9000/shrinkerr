@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
 
 ### Fixed
-- **Fewer freezes and "database is locked" errors on NAS storage**: the Dashboard's disk-space card no longer reads the media mounts on the app's main thread (a stalled mount froze everything every 10 seconds).
+- **Fewer freezes and "database is locked" errors on NAS storage**: the Dashboard's disk-space card no longer reads the media mounts on the app's main thread (a stalled mount froze everything every 10 seconds), and neither does reading a Blu-ray / DVD's track languages and size (done at every disc probe, now also remembered per disc).
 - **The API key is no longer accepted in URLs (`?api_key=`), only in the `X-Api-Key` header** — in a URL it ended up in proxy logs and browser history. If a script or dashboard widget passes it in the URL, switch it to the header. Live updates use a one-time ticket instead, and need it whenever an API key is set.
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.

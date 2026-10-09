@@ -65,3 +65,34 @@ async def test_disk_space_is_cached_between_polls(monkeypatch, tmp_path):
     first = await stats._disk_info([str(tmp_path)])
     second = await stats._disk_info([str(tmp_path)])
     assert first == second and len(first) == 1 and len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_disc_languages_are_read_off_the_loop_and_cached(tmp_path, monkeypatch):
+    """SC-07: a disc's IFO / mpls / ISO language parse (pycdlib, bsdtar,
+    libbluray) ran on the event loop at every disc probe."""
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    import backend.disc_metadata as disc_metadata
+    import backend.scanner as scanner
+    from backend.tests.test_disc_release_folder import _dvd
+    marker = _dvd(tmp_path / "Film (1999)")
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=720x480:rate=25:duration=2",
+                    "-f", "lavfi", "-i", "sine=duration=2", "-c:v", "mpeg2video", "-c:a", "ac3",
+                    "-f", "vob", str(marker.parent / "VTS_01_1.VOB")], check=True)
+    calls = []
+
+    def slow_parse(folder, kind):
+        calls.append(folder)
+        time.sleep(0.5)  # hundreds of playlists over a NAS
+        return {"audio": ["eng"], "subtitle": []}
+    monkeypatch.setattr(disc_metadata, "parse_disc_languages", slow_parse)
+    monkeypatch.setattr(scanner, "_DISC_LANG_CACHE", type(scanner._DISC_LANG_CACHE)())
+
+    probe, gap = await _max_loop_gap(scanner.probe_file(str(marker)))
+    assert probe["audio_tracks"][0]["language"] == "eng"
+    assert gap < 0.3                    # the 0.5 s parse didn't hold the loop
+    await scanner.probe_file(str(marker))
+    assert len(calls) == 1              # the second probe of the same disc is cached
