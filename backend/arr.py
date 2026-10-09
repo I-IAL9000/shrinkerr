@@ -1,6 +1,7 @@
 """Sonarr and Radarr integration — trigger rescans after conversion."""
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -771,6 +772,15 @@ async def upgrade_file(file_path: str) -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _has_aired(air_date_utc: str | None, now: datetime) -> bool:
+    if not air_date_utc:
+        return False  # TBA
+    try:
+        return datetime.fromisoformat(air_date_utc.replace("Z", "+00:00")) <= now
+    except ValueError:
+        return False
+
+
 async def search_missing_episodes(file_paths: list[str]) -> dict:
     """Resolve file_paths to unique Sonarr series, then search each series'
     missing episodes. Returns an aggregate summary.
@@ -833,41 +843,24 @@ async def search_missing_episodes(file_paths: list[str]) -> dict:
                 }
 
             # For each unique series, look up missing episodes and trigger
-            # EpisodeSearch. We use the per-series /wanted/missing filter
-            # rather than a library-wide MissingEpisodeSearch so the action
-            # stays scoped to what the user actually selected.
+            # EpisodeSearch, scoped to what the user selected. /wanted/missing
+            # has no series filter (seriesId was ignored), so every selected
+            # series searched the whole library's missing list (SC-10,
+            # v0.10.0); the series' own episode list is filtered instead:
+            # monitored, aired, no file — Sonarr's definition of missing.
             details: list[dict] = []
             total_episode_ids = 0
+            now = datetime.now(timezone.utc)
 
             for series_id, series in series_by_id.items():
-                # Page through missing episodes for this series.
                 missing_ids: list[int] = []
-                page = 1
-                page_size = 100
-                while True:
-                    resp = await client.get(
-                        f"{sonarr_url}/api/v3/wanted/missing",
-                        headers=headers,
-                        params={
-                            "seriesId": series_id,
-                            "page": page,
-                            "pageSize": page_size,
-                            "sortKey": "airDateUtc",
-                            "sortDirection": "descending",
-                            "includeSeries": "false",
-                            "monitored": "true",
-                        },
-                    )
-                    if resp.status_code != 200:
-                        break
-                    data = resp.json()
-                    records = data.get("records", [])
-                    missing_ids.extend(r["id"] for r in records if "id" in r)
-                    if len(records) < page_size:
-                        break
-                    page += 1
-                    if page > 50:  # safety cap — 5000 episodes
-                        break
+                resp = await client.get(f"{sonarr_url}/api/v3/episode", headers=headers,
+                                        params={"seriesId": series_id})
+                if resp.status_code == 200:
+                    for ep in resp.json():
+                        if (ep.get("seriesId") == series_id and ep.get("monitored")
+                                and not ep.get("hasFile") and _has_aired(ep.get("airDateUtc"), now)):
+                            missing_ids.append(ep["id"])
 
                 if not missing_ids:
                     details.append({
