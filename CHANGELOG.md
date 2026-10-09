@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker images can run as your own user** (optional `PUID` / `PGID` / `UMASK`) instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
 
 ### Fixed
+- **The API key is no longer accepted in URLs (`?api_key=`), only in the `X-Api-Key` header** — in a URL it ended up in proxy logs and browser history. If a script or dashboard widget passes it in the URL, switch it to the header. Live updates use a one-time ticket instead, and need it whenever an API key is set.
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.

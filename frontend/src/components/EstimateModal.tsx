@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import i18n from "../i18n";
-import { estimateJobs, startTestEncode, getStoredApiKey, getEncodingSettings, getEncoderCaps, type EncoderCaps } from "../api";
+import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsUrl, type EncoderCaps } from "../api";
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum } from "../fmt";
 import { vmafColor, vmafTintBg } from "../utils/vmaf";
@@ -107,21 +107,22 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
   // Connect WebSocket on mount for test encode progress (must be open before test starts)
   useEffect(() => {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiKey = getStoredApiKey();
-    const wsUrl = `${proto}//${window.location.host}/ws${apiKey ? `?api_key=${apiKey}` : ""}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === "test_encode_progress") {
-          setTestProgress(msg.progress || 0);
-          if (msg.step) setTestStep(msg.step);
-        }
-      } catch {}
-    };
-    return () => { ws.close(); wsRef.current = null; };
+    let cancelled = false;
+    wsUrl("/ws").then(url => {
+      if (cancelled) return;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "test_encode_progress") {
+            setTestProgress(msg.progress || 0);
+            if (msg.step) setTestStep(msg.step);
+          }
+        } catch {}
+      };
+    }).catch(() => {});
+    return () => { cancelled = true; wsRef.current?.close(); wsRef.current = null; };
   }, []);
   const [audioBr, setAudioBr] = useState<number | null>(null);
   const [resolution, setResolution] = useState<string | null>(null);

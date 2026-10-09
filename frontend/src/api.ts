@@ -775,6 +775,17 @@ export const syncJellyfinMetadata = () =>
 export const syncEmbyMetadata = () =>
   apiFetch<any>("/rules/sync-emby", { method: "POST" });
 
+/** URL for one of the server's WebSockets. With an API key, a one-time
+ *  ticket goes in the URL instead of the key itself, which ended up in
+ *  proxy logs and browser history (v0.10.0). */
+export async function wsUrl(path: string): Promise<string> {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const base = `${protocol}//${window.location.host}${path}`;
+  if (!getStoredApiKey()) return base;  // no key: the session cookie (if any) authenticates
+  const { ticket } = await apiFetch<{ ticket: string }>("/auth/ws-ticket", { method: "POST" });
+  return `${base}?ticket=${encodeURIComponent(ticket)}`;
+}
+
 // WebSocket hook
 export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -784,18 +795,26 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
   useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiKey = getStoredApiKey();
-    const wsUrl = `${protocol}//${window.location.host}/ws${apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ""}`;
-
     let closed = false;
+    let connecting = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const connect = () => {
-      if (closed) return;
+    const connect = async () => {
+      if (closed || connecting) return;
       const existing = wsRef.current;
       if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) return;
-      const ws = new WebSocket(wsUrl);
+      connecting = true;
+      let url: string;
+      try {
+        url = await wsUrl("/ws");  // a fresh ticket every time: each works once
+      } catch {
+        connecting = false;
+        if (!closed) reconnectTimer = setTimeout(connect, 3000);
+        return;
+      }
+      connecting = false;
+      if (closed) return;
+      const ws = new WebSocket(url);
       wsRef.current = ws;
       ws.onmessage = (event) => {
         try {

@@ -170,3 +170,40 @@ async def test_auto_queue_priority_round_trip(client):
                                  json={"auto_queue_priority": 99})
     assert put_high.status_code == 200
     assert (await client.get("/api/settings/encoding")).json()["auto_queue_priority"] == 2
+
+
+# --- F10 (v0.10.0): the API key is accepted only in the X-Api-Key header ----
+
+async def _set_api_key(db_path, key):
+    import aiosqlite
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('api_key', ?)", (key,))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_api_key_in_the_url_is_refused(client, test_db):
+    await _set_api_key(test_db, "k3y-for-tests")
+    assert (await client.get("/api/settings/dirs?api_key=k3y-for-tests")).status_code == 401
+    assert (await client.get("/api/settings/dirs", headers={"X-Api-Key": "k3y-for-tests"})).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_websocket_tickets_work_once(client, test_db, monkeypatch):
+    from types import SimpleNamespace
+    from backend import main as main_module
+    await _set_api_key(test_db, "k3y-for-tests")
+    resp = await client.post("/api/auth/ws-ticket", headers={"X-Api-Key": "k3y-for-tests"})
+    ticket = resp.json()["ticket"]
+
+    def ws(**query):
+        return SimpleNamespace(query_params=query, cookies={})
+
+    assert await main_module._check_ws_auth(ws(api_key="k3y-for-tests")) is False  # no longer accepted
+    assert await main_module._check_ws_auth(ws(ticket=ticket)) is True
+    assert await main_module._check_ws_auth(ws(ticket=ticket)) is False  # used up
+    assert (await client.post("/api/auth/ws-ticket")).status_code == 401  # needs the key itself
+
+    expired = (await client.post("/api/auth/ws-ticket", headers={"X-Api-Key": "k3y-for-tests"})).json()["ticket"]
+    main_module._ws_tickets[expired] = 0
+    assert await main_module._check_ws_auth(ws(ticket=expired)) is False

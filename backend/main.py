@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import logging
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -649,7 +650,7 @@ async def api_key_auth(request: Request, call_next):
     # `auth_method` lets routes require a password login for settings that
     # can run code (v0.9.157): the API key is baked into download-client
     # scripts and must not be enough for those.
-    supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
+    supplied_key = request.headers.get("X-Api-Key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
         request.state.auth_method = "api_key"
         return await call_next(request)
@@ -693,7 +694,7 @@ async def auth_check(request: Request):
 
     # Check API key (constant-time; old `==` comparison was an online
     # timing oracle against this unauthenticated endpoint).
-    supplied_key = request.headers.get("X-Api-Key") or request.query_params.get("api_key") or ""
+    supplied_key = request.headers.get("X-Api-Key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
         return {"auth_required": True, "authenticated": True, "method": "api_key"}
 
@@ -846,19 +847,44 @@ async def get_logs(
     return log_buffer.get_recent(limit, source, search)
 
 
+# One-time WebSocket tickets (v0.10.0, F10). Browsers can't send headers
+# with a WebSocket, so the UI put the API key in the URL, where it ended up
+# in proxy logs and history. Now it fetches a ticket with its header and
+# connects with ?ticket=; each one works once, within a minute.
+_ws_tickets: dict[str, float] = {}
+_WS_TICKET_TTL = 60
+
+
+@app.post("/api/auth/ws-ticket")
+async def ws_ticket():
+    now = time.monotonic()
+    for ticket, expires in list(_ws_tickets.items()):
+        if expires < now:
+            _ws_tickets.pop(ticket, None)
+    ticket = secrets.token_urlsafe(24)
+    _ws_tickets[ticket] = now + _WS_TICKET_TTL
+    return {"ticket": ticket}
+
+
 async def _check_ws_auth(websocket: WebSocket) -> bool:
-    """Check authentication for WebSocket connections via query param or cookie."""
+    """Authenticate a WebSocket by one-time ticket or session cookie, on
+    the same terms as the HTTP API: open only when neither an API key nor
+    password login is set up (it used to be open whenever password login
+    was off, even with an API key)."""
     auth_settings = _get_auth_settings_sync()
-    if not auth_settings.get("auth_enabled"):
+    if auth_settings is None:
+        return False  # can't read the settings: fail closed, as the HTTP middleware does
+    configured_api_key = (auth_settings.get("api_key") or "").strip()
+    password_auth_on = bool(auth_settings.get("auth_enabled"))
+    if not configured_api_key and not password_auth_on:
         return True
-    # Check API key in query param
-    provided = websocket.query_params.get("api_key", "")
-    if provided and provided == auth_settings.get("api_key"):
+    ticket = websocket.query_params.get("ticket", "")
+    if ticket and _ws_tickets.pop(ticket, 0) > time.monotonic():
         return True
-    # Check session cookie
-    session = websocket.cookies.get("shrinkerr_session")
-    if session and _validate_session(session, auth_settings):
-        return True
+    if password_auth_on:
+        session = websocket.cookies.get("shrinkerr_session")
+        if session and _validate_session(session, auth_settings):
+            return True
     return False
 
 

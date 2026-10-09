@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { getStoredApiKey } from "../api";
+import { getStoredApiKey, wsUrl } from "../api";
 
 interface LogEntry {
   timestamp: string;
@@ -63,37 +63,30 @@ export default function LogsPage() {
 
   // WebSocket connection
   useEffect(() => {
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const apiKey = getStoredApiKey();
-    const wsUrl = `${proto}//${window.location.host}/ws/logs${apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ""}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onmessage = (evt) => {
-      try {
-        const entry: LogEntry = JSON.parse(evt.data);
-        setLogs((prev) => {
-          const next = [...prev, entry];
-          return next.length > MAX_DOM_LINES
-            ? next.slice(next.length - MAX_DOM_LINES)
-            : next;
-        });
-      } catch {
-        // ignore malformed messages
-      }
-    };
-
-    ws.onclose = () => {
-      // Attempt reconnect after 3 seconds
-      setTimeout(() => {
-        if (wsRef.current === ws) {
-          // trigger effect re-run by updating state
+    let cancelled = false;
+    let ws: WebSocket | null = null;
+    wsUrl("/ws/logs").then(url => {
+      if (cancelled) return;
+      ws = new WebSocket(url);
+      wsRef.current = ws;
+      ws.onmessage = (evt) => {
+        try {
+          const entry: LogEntry = JSON.parse(evt.data);
+          setLogs((prev) => {
+            const next = [...prev, entry];
+            return next.length > MAX_DOM_LINES
+              ? next.slice(next.length - MAX_DOM_LINES)
+              : next;
+          });
+        } catch {
+          // ignore malformed messages
         }
-      }, 3000);
-    };
+      };
+    }).catch(() => {});
 
     return () => {
-      ws.close();
+      cancelled = true;
+      ws?.close();
       wsRef.current = null;
     };
   }, []);
