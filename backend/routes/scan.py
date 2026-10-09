@@ -331,6 +331,50 @@ def scan_is_actively_running() -> bool:
     return False
 
 
+# Extras that sit beside a movie and aren't another copy of it: Plex's local
+# extras suffixes, samples, and the parts of a multi-part film (v0.10.0).
+_EXTRA_RE = re.compile(
+    r"(?:-(?:trailer|sample|featurette|behindthescenes|deleted|interview|scene|short|other)\b"
+    r"|\b(?:sample|trailer|featurette)\b"
+    r"|\b(?:cd|disc|disk|part|pt)[ ._-]?\d\b)",
+    re.IGNORECASE,
+)
+_EPISODE_RE = re.compile(r"[Ss](\d+)[Ee](\d+)")
+
+
+def duplicate_groups(paths) -> dict[str, list[str]]:
+    """Files that are other copies of the same title, grouped: the same
+    episode (season and episode) twice in a folder, or two versions of a
+    movie in its folder. The season was ignored, so S01E01 and S02E01 in one
+    show folder were "duplicates", as were a movie's trailer, sample and
+    CD1/CD2 parts (SC-16, v0.10.0)."""
+    from collections import defaultdict
+    by_folder: dict[str, list[str]] = defaultdict(list)
+    for fp in paths:
+        by_folder[fp.rsplit("/", 1)[0] if "/" in fp else ""].append(fp)
+    groups: dict[str, list[str]] = {}
+    for folder, files in by_folder.items():
+        if len(files) < 2:
+            continue
+        folder_name = folder.rsplit("/", 1)[-1].lower()
+        episodic = (folder_name.startswith(("season", "specials"))
+                    or any(_EPISODE_RE.search(f.rsplit("/", 1)[-1]) for f in files))
+        if episodic:
+            by_episode: dict[str, list[str]] = defaultdict(list)
+            for fp in files:
+                m = _EPISODE_RE.search(fp.rsplit("/", 1)[-1])
+                if m:
+                    by_episode[f"S{int(m[1])}E{int(m[2])}"].append(fp)
+            for key, eps in by_episode.items():
+                if len(eps) > 1:
+                    groups[f"ep:{folder}/{key}"] = eps
+        else:
+            versions = [fp for fp in files if not _EXTRA_RE.search(fp.rsplit("/", 1)[-1])]
+            if len(versions) > 1:
+                groups[f"folder:{folder}"] = versions
+    return groups
+
+
 def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str) -> None:
     """Runs in a separate process — does all ffprobe/DB work without blocking the main event loop."""
     import os
@@ -655,55 +699,18 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                         _scope_params,
                     ).fetchall()
 
-                    from collections import defaultdict
-                    folder_files = defaultdict(list)
-                    for (fp,) in rows:
-                        # Get the title-level folder (one with media ID) or direct parent
-                        parts = fp.split("/")
-                        parent = "/".join(parts[:-1])
-                        folder_files[parent].append(fp)
-
                     dup_count = 0
-                    for folder, files in folder_files.items():
-                        if len(files) > 1:
-                            # Check if these are actually different versions of the same content
-                            # (not just episodes in a season folder)
-                            folder_name = folder.split("/")[-1] if "/" in folder else folder
-                            is_season = folder_name.lower().startswith("season") or folder_name.lower().startswith("specials")
-
-                            # Also treat as episodic if files have S##E## patterns (episodes without Season subfolder)
-                            import re as _re_dup
-                            has_episodes = any(_re_dup.search(r'[Ss]\d+[Ee]\d+', fp.split("/")[-1]) for fp in files)
-
-                            if is_season or has_episodes:
-                                # For season/episode folders, detect episode duplicates (same episode, different quality)
-                                ep_groups = defaultdict(list)
-                                for fp in files:
-                                    fname = fp.split("/")[-1]
-                                    ep_match = _re_dup.search(r'[Ss]\d+[Ee](\d+)', fname)
-                                    ep_key = ep_match.group(1) if ep_match else fname
-                                    ep_groups[ep_key].append(fp)
-                                for ep_key, ep_files in ep_groups.items():
-                                    if len(ep_files) > 1:
-                                        group_id = f"ep:{folder}/{ep_key}"
-                                        for fp in ep_files:
-                                            db.execute(
-                                                "UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?",
-                                                (len(ep_files), group_id, fp)
-                                            )
-                                            dup_count += 1
-                            else:
-                                # For movie/non-season folders, all files are duplicates of each other
-                                group_id = f"folder:{folder}"
-                                for fp in files:
-                                    db.execute(
-                                        "UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?",
-                                        (len(files), group_id, fp)
-                                    )
-                                    dup_count += 1
-
+                    for group_id, files in duplicate_groups(fp for (fp,) in rows).items():
+                        for fp in files:
+                            db.execute(
+                                "UPDATE scan_results SET dup_count = ?, dup_group = ? WHERE file_path = ?",
+                                (len(files), group_id, fp)
+                            )
+                            dup_count += 1
+                    # Commit the reset even with no duplicates left: a resolved
+                    # duplicate kept its count forever (SC-16, v0.10.0).
+                    db.commit()
                     if dup_count > 0:
-                        db.commit()
                         print(f"[SCANNER] Detected {dup_count} duplicate files", flush=True)
                 finally:
                     db.close()

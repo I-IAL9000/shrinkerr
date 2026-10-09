@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **"Search missing" searches only the selected series** — it searched your whole Sonarr library's missing episodes once per selected series.
 - **The watcher skips what a full scan skips** — a file whose converted version is already there was re-added every few minutes (and queued again with auto-queue). Videos next to a Blu-ray/DVD folder now show up in the Scanner.
 - **A renamed or moved file keeps its Scanner row** — manual match, track edits, health result, converted flag and ignore — instead of coming back as a new file.
+- Duplicate detection no longer flags episodes of different seasons, a movie's trailer, sample or CD1/CD2 parts, and a resolved duplicate is cleared.
 - **A conversion or audio cleanup stuck on a stalled network share is now stopped** after 30 minutes without progress (or the ffmpeg timeout) instead of holding its worker slot until a restart.
 - **Rules on Sonarr/Radarr tags, watched status and Jellyfin/Emby tags now work** — they never matched, so a "skip" rule on them didn't protect anything. Rules using file size, date added, title, NZBGet category, Jellyfin/Emby tags or Emby watched can be created again, and a full scan no longer wipes the Jellyfin/Emby data rules use.
 - **A folder the NAS couldn't list during a scan (a stalled mount) had all its rows deleted**, losing manual matches and track edits; those rows are now kept until the folder can be read.
