@@ -950,16 +950,12 @@ async def clear_pending_health_checks():
     Useful when auto-queue has flooded the queue. Running jobs and other job
     types are untouched.
     """
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    # In chunks (F14): a flood is tens of thousands of jobs.
+    n = await _queue.delete_jobs_where("job_type = 'health_check' AND status = 'pending'")
     db = await connect_db()
     try:
-        async with db.execute(
-            "SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'health_check' AND status = 'pending'"
-        ) as cur:
-            row = await cur.fetchone()
-            n = row["n"] if row else 0
-        await db.execute(
-            "DELETE FROM jobs WHERE job_type = 'health_check' AND status = 'pending'"
-        )
         # Clean up the file_events queued entries too so the Activity feed isn't drowned
         await db.execute(
             "DELETE FROM file_events WHERE event_type = 'queued' AND summary LIKE '%health check%'"

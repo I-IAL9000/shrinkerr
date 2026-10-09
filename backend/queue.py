@@ -781,23 +781,38 @@ class JobQueue:
         finally:
             await db.close()
 
-    async def clear_completed(self) -> None:
+    # F14 (v0.10.0): clearing deletes in chunks, committing and pausing
+    # between them. One DELETE of ~100k finished jobs held the write lock for
+    # a quarter of a second or more (longer on a big database), and every
+    # running conversion's progress write waited behind it — "database is
+    # locked" when it waited too long.
+    _CLEAR_CHUNK = 5000
+    _CLEAR_PAUSE = 0.02
+
+    async def delete_jobs_where(self, where: str) -> int:
+        """Delete the jobs matching `where` (a fixed SQL condition, never user
+        input) in chunks; returns how many were deleted."""
         db = await self._connect()
+        total = 0
         try:
-            await db.execute(
-                "DELETE FROM jobs WHERE status IN ('completed', 'failed', 'cancelled')"
-            )
-            await db.commit()
+            while True:
+                cur = await db.execute(
+                    f"DELETE FROM jobs WHERE id IN (SELECT id FROM jobs WHERE {where} LIMIT ?)",
+                    (self._CLEAR_CHUNK,),
+                )
+                await db.commit()
+                total += cur.rowcount
+                if cur.rowcount < self._CLEAR_CHUNK:
+                    return total
+                await asyncio.sleep(self._CLEAR_PAUSE)  # let other writers in
         finally:
             await db.close()
 
+    async def clear_completed(self) -> None:
+        await self.delete_jobs_where("status IN ('completed', 'failed', 'cancelled')")
+
     async def clear_pending(self) -> None:
-        db = await self._connect()
-        try:
-            await db.execute("DELETE FROM jobs WHERE status = 'pending'")
-            await db.commit()
-        finally:
-            await db.close()
+        await self.delete_jobs_where("status = 'pending'")
 
     async def get_stats(self) -> dict:
         db = await self._connect()

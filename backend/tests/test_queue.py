@@ -247,3 +247,67 @@ async def test_get_job_ids_by_status_matches_list_order_and_search(test_db):
     ids = await q.get_job_ids_by_status("pending")
     assert ids == [r["id"] for r in rows] == [c, a, b]  # priority first, then queue order
     assert await q.get_job_ids_by_status("pending", search="alpha") == [c, a]
+
+
+@pytest.mark.asyncio
+async def test_clearing_deletes_in_committed_chunks(test_db, monkeypatch):
+    """F14 (v0.10.0): one DELETE of the whole history held the write lock
+    long enough to block running conversions' progress writes."""
+    import aiosqlite
+    q = JobQueue(test_db)
+    monkeypatch.setattr(JobQueue, "_CLEAR_CHUNK", 3)
+    monkeypatch.setattr(JobQueue, "_CLEAR_PAUSE", 0)
+    async with aiosqlite.connect(test_db) as db:
+        for i, status in enumerate(["completed"] * 5 + ["failed"] * 2 + ["cancelled"] + ["pending"] * 7 + ["running"]):
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, created_at) VALUES (?, 'convert', ?, '2026-10-09')",
+                (f"/m/{i}.mkv", status))
+        await db.commit()
+
+    commits = 0
+    connect = q._connect
+
+    async def counting_connect():
+        db = await connect()
+        commit = db.commit
+
+        async def counted():
+            nonlocal commits
+            commits += 1
+            await commit()
+        db.commit = counted
+        return db
+    monkeypatch.setattr(q, "_connect", counting_connect)
+
+    await q.clear_completed()
+    assert commits == 3  # 8 finished jobs in chunks of 3
+    assert sorted({j["status"] for j in await q.get_jobs_by_status("pending")}) == ["pending"]
+    assert len(await q.get_jobs_by_status("pending")) == 7
+    assert await q.get_jobs_by_status("completed") == []
+    assert await q.get_jobs_by_status("failed") == []
+
+    await q.clear_pending()
+    assert await q.get_jobs_by_status("pending") == []
+    assert len(await q.get_jobs_by_status("running")) == 1
+
+
+@pytest.mark.asyncio
+async def test_clearing_pending_health_checks_keeps_other_jobs(test_db, monkeypatch):
+    import aiosqlite
+    from backend.queue import QueueWorker
+    from backend.routes import jobs as jobs_route
+    monkeypatch.setattr(JobQueue, "_CLEAR_CHUNK", 2)
+    monkeypatch.setattr(JobQueue, "_CLEAR_PAUSE", 0)
+    monkeypatch.setattr(jobs_route, "_queue", JobQueue(test_db))
+    monkeypatch.setattr(jobs_route, "_worker", QueueWorker(test_db))
+    async with aiosqlite.connect(test_db) as db:
+        for i, (job_type, status) in enumerate(
+                [("health_check", "pending")] * 5 + [("health_check", "running"), ("convert", "pending")]):
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, created_at) VALUES (?, ?, ?, '2026-10-09')",
+                (f"/m/{i}.mkv", job_type, status))
+        await db.commit()
+    assert await jobs_route.clear_pending_health_checks() == {"deleted": 5}
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT job_type, status FROM jobs ORDER BY id") as cur:
+            assert await cur.fetchall() == [("health_check", "running"), ("convert", "pending")]
