@@ -110,7 +110,7 @@ _ENCODING_DEFAULTS = {
     "target_codec": "hevc",
     "target_resolution": "copy",
     "source_codecs": json.dumps(DEFAULT_SOURCE_CODECS),
-    "sub_cleanup_enabled": "true",
+    "sub_cleanup_enabled": "false",  # v0.10.0: keep every subtitle until you choose languages
     "sub_keep_languages": '[]',
     "sub_keep_unknown": "true",
     "audio_codec": "copy",
@@ -161,7 +161,7 @@ _ENCODING_DEFAULTS = {
     # the original is left in place, and the job completes with a rejection
     # notice. 0 = disabled (never reject). Only applied when vmaf_analysis_enabled
     # is true AND an encode produced a valid VMAF score.
-    "vmaf_min_score": "0",
+    "vmaf_min_score": "88",  # v0.10.0: reject encodes scoring below this (0 = never)
     "resolution_aware_cq": "false",
     "resolution_cq_4k": "24",
     "resolution_cq_1080p": "20",
@@ -171,7 +171,7 @@ _ENCODING_DEFAULTS = {
     "filename_suffix": "",  # e.g. "-Shrinkerr" — appended to filename after conversion
     # Post-conversion
     "trash_original_after_conversion": "false",
-    "backup_original_days": "0",  # 0 = disabled; keep original in .shrinkerr_backup for X days
+    "backup_original_days": "7",  # keep originals in .shrinkerr_backup for X days; 0 = trash or delete (v0.10.0: was 0)
     "backup_folder": "",  # Empty = .shrinkerr_backup in same dir as file; set a path for centralized backups
     # Advanced
     "custom_ffmpeg_flags": "",  # Extra flags appended to ffmpeg command
@@ -248,6 +248,36 @@ async def list_media_dirs():
 _DISALLOWED_MEDIA_DIR_PREFIXES = (
     "/etc", "/root", "/proc", "/sys", "/boot", "/dev", "/app/data",
 )
+
+
+# v0.10.0 "safe by default": originals are kept 7 days, VMAF rejects encodes
+# below 88, and subtitles are left alone until languages are chosen. Those
+# defaults are only for new installs: an existing install keeps what it did
+# before, so the old values are written for any of these it never saved.
+# Seeding them (instead of changing fallbacks) also gives the converter,
+# remote nodes and the scanner — which each read the raw settings — one value.
+_V010_DEFAULTS = {"backup_original_days": ("7", "0"), "vmaf_min_score": ("88", "0"),
+                  "sub_cleanup_enabled": ("false", "true")}
+
+
+async def seed_v010_defaults() -> None:
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'defaults_v010_seeded'") as cur:
+            if await cur.fetchone():
+                return
+        async with db.execute(
+            "SELECT (SELECT COUNT(*) FROM media_dirs) + (SELECT COUNT(*) FROM jobs) "
+            "+ (SELECT COUNT(*) FROM scan_results) AS n"
+        ) as cur:
+            existing = (await cur.fetchone())["n"] > 0
+        for key, (new_install, before) in _V010_DEFAULTS.items():
+            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                             (key, before if existing else new_install))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('defaults_v010_seeded', '1')")
+        await db.commit()
+    finally:
+        await db.close()
 
 
 def _validate_filesystem_path(
@@ -564,7 +594,7 @@ async def get_encoding_settings():
         )
     except (json.JSONDecodeError, ValueError):
         result["sub_keep_languages"] = []
-    result["sub_cleanup_enabled"] = merged.get("sub_cleanup_enabled", "true").lower() == "true"
+    result["sub_cleanup_enabled"] = merged.get("sub_cleanup_enabled", "false").lower() == "true"
     result["sub_keep_unknown"] = merged.get("sub_keep_unknown", "true").lower() == "true"
 
     # Mask API keys — show only last 4 chars if set

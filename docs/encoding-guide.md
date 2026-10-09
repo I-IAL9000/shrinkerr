@@ -183,8 +183,10 @@ the output if the score is too low.
 **Enable:** Settings → Video → Smart Encoding → "VMAF analysis" (on by
 default — scoring only).
 
-**Minimum score (`vmaf_min_score`):** opt-in. The default 0 disables
-rejection (VMAF still runs and is reported, just never rejects). Typical values:
+**Minimum score (`vmaf_min_score`):** "Reject encodes below a minimum
+VMAF score". On by default at 88 for installs since v0.10.0 (installs
+from before keep what they had); 0 disables rejection (VMAF still runs
+and is reported, just never rejects). Typical values:
 
 | Min score | Meaning | Reject rate on typical content |
 |---|---|---|

@@ -16,9 +16,10 @@ outcome than a 25% larger file.
 Several safety nets make destroying your library hard:
 - The encoded output is verified non-empty before the original is
   touched.
-- Optionally enable VMAF rejection (Settings → Video) to discard
-  encodes that fell below a quality threshold.
-- Optionally keep originals for N days (`backup_original_days` setting).
+- VMAF rejection (Settings → Video) discards encodes that fell below a
+  quality threshold — on at 88 by default since v0.10.0.
+- Originals are kept for N days (7 by default since v0.10.0), or moved to
+  the trash, or deleted — Settings → Automation → Originals & Backups.
 - Files that grew after encoding are detected — original kept, file
   auto-ignored.
 

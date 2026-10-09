@@ -18,12 +18,11 @@ starting points that work for most people.
    `./data/shrinkerr.db`. Settings → System → Backups can export a full backup
    (DB + settings + media-dir config); do this after you've configured
    everything and before the first big run.
-2. **Set a backup folder for originals.** Settings → Automation → Originals & Backups.
-   - `trash_original_after_conversion = false` by default (originals
-     stay put if the output is larger; see VMAF rejection).
-   - `backup_original_days` > 0 keeps originals in a `.shrinkerr_backup/`
-     folder next to each file for that many days before deletion. Set
-     to 7–14 for a safety net.
+2. **Choose what happens to originals.** Settings → Automation → Originals & Backups:
+   kept for N days (the default since v0.10.0: 7), moved to the trash, or
+   deleted (originals stay put if the output is larger; see VMAF rejection).
+   - Kept originals sit in a `.shrinkerr_backup/` folder next to each file
+     for that many days before deletion; Undo works meanwhile.
    - `backup_folder` can centralize all backups to one path (e.g.
      `/srv/media-backup`) instead of sprinkling `.shrinkerr_backup/`
      everywhere.

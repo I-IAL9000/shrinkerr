@@ -404,6 +404,7 @@
   "subtitles": {
     "title": "Subtitles",
     "removeUnwanted": "Remove unwanted subtitle tracks",
+    "noLanguagesWarning": "No languages chosen: every subtitle with a language tag will be removed, forced ones included.",
     "keepLanguages": "Keep Subtitle Languages",
     "searchPlaceholder": "Search languages to add...",
     "keepHelp": "Internal subtitle tracks in these languages will always be kept. Forced subtitles are always kept regardless of language. Only tracks in other languages will be marked for removal.",

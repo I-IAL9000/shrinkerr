@@ -1386,7 +1386,7 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
                         <input
                           type="checkbox"
                           checked={enabled}
-                          onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: e.target.checked ? 85 : 0 })}
+                          onChange={(e) => setEncoding({ ...encoding, vmaf_min_score: e.target.checked ? 88 : 0 })}
                           style={{ accentColor: "var(--accent)" }}
                         />
                         <span style={labelStyle}>{t("settingsMedia:video.smart.minScore")}</span>
@@ -2100,6 +2100,10 @@ export default function SettingsPage({ theme, onToggleTheme }: { theme: string; 
             </label>
             {(encoding?.sub_cleanup_enabled ?? true) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 500 }}>
+
+              {(encoding.sub_keep_languages || []).length === 0 && !encoding.keep_native_subs && (
+                <div style={{ fontSize: 12, color: "var(--warning)" }}>{t("settingsMedia:subtitles.noLanguagesWarning")}</div>
+              )}
 
               {/* Subtitle Keep Languages */}
               <div>
@@ -3913,23 +3917,46 @@ volumes:
             <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
               <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.originals.title")}</div>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-              <input type="checkbox" checked={encoding?.trash_original_after_conversion || false}
-                onChange={() => setEncoding({ ...encoding, trash_original_after_conversion: !encoding?.trash_original_after_conversion })}
-                style={{ flexShrink: 0 }} />
-              <span style={labelStyle}>{t("settingsSystem:automation.originals.trash")}</span>
-            </label>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, marginBottom: 12 }}>
-              {t("settingsSystem:automation.originals.trashHelp")}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.originals.backupFor")}</span>
-              <input type="number" min={0} style={{ ...inputStyle, width: 60 }}
-                value={encoding?.backup_original_days ?? 0}
-                onChange={e => setEncoding({ ...encoding, backup_original_days: e.target.value })} />
-              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.originals.days")}</span>
-              <span style={{ fontSize: 11, color: "var(--text-muted)", opacity: 0.6 }}>{t("settingsSystem:automation.originals.daysHint")}</span>
-            </div>
+            {/* One choice instead of a trash toggle and a days field where the
+                backup silently won (v0.10.0). Same settings underneath:
+                backup_original_days > 0 = keep; else trash or delete. */}
+            {(() => {
+              const days = Number(encoding?.backup_original_days ?? 0) || 0;
+              const mode = days > 0 ? "keep" : (encoding?.trash_original_after_conversion ? "trash" : "delete");
+              const choose = (m: "keep" | "trash" | "delete") => setEncoding({
+                ...encoding,
+                backup_original_days: m === "keep" ? (days > 0 ? days : 7) : 0,
+                trash_original_after_conversion: m === "trash",
+              });
+              const option = (m: "keep" | "trash" | "delete", label: React.ReactNode, help: string) => (
+                <label style={{ display: "flex", gap: 10, cursor: "pointer", marginBottom: 10 }}>
+                  <input type="radio" name="originals-mode" checked={mode === m} onChange={() => choose(m)}
+                    style={{ flexShrink: 0, marginTop: 3, accentColor: "var(--accent)" }} />
+                  <span>
+                    <span style={labelStyle}>{label}</span>
+                    <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>{help}</span>
+                  </span>
+                </label>
+              );
+              return (
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>{t("settingsSystem:automation.originals.whatHappens")}</div>
+                  {option("keep", (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {t("settingsSystem:automation.originals.keepFor")}
+                      <input type="number" min={1} style={{ ...inputStyle, width: 60, height: 28 }}
+                        value={mode === "keep" ? days : 7}
+                        disabled={mode !== "keep"}
+                        onChange={e => setEncoding({ ...encoding, backup_original_days: Math.max(1, parseInt(e.target.value) || 1) })} />
+                      {t("settingsSystem:automation.originals.keepDays")}
+                    </span>
+                  ), t("settingsSystem:automation.originals.keepHelp"))}
+                  {option("trash", t("settingsSystem:automation.originals.trashOption"), t("settingsSystem:automation.originals.trashHelp"))}
+                  {option("delete", t("settingsSystem:automation.originals.deleteOption"), t("settingsSystem:automation.originals.deleteHelp"))}
+                </div>
+              );
+            })()}
+            {Number(encoding?.backup_original_days ?? 0) > 0 && (<>
             <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 26, marginBottom: 10 }}>
               <span style={{ fontSize: 12, color: "var(--text-muted)", flexShrink: 0 }}>{t("settingsSystem:automation.originals.backupFolder")}</span>
               <input type="text" style={{ ...inputStyle, flex: 1 }}
@@ -3954,6 +3981,7 @@ volumes:
                 components={{ code: <code style={{ fontSize: 10, padding: "1px 4px", background: "var(--bg-primary)", borderRadius: 2 }} />, b: <strong /> }}
               />
             </div>
+            </>)}
             <div style={{ paddingLeft: 26, marginBottom: 16 }}>
               <button
                 className="btn btn-secondary"

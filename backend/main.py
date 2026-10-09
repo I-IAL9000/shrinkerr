@@ -213,6 +213,12 @@ async def lifespan(app: FastAPI):
     init_logstream()
 
     await init_db()
+    # v0.10.0: safer defaults for new installs; existing ones keep theirs.
+    try:
+        from backend.routes.settings import seed_v010_defaults
+        await seed_v010_defaults()
+    except Exception as exc:
+        print(f"[STARTUP] default seeding skipped: {exc}", flush=True)
     # v0.9.151: reclaim free space (e.g. after shrinking full-size Plex
     # posters) while nothing else is using the database yet.
     try:

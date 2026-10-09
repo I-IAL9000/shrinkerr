@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).
 - After an update, a short "What's new" dialog lists the new features and the main fixes, once.
 - The Scanner shows HDR10 / HLG / Dolby Vision badges.
+- **Safer defaults for new installs:** originals are kept 7 days, encodes scoring below VMAF 88 are rejected, and subtitles are left alone until you choose languages. Existing installs keep their settings.
+- Settings → Automation: one clear choice for originals — kept for N days, moved to the trash, or deleted.
 - **Docker images can run as your own user** (optional `PUID` / `PGID` / `UMASK`) instead of root, so converted files and backups are owned like the ones Sonarr / Radarr / Plex write.
 
 ### Fixed

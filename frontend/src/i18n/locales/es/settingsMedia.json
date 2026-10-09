@@ -409,6 +409,7 @@
   "subtitles": {
     "title": "Subtítulos",
     "removeUnwanted": "Eliminar pistas de subtítulos no deseadas",
+    "noLanguagesWarning": "No has elegido idiomas: se eliminarán todos los subtítulos con etiqueta de idioma, incluidos los forzados.",
     "keepLanguages": "Idiomas de subtítulos que se conservan",
     "searchPlaceholder": "Buscar idiomas para añadir...",
     "keepHelp": "Las pistas de subtítulos internas en estos idiomas se conservarán siempre. Los subtítulos forzados se conservan siempre, sea cual sea el idioma. Solo se marcarán para eliminar las pistas en otros idiomas.",
