@@ -1132,8 +1132,10 @@ class TestEncodeRequest(BaseModel):
     file_path: str
     # None = the configured default encoder (the Estimate modal's "Auto").
     encoder: str | None = None
-    cq: int | None = 20
-    preset: str | None = "p6"
+    # The dialog's quality (CQ for NVENC, CRF for libx265) and preset; None
+    # = what the job would get from its rule or the settings.
+    cq: int | None = None
+    preset: str | None = None
     sample_seconds: int = 30
 
 
@@ -1160,10 +1162,35 @@ async def start_test_encode(payload: TestEncodeRequest):
         finally:
             await db_t.close()
 
-    encoder = payload.encoder
-    if not encoder:
-        from backend.converter import get_live_encoding_settings
-        encoder = (await get_live_encoding_settings()).get("default_encoder") or "nvenc"
+    # The job's settings, as Add to Queue would give them (v0.10.0): the
+    # file's rule, then the dialog's encoder / quality / preset, then the
+    # defaults — with the encoder swapped for one this host can run, as the
+    # local worker does.
+    import asyncio
+    from backend.converter import get_live_encoding_settings
+    from backend.encoder_caps import detect_encoders, resolve_node_encoder
+    from backend.rule_resolver import resolve_rules_for_batch
+    rule = (await resolve_rules_for_batch([test_file])).get(test_file) or {}
+    encoder = payload.encoder or rule.get("encoder") or \
+        (await get_live_encoding_settings()).get("default_encoder") or "nvenc"
+    caps = (await asyncio.to_thread(detect_encoders)).available
+    encoder = resolve_node_encoder(encoder, caps) or encoder
+    overrides: dict = {}
+    if encoder == "nvenc":
+        cq = payload.cq if payload.cq is not None else rule.get("nvenc_cq")
+        if cq is not None:
+            overrides["override_cq"] = cq
+        if payload.preset or rule.get("nvenc_preset"):
+            overrides["override_preset"] = payload.preset or rule.get("nvenc_preset")
+    elif encoder == "libx265":
+        # The dialog's slider is the CRF for libx265.
+        crf = payload.cq if payload.cq is not None else rule.get("libx265_crf")
+        if crf is not None:
+            overrides["override_crf"] = crf
+        if payload.preset or rule.get("libx265_preset"):
+            overrides["override_libx265_preset"] = payload.preset or rule.get("libx265_preset")
+    if rule.get("target_resolution"):
+        overrides["override_target_resolution"] = rule["target_resolution"]
 
     try:
         result = await run_test_encode(
@@ -1173,6 +1200,7 @@ async def start_test_encode(payload: TestEncodeRequest):
             preset=payload.preset or "p6",
             sample_seconds=payload.sample_seconds,
             ws_manager=ws_manager,
+            job_overrides=overrides,
         )
         return result
     except Exception as exc:

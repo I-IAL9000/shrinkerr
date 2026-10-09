@@ -69,6 +69,7 @@ async def run_test_encode(
     preset: str = "p6",
     sample_seconds: int = 30,
     ws_manager=None,
+    job_overrides: dict | None = None,
 ) -> dict:
     """Run a test encode on a sample segment and return quality metrics.
 
@@ -115,7 +116,6 @@ async def run_test_encode(
         sample_dur = min(sample_seconds, duration - start_time)
 
         orig_path = TEMP_DIR / f"{task_id}_orig.mkv"
-        enc_path = TEMP_DIR / f"{task_id}_enc.mkv"
 
         # 2. Extract original segment (stream copy — fast)
         await _send_progress("extracting", 10)
@@ -137,41 +137,23 @@ async def run_test_encode(
 
         original_size = orig_path.stat().st_size
 
-        # 3. Encode the sample
+        # 3. Encode the sample exactly as a job would (v0.10.0): the
+        # converter builds the command — encoder, preset, quality, bit depth,
+        # hardware decode, resolution, audio — from the same settings, rule
+        # and overrides. This used to be its own command: libx265 always ran
+        # `medium` at CQ + 2, QSV / VAAPI fell back to libx265, and bit depth,
+        # hardware decode, rules and resolution were ignored.
         await _send_progress("encoding", 30)
-        enc_cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-progress", "pipe:1"]
-        enc_cmd += ["-i", str(orig_path)]
-
-        if encoder == "nvenc":
-            enc_cmd += [
-                "-c:v", "hevc_nvenc",
-                "-preset", preset,
-                "-tune", "hq",
-                "-rc", "vbr",
-                "-cq", str(cq),
-                "-profile:v", "main10",
-                "-pix_fmt", "p010le",
-            ]
-        elif encoder == "videotoolbox":
-            # VideoToolbox has its own 1–100 (higher = better) quality scale,
-            # so the CQ slider value doesn't apply — use the configured one.
-            from backend.converter import get_live_encoding_settings
-            vt_q = (await get_live_encoding_settings()).get("videotoolbox_quality", 55)
-            enc_cmd += [
-                "-c:v", "hevc_videotoolbox",
-                "-q:v", str(vt_q),
-            ]
-        else:
-            crf = cq + 2  # CRF offset for libx265
-            enc_cmd += [
-                "-c:v", "libx265",
-                "-preset", "medium",
-                "-crf", str(crf),
-                "-profile:v", "main10",
-                "-pix_fmt", "yuv420p10le",
-            ]
-
-        enc_cmd += ["-c:a", "copy", "-map", "0:V:0", "-map", "0:a:0?", str(enc_path)]
+        from backend.converter import convert_file
+        plan = await convert_file(
+            str(orig_path), encoder, sample_dur, command_only=True, **(job_overrides or {}),
+        )
+        if not plan.get("command"):
+            raise RuntimeError(plan.get("error") or "This file can't be converted")
+        enc_path = Path(plan["output_path"])
+        encoder = plan.get("encoder") or encoder
+        enc_cmd = list(plan["command"])
+        enc_cmd[-1:-1] = ["-progress", "pipe:1"]  # global option, before the output
 
         enc_start = time.time()
         proc = await asyncio.create_subprocess_exec(
@@ -188,6 +170,7 @@ async def run_test_encode(
 
         # Parse progress
         encoding_fps = 0.0
+        frames_done = 0
         try:
             if proc.stdout:
                 while True:
@@ -208,6 +191,11 @@ async def run_test_encode(
                             encoding_fps = float(decoded.split("=")[1])
                         except ValueError:
                             pass
+                    elif decoded.startswith("frame="):
+                        try:
+                            frames_done = int(decoded.split("=")[1])
+                        except ValueError:
+                            pass
             await asyncio.wait_for(proc.wait(), timeout=max(1.0, deadline - time.monotonic()))
         except asyncio.TimeoutError:
             proc.kill()
@@ -215,6 +203,10 @@ async def run_test_encode(
             raise RuntimeError("Encoding timed out")
         stderr = await stderr_task
         enc_time = time.time() - enc_start
+        if encoding_fps <= 0 and frames_done and enc_time > 0:
+            # ffmpeg reports fps=0 when the encode ends within its first
+            # progress interval (a short sample on a fast encoder).
+            encoding_fps = frames_done / enc_time
 
         if proc.returncode != 0 or not enc_path.exists():
             raise RuntimeError(f"Encoding failed: {stderr.decode()[-500:]}")

@@ -77,7 +77,7 @@ async def test_a_test_encode_survives_a_chatty_encoder(test_db, tmp_path, monkey
         f"#!{sys.executable}\n"
         "import os, sys\n"
         "args = sys.argv[1:]\n"
-        "if args[-1].endswith('_enc.mkv'):  # the encode step: flood stderr, then finish\n"
+        "if args[-1].endswith('.converting.mkv'):  # the encode step: flood stderr, then finish\n"
         "    sys.stderr.write('x' * 300000); sys.stderr.flush()\n"
         "    print('progress=end', flush=True)\n"
         "    open(args[-1], 'wb').write(b'0' * 1000)\n"

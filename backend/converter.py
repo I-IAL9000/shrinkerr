@@ -2671,9 +2671,14 @@ async def convert_file(
     on_output_placed: Optional[Callable] = None,
     external_subs: Optional[list[dict]] = None,
     delete_merged_subs: Optional[bool] = None,
+    command_only: bool = False,
 ) -> dict:
     """
     Convert a video file to HEVC.
+
+    `command_only` (v0.10.0): stop before running anything and return the
+    ffmpeg command (`command`) and where it writes (`output_path`). The test
+    encode runs it on its sample, so it encodes exactly as a job would.
 
     `external_subs` / `delete_merged_subs` (v0.10.0): sidecar subtitles to
     merge and whether to delete them afterwards, from the caller — a remote
@@ -3602,6 +3607,9 @@ async def convert_file(
     # first; only the specific reconfiguration crash on the NVDEC-native
     # CUDA path triggers the software-decode fallback.
     _software_retry = False
+    if command_only:
+        return {"success": True, "command": _assemble_cmd(_hw_use), "output_path": temp_path,
+                "encoder": encoder, "space_saved": 0, "error": None}
     while True:
         cmd = _assemble_cmd(_hw_use and not _software_retry)
         full_command = " ".join(cmd)
