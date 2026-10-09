@@ -258,7 +258,7 @@ async def first_frame_info(source: str, input_args: Optional[list[str]] = None) 
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "error", *(input_args or []), "-select_streams", "v:0",
+            "ffprobe", "-v", "error", *(input_args or []), "-select_streams", "V:0",
             "-read_intervals", "%+#1", "-show_frames",
             "-show_entries", "frame=pix_fmt,color_transfer,color_primaries,side_data_list",
             "-of", "json", source,
@@ -316,6 +316,51 @@ async def media_input(file_path: str) -> tuple[Optional[str], list[str], Optiona
     if disc_type:
         input_args = ["-analyzeduration", "200M", "-probesize", "200M", *input_args]
     return source, input_args, disc_type
+
+
+# Codecs a cover image or thumbnail comes in. A stream of one of these is
+# video only when it has more than a frame: real Motion-JPEG video (old
+# cameras) does, a cover doesn't.
+_STILL_IMAGE_CODECS = frozenset({"mjpeg", "png", "bmp", "gif", "ansi", "webp", "tiff", "jpegls", "jpeg2000"})
+
+
+def _stream_seconds(stream: dict) -> Optional[float]:
+    """A stream's duration from ffprobe (or Matroska's DURATION tag)."""
+    try:
+        if stream.get("duration") not in (None, "N/A"):
+            return float(stream["duration"])
+    except (TypeError, ValueError):
+        pass
+    tags = stream.get("tags") or {}
+    tag = tags.get("DURATION") or tags.get("duration")
+    if tag:
+        try:
+            h, m, sec = str(tag).split(":")
+            return int(h) * 3600 + int(m) * 60 + float(sec)
+        except ValueError:
+            pass
+    return None
+
+
+def is_picture_stream(stream: dict) -> bool:
+    """A cover image or thumbnail rather than video (SC-24): flagged as an
+    attached picture, or a still-image codec with a single frame (Matroska
+    can hold a cover as an ordinary one-frame track). The codec name alone
+    used to decide, so real Motion-JPEG videos were marked corrupt, and a
+    cover listed first became the file's "video" (png 600x900)."""
+    if stream.get("codec_type") != "video":
+        return False
+    if (stream.get("disposition") or {}).get("attached_pic", 0) == 1:
+        return True
+    if stream.get("codec_name") not in _STILL_IMAGE_CODECS:
+        return False
+    frames = str(stream.get("nb_frames") or "")
+    if frames.isdigit():
+        return int(frames) <= 1
+    seconds = _stream_seconds(stream)
+    if seconds is not None:
+        return seconds < 1.0
+    return stream.get("codec_name") != "mjpeg"
 
 
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
@@ -396,6 +441,7 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     fmt = data.get("format", {})
 
     video_codec = ""
+    video_stream_index: Optional[int] = None
     video_pix_fmt = ""
     video_width = 0
     video_height = 0
@@ -406,8 +452,9 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
 
     for stream in streams:
         codec_type = stream.get("codec_type", "")
-        if codec_type == "video" and not video_codec:
+        if codec_type == "video" and not video_codec and not is_picture_stream(stream):
             video_codec = stream.get("codec_name", "")
+            video_stream_index = stream.get("index")
             # v0.5.9: pix_fmt drives the NVENC bit-depth `auto` mode
             # ("yuv420p10le" / "yuv420p12le" → 10-bit out, anything else
             # → 8-bit out). Captured here once at probe time so every
@@ -501,13 +548,9 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     # always a container that ffprobe couldn't fully parse (damaged headers,
     # truncated download, etc). Treat like a probe failure so it lands in the
     # corrupt branch of scan_directory() and shows up under the Corrupt filter.
-    # We check the raw streams list (not just video_codec) so cover-art / image
-    # attachments don't fool us.
+    # Cover art and thumbnails don't count (is_picture_stream).
     has_real_video = any(
-        s.get("codec_type") == "video"
-        and s.get("codec_name") not in ("mjpeg", "png", "bmp", "gif", "ansi")
-        and s.get("disposition", {}).get("attached_pic", 0) != 1
-        for s in streams
+        s.get("codec_type") == "video" and not is_picture_stream(s) for s in streams
     )
     if not has_real_video:
         print(f"[SCANNER] No decodable video stream in: {file_path} — marking corrupt", flush=True)
@@ -554,6 +597,9 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
 
     result = {
         "video_codec": video_codec,
+        # ffprobe index of the stream above, so the encode maps it and not a
+        # cover image listed before it (SC-24).
+        "video_stream_index": video_stream_index,
         "video_pix_fmt": video_pix_fmt,
         "hdr_format": hdr_format,
         "video_width": video_width,
@@ -645,6 +691,13 @@ CODEC_FAMILIES = {
     "vc1": ("vc1", "wmv3", "wmv2", "wmv1"),
     "msmpeg4v3": ("msmpeg4v3", "msmpeg4v2", "msmpeg4"),
     "vp9": ("vp9",),
+    # v0.10.0 (SC-24): .flv / .webm / .mpg / camera files were scanned but
+    # their codecs had no family, so they could never be selected.
+    "vp8": ("vp8",),
+    "mpeg1": ("mpeg1video",),
+    "flv": ("flv1", "flv"),
+    "h263": ("h263", "h263p", "h263i"),
+    "mjpeg": ("mjpeg",),
 }
 
 

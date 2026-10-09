@@ -27,6 +27,29 @@ async def _probe_audio_stream_count(input_path: str) -> int:
     return len([ln for ln in stdout.decode().splitlines() if ln.strip()])
 
 
+async def _probe_video_map(input_path: str) -> str:
+    """`-map` for the film's video stream: the first video stream that isn't
+    a cover image (scanner.is_picture_stream), by index. `0:V:0?` when the
+    probe fails. v0.10.0 (SC-24): an MKV whose first track is a one-frame
+    cover kept the cover as its video after an audio cleanup."""
+    from backend.scanner import is_picture_stream
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "quiet", "-select_streams", "v", "-show_streams",
+            "-of", "json", input_path,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        for stream in json.loads(stdout or b"{}").get("streams", []):
+            if not is_picture_stream(stream) and stream.get("index") is not None:
+                return f"0:{stream['index']}"
+    except Exception:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+    return "0:V:0?"
+
+
 async def _probe_subtitle_stream_codecs(input_path: str) -> dict[int, str]:
     """Return a `{stream_index: codec_name}` map for every subtitle stream
     in `input_path`. Used by remux_audio so build_remux_cmd can decide which
@@ -70,6 +93,7 @@ def build_remux_cmd(
     external_subtitle_files: list[dict] | None = None,
     subtitle_stream_codecs: dict[int, str] | None = None,
     audio_languages: dict[int, str] | None = None,
+    video_map: str = "0:V:0?",
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
@@ -112,10 +136,12 @@ def build_remux_cmd(
     # with "dimensions not set" → "Could not write header (incorrect
     # codec parameters?)" → exit 234. The convert path already maps
     # `0:v:0` for exactly this reason (see converter.py); the remux
-    # path never got the same treatment. `0:v:0?` = first video stream,
-    # `?` so it doesn't error on the rare audio-only input. Cover art is
-    # dropped, matching the convert path's deliberate behavior.
-    cmd += ["-map", "0:v:0?"]
+    # path never got the same treatment. `?` so it doesn't error on the
+    # rare audio-only input. Cover art is dropped, matching the convert
+    # path's deliberate behavior. v0.10.0: remux_audio passes the film's
+    # stream by index (_probe_video_map); the default `0:V:0?` is the first
+    # video stream that isn't an attached picture.
+    cmd += ["-map", video_map]
 
     # Subtitles: if indices provided, map selectively; otherwise keep all
     out_sub_idx = 0
@@ -306,6 +332,7 @@ async def remux_audio(
         external_subtitle_files=ext_subs or None,
         subtitle_stream_codecs=sub_codecs or None,
         audio_languages=audio_languages,
+        video_map=await _probe_video_map(input_path),
     )
     # Used by the worker to populate update_conversion_log so the
     # Completed tab's expanded view has something to show on

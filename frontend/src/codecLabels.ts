@@ -6,6 +6,7 @@ export const CODEC_LABELS: Record<string, string> = {
   mpeg4: "XviD", msmpeg4v3: "DivX", msmpeg4v2: "DivX",
   vc1: "VC-1", wmv3: "WMV",
   vp9: "VP9", vp8: "VP8",
+  mpeg1video: "MPEG-1", flv1: "FLV", h263: "H.263", mjpeg: "MJPEG",
   svq3: "SVQ3",
 };
 

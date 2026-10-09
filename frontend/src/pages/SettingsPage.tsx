@@ -40,6 +40,11 @@ const SOURCE_CODECS = [
   { value: "vc1", always: false, defaultOn: true },
   { value: "msmpeg4v3", always: false, defaultOn: false },
   { value: "vp9", always: false, defaultOn: false },
+  { value: "vp8", always: false, defaultOn: false },
+  { value: "mpeg1", always: false, defaultOn: false },
+  { value: "flv", always: false, defaultOn: false },
+  { value: "h263", always: false, defaultOn: false },
+  { value: "mjpeg", always: false, defaultOn: false },
   { value: "hevc", always: false, defaultOn: false },
   { value: "av1", always: false, defaultOn: false },
 ];

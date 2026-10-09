@@ -123,7 +123,7 @@ async def run_test_encode(
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-ss", str(start_time), "-t", str(sample_dur),
             "-i", file_path, "-c", "copy",
-            "-map", "0:v:0", "-map", "0:a:0?",
+            "-map", "0:V:0", "-map", "0:a:0?",
             str(orig_path),
         ]
         proc = await asyncio.create_subprocess_exec(
@@ -171,7 +171,7 @@ async def run_test_encode(
                 "-pix_fmt", "yuv420p10le",
             ]
 
-        enc_cmd += ["-c:a", "copy", "-map", "0:v:0", "-map", "0:a:0?", str(enc_path)]
+        enc_cmd += ["-c:a", "copy", "-map", "0:V:0", "-map", "0:a:0?", str(enc_path)]
 
         enc_start = time.time()
         proc = await asyncio.create_subprocess_exec(
@@ -370,7 +370,7 @@ async def run_vmaf_analysis(
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-ss", str(start), "-t", str(sample_dur),
-                "-i", src, "-c", "copy", "-map", "0:v:0",
+                "-i", src, "-c", "copy", "-map", "0:V:0",
                 str(dst),
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.PIPE,

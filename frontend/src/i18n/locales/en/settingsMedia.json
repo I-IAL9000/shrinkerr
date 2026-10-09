@@ -478,6 +478,11 @@
       "vc1": "VC-1 (WMV)",
       "msmpeg4v3": "MS-MPEG4v3 (old DivX/AVI)",
       "vp9": "VP9 (YouTube/WebM)",
+      "vp8": "VP8 (older WebM)",
+      "mpeg1": "MPEG-1 (VCD / old .mpg)",
+      "flv": "Sorenson / FLV1 (Flash video)",
+      "h263": "H.263 (old phones / 3GP)",
+      "mjpeg": "Motion JPEG (camera AVI / MOV)",
       "hevc": "H.265 / HEVC / x265",
       "av1": "AV1"
     },

@@ -311,6 +311,11 @@ def _build_ffmpeg_cmd_impl(
     # Each dict: {path, codec, language, forced}
     external_subtitle_files: list[dict] | None = None,
     subtitle_streams_to_remove: set | None = None,
+    # v0.10.0 (SC-24): the source video stream. `0:V:0` is the first video
+    # stream that isn't an attached picture; convert_file passes the
+    # scanner's choice by index ("0:3") so a cover track listed first
+    # isn't encoded as the film.
+    video_map: str = "0:V:0",
     # v0.5.6: cap ffmpeg's thread count via `-threads N`. 0 = ffmpeg auto
     # (uses all available cores, pre-v0.5.6 behaviour). 1-16 = explicit cap.
     ffmpeg_threads: int = 0,
@@ -653,11 +658,12 @@ def _build_ffmpeg_cmd_impl(
     if ffmpeg_threads and ffmpeg_threads > 0:
         cmd += ["-threads", str(ffmpeg_threads)]
 
-    # Map ONLY the first video stream (0:v:0) — NOT all video streams.
+    # Map ONLY the film's video stream — NOT all video streams.
     # Some files have cover art (PNG/JPEG attached_pic) registered as extra video streams.
     # Using "-map 0:v" maps ALL of them, causing ffmpeg to re-encode the cover as HEVC,
     # which corrupts the output stream layout and confuses players like Sonarr/Plex.
-    cmd += ["-map", "0:v:0"]
+    # v0.10.0: `0:v:0` took a cover listed first; see video_map.
+    cmd += ["-map", video_map]
 
     # Audio mapping + codec args
     # Two paths:
@@ -1690,6 +1696,7 @@ async def _prestrip_subtitles(
     subtitle_streams: list[dict],
     audio_streams_to_keep: list[dict] | None,
     subtitle_streams_to_remove: set,
+    video_map: str = "0:V:0",
 ) -> str | None:
     """Fast `-c copy` remux pass that drops unwanted subtitle streams.
 
@@ -1706,10 +1713,10 @@ async def _prestrip_subtitles(
     out_path = str(p.parent / (p.stem + ".stripped.mkv"))
 
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", input_path]
-    # Always keep the first video stream and any attachments. Audio: either
+    # Always keep the film's video stream and any attachments. Audio: either
     # keep all (when no inline audio removal is in play) or only the
     # explicitly-listed kept streams.
-    cmd += ["-map", "0:v:0"]
+    cmd += ["-map", video_map]
     if audio_streams_to_keep is not None:
         for stream in audio_streams_to_keep:
             idx = stream.get("stream_index")
@@ -1933,7 +1940,7 @@ async def _probe_vmaf_stream(path: str) -> dict:
     try:
         cmd = [
             "ffprobe", "-v", "quiet", "-print_format", "json",
-            "-select_streams", "v:0",
+            "-select_streams", "V:0",
             "-show_entries",
             "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,"
             "pix_fmt,color_range,color_space,duration",
@@ -2063,7 +2070,7 @@ async def _run_libvmaf_pass(
     import json as _vjson
 
     vmaf_filter = (
-        f"[0:v]{ref_pipeline}[ref_norm];"
+        f"[0:V]{ref_pipeline}[ref_norm];"
         f"[1:v]{dist_pipeline}[dist_norm];"
         f"[dist_norm][ref_norm]scale2ref=flags=bicubic[dist][ref];"
         f"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:n_threads=4:"
@@ -2384,7 +2391,7 @@ async def _probe_video_duration(path: str, exact_tag_only: bool = False) -> Opti
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "ffprobe", "-v", "error", "-select_streams", "V:0",
             "-show_entries", "stream=duration:stream_tags",
             "-of", "json", path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -3090,6 +3097,12 @@ async def convert_file(
     _PRESTRIP_SUB_THRESHOLD = 9999
     prestrip_path: str | None = None
     encode_input_path = input_path  # what the encoder reads from (gets swapped after pre-strip)
+    # v0.10.0 (SC-24): encode the stream the scanner chose as the video, by
+    # index, so a cover image listed first isn't encoded as the film. A disc
+    # is read through concat:/bluray:, whose stream numbers differ from the
+    # probe's, so it keeps the first non-picture video stream.
+    _video_index = (probe_data or {}).get("video_stream_index")
+    video_map = f"0:{_video_index}" if _video_index is not None and not disc_type else "0:V:0"
     # v0.7.0: extra ffmpeg input args (e.g. `-f dvdvideo` for DVD ISO)
     # that must be emitted BEFORE `-i` in the encode cmd. Spliced in
     # below after _build_ffmpeg_cmd_impl returns. Empty for folder discs
@@ -3142,6 +3155,7 @@ async def convert_file(
             subtitle_streams=subtitle_streams,
             audio_streams_to_keep=audio_streams_to_keep,
             subtitle_streams_to_remove=sub_remove_set,
+            video_map=video_map,
         )
         if prestrip_path:
             # Subs (and any unwanted audio) are gone from the stripped file —
@@ -3170,6 +3184,7 @@ async def convert_file(
                 probe_audio_tracks = new_probe.get("audio_tracks") or []
                 audio_stream_codecs = [t.get("codec", "") for t in probe_audio_tracks]
             encode_input_path = prestrip_path
+            video_map = "0:V:0"  # the stripped file holds only that video stream
             # Reset the inline keep-lists — strip already enforced them.
             # Default `-map 0:a` then maps everything that's left (all
             # kept), and an empty sub_remove_set means no further filtering
@@ -3333,6 +3348,7 @@ async def convert_file(
             subtitle_streams=subtitle_streams,
             audio_streams_to_keep=audio_streams_to_keep,
             subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
+            video_map=video_map,
             external_subtitle_files=external_sub_files,
             ffmpeg_threads=ffmpeg_threads,
             use_hw_decode=use_hw,
@@ -4151,7 +4167,7 @@ async def convert_file(
                         )
                         xcheck_dur = min(30.0, vmaf_duration) if vmaf_duration > 0 else 30.0
                         xcheck_filter = (
-                            f"[0:v]{ref_pipeline}[ref_x];"
+                            f"[0:V]{ref_pipeline}[ref_x];"
                             f"[1:v]{dist_pipeline}[dist_x];"
                             f"[dist_x][ref_x]scale2ref=flags=bicubic[dx][rx];"
                             f"[dx][rx]ssim;[dx][rx]psnr"
