@@ -250,3 +250,29 @@ async def test_the_worker_reads_settings_once_per_pass(test_db, monkeypatch):
         await db.commit()
     w._settings_cache_at -= w._SETTINGS_TTL  # ...reaches the worker within a few seconds
     assert await w._get_parallel_limit() == 5
+
+
+@pytest.mark.asyncio
+async def test_the_dashboard_summary_runs_off_the_loop_and_reads_vmaf_and_labels(test_db, monkeypatch):
+    """F5 / F12: /stats/summary aggregated every completed job on the event
+    loop, and queried media folders and VMAF scores on a connection it had
+    already closed — the VMAF card and library labels were always empty."""
+    import aiosqlite
+    import backend.routes.stats as stats
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path, label) VALUES ('/mnt/disk1/Films', 'Movies')")
+        for i, (saved, vmaf) in enumerate(((3_000_000_000, 95.0), (1_000_000_000, 90.0), (0, 80.0))):
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, space_saved, original_size, vmaf_score, "
+                "created_at, started_at, completed_at, audio_tracks_to_remove) VALUES "
+                "(?, 'convert', 'completed', ?, 5000000000, ?, '2026-01-01T00:00:00', "
+                "'2026-01-01T00:00:00', '2026-01-01T00:10:00', '[2]')",
+                (f"/mnt/disk1/Films/Film {i} (2001)/Film.{i}.1080p.BluRay.mkv", saved, vmaf))
+        await db.commit()
+
+    summary, gap = await _max_loop_gap(stats.get_stats_summary())
+    assert summary["vmaf_stats"] == {"avg": 88.3, "count": 3, "excellent": 1, "good": 1, "poor": 1}
+    assert summary["top_folders"] == [{"label": "Movies", "value": 4_000_000_000}]
+    assert summary["files_processed"] == 3 and summary["total_saved"] == 4_000_000_000
+    assert summary["avg_time_minutes"] == 10.0 and summary["audio_tracks_deleted"] == 3
+    assert gap < 0.2

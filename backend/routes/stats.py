@@ -83,7 +83,21 @@ def _parse_json(val) -> list:
 
 @router.get("/summary")
 async def get_stats_summary():
-    db = await connect_db()
+    # F5 / F12 (v0.10.0): this loads every completed job (100k+ on a big
+    # install) and every scan row and aggregates them in Python — a 0.5 s+
+    # freeze of the whole app per Dashboard visit when it ran on the event
+    # loop. It now runs in a thread with its own connection. It also queried
+    # media folders and VMAF scores on a connection it had already closed,
+    # so library labels and the VMAF card were always empty.
+    import backend.database as _database
+    return await asyncio.to_thread(_stats_summary, _database.DB_PATH)
+
+
+def _stats_summary(db_path: str) -> dict:
+    """Blocking: run in a thread."""
+    import sqlite3
+    con = sqlite3.connect(db_path, timeout=30)
+    con.row_factory = sqlite3.Row
     try:
         # --- Completed jobs ---
         # v0.5.25: include original_file_path so the source-type
@@ -91,32 +105,48 @@ async def get_stats_summary():
         # `rename_source_to_target_codec` strips "Remux" post-conversion,
         # so current file_path categorization misses every Remux job
         # the user has actually processed.
-        rows = await db.execute_fetchall(
+        completed = [dict(r) for r in con.execute(
             "SELECT file_path, original_file_path, job_type, status, space_saved, original_size, "
             "audio_tracks_to_remove, started_at, completed_at "
             "FROM jobs WHERE status = 'completed'"
-        )
-        completed = [dict(r) for r in rows]
+        )]
 
         # --- Pending/failed counts ---
-        row = await db.execute_fetchall(
+        status_counts = {r["status"]: r["cnt"] for r in con.execute(
             "SELECT status, COUNT(*) as cnt FROM jobs WHERE status IN ('pending','failed') GROUP BY status"
-        )
-        status_counts = {r["status"]: r["cnt"] for r in row}
+        )}
         pending_count = status_counts.get("pending", 0)
         failed_count = status_counts.get("failed", 0)
 
         # --- Scan results (only needed columns) ---
-        scan_rows = await db.execute_fetchall(
+        scan_data = [dict(r) for r in con.execute(
             "SELECT file_path, file_size, video_codec, needs_conversion, "
             "audio_tracks_json, native_language "
             "FROM scan_results WHERE removed_from_list = 0 "
             "AND file_path NOT LIKE '%.converting.%' "
             "AND file_path NOT LIKE '%.remuxing.%'"
-        )
-        scan_data = [dict(r) for r in scan_rows]
+        )]
+
+        # Configured media directories for library-level grouping (longest
+        # first). Both `path` and `label` — the label is the user's display
+        # name and takes precedence; the path is the matching key + fallback
+        # derivation.
+        media_dir_rows = con.execute(
+            "SELECT path, label FROM media_dirs ORDER BY LENGTH(path) DESC").fetchall()
+
+        # VMAF quality scores. Canonical 3-tier table (v0.3.32+) — see
+        # frontend/src/utils/vmaf.ts. The previous "fair" bucket (80–87) was
+        # folded into "poor"; old API consumers will see fair=0 if they
+        # still ask for it.
+        vmaf_row = con.execute(
+            "SELECT COUNT(*) AS count, AVG(vmaf_score) AS avg, "
+            "SUM(vmaf_score >= 93) AS excellent, "
+            "SUM(vmaf_score >= 87 AND vmaf_score < 93) AS good, "
+            "SUM(vmaf_score < 87) AS poor "
+            "FROM jobs WHERE status = 'completed' AND vmaf_score IS NOT NULL AND vmaf_score > 0"
+        ).fetchone()
     finally:
-        await db.close()
+        con.close()
 
     # ---- Compute all stats in Python ----
 
@@ -140,15 +170,10 @@ async def get_stats_summary():
     # Load configured media directories for library-level grouping.
     # Both `path` and `label` — the label is the user's display name and
     # takes precedence; the path is the matching key + fallback derivation.
-    _media_dirs: list[dict] = []
-    try:
-        async with db.execute("SELECT path, label FROM media_dirs ORDER BY LENGTH(path) DESC") as cur:
-            _media_dirs = [
-                {"path": r["path"].rstrip("/"), "label": (r["label"] or "").strip()}
-                for r in await cur.fetchall()
-            ]
-    except Exception:
-        pass
+    _media_dirs: list[dict] = [
+        {"path": r["path"].rstrip("/"), "label": (r["label"] or "").strip()}
+        for r in media_dir_rows
+    ]
 
     def _volume_name_from_path(p: str) -> str:
         """Disk-space-card-style derivation: `/media/<X>/...` → `X`,
@@ -308,20 +333,11 @@ async def get_stats_summary():
     # folded into "poor"; old API consumers will see fair=0 if they
     # still ask for it.
     vmaf_stats = {"avg": 0, "count": 0, "excellent": 0, "good": 0, "poor": 0}
-    try:
-        async with db.execute(
-            "SELECT vmaf_score FROM jobs WHERE status='completed' AND vmaf_score IS NOT NULL AND vmaf_score > 0"
-        ) as cur:
-            vmaf_rows = await cur.fetchall()
-        if vmaf_rows:
-            scores = [r["vmaf_score"] for r in vmaf_rows]
-            vmaf_stats["count"] = len(scores)
-            vmaf_stats["avg"] = round(sum(scores) / len(scores), 1)
-            vmaf_stats["excellent"] = sum(1 for s in scores if s >= 93)
-            vmaf_stats["good"] = sum(1 for s in scores if 87 <= s < 93)
-            vmaf_stats["poor"] = sum(1 for s in scores if s < 87)
-    except Exception:
-        pass
+    if vmaf_row and vmaf_row["count"]:
+        vmaf_stats.update(
+            count=vmaf_row["count"], avg=round(vmaf_row["avg"], 1),
+            excellent=vmaf_row["excellent"], good=vmaf_row["good"], poor=vmaf_row["poor"],
+        )
 
     return {
         # Overview cards
