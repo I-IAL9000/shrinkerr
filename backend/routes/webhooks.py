@@ -189,12 +189,12 @@ async def webhook_queue(request: WebhookQueueRequest):
         )
         added += 1
 
-    # Auto-start queue if items were added and worker is idle
+    # Auto-start queue if items were added and worker is idle (never over a
+    # manual pause)
     if added > 0:
         from backend.routes.jobs import _worker
-        if _worker is not None and (not _worker._running or _worker._paused):
-            print(f"[WEBHOOK] Auto-starting queue for {added} new job(s)", flush=True)
-            _worker.start()
+        if _worker is not None and _worker.start_if_idle():
+            print(f"[WEBHOOK] Auto-started queue for {added} new job(s)", flush=True)
 
     return {"added": added, "errors": errors}
 

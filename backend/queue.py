@@ -1144,6 +1144,7 @@ class QueueWorker:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._paused = False
+        self._last_state_save: Optional[asyncio.Task] = None
         # Parallel job tracking: keyed by job_id
         self._active_procs: dict[int, asyncio.subprocess.Process] = {}
         self._active_tasks: dict[int, asyncio.Task] = {}
@@ -1281,9 +1282,65 @@ class QueueWorker:
         """Compat: return first active job id (for API that expects single job)."""
         return next(iter(self._active_procs), None)
 
+    # v0.10.0: Start / Pause / Resume are remembered across restarts (an
+    # automatic image update left auto-queued files waiting for a click).
+    _RUN_STATE_KEY = "queue_run_state"
+
+    def _remember_run_state(self, state: str) -> None:
+        previous = self._last_state_save
+
+        async def _save() -> None:
+            if previous is not None:  # in order: start then pause ends paused
+                try:
+                    await previous
+                except Exception:
+                    pass
+            try:
+                async with aiosqlite.connect(self.db_path) as db:
+                    await db.execute("PRAGMA busy_timeout=30000")
+                    await db.execute(
+                        "INSERT INTO settings (key, value) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (self._RUN_STATE_KEY, state))
+                    await db.commit()
+            except Exception as exc:
+                print(f"[WORKER] Could not save the queue state ({state}): {exc}", flush=True)
+        try:
+            self._last_state_save = asyncio.get_running_loop().create_task(_save())
+        except RuntimeError:
+            pass  # no event loop (sync caller): nothing to persist with
+
+    async def restore_run_state(self) -> None:
+        """At startup: start the queue if it was running, and keep it paused
+        if it was paused. Never started (or an older install): stays stopped."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("SELECT value FROM settings WHERE key = ?",
+                                      (self._RUN_STATE_KEY,)) as cur:
+                    row = await cur.fetchone()
+        except Exception as exc:
+            print(f"[WORKER] Could not read the queue state: {exc}", flush=True)
+            return
+        state = row[0] if row else None
+        if state in ("running", "paused"):
+            print(f"[WORKER] Restoring the queue: {state}", flush=True)
+            self.start()
+            if state == "paused":
+                self.pause()
+
+    def start_if_idle(self) -> bool:
+        """Start the queue for newly added work (webhooks, add-by-path, health
+        checks) unless the user paused it. These used to call start(), which
+        also cleared a pause set on purpose."""
+        if self._paused or (self._running and self._task and not self._task.done()):
+            return False
+        self.start()
+        return True
+
     def start(self) -> None:
         print(f"[WORKER] start() called: _running={self._running}, _task={self._task}, _task.done={self._task.done() if self._task else 'N/A'}", flush=True)
         self._paused = False
+        self._remember_run_state("running")
         if self._running and self._task and not self._task.done():
             print("[WORKER] Already running, unpaused", flush=True)
             return
@@ -1309,9 +1366,11 @@ class QueueWorker:
 
     def pause(self) -> None:
         self._paused = True
+        self._remember_run_state("paused")
 
     def resume(self) -> None:
         self._paused = False
+        self._remember_run_state("running")
 
     async def _reap_orphaned_running(self) -> int:
         """Return stale 'running' rows that no live worker task owns to 'pending'.

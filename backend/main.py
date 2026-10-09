@@ -349,6 +349,7 @@ async def lifespan(app: FastAPI):
     app.state.node_manager = node_manager
     init_job_routes(worker, queue)
     init_scheduler(worker.start)
+    await worker.restore_run_state()
     watcher.start()
     # Weekly database backup task (keeps last 4)
     import asyncio

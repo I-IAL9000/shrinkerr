@@ -277,10 +277,15 @@ function KeyboardShortcuts({ onToggleQueue }: { onToggleQueue: () => void }) {
         case "h": navigate("/schedule"); break;
         case "m": navigate("/monitor"); break;
         case "e": navigate("/settings"); break;
-        case " ": // Space = toggle queue start/pause
+        case " ": { // Space = toggle queue start/pause
+          // Not while a button, link or other control has focus: Space
+          // presses that control (v0.10.0 — it toggled the queue instead).
+          const el = e.target as HTMLElement;
+          if (el?.closest?.("button, a, summary, [role=button], [role=checkbox], [role=switch], [role=tab], [role=menuitem], [role=option], [role=radio]")) return;
           e.preventDefault();
           onToggleQueue();
           break;
+        }
         default: break;
       }
     };

@@ -865,10 +865,9 @@ async def queue_health_checks(payload: HealthCheckRequest):
     all_ids = await _queue.add_jobs_bulk(jobs_to_insert)
     job_ids = [jid for jid in all_ids if jid]
 
-    # Auto-start the worker if idle
+    # Auto-start the worker if idle (never over a manual pause)
     if job_ids and _worker is not None:
-        if not _worker._running or _worker._paused:
-            _worker.start()
+        _worker.start_if_idle()
 
     return {"added": len(job_ids), "job_ids": job_ids, "mode": mode}
 
@@ -1119,11 +1118,10 @@ async def add_jobs_by_path(payload: AddByPathRequest):
         added += 1
         print(f"[API] Queued by path: {_os.path.basename(fp)} ({job_type}, priority={payload.priority}, insert_next={payload.insert_next})", flush=True)
 
-    # Auto-start queue if items were added and worker is idle
-    if added > 0 and _worker is not None:
-        if not _worker._running or _worker._paused:
-            print(f"[API] Auto-starting queue for {added} new job(s) from add-by-path", flush=True)
-            _worker.start()
+    # Auto-start queue if items were added and worker is idle (never over a
+    # manual pause)
+    if added > 0 and _worker is not None and _worker.start_if_idle():
+        print(f"[API] Auto-started queue for {added} new job(s) from add-by-path", flush=True)
 
     return {"added": added, "errors": errors}
 
