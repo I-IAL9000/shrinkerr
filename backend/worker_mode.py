@@ -483,9 +483,13 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "audio_codec": job.get("audio_codec") or "copy",
                 "audio_bitrate": job.get("audio_bitrate") or 128,
                 "target_resolution": job.get("target_resolution") or "copy",
-                "filename_suffix": "",
-                "custom_ffmpeg_flags": "",
-                "auto_convert_lossless": False,
+                # Output name, custom flags and lossless audio follow the
+                # server (v0.10.0; they were hard-coded off).
+                "filename_suffix": job.get("filename_suffix") or "",
+                "custom_ffmpeg_flags": job.get("custom_ffmpeg_flags") or "",
+                "auto_convert_lossless": bool(job.get("auto_convert_lossless", False)),
+                "lossless_target_codec": job.get("lossless_target_codec") or "eac3",
+                "lossless_target_bitrate": int(job.get("lossless_target_bitrate") or 640),
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server
@@ -531,6 +535,9 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 pre_settings=worker_settings,
                 audio_tracks_to_remove=_audio_rm if job_type == "combined" else None,
                 subtitle_tracks_to_remove=_sub_rm if job_type == "combined" else None,
+                # Sidecar subtitles to merge: the worker has no Scanner rows.
+                external_subs=job.get("external_subs") if "external_subs" in job else None,
+                delete_merged_subs=job.get("delete_external_subs_after_merge"),
             )
 
             # A cancel that came after the output replaced the original (e.g.

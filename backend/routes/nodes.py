@@ -403,7 +403,10 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq', "
             "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec', "
             "              'videotoolbox_quality', 'videotoolbox_hw_decode', "
-            "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder')"
+            "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder', "
+            "              'filename_suffix', 'custom_ffmpeg_flags', 'auto_convert_lossless', "
+            "              'lossless_target_codec', 'lossless_target_bitrate', "
+            "              'delete_external_subs_after_merge')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
     finally:
@@ -429,6 +432,26 @@ async def request_job(req: RequestJobBody, request: Request):
             worker_folder = ""
         backup_folder = worker_folder
     assigned["backup_folder"] = backup_folder
+    # Output name, custom flags, lossless audio and sidecar subtitles follow
+    # the server too — workers hard-coded none of them (v0.10.0). Sidecars
+    # come from this server's Scanner row, translated to the worker's paths.
+    assigned["filename_suffix"] = srv_settings.get("filename_suffix") or ""
+    assigned["custom_ffmpeg_flags"] = srv_settings.get("custom_ffmpeg_flags") or ""
+    assigned["auto_convert_lossless"] = (srv_settings.get("auto_convert_lossless") or "false").lower() == "true"
+    assigned["lossless_target_codec"] = srv_settings.get("lossless_target_codec") or "eac3"
+    try:
+        assigned["lossless_target_bitrate"] = int(srv_settings.get("lossless_target_bitrate") or 640)
+    except (TypeError, ValueError):
+        assigned["lossless_target_bitrate"] = 640
+    from backend.converter import external_subs_to_merge
+    external = []
+    for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned
+        worker_path = await nm.translate_path(sub["path"], req.node_id, "to_worker")
+        external.append({**sub, "path": worker_path})
+    assigned["external_subs"] = external
+    assigned["delete_external_subs_after_merge"] = (
+        (srv_settings.get("delete_external_subs_after_merge") or "false").lower() == "true"
+    )
     try:
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):

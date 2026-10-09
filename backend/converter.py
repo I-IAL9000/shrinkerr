@@ -2587,18 +2587,21 @@ async def external_subs_to_merge(source_path: str) -> list[dict] | None:
     return external_sub_files
 
 
-def delete_merged_external_subs(external_sub_files: list[dict] | None) -> None:
+def delete_merged_external_subs(external_sub_files: list[dict] | None, delete: bool | None = None) -> None:
     """Delete sidecar subtitles that were muxed into the output, when
-    "Delete external subtitles after merging" is on."""
+    "Delete external subtitles after merging" is on (or `delete`, when the
+    caller knows — a remote worker gets it from the server)."""
     if not external_sub_files:
         return
-    try:
-        from backend.scanner import _is_cleanup_enabled as _ice
-        # v0.5.21: explicit default=False to match UI default and
-        # avoid silent file deletion on missing-row installs.
-        if not _ice("delete_external_subs_after_merge", default=False):
-            return
-    except Exception:
+    if delete is None:
+        try:
+            from backend.scanner import _is_cleanup_enabled as _ice
+            # v0.5.21: explicit default=False to match UI default and
+            # avoid silent file deletion on missing-row installs.
+            delete = _ice("delete_external_subs_after_merge", default=False)
+        except Exception:
+            delete = False
+    if not delete:
         return
     for es in external_sub_files:
         try:
@@ -2660,9 +2663,15 @@ async def convert_file(
     audio_tracks_to_remove: Optional[list] = None,
     subtitle_tracks_to_remove: Optional[list] = None,
     on_output_placed: Optional[Callable] = None,
+    external_subs: Optional[list[dict]] = None,
+    delete_merged_subs: Optional[bool] = None,
 ) -> dict:
     """
     Convert a video file to HEVC.
+
+    `external_subs` / `delete_merged_subs` (v0.10.0): sidecar subtitles to
+    merge and whether to delete them afterwards, from the caller — a remote
+    worker has no Scanner rows or settings of its own to look them up in.
 
     `on_output_placed` (async, v0.10.0) runs the moment the output has
     replaced the original — before the original is backed up / trashed,
@@ -3171,7 +3180,7 @@ async def convert_file(
             print(f"[CONVERT] Pre-strip done — main encode runs on {prestrip_path}", flush=True)
 
     # Load external subtitle files to merge (if the setting is enabled)
-    external_sub_files = await external_subs_to_merge(input_path)
+    external_sub_files = external_subs if external_subs is not None else await external_subs_to_merge(input_path)
 
     # v0.5.6: thread cap from live settings (0 = ffmpeg auto).
     try:
@@ -4477,7 +4486,7 @@ async def convert_file(
         return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
 
     # Handle external subtitle files after successful conversion
-    delete_merged_external_subs(external_sub_files)
+    delete_merged_external_subs(external_sub_files, delete_merged_subs)
 
     # Rename remaining external subtitle files to match the new filename
     final_stem = Path(final_path).stem

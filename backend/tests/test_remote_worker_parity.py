@@ -107,3 +107,91 @@ async def test_remote_completion_updates_the_scan_row_and_job(node_api, test_db,
     assert rows[0]["video_codec"] == "hevc" and rows[0]["needs_conversion"] == 0
     assert [(t["stream_index"], t["language"]) for t in json.loads(rows[0]["audio_tracks_json"])] == [(1, "eng")]
     assert jrow == {"file_path": str(out), "original_file_path": str(src), "status": "completed"}
+
+
+@pytest.mark.asyncio
+async def test_workers_get_the_output_and_audio_settings_and_sidecar_subtitles(node_api, test_db, tmp_path, monkeypatch):
+    """Workers hard-coded no filename suffix, no custom flags and no lossless
+    conversion, and never merged sidecar subtitles (v0.10.0)."""
+    import backend.config
+    import backend.scanner as scanner
+    monkeypatch.setattr(scanner, "settings", backend.config.settings)
+    monkeypatch.setattr(scanner, "_cleanup_enabled_cache", {})
+    nm, request = node_api
+    media = tmp_path / "media"
+    media.mkdir()
+    srt = media / "b.is.srt"
+    srt.write_text("1\n00:00:00,500 --> 00:00:01,500\nHalló\n\n")
+    await _setup(test_db, {"filename_suffix": "-Shrinkerr", "custom_ffmpeg_flags": "-tune grain",
+                           "auto_convert_lossless": "true", "lossless_target_codec": "ac3",
+                           "lossless_target_bitrate": "448", "merge_external_subs": "true",
+                           "delete_external_subs_after_merge": "true"},
+                 mappings=[{"server": str(media), "worker": "/mnt/media"}])
+    subs = [{"stream_index": -1, "language": "ice", "codec": "subrip", "keep": True,
+             "external": True, "external_path": str(srt)}]
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp, subtitle_tracks_json) "
+                         "VALUES (?, 1, '2026-10-08T00:00:00', ?)", (str(media / "b.mkv"), json.dumps(subs)))
+        await db.commit()
+    await JobQueue(test_db).add_job(str(media / "b.mkv"), "convert", encoder="libx265")
+
+    job = (await nodes_route.request_job(nodes_route.RequestJobBody(node_id="node-1"), request))["job"]
+
+    assert (job["filename_suffix"], job["custom_ffmpeg_flags"]) == ("-Shrinkerr", "-tune grain")
+    assert (job["auto_convert_lossless"], job["lossless_target_codec"], job["lossless_target_bitrate"]) == (True, "ac3", 448)
+    if shutil.which("ffprobe"):  # sidecars are only merged when ffmpeg can read them
+        assert [(s["path"], s["language"]) for s in job["external_subs"]] == [("/mnt/media/b.is.srt", "ice")]
+    assert job["delete_external_subs_after_merge"] is True
+
+
+@pytest.mark.asyncio
+async def test_the_worker_hands_them_to_convert_file(tmp_path, monkeypatch):
+    import backend.converter
+    import backend.scanner
+    from backend import worker_mode
+    from backend.tests.test_worker_audio_remux import PROBE, FakeClient
+    src = tmp_path / "Movie (2009) h264.mkv"
+    src.write_bytes(b"x")
+    seen = {}
+
+    async def fake_probe(path, *a, **kw):
+        return dict(PROBE)
+
+    async def fake_convert_file(**kwargs):
+        seen.update(kwargs)
+        return {"success": True, "output_path": str(src), "space_saved": 1, "error": None}
+
+    monkeypatch.setattr(backend.scanner, "probe_file", fake_probe)
+    monkeypatch.setattr(backend.converter, "convert_file", fake_convert_file)
+    subs = [{"path": "/mnt/media/b.is.srt", "codec": "subrip", "language": "ice", "forced": False}]
+    await worker_mode.execute_job(FakeClient(), "node-1", {
+        "id": 9, "file_path": str(src), "job_type": "convert", "encoder": "libx265",
+        "filename_suffix": "-Shrinkerr", "custom_ffmpeg_flags": "-tune grain",
+        "auto_convert_lossless": True, "lossless_target_codec": "ac3", "lossless_target_bitrate": 448,
+        "external_subs": subs, "delete_external_subs_after_merge": True,
+    }, ["libx265"])
+
+    settings = seen["pre_settings"]
+    assert (settings["filename_suffix"], settings["custom_ffmpeg_flags"]) == ("-Shrinkerr", "-tune grain")
+    assert (settings["auto_convert_lossless"], settings["lossless_target_codec"], settings["lossless_target_bitrate"]) == (True, "ac3", 448)
+    assert seen["external_subs"] == subs and seen["delete_merged_subs"] is True
+
+
+@pytest.mark.asyncio
+async def test_convert_file_merges_the_sidecars_it_is_given(test_db, tmp_path):
+    import subprocess
+    from backend.converter import convert_file
+    from backend.tests.test_cleanup_merges_external_subs import _subtitle_languages
+    from backend.tests.test_output_integrity import _clip, needs_libx265
+    if needs_libx265.args[0]:
+        pytest.skip("needs ffmpeg with libx265")
+    src = tmp_path / "Movie (2009) 1080p WEB h264.mkv"
+    _clip(src, seconds=2)
+    srt = tmp_path / "Movie (2009) 1080p WEB h264.is.srt"
+    srt.write_text("1\n00:00:00,500 --> 00:00:01,500\nHalló\n\n")
+    result = await convert_file(str(src), "libx265", 2.0, override_libx265_preset="ultrafast",
+                                external_subs=[{"path": str(srt), "codec": "subrip", "language": "ice", "forced": False}],
+                                delete_merged_subs=True)
+    assert result["success"], result.get("error")
+    assert _subtitle_languages(result["output_path"]) == ["ice"]
+    assert not srt.exists()
