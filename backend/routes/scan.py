@@ -165,8 +165,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 """INSERT INTO scan_results
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, probe_error, video_height,
-                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format, video_width)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format, video_width, probe_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -210,7 +210,9 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        -- is_dubbed_flag: scan native is always heuristic -> 0; recomputed by refresh/set-language
                        is_dubbed_flag=0,
                        hdr_format=excluded.hdr_format,
-                       video_width=excluded.video_width
+                       video_width=excluded.video_width,
+                       -- SC-13: NULL from the watcher drops a stale probe.
+                       probe_json=excluded.probe_json
                 """,
                 (
                     scanned.file_path,
@@ -238,6 +240,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     has_und,  # v0.8.0 language detection
                     getattr(scanned, 'hdr_format', None),  # v0.10.0
                     getattr(scanned, 'video_width', 0),  # v0.10.0 (SC-22)
+                    getattr(scanned, 'probe_cache', None),  # v0.10.0 (SC-13)
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
@@ -386,7 +389,8 @@ def duplicate_groups(paths) -> dict[str, list[str]]:
     return groups
 
 
-def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str) -> None:
+def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, cancel_file: str,
+                         reuse_probes: bool = False) -> None:
     """Runs in a separate process — does all ffprobe/DB work without blocking the main event loop."""
     import os
     import sqlite3
@@ -460,6 +464,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                     result_callback=result_cb,
                     cancel_check=is_cancelled,
                     unreadable=unreadable_dirs,
+                    reuse_probes=reuse_probes,
                 )
                 completed_paths.append(path)
             except Exception as exc:
@@ -771,7 +776,9 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
     # Start scan in a separate process
     proc = multiprocessing.Process(
         target=_scan_worker_process,
-        args=(paths, DB_PATH, _scan_progress_file, _scan_cancel_file),
+        # A full scan reuses unchanged files' probes; a folder rescan is how
+        # someone asks for a fresh look, so it probes everything (SC-13).
+        args=(paths, DB_PATH, _scan_progress_file, _scan_cancel_file, not is_folder_rescan),
         daemon=True,
     )
     proc.start()

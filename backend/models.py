@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Optional
 
 class AudioTrack(BaseModel):
@@ -79,6 +79,9 @@ class ScannedFile(BaseModel):
     # VIDEO_TS/BDMV folder structure and registers the marker file as
     # a single scan item instead of recursing into the disc payload.
     disc_type: Optional[str] = None
+    # SC-13 (v0.10.0): the raw probe with the file's size and mtime, stored
+    # as scan_results.probe_json so a full rescan can skip an unchanged file.
+    probe_cache: Optional[str] = Field(default=None, exclude=True)
 
 class ScanRequest(BaseModel):
     paths: list[str]

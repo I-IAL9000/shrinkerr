@@ -464,6 +464,12 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN video_width INTEGER DEFAULT 0")
         except Exception:
             pass
+        # SC-13 (v0.10.0): the file's last probe, reused by full rescans
+        # while its size and mtime don't change (scanner.scan_directory).
+        try:
+            await db.execute("ALTER TABLE scan_results ADD COLUMN probe_json TEXT DEFAULT NULL")
+        except Exception:
+            pass
         # Migration: add probe_status column to scan_results
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN probe_status TEXT DEFAULT 'ok'")

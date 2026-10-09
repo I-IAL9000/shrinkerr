@@ -108,9 +108,10 @@ folder if configured. If `backup_original_days = 0` and no centralized
 writes.
 
 **Will Shrinkerr re-scan files it's already seen?**
-It uses mtime + size to skip unchanged files. If a file's mtime changes,
-it's re-scanned. Forced re-scans via the Scanner "Rescan" button always
-re-check every file under the chosen path.
+A full scan reuses what it read from a file last time when the file's size
+and modification time haven't changed (its tracks are still sorted with your
+current language settings). If either changes, the file is read again.
+Rescanning a single folder from the Scanner always re-reads every file in it.
 
 **Some of my tracks show as "unknown" language. Can Shrinkerr fix that?**
 Yes. Text subtitles are identified automatically during a scan. For `und`

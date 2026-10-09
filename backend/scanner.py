@@ -396,6 +396,11 @@ def is_picture_stream(stream: dict) -> bool:
     return stream.get("codec_name") != "mjpeg"
 
 
+# Bump when probe_file's result changes (a new field, different detection):
+# full rescans then probe every file again instead of reusing stored probes.
+PROBE_CACHE_VERSION = 1
+
+
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
     """Run ffprobe on a file and return parsed metadata dict, or None on failure.
 
@@ -1857,9 +1862,13 @@ async def scan_directory(
     result_callback: Optional[Callable] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     unreadable: Optional[list[str]] = None,
+    reuse_probes: bool = False,
 ) -> list[ScannedFile]:
     """
     Walk dir_path, probe video files, classify tracks, build ScannedFile list.
+
+    `reuse_probes` (SC-13, v0.10.0): a file whose size and mtime haven't
+    changed since its last scan reuses the probe stored with it.
 
     If result_callback is provided, each result is passed to it immediately
     (for streaming/batched DB writes). Results are still returned as a list
@@ -1943,11 +1952,53 @@ async def scan_directory(
     PROBE_CHUNK = max(SCAN_CONCURRENCY * 50, 100)  # ~100-200 files per gather
     probe_sem = asyncio.Semaphore(SCAN_CONCURRENCY)
 
-    async def _do_probe(fp):
+    # SC-13 (v0.10.0): a full rescan probed every file again — ~33k ffprobes
+    # over the NAS, plus, for each unlabelled subtitle, reading up to 30
+    # minutes of the file to detect its language. A file whose size and
+    # mtime (ns) are unchanged reuses the probe its last scan stored
+    # (scan_results.probe_json); its tracks are still classified with the
+    # current settings. Disc images and failed probes aren't stored.
+    probe_caches: dict[str, str] = {}
+    reused = 0
+
+    def _stored_probes(paths: list[str]) -> dict[str, str]:
+        import sqlite3
+        con = sqlite3.connect(settings.db_path, timeout=30)
+        try:
+            marks = ",".join("?" * len(paths))
+            return dict(con.execute(
+                f"SELECT file_path, probe_json FROM scan_results "
+                f"WHERE probe_json IS NOT NULL AND file_path IN ({marks})", paths))
+        finally:
+            con.close()
+
+    async def _do_probe(fp, stored: dict[str, str]):
+        nonlocal reused
         async with probe_sem:
             if cancel_check and cancel_check():
                 return None
-            return await probe_file(str(fp))
+            path = str(fp)
+            try:
+                st = await asyncio.to_thread(os.stat, path)
+                signature = {"v": PROBE_CACHE_VERSION, "size": st.st_size, "mtime_ns": st.st_mtime_ns}
+            except OSError:
+                signature = None
+            if signature and path in stored:
+                try:
+                    cached = json.loads(stored[path])
+                    if all(cached.get(k) == signature[k] for k in signature) and cached.get("probe"):
+                        probe_caches[path] = stored[path]
+                        reused += 1
+                        return cached["probe"]
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            probe = await probe_file(path)
+            if signature and probe and not probe.get("disc_type"):
+                try:
+                    probe_caches[path] = json.dumps({**signature, "probe": probe})
+                except (TypeError, ValueError):
+                    pass
+            return probe
 
     print(
         f"[SCANNER] Pre-probing {total} files with concurrency={SCAN_CONCURRENCY}",
@@ -1962,7 +2013,13 @@ async def scan_directory(
             )
             break
         chunk = all_files[chunk_start : chunk_start + PROBE_CHUNK]
-        chunk_probes = await asyncio.gather(*[_do_probe(fp) for fp in chunk])
+        stored: dict[str, str] = {}
+        if reuse_probes:
+            try:
+                stored = await asyncio.to_thread(_stored_probes, [str(fp) for fp in chunk])
+            except Exception as exc:
+                print(f"[SCANNER] Stored probes unavailable, probing: {exc}", flush=True)
+        chunk_probes = await asyncio.gather(*[_do_probe(fp, stored) for fp in chunk])
         for fp, pr in zip(chunk, chunk_probes):
             probes[str(fp)] = pr
         if progress_callback:
@@ -1973,6 +2030,9 @@ async def scan_directory(
                 files_probed=min(chunk_start + PROBE_CHUNK, total),
                 total_files=total,
             )
+
+    if reused:
+        print(f"[SCANNER] {reused} of {total} files unchanged since the last scan: reused their probes", flush=True)
 
     for idx, file_path in enumerate(all_files):
         if cancel_check and cancel_check():
@@ -2225,6 +2285,7 @@ async def scan_directory(
             video_width=probe.get("video_width", 0),
             hdr_format=probe.get("hdr_format"),
             disc_type=disc_type_val,  # v0.6.0
+            probe_cache=probe_caches.pop(str(file_path), None),  # v0.10.0 (SC-13)
         )
         if result_callback:
             await result_callback(scanned)
