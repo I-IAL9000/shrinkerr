@@ -20,17 +20,13 @@
     "menu": "Menú"
   },
   "settingsSections": {
-    "directories": "Directorios",
+    "media": "Medios",
     "video": "Vídeo",
-    "audio": "Audio",
-    "subtitles": "Subtítulos",
-    "connections": "Conexiones",
-    "rules": "Reglas",
-    "renaming": "Renombrado",
+    "audioSubtitles": "Audio y subtítulos",
     "automation": "Automatización",
-    "system": "Sistema",
-    "updates": "Actualizaciones",
-    "support": "Soporte"
+    "integrations": "Integraciones",
+    "notifications": "Notificaciones",
+    "system": "Sistema"
   },
   "version": {
     "updateAvailable": "Actualización disponible",

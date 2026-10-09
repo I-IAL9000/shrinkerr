@@ -70,5 +70,9 @@
     "folderType": "Tipo de carpeta",
     "streams": "Reproducciones que pausan la codificación",
     "bitrate": "Tasa de bits"
+  },
+  "settingsSearch": {
+    "placeholder": "Buscar ajustes",
+    "none": "Ningún ajuste coincide"
   }
 }

@@ -110,8 +110,7 @@
     "reveal": "Mostrar",
     "copy": "Copiar al portapapeles",
     "regenerate": "Regenerar la clave de API (en el servidor; se aplica de inmediato)",
-    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa.",
-    "save": "Guardar autenticación"
+    "apiKeyHelp": "La usan NZBGet, SABnzbd, los workers remotos y otras integraciones externas. No es necesaria para iniciar sesión en el navegador. Se muestra enmascarada: pulsa 👁 para mostrarla o ⧉ para copiar la clave completa."
   },
   "notifications": {
     "title": "Notificaciones",
@@ -136,7 +135,6 @@
     "genericWebhook": "Webhook genérico",
     "genericWebhookUrl": "URL (recibe un POST JSON)",
     "payload": "Contenido:",
-    "save": "Guardar ajustes de notificaciones",
     "test": "Probar notificaciones"
   },
   "backups": {
@@ -208,17 +206,14 @@
     "clearedPending_many": "Se eliminaron {{formatted}} trabajos de comprobación pendientes",
     "clearedPending_other": "Se eliminaron {{formatted}} trabajos de comprobación pendientes",
     "urlCopied": "URL copiada",
-    "scriptSaved": "Ajustes del script posterior a la conversión guardados",
     "noApiKey": "No hay ninguna clave de API configurada",
     "fetchKeyFailed": "No se pudo obtener la clave: {{error}}",
     "apiKeyCopied": "Clave de API copiada",
     "apiKeyRegenerated": "Clave de API regenerada: cópiala y actualiza la configuración de tus workers / NZBGet / SABnzbd",
     "regenerateEmpty": "La regeneración devolvió una clave vacía",
     "regenerateFailed": "Error al regenerar: {{error}}",
-    "authSaved": "Ajustes de autenticación guardados",
     "notificationLanguageSaved": "Idioma de las notificaciones guardado",
     "notificationLanguageFailed": "No se pudo guardar el idioma de las notificaciones: {{error}}",
-    "notificationsSaved": "Ajustes de notificaciones guardados",
     "testSent": "Prueba enviada: {{providers}}",
     "testFailed": "Error: {{providers}}",
     "noProviders": "No hay ningún proveedor de notificaciones configurado",

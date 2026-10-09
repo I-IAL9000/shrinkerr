@@ -220,7 +220,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
       title: t("dashboard:setup.dirs.title"),
       description: t("dashboard:setup.dirs.description"),
       done: setup.has_dirs,
-      action: () => navigate("/settings"),
+      action: () => navigate("/settings/media"),
       actionLabel: t("dashboard:setup.dirs.action"),
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -248,7 +248,7 @@ function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: (
       title: t("dashboard:setup.customize.title"),
       description: t("dashboard:setup.customize.description"),
       done: setup.has_plex,
-      action: () => navigate("/settings#connections"),
+      action: () => navigate("/settings/integrations"),
       actionLabel: t("dashboard:setup.customize.action"),
       optional: true,
       icon: (

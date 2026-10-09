@@ -70,5 +70,9 @@
     "folderType": "Folder type",
     "streams": "Streams that pause encoding",
     "bitrate": "Bitrate"
+  },
+  "settingsSearch": {
+    "placeholder": "Search settings",
+    "none": "No setting matches"
   }
 }

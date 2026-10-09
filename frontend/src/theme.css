@@ -328,6 +328,49 @@ body {
   color: var(--text-secondary);
   background: rgba(255,255,255,0.03);
 }
+.settings-subnav-link.active { color: var(--accent-text); font-weight: 600; }
+
+/* Settings search, sub-page strip (phones) and the Save bar (v0.10.0). */
+.settings-search { position: relative; max-width: 420px; margin-bottom: 16px; }
+.settings-search input {
+  width: 100%; height: 34px; padding: 0 12px; font-size: 13px;
+  background: var(--bg-primary); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.settings-search-results {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 60;
+  max-height: 360px; overflow-y: auto; padding: 4px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+.settings-search-results button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%;
+  padding: 7px 10px; text-align: left; font-size: 13px; color: var(--text-primary);
+  background: none; border: none; border-radius: 4px; cursor: pointer;
+}
+.settings-search-results button:hover,
+.settings-search-results button:focus-visible { background: var(--bg-secondary); }
+.settings-search-text { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.settings-search-section { flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+.settings-search-empty { padding: 8px 10px; font-size: 13px; color: var(--text-muted); }
+
+.settings-section-strip { display: none; }
+
+.settings-save-bar {
+  position: sticky; bottom: 16px; z-index: 40;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 24px; padding: 10px 14px;
+  background: var(--bg-card); border: 1px solid var(--accent); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+}
+.settings-save-bar > span { flex: 1; font-size: 13px; color: var(--text-primary); }
+
+.settings-highlight {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  transition: outline-color 0.3s;
+}
 
 .main-content {
   flex: 1;
@@ -850,6 +893,18 @@ input[type="checkbox"] { cursor: pointer; }
 @media (min-width: 1400px) {
   .monitor-detail-grid { grid-template-columns: repeat(4, 1fr); }
 }
+@media (max-width: 768px) {
+  .settings-section-strip {
+    display: flex; gap: 6px; overflow-x: auto; margin: 0 -4px 16px; padding: 0 4px 4px;
+  }
+  .settings-section-strip button {
+    flex-shrink: 0; padding: 6px 12px; font-size: 13px; white-space: nowrap; cursor: pointer;
+    color: var(--text-secondary); background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 999px;
+  }
+  .settings-section-strip button.active { color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+}
+
 @media (max-width: 768px) {
   .monitor-detail-grid { grid-template-columns: 1fr; }
 }

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Settings has a page per topic** — Media, Video, Audio & subtitles, Automation, Integrations, Notifications and System — instead of one very long page, plus a search box that jumps to any setting. One Save bar replaces the Save button each section had: it counts your unsaved changes, sends only those, and warns before you leave Settings without saving. Old links such as `/settings#connections` still land on the right page.
 - **Theme: System, Light or Dark** (Settings → User interface). System follows your device's light / dark setting and is what a browser that never chose a theme gets; a saved Light or Dark is kept.
 - The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).
 - After an update, a short "What's new" dialog lists the new features and the main fixes, once.

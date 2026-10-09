@@ -15,7 +15,6 @@
     "connectedLibraries_many": "Conectado a {{name}} ({{count}} bibliotecas)",
     "connectedLibraries_other": "Conectado a {{name}} ({{count}} bibliotecas)",
     "connectionFailed": "Error de conexión",
-    "saveFailed": "Error al guardar: {{error}}",
     "refreshAfter": "Actualizar la biblioteca tras la conversión",
     "enabled": "Activado",
     "disabled": "Desactivado"
@@ -42,8 +41,7 @@
     "testFailed": "La prueba falló",
     "requestFailed": "La solicitud falló",
     "connectedUser": "Conectado: usando tu clave",
-    "connectedBundled": "Conectado: usando la clave incluida",
-    "save": "Guardar clave de API"
+    "connectedBundled": "Conectado: usando la clave incluida"
   },
   "plex": {
     "intro": "Conecta tu servidor Plex para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas, colecciones y géneros de Plex, priorizar el contenido no visto en la cola y pausar la codificación cuando alguien esté reproduciendo.",
@@ -83,7 +81,6 @@
     "emptyTrashHelp": "Vacía automáticamente la papelera de la biblioteca de Plex cuando termina cada escaneo de conversión.",
     "prioritizeUnwatched": "Priorizar contenido no visto",
     "prioritizeUnwatchedHelp": "Al añadir archivos a la cola, el contenido no visto recibe automáticamente prioridad Alta para que se convierta primero. Es más probable que notes las mejoras de calidad en contenido que aún no has visto. Requiere sincronizar con Plex.",
-    "save": "Guardar ajustes de Plex",
     "errors": {
       "popupBlocked": "Ventana emergente bloqueada. Permite las ventanas emergentes para este sitio e inténtalo de nuevo.",
       "timedOut": "Se agotó el tiempo de espera del inicio de sesión en Plex. Inténtalo de nuevo.",
@@ -95,17 +92,13 @@
     "intro": "Conecta tu servidor Jellyfin para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas y géneros de Jellyfin, sincronizar el estado de visto para priorizar la cola y pausar la codificación durante las reproducciones activas.",
     "url": "URL de Jellyfin",
     "apiKeyPlaceholder": "Tu clave de API de Jellyfin",
-    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Jellyfin. Formato: /container=/jellyfin",
-    "saved": "Ajustes de Jellyfin guardados",
-    "save": "Guardar ajustes de Jellyfin"
+    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Jellyfin. Formato: /container=/jellyfin"
   },
   "emby": {
     "intro": "Conecta tu servidor Emby para actualizar automáticamente la biblioteca tras cada conversión, crear reglas de codificación basadas en etiquetas y géneros de Emby, sincronizar el estado de visto para priorizar la cola y pausar la codificación durante las reproducciones activas.",
     "url": "URL de Emby",
     "apiKeyPlaceholder": "Tu clave de API de Emby",
-    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Emby. Formato: /container=/emby",
-    "saved": "Ajustes de Emby guardados",
-    "save": "Guardar ajustes de Emby"
+    "pathMappingHelp": "Asigna rutas del contenedor a rutas de Emby. Formato: /container=/emby"
   },
   "arr": {
     "intro": "Tras la conversión, Shrinkerr puede avisar a Sonarr/Radarr para que vuelvan a escanear la carpeta del título y actualicen su base de datos con el nuevo archivo.",
@@ -114,7 +107,6 @@
     "pathMapping": "Mapeo de rutas",
     "sonarrPathHelp": "Asigna rutas del contenedor a rutas de Sonarr. p. ej. /media/TV1=/TV1",
     "radarrPathHelp": "Asigna rutas del contenedor a rutas de Radarr. p. ej. /media/Movies=/Movies",
-    "saved": "Ajustes de Sonarr/Radarr guardados",
     "testSonarr": "Probar Sonarr",
     "testRadarr": "Probar Radarr",
     "connected": "{{name}} conectado (v{{version}})",
@@ -135,7 +127,6 @@
     "waitForCompletion": "Esperar a que termine la conversión",
     "checkSonarrTags": "Comprobar etiquetas de Sonarr",
     "checkRadarrTags": "Comprobar etiquetas de Radarr",
-    "saved": "Ajustes del cliente de descarga guardados",
     "downloadNzbget": "Descargar script de NZBGet",
     "downloadSabnzbd": "Descargar script de SABnzbd",
     "prereq": {

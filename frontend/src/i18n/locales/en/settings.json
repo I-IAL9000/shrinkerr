@@ -8,5 +8,14 @@
       "light": "Light",
       "dark": "Dark"
     }
+  },
+  "saveBar": {
+    "label": "Unsaved changes",
+    "unsaved_one": "{{count}} unsaved change",
+    "unsaved_other": "{{count}} unsaved changes",
+    "discard": "Discard",
+    "leaveConfirm_one": "You have {{count}} unsaved change. Leave Settings without saving it?",
+    "leaveConfirm_other": "You have {{count}} unsaved changes. Leave Settings without saving them?",
+    "leave": "Leave without saving"
   }
 }

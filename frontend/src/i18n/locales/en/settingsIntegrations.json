@@ -14,7 +14,6 @@
     "connectedLibraries_one": "Connected to {{name}} ({{count}} library)",
     "connectedLibraries_other": "Connected to {{name}} ({{count}} libraries)",
     "connectionFailed": "Connection failed",
-    "saveFailed": "Save failed: {{error}}",
     "refreshAfter": "Refresh library after conversion",
     "enabled": "Enabled",
     "disabled": "Disabled"
@@ -41,8 +40,7 @@
     "testFailed": "Test failed",
     "requestFailed": "Request failed",
     "connectedUser": "Connected — using your key",
-    "connectedBundled": "Connected — using bundled key",
-    "save": "Save API Key"
+    "connectedBundled": "Connected — using bundled key"
   },
   "plex": {
     "intro": "Connect your Plex server to automatically refresh your library after each conversion, create encoding rules based on Plex labels, collections, and genres, prioritize unwatched content in the queue, and pause encoding when someone is streaming.",
@@ -81,7 +79,6 @@
     "emptyTrashHelp": "Automatically empty the Plex library trash after each conversion scan completes.",
     "prioritizeUnwatched": "Prioritize unwatched content",
     "prioritizeUnwatchedHelp": "When adding files to the queue, unwatched content automatically gets High priority so it converts first. You're more likely to notice quality improvements on content you haven't watched yet. Requires syncing with Plex.",
-    "save": "Save Plex Settings",
     "errors": {
       "popupBlocked": "Popup blocked. Please allow popups for this site and try again.",
       "timedOut": "Timed out waiting for Plex sign-in. Please try again.",
@@ -93,17 +90,13 @@
     "intro": "Connect your Jellyfin server to automatically refresh your library after each conversion, create encoding rules based on Jellyfin tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.",
     "url": "Jellyfin URL",
     "apiKeyPlaceholder": "Your Jellyfin API key",
-    "pathMappingHelp": "Maps container paths to Jellyfin paths. Format: /container=/jellyfin",
-    "saved": "Jellyfin settings saved",
-    "save": "Save Jellyfin Settings"
+    "pathMappingHelp": "Maps container paths to Jellyfin paths. Format: /container=/jellyfin"
   },
   "emby": {
     "intro": "Connect your Emby server to automatically refresh your library after each conversion, create encoding rules based on Emby tags and genres, sync watched status for queue prioritization, and pause encoding during active streams.",
     "url": "Emby URL",
     "apiKeyPlaceholder": "Your Emby API key",
-    "pathMappingHelp": "Maps container paths to Emby paths. Format: /container=/emby",
-    "saved": "Emby settings saved",
-    "save": "Save Emby Settings"
+    "pathMappingHelp": "Maps container paths to Emby paths. Format: /container=/emby"
   },
   "arr": {
     "intro": "After conversion, Shrinkerr can notify Sonarr/Radarr to rescan the title folder so they update their database with the new file.",
@@ -112,7 +105,6 @@
     "pathMapping": "Path Mapping",
     "sonarrPathHelp": "Maps container paths to Sonarr paths. e.g. /media/TV1=/TV1",
     "radarrPathHelp": "Maps container paths to Radarr paths. e.g. /media/Movies=/Movies",
-    "saved": "Sonarr/Radarr settings saved",
     "testSonarr": "Test Sonarr",
     "testRadarr": "Test Radarr",
     "connected": "{{name}} connected (v{{version}})",
@@ -133,7 +125,6 @@
     "waitForCompletion": "Wait for conversion to complete",
     "checkSonarrTags": "Check Sonarr tags",
     "checkRadarrTags": "Check Radarr tags",
-    "saved": "Download client settings saved",
     "downloadNzbget": "Download NZBGet Script",
     "downloadSabnzbd": "Download SABnzbd Script",
     "prereq": {

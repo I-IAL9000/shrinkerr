@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
@@ -23,6 +23,7 @@ import RouteErrorBoundary from "./components/ErrorBoundary";
 import GiftIcon from "./components/GiftIcon";
 import type { WSMessage, JobProgress, ScanProgress } from "./types";
 import { jobProgressStore } from "./jobProgressStore";
+import { SETTINGS_SECTIONS } from "./settingsSections";
 import { dialogOpen } from "./useDialog";
 import { shortcutsEnabled } from "./shortcuts";
 
@@ -145,20 +146,6 @@ function FailedJobBadge() {
   );
 }
 
-const SETTINGS_SECTIONS = [
-  { id: "directories", labelKey: "nav:settingsSections.directories" },
-  { id: "video", labelKey: "nav:settingsSections.video" },
-  { id: "audio", labelKey: "nav:settingsSections.audio" },
-  { id: "subtitles", labelKey: "nav:settingsSections.subtitles" },
-  { id: "connections", labelKey: "nav:settingsSections.connections" },
-  { id: "rules", labelKey: "nav:settingsSections.rules" },
-  { id: "renaming", labelKey: "nav:settingsSections.renaming" },
-  { id: "automation", labelKey: "nav:settingsSections.automation" },
-  { id: "system", labelKey: "nav:settingsSections.system" },
-  { id: "updates", labelKey: "nav:settingsSections.updates" },
-  { id: "support", labelKey: "nav:settingsSections.support" },
-];
-
 interface NavItem {
   to: string;
   labelKey: string;
@@ -212,20 +199,16 @@ function SidebarNavItems() {
                 {item.badge && <NewFileBadge />}
                 {item.failedBadge && <FailedJobBadge />}
               </NavLink>
-              {item.to === "/settings" && location.pathname === "/settings" && (
+              {item.to === "/settings" && location.pathname.startsWith("/settings") && (
                 <div className="settings-subnav">
                   {SETTINGS_SECTIONS.map(s => (
-                    <a
+                    <NavLink
                       key={s.id}
-                      href={`#${s.id}`}
-                      className="settings-subnav-link"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        document.getElementById(s.id)?.scrollIntoView({ behavior: "smooth" });
-                      }}
+                      to={`/settings/${s.id}`}
+                      className={({ isActive }) => `settings-subnav-link ${isActive ? "active" : ""}`}
                     >
                       {t(s.labelKey)}
-                    </a>
+                    </NavLink>
                   ))}
                 </div>
               )}
@@ -255,7 +238,10 @@ function MobileMenu() {
       {open && (
         <div className="mobile-menu-overlay" onClick={() => setOpen(false)}>
           <div className="mobile-menu" onClick={e => e.stopPropagation()}>
-            <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {/* Close on a link too: a navigation held back (Settings' unsaved
+                changes) leaves the path as it was. */}
+            <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}
+              onClick={e => { if ((e.target as HTMLElement).closest("a")) setOpen(false); }}>
               <SidebarNavItems />
             </nav>
             <VersionBadge />
@@ -403,7 +389,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 // VMAF button (see VmafRemeasureRow in SettingsPage). v0.3.107+.
 type VmafRemeasureState = { phase: "running"; done: number; total: number; current: string };
 
-export default function App() {
+function AppContent() {
   const { t } = useTranslation(["nav", "common"]);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -557,7 +543,7 @@ export default function App() {
   return (
     <ToastProvider value={addToast}>
     <ConfirmProvider>
-    <BrowserRouter>
+    <>
       <KeyboardShortcuts onToggleQueue={async () => {
         try {
           const stats = await getJobStats();
@@ -671,7 +657,7 @@ export default function App() {
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/monitor" element={<MonitorPage />} />
-            <Route path="/settings" element={<SettingsPage themePref={themePref} onThemeChange={chooseTheme} />} />
+            <Route path="/settings/*" element={<SettingsPage themePref={themePref} onThemeChange={chooseTheme} />} />
             {/* Design-system reference page — no sidebar link; reach it directly at /design (dev builds) */}
             {DesignPage && <Route path="/design" element={<DesignPage />} />}
           </Routes>
@@ -680,8 +666,17 @@ export default function App() {
         </main>
         <WhatsNewModal />
       </div>
-    </BrowserRouter>
+    </>
     </ConfirmProvider>
     </ToastProvider>
   );
+}
+
+// A data router (v0.10.0): Settings warns before you leave it with unsaved
+// changes (useBlocker), which needs one. The app's own <Routes> still do
+// the routing, under this single catch-all.
+const router = createBrowserRouter([{ path: "*", element: <AppContent /> }]);
+
+export default function App() {
+  return <RouterProvider router={router} />;
 }

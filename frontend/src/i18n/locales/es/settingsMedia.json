@@ -211,7 +211,6 @@
       "ffmpeg": "Tiempo de espera de ffmpeg (horas)",
       "ffprobe": "Tiempo de espera de ffprobe (segundos)"
     },
-    "save": "Guardar ajustes de codificación",
     "guide": {
       "title": "Guía de conversión",
       "cols": {
@@ -360,7 +359,6 @@
       "targetCodec": "Códec de destino",
       "targetBitrate": "Tasa de bits de destino"
     },
-    "save": "Guardar reglas de audio",
     "guide": {
       "title": "Guía de audio",
       "perHour": "{{size}}/h",
@@ -446,14 +444,12 @@
       "label": "Detectar automáticamente el idioma de las pistas desconocidas antes de convertir",
       "help": "Antes de convertir o limpiar los subtítulos, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. Es el mismo ajuste que en la sección Audio. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles."
     },
-    "save": "Guardar reglas de subtítulos",
     "external": {
       "title": "Subtítulos externos",
       "merge": "Integrar los subtítulos externos en el vídeo",
       "mergeHelp": "Durante la conversión o el remux, incrusta en el contenedor MKV los archivos .srt, .ass, .ssa, .sub y .vtt externos que estén junto al vídeo. El idioma se detecta a partir del nombre del archivo (p. ej., <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Eliminar los archivos de subtítulos externos tras integrarlos",
-      "deleteWarning": "Los archivos .srt/.ass originales se eliminarán permanentemente tras una integración correcta.",
-      "save": "Guardar ajustes de subtítulos externos"
+      "deleteWarning": "Los archivos .srt/.ass originales se eliminarán permanentemente tras una integración correcta."
     }
   },
   "options": {

@@ -19,17 +19,13 @@
     "menu": "Menu"
   },
   "settingsSections": {
-    "directories": "Directories",
+    "media": "Media",
     "video": "Video",
-    "audio": "Audio",
-    "subtitles": "Subtitles",
-    "connections": "Connections",
-    "rules": "Rules",
-    "renaming": "Renaming",
+    "audioSubtitles": "Audio & subtitles",
     "automation": "Automation",
-    "system": "System",
-    "updates": "Updates",
-    "support": "Support"
+    "integrations": "Integrations",
+    "notifications": "Notifications",
+    "system": "System"
   },
   "version": {
     "updateAvailable": "Update available",

@@ -8,5 +8,16 @@
       "light": "Claro",
       "dark": "Oscuro"
     }
+  },
+  "saveBar": {
+    "label": "Cambios sin guardar",
+    "unsaved_one": "{{count}} cambio sin guardar",
+    "unsaved_many": "{{count}} cambios sin guardar",
+    "unsaved_other": "{{count}} cambios sin guardar",
+    "discard": "Descartar",
+    "leaveConfirm_one": "Tienes {{count}} cambio sin guardar. ¿Salir de Ajustes sin guardarlo?",
+    "leaveConfirm_many": "Tienes {{count}} cambios sin guardar. ¿Salir de Ajustes sin guardarlos?",
+    "leaveConfirm_other": "Tienes {{count}} cambios sin guardar. ¿Salir de Ajustes sin guardarlos?",
+    "leave": "Salir sin guardar"
   }
 }

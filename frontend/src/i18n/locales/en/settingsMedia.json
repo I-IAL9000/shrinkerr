@@ -207,7 +207,6 @@
       "ffmpeg": "ffmpeg timeout (hours)",
       "ffprobe": "ffprobe timeout (seconds)"
     },
-    "save": "Save Encoding Settings",
     "guide": {
       "title": "Conversion Guide",
       "cols": {
@@ -356,7 +355,6 @@
       "targetCodec": "Target Codec",
       "targetBitrate": "Target Bitrate"
     },
-    "save": "Save Audio Rules",
     "guide": {
       "title": "Audio Guide",
       "perHour": "{{size}}/hr",
@@ -441,14 +439,12 @@
       "label": "Auto-detect languages for unknown tracks before converting",
       "help": "Before converting or cleaning up subtitles, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. This is the same setting as in the Audio section. You can also run detection manually per file from the file detail view."
     },
-    "save": "Save Subtitle Rules",
     "external": {
       "title": "External Subtitles",
       "merge": "Merge external subtitles into video",
       "mergeHelp": "During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container. Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Delete external subtitle files after merge",
-      "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge.",
-      "save": "Save External Subtitle Settings"
+      "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge."
     }
   },
   "options": {

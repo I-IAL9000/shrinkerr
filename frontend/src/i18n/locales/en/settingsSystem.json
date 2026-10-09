@@ -108,8 +108,7 @@
     "reveal": "Reveal",
     "copy": "Copy to clipboard",
     "regenerate": "Regenerate API key (server-side; takes effect immediately)",
-    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key.",
-    "save": "Save Authentication"
+    "apiKeyHelp": "Used by NZBGet, SABnzbd, remote workers, and other external integrations. Not required for browser login. Shown masked — click 👁 to reveal or ⧉ to copy the full key."
   },
   "notifications": {
     "title": "Notifications",
@@ -134,7 +133,6 @@
     "genericWebhook": "Generic Webhook",
     "genericWebhookUrl": "URL (receives JSON POST)",
     "payload": "Payload:",
-    "save": "Save Notification Settings",
     "test": "Test Notifications"
   },
   "backups": {
@@ -205,17 +203,14 @@
     "clearedPending_one": "Removed {{formatted}} pending health-check job",
     "clearedPending_other": "Removed {{formatted}} pending health-check jobs",
     "urlCopied": "URL copied",
-    "scriptSaved": "Post-conversion script settings saved",
     "noApiKey": "No API key configured",
     "fetchKeyFailed": "Failed to fetch key: {{error}}",
     "apiKeyCopied": "API key copied",
     "apiKeyRegenerated": "API key regenerated — copy and update your worker / NZBGet / SABnzbd configs",
     "regenerateEmpty": "Regenerate returned an empty key",
     "regenerateFailed": "Regenerate failed: {{error}}",
-    "authSaved": "Authentication settings saved",
     "notificationLanguageSaved": "Notification language saved",
     "notificationLanguageFailed": "Couldn't save notification language: {{error}}",
-    "notificationsSaved": "Notification settings saved",
     "testSent": "Test sent: {{providers}}",
     "testFailed": "Failed: {{providers}}",
     "noProviders": "No notification providers configured",
