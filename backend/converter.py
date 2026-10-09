@@ -2672,9 +2672,14 @@ async def convert_file(
     external_subs: Optional[list[dict]] = None,
     delete_merged_subs: Optional[bool] = None,
     command_only: bool = False,
+    pre_probe: Optional[dict] = None,
 ) -> dict:
     """
     Convert a video file to HEVC.
+
+    `pre_probe` (M7, v0.10.0): the caller's probe_file() of `input_path`, so
+    the source isn't probed a second time (a cold probe over a slow mount
+    takes seconds; a disc's up to minutes).
 
     `command_only` (v0.10.0): stop before running anything and return the
     ffmpeg command (`command`) and where it writes (`output_path`). The test
@@ -2784,7 +2789,7 @@ async def convert_file(
     probe_data: dict | None = None
     try:
         from backend.scanner import probe_file
-        probe_data = await probe_file(input_path)
+        probe_data = pre_probe if pre_probe is not None else await probe_file(input_path)
         if probe_data:
             # Subtitle streams for safe mapping (skip unsupported codecs)
             # Map probe format to what build_ffmpeg_cmd expects

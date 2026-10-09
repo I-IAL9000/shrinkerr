@@ -979,11 +979,12 @@ async def _cleanup_expired_backups():
 
 
 async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
-                                     current_file_path: str) -> None:
+                                     current_file_path: str) -> Optional[dict]:
     """Point a job and its scan_results row at the output that replaced
     `file_path` (now at `current_file_path`): new path, size, codec, and the
     re-probed tracks sorted again. Shared by the local worker and remote-node
-    completions, which never updated the row (H7, v0.10.0)."""
+    completions, which never updated the row (H7, v0.10.0). Returns the
+    output's probe (None if it failed) for the caller to reuse (M7)."""
     from backend.scanner import probe_file
     _queue = JobQueue(db_path)
     import json as _json
@@ -999,6 +1000,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
     new_has_removable_subs = 0
     new_lossless = 0
     new_has_und = None
+    fresh = None
     try:
         from backend.scanner import (
             classify_audio_tracks, classify_subtitle_tracks,
@@ -1149,6 +1151,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             await db_path.close()
     except Exception as exc:
         print(f"[WORKER] Early scan_results update failed (non-fatal): {exc}", flush=True)
+    return fresh
 
 
 class QueueWorker:
@@ -2255,6 +2258,9 @@ class QueueWorker:
 
         space_saved = 0
         current_file_path = file_path
+        # (path, probe) of the newest probe of the output, so the audio-codec
+        # rename below doesn't probe the same file again (M7, v0.10.0).
+        output_probe: tuple[str, Optional[dict]] | None = None
         # v0.9.119: when a convert/combined encode is discarded for being larger
         # but the job still has audio/sub cleanup to do, run that cleanup inline
         # in THIS job (via the remux block below) instead of enqueuing a separate
@@ -2351,6 +2357,7 @@ class QueueWorker:
                 audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,
                 subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
                 on_output_placed=lambda: self._finalize(job_id),
+                pre_probe=probe,
             )
             if not result["success"]:
                 if job_id in self._cancel_flags:
@@ -2437,7 +2444,8 @@ class QueueWorker:
             )
             if output_replaced_source:
                 await self._finalize(job_id)
-                await refresh_converted_scan_row(self.db_path, job_id, file_path, current_file_path)
+                output_probe = (current_file_path, await refresh_converted_scan_row(
+                    self.db_path, job_id, file_path, current_file_path))
 
             # Always record the pre-rename source path so the VMAF
             # re-measure pass can find this job as a candidate even when
@@ -2858,6 +2866,7 @@ class QueueWorker:
                                 break
                             await asyncio.sleep(5)
                             _rp = await _rpf(_new_out, detect_und_subs=False)
+                        output_probe = (_new_out, _rp)
                         # Stat the NAS file before opening the write transaction
                         # (a CIFS stall here used to hold the DB lock). v0.9.149
                         _new_sz = await _async_getsize(_new_out) if _rp else None
@@ -2992,7 +3001,10 @@ class QueueWorker:
         # Rename audio codec in filename if it changed
         try:
             from backend.converter import get_audio_display_name, rename_audio_codec_in_filename
-            final_probe = await probe_file(current_file_path)
+            if output_probe and output_probe[0] == current_file_path and output_probe[1]:
+                final_probe = output_probe[1]
+            else:
+                final_probe = await probe_file(current_file_path)
             if final_probe and final_probe.get("audio_tracks"):
                 primary_track = final_probe["audio_tracks"][0]
                 primary_codec = primary_track.get("codec", "")
