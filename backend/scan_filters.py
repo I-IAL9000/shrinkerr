@@ -203,6 +203,27 @@ def row_type(row: dict, ctx: dict) -> str:
     return v
 
 
+_DV_NAME = re.compile(r"dolby[\s.]*vision|\.dv\.|\bdv\b(?!d)", re.IGNORECASE)
+_HLG_NAME = re.compile(r"\bhlg\b", re.IGNORECASE)
+_HDR10_NAME = re.compile(r"\bhdr(10\+?)?\b", re.IGNORECASE)
+
+
+def hdr_kind(row: dict) -> Optional[str]:
+    """"dv", "hdr10" or "hlg": the probe's HDR format; for files scanned
+    before it was stored (v0.10.0), the name."""
+    fmt = (row.get("hdr_format") or "").lower()
+    if fmt:
+        return "dv" if fmt.startswith("dv") else fmt
+    fp = row["file_path"]
+    if _DV_NAME.search(fp):
+        return "dv"
+    if _HLG_NAME.search(fp):
+        return "hlg"
+    if _HDR10_NAME.search(fp):
+        return "hdr10"
+    return None
+
+
 # ── The filters ───────────────────────────────────────────────────────────
 
 def _like_any(*patterns: str) -> str:
@@ -246,6 +267,10 @@ _MY_LANGS = ("(SELECT lower(k.value) FROM settings s, json_each(s.value) k "
 _TRACK_LANG = "lower(COALESCE(json_extract(t.value, '$.language'), ''))"
 _TRACK_TEXT = "(COALESCE(json_extract(t.value, '$.profile'), '') || ' ' || COALESCE(json_extract(t.value, '$.title'), ''))"
 _IMAGE_SUB_CODECS = "('hdmv_pgs_subtitle', 'pgssub', 'dvd_subtitle', 'vobsub', 'dvb_subtitle', 'xsub')"
+_TRACK_TITLE = "lower(COALESCE(json_extract(t.value, '$.title'), ''))"
+# Files whose name or probe may say HDR: the HDR pills' Python check runs on these only.
+_MAYBE_HDR = ("(hdr_format IS NOT NULL OR file_path LIKE '%hdr%' OR file_path LIKE '%dv%' "
+              "OR file_path LIKE '%dolby%' OR file_path LIKE '%hlg%')")
 
 
 def _job_exists(condition: str) -> str:
@@ -316,10 +341,23 @@ _FILTER_LIST = [
            f"OR {_TRACK_TEXT} LIKE '%dts-x%' OR {_TRACK_TEXT} LIKE '%dtsx%'",
            hint=("atmos", "dts:x", "dts-x", "dtsx"))),
     Filter("audio_71", "audio", sql=_tracks("audio_tracks_json", "json_extract(t.value, '$.channels') >= 8")),
+    Filter("commentary", "audio", sql=_tracks(
+        "audio_tracks_json", f"{_TRACK_TITLE} LIKE '%commentary%'", hint=("ommentary",))),
     # Subtitles
     Filter("image_subs", "subtitles", sql=_tracks(
         "subtitle_tracks_json", f"lower(COALESCE(json_extract(t.value, '$.codec'), '')) IN {_IMAGE_SUB_CODECS}",
         hint=("pgs", "dvd_subtitle", "vobsub", "dvb_subtitle", "xsub"))),
+    Filter("external_subs", "subtitles", sql="COALESCE(has_external_subs_flag, 0) = 1"),
+    Filter("forced_subs", "subtitles", sql=_tracks(
+        "subtitle_tracks_json", "json_extract(t.value, '$.forced') = 1", hint=('"forced": true', '"forced":true'))),
+    # Subtitles for the deaf and hard of hearing, by the track's title.
+    Filter("sdh_subs", "subtitles", sql=_tracks(
+        "subtitle_tracks_json",
+        f"({_TRACK_TITLE} LIKE '%sdh%' OR {_TRACK_TITLE} LIKE '%hearing%' OR {_TRACK_TITLE} LIKE '%(cc)%')",
+        hint=("sdh", "earing", "(cc)"))),  # LIKE ignores ASCII case
+    # HDR: the probe's format, else the name (scanned before it was stored)
+    *(Filter(f"hdr_{k}", "hdr", pre_sql=_MAYBE_HDR, py=(lambda k: lambda r, c: hdr_kind(r) == k)(k))
+      for k in ("dv", "hdr10", "hlg")),
     # Language
     Filter("dubbed", "language", sql="COALESCE(is_dubbed_flag, 0) = 1"),
     Filter("not_api_matched", "language", sql=_UNMATCHED),
@@ -420,7 +458,6 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
 }
 
 _SQL_OPS = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
-_HDR_NAME = re.compile(r"\bhdr10\+?\b|\bhdr\b|dolby[\s.]*vision|\.dv\.|\bdv\b(?!d)", re.IGNORECASE)
 
 
 def _values(value) -> list:
@@ -512,7 +549,7 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
     if kind == "hdr":
         # The probe's HDR format; files scanned before it was stored: the name.
         def is_hdr(row, ctx):
-            return bool(row.get("hdr_format")) or bool(_HDR_NAME.search(row["file_path"]))
+            return hdr_kind(row) is not None
         want = _truthy(value)
         return Filter(fid, py=lambda r, c: is_hdr(r, c) == want)
 

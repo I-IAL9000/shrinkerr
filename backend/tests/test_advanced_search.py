@@ -61,17 +61,24 @@ async def test_each_condition(lib, cond, expected):
 
 @pytest.mark.asyncio
 async def test_hdr_from_the_probe_or_the_name(lib):
-    assert await names(adv(("hdr", "eq", True))) == set()
+    hdr = {"ep1", "corrupt", "web_in_br"}  # HDR10, HLG, Dolby Vision
+    assert await names(adv(("hdr", "eq", True))) == hdr
     async with aiosqlite.connect(lib) as db:
         await db.execute("UPDATE scan_results SET hdr_format = 'hdr10' WHERE file_path LIKE '%Dune%'")
         await db.commit()
-    assert await names(adv(("hdr", "eq", True))) == {"dune"}
-    assert await names(adv(("hdr", "eq", False))) == set(ROWS) - {"dune"}
+    assert await names(adv(("hdr", "eq", True))) == hdr | {"dune"}
+    assert await names(adv(("hdr", "eq", False))) == set(ROWS) - hdr - {"dune"}
     # Scanned before the format was stored: the name decides.
     from backend.scan_filters import compile_condition
     is_hdr = compile_condition(0, {"property": "hdr", "op": "eq", "value": True}).py
     assert is_hdr({"file_path": "/m/Movie.2160p.HDR.DV.mkv", "hdr_format": None}, None) is True
     assert is_hdr({"file_path": "/m/Hdrive/Movie.mkv", "hdr_format": None}, None) is False
+    # The pills tell them apart (by name, too).
+    from backend.scan_filters import hdr_kind
+    assert [hdr_kind({"file_path": f, "hdr_format": None}) for f in (
+        "/m/Movie.2160p.DV.HDR10.mkv", "/m/Movie.2160p.HDR10+.mkv", "/m/Show.HLG.mkv",
+        "/m/Movie.DVDRip.mkv", "/m/Movie.mkv")] == ["dv", "hdr10", "hlg", None, None]
+    assert hdr_kind({"file_path": "/m/Movie.HDR.mkv", "hdr_format": "dv5"}) == "dv"  # the probe wins
 
 
 @pytest.mark.asyncio

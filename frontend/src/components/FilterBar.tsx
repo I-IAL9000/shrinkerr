@@ -47,6 +47,11 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "res_1080p", label: "1080p" },
   { key: "res_720p", label: "720p" },
   { key: "res_sd", label: "SD" },
+  // HDR group (v0.10.0): the probe's format, else the name
+  { key: "_hdr", label: "HDR:", group: "divider" },
+  { key: "hdr_dv", label: "Dolby Vision" },
+  { key: "hdr_hdr10", label: "HDR10" },
+  { key: "hdr_hlg", label: "HLG" },
   // Size group
   { key: "_size", labelKey: "scanner:filters.groups.size", group: "divider" },
   { key: "size_small", labelKey: "scanner:filters.sizeSmall" },
@@ -59,9 +64,13 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "lossy_audio", labelKey: "scanner:filters.lossyAudio" },
   { key: "object_audio", label: "Atmos / DTS:X" },
   { key: "audio_71", label: "7.1" },
+  { key: "commentary", labelKey: "scanner:filters.commentary" },
   // Subtitles group (v0.10.0)
   { key: "_subs", labelKey: "scanner:filters.groups.subtitles", group: "divider" },
   { key: "image_subs", labelKey: "scanner:filters.imageSubs" },
+  { key: "external_subs", labelKey: "scanner:filters.externalSubs" },
+  { key: "forced_subs", labelKey: "scanner:filters.forcedSubs" },
+  { key: "sdh_subs", label: "SDH" },
   // Language group
   { key: "_lang", labelKey: "scanner:filters.groups.language", group: "divider" },
   { key: "dubbed", labelKey: "scanner:filters.dubbed" },
