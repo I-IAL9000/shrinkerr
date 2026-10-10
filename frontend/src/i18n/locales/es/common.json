@@ -80,5 +80,28 @@
   "settingsSearch": {
     "placeholder": "Buscar ajustes",
     "none": "Ningún ajuste coincide"
+  },
+  "qualityPresets": {
+    "max_quality": {
+      "name": "Calidad máxima",
+      "desc": "Para conservar: más detalle con un ahorro moderado."
+    },
+    "quality": {
+      "name": "Calidad",
+      "desc": "Se ve igual que el original."
+    },
+    "balanced": {
+      "name": "Equilibrado",
+      "desc": "Calidad excelente, archivos notablemente más pequeños."
+    },
+    "max_savings": {
+      "name": "Máximo ahorro",
+      "desc": "Buena calidad, archivos mucho más pequeños; puede notarse en escenas oscuras o con grano."
+    },
+    "smallest": {
+      "name": "Lo más pequeño",
+      "desc": "Los archivos más pequeños; la pérdida se nota en una pantalla grande."
+    },
+    "savings": "aprox. un {{pct}} % más pequeño"
   }
 }

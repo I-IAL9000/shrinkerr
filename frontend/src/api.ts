@@ -758,7 +758,14 @@ export const browseDirectory = (path: string = "/") =>
   );
 export const getEncodingSettings = () => apiFetch<any>("/settings/encoding");
 // Setup wizard (v0.10.0)
-export interface QualityPreset { id: "quality" | "balanced" | "max_savings"; settings: Record<string, number>; savings_pct: number }
+export interface QualityPreset {
+  id: "max_quality" | "quality" | "balanced" | "max_savings" | "smallest";
+  cq: number;
+  settings: Record<string, number>;  // for the encoder asked about
+  job: { nvenc_cq: number; libx265_crf: number };  // what it sets on a queued job
+  savings_pct: number;
+  wizard: boolean;
+}
 export const getQualityPresets = (encoder?: string) =>
   apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
     `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);

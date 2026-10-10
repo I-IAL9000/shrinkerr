@@ -235,11 +235,6 @@
         "veryGood": "Muy buena",
         "bestPractical": "Lo mejor en la práctica",
         "diminishingReturns": "Beneficio decreciente",
-        "maxQuality": "Calidad máxima",
-        "qualityFirst": "Calidad ante todo",
-        "spaceSaver": "Ahorro de espacio",
-        "maxCompression": "Compresión máxima",
-        "maxThroughput": "Rendimiento máximo",
         "overkill": "Excesiva",
         "transparent": "Transparente",
         "excellent": "Excelente",
@@ -251,16 +246,10 @@
         "desc": "Preajuste más alto = codificación más lenta pero mejor compresión. A diferencia de libx265, la velocidad de NVENC cambia muy poco entre p1 y p7, y las mejoras de calidad también son modestas. Usa p3-p5 por defecto y ajusta el CQ para el tamaño.",
         "note": "Velocidades aproximadas para 1080p en una Quadro P2200."
       },
-      "nvencCombos": {
-        "title": "Combinaciones recomendadas para NVENC"
-      },
       "x265Presets": {
         "title": "Preajustes de libx265 (CPU)",
         "desc": "El coste de los preajustes de libx265 crece de forma EXPONENCIAL: cada paso a la derecha duplica aproximadamente el tiempo de codificación. El `medium` predeterminado es el punto óptimo de calidad por minuto; baja a `fast` o `veryfast` para procesar lotes atrasados y sube a `slow`/`slower` solo para másteres de archivo.",
         "note": "Velocidades aproximadas para salida de 10 bits en una CPU de escritorio moderna. Los Mac M1/M2 rinden un ~40-60 % de estas cifras; las CPU antiguas, menos."
-      },
-      "x265Combos": {
-        "title": "Combinaciones recomendadas para libx265"
       },
       "cqCrf": {
         "title": "Entender CQ / CRF",
@@ -305,6 +294,10 @@
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",
         "desc": "QP es un cuantizador constante: menor = más calidad y archivos más grandes; 20–22 suele ser transparente, 23–26 equilibra calidad y tamaño de forma sensata. El nivel de compresión (0–7) es la profundidad de análisis del driver; un valor más bajo suele dar archivos más pequeños a costa de velocidad. En hardware Intel, QSV suele ser mejor opción. Aún no hay tablas medidas para VAAPI: haz una codificación de prueba para calibrar."
+      },
+      "presets": {
+        "title": "Ajustes de calidad",
+        "desc": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el típico con fuentes H.264."
       }
     }
   },

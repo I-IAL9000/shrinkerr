@@ -322,22 +322,14 @@ export default function QueuePage() {
     toast(t("queue:toasts.moving", { count: selectedIds.length, position: t(`queue:positions.${position}`) }));
   };
 
-  const handleBulkVideoPreset = async (preset: string, cq: number) => {
-    // Optimistic UI update — apply immediately, then sync in background.
-    // Route to libx265_* vs nvenc_* based on the configured default encoder
-    // so CPU-only installs pick up the CRF slider instead of NVENC's CQ.
-    const isCpu = encodingDefaults?.default_encoder === "libx265";
+  // A quality preset sets both the CQ (NVENC, QSV, VAAPI and VideoToolbox
+  // read it) and libx265's CRF, so it holds whichever encoder runs the job.
+  // Optimistic UI update — apply immediately, then sync in background.
+  const handleBulkVideoPreset = async (job: { nvenc_cq: number; libx265_crf: number }) => {
     const selectedSet = new Set(selectedIds);
-    setJobs(prev => prev.map(j => {
-      if (!selectedSet.has(j.id)) return j;
-      return isCpu
-        ? { ...j, libx265_preset: preset, libx265_crf: cq }
-        : { ...j, nvenc_preset: preset, nvenc_cq: cq };
-    }));
+    setJobs(prev => prev.map(j => selectedSet.has(j.id) ? { ...j, ...job } : j));
     toast(t("queue:toasts.videoPresetApplied", { count: selectedIds.length }), "success");
-    bulkUpdateJobSettings(isCpu
-      ? { job_ids: selectedIds, libx265_preset: preset, libx265_crf: cq }
-      : { job_ids: selectedIds, nvenc_preset: preset, nvenc_cq: cq });
+    bulkUpdateJobSettings({ job_ids: selectedIds, ...job });
   };
 
   const handleBulkAudioPreset = async (codec: string, bitrate: number) => {

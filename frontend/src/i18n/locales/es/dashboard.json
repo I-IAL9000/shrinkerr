@@ -38,21 +38,6 @@
     "quality": {
       "title": "Calidad",
       "description": "Cuánto comprimir. El ahorro es el típico con fuentes H.264; puedes ajustarlo después en Ajustes → Vídeo.",
-      "savings": "aprox. un {{pct}} % más pequeño",
-      "presets": {
-        "quality": {
-          "name": "Calidad",
-          "desc": "Se ve igual que el original."
-        },
-        "balanced": {
-          "name": "Equilibrado",
-          "desc": "Calidad excelente, archivos notablemente más pequeños."
-        },
-        "max_savings": {
-          "name": "Máximo ahorro",
-          "desc": "Buena calidad y los archivos más pequeños; puede notarse en escenas oscuras o con grano."
-        }
-      },
       "custom": {
         "name": "Mantener mis ajustes",
         "desc": "Tu ajuste de calidad actual no es ninguno de estos."

@@ -2737,15 +2737,21 @@ async def convert_file(
     libx265_preset = override_libx265_preset if override_libx265_preset is not None else live_settings.get("libx265_preset", "medium")
     cq = override_cq if override_cq is not None else live_settings.get("nvenc_cq", 20)
     crf = override_crf if override_crf is not None else live_settings.get("libx265_crf", 20)
-    # Intel QSV / VAAPI knobs. No per-job overrides yet — the rule engine
-    # and the estimate modal will gain them in a later phase. For now they
-    # come from the DB only. v0.3.67+.
+    # Intel QSV / VAAPI / VideoToolbox knobs. A job's own quality (a queue
+    # preset, a rule, content-type CQ) is on NVENC's CQ scale; it used to
+    # reach only NVENC and libx265 — these encoders now get it translated
+    # (v0.10.0).
     qsv_cq = live_settings.get("qsv_cq", 22)
     qsv_preset = live_settings.get("qsv_preset", "medium")
     qsv_lookahead = bool(live_settings.get("qsv_lookahead", False))
     vaapi_qp = live_settings.get("vaapi_qp", 22)
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     videotoolbox_quality = live_settings.get("videotoolbox_quality", 55)
+    if override_cq is not None:
+        from backend.encoding_estimates import quality_settings
+        qsv_cq = quality_settings("qsv", override_cq)["qsv_cq"]
+        vaapi_qp = quality_settings("vaapi", override_cq)["vaapi_qp"]
+        videotoolbox_quality = quality_settings("videotoolbox", override_cq)["videotoolbox_quality"]
     audio_codec = override_audio_codec if override_audio_codec is not None else live_settings.get("audio_codec", "copy")
     audio_bitrate = override_audio_bitrate if override_audio_bitrate is not None else live_settings.get("audio_bitrate", 128)
     # v0.5.7: hardware decode settings. Resolved per-job below once

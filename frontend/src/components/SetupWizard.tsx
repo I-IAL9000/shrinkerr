@@ -7,6 +7,7 @@ import {
   type EncoderCaps, type PreviewTrack, type QualityPreset,
 } from "../api";
 import FolderBrowser from "./FolderBrowser";
+import { presetSetting } from "../qualityPresets";
 import LanguagePicker from "./LanguagePicker";
 import { useToast } from "../useToast";
 
@@ -23,10 +24,6 @@ type Originals = "keep" | "trash" | "delete";
 
 // UI language → the ISO 639-2 code tracks use, for the "Add English" hint.
 const UI_TO_TRACK_LANG: Record<string, string> = { en: "eng", es: "spa" };
-// Shown next to a preset: the setting it sets.
-const QUALITY_UNIT: Record<string, string> = {
-  nvenc_cq: "CQ", libx265_crf: "CRF", qsv_cq: "ICQ", vaapi_qp: "QP", videotoolbox_quality: "q:v",
-};
 
 function ProtectForm({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation(["dashboard"]);
@@ -111,6 +108,7 @@ export default function SetupWizard({ setup, onClose, onChanged }: {
   const [caps, setCaps] = useState<EncoderCaps | null>(null);
   const [encoder, setEncoder] = useState("nvenc");
   const [presets, setPresets] = useState<QualityPreset[]>([]);
+  const [currentPreset, setCurrentPreset] = useState<string | null>(null);
   const [preset, setPreset] = useState<PresetChoice>("quality");
   const [custom, setCustom] = useState(false);  // saved quality matches no preset
   const [audioLangs, setAudioLangs] = useState<string[]>([]);
@@ -139,6 +137,7 @@ export default function SetupWizard({ setup, onClose, onChanged }: {
   useEffect(() => {
     getQualityPresets(encoder).then(r => {
       setPresets(r.presets);
+      setCurrentPreset(r.current);
       setCustom(!r.current);
       setPreset((r.current as PresetChoice) || (setup.has_jobs ? "custom" : "quality"));
     }).catch(() => {});
@@ -257,15 +256,13 @@ export default function SetupWizard({ setup, onClose, onChanged }: {
   } else if (step === "quality") {
     body = (
       <>
-        {presets.map(p => {
-          const [key, value] = Object.entries(p.settings)[0] || [];
-          return (
-            <Option key={p.id} name="wizard-quality" checked={preset === p.id} onChange={() => setPreset(p.id)}
-              title={<>{t(`dashboard:setup.quality.presets.${p.id}.name`)} <span className="wizard-savings">{t("dashboard:setup.quality.savings", { pct: p.savings_pct })}</span></>}>
-              {t(`dashboard:setup.quality.presets.${p.id}.desc`)} {key && <span className="wizard-muted">({QUALITY_UNIT[key] || key} {value})</span>}
-            </Option>
-          );
-        })}
+        {/* The middle three of the shared presets, and the saved one if it's another. */}
+        {presets.filter(p => p.wizard || p.id === currentPreset).map(p => (
+          <Option key={p.id} name="wizard-quality" checked={preset === p.id} onChange={() => setPreset(p.id)}
+            title={<>{t(`common:qualityPresets.${p.id}.name`)} <span className="wizard-savings">{t("common:qualityPresets.savings", { pct: p.savings_pct })}</span></>}>
+            {t(`common:qualityPresets.${p.id}.desc`)} <span className="wizard-muted">({presetSetting(p)})</span>
+          </Option>
+        ))}
         {custom && (
           <Option name="wizard-quality" checked={preset === "custom"} onChange={() => setPreset("custom")} title={t("dashboard:setup.quality.custom.name")}>
             {t("dashboard:setup.quality.custom.desc")}

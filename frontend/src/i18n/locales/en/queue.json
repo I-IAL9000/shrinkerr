@@ -201,14 +201,6 @@
     "videoPresetPlaceholder": "Video preset...",
     "audioPresetPlaceholder": "Audio preset...",
     "priorityPlaceholder": "Priority...",
-    "videoPresets": {
-      "maxQuality": "Max quality",
-      "qualityFirst": "Quality first",
-      "balanced": "Balanced",
-      "spaceSaver": "Space saver",
-      "maxCompression": "Max compression",
-      "potato": "Potato mode 🥔"
-    },
     "audioPresets": {
       "copy": "Copy (no conversion)",
       "bluray": "Blu-ray quality",

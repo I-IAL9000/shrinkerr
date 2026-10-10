@@ -226,14 +226,6 @@
     "videoPresetPlaceholder": "Preajuste de video...",
     "audioPresetPlaceholder": "Preajuste de audio...",
     "priorityPlaceholder": "Prioridad...",
-    "videoPresets": {
-      "maxQuality": "Máxima calidad",
-      "qualityFirst": "Calidad primero",
-      "balanced": "Equilibrado",
-      "spaceSaver": "Ahorro de espacio",
-      "maxCompression": "Máxima compresión",
-      "potato": "Modo patata 🥔"
-    },
     "audioPresets": {
       "copy": "Copiar (sin conversión)",
       "bluray": "calidad Blu-ray",

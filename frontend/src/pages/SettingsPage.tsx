@@ -19,7 +19,7 @@ import {
   plexAuthDisconnect, plexAuthStatus,
   getVersion, getChangelog,
   getVmafRemeasureStatus, startVmafRemeasure,
-  getEncoderCaps, regenerateApiKey,
+  getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
   type EncoderCaps,
@@ -32,6 +32,7 @@ import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
 import { fmtBytes } from "../fmt";
 import { pressable } from "../utils/a11y";
 import { ALL_LANGUAGES } from "../languageCodes";
+import { presetSetting } from "../qualityPresets";
 import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../settingsSections";
 import SettingsSearch from "../components/SettingsSearch";
 import { useConfirm } from "../components/ConfirmModal";
@@ -274,6 +275,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   const [encodingError, setEncodingError] = useState<string | null>(null);
   // Encoder the Conversion Guide describes (v0.9.142).
   const guideEncoder: string = encoding?.default_encoder || "nvenc";
+  // The shared quality presets for the guide's table (v0.10.0).
+  const [guidePresets, setGuidePresets] = useState<QualityPreset[]>([]);
+  useEffect(() => {
+    getQualityPresets(guideEncoder).then(r => setGuidePresets(r.presets)).catch(() => {});
+  }, [guideEncoder]);
   // Encoder caps from /api/stats/encoder-caps. Drives which options the
   // default-encoder dropdown surfaces. Null while loading; once loaded,
   // missing encoders won't appear. v0.3.68+.
@@ -1688,20 +1694,6 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       ],
                       note: t("settingsMedia:video.guide.nvencPresets.note"),
                     },
-                    {
-                      encoders: ["nvenc"],
-                      title: t("settingsMedia:video.guide.nvencCombos.title"),
-                      cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
-                      rows: [
-                        // Savings columns: the same curve the estimates use
-                        // (backend/encoding_estimates.py; libx265 CRF ≈ CQ + 2).
-                        [t("settingsMedia:video.guide.cells.maxQuality"), "p7 / CQ 20", "~45%"],
-                        [t("settingsMedia:video.guide.cells.qualityFirst"), "p6 / CQ 21", "~50%"],
-                        [t("settingsMedia:video.guide.cells.balanced"), "p5 / CQ 23", "~55%"],
-                        [t("settingsMedia:video.guide.cells.spaceSaver"), "p4 / CQ 25", "~65%"],
-                        [t("settingsMedia:video.guide.cells.maxCompression"), "p3 / CQ 27", "~75%"],
-                      ],
-                    },
                     // ── libx265 (CPU) ──────────────────────────────────────
                     {
                       encoders: ["libx265"],
@@ -1720,17 +1712,15 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       ],
                       note: t("settingsMedia:video.guide.x265Presets.note"),
                     },
+                    // ── The quality presets (every encoder) ────────────────
+                    // The same list as the setup wizard and the queue panel,
+                    // with the savings the estimates use.
                     {
-                      encoders: ["libx265"],
-                      title: t("settingsMedia:video.guide.x265Combos.title"),
+                      encoders: ["nvenc", "libx265", "qsv", "vaapi", "videotoolbox"],
+                      title: t("settingsMedia:video.guide.presets.title"),
+                      desc: t("settingsMedia:video.guide.presets.desc"),
                       cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
-                      rows: [
-                        [t("settingsMedia:video.guide.cells.maxQuality"), "slow / CRF 18", "~35%"],
-                        [t("settingsMedia:video.guide.cells.qualityFirst"), "medium / CRF 20", "~35%"],
-                        [t("settingsMedia:video.guide.cells.balanced"), "fast / CRF 23", "~50%"],
-                        [t("settingsMedia:video.guide.cells.spaceSaver"), "veryfast / CRF 25", "~55%"],
-                        [t("settingsMedia:video.guide.cells.maxThroughput"), "superfast / CRF 26", "~60%"],
-                      ],
+                      rows: guidePresets.map(p => [t(`common:qualityPresets.${p.id}.name`), presetSetting(p), `~${p.savings_pct}%`]),
                     },
                     // ── Shared quality target ──────────────────────────────
                     {

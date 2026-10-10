@@ -231,11 +231,6 @@
         "veryGood": "Very good",
         "bestPractical": "Best practical",
         "diminishingReturns": "Diminishing returns",
-        "maxQuality": "Max quality",
-        "qualityFirst": "Quality first",
-        "spaceSaver": "Space saver",
-        "maxCompression": "Max compression",
-        "maxThroughput": "Max throughput",
         "overkill": "Overkill",
         "transparent": "Transparent",
         "excellent": "Excellent",
@@ -247,16 +242,10 @@
         "desc": "Higher preset = slower encoding but better compression. Unlike libx265, NVENC preset speed changes very little between p1 and p7 — the quality gains are also modest. Default to p3-p5 and adjust CQ for size.",
         "note": "Speeds are approximate for 1080p on Quadro P2200."
       },
-      "nvencCombos": {
-        "title": "NVENC recommended combos"
-      },
       "x265Presets": {
         "title": "libx265 presets (CPU)",
         "desc": "libx265 preset cost scales EXPONENTIALLY — each step right roughly doubles encode time. Default `medium` is the quality-per-minute sweet spot; drop to `fast` or `veryfast` for backfills, bump to `slow`/`slower` only for archival masters.",
         "note": "Speeds are rough for 10-bit output on a modern desktop CPU. M1/M2 Macs run ~40-60% of these numbers; older CPUs slower."
-      },
-      "x265Combos": {
-        "title": "libx265 recommended combos"
       },
       "cqCrf": {
         "title": "Understanding CQ / CRF",
@@ -301,6 +290,10 @@
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",
         "desc": "QP is a constant quantizer: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 trades quality for size sensibly. Compression level (0–7) is driver-specific analysis depth; lower usually means smaller files at some speed cost. On Intel hardware QSV is usually the better choice. No measured tables for VAAPI yet: run a test encode to calibrate."
+      },
+      "presets": {
+        "title": "Quality presets",
+        "desc": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are typical for H.264 sources."
       }
     }
   },

@@ -1433,10 +1433,12 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
 
 @router.get("/quality-presets")
 async def get_quality_presets(encoder: Optional[str] = None):
-    """The setup wizard's quality presets for `encoder` (default: the saved
-    one): what each sets and saves, and which one the saved settings are
-    (None: something else)."""
-    from backend.encoding_estimates import QUALITY_PRESETS, cq_to_savings_pct, effective_cq, preset_settings
+    """The quality presets for `encoder` (default: the saved one): what each
+    sets and saves, whether the setup wizard offers it, and which one the
+    saved settings are (None: something else)."""
+    from backend.encoding_estimates import (
+        QUALITY_PRESETS, WIZARD_PRESETS, cq_to_savings_pct, effective_cq, preset_settings, quality_settings,
+    )
     db = await aiosqlite.connect(DB_PATH)
     try:
         async with db.execute("SELECT key, value FROM settings") as cur:
@@ -1448,8 +1450,12 @@ async def get_quality_presets(encoder: Optional[str] = None):
     for pid in QUALITY_PRESETS:
         values = preset_settings(enc, pid)
         as_saved = {"default_encoder": enc, **{k: str(v) for k, v in values.items()}}
-        presets.append({"id": pid, "settings": values,
-                        "savings_pct": round(cq_to_savings_pct(effective_cq(as_saved)) * 100)})
+        cq = QUALITY_PRESETS[pid]
+        presets.append({"id": pid, "cq": cq, "settings": values,
+                        # A job's own quality: the CQ (every encoder reads it) and libx265's CRF.
+                        "job": {**quality_settings("nvenc", cq), **quality_settings("libx265", cq)},
+                        "savings_pct": round(cq_to_savings_pct(effective_cq(as_saved)) * 100),
+                        "wizard": pid in WIZARD_PRESETS})
         if all(str(saved.get(k, "")) == str(v) for k, v in values.items()):
             current = pid
     return {"encoder": enc, "presets": presets, "current": current}

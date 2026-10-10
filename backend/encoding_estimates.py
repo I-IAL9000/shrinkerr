@@ -35,22 +35,29 @@ def cq_to_savings_pct(cq: int) -> float:
 # (content_detect.CRF_OFFSET).
 _CRF_OFFSET = 2
 # VideoToolbox's -q:v (higher = better) as the CQ with the same savings,
-# from the measured Settings → Video guide rows (q50 ≈ 65-70%, q55-60 ≈
-# 40-55%, q65 ≈ 20-25%).
-_VT_Q_AS_CQ = ((45, 28), (50, 26), (55, 23), (60, 21), (65, 15))
+# from the measured Settings → Video guide rows (q40 ≈ 82%, q45 ≈ 76%, q50 ≈
+# 65-70%, q55-60 ≈ 40-55%, q62 ≈ 35% by interpolation, q65 ≈ 20-25%).
+_VT_Q_AS_CQ = ((40, 29), (45, 28), (50, 26), (55, 23), (60, 21), (62, 18), (65, 15))
 QUALITY_KEYS = ("default_encoder", "nvenc_cq", "libx265_crf", "qsv_cq", "vaapi_qp", "videotoolbox_quality")
 
-# The setup wizard's quality presets, on NVENC's CQ scale (v0.10.0):
-# Quality = the default, transparent; Balanced = excellent; Max savings =
-# good (Settings → Video guide). VideoToolbox gets the -q:v measured to save
-# about the same (_VT_Q_AS_CQ).
-QUALITY_PRESETS = {"quality": 20, "balanced": 23, "max_savings": 26}
-_VT_Q_FOR_PRESET = {"quality": 60, "balanced": 55, "max_savings": 50}
+# The quality presets (v0.10.0), on NVENC's CQ scale, best quality first —
+# one list for the setup wizard (WIZARD_PRESETS), the queue panel and the
+# Settings guide, which each had their own. Quality = the default,
+# transparent; Balanced = excellent; Max savings = good.
+QUALITY_PRESETS = {"max_quality": 18, "quality": 20, "balanced": 23, "max_savings": 26, "smallest": 29}
+WIZARD_PRESETS = ("quality", "balanced", "max_savings")
 
 
-def preset_settings(encoder: str, preset: str) -> dict:
-    """The settings a quality preset sets for `encoder`."""
-    cq = QUALITY_PRESETS[preset]
+def vt_quality_for_cq(cq: int) -> int:
+    """The VideoToolbox -q:v that saves about what NVENC's `cq` does: the
+    measured point nearest to it (the better quality on a tie)."""
+    return min(_VT_Q_AS_CQ, key=lambda qc: (abs(qc[1] - cq), -qc[0]))[0]
+
+
+def quality_settings(encoder: str, cq: int) -> dict:
+    """`cq` (NVENC's scale) as `encoder`'s own quality setting. libx265's CRF
+    runs _CRF_OFFSET above; QSV's global_quality and VAAPI's QP share the
+    scale (not measured)."""
     encoder = (encoder or "nvenc").lower()
     if encoder == "libx265":
         return {"libx265_crf": cq + _CRF_OFFSET}
@@ -59,8 +66,13 @@ def preset_settings(encoder: str, preset: str) -> dict:
     if encoder == "vaapi":
         return {"vaapi_qp": cq}
     if encoder == "videotoolbox":
-        return {"videotoolbox_quality": _VT_Q_FOR_PRESET[preset]}
+        return {"videotoolbox_quality": vt_quality_for_cq(cq)}
     return {"nvenc_cq": cq}
+
+
+def preset_settings(encoder: str, preset: str) -> dict:
+    """The settings a quality preset sets for `encoder`."""
+    return quality_settings(encoder, QUALITY_PRESETS[preset])
 
 
 def effective_cq(values: dict) -> int:

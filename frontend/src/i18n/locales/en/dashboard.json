@@ -38,21 +38,6 @@
     "quality": {
       "title": "Quality",
       "description": "How hard to compress. Savings are typical for H.264 sources; you can fine-tune this later in Settings → Video.",
-      "savings": "about {{pct}}% smaller",
-      "presets": {
-        "quality": {
-          "name": "Quality",
-          "desc": "Looks the same as the original."
-        },
-        "balanced": {
-          "name": "Balanced",
-          "desc": "Excellent quality, noticeably smaller files."
-        },
-        "max_savings": {
-          "name": "Max savings",
-          "desc": "Good quality and the smallest files; dark or grainy scenes can show it."
-        }
-      },
       "custom": {
         "name": "Keep my settings",
         "desc": "Your current quality setting isn't one of these presets."

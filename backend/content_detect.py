@@ -223,7 +223,7 @@ def smart_cq(file_path: str, width, height, settings: dict) -> tuple[int | None,
 def smart_quality(file_path: str, width, height, settings: dict) -> tuple[int | None, int | None]:
     """smart_cq() as a job's (nvenc_cq, libx265_crf); libx265's CRF runs
     CRF_OFFSET above NVENC's CQ for similar quality. (None, None) leaves the
-    job on the global settings. QSV, VAAPI and VideoToolbox have no per-job
-    quality, so they keep their own settings, as with rules."""
+    job on the global settings. QSV, VAAPI and VideoToolbox get the CQ
+    translated at encode time (encoding_estimates.quality_settings)."""
     cq, _ = smart_cq(file_path, width, height, settings)
     return (cq, cq + CRF_OFFSET) if cq is not None else (None, None)

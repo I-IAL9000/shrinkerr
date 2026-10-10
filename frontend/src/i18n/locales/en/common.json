@@ -80,5 +80,28 @@
   "settingsSearch": {
     "placeholder": "Search settings",
     "none": "No setting matches"
+  },
+  "qualityPresets": {
+    "max_quality": {
+      "name": "Max quality",
+      "desc": "For keeping: extra detail at a modest saving."
+    },
+    "quality": {
+      "name": "Quality",
+      "desc": "Looks the same as the original."
+    },
+    "balanced": {
+      "name": "Balanced",
+      "desc": "Excellent quality, noticeably smaller files."
+    },
+    "max_savings": {
+      "name": "Max savings",
+      "desc": "Good quality, much smaller files; dark or grainy scenes can show it."
+    },
+    "smallest": {
+      "name": "Smallest",
+      "desc": "The smallest files; the loss shows on a big screen."
+    },
+    "savings": "about {{pct}}% smaller"
   }
 }

@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ActionMenu from "./ActionMenu";
+import { getQualityPresets, type QualityPreset } from "../api";
+import { presetSetting } from "../qualityPresets";
 
 interface QueueControlPanelProps {
   selectedCount: number;
@@ -7,7 +10,8 @@ interface QueueControlPanelProps {
   onMoveUp: () => void;
   onMoveDown: () => void;
   onMoveBottom: () => void;
-  onChangeVideoPreset: (preset: string, cq: number) => void;
+  /** A quality preset's values for the selected jobs (any encoder reads them). */
+  onChangeVideoPreset: (job: QualityPreset["job"]) => void;
   onChangeAudioPreset: (codec: string, bitrate: number) => void;
   onChangePriority: (priority: number) => void;
   onIgnore: () => void;
@@ -21,25 +25,6 @@ const PRIORITIES = [
   { labelKey: "normal", value: 0 },
   { labelKey: "high", value: 1 },
   { labelKey: "highest", value: 2 },
-];
-
-// nameKey → queue:panel.videoPresets.*; detail is technical and not translated.
-const NVENC_VIDEO_PRESETS = [
-  { nameKey: "maxQuality", detail: "p7 / CQ 20", preset: "p7", cq: 20 },
-  { nameKey: "qualityFirst", detail: "p6 / CQ 21", preset: "p6", cq: 21 },
-  { nameKey: "balanced", detail: "p5 / CQ 23", preset: "p5", cq: 23 },
-  { nameKey: "spaceSaver", detail: "p4 / CQ 25", preset: "p4", cq: 25 },
-  { nameKey: "maxCompression", detail: "p3 / CQ 27", preset: "p3", cq: 27 },
-  { nameKey: "potato", detail: "p1 / CQ 30", preset: "p1", cq: 30 },
-];
-
-const LIBX265_VIDEO_PRESETS = [
-  { nameKey: "maxQuality", detail: "veryslow / CRF 20", preset: "veryslow", cq: 20 },
-  { nameKey: "qualityFirst", detail: "slower / CRF 21", preset: "slower", cq: 21 },
-  { nameKey: "balanced", detail: "medium / CRF 23", preset: "medium", cq: 23 },
-  { nameKey: "spaceSaver", detail: "fast / CRF 25", preset: "fast", cq: 25 },
-  { nameKey: "maxCompression", detail: "veryfast / CRF 27", preset: "veryfast", cq: 27 },
-  { nameKey: "potato", detail: "ultrafast / CRF 30", preset: "ultrafast", cq: 30 },
 ];
 
 // labelKey (whole label) / noteKey (parenthetical) → queue:panel.audioPresets.*;
@@ -108,7 +93,12 @@ export default function QueueControlPanel({
   defaultEncoder = "nvenc",
 }: QueueControlPanelProps) {
   const { t } = useTranslation(["queue", "common"]);
-  const VIDEO_PRESETS = defaultEncoder === "libx265" ? LIBX265_VIDEO_PRESETS : NVENC_VIDEO_PRESETS;
+  // The shared quality presets (v0.10.0): quality only — the speed preset
+  // stays the Settings choice — and every encoder takes them.
+  const [presets, setPresets] = useState<QualityPreset[]>([]);
+  useEffect(() => {
+    getQualityPresets(defaultEncoder).then(r => setPresets(r.presets)).catch(() => {});
+  }, [defaultEncoder]);
 
   return (
     <div
@@ -197,9 +187,9 @@ export default function QueueControlPanel({
       <ActionMenu
         label={t("queue:panel.videoPresetPlaceholder")}
         buttonStyle={selectStyle}
-        items={VIDEO_PRESETS.map(p => ({
-          label: `${t(`queue:panel.videoPresets.${p.nameKey}`)} — ${p.detail}`,
-          onSelect: () => onChangeVideoPreset(p.preset, p.cq),
+        items={presets.map(p => ({
+          label: `${t(`common:qualityPresets.${p.id}.name`)} — ${presetSetting(p)} · ${t("common:qualityPresets.savings", { pct: p.savings_pct })}`,
+          onSelect: () => onChangeVideoPreset(p.job),
         }))}
       />
       <ActionMenu
