@@ -3,7 +3,11 @@
 Shrinkerr exposes its numbers three ways: Prometheus metrics, one small
 JSON object for dashboard widgets (Homepage, Homarr and anything else that
 can read a JSON URL), and Home Assistant over MQTT. The first two need the
-API key (Settings → System → Authentication) once authentication is set up.
+API key (Settings → System → Authentication) wherever Shrinkerr asks for
+sign-in: not with **External (reverse proxy)** sign-in, and not from local
+addresses when **Who signs in** is **Not from local addresses**. Send it
+in the `X-Api-Key` header (or as below): since 0.10 a key in the URL
+(`?api_key=`) isn't accepted.
 
 ## Prometheus
 
@@ -19,6 +23,9 @@ scrape_configs:
       - targets: ["shrinkerr:6680"]
 ```
 
+`/api/metrics` also takes the key as the Basic-auth password
+(`basic_auth:` with any username), for tools that only offer that.
+
 | Metric | Type | What |
 |---|---|---|
 | `shrinkerr_info{version}` | gauge | The running version (always 1). |
@@ -33,7 +40,8 @@ scrape_configs:
 | `shrinkerr_estimated_savings_bytes` | gauge | What converting them would save, estimated. |
 | `shrinkerr_node_up{node}` | gauge | Each remote worker: 1 online, 0 offline. |
 
-Jobs cleared from the Queue with "Clear done" still count.
+Completed jobs cleared from the Queue with "Clear done" still count (it
+deletes failed and cancelled ones).
 
 ## Dashboard widgets
 
@@ -81,7 +89,7 @@ MQTT broker that Home Assistant already uses (the Mosquitto add-on, say).
 1. Settings → Integrations → **Home Assistant (MQTT)**: tick **Connect to
    the MQTT broker** and enter its host, port (1883, or 8883 with TLS) and
    the user name and password Home Assistant's MQTT integration uses.
-2. Click **Test connection**, then **Save**.
+2. Click **Test connection** (it saves your changes first).
 
 A **Shrinkerr** device appears in Home Assistant (Settings → Devices &
 services → MQTT) with:

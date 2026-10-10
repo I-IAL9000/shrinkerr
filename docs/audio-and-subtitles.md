@@ -1,21 +1,90 @@
 # Audio and subtitles
 
-What Shrinkerr can do to a file's audio and subtitle tracks besides keeping
-or removing them by language — converting lossless audio, adding a stereo
-track for devices that can't play surround, and turning image subtitles
-into text. All of it is in **Settings → Audio & subtitles** and happens
-while a file is converted or cleaned up, in the same pass.
+Which audio and subtitle tracks Shrinkerr keeps, by language, and what else
+it can do to them — converting lossless audio, adding a stereo track for
+devices that can't play surround, and turning image subtitles into text.
+All of it is in **Settings → Audio & subtitles**. Tracks are removed when a
+file is converted or cleaned up; the other options apply while a file is
+converted (the subtitle options also when it's cleaned up), in the same
+pass.
 
-Choosing which languages to keep, and detecting the language of unlabelled
-tracks, are covered in [Language detection](language-detection.md).
+Detecting the language of unlabelled tracks is covered in
+[Language detection](language-detection.md).
 
 ## Contents
+- [Choosing the languages to keep](#choosing-the-languages-to-keep)
 - [Lossless audio](#lossless-audio)
 - [A stereo compatibility track](#a-stereo-compatibility-track)
 - [Image subtitles to text (SRT)](#image-subtitles-to-text-srt)
 - [Sidecar subtitles](#sidecar-subtitles)
 - [Fix for direct play](#fix-for-direct-play)
 - [Remote workers](#remote-workers)
+
+## Choosing the languages to keep
+
+A conversion or cleanup removes the tracks your languages don't keep. The
+Scanner shows each file's tracks and which ones go; its **Audio cleanup**
+and **Subtitle cleanup** filters list the files with something to remove.
+
+**Audio** is the **Audio Track Rules** card. Its options — language
+detection and Audio Conversion included — only show while **Remove
+unwanted audio tracks** is on (the default); with it off, every audio track
+stays.
+
+- **Always Keep Languages** — audio in these languages stays.
+- **Auto-keep native language audio tracks** (on) — the original language
+  of the film or show stays too. It comes from TMDB (by an IMDb, TVDB or
+  TMDB id in the file or folder name, else by title and year) or from a
+  **Fix match**. With no match, Shrinkerr guesses: the track marked
+  original, else the first audio track.
+- **Keep only the best track per always-keep language** (on) — of several
+  tracks in one of those languages, the one with the most channels, then
+  the best codec, stays. The original language's tracks all stay while
+  auto-keep native is on.
+- **Reorder native language to first audio stream** (on) — a conversion or
+  cleanup moves the original-language audio to the first audio track. A
+  file that needs only this counts as audio cleanup.
+- Audio with no language (`und`) always stays — the **Keep
+  unknown/undefined tracks** switch doesn't change that — and so does the
+  [stereo compatibility track](#a-stereo-compatibility-track). A file
+  always keeps at least one audio track.
+
+**Subtitles** is the card below it:
+
+- **Remove unwanted subtitle tracks** is off on new installs, so every
+  subtitle stays until you choose languages; the setup wizard turns it on
+  when you pick subtitle languages there. While it's off, the options
+  below are hidden.
+- **Keep Subtitle Languages** — subtitles in these languages stay. With
+  none chosen (and auto-keep native off), every subtitle with a language
+  goes, forced ones included.
+- **Keep unknown/undefined subtitles** (on) and **Auto-keep native
+  language subtitle tracks** (off).
+- Forced subtitles stay only in a keep language, the original language
+  (with that switch on), or with no language. Empty placeholder subtitles
+  (forced or unknown, one line at most) go.
+
+**Changing these settings** updates the files already scanned, in the
+background (after a running scan), with no rescan; pending jobs follow.
+Tracks you tick or untick by hand — in a file's panel in the Scanner, or a
+pending job's panel in the Queue — are marked **your choice** and stay as
+you set them, through language changes, rescans and
+[language detection](language-detection.md).
+
+An encoding rule can set its own audio languages and subtitle policy (keep
+all, remove all, or these languages): rule form → **Languages, originals
+and more** ([Rules and automation](rules-and-automation.md#actions-and-overrides)).
+They apply when files are queued; the Scanner keeps showing the global
+choice.
+
+Language codes are compared in one spelling: `de`, `deu`, `de-DE` and `ger`
+are all German, so Bazarr's `.is.srt` and TMDB's 2-letter codes match your
+languages.
+
+Scanner filters for tracks: **Audio cleanup**, **Subtitle cleanup**,
+**Unknown language**, **Missing my language** (no audio or subtitle track
+in your languages), **Atmos / DTS:X**, **7.1**, **Commentary**, **Image
+subtitles**, **External**, **Forced**, **SDH** and **Hi10P**.
 
 ## Lossless audio
 
@@ -53,7 +122,8 @@ Jellyfin transcode.
 Blu-ray (PGS) and DVD (VobSub) subtitles are pictures. Many players can't
 show them and transcode the video to burn them in. **Convert image
 subtitles to text (SRT)** reads them with OCR (tesseract) and adds an SRT
-track in the same language, titled "OCR", next to each one.
+track in the same language, titled "OCR" (or the image track's title plus
+"(OCR)"), next to each one.
 
 - **Which tracks:** the image subtitle tracks the file keeps, unless it
   already has a text track in that language (forced and full subtitles are
@@ -78,8 +148,18 @@ track in the same language, titled "OCR", next to each one.
 **Merge external subtitles** puts `.srt`, `.ass`, `.ssa`, `.sub` and
 `.vtt` files beside the video into the MKV during a conversion or cleanup,
 with the language and forced flag from the file name
-(`Movie.eng.srt`, `Movie.en.forced.srt`). **Delete external subtitles
+(`Movie.eng.srt`, `Movie.en.forced.srt`). **Delete external subtitle files
 after merge** removes the sidecars once they're in.
+
+Full language names (`Movie.English.srt`), region or script tags
+(`Movie.pt-BR.srt`, `Movie.zh-Hans.srt`) and a flag before the language
+(`Movie.forced.en.srt`) are read too.
+
+With Bazarr, **Wait after an import** (Settings → Automation, 0 minutes by
+default) lets its subtitles arrive before a new file converts, and
+Shrinkerr asks Bazarr to re-sync after it rewrites a file, so Bazarr doesn't
+download merged subtitles again
+([Bazarr and Maintainerr](rules-and-automation.md#bazarr-and-maintainerr)).
 
 ## Fix for direct play
 
@@ -102,7 +182,9 @@ one, whatever the settings above say. Files with no problem are left alone.
 
 Rules and the conversion filters (minimum size, bitrate limits) don't stop
 a fix. A file still hardlinked by a torrent client, or in a Maintainerr
-collection, is left out unless you override them.
+collection, is left out while **Skip files that are still hardlinked**
+(Settings → Automation) or **Don't queue titles Maintainerr is about to
+remove** (Settings → Integrations) is on.
 
 ## Remote workers
 

@@ -19,8 +19,9 @@ whatever language each browser shows the interface in.
 | Gotify | The server URL and an application token |
 | Apprise | Service URLs, one per line — Pushover, Slack, Matrix, Pushbullet, Teams and more; see the [Apprise wiki](https://github.com/caronc/apprise/wiki) for each service's URL |
 
-Tokens and passwords are shown masked after saving, and left out of
-settings exports.
+The email password and the ntfy and Gotify tokens are shown masked after
+saving. Settings exports leave out the password, the tokens, and the
+Discord, webhook, ntfy and Apprise URLs.
 
 ## Events
 
@@ -33,7 +34,7 @@ settings exports.
 | Worker offline | A remote worker stopped answering — once per outage |
 | Weekly summary | Once a week: files converted, space saved, failures, what's waiting, and the total saved |
 
-Turn each one on or off under the channel list. Failures, low disk
+Turn each one on or off above the channel list. Failures, low disk
 space, rejections and offline workers are sent as urgent where the
 channel has priorities (ntfy, Gotify).
 

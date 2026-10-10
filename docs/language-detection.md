@@ -3,7 +3,8 @@
 Media files often carry audio or subtitle tracks tagged `und`
 (undetermined) — no language metadata. That breaks track cleanup: your
 "keep English + Icelandic" rule can't match a track it can't identify, so
-`und` tracks get dropped, or you have to hand-pick every track. Shrinkerr
+`und` tracks stay whatever their language, or you have to hand-pick every
+track. Shrinkerr
 detects the real language of `und` tracks and can write the correct tag
 back into the file.
 
@@ -46,12 +47,12 @@ subtitle gets its language filled in with no action from you.
 
 **On demand (any track):** open a file's detail panel and click **Detect
 languages**. This detects every `und` audio and subtitle track on that file
-— including the slow image-sub OCR — applies the results, and (by default)
-writes the tags into the file. Image-sub OCR takes minutes; a live status
+— including the slow image-sub OCR — applies the results, and writes the
+tags into the file. Image-sub OCR takes minutes; a live status
 line shows the current stage (extracting → OCR passes).
 
-**Batch:** from the scanner list (e.g. filtered to
-[Unknown language](#the-unknown-language-filter)), use **Detect all
+**Batch:** from the scanner list filtered to
+[Unknown language](#the-unknown-language-filter), use **Detect all
 unknown**, or select titles and use **Detect selected (N)**. The batch runs
 server-side with a live **N/total** progress indicator that survives
 navigating away and back, and a **Cancel** button (stops after the current
@@ -62,23 +63,32 @@ on (default), converting a file with `und` audio detects the language first,
 so the converted output carries the correct tag. Image-sub OCR is *not* run
 before conversion — it's too slow to gate an encode on.
 
+**Blu-ray / DVD folders and ISOs:** spoken-language detection reads them
+too (since v0.10.0). A disc can't be tagged, so the language is applied
+when it's converted: a disc folder's panel offers **Convert to MKV (apply
+language)**.
+
 ## Writing tags back to the file
 
-By default, on-demand detection doesn't just update Shrinkerr's database —
+On-demand detection doesn't just update Shrinkerr's database —
 it writes the corrected language tags **into the file**, so the fix is real
 on disk and every other tool (Plex, Jellyfin, mpv, …) sees it too. No
 re-encode is involved:
 
 - **mkv** — edited **in place** with `mkvpropedit`: instant, no rewrite, no
   extra disk space, even on a 50 GB file.
-- **mp4 / m4v / mov / ts** — a fast `ffmpeg -c copy` remux to a temp file,
-  then an atomic replace. No quality loss (streams are copied, not
+- **mp4 / mov** — a fast `ffmpeg -c copy` remux to a temp file, then
+  swapped in for the original. No quality loss (streams are copied, not
   re-encoded), but it does rewrite the container. The tag is verified present
   in the output before the replace.
-- **containers with no per-track language field** (avi, mpg, wmv, flv, …) —
-  these *cannot* store a language tag, so the write is skipped and the track
-  stays flagged as unknown. The only real fix is remuxing to mkv (i.e.
-  **convert** the file); detection alone can't help here.
+- **containers with no per-track language field** (avi, mpg, wmv, flv, …;
+  m4v too, which ffmpeg can't rewrite reliably) — these *cannot* be tagged
+  in place, so the write is skipped and the track stays flagged as unknown,
+  with the detected language kept as pending. The only real fix is
+  remuxing to mkv: the file's panel offers **Remux to MKV (apply
+  language)**, a stream copy (no re-encode).
+- **ts / m2ts / mts** — on-demand detection skips these; convert them to
+  MKV first.
 - **external sidecar subs** — the language lives in the *filename*, so the
   sidecar is renamed to embed the ISO-639-2 code (`Movie.srt` →
   `Movie.eng.srt`) — the convention Plex/Jellyfin/Bazarr read. For VobSub
@@ -91,29 +101,36 @@ is verified in the file** — if the write can't persist (unsupported container,
 read-only mount, error), the track stays flagged so you never lose track of it
 while the file and Plex still read `und`.
 
+The file's tracks are then sorted again with the new languages; tracks you
+kept or removed by hand stay as you set them
+([Choosing the languages to keep](audio-and-subtitles.md#choosing-the-languages-to-keep)).
+
 If Plex is configured, a library refresh is triggered afterward so Plex
 re-reads the corrected languages. A **batch** run coalesces this into one full
 refresh per affected library section at the end (see the setting below).
 
 ## Settings
 
-These are in **Settings → Audio** (the auto-detect toggle is also shown under
-Subtitles):
+These are in **Settings → Audio & subtitles**, in the **Audio Track Rules**
+card (the auto-detect toggle is also shown under Subtitles):
 
 - **Auto-detect languages for unknown tracks before converting**
   (default **on**) — when converting a file with `und` tracks, detect audio
   language first so the output is tagged correctly. Turn off to leave `und`
   tracks untouched through conversion.
-- **Notify Plex on track-language change** (default **on**) — after tags are
-  written to a file, refresh the file's Plex library section. No effect if
-  Plex isn't configured.
-- **Audio detection model** (`tiny` / `base` / `small`, default `tiny`) —
-  the faster-whisper model for spoken-language ID. Larger is more accurate on
-  non-English speech at the cost of download size, RAM, and speed. Takes
-  effect on the next detection (no restart).
+- **Audio detection model** (`tiny` / `base` / `small` / `medium` /
+  `large-v3`, default `tiny`) — the faster-whisper model for spoken-language
+  ID. Larger is more accurate on non-English speech at the cost of download
+  size, RAM, and speed; `medium` and `large-v3` are practical only with an
+  NVIDIA GPU (the NVENC image). Takes effect on the next detection (no
+  restart).
 - **Audio / Subtitle confidence** (defaults `0.6` / `0.7`) — minimum
   confidence to accept a detected language. Lower tags more tracks but risks
   wrong tags.
+
+The Plex refresh after tags are written (default **on**; no effect if Plex
+isn't configured) has no switch in Settings: it's the
+`plex_notify_on_lang_change` setting (`PUT /api/settings/encoding`).
 
 The env vars below still work and **override** the Settings values (handy for
 headless/compose-only deploys):
@@ -124,6 +141,7 @@ headless/compose-only deploys):
 | `SHRINKERR_LANG_DETECT_SUB_MIN` | `0.7` | Min confidence to accept a subtitle detection |
 | `SHRINKERR_WHISPER_CACHE` | `/app/data/models` | Where the faster-whisper model is cached |
 | `SHRINKERR_WHISPER_MODEL` | `tiny` | faster-whisper model for audio ID. `tiny` is under-confident on non-English speech (Nordic tracks land just under the gate); set `base` or `small` for better accuracy at the cost of size/speed. |
+| `SHRINKERR_WHISPER_IDLE_SECONDS` | `300` | Seconds the audio-detection model stays loaded after its last use; then it's unloaded to free RAM (and GPU memory) until the next detection. |
 | `SHRINKERR_PGS_SAMPLE_SECONDS` | `1200` | Seconds of a PGS track to OCR for detection (0 = whole track). OCR of a full movie is slow; a leading sample is enough to ID the language. Falls back to the full track if the sample has no text. |
 
 ## The "Unknown language" filter
@@ -139,27 +157,33 @@ them too.
 
 - **Text subtitles** — the subtitle text is extracted (raw, without forcing
   a decode that would reject non-UTF-8), the real charset is detected, and
-  `langdetect` identifies the language. Runs inline during scanning.
-- **Audio** — a 30-second clip is extracted (16 kHz mono) and run through a
-  faster-whisper *tiny* model's language identification. Several positions
+  `langdetect` identifies the language. Runs inline during scanning, on new
+  and changed files: a full scan reuses what it read last time for a file
+  whose size and date haven't changed (a folder rescan reads everything
+  again).
+- **Audio** — a 30-second clip is extracted (16 kHz mono) and run through
+  the faster-whisper model's language identification (*tiny* unless you
+  pick another). Several positions
   in the track are sampled and the most confident wins, so a track whose
   first sampled window is music or silence still gets identified from a
-  better window.
-- **Image subtitles** — the track is extracted with `mkvextract`, OCR'd with
-  `pgsrip`/tesseract, and the recognized text is fed to the same
+  better window. In the NVENC image it runs on the NVIDIA GPU (on the CPU
+  without one); the other images use the CPU.
+- **Image subtitles** — the track is extracted (`ffmpeg` / `mkvextract`),
+  OCR'd with `pgsrip`/tesseract (PGS) or `subtile-ocr` (VobSub), and the
+  recognized text is fed to the same
   `langdetect` step. It OCRs with the Latin model first (covers all
   Latin-script languages cleanly); if the result can't be identified — the
   usual sign the sub is non-Latin — it re-OCRs with the CJK / Cyrillic /
   Arabic models.
 
-Before any of the above, if the track's **title** names a language
+On demand, before any of the above, if the track's **title** names a language
 ("Traditional Chinese", "Romanian", "English SDH"), that's used directly —
 it's free and reliable, and it rescues **forced/SDH** tracks that carry too
 little text for content detection to work. Applies to audio and subtitle
 tracks alike.
 
-In every case the recognized/identified language flows through one shared
-path: confidence gate → apply to the DB → write to the file → optional Plex
+On demand, the recognized/identified language then flows through one shared
+path: confidence gate → write to the file → apply to the DB → optional Plex
 refresh.
 
 ## Confidence and fail-open
@@ -177,12 +201,14 @@ The detection tooling is bundled in every image:
 
 - `langdetect` + `charset-normalizer` — text-subtitle detection (tiny).
 - `faster-whisper` + `pytesseract` + `pgsrip` — audio + image-sub detection.
-- `tesseract-ocr` and the language packs (`eng`, `chi-sim`, `chi-tra`,
-  `jpn`, `kor`, `rus`, `ara`) plus `mkvtoolnix` and OpenCV's runtime libs.
+- `tesseract-ocr` and the language packs detection uses (`eng`, `chi-sim`,
+  `chi-tra`, `jpn`, `kor`, `rus`, `ara`; the images include more, for
+  [image subtitles to text](audio-and-subtitles.md#image-subtitles-to-text-srt))
+  plus `mkvtoolnix` and OpenCV's runtime libs.
 - `pgsrip` handles PGS (Blu-ray). VobSub (DVD) OCR uses `subtile-ocr`, which
-  is bundled in the **NVENC** images; on the portable/CPU images VobSub
-  tracks fall back to `und` (PGS works everywhere). Detection is fail-open,
-  so a missing tool never breaks a scan or conversion.
+  is bundled in every image too (before v0.10.0, only in the NVENC images).
+  Detection is fail-open, so a missing tool never breaks a scan or
+  conversion.
 
 These add on the order of tens of MB to the image. The faster-whisper
 **tiny** model (~75 MB) is *not* baked in — it downloads on the first audio
@@ -191,7 +217,7 @@ outbound network the first time and a writable data volume.
 
 ## Troubleshooting
 
-**"No new languages detected" immediately** — audio detection needs the
+**"No new languages resolved" immediately** — audio detection needs the
 faster-whisper model. If it returns instantly with nothing, the model
 probably failed to load or download. Check the logs for `[LANG-DETECT]`
 warnings. First use needs network + a writable `/app/data/models`.
@@ -199,12 +225,13 @@ warnings. First use needs network + a writable `/app/data/models`.
 **An image sub stays `und`** — OCR of a heavily-styled or low-resolution
 bitmap sub can come back below the confidence threshold; that's the gate
 working (better `und` than wrong). PGS is well-supported; VobSub is more
-variable and its OCR (`subtile-ocr`) is only bundled in the NVENC images —
-on the portable/CPU images VobSub tracks stay `und`.
+variable.
 
 **A detected language didn't reach the file** — the write is fail-open; if
-`mkvpropedit`/the remux failed, Shrinkerr keeps the DB detection but the
-file is unchanged. Check the logs for `[LANG-DETECT] file write failed`.
+`mkvpropedit`/the remux failed, the file is unchanged and the track stays
+`und`, with the detected language kept as pending (the file's panel offers
+**Remux to MKV (apply language)**). Check the logs for `[LANG-DETECT]`
+lines about `mkvpropedit` or the remux.
 
 **An audio track won't detect** — some tracks (music-only, commentary beds,
 very short) genuinely don't yield a confident spoken-language result across

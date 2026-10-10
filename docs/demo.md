@@ -30,8 +30,10 @@ Shrinkerr ([Installation → Reverse proxy](installation.md#reverse-proxy-setups
   episodes with made-up titles, their audio and subtitle tracks, about 90
   finished conversions, 24 queued jobs and one failed one. There are no
   files behind them.
-- **Nothing runs in the background**: no watcher, no queue, no scans.
+- **The watcher and the queue don't run**, and scans can't be started. The
+  update check and the weekly database backup still run, as on any install.
   Posters aren't fetched, so titles show their first letter.
 
 `SHRINKERR_DEMO=1` turns all of this on. Don't set it on an install you use:
-it hides your library behind the demo's and stops the queue.
+the demo library only fills an empty database, so it would show your own
+library to anyone, without signing in, and stop the queue.

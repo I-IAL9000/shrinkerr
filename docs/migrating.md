@@ -15,6 +15,10 @@ page maps what you have to where it lives in Shrinkerr.
   minutes.
 - Files the other tool already converted to HEVC aren't converted again,
   unless HEVC is among the codecs you convert from (Settings → Video).
+- **Torrents still seeding** are hardlinks: converting one frees nothing.
+  New installs skip them (**Skip files that are still hardlinked**,
+  Settings → Automation), and the Scanner's **Hardlinked (seeding)** filter
+  shows them.
 
 ## Where things are
 
@@ -34,9 +38,13 @@ page maps what you have to where it lives in Shrinkerr.
 
 1. **Install** Shrinkerr with the same media paths mounted
    ([Installation](installation.md)).
-2. **Run the setup wizard**: media folders, hardware, a quality preset,
-   the languages to keep, and what happens to originals. Keep originals for
-   a few days at first.
+2. **Set up sign-in, then run the setup wizard.** Shrinkerr first asks how
+   people sign in: a username and password, or your reverse proxy
+   (External). Download clients, Sonarr / Radarr and remote workers use the
+   API key. The wizard then covers media folders, hardware, a quality
+   preset, the languages to keep, and what happens to originals. Keep
+   originals for a few days at first. **Doctor** (in the sidebar) then
+   checks the media folders, ffmpeg and your encoder, and the connections.
 3. **Recreate per-library differences as rules**: an anime folder in AV1,
    higher quality for 4K, leave remuxes' originals for 30 days… The rule
    library has a few to start from.

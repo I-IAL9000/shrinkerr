@@ -6,9 +6,16 @@ deeper.
 
 ## Guides
 
+- [**What happens to your files**](what-happens-to-your-files.md) — the
+  checks before an original is replaced, what becomes of the original, Undo,
+  discs, and every other way Shrinkerr changes a file.
 - [**Installation**](installation.md) — every installation scenario:
   bare docker-compose, Portainer, reverse proxy (Traefik / Nginx / Caddy),
   NVIDIA Container Toolkit setup, Windows + WSL2, first-run walkthrough.
+- [**Unraid, TrueNAS and Synology**](nas.md) — what's specific to running
+  Shrinkerr on each, including GPU passthrough.
+- [**Hardware**](hardware.md) — which encoders work on which GPUs and
+  machines, what each keeps (HDR, Dolby Vision, AV1), and which image to use.
 - [**Remote workers**](remote-workers.md) — distributed encoding across
   machines. Registering a worker, path mappings, capability-based routing,
   per-node schedules, affinity, pausing, and the NVENC ↔ libx265 fallback
@@ -37,6 +44,8 @@ deeper.
   fleet, backup strategy, what to set before your first batch.
 - [**Coming from Tdarr or Unmanic**](migrating.md) — where their libraries,
   plugins, flows, nodes and schedules live in Shrinkerr, and how to switch.
+- [**Compared with Tdarr, Unmanic and FileFlows**](comparison.md) — how they
+  differ, and when another tool may suit you better.
 - [**Demo**](demo.md) — run a read-only demo with a made-up library
   (`docker-compose.demo.yml`).
 - [**Monitoring and dashboards**](monitoring.md) — Prometheus metrics
@@ -50,8 +59,11 @@ deeper.
 - [**Security**](security.md) — threat model, in-app defences, and
   hardening checklist for production deployments.
 - [**FAQ**](faq.md) — quick answers to recurring questions.
+- [**How Shrinkerr is built**](how-shrinkerr-is-built.md) — who does what,
+  and how changes are tested before they reach you.
 
 ## Something missing?
 
-Open an issue or PR. Docs live in `docs/` and any `.md` file on `main` is
-served by GitHub as-is — no build step.
+Open an issue or PR ([Contributing](../CONTRIBUTING.md)). Docs live in
+`docs/` and any `.md` file on `main` is served by GitHub as-is — no build
+step.

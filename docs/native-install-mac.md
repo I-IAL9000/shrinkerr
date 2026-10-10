@@ -39,8 +39,10 @@ Running natively gives you:
 
 - **NVENC / QSV / VAAPI are Linux-only.** On a Mac the choices are
   VideoToolbox (hardware) and libx265 (software).
-- **Disc-folder + ISO conversion** still works on Mac (uses libdvdread
-  / libbluray bundled with brew's ffmpeg).
+- **Disc-folder + ISO conversion** works for DVDs. Blu-ray folders and
+  ISOs are read through ffmpeg's `bluray:` protocol, which brew's `ffmpeg`
+  isn't built with (`ffmpeg -protocols | grep bluray` shows whether yours
+  is).
 
 ## Prerequisites
 
@@ -63,6 +65,21 @@ ffmpeg -filters 2>/dev/null | grep -w libvmaf
 If you don't see videotoolbox in the encoder list, brew's ffmpeg has
 gone weird — try `brew reinstall ffmpeg` or build from source with
 `./configure --enable-videotoolbox`.
+
+**Optional tools.** Shrinkerr runs without them; each turns on a feature
+(the Docker images include them):
+
+- `brew install dovi_tool mkvtoolnix` keeps Dolby Vision (profiles 7 and
+  8) when a file is converted. Without them those files are left
+  unconverted.
+- `brew install tesseract tesseract-lang mkvtoolnix` reads image subtitles
+  (Blu-ray PGS) for language detection and turns them into SRT
+  (Settings → Audio & subtitles → Image subtitles). `tesseract-lang` adds
+  the languages other than English. DVD (VobSub) subtitles also need
+  `subtile-ocr`, a Rust tool: `cargo install subtile-ocr`.
+
+Once Shrinkerr is running, the **Doctor** page (sidebar) checks ffmpeg,
+ffprobe, VMAF and your default encoder.
 
 ## Install
 
@@ -107,9 +124,9 @@ source .venv/bin/activate
 python3 -m backend.main
 ```
 
-Visit http://localhost:6680 — first-run walkthrough takes you through
-adding media directories and encoding settings, same as the Docker
-flow.
+Visit http://localhost:6680 — Shrinkerr asks how people sign in, then the
+first-run walkthrough takes you through adding media directories and
+encoding settings, same as the Docker flow.
 
 ## Using VideoToolbox
 
@@ -125,14 +142,22 @@ Default Encoder. On a fresh install it's selected for you.
   less, and above ~65 files can come out larger than the source. libx265
   CRF 22 is both smaller and slightly better than q:v 55 but ~8–10× slower.
   Settings → Video's Conversion Guide has the full table. There are no
-  presets; speed is set by the hardware.
+  speed presets; speed is set by the hardware.
+- The **quality presets** (Max quality … Smallest, in the setup wizard, the
+  Queue panel and Settings → Video's guide) and **Target a VMAF score**
+  (Settings → Video) work with VideoToolbox too: their quality is
+  translated to its scale.
 - **Use VideoToolbox for decode** (on by default) decodes H.264 and HEVC
   sources on the Mac's media engine. Other codecs (MPEG-2, VC-1, …) are
   decoded in software automatically.
 - Output is 10-bit HEVC for 10-bit sources and 8-bit for 8-bit sources.
   HDR10 colour tags and mastering/light-level metadata are kept.
-- Rules and the Queue dialog can pick VideoToolbox as the encoder; its
-  quality always comes from Settings.
+- Rules and the Queue dialog can pick VideoToolbox as the encoder. A
+  quality they set (or content type detection's) is translated to
+  VideoToolbox's scale; otherwise it comes from Settings.
+- A rule's **AV1** output is encoded as HEVC on VideoToolbox, which has no
+  AV1 encoder here. With libx265 it uses SVT-AV1, which brew's ffmpeg
+  includes.
 
 On an M1 Pro, 1080p encodes run at roughly 120 fps with hardware decode.
 
@@ -153,8 +178,13 @@ python3 -m backend.main
 
 The worker shows up on the Nodes page with a **VideoToolbox (Mac)**
 capability. NVENC jobs it picks up are encoded with VideoToolbox, at the
-VideoToolbox quality configured on the server. Turn off *translate
-encoder* for the node if it should only take jobs it can run natively.
+VideoToolbox quality configured on the server unless the job sets its own.
+Turn off *Encoder translation* in the node's settings if it should only
+take jobs it can run natively.
+
+Run the same Shrinkerr version on the Mac as on the server: a 0.10 server
+needs 0.10 workers, since older ones don't know its per-job settings.
+More on workers: [Remote workers](remote-workers.md).
 
 ## Running as a launchd service
 
@@ -183,6 +213,8 @@ To auto-start on login:
     <string>/Users/YOU/shrinkerr/shrinkerr.db</string>
     <key>SHRINKERR_MEDIA_ROOT</key>
     <string>/Volumes/Media</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -193,6 +225,10 @@ To auto-start on login:
 </dict>
 </plist>
 ```
+
+launchd doesn't use your shell's `PATH`, so the plist sets one that
+includes Homebrew's (`/opt/homebrew/bin` on Apple Silicon, `/usr/local/bin`
+on Intel). Without it Shrinkerr can't find ffmpeg.
 
 Load + start:
 
@@ -243,5 +279,5 @@ encoder instead.
 the pinned dependencies don't build on the newest Python releases.
 
 **Anything else** — open an issue with the output of `ffmpeg
--version` and the failing job's "View ffmpeg log" expand from the
-Completed tab.
+-version` and the failing job's "ffmpeg log" (expand the job in the
+Queue's Failed tab).

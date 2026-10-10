@@ -11,11 +11,12 @@ right settings, without having to touch the UI for each one.
   - [Sharing rules and the rule library](#sharing-rules-and-the-rule-library)
 - [Watch folders](#watch-folders)
 - [NZBGet / SABnzbd](#nzbget--sabnzbd)
+- [Webhook endpoints](#webhook-endpoints)
 - [Sonarr / Radarr](#sonarr--radarr)
   - [Queue each import (Connect → Webhook)](#queue-each-import-connect--webhook)
   - [Replacing corrupt files](#replacing-corrupt-files)
 - [Bazarr and Maintainerr](#bazarr-and-maintainerr)
-- [Plex / Jellyfin integration](#plex--jellyfin-integration)
+- [Plex / Jellyfin / Emby integration](#plex--jellyfin--emby-integration)
 - [Scheduling](#scheduling)
   - [Policies](#policies)
   - [Freeing space by a date](#freeing-space-by-a-date)
@@ -24,7 +25,7 @@ right settings, without having to touch the UI for each one.
 
 ## Encoding rules
 
-Settings → Automation → Rules. Each rule is a set of conditions that
+Settings → Automation → Encoding Rules. Each rule is a set of conditions that
 select files, plus an action with optional encoder overrides.
 
 ### Conditions
@@ -41,13 +42,15 @@ select files, plus an action with optional encoder overrides.
 - **Release group**
 - **Content type** — anime / animation / film grain / remux / other, the same
   file- and folder-name detection as Settings → Video → Content type
-  detection (works whether or not that setting is on)
+  detection (works whether or not that setting is on). With that setting
+  on, **Rule…** next to each type there starts a new rule with this
+  condition filled in.
 - **Plex label / collection / genre / library** — requires Plex connected
 - **Jellyfin / Emby tag**, **Emby watched** — requires the corresponding integration
 - **Sonarr / Radarr tag** — the tag on the file's series / movie; requires the corresponding integration
 - **Watched** (Plex) / **Jellyfin watched**
 - **Saved view** — the files a Scanner view lists (Scanner → Views)
-- **NZBGet category** — for downloads queued by the NZBGet script
+- **Download category** — the NZBGet / SABnzbd category, for downloads queued by their scripts
 
 Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
 (AND).
@@ -76,8 +79,11 @@ policies:
   saving is smaller; the track cleanup still runs.
 
 These travel with each job, to remote workers too.
-- **Skip** — file is tagged "skipped by rule" during scan/estimate and
-  won't show up in conversion filters.
+- **Skip** — Add to Queue (and auto-queue, the download-client scripts and
+  the webhooks) leave the file alone; the estimate counts it as "skipped by
+  rules". A skip rule on a directory, a Plex label / collection / genre /
+  library or a Jellyfin / Emby tag also keeps its files out of the
+  conversion filters.
 - **Audio/sub only** — skip video encoding entirely; only do the
   audio/subtitle cleanup pass (if enabled).
 
@@ -156,19 +162,30 @@ can edit it like any other rule. Adding it again resets it.
 The file watcher is always on: it polls your media directories every 5
 minutes, and new files it finds appear in the Scanner with the `NEW`
 badge. Pair this with **Auto-queue new files** (Settings → Automation →
-Auto-Queue) to have Shrinkerr automatically queue any scan result that
-needs conversion.
+Auto-Queue) to have Shrinkerr automatically queue the new files that
+need converting or a track cleanup, as Add to Queue would queue them.
+**Auto-queue priority** (Normal by default) is the priority they get; a
+rule's Queue priority wins when it's higher. **Only files in:** limits it
+to the new files a saved view lists (default: every new file); that view
+can't be deleted while the auto-queue uses it.
+
+To look at each conversion before it replaces the original, turn on
+**Review conversions before they replace the original** (Settings →
+Automation → Originals & Backups; off by default). See
+[What happens to your files](what-happens-to-your-files.md#the-checks-before-anything-is-replaced).
 
 Watch folders run against the same media dirs you configured in
-Directories — no separate path list.
+Settings → Media → Media Directories (those with **Scan** on) — no
+separate path list.
 
 ## NZBGet / SABnzbd
 
 The post-processing scripts let NZBGet/SABnzbd notify Shrinkerr the
 moment a download finishes, so a file can start encoding before
 Sonarr/Radarr have finished importing it. The script POSTs to
-`/api/webhooks/post-process` with the file path and metadata; Shrinkerr
-matches it against your encoding rules and queues the job.
+`/api/jobs/add-by-path` with the file paths and the download's category;
+Shrinkerr stores each file in the Scanner and queues it as Add to Queue
+would, your encoding rules included.
 
 ### Prerequisites (read these first)
 
@@ -182,8 +199,8 @@ internal path.**
 The script tells Shrinkerr "I just finished downloading
 `/Downloads/completed/TV/Foo.S01E01/foo.mkv`". Shrinkerr then has to
 open that file. If the NZBGet container sees `/Downloads/...` but the
-Shrinkerr container has nothing mounted at `/Downloads`, every job fails
-with `Outside media dirs` or `Failed to probe file`.
+Shrinkerr container has nothing mounted at `/Downloads`, every file is
+refused with `Outside media dirs` or `File not found`.
 
 The simplest fix is to mount the same host path at the same internal
 path in both compose files:
@@ -211,7 +228,7 @@ new volume bindings.
 
 **2. Add NZBGet's category folders as media directories in Shrinkerr.**
 
-Settings → Directories → "+ Add". For each NZBGet category you want to
+Settings → Media → Media Directories → "+ Add". For each NZBGet category you want to
 auto-queue, add the folder NZBGet writes finished downloads to —
 typically `${MainDir}/completed/<category>` (e.g.
 `/Downloads/completed/TV`, `/Downloads/completed/Movies`).
@@ -230,7 +247,7 @@ landing zone, not a finished library.
 
 **3. Path mappings: only when paths actually differ.**
 
-Settings → Connections → NZBGet / SABnzbd → Path mappings translates the path
+Settings → Integrations → NZBGet / SABnzbd → Path mappings translates the path
 the script reports into the path Shrinkerr should open. You only need
 mappings if the two containers see the same file at different paths.
 
@@ -252,7 +269,7 @@ You need a mapping when:
 ### NZBGet script installation
 
 1. Complete the prerequisites above (volume mounts + media dirs).
-2. Settings → Connections → NZBGet / SABnzbd — set Tags / Categories / Priority,
+2. Settings → Integrations → NZBGet / SABnzbd — set Tags / Categories / Priority,
    click **Save**, then **Download NZBGet Script**.
 3. Place `Shrinkerr.py` in NZBGet's `ScriptDir` (Settings → Paths →
    ScriptDir; defaults to `/scripts` inside the official container).
@@ -266,7 +283,7 @@ You need a mapping when:
 ### SABnzbd script installation
 
 1. Complete the prerequisites above (volume mounts + media dirs).
-2. Settings → Connections → NZBGet / SABnzbd, click **Download SABnzbd Script**.
+2. Settings → Integrations → NZBGet / SABnzbd, click **Download SABnzbd Script**.
 3. Place `shrinkerr.py` in SABnzbd's `scripts` folder.
 4. SABnzbd → Config → Categories, set **shrinkerr.py** as the
    post-processing script for the categories you want auto-queued.
@@ -275,20 +292,23 @@ You need a mapping when:
 
 ### Shrinkerr-side options
 
-Settings → Connections → NZBGet / SABnzbd (same options apply to SABnzbd):
+Settings → Integrations → NZBGet / SABnzbd (same options apply to SABnzbd):
 
-- **Tags** — only process downloads matching these NZBGet tags (empty =
-  all)
-- **Categories** — same for categories
+- **Tags to match in Sonarr/Radarr** — only process downloads whose
+  series / movie has at least one of these tags in Sonarr / Radarr (a
+  download they don't know is skipped). Without Sonarr / Radarr set up in
+  Shrinkerr, every download is processed.
+- **Categories** — only process downloads in these NZBGet / SABnzbd
+  categories (empty = all)
 - **Priority** — what priority the auto-queued job gets (Normal / High /
   Highest)
-- **Wait for completion** — whether NZBGet's script waits for the
+- **Wait for conversion to complete** — whether NZBGet's script waits for the
   encode to finish before returning (makes Sonarr/Radarr's "import on
   completion" wait for your smaller file). Adds a wait to the NZBGet
-  queue — off by default.
-- **Check Sonarr/Radarr tags** — if on, the script asks Sonarr / Radarr
-  whether this file's series/movie has a `no-convert` tag and skips if
-  so. Lets you opt individual shows out via the *arr tag system.
+  queue — on by default.
+- **Check Sonarr tags** / **Check Radarr tags** — whether the script looks
+  TV downloads up in Sonarr and movies in Radarr for those tags. On by
+  default. It's opt-in: tag the shows and movies you want converted.
 
 ### Troubleshooting
 
@@ -306,20 +326,23 @@ registered in Shrinkerr.
    where that path points. Either align the volumes (preferred) or add
    a path mapping that translates NZBGet's view into Shrinkerr's view.
 4. If the file **is** there, just add the parent folder as a media
-   directory (Type=Other, Scan=off) and re-run the job.
+   directory (Type=Other, Scan=off) and run the script for that download
+   again.
 
-**`Failed to probe file: ...`** in Shrinkerr logs.
+**`File not found: ...`** or **`Probe failed: ...`** in NZBGet/SABnzbd
+logs, or a job that failed with **`Source file no longer exists`** or
+**`Failed to probe file`**.
 
-Shrinkerr accepted the path but ffprobe couldn't open it. Usually one
-of:
+Shrinkerr accepted the path but couldn't find or read the file. Usually
+one of:
 
 - The file moved between when NZBGet finished and when Shrinkerr
-  processed the webhook (Sonarr/Radarr imported it). Set "Wait for
-  completion = on" or accept that *arr will move it before encoding —
+  ran the job (Sonarr/Radarr imported it). Set "Wait for conversion to
+  complete = on" or accept that *arr will move it before encoding —
   Shrinkerr's queue handles the move-during-queue case for files that
   are already in your media library, but not for files in the download
   landing zone.
-- Stale path from a restored database: an old `convert_jobs` row points
+- Stale path from a restored database: an old `jobs` row points
   to a file path that no longer exists. Clear failed jobs and rescan.
 - Permissions: the Shrinkerr container's user can't read the file.
   Fix the volume mount mode or chown the file.
@@ -332,18 +355,43 @@ it saw and why it stopped. Usual cause: the NZBGet category doesn't
 match what you typed in Shrinkerr's Categories field, or the Tags
 filter is set but the Sonarr tag isn't propagated.
 
+## Webhook endpoints
+
+Settings → Automation → Webhook Endpoints lists what other tools can call:
+
+| Endpoint | What it does |
+|---|---|
+| `POST /api/webhooks/scan` | Scans the library, or the `paths` you send (they must be under a media directory) |
+| `POST /api/webhooks/queue` | Queues files by path: `{"paths": [...]}`, optionally `priority`, `insert_next`, `force_reencode` |
+| `POST /api/webhooks/pause`, `/resume` | Pauses or resumes the queue |
+| `GET /api/webhooks/status` | Running, pending and completed jobs, space saved, and whether it's paused |
+
+They always need your API key (Settings → System → Authentication), in an
+`X-Api-Key` header or as the Basic-auth password (any username) — not in
+the URL. A file sent to `/queue` is stored in the Scanner and queued as
+Add to Queue would queue it. Like the download-client scripts, it starts
+the queue when it's stopped but never undoes a pause you set; `/resume`
+does that.
+
 ## Sonarr / Radarr
 
-Settings → Connections → Sonarr / Radarr. Enter URL + API key.
+Settings → Integrations → Sonarr / Radarr. Enter URL + API key.
 
 Once connected:
 - **Rescan after conversion** — Shrinkerr tells Sonarr / Radarr to rescan
   the series / movie folder so they pick up the new file.
-- **Replace / Upgrade search** buttons on any job's detail view.
-- **Missing search** for content *arr shows as missing but you know is
-  actually there (a common thing after a restore from backup).
-- **Tag-based rules** in the rule editor — condition "Sonarr tag is
-  X" / "Radarr tag is Y".
+- **Request replacement / Search for upgrade** buttons on a file's details
+  in the Scanner, and for a selection in the Scanner's \*arr actions menu.
+- **Search missing episodes** (\*arr actions, Sonarr only) — asks Sonarr
+  to search for the missing monitored episodes of each series in the
+  selection.
+- **Tag-based rules** in the rule editor — condition "Sonarr/Radarr Tag
+  is X".
+- **Below cutoff** and **Unmonitored** Scanner filters (the Sonarr/Radarr
+  group) — files Sonarr / Radarr will replace anyway, so converting them
+  is wasted work, and files they don't monitor. Read after every full
+  scan, or now with **Read cutoff & monitoring** (Settings → Integrations
+  → Sonarr / Radarr).
 
 ### Queue each import (Connect → Webhook)
 
@@ -403,25 +451,36 @@ of the queue and estimates — no point spending hours converting them — and
 the Scanner's **Leaving soon** filter shows them. "Include ignored" in Add
 to Queue still queues them.
 
-## Plex / Jellyfin integration
+## Plex / Jellyfin / Emby integration
 
-**Plex** — Settings → Connections → Plex. Use the built-in OAuth flow
+**Plex** — Settings → Integrations → Plex. Use the built-in OAuth flow
 (click "Connect to Plex") or paste a manual token + server URL.
 
 What you get:
 - **Rule conditions on Plex label / collection / genre / library**.
-- **Library refresh after conversion** — points Plex at the exact file,
+- **Library refresh after conversion** — points Plex at the file's folder,
   no full-section rescan.
 - **Plex trash cleanup** — also empties Plex's trash after the refresh.
-- **Watch-status rules** — skip or prioritize based on watched / unwatched
-  / on watchlist.
-- **Pause on stream** — stop encoding if Plex is currently transcoding a
+- **Watch-status rules** — skip or prioritize based on watched / unwatched.
+- **Prioritize unwatched content** (off by default) — unwatched files are
+  queued with at least High priority, so they convert first. Watch status
+  is read after every full scan, or with **Sync from Plex** above the
+  Encoding Rules.
+- **Pause on stream** (Schedule page) — stop encoding if Plex is currently transcoding a
   stream (Shrinkerr on the same host would share the GPU). Configurable
   threshold, transcode-only / any-playback.
 
-**Jellyfin** — Settings → Connections → Jellyfin. URL, API key, user ID.
+**Jellyfin** — Settings → Integrations → Jellyfin. URL, API key, user ID
+(optional).
 Similar feature set minus the label/collection rules (Jellyfin's
 metadata model differs); library refresh and pause-on-stream both work.
+
+**Emby** — Settings → Integrations → Emby. URL, API key, user ID
+(optional, for watched status).
+- **Refresh library after conversion** — on by default.
+- **Emby tag** and **Emby watched** rule conditions — read from Emby after
+  every full scan.
+- **Pause on stream** (Schedule page) — as for Plex.
 
 ## Scheduling
 
@@ -430,15 +489,19 @@ metadata model differs); library refresh and pause-on-stream both work.
 - Start / end hour (24h). `22 → 8` means "quiet from 10pm to 8am".
 - Parallel-jobs override during quiet hours — e.g. drop to 1 instead of
   2 at night so the box isn't audible from the bedroom.
-- `nice` the ffmpeg processes during quiet hours (Linux only; reduces
-  CPU priority so the system is responsive even when encoding).
+- `nice` the ffmpeg processes during quiet hours (reduces CPU priority,
+  and I/O priority on Linux, so the system is responsive even when
+  encoding).
 
-**Per-node schedule** (Nodes → [node] → Settings → Schedule): click the
+**Per-node schedule** (Nodes → [node] → Node settings → Schedule): click the
 hours the node may process jobs. Combines with global quiet hours.
 
 **Run hours / scheduled start** (Schedule page): pick the hours the queue
 may run (it pauses automatically outside them), or schedule a one-off
 queue start.
+
+**Home Assistant** can start and pause the queue too, with a switch over
+MQTT — see [Home Assistant (MQTT)](monitoring.md#home-assistant-mqtt).
 
 ### Policies
 
@@ -471,14 +534,17 @@ adds them ahead of what's waiting and starts the queue.
 
 ## Batch rename
 
-Settings → Renaming. Define a filename pattern using tokens:
-`{title}`, `{year}`, `{season:02}`, `{episode:02}`, `{episode_title}`,
-`{resolution}`, `{source}`, `{codec}`, `{audio}`, `{tags}`,
-`{release_group}`.
+Settings → Media → Renaming. Define a filename pattern using tokens:
+`{Title}`, `{Year}`, `{TmdbId}`, `{ImdbId}`, `{Edition}`,
+`{SeriesTitle}`, `{season:00}`, `{episode:00}`, `{EpisodeTitle}`,
+`{TvdbId}`, `{Quality}`, `{Resolution}`, `{Source}`, `{VideoCodec}`,
+`{VideoDynamicRange}`, `{AudioCodec}`, `{AudioChannels}`,
+`{ReleaseGroup}`, `{Proper}` (`:00` zero-pads a number).
 
-Two patterns — movies and TV. Preview in real time as you edit.
+File patterns for movies and episodes, plus folder patterns used with
+**Also rename folders**. Preview in real time as you edit.
 
-- **Auto-rename after conversion** toggles in Settings → Renaming. When
+- **Auto-rename after conversion** toggles in Settings → Media → Renaming. When
   on, every finished job also renames the file to match the pattern, so
   your library stays consistent as Shrinkerr swaps x264 → x265.
 - **Bulk rename UI** — Scanner → select files → Rename. Shows a preview
@@ -486,22 +552,25 @@ Two patterns — movies and TV. Preview in real time as you edit.
 
 ## Post-conversion scripts
 
-Settings → Automation → Post-Conversion Script. A shell command or script
-path that runs after every successful encode. Environment vars
-available:
+Settings → Automation → Post-Conversion Script. The absolute path of an
+executable script (run directly, not through a shell) that runs after
+every finished conversion or track cleanup. Failed or cancelled jobs
+don't run it. A conversion whose new file was thrown away (larger than
+the original, or below the VMAF minimum) does, with
+`SHRINKERR_SPACE_SAVED` 0. Environment vars available:
 
 | Var | Example |
 |---|---|
+| `SHRINKERR_EVENT` | job_completed |
 | `SHRINKERR_FILE_PATH` | /media/TV/Foo/ep.mkv |
 | `SHRINKERR_ORIGINAL_PATH` | /media/TV/Foo/ep.mkv |
-| `SHRINKERR_FILE_SIZE` | 1024000000 (bytes) |
 | `SHRINKERR_ORIGINAL_SIZE` | 3500000000 |
 | `SHRINKERR_SPACE_SAVED` | 2476000000 |
 | `SHRINKERR_VMAF_SCORE` | 94.3 |
-| `SHRINKERR_DURATION` | 1800 (s) |
 | `SHRINKERR_ENCODER` | nvenc |
 | `SHRINKERR_PRESET` | p6 |
 | `SHRINKERR_CQ` | 20 |
+| `SHRINKERR_FPS` | 195.5 |
 | `SHRINKERR_JOB_ID` | 12345 |
 | `SHRINKERR_JOB_TYPE` | convert |
 

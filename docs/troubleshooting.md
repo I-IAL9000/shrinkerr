@@ -5,6 +5,8 @@ excerpts when opening an issue.
 
 ## Contents
 - [Start with the Doctor page](#start-with-the-doctor-page)
+- [Sign-in screen after updating, or locked out](#sign-in-screen-after-updating-or-locked-out)
+- [Scripts or widgets get 401 after updating](#scripts-or-widgets-get-401-after-updating)
 - [Dashboard stuck on loading spinner](#dashboard-stuck-on-loading-spinner)
 - [Setup wizard doesn't show on fresh install](#setup-wizard-doesnt-show-on-fresh-install)
 - [Scanner shows "Loading files…" forever](#scanner-shows-loading-files-forever)
@@ -14,6 +16,9 @@ excerpts when opening an issue.
 - [Jobs fail with "file not found"](#jobs-fail-with-file-not-found)
 - [Plex library refresh does nothing](#plex-library-refresh-does-nothing)
 - [Encoded file is larger than original](#encoded-file-is-larger-than-original)
+- [HDR or Dolby Vision files aren't converted](#hdr-or-dolby-vision-files-arent-converted)
+- [A conversion didn't replace the original](#a-conversion-didnt-replace-the-original)
+- [Files aren't queued, or don't start](#files-arent-queued-or-dont-start)
 - [Queue is "running" but nothing happens](#queue-is-running-but-nothing-happens)
 - [Lost / broken database](#lost--broken-database)
 - [Reading the logs](#reading-the-logs)
@@ -37,6 +42,29 @@ Reporting a problem? **Download diagnostics** saves a zip of the checks,
 your settings and environment (passwords, API keys and tokens taken out),
 the library's shape, the recent log and recent failed jobs; **Report a
 problem** opens a GitHub issue to attach it to.
+
+## Sign-in screen after updating, or locked out
+
+Since 0.10 Shrinkerr asks everyone to sign in. An install that didn't have
+password login shows **Set up sign-in** before anything else: pick
+**Sign-in page** (a username and password) or **External (reverse
+proxy)**. If an API key is set, setting up sign-in needs that key, so
+nobody else can pick the password. Download clients, Sonarr / Radarr and
+remote workers keep using the API key. See
+[Security § Authentication](security.md#authentication).
+
+Forgot the password, or locked out? The README's
+[Troubleshooting](../README.md#troubleshooting) section ("I locked myself
+out of the UI") resets sign-in from the command line without touching the
+rest of the database.
+
+## Scripts or widgets get 401 after updating
+
+Since 0.10 the API key only works in the `X-Api-Key` header. A script or
+dashboard widget that puts it in the URL (`?api_key=…`) gets
+`401 Authentication required`: send the header instead. Prometheus can
+send the key as a bearer token, and webhooks as the Basic-auth password
+([Monitoring](monitoring.md)).
 
 ## Dashboard stuck on loading spinner
 
@@ -76,8 +104,8 @@ browser devtools Network tab.
 
 ## NVENC not advertised / unavailable
 
-Nodes → Local shows `capabilities: [libx265]` only, `gpu: None`, or a
-red `nvenc_unavailable_reason`.
+Nodes shows no **NVENC (GPU)** badge on the Local node, or its Monitor
+card says **NVENC off** with the reason.
 
 **Check `nvidia-smi` inside the container:**
 ```bash
@@ -93,16 +121,16 @@ If it fails with "command not found" or cannot connect to driver:
 If `nvidia-smi` works but NVENC test fails (`ffmpeg exited N: ...`):
 - Driver version doesn't match the image requirement. `:nvenc` and
   `:edge-nvenc` both need ≥570. Upgrade the driver.
-- Another process is saturating the NVENC engine. Consumer NVIDIA cards
-  have a concurrent-NVENC-session limit that unlocks on newer driver
-  versions via the open-kernel-module driver.
+- Too many encodes at once. GeForce cards limit how many NVENC encodes
+  run at the same time, other apps on the GPU (a Plex transcode, say)
+  included. Keep **Parallel Jobs** (Settings → Video, or the node's
+  **Node settings** on the Nodes page) within it.
 
 ## Remote worker is stuck or slow
 
 ### 1 fps on a Mac worker
 
-See [Remote workers § "Mac worker is slow"](remote-workers.md). Two
-common causes, both fixed in v0.3.19:
+Two common causes, both fixed in v0.3.19:
 - Running the amd64 image on Apple Silicon via Rosetta emulation (5–10×
   slowdown by itself). Remove `--platform linux/amd64` and pull `:latest`
   (multi-arch). `docker exec shrinkerr-worker uname -m` should return
@@ -126,23 +154,29 @@ local disk. Options:
 
 ### Worker registered but never picks up jobs
 
-Nodes page shows the worker online but `current_job_id` stays null.
+Nodes page shows the worker **Online** but never **Working**.
 
-1. **Affinity** — Node Settings → Job affinity. If set to `nvenc_only`
+1. **Affinity** — Nodes → Node settings → Job affinity. If set to `nvenc_only`
    and all queued jobs are libx265, or vice versa, the worker
    legitimately has nothing to pick up.
-2. **Translate encoder** off — same issue but wider.
+2. **Encoder translation** off — same issue but wider.
 3. **Paused** — explicit pause flag on the node.
 4. **Schedule** — node's per-hour schedule might be restricting
    right now.
-5. **Max jobs** — at 0 (yes, some people do this by accident).
 
 If all those look right, check worker logs:
 ```bash
 docker logs shrinkerr-worker 2>&1 | grep -iE "request-job" | tail -5
 ```
-Requests should be returning `"job":null` (no matching job) rather than
-errors.
+Requests should be returning `200 OK` (the server just has no matching
+job) rather than errors.
+
+### Worker not updated to 0.10
+
+Run remote workers on the server's version. Workers older than 0.10 don't
+know the per-job settings 0.10 added (a rule's originals policy, Fix for
+direct play, before / after frames, Dolby Vision). **Nodes → Add a remote
+worker** gives a command with the image matching this server's version.
 
 ### Worker says "file not found"
 
@@ -155,7 +189,7 @@ could break VMAF's `-filter_complex` arg and the error was silent. Fixed.
 If you're on ≥ v0.3.10 and VMAF still isn't running for some files:
 
 1. **VMAF disabled** — Settings → Video → Smart Encoding → VMAF
-   analysis. Check it's on.
+   quality analysis. Check it's on.
 2. **Worker-mode job before v0.3.19** — remote workers hardcoded VMAF
    off. Fixed.
 3. **libvmaf not available** — official images all have it. Custom builds
@@ -165,9 +199,8 @@ If you're on ≥ v0.3.10 and VMAF still isn't running for some files:
    `[CONVERT] VMAF failed (ffmpeg rc=N: ...)` with the tail of stderr.
    Often a filter-chain mismatch on odd source formats.
 
-Without any of those log lines, the VMAF block wasn't even entered —
-means the setting looked "false" at encode time. Check the current
-value:
+If the log shows `[CONVERT] VMAF decision: enabled=False`, the setting
+looked "false" at encode time. Check the current value:
 ```bash
 docker compose exec shrinkerr python3 -c "
 import sqlite3
@@ -196,23 +229,24 @@ find /srv/media -name "*.converting.mkv" -mtime +1 -delete
 
 ## Plex library refresh does nothing
 
-1. Plex integration is connected (Settings → Connections → Plex shows
+1. Plex integration is connected (Settings → Integrations → Plex shows
    a server name).
-2. Path mapping matches how Plex sees the files. Settings → Connections
-   → Plex → Path mapping (e.g. `/media → /home/plex/media`). The
+2. Path mapping matches how Plex sees the files. Settings → Integrations
+   → Plex → Path Mapping (e.g. `/media=/home/plex/media`). The
    *library refresh* call is path-specific; if Plex doesn't see the
    exact path, it does nothing.
 3. Plex library has "Scan library automatically" enabled (Plex side).
    Shrinkerr's call tells Plex *to* scan; if Plex is configured to
    ignore manual scan requests, nothing happens.
 
-Test manually from Shrinkerr: Settings → Connections → Plex → "Test".
+Test manually from Shrinkerr: Settings → Integrations → Plex → "Test"
+(under "Advanced: enter URL & token manually").
 Failure here surfaces the actual HTTP error Plex returned.
 
 ## Encoded file is larger than original
 
-Shrinkerr detects this and keeps the original. Job marked "skipped
-(larger after conversion)", file auto-added to ignore list so
+Shrinkerr detects this and keeps the original. The job's details show
+"(N% larger — discarded)", file auto-added to ignore list so
 subsequent scans skip it.
 
 Causes:
@@ -225,6 +259,58 @@ Causes:
 
 Unignore a file from the ignored list (Scanner → **Ignored** filter) if
 you want to retry.
+
+## HDR or Dolby Vision files aren't converted
+
+Shrinkerr won't replace an HDR or Dolby Vision file with one that lost it:
+the job fails and the original stays. The job's error says why:
+
+- **"Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same
+  size…"** — the job would resize, encode to AV1 or use Quick Sync /
+  VAAPI, the file is a disc, or dovi_tool / mkvmerge are missing (a native
+  install).
+- **"HDR video needs a 10-bit encoder"** — Quick Sync and VAAPI encode
+  8-bit here. Use NVENC, libx265 or VideoToolbox.
+- **"… lost its HDR in the encode. Original kept."** — the output came out
+  SDR or 8-bit. With NVENC, check Settings → Video → Bit Depth isn't
+  8-bit.
+- **"Couldn't keep Dolby Vision: … Original kept."** — dovi_tool couldn't
+  carry the Dolby Vision over; the reason follows.
+
+See [Encoding guide § HDR and Dolby Vision](encoding-guide.md#hdr-and-dolby-vision).
+
+## A conversion didn't replace the original
+
+- **Review before replace** is on (Settings → Automation → Originals &
+  Backups): converted files wait in **Queue → Review** until you
+  **Approve** them (they're put in place when the queue runs) or
+  **Reject** them (the new file is deleted, the original isn't queued
+  again).
+- **The new file failed a check**: larger than the original, below your
+  minimum VMAF, shorter than the original, or HDR lost. The job's details
+  say which. See
+  [What happens to your files](what-happens-to-your-files.md#the-checks-before-anything-is-replaced).
+
+## Files aren't queued, or don't start
+
+Add to Queue says what it left out:
+
+- **Still hardlinked (seeding)** — with **Skip files that are still
+  hardlinked (e.g. seeding)** on (Settings → Automation → Conversion
+  Filters; on for new installs), a file a torrent client still shares is
+  left out: converting it frees nothing. The Scanner's **Hardlinked
+  (seeding)** filter shows them.
+- **In a Maintainerr collection (leaving soon)** — with **Don't queue
+  titles Maintainerr is about to remove** on (Settings → Integrations →
+  Maintainerr).
+- **Ignored**, or skipped by a rule.
+
+**Include ignored files and override rules** in Add to Queue queues them
+anyway.
+
+A pending job that says **waits until …** was just imported: **Wait after
+an import** (Settings → Automation → Conversion Filters) holds it so Bazarr
+can add subtitles first.
 
 ## Queue is "running" but nothing happens
 
@@ -244,7 +330,7 @@ Back up BEFORE trying anything. `cp ./data/shrinkerr.db
 
 **SQLite integrity check:**
 ```bash
-docker compose exec shrinkerr sqlite3 /app/data/shrinkerr.db 'PRAGMA integrity_check'
+docker compose exec shrinkerr python3 -c "import sqlite3; print(sqlite3.connect('/app/data/shrinkerr.db').execute('PRAGMA integrity_check').fetchone()[0])"
 ```
 Returns `ok` when the DB is fine.
 
@@ -269,18 +355,19 @@ docker compose logs shrinkerr --since 1h
 ```
 
 Log prefixes:
-- `[QUEUE]` — queue lifecycle, worker slot decisions
-- `[WORKER]` — job execution by the local or remote worker loop
+- `[QUEUE]` — adding jobs to the queue, and why a file was skipped
+- `[WORKER]` — job execution by the local or remote worker loop, worker
+  slot decisions
 - `[CONVERT]` — ffmpeg invocation, VMAF, result summarization
-- `[SCAN]` — scanner progress
+- `[SCANNER]` — scanner progress
 - `[NODES]` — node registration, heartbeat, capability detection
-- `[PLEX]` / `[JELLYFIN]` — media server integration calls
-- `[RULES]` — rule resolver decisions (verbose; only useful when
-  debugging unexpected rule behavior)
+- `[PLEX]` / `[JELLYFIN]` / `[EMBY]` — media server integration calls
+- `[RULES]` — encoding rules being listed and created
 
-Default docker-compose log driver is `json-file` with a 10MB × 3 files
-ring. Long runs can push older entries out; add a driver config if you
-want more history:
+Shrinkerr's compose files set no logging options, so Docker's default
+`json-file` driver applies: it keeps everything unless your Docker daemon
+is set to rotate logs. Add a driver config to cap the logs or keep a set
+amount of history:
 
 ```yaml
 services:

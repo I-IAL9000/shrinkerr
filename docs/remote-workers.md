@@ -17,6 +17,7 @@ encoding.
 - [Per-node controls](#per-node-controls)
 - [Pause / schedule / affinity](#pause--schedule--affinity)
 - [Circuit breaker](#circuit-breaker)
+- [Offline workers and lost jobs](#offline-workers-and-lost-jobs)
 - [Verifying the setup](#verifying-the-setup)
 
 ## When it's worth it
@@ -31,8 +32,9 @@ encoding.
 When it's **not** worth it:
 - You have one GPU host. Just run Shrinkerr directly on it.
 - Your "workers" would access the library over a slow network share. See
-  the "path mappings" and "slow workers" sections — the I/O cost can
-  dwarf the compute gain.
+  [Path mappings](#path-mappings) and Troubleshooting's
+  [Remote worker is stuck or slow](troubleshooting.md#remote-worker-is-stuck-or-slow)
+  — the I/O cost can dwarf the compute gain.
 
 ## Architecture in one paragraph
 
@@ -41,12 +43,14 @@ WebSocket. Workers are the same image in `SHRINKERR_MODE=worker` — they
 poll the primary for jobs over HTTP, run ffmpeg locally, and report
 progress back. The primary never pushes to the worker; the worker always
 initiates. That means workers on NAT'd / dynamic-IP networks Just Work as
-long as they can reach the primary.
+long as they can reach the primary. Cancelling a job reaches the worker
+in the answer to its next progress report (every few seconds), and it
+stops ffmpeg.
 
 ## Setting up a worker
 
 On the primary, go to **Settings → System → Authentication** and copy the
-API key. Then on the worker host:
+API key (if there's none yet, Regenerate makes one). Then on the worker host:
 
 ```bash
 docker run -d \
@@ -72,6 +76,11 @@ Mount the library at the same path the server sees it and no path
 mappings are needed. (Open Shrinkerr by its network address, not
 `localhost`, or the worker can't reach it.)
 
+**Keep workers on the server's version.** When you update the server to
+0.10, update the workers too: older workers don't know the new per-job
+settings (a rule's originals policy, Fix for direct play, before / after
+frames, Dolby Vision).
+
 Within ~30 seconds the worker appears on the Nodes page with its
 detected capabilities (`libx265`, `nvenc`, both).
 
@@ -84,6 +93,10 @@ detected capabilities (`libx265`, `nvenc`, both).
 | `API_KEY` | yes | From Settings → System → Authentication on the primary |
 | `WORKER_NAME` | no | Display name on the Nodes page. Defaults to the container hostname. |
 | `CAPABILITIES` | no | Comma-separated override (e.g. `libx265`). If unset, the worker auto-detects. Useful to force a GPU host into CPU-only mode. |
+| `POLL_INTERVAL` | no | Seconds between job requests while idle. Default `5`. |
+| `HEARTBEAT_INTERVAL` | no | Seconds between heartbeats. Default `30`. Keep it well under 5 minutes, or the server marks the worker offline. |
+| `METRICS_INTERVAL` | no | Seconds between CPU / GPU stats sent for the Monitor page. Default `5`. |
+| `SHRINKERR_DATA_DIR` | no | Where the worker keeps its `worker_id` and `worker_token`. Default `/app/data`. |
 
 ## Authentication (per-node tokens)
 
@@ -104,11 +117,12 @@ against the primary:
 
 From that point on the server rejects any call to `/api/nodes/request-job`
 or `/api/nodes/report-*` that doesn't present the matching token, with
-`hmac.compare_digest` on the compare. Even if an attacker steals the
-shared `API_KEY`, they can't impersonate an existing registered node
-without also getting the per-node token from that node's data volume.
+`hmac.compare_digest` on the compare. The shared `API_KEY` alone can't
+make those calls for an existing node — they also need the per-node
+token from that node's data volume. But the API key can rotate a node's
+token or remove a node, so treat it like an admin password.
 
-**Rotation.** Go to **Nodes → [node] → Settings → Rotate token**. The
+**Rotation.** Go to **Nodes → [node] → Node settings → Rotate token**. The
 server NULLs the stored token immediately. On the worker's next call
 it receives a 401, drops its cached copy (`/app/data/worker_token`),
 and re-bootstraps on its next heartbeat. The worker doesn't need a
@@ -119,13 +133,15 @@ fail and be requeued (the worker's `report-progress` POST gets the 401
 before the 200 it's expecting). Rotate during quiet hours, or pause
 the node first, if that matters to you.
 
-**Resetting a worker.** If you ever rebuild a worker host from scratch,
-delete its data volume, or otherwise lose the cached token, just let it
-reconnect — it will look like a brand-new node on the primary (new
-heartbeat, empty stored token, fresh handshake). If you want the old
-`node_id` back: **Nodes → [node] → Settings → Rotate token** before
-starting the new worker, and the server will re-bootstrap against the
-reinstalled worker on its first heartbeat.
+**Resetting a worker.** If you ever rebuild a worker host from scratch or
+delete its data volume, just let it reconnect — it will look like a
+brand-new node on the primary (new `node_id`, empty stored token, fresh
+handshake). The `node_id` lives in `/app/data/worker_id`. If you want the
+old node back, the new worker needs that file: then **Nodes → [node] →
+Node settings → Rotate token**, and the server will re-bootstrap against
+the reinstalled worker on its next heartbeat. The same applies when a
+worker keeps its `worker_id` but loses its cached token: until you rotate,
+every call it makes gets a 401.
 
 **Local node.** The local node (`id=local`) runs in-process and doesn't
 authenticate over HTTP, so it has no token. Rotating a local node is a
@@ -144,7 +160,7 @@ Two ways out:
 
 1. **Upgrade the worker container** to v0.3.30+. Then clear the stale
    server-side token either by clicking "Rotate token" in the Node
-   Settings modal, or by running
+   settings modal, or by running
    `UPDATE worker_nodes SET token=NULL WHERE id!='local'` on the DB.
    The worker will re-bootstrap on its next heartbeat.
 
@@ -165,7 +181,7 @@ worker receives it.
 
 Two sources for mappings, in priority order (v0.3.31+):
 
-**1. Admin override — Nodes → [node] → Settings → Path mappings.** Tick
+**1. Admin override — Nodes → [node] → Node settings → Path mappings.** Tick
 "Override worker's env-var mappings" and add one row per prefix. Takes
 effect immediately on save without touching the worker container. This
 is the right choice when you want to tweak mappings without editing
@@ -202,15 +218,19 @@ Multiple mappings are allowed — add one row per prefix.
 SMB / NFS / AFP, encoding writes go back over the network for every
 chunk. On AFP over TCP we've measured a ~5× throughput penalty vs local
 disk. Fine if the worker is on a fast LAN, rough on Wi-Fi. See
-Troubleshooting for "Mac worker is slow".
+[Troubleshooting § 1 fps on a Mac worker](troubleshooting.md#1-fps-on-a-mac-worker).
 
 ## Capability-based job routing
 
 Each node advertises what it can do. Job assignment considers:
 - Job's requested encoder (`nvenc` / `libx265` / `qsv` / `vaapi` / `videotoolbox`)
 - Node's capabilities
-- Node's `translate_encoder` setting (Nodes → [node] → Settings)
+- Node's `translate_encoder` setting (Nodes → [node] → Node settings →
+  Encoder translation)
 - Node's `job_affinity` setting
+
+Health checks always run on the server; workers get conversions and
+track cleanups.
 
 If `translate_encoder` is on (default), a node that can't run a job's
 encoder swaps it for the best one it has — hardware first (NVENC →
@@ -253,8 +273,8 @@ priority chain (v0.3.18+):
 | p6 | medium | |
 | p7 | slow | Capped — libx265 `slower`/`veryslow` are exponentially slower on CPU |
 
-CRF uses `nvenc_cq` 1:1 (similar perceptual quality, libx265's extra
-efficiency shows up as a smaller file).
+CRF uses `nvenc_cq` 1:1, kept within 18–30 (similar perceptual quality,
+libx265's extra efficiency shows up as a smaller file).
 
 **Symmetric for libx265 → NVENC** (see Settings → Video → libx265
 section → "GPU fallback"): pin specific NVENC preset + CQ for when a
@@ -266,17 +286,24 @@ Workers don't read the server's settings table directly — the server
 packs the relevant values into each assigned-job payload, and the
 worker uses those when building its ffmpeg command. The propagated
 set includes encoder presets, CRF/CQ, VMAF toggles, fallback pairs,
-and (v0.5.7+) the four hardware decode toggles
+and (v0.5.7+) the hardware decode toggles
 (`nvenc_hw_decode` / `qsv_hw_decode` / `vaapi_hw_decode` /
-`libx265_use_nvdec`) plus the NVENC bit-depth choice
-(`nvenc_bit_depth`). Change a setting on the server and the next
-job dispatched to a worker picks it up automatically — no per-worker
-config edit needed.
+`videotoolbox_hw_decode` / `libx265_use_nvdec`). Change a setting on
+the server and the next job dispatched to a worker picks it up
+automatically — no per-worker config edit needed.
 
 Since v0.10.0 that also covers the originals policy, output name and
 custom flags, lossless and compatibility audio, image subtitles to SRT,
 review before replace, VMAF target quality, a rule's AV1 output, and the
 sidecar subtitles to merge (the worker has no Scanner of its own).
+Before / after frames, Fix for direct play and Dolby Vision work on
+workers too, and a file waiting after an import ("Wait after an import")
+isn't handed to a worker before its time.
+
+Results come back the same way as a local job's: a worker's conversion
+updates the Scanner, keeps its encoding stats and ffmpeg command, records
+a VMAF rejection like a local one, and tells Sonarr / Radarr and Bazarr
+about the new file.
 
 If a worker's hardware doesn't match what the server requested (e.g.
 `nvenc_hw_decode=true` on a worker without an NVIDIA card), the
@@ -286,16 +313,19 @@ software decode for that job. See
 
 ## Per-node controls
 
-Each node has its own settings (Nodes → [node] → Settings):
+Each node has its own settings (Nodes → [node] → Node settings):
 
-- **Max jobs** — how many concurrent jobs this node runs. Override the
-  global `parallel_jobs`.
-- **Pause** — node stops accepting new jobs. A running job finishes
-  cleanly; no new work starts until unpaused.
+- **Parallel jobs** — how many jobs this node runs at once. On the Local
+  node it's the same value as the global `parallel_jobs`; a remote
+  worker runs one job at a time.
+- **Pause** — node stops accepting new jobs. Its running job is stopped
+  and goes back to the queue, where another node can pick it up.
 - **Job affinity** — `any` / `cpu_only` / `nvenc_only`.
-- **Translate encoder** — whether this node accepts jobs meant for the
+- **Encoder translation** — whether this node accepts jobs meant for the
   other encoder (with translation) or rejects them.
-- **Schedule** — node-specific hours. Combines with global quiet hours.
+- **Schedule** — node-specific hours. The Schedule page's run hours and
+  quiet hours apply to the Local node only; remote workers follow just
+  their own schedule.
 - **Path mappings** — as above.
 
 ## Pause / schedule / affinity
@@ -307,35 +337,53 @@ Use cases:
   `job_affinity=nvenc_only` on the GPU node and `job_affinity=cpu_only` on
   the Mac, `translate_encoder=false` on both.
 - "Pause a noisy machine during movie night": toggle Pause on the node.
-  Running job finishes cleanly; queue doesn't drain during the pause.
+  Its running job goes back to the queue, and the node takes no new jobs
+  until you resume it.
 
 ## Circuit breaker
 
 If a node fails N consecutive jobs (tracked in
-`worker_nodes.consecutive_failures`), Shrinkerr auto-pauses it and
-flags it in the UI. Common cause: an unreachable network mount or a
-failing GPU. Once you've fixed the underlying issue, unpause it.
+`worker_nodes.consecutive_failures`), Shrinkerr suspends it (no new
+jobs) and the Nodes page shows it as Suspended. Common cause: an
+unreachable network mount or a failing GPU. Once you've fixed the
+underlying issue, click **Reset** on its card.
+
+## Offline workers and lost jobs
+
+A worker that sends no heartbeat for 5 minutes is marked offline, and
+its job goes back to the queue for another node. The server checks every
+minute. With "Worker offline" ticked in Settings → Notifications you're
+told once per outage. After the server restarts, workers get those 5
+minutes to check in before their jobs are handed elsewhere.
+
+A worker can only report on a job it still has. One that lost its job
+can't mark it failed or completed under whoever runs it now; it's told
+to stop. One that was only briefly unreachable gets its job back — and a
+conversion it finished is kept — if nobody has claimed the job meanwhile.
 
 ## Verifying the setup
 
 From the primary, Nodes page:
 - Node's status is `online` or `working`
 - Capabilities list what you expect
-- `nvenc_unavailable_reason` is blank on GPU nodes
+- On the Monitor page, GPU nodes don't show "NVENC off" (it comes with
+  the reason)
 
-In the worker container's logs (`docker logs shrinkerr-worker`):
+The server's own Local node logs, in the server's logs:
 ```
 [NODES] Local node registered: capabilities=['libx265', 'nvenc'], ...
 ```
-or for a remote worker started via `SHRINKERR_MODE=worker`:
+A remote worker started via `SHRINKERR_MODE=worker` logs, in
+`docker logs shrinkerr-worker`:
 ```
-[WORKER] Registered as '<name>' (id <uuid>) with server <url>
-[WORKER] Heartbeat OK
+[WORKER]   Capabilities: ['libx265', 'nvenc']
+...
+[WORKER] Connected to server at <url>
 ```
 
 First job dispatched to the worker will log:
 ```
-[WORKER] Processing job 12345: /path/to/file.mkv
+[WORKER] Starting job 12345: file.mkv (convert)
 [CONVERT] Starting: /path/to/file.mkv (encoder=nvenc, duration=...)
 [CONVERT] Settings: encoder=nvenc, preset=p6, cq=20, ...
 ```

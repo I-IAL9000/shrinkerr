@@ -27,17 +27,17 @@ services:
     #
     # Portable (multi-arch: linux/amd64 + linux/arm64, CPU encoding only)
     # Works on ANY host — Linux server, Mac, Windows, Raspberry Pi, ARM cloud:
-    #   shrinkerr:latest      — ffmpeg n7.1   (stable, DEFAULT)
+    #   shrinkerr:latest      — ffmpeg n8.1   (stable, DEFAULT)
     #   shrinkerr:edge        — ffmpeg master (bleeding edge)
     #
     # NVENC (linux/amd64 only, CUDA base, hardware encoding on NVIDIA GPUs)
     # Requires an NVIDIA GPU + the NVIDIA Container Toolkit on the host:
-    #   shrinkerr:nvenc       — ffmpeg n7.1   (NVIDIA driver 525.60.13+)
+    #   shrinkerr:nvenc       — ffmpeg n8.1   (NVIDIA driver 570.00+)
     #   shrinkerr:edge-nvenc  — ffmpeg master (NVIDIA driver 570.00+)
     #
-    # Pin to a specific version (e.g. shrinkerr:v0.9.0-nvenc) for deterministic
-    # upgrades; the floating tags above track their branches.
-    image: shrinkerr:latest
+    # Pin a minor line (e.g. :0.10, :0.10-nvenc) to get patches only, or an
+    # exact version (e.g. :v0.10.0-nvenc); the tags above move with releases.
+    image: ghcr.io/i-ial9000/shrinkerr:latest
     container_name: shrinkerr
 
     # --- Web UI + API port ---
@@ -49,7 +49,7 @@ services:
 
     volumes:
       # --- Required: persistent app data ---
-      # SQLite database, logs, encoding history, backups. Back this up.
+      # SQLite database, encoding history, settings backups. Back this up.
       # CHANGE ME: set the left side to a real path on your host.
       # Linux/Mac: - /srv/shrinkerr/data:/app/data
       # Windows:   - C:\ProgramData\shrinkerr\data:/app/data
@@ -72,7 +72,7 @@ services:
 
       # --- Optional: NZBGet / SABnzbd completed-downloads folders ---
       # Only needed if you use the NZBGet / SABnzbd post-processing scripts
-      # (see Settings → Automation). These are the folders your downloader
+      # (see Settings → Integrations). These are the folders your downloader
       # drops files into when a download finishes. Shrinkerr needs read+write
       # so it can hand files off to Sonarr/Radarr after processing.
       # Delete these two lines if you don't use nzb/sab.
@@ -106,7 +106,7 @@ services:
     # does nothing for it.
     #
     # To switch to NVENC:
-    #   1. Change the `image:` line above to shrinkerr:nvenc (or :edge-nvenc).
+    #   1. Change the `image:` line above to ghcr.io/i-ial9000/shrinkerr:nvenc (or :edge-nvenc).
     #   2. Uncomment `- NVIDIA_VISIBLE_DEVICES=all` under environment above.
     #   3. Uncomment the GPU block below. Two scenarios:
     #        Linux (with NVIDIA Container Toolkit):
@@ -127,7 +127,7 @@ services:
     # unambiguous — the two together are belt-and-suspenders reliable.
     #
     # DRIVER VERSION:
-    #   :nvenc        → ffmpeg n7.1   → NVIDIA driver 525.60.13+
+    #   :nvenc        → ffmpeg n8.1   → NVIDIA driver 570.00+
     #   :edge-nvenc   → ffmpeg master → NVIDIA driver 570.00+
     # If the driver is too old, the runtime test encode fails and the
     # Monitor page tells you exactly what to upgrade to.
@@ -152,7 +152,8 @@ services:
   # to a beefier machine, or for mixing x86/NVENC + ARM/CPU workers.
   #
   # Setup:
-  #   1. In the main Shrinkerr UI: Settings → Nodes → create a worker API key.
+  #   1. In the main Shrinkerr UI: Nodes → Add a remote worker writes this
+  #      block for you; or copy the API key from Settings → System.
   #   2. Paste that key into API_KEY below.
   #   3. Set SERVER_URL to how the worker reaches the server:
   #        - Same docker network / same stack: http://shrinkerr:6680
@@ -164,17 +165,17 @@ services:
   #   shrinkerr:nvenc / :edge-nvenc  → linux/amd64, CUDA+NVENC, GPU host
   # ==========================================================================
   # shrinkerr-worker:
-  #   image: shrinkerr:latest            # or shrinkerr:nvenc for a GPU worker
+  #   image: ghcr.io/i-ial9000/shrinkerr:latest   # or :nvenc for a GPU worker
   #   container_name: shrinkerr-worker
   #   environment:
   #     - SHRINKERR_MODE=worker          # switches container to worker mode (no UI, no server)
   #     - SERVER_URL=http://shrinkerr:6680
   #     - API_KEY=REPLACE_WITH_WORKER_KEY
   #     - WORKER_NAME=gaming-pc          # shown on the Nodes page
-  #     - CAPABILITIES=nvenc,libx265     # advertise what this node can do. Valid: nvenc, libx265
+  #     # - CAPABILITIES=nvenc,libx265   # optional: override what the node detected (nvenc, libx265, videotoolbox)
   #     # If the worker mounts media at a different path than the server does,
-  #     # map the paths here (JSON list of [server_path, worker_path] pairs):
-  #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
+  #     # map the paths here (or on the Nodes page):
+  #     # - PATH_MAPPINGS=[{"server":"/media","worker":"/mnt/nas"}]
   #     # Only needed for the NVENC worker image:
   #     # - NVIDIA_VISIBLE_DEVICES=all
   #     # Timing (all optional; defaults shown):

@@ -10,18 +10,27 @@ Shrinkerr targets HEVC because it's the best compression codec supported
 natively by every mainstream media server (Plex, Jellyfin, Emby) and
 every current device. AV1 is more efficient but client support is still
 patchy — broken playback on older TVs / streaming devices is a worse
-outcome than a 25% larger file.
+outcome than a 25% larger file. HEVC is the default; an encoding rule's
+**Output codec** can choose AV1 for the files it matches
+([Encoding guide § AV1 output](encoding-guide.md#av1-output)).
 
 **Is my data safe? Will Shrinkerr destroy my library?**
 Several safety nets make destroying your library hard:
 - The encoded output is verified non-empty before the original is
   touched.
+- An output shorter than the original (a stalled network share, say), or
+  one that lost its HDR, is thrown away and the original kept.
 - VMAF rejection (Settings → Video) discards encodes that fell below a
-  quality threshold — on at 88 by default since v0.10.0.
-- Originals are kept for N days (7 by default since v0.10.0), or moved to
-  the trash, or deleted — Settings → Automation → Originals & Backups.
+  quality threshold — on at 88 by default for new installs since v0.10.0.
+- Originals are kept for N days (7 by default for new installs since
+  v0.10.0), or moved to the trash, or deleted — Settings → Automation →
+  Originals & Backups.
 - Files that grew after encoding are detected — original kept, file
   auto-ignored.
+- **Review before replace** (Settings → Automation → Originals & Backups)
+  holds converted files in Queue → Review until you approve them.
+
+Every check, in order: [What happens to your files](what-happens-to-your-files.md).
 
 That said, back up your library before a big batch if you haven't done
 so in a while. We've spent a lot of effort making Shrinkerr conservative
@@ -34,10 +43,29 @@ block Sonarr/Radarr's import until after conversion (so the smaller
 file is what gets imported). A plain "watch folder" scan can't do
 that — it only reacts after the file has already moved.
 
+Torrent setups have no such script: add Shrinkerr to Sonarr / Radarr as a
+Connect → Webhook instead, and each file is queued once it's imported. The
+steps are in Settings → Integrations.
+
 **Does this work without Plex?**
 Yes. Plex integration is optional and adds metadata-based rules,
 watch-status targeting, and auto-refresh. The core encoding pipeline
 works fine without it.
+
+**How does Shrinkerr work with Sonarr and Radarr?**
+- After a conversion, and after a rename from the Scanner, Shrinkerr asks
+  Sonarr or Radarr to rescan that series or movie, so they pick up the
+  new file — its name changes too (the codec tag, e.g. `x264` → `x265`,
+  and the extension, always `.mkv`). Files still in a download client's
+  post-processing are skipped: Sonarr / Radarr import those anyway.
+- A file below its quality profile's cutoff will be replaced by an
+  upgrade, so converting it is wasted work. The Scanner's **Below cutoff**
+  filter shows those files (read after every full scan, or with **Read
+  cutoff & monitoring** in Settings → Integrations).
+- The Connect webhook (above) queues each file they import.
+- **Request replacement** (Scanner → \*arr actions, or a file's details)
+  asks them to blocklist the release, delete the file and search for
+  another — for a corrupt file, say.
 
 ## Encoding
 
@@ -69,10 +97,21 @@ Very rough 1080p ballparks:
 Take the queue's ETA as reality; Shrinkerr reports live fps.
 
 **Can I re-encode files that are already x265?**
-Yes. Settings → Video → Convert From → check `h265`. Useful for
-migrating between HEVC profiles (e.g. re-encoding x265 8-bit to x265
-Main10 for smaller files). Not useful as a default — you'll waste
+Yes. Settings → Video → Convert From → check **H.265 / HEVC / x265**.
+Useful for migrating between HEVC profiles (e.g. re-encoding x265 8-bit
+to x265 Main10 for smaller files). Not useful as a default — you'll waste
 compute on files that are already fine.
+
+**Does Shrinkerr keep HDR and Dolby Vision?**
+Yes, where it can. HDR10 and HLG files are encoded 10-bit and stay HDR; an
+output that lost its HDR (or came out 8-bit) is thrown away and the
+original kept. Dolby Vision profiles 7 and 8 keep their Dolby Vision:
+dovi_tool moves it into the new file (profile 7 becomes 8.1). Left alone:
+Dolby Vision profile 5, and Dolby Vision files that would be resized,
+encoded to AV1 or with Quick Sync / VAAPI, or are Blu-ray / DVD discs.
+Quick Sync and VAAPI don't convert HDR files at all. Dolby Vision files are
+HEVC, so they're only converted when HEVC is ticked in Convert From. See
+[Encoding guide § HDR and Dolby Vision](encoding-guide.md#hdr-and-dolby-vision).
 
 ## Workers
 
@@ -90,9 +129,10 @@ just be consuming more RAM. If you want to split a machine's work into
 GPU + CPU lanes, use `job_affinity` on the local node.
 
 **What happens if a worker goes offline mid-encode?**
-The primary marks the job failed, cleans the `.converting.mkv` leftover
-on the next scan of that directory, and the original is untouched. If
-the worker comes back, you can retry the job.
+After about five minutes without a check-in, the server marks the worker
+offline and puts its job back in the queue for another node; the original
+is untouched. If the worker comes back before another node has taken the
+job, it gets the job back.
 
 ## Storage / library
 
@@ -102,10 +142,37 @@ slow at directory walks (AFP, SMB1), so first-time scans can take a
 while.
 
 **Does Shrinkerr write outside the media directories?**
-Only to `/app/data` (SQLite DB, cached posters) and to the backup
-folder if configured. If `backup_original_days = 0` and no centralized
-`backup_folder`, originals are replaced in place with no external
-writes.
+Only to `/app/data` (SQLite DB, cached posters, before / after frames), to
+the backup folder if configured, and to the trash if originals go there
+(the system trash: on Linux, a `.Trash-<uid>` folder at the top of the
+drive or share). VMAF and image-subtitle OCR do their temporary work in
+the container's `/tmp`. See
+[What happens to your files § Where Shrinkerr writes](what-happens-to-your-files.md#where-shrinkerr-writes).
+
+**I seed my downloads. Does converting them save space?**
+No. A file that's still hardlinked — a torrent client seeding it, with
+the imported copy usually a hardlink to the same data — keeps its space
+as long as the other link exists, so writing a new file uses more space,
+not less. Scans record each file's hardlinks: the Scanner's **Hardlinked
+(seeding)** filter shows them, and **Skip files that are still hardlinked
+(e.g. seeding)** (Settings → Automation → Conversion Filters) leaves them
+out of the queue. It's on for new installs; installs from before 0.10
+turn it on there. Add to Queue says how many it left out, and **Include
+ignored files and override rules** queues them anyway.
+
+**What's the difference between Remove, Ignore and Trash files in the
+Scanner?**
+- **Remove** takes the row out of the Scanner's list. The file isn't
+  touched, and the next scan of its folder lists it again.
+- **Ignore** keeps the file in the Scanner (the **Ignored** filter shows
+  it), but Add to Queue, auto-queue and policies leave it out unless you
+  tick **Include ignored files and override rules**. **Unignore** undoes
+  it.
+- **Trash files** moves the file to the system trash (on Linux, a
+  `.Trash-<uid>` folder at the top of the drive or share) and drops it
+  from the Scanner and the queue. Shrinkerr can't restore it — your
+  system's trash can — and Sonarr / Radarr aren't told, so they'll find it
+  missing.
 
 **Will Shrinkerr re-scan files it's already seen?**
 A full scan reuses what it read from a file last time when the file's size
@@ -153,11 +220,20 @@ Apache 2.0. Use it, fork it, run it anywhere. No warranty.
 **Where do updates / releases come from?**
 Every `v*` tag on GitHub triggers a build of the four image variants.
 Release notes for each version are in the GitHub Releases page (pulled
-from `CHANGELOG.md`) and the Settings → Updates → Changelog modal
-inside the app.
+from `CHANGELOG.md`) and under **Recent releases** in Settings → System →
+Updates inside the app.
+
+Every push to `develop` builds `:develop` test images. The update notice
+follows your channel: a release hears about newer releases, a `:develop`
+image about newer develop builds. Settings → System → Updates shows the
+channel; untick **Check GitHub for new versions (every 30 minutes)** to
+stop the check.
 
 **How do I report a bug?**
-Open an issue on GitHub. Include:
+Open **System → Doctor**, click **Download diagnostics** (version, setup,
+recent log and failed jobs, with passwords, API keys and tokens taken out)
+and attach the file to a GitHub issue — the bug report form asks for it.
+Otherwise include:
 - Version (bottom of sidebar or `docker compose exec shrinkerr cat /app/VERSION`)
 - Image tag you're running
 - Relevant log excerpt (`docker compose logs shrinkerr --tail 200`)

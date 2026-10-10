@@ -26,7 +26,7 @@ Four tags are published to two registries simultaneously — pick whichever
 you prefer:
 
 - [`ghcr.io/i-ial9000/shrinkerr`](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr) — GitHub Container Registry. No anonymous-pull rate limits.
-- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub mirror. Familiar default for many users; anonymous pulls are capped at 100 per 6 hours per IP.
+- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub mirror. Familiar default for many users. Docker Hub limits anonymous pulls; if you hit the limit, pull from GHCR or `docker login` first.
 
 Image content is identical on both. The compose snippets in this guide
 use `ghcr.io/...`; substitute `pal9000/shrinkerr:<tag>` if you'd rather
@@ -34,9 +34,9 @@ pull from Docker Hub.
 
 | Tag | Platforms | Encoders | Use when |
 |---|---|---|---|
-| `:latest` | amd64, arm64 | libx265 (CPU) | Default for any host. Mac, Raspberry Pi, ARM cloud, Windows without GPU. |
+| `:latest` | amd64, arm64 | CPU, Intel / AMD ([Hardware](hardware.md)) | Default for any host. Mac, Raspberry Pi, ARM cloud, Windows without GPU. |
 | `:nvenc` | amd64 | NVENC + libx265 | NVIDIA GPU host, driver 570+. |
-| `:edge` | amd64, arm64 | libx265, ffmpeg master | You want bleeding-edge ffmpeg features. (Not a pre-release of Shrinkerr: that's `:develop`.) |
+| `:edge` | amd64, arm64 | as `:latest`, ffmpeg master | You want bleeding-edge ffmpeg features. (Not a pre-release of Shrinkerr: that's `:develop`.) |
 | `:edge-nvenc` | amd64 | NVENC + libx265, ffmpeg master | GPU + latest ffmpeg + driver 570+. |
 
 All four share the same DB schema and settings format — moving between them
@@ -80,8 +80,8 @@ docker compose logs -f shrinkerr
 
 **Directory-level tips**
 - Put `docker-compose.yml` somewhere stable like `/opt/shrinkerr/` or `/srv/docker/shrinkerr/`. `./data` will be relative to that.
-- Mount the media dir **read-write** — Shrinkerr replaces files in place unless you configure a backup folder. If the user running Docker can't write to it, jobs will fail at the rename step.
-- Mount the SAME library path as the server writes it. If Plex sees `/mnt/media/TV`, mount that path. Path mapping is for remote workers, not for the primary server.
+- Mount the media dir **read-write** — Shrinkerr replaces files in place (a backup folder only keeps the originals). If the user running Docker can't write to it, jobs will fail at the rename step.
+- Mount the SAME library path as the server writes it. If Plex sees `/mnt/media/TV`, mount that path. If you can't, set a path mapping on that app's card in Settings → Integrations (Plex, Jellyfin, Emby, Sonarr / Radarr).
 
 **More than one media root:**
 
@@ -92,7 +92,22 @@ docker compose logs -f shrinkerr
       - /mnt/other:/media/other
 ```
 
-Then add each `/media/*` path in Settings → Directories.
+Then add each `/media/*` path in Settings → Media → Media Directories.
+
+**Running as your own user (optional):**
+
+```yaml
+    environment:
+      - PUID=1000    # the user that owns your media: `id -u`
+      - PGID=1000    # its group: `id -g`
+      - UMASK=002    # optional: new files are group-writable
+```
+
+Without `PUID` / `PGID` Shrinkerr runs as root, as before. With them it
+runs as that user, so converted files and backups are owned like the ones
+Sonarr / Radarr / Plex write. That user needs write access to the media;
+Shrinkerr hands its data folder to it when the container starts. `UMASK`
+also works on its own. On a NAS, see [Unraid, TrueNAS and Synology](nas.md).
 
 ## `docker run` (one-shot)
 
@@ -108,6 +123,7 @@ docker run -d --name shrinkerr \
 ```
 
 For NVENC replace the image with `:nvenc` and add `--runtime=nvidia --gpus all`.
+To run as your own user, add `-e PUID=1000 -e PGID=1000` (see above).
 
 ## NVIDIA GPU setup
 
@@ -158,8 +174,9 @@ For NVENC replace the image with `:nvenc` and add `--runtime=nvidia --gpus all`.
    ```bash
    docker compose exec shrinkerr nvidia-smi
    ```
-   You should see the GPU listed. In the UI, Nodes → Local should show GPU
-   name + driver + `capabilities: [libx265, nvenc]`.
+   You should see the GPU listed. In the UI, the Nodes page's **THIS SERVER**
+   card should show the GPU name and the **NVENC (GPU)** and **libx265 (CPU)**
+   pills; Monitor shows the driver version.
 
 ### Windows + WSL2
 
@@ -171,8 +188,9 @@ For NVENC replace the image with `:nvenc` and add `--runtime=nvidia --gpus all`.
 
 ### What "NVENC not advertised" means
 
-If Nodes → Local shows `libx265` only plus a red `nvenc_unavailable_reason`,
-the detection ran and rejected NVENC. Common reasons:
+If Monitor shows **NVENC off** with a reason under it (and the Nodes page
+shows only **libx265 (CPU)**), the detection ran and rejected NVENC. Common
+reasons:
 - **no NVIDIA GPU detected** — `nvidia-smi` didn't work inside the container.
   Your `--gpus`/`runtime: nvidia` wiring is missing.
 - **ffmpeg build has no hevc_nvenc encoder** — you're on the `:latest` image
@@ -182,17 +200,18 @@ the detection ran and rejected NVENC. Common reasons:
 
 ## Intel/AMD GPU setup (experimental)
 
-> ⚠️ **Experimental as of v0.3.70.** The QSV and VAAPI encoders ship in
-> both Docker images and are wired through the queue, settings, rule
-> engine, and worker capability advertisement — but the maintainer
-> doesn't currently have functional Intel iGPU hardware to verify them
-> end-to-end. **Please [open an issue](https://github.com/I-IAL9000/shrinkerr/issues)
+> ⚠️ **Experimental.** The QSV and VAAPI encoders ship in both Docker
+> images and are wired through the queue, settings, rule engine, and
+> worker capability advertisement. They're confirmed end-to-end on one
+> tester's modern Intel iGPU, but not yet on enough hardware to call
+> them stable. **Please [open an issue](https://github.com/I-IAL9000/shrinkerr/issues)
 > with results (working or failing) so we can promote them out of
 > experimental.**
 
 ### Activate
 
-Both images (`:latest` and `:nvenc`) carry the VA-API runtime libraries.
+Both images (`:latest` and `:nvenc`) carry the VA-API runtime libraries
+(on amd64).
 The host needs to pass through `/dev/dri` and let the container's user
 into the render group:
 
@@ -211,7 +230,9 @@ services:
 `group_add` accepts the group **name** (`render` on most distros) but
 many distros leave the group nameless inside the container, in which
 case you'll see `unable to find group render` and have to use the
-numeric GID instead.
+numeric GID instead. With `PUID` / `PGID` set
+([Docker Compose](#docker-compose-recommended)), Shrinkerr joins the
+groups that own `/dev/dri` itself, so `group_add` isn't needed.
 
 Then `docker compose down && docker compose up -d`, open Settings →
 Video, and click **Re-detect** next to the encoder dropdown. QSV
@@ -307,6 +328,12 @@ with a proxy if you want HTTPS, auth, or virtual hosts. The app uses
 WebSockets (`/ws`) for live progress, so make sure your proxy forwards
 those.
 
+If the proxy signs people in (Authelia, Authentik, …), choose **External**
+in Settings → System → Authentication, and Shrinkerr asks nobody. Use it
+only when Shrinkerr can't be reached except through the proxy. With the
+sign-in page and "Not from local addresses", requests through a proxy
+still sign in: they never count as local. See [Security](security.md).
+
 ### Traefik
 
 ```yaml
@@ -379,29 +406,60 @@ containerized web app.
 
 On Unraid, map the webUI port in the template to `6680` and the two volumes
 (`/app/data` and `/media`). Unraid's "Add container" UI prompts for each.
+More for Unraid, TrueNAS and Synology: [nas.md](nas.md).
 
 ## First-run walkthrough
 
-1. Browse to `http://<host>:6680` — the setup wizard greets you.
-2. **Add media directories** — click "Go to Settings", enter one or more
+1. Browse to `http://<host>:6680`. Shrinkerr first asks how people sign in
+   (step 6), then the setup wizard greets you.
+2. **Add media directories** — the wizard's first step: enter one or more
    absolute paths that match your compose volumes. Each directory gets a
-   label (e.g. "Movies", "TV") used in the UI.
-3. **Scan your library** — Scanner page, pick a directory, hit Start
-   Scan. First scan on a 10TB library typically takes 10–40 minutes
+   label (e.g. "Movies", "TV") used in the UI. The wizard then asks for the
+   encoder, a quality preset, the languages to keep and what happens to
+   originals.
+3. **Scan your library** — the wizard's last step starts the scan and opens
+   the Scanner (later: Scanner page, pick a directory, hit Scan). First
+   scan on a 10TB library typically takes 10–40 minutes
    depending on disk speed; subsequent scans are incremental. Posters
    and original-language metadata are auto-fetched using the bundled
    TMDB non-commercial key — nothing to configure.
-4. **Customize (optional)** — Settings → Connections to link
+4. **Customize (optional)** — Settings → Integrations to link
    Plex / Jellyfin / Sonarr / Radarr for label-based rules and library
    sync. Settings → Video to fine-tune encoder presets. Everything here
    is optional; the app works out of the box.
-5. **Encoder choice** — Settings → Video. On first start the default
-   encoder is set from what the host supports: NVENC if an NVIDIA GPU is
-   detected, otherwise libx265 (VideoToolbox on a native Mac). See the
+5. **Encoder choice** — the wizard's Hardware step, or Settings → Video. On
+   first start the default encoder is set from what the host supports:
+   NVENC if an NVIDIA GPU is detected, Quick Sync or VAAPI on Intel / AMD,
+   otherwise libx265 (VideoToolbox on a native Mac). See the
    [Encoding guide](encoding-guide.md) for preset tuning.
 6. **Sign-in** — the first visit asks how people sign in: a username and
    password, or External if a reverse proxy signs them in. Change it later
    in Settings → System → Authentication. See [Security](security.md).
+
+New installs start with safer defaults (an updated install keeps its
+settings):
+
+- originals are kept 7 days (Settings → Automation → Originals & Backups);
+- encodes scoring below VMAF 88 are rejected (Settings → Video → Smart
+  Encoding);
+- subtitles are left alone until you choose languages to keep (the wizard,
+  or Settings → Audio & subtitles → Subtitles);
+- files that are still hardlinked (e.g. seeding) are skipped
+  (Settings → Automation → Conversion Filters);
+- content type detection is on (Settings → Video → Smart Encoding).
+
+What happens to a file when it's converted: [What happens to your files](what-happens-to-your-files.md).
+
+Also worth knowing:
+
+- **Doctor** (sidebar) checks the media folders, the data folder, ffmpeg and
+  your encoder, the connections, remote workers and the password. Its
+  **Download diagnostics** makes a file for bug reports, with passwords, API
+  keys and tokens taken out.
+- **Nodes → Add a remote worker** writes the command to run a worker on
+  another machine ([Remote workers](remote-workers.md#setting-up-a-worker)).
+- A read-only **demo** with a made-up library: [demo.md](demo.md).
+- Coming from Tdarr or Unmanic: [migrating.md](migrating.md).
 
 ### Bundled vs. your own TMDB key
 
@@ -417,7 +475,7 @@ work immediately. Reasons you might want your own key:
   `TMDB_API_KEY` as a build arg, the bundled slot is empty.
 
 Apply at <https://www.themoviedb.org/settings/api> and paste into
-Settings → Connections → Metadata APIs. User-saved keys always win over the
+Settings → Integrations → Metadata APIs. User-saved keys always win over the
 bundled one.
 
 If you're running a self-build and want to bundle your own key at
@@ -442,7 +500,7 @@ services:
 ```
 
 TMDB's terms require attribution; Shrinkerr already renders it in
-Settings → Support.
+Settings → System → Support.
 
 The wizard stays visible in the Dashboard until those steps are done
 (or you dismiss it with "Skip setup").
@@ -459,6 +517,18 @@ back up `./data/shrinkerr.db` first — the DB is the only stateful thing.
 Read the release's **Upgrade notes** (on the
 [Releases](https://github.com/I-IAL9000/shrinkerr/releases) page; Shrinkerr
 also shows them once after an update) — they say what to do, if anything.
+
+Updating to 0.10 from an older version:
+
+- Shrinkerr asks how people sign in before anything else, unless password
+  login was already on. Download clients, Sonarr / Radarr and remote
+  workers keep using the API key, now only in the `X-Api-Key` header (no
+  longer `?api_key=` in a URL).
+- Update remote workers to 0.10 as well: older ones don't know the new
+  per-job settings.
+- The first full scan takes longer: it reads every file once more.
+- Your settings stay as they were; the safer defaults
+  ([above](#first-run-walkthrough)) are for new installs.
 
 Switching between `:latest` ↔ `:nvenc` ↔ `:edge` is safe — same schema,
 same settings format, capability detection re-runs on startup.
@@ -500,5 +570,8 @@ docker image rm ghcr.io/i-ial9000/shrinkerr:nvenc
 ```
 
 Your media is untouched — Shrinkerr only writes into `/app/data`, converts
-files in place, and (optionally) into a `.shrinkerr_backup` folder next to
-each source file.
+files in place, and (when it keeps originals, as new installs do for 7 days)
+into a `.shrinkerr_backup` folder next to each source file, or the backup
+folder you set. With review before replace on (Settings → Automation →
+Originals & Backups), converted files waiting in Queue → Review sit in a
+hidden `.shrinkerr-review` folder beside the original.

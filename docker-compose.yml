@@ -25,10 +25,10 @@ services:
     # To skip the build and pull a prebuilt image instead, comment `build:`
     # out and uncomment one of these `image:` lines:
     #   Portable (works on ANY host — Mac, Windows, Linux, Pi, ARM…):
-    #     shrinkerr:latest     — ffmpeg n7.1   (default, stable)
+    #     shrinkerr:latest     — ffmpeg n8.1   (default, stable)
     #     shrinkerr:edge       — ffmpeg master (bleeding edge)
     #   NVENC (x86_64 Linux host with NVIDIA GPU + Container Toolkit):
-    #     shrinkerr:nvenc      — ffmpeg n7.1   (NVIDIA driver 525.60.13+)
+    #     shrinkerr:nvenc      — ffmpeg n8.1   (NVIDIA driver 570.00+)
     #     shrinkerr:edge-nvenc — ffmpeg master (NVIDIA driver 570.00+)
     # Or build every tag at once with: ./scripts/build-images.sh
     build: .
@@ -47,7 +47,7 @@ services:
 
     volumes:
       # --- Required: database + app data ---
-      # Holds the SQLite DB, logs, backups, and the encoding history.
+      # Holds the SQLite DB, settings backups, and the encoding history.
       # If you delete this folder, you lose all settings and history.
       # Linux/Mac: use a relative path (./data) or an absolute one
       # Windows:   use C:\path\to\data:/app/data
@@ -56,8 +56,8 @@ services:
       # --- Required: your media library ---
       # Point this at the folder containing your Movies/TV/etc. Shrinkerr
       # will scan it and write converted files back to the same location
-      # (with the originals trashed or permanently deleted depending on your
-      # Settings → Automation config).
+      # (with the originals kept for a few days, trashed or deleted, as set in
+      # Settings → Automation → Originals & Backups).
       # Shrinkerr needs READ + WRITE access — it overwrites originals in place.
       # Examples:
       #   Linux/Mac: - /srv/media:/media
@@ -102,7 +102,7 @@ services:
     # set as the default runtime) `deploy:` alone silently fails to pass the
     # GPU through. `runtime: nvidia` is the reliable explicit request.
     #
-    # DRIVER VERSION: :nvenc → driver 525.60.13+; :edge-nvenc → driver 570+.
+    # DRIVER VERSION: :nvenc and :edge-nvenc both need driver 570+.
     # The Monitor page shows your driver version and flags any mismatch.
     # =======================================================================
     # runtime: nvidia
@@ -122,11 +122,12 @@ services:
   # on the network (e.g. a gaming PC) that you want to use for CPU encoding.
   #
   # Steps:
-  #   1. In the main server UI: Settings → Nodes → create a worker API key.
+  #   1. In the main server UI: Nodes → Add a remote worker writes this
+  #      block for you; or copy the API key from Settings → System.
   #   2. Copy that key into API_KEY below.
   #   3. Set SERVER_URL to the main container's address from the worker's POV.
   #   4. `docker compose up -d shrinkerr-worker`
-  #   5. The node will appear on the Monitor page within ~30 seconds.
+  #   5. The node will appear on the Nodes page within ~30 seconds.
   # ==========================================================================
   # shrinkerr-worker:
   #   build: .
@@ -134,13 +135,13 @@ services:
   #   environment:
   #     - SHRINKERR_MODE=worker             # switches the container to worker mode
   #     - SERVER_URL=http://shrinkerr:6680  # or http://<main-host-ip>:6680 if on a different host
-  #     - API_KEY=REPLACE_WITH_WORKER_KEY   # create in Settings → Nodes
+  #     - API_KEY=REPLACE_WITH_WORKER_KEY   # Settings → System → Authentication
   #     - WORKER_NAME=beefy-desktop         # shows up in the Nodes page
   #     - CAPABILITIES=nvenc,libx265        # or just "libx265" on CPU-only boxes
   #     # If the worker sees the media at a different path than the server does,
-  #     # set PATH_MAPPINGS as a JSON list of [server_path, worker_path] pairs.
+  #     # set PATH_MAPPINGS (or set the mapping on the Nodes page).
   #     # Example: server sees /media/Movies, worker sees /mnt/nas/Movies:
-  #     # - PATH_MAPPINGS=[["/media","/mnt/nas"]]
+  #     # - PATH_MAPPINGS=[{"server":"/media","worker":"/mnt/nas"}]
   #     - NVIDIA_VISIBLE_DEVICES=all
   #   volumes:
   #     - /srv/media:/media                  # must match what the server sees (or use PATH_MAPPINGS)

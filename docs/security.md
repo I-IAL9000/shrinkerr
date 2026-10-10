@@ -14,7 +14,8 @@ the user; there's no multi-tenant model.
 
 - **Unauth network neighbours.** Anyone who can reach the port shouldn't
   be able to read settings, queue transcodes, or change anything that
-  can execute code (e.g. the post-conversion script).
+  can execute code (e.g. the post-conversion script). Choosing "Not from
+  local addresses" trusts local addresses with all of that.
 - **Session hijack / XSS.** A leaked cookie or in-browser code-injection
   attack on the SPA shouldn't immediately hand out the raw API key or
   stored integration secrets.
@@ -49,7 +50,11 @@ the user; there's no multi-tenant model.
     A request that carries `X-Forwarded-For`, `X-Real-IP` or `Forwarded`
     came through a proxy and always signs in, so a reverse proxy on the
     same host doesn't make internet traffic "local". Tailscale and other
-    CGNAT addresses (100.64.0.0/10) aren't local.
+    CGNAT addresses (100.64.0.0/10) aren't local. When Docker rewrites
+    the client address (Docker Desktop, or a userland proxy), every
+    request can look like it comes from a local address — so choose
+    **Everyone** if Shrinkerr's port can be reached from outside your
+    network.
   - **External**: your reverse proxy (Authelia, Authentik, …) signs
     people in and Shrinkerr asks nobody. Use it only when Shrinkerr can't
     be reached except through the proxy.
@@ -59,7 +64,16 @@ the user; there's no multi-tenant model.
   working), and a loud `[SECURITY]` banner prints at startup. If an API
   key is set, setting up sign-in needs that key — nobody else can pick
   the password.
-- **API keys keep working** everywhere, whatever the sign-in method.
+- **API keys keep working** everywhere, whatever the sign-in method — in
+  the `X-Api-Key` header only (v0.10.0). A key in the URL (`?api_key=`)
+  no longer works: it ended up in proxy logs and browser history.
+  Prometheus can send it as a bearer token to `/api/metrics`, and
+  webhooks as the Basic-auth password. The key reaches the whole API
+  except the settings that can run code, so treat it like an admin
+  password.
+- **Live updates** (the WebSocket) connect with a one-time ticket the UI
+  fetches first; each ticket works once, within a minute, so no key goes
+  in a URL.
 - **Passwords are stored as bcrypt hashes** (cost 12). Legacy SHA-256
   hashes from older installs are transparently upgraded on the next
   successful login.
@@ -67,9 +81,11 @@ the user; there's no multi-tenant model.
 - **API key and session comparisons are constant-time** (`hmac.compare_digest`).
 - **Session signing uses a per-install secret** generated on first
   launch; sessions fail closed if the secret is ever missing.
-- **Integration endpoints** (`/api/webhooks/*`, `/api/nodes/*`, backup
-  download/restore, NZBGet/SABnzbd config + scripts) always require
-  `X-Api-Key`, regardless of whether password auth is enabled.
+- **Integration endpoints** (`/api/webhooks/*`, the remote-worker
+  endpoints under `/api/nodes/`, backup download/restore, NZBGet/SABnzbd
+  config + scripts) always require the API key in `X-Api-Key` (webhooks
+  also take it as the Basic-auth password) or a password session — also
+  from local addresses and with External sign-in.
 - **Remote worker nodes carry a per-node auth token** on top of the
   shared `X-Api-Key`. The server issues a fresh token on the node's
   first heartbeat, the worker persists it in `/app/data/worker_token`
@@ -78,20 +94,31 @@ the user; there's no multi-tenant model.
   node can't impersonate an existing one: the server compares the
   supplied token with the stored value via `hmac.compare_digest` and
   returns 401 on mismatch. Admins can force a fresh handshake any time
-  from **Nodes → Settings → Rotate token**; the worker drops its
+  from **Nodes → Node settings → Rotate token**; the worker drops its
   cached copy on the next 401 and re-bootstraps automatically.
+- **A remote worker can only report on its own job**: one that lost its
+  job can't mark it failed or completed under the node that runs it now.
+- **Demo mode** (`SHRINKERR_DEMO=1`, see [demo.md](demo.md)) is read-only
+  and nobody signs in. Never set it on a real install: anyone who can
+  reach the port sees your library and settings.
 
 ### Secrets handling
 
 - **API key is masked** (`****xxxx`) in the bulk `/api/settings/encoding`
   response. A dedicated `GET /api/settings/api-key` returns the raw
   value on demand for the UI copy button.
-- **Integration keys and tokens** (TMDB, Plex, Jellyfin, Sonarr,
-  Radarr, SMTP password) are all masked the same way.
+- **Integration keys and tokens** (TMDB, Plex, Jellyfin, Emby, Sonarr,
+  Radarr, Bazarr, SMTP password, ntfy and Gotify tokens) are all masked
+  the same way; the MQTT password is masked in full.
 - **Settings export** strips every secret row: `api_key`,
-  `session_secret`, `auth_password_hash`, each integration key, SMTP
-  password, and path-tokened URLs (Discord webhook, generic webhook,
-  Telegram bot token).
+  `session_secret`, `auth_password_hash`, each integration key and
+  token (MQTT password, ntfy and Gotify tokens included), SMTP password,
+  and path-tokened URLs (Discord webhook, generic webhook, Telegram bot
+  token, ntfy topic URL, Apprise URLs).
+- **Settings import** never imports credentials or sign-in settings, and
+  runs the same checks as saving in Settings.
+- **Download diagnostics** (Doctor page) takes passwords, API keys and
+  tokens out of the file it makes for bug reports.
 - **TMDB API key** is sent as a `params=` arg rather than interpolated
   into URL strings, so it doesn't leak into httpx exception messages
   that may end up in logs.
@@ -104,7 +131,9 @@ the user; there's no multi-tenant model.
 - **Media directories** must be absolute, existing directories. Paths
   under `/etc`, `/root`, `/proc`, `/sys`, `/boot`, `/dev`, `/app/data`,
   and the filesystem root itself are rejected.
-- **Backup folder setting** validated the same way.
+- **Backup folder setting** validated the same way, and it can't overlap
+  a media folder. Backup expiry and deleting backups (Settings →
+  Automation) only ever delete backups.
 - **All user-supplied file paths** for delete / queue / probe operations
   are resolved (symlinks followed) and checked against configured media
   dirs with `os.path.commonpath`, not string `startswith` (which the
@@ -117,14 +146,15 @@ the user; there's no multi-tenant model.
 
 ### SSRF protection
 
-All user-configured outbound URLs (Plex, Sonarr, Radarr, Discord
-webhook, generic webhook) are validated at save-time against an IP
-block-list covering:
+User-configured outbound URLs (Plex, Jellyfin, Emby, Sonarr, Radarr,
+Bazarr, Maintainerr, the MQTT broker, Discord webhook, generic webhook,
+ntfy, Gotify) are validated at save-time against an IP block-list
+covering:
 
 - IPv4 link-local `169.254.0.0/16` — includes AWS / Azure / GCP / Alibaba
   cloud metadata endpoints
 - IPv6 link-local `fe80::/10`
-- IPv6 site-local `fd00::/8`
+- IPv6 site-local `fec0::/10`
 - IPv4-mapped IPv6 variants of the above
 
 Loopback and RFC 1918 private ranges are **allowed by default** —
@@ -140,8 +170,9 @@ restricted: refuses to list the filesystem root, any system directory
 
 ### Injection surface
 
-- **ffmpeg / ffprobe subprocess calls** use `asyncio.create_subprocess_exec`
-  with list args — never `shell=True`, no string interpolation into a
+- **ffmpeg / ffprobe subprocess calls** use list args
+  (`asyncio.create_subprocess_exec` or `subprocess.run`) — never
+  `shell=True`, no string interpolation into a
   single command line. Paths with spaces / apostrophes / special chars
   are safe as individual argv entries.
 - **VMAF filter-complex path** is sanitized (alphanumeric + `._-`)
@@ -150,6 +181,11 @@ restricted: refuses to list the filesystem root, any system directory
 - **LIKE query user input** is escaped with `ESCAPE '\\'` so `%` and
   `_` in user-supplied search strings don't act as wildcards (stops
   enumeration).
+- **Custom ffmpeg flags** can't add inputs or outputs or name files, and
+  encodes run in an empty scratch folder. A backup restored with just
+  the API key comes back without its post-conversion script and custom
+  flags; re-enter them signed in.
+- **Links in the in-app changelog** only open http(s) addresses.
 
 ### Response headers
 
@@ -172,15 +208,18 @@ For a production / internet-exposed deployment, on top of the defaults:
       The app doesn't terminate TLS itself.
 - [ ] **Use a strong password** (Settings → System → Authentication), and
       "Not from local addresses" only on a network you trust.
-- [ ] **Rotate the auto-generated API key.** The one printed at first
-      launch is cryptographically random, but if you suspect the log
-      was copied somewhere untrusted, Settings → System → Authentication
-      → API Key → Regenerate.
+- [ ] **Rotate the API key if it may have leaked** — e.g. an install
+      from before v0.3.65 printed its key to the log at first launch.
+      Settings → System → Authentication → API Key → Regenerate makes a
+      new, cryptographically random one.
 - [ ] **Bind the container port to `127.0.0.1`** unless you actually
       want LAN access directly. Put the reverse proxy in front.
 - [ ] **Set up sign-in** before configuring `post_conversion_script` or
       custom ffmpeg flags — the app refuses to save them until it's set
       up, and never with just the API key.
+- [ ] **Run as your own user.** Set `PUID` / `PGID` (and optionally
+      `UMASK`) and the container runs Shrinkerr as that user instead of
+      root.
 - [ ] **Keep the `./data` volume private.** It's the single source of
       truth for every stored secret.
 - [ ] **Don't expose port 6680 to the public internet** without at

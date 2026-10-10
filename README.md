@@ -13,9 +13,26 @@
 
 ---
 
-Shrinkerr scans your media library, identifies files that are worth re-encoding, queues them up, and runs `ffmpeg` in the background — replacing each file with a smaller x265 copy only when the encode succeeds and actually saves space (plus an optional VMAF minimum-score check). It's designed for home media servers (Plex, Jellyfin, Emby) where you want to reclaim drive space without hand-rolling ffmpeg scripts.
+Shrinkerr makes a video library smaller without making it worse. It converts
+films and episodes to HEVC (or AV1), removes the audio and subtitle tracks you
+don't want, and replaces a file only when the new one passes its checks.
 
-Typical result on a mixed TV + movies library: **40–65% smaller files** with no visible quality loss, fully automated, with originals optionally retained in a backup folder for easy rollback.
+- **It knows your languages.** It keeps the languages you choose plus each
+  title's original language, from TMDB, so a Japanese film keeps its Japanese
+  audio. Tracks with no language tag are identified, by listening to the
+  audio or reading the subtitles, and the fix is written into the file.
+- **It converts disc rips.** Blu-ray and DVD folders and ISOs become one MKV.
+- **It checks before it replaces.** A new file has to be complete, still HDR
+  if the original was, smaller, and good enough by its VMAF score. Originals
+  can be kept for days, and Undo puts one back
+  ([what happens to your files](docs/what-happens-to-your-files.md)).
+
+Converted files usually come out 40–65% smaller. Across the maintainer's
+library, that's about **40–50 TB saved for every 100 TB**.
+
+It works with Sonarr, Radarr, Bazarr, Plex, Jellyfin and Emby, encodes on
+NVIDIA, Intel, AMD and Apple hardware or the CPU, and can share the work with
+other machines.
 
 <div align="center">
 
@@ -29,81 +46,91 @@ Typical result on a mixed TV + movies library: **40–65% smaller files** with n
 
 ## Features
 
-**Encoding**
-- x264 (or any other source codec) → x265 (HEVC) conversion, NVENC hardware or libx265 CPU
-- **Intel QSV and Intel/AMD VAAPI** — *experimental* hardware encoders for non-NVIDIA GPUs (see [Intel/AMD GPU support](#intelamd-gpu-support-experimental))
-- Per-resolution CQ/CRF overrides (4K, 1080p, 720p, SD)
-- Encoding rules — by directory / source / resolution / file size / codec, by Plex label / collection / genre / library, or by Sonarr / Radarr tag
-- Optional [VMAF](https://github.com/Netflix/vmaf) quality check with a configurable minimum score — encodes that score below the threshold are discarded and the original is kept
-- **Dry run** — fire off a 30-second test encode before committing to a full job and get its VMAF score back, so you can validate your settings on a single clip without burning 20 minutes on a bad preset
-- Automatic fallback from NVENC → libx265 when the requested encoder isn't available on a node
-- Multiple parallel jobs per host, capped by a `parallel_jobs` setting
-- Built-in conversion guide + quick-action presets for common scenarios
+**Converting**
+- HEVC by default, or AV1 for the files a rule picks.
+- NVENC on NVIDIA, Quick Sync and VAAPI on Intel / AMD (*experimental*),
+  VideoToolbox on a Mac (native install), or the CPU (libx265, SVT-AV1). See
+  [Hardware](docs/hardware.md).
+- Five quality presets, from Max quality to Smallest, for every encoder, with
+  its own quality per resolution and per kind of content (anime, film grain,
+  animation, remuxes).
+- [VMAF](https://github.com/Netflix/vmaf) checks: reject encodes below a
+  score, or target a score and let each title find its own quality.
+- HDR10 and HLG stay HDR; Dolby Vision profiles 7 and 8 keep their Dolby
+  Vision.
+- Blu-ray and DVD folders and ISOs convert to one MKV.
+- A test encode on a sample before you commit, and before / after frames of
+  every conversion.
+- Savings estimates before you queue anything, which learn from your own
+  conversions.
 
-**Library management**
-- Recursive scanner with ffprobe-based codec / bitrate analysis
-- TMDB metadata + native-language lookup so the audio/subtitle cleanup rules know which language is the original
-- Audio track cleanup — keep only the languages you want, drop commentary / descriptive tracks
-- Subtitle track cleanup — same as audio, plus detection of forced / SDH / CC variants
-- External subtitle detection — sidecar `.srt` / `.ass` / `.sub` files show up next to embedded ones and can be merged into the output during conversion
-- Health check — probes files for corruption before (and optionally after) encoding
-- File-level ignore list with one-click restore
-- Extensive filter system + advanced search — match on any attribute (codec, resolution, size, bitrate, audio languages, native language, Plex metadata, …)
-- Watch folders — new files appear in the scanner view automatically
-- Poster grid view with TMDB artwork for visual browsing
+**Audio and subtitles**
+- Keep the languages you choose plus each title's original language; tracks
+  you keep or remove by hand stay that way.
+- Lossless audio converted to a smaller codec (Atmos and DTS:X stay
+  lossless), and an optional stereo compatibility track, loudness-normalised
+  if you like.
+- Image subtitles (PGS, VobSub) converted to SRT with OCR; external `.srt` /
+  `.ass` files merged into the file.
+- Untagged tracks identified from the subtitle text, the audio (Whisper) or
+  the subtitle images (OCR), and the language written into the file
+  ([Language detection](docs/language-detection.md)).
+- Direct-play filters find what makes Plex, Jellyfin and Emby transcode, and
+  **Fix for direct play** fixes it.
 
-**Language detection** (for tracks tagged `und` / undetermined)
-- **Text subtitles** — detected automatically at scan time from the subtitle text, with charset detection for legacy non-Unicode encodings (GB2312 / Big5 / Shift-JIS / EUC-KR / Windows-1252)
-- **Audio** — spoken-language ID via a bundled faster-whisper model (samples several points in the track for confidence), on demand and — optionally — automatically before conversion
-- **Image subtitles** — PGS (Blu-ray) and VobSub (DVD) via OCR (tesseract), multi-script (Latin / CJK / Cyrillic / Arabic), on demand
-- Detected languages are **written back to the file** (in place via `mkvpropedit` for mkv, no re-encode) — so the fix is real on disk, not just in Shrinkerr — with an optional Plex refresh afterward
-- Confidence-gated and fail-open: a low-confidence or failed detection leaves the track `und` rather than mistagging it
-- A dedicated **Unknown language** filter surfaces titles that still have `und` tracks
-- See [Language detection](docs/language-detection.md)
+**Your library**
+- A Scanner with filters for nearly everything — codec, resolution, HDR,
+  bitrate for the resolution, audio and subtitle details, hardlinked
+  (seeding), not watched in months, below Sonarr / Radarr's cutoff, leaving
+  soon in Maintainerr — that combine, plus Advanced Search. Save any of them
+  as a view, one click away in the sidebar.
+- Poster view with TMDB artwork and IMDb links, and each file's technical
+  details.
+- Health checks, and replacing corrupt files through Sonarr / Radarr.
+- Batch rename with Plex-friendly patterns.
 
 **Automation**
-- Queue with drag-and-drop reordering, bulk apply, priority levels, and scheduling
-- Watch folders — auto-queue newly-added files (the watcher checks every 5 minutes)
-- NZBGet / SABnzbd post-processing scripts — auto-queue freshly-downloaded releases
-- Sonarr / Radarr integration — trigger replacement searches, upgrade searches, and missing-episode searches without leaving the UI; library refresh on completion
-- Plex / Jellyfin integration — label / collection / genre / library-based rules, watch-status sync, library refresh on completion, trash cleanup
-- Scheduling — only encode during off-peak hours, pause around Plex / Jellyfin prime-time
-- Post-conversion hook scripts with rich env-var context (job details, space saved, [VMAF](https://github.com/Netflix/vmaf) score, etc.)
-- Batch rename with Plex-friendly patterns, with optional auto-rename after conversion
-- File-size / bitrate threshold filters on the conversion queue (skip tiny files, skip already-low-bitrate files)
-- Custom ffmpeg flags per job or per rule
-- Notifications via Discord / Telegram / email / webhook
+- Rules by folder, source, resolution, codec, content type, size, Sonarr /
+  Radarr tags, Plex / Jellyfin / Emby labels, collections, genres and watched
+  status, or a saved view. A rule can change the encoder, quality, AV1,
+  languages, what happens to originals and the minimum VMAF. Share rules as
+  YAML, start from the rule library, and test which rule a file gets.
+- New files queued by the watcher, Sonarr / Radarr's Connect webhook, or the
+  NZBGet / SABnzbd scripts, optionally after a wait so Bazarr adds subtitles
+  first.
+- Policies run a saved view on a schedule within a budget ("up to 200 GB each
+  night"); **Free space…** picks the conversions that free N GB fastest.
+- Run hours, and a pause while Plex, Jellyfin or Emby is streaming.
+- **Review before replace**, post-conversion scripts and custom ffmpeg flags.
+- Sonarr, Radarr, Bazarr, Plex, Jellyfin and Emby are told about every
+  changed file.
 
-**Distributed workers**
-- Offload encoding to remote hosts (second machine, gaming PC, ARM box)
-- Capability-aware job routing (NVENC jobs go to NVENC hosts, CPU jobs anywhere)
-- Per-node pause / affinity / schedule / concurrency limits
-- Path-mapping support for workers that see the library at a different path
-- Circuit breaker auto-pauses a node after repeated failures
+**Remote workers**
+- More machines share the work, each with its own encoder; the Nodes page
+  writes the command to start one.
+- Jobs go to a node that can run them; per-node schedules, affinity and
+  parallel jobs; path mappings; a node that keeps failing is paused.
 
-**Monitoring & statistics**
-- Live dashboard — active jobs, queue depth, total saved, projected savings
-- System monitor — GPU (utilization, VRAM, temp, NVENC/NVDEC load), CPU, RAM, disk I/O, network, Plex stream count
-- 90-day trend charts — cumulative savings, daily encodes, avg FPS per job
-- Library breakdown — codecs, resolutions, source types, native languages, audio track languages
-- [VMAF](https://github.com/Netflix/vmaf) score distribution + per-job quality breakdown
-- Activity log — every scan, encode, ignore, arr action, Plex sync — with timestamps
+**Keeping an eye on it**
+- Dashboard, statistics and a system monitor (GPU, CPU, disks, streams).
+- Notifications by Discord, Telegram, email, webhook, ntfy, Gotify or
+  Apprise (100+ services), including a weekly summary.
+- Prometheus metrics, a Homepage / Homarr widget, and Home Assistant over
+  MQTT ([Monitoring](docs/monitoring.md)).
+- A **Doctor** page that checks the setup and makes a diagnostics file for
+  bug reports.
 
-**Safety net**
-- Keep originals for N days in a per-directory `.shrinkerr_backup` folder, or centralize to one path
-- **Undo conversion** — restore any recently-encoded file to its original with one click
-- Automatic detection of "no savings" encodes → keep the original, mark the file as ignored
-- Output verification — ffmpeg must successfully encode AND the output must be non-empty before the original is touched
-- Automatic retry with directory-scan fallback for transient NFS/SMB filesystem glitches
+**Safety**
+- Sign-in is required: a password, or your reverse proxy's. Apps use API
+  keys.
+- Originals kept for N days, trashed or deleted, as you choose; Undo while
+  they're kept. Hardlinked files are left alone.
+- Settings export / import and database backups.
 
-**Quality of life**
-- Dark + light theme
-- Queue/dashboard updates via WebSocket — no page refresh needed
-- Bulk-edit selected jobs (encoder, preset, CQ, priority, audio codec)
-- Settings export/import (JSON) for easy migration
-- Full backup/restore (includes DB + media-dir config + encoding rules)
-- Keyboard shortcuts for navigation and queue start/pause
-- Tab-visibility-aware polling — pauses background fetches when the tab isn't visible
+**Interface**
+- English and Spanish; light, dark or your system's theme; works on phones,
+  from the keyboard and with a screen reader.
+- A setup wizard that previews your language choices on your own files.
 
 ---
 
@@ -113,11 +140,13 @@ Typical result on a mixed TV + movies library: **40–65% smaller files** with n
 - **Media library** on a filesystem Docker can bind-mount with read + write access
 - **Port 6680** free on the host (or another port of your choosing)
 - **For NVENC (optional, 5–10× faster than CPU)**:
-  - NVIDIA GPU (Pascal / GTX 10xx or newer)
+  - NVIDIA GPU: Pascal (GTX 10xx) or newer for 10-bit HEVC, the default; a second-generation Maxwell GPU (GTX 950 and up) can do 8-bit HEVC (Settings → Video → Bit Depth)
   - NVIDIA driver 570+ (for both `:nvenc` and `:edge-nvenc`)
   - **Linux**: [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit)
   - **Windows**: Docker Desktop in WSL2 mode (Windows 10 21H2+ / Windows 11) with a recent NVIDIA Windows driver — nothing else to install
   - **macOS**: no NVIDIA path, but Apple's **VideoToolbox** hardware encoder is supported when Shrinkerr runs **natively (no Docker)**, as a server or as a remote worker. See [Running Shrinkerr natively on macOS](docs/native-install-mac.md). Real-world: ~30–100 fps native vs. ~1 fps via Docker.
+
+Which encoders work on which hardware, and which image to use: [Hardware](docs/hardware.md). On a NAS: [Unraid, TrueNAS and Synology](docs/nas.md).
 
 ---
 
@@ -126,7 +155,7 @@ Typical result on a mixed TV + movies library: **40–65% smaller files** with n
 Four tags are published to two registries — pick whichever you prefer:
 
 - [`ghcr.io/i-ial9000/shrinkerr`](https://github.com/I-IAL9000/shrinkerr/pkgs/container/shrinkerr) — GitHub Container Registry (no rate limits on anonymous pulls)
-- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub (mirror; familiar default, anonymous pulls are rate-limited to 100 / 6h / IP)
+- [`pal9000/shrinkerr`](https://hub.docker.com/r/pal9000/shrinkerr) — Docker Hub (mirror; familiar default. Docker Hub limits anonymous pulls — if you hit the limit, pull from GHCR or sign in to Docker Hub)
 
 Both registries publish the same tags simultaneously:
 
@@ -226,14 +255,16 @@ A heavily-commented production template is at [`docker-compose.portainer.yml`](d
 
 ## First-time setup
 
-After `docker compose up -d` the setup wizard walks you through four steps:
+After you set up sign-in, the setup wizard walks you through six steps: media folders, hardware (the encoder), quality, the languages to keep, what happens to originals, and a first scan. Then it opens the Scanner. Reopen it any time at `/?setup`.
 
-1. **Add media directories** — Settings → Directories. Point at `/media/TV`, `/media/Movies`, etc. (whatever paths exist inside the container mount).
+To do the same by hand:
+
+1. **Add media directories** — Settings → Media → Media Directories. Point at `/media/TV`, `/media/Movies`, etc. (whatever paths exist inside the container mount).
 2. **Scan your library** — Scanner → select paths → Scan. Shrinkerr probes each file with ffprobe and classifies it.
-3. **Connect Plex (optional)** — Settings → Connections → Plex. Enables label-based rules and automatic library refresh.
-4. **Start converting** — Queue → Start. Watches run 1 job at a time by default; the Nodes page lets you bump this to match your hardware.
+3. **Connect Plex (optional)** — Settings → Integrations → Plex. Enables label-based rules and automatic library refresh.
+4. **Start converting** — Queue → Start. Jobs run 1 at a time by default; the Nodes page lets you bump this to match your hardware.
 
-You can skip 1 and 3 and go straight to manual encoding via Scanner → Add selected to queue.
+You can skip 3 and go straight to manual encoding via Scanner → Add to queue.
 
 ## Intel/AMD GPU support (experimental)
 
@@ -247,7 +278,7 @@ You can skip 1 and 3 and go straight to manual encoding via Scanner → Add sele
 > with X" — that's how we expand the supported matrix.**
 
 Both Docker images (`:latest` CPU and `:nvenc`) ship with the VA-API
-runtime as of v0.3.67. To activate the encoders, the host needs to
+runtime (amd64 only) as of v0.3.67. To activate the encoders, the host needs to
 pass through `/dev/dri` and add the container user to the render
 group:
 
@@ -272,7 +303,7 @@ was active.
 |---|---|---|
 | **QSV** (`hevc_qsv`) | Intel iGPUs (Gen8+ / 2014+), Intel Arc / Battlemage | Best on Intel — better quality controls than VAAPI on the same hardware |
 | **VAAPI** (`hevc_vaapi`) | Intel iGPUs (any) AND AMD GPUs (Polaris / Vega / RDNA) | The only hardware path for AMD; works on Intel too |
-| **NVENC** | NVIDIA GPUs (Maxwell+) | Use the `:nvenc` image variant; doesn't go through `/dev/dri` |
+| **NVENC** | NVIDIA GPUs: Pascal or newer for 10-bit (the default), second-generation Maxwell (GTX 950 and up) for 8-bit | Use the `:nvenc` image variant; doesn't go through `/dev/dri` |
 
 Verify with `docker exec shrinkerr vainfo` — should list HEVC encode
 profiles (e.g. `VAProfileHEVCMain`). If it errors with `vaInitialize
@@ -289,7 +320,7 @@ driver (e.g. nvidia-drm); see the troubleshooting section in
 
 1. **Scanner** → pick directories → **Scan**. Takes 5-30 minutes per 10k files depending on disk speed.
 2. Filter by codec (show x264 only), by resolution (1080p+), by size, or by any attribute via the search bar / advanced filter panel.
-3. Select a subset → **Add selected to queue**. An estimate modal shows expected space saved + estimated time.
+3. Select a subset → **Add to queue**. An estimate modal shows expected space saved + estimated time.
 4. **Queue** → **Start**. Shrinkerr encodes in the background and updates the UI live via WebSocket.
 5. Files are replaced in place. Originals go to `.shrinkerr_backup` (or the trash, or permanently deleted — configurable).
 
@@ -300,7 +331,7 @@ driver (e.g. nvidia-drm); see the troubleshooting section in
 
 Many Blu-ray rips ship with 5+ audio tracks (commentary, descriptive audio, foreign-language dubs) and 20+ subtitle tracks. Shrinkerr can strip the ones you don't want without re-encoding video.
 
-1. **Settings → Audio / Subtitles** — set your "always keep" languages (e.g. `eng, isl`) and optionally ignore unknown-language tracks.
+1. **Settings → Audio & subtitles** — set your "always keep" languages (e.g. `eng, isl`) and optionally ignore unknown-language tracks. For subtitles, also tick **Remove unwanted subtitle tracks** (off on new installs; the setup wizard ticks it when you pick subtitle languages).
 2. Scanner flags files with removable tracks.
 3. Add to queue → Shrinkerr runs an ffmpeg stream-copy (fast, no quality loss) with the unwanted tracks dropped.
 
@@ -311,22 +342,22 @@ Many Blu-ray rips ship with 5+ audio tracks (commentary, descriptive audio, fore
 
 For a corrupt or low-quality file already on disk:
 
-1. Queue → Completed/Failed tab → click the file → **Request replacement**.
+1. Scanner → expand the file → **Request replacement** (or **Re-request all** on the Queue's Failed tab).
 2. Shrinkerr blocklists the current release in Sonarr/Radarr, deletes the file from disk, and triggers a fresh search.
-3. Or use **Search for upgrades** / **Search for missing** as bulk actions across a directory.
+3. Or use **Search for upgrades** / **Search missing episodes** as bulk actions across a directory.
 
 </details>
 
 <details>
 <summary><b>NZBGet / SABnzbd integration</b></summary>
 
-Auto-queue freshly-downloaded releases so they start encoding the moment Sonarr/Radarr hands them off.
+Auto-queue freshly-downloaded releases so they start encoding the moment the download finishes, before Sonarr/Radarr import them.
 
-1. Settings → Connections → NZBGet / SABnzbd → **Download NZBGet Script** (or SABnzbd).
+1. Settings → Integrations → NZBGet / SABnzbd → **Download NZBGet Script** (or SABnzbd).
 2. Drop the downloaded script into your downloader's scripts folder.
 3. Your server URL and API key are baked in — no further config.
 
-Files with nzb-assigned categories / tags you configure in the Shrinkerr UI will be queued automatically after the download completes.
+Files with nzb-assigned categories / Sonarr/Radarr tags you configure in the Shrinkerr UI will be queued automatically after the download completes.
 
 </details>
 
@@ -377,6 +408,10 @@ NVENC workers need the same GPU passthrough config as the main server (`runtime:
 | `NVIDIA_VISIBLE_DEVICES` | unset | Set to `all` on NVENC variants to enable GPU passthrough |
 | `SHRINKERR_LANG_DETECT_AUDIO_MIN` | `0.6` | Min confidence to accept an audio [language detection](docs/language-detection.md) |
 | `SHRINKERR_LANG_DETECT_SUB_MIN` | `0.7` | Min confidence to accept a subtitle language detection |
+| `SHRINKERR_WHISPER_MODEL` | unset | faster-whisper model for spoken-language detection (`tiny` … `large-v3`); overrides Settings → Audio & subtitles → Audio detection model (default `tiny`) |
+| `SHRINKERR_SCAN_CONCURRENCY` | `4` | How many files a scan probes at once |
+| `SHRINKERR_TMDB_API_KEY` | bundled in the official images | Your own TMDB key for posters and metadata; a key saved in Settings → Integrations → Metadata APIs wins |
+| `SHRINKERR_DEMO` | unset | `1` runs a read-only [demo](docs/demo.md) with a made-up library. Never set it on an install you use |
 
 **Worker-only** (when `SHRINKERR_MODE=worker`):
 
@@ -390,12 +425,15 @@ NVENC workers need the same GPU passthrough config as the main server (`runtime:
 | `POLL_INTERVAL` | `5` | Seconds between job polls |
 | `HEARTBEAT_INTERVAL` | `30` | Seconds between keepalive pings |
 | `METRICS_INTERVAL` | `5` | Seconds between CPU/GPU metric reports |
+| `SHRINKERR_DATA_DIR` | `/app/data` | Where the worker keeps its id and token |
 
 Legacy `SQUEEZARR_*` equivalents are honored as a fallback — the app was originally called Squeezarr and this back-compat avoids breaking existing deployments.
 
 ### Settings
 
-Almost everything else is configured via **Settings** in the UI (encoding presets, always-keep languages, Plex/Sonarr/Radarr credentials, scheduling, notifications, backup retention, etc.). The full settings blob is exportable/importable as JSON for migration.
+Almost everything else is configured via **Settings** in the UI, one page per topic — Media, Video, Audio & subtitles, Automation, Integrations, Notifications and System — with a search box that jumps to any setting. The settings (without passwords, API keys and tokens) are exportable/importable as JSON for migration.
+
+New installs start on the safe side: originals are kept 7 days, encodes scoring below VMAF 88 are rejected, subtitles are left alone until you choose languages, hardlinked (seeding) files are skipped, and content type detection is on. Existing installs keep their settings. Step by step, what Shrinkerr does to a file: [What happens to your files](docs/what-happens-to-your-files.md).
 
 ---
 
@@ -404,7 +442,13 @@ Almost everything else is configured via **Settings** in the UI (encoding preset
 - **Dashboard** (`/`) — live status, queue depth, total saved, 90-day trends
 - **Monitor** (`/monitor`) — real-time CPU/GPU/RAM/disk gauges, Plex stream count, per-worker-node gauges, Shrinkerr workload summary
 - **Activity** (`/activity`) — timeline of every event (scan, encode, arr action, Plex sync, file-event, etc.)
-- **Logs** (`/logs`) — tail of the container stdout/stderr for debugging
+- **Logs** (`/logs`) — tail of Shrinkerr's log output for debugging
+- **Doctor** (`/doctor`) — checks the media folders, the data folder and database, ffmpeg and your encoder, the connections, remote workers and the password
+- **Prometheus** — `/api/metrics`: the queue, space saved, the library and remote workers. Prometheus sends the API key as a bearer token
+- **Homepage / Homarr** — `/api/stats/widget`: the same numbers as one JSON object, for a "custom API" widget (API key in the `X-Api-Key` header)
+- **Home Assistant** — over MQTT (Settings → Integrations → Home Assistant (MQTT)): sensors for the queue, space saved and the current file, and a switch that starts and pauses the queue
+
+Setup examples: [Monitoring and dashboards](docs/monitoring.md). Notifications — Discord, Telegram, email, webhook, ntfy, Gotify and Apprise — are set up in Settings → Notifications: [Notifications](docs/notifications.md).
 
 ---
 
@@ -417,13 +461,19 @@ docker compose pull
 docker compose up -d
 ```
 
-The database migrates itself on startup — never overwrites user data, only adds new columns. If upgrading from the pre-rename era (when the app was called Squeezarr), the `squeezarr.db` file is auto-renamed to `shrinkerr.db` on first start along with its WAL sidecar files.
+The database migrates itself on startup — never overwrites user data, only adds new tables and columns. If upgrading from the pre-rename era (when the app was called Squeezarr), the `squeezarr.db` file is auto-renamed to `shrinkerr.db` on first start along with its WAL sidecar files.
 
 For deterministic upgrades in production, pin to a release's version tag (e.g. `shrinkerr:v0.10.0-nvenc`; releases are tagged `vX.Y.Z` and listed on the [Releases](https://github.com/I-IAL9000/shrinkerr/releases) page) instead of a floating `:latest` — or a minor line (`:0.10-nvenc`) to get its patches only. Read a release's **Upgrade notes** before updating; Shrinkerr also shows them once after an update.
+
+**Settings → System → Updates** shows your channel (releases or develop) and can turn off the GitHub check. Update remote workers to 0.10 along with the server: older workers don't know 0.10's per-job settings.
+
+Coming from Tdarr or Unmanic? See [Migrating](docs/migrating.md).
 
 ---
 
 ## Troubleshooting
+
+Start with **Doctor** (sidebar → System → Doctor): it checks what Shrinkerr depends on and says what needs a look. Reporting a bug? Click **Download diagnostics** there and attach the file to the [issue](https://github.com/I-IAL9000/shrinkerr/issues): it has your version, setup, recent log and failed jobs, with passwords, API keys and tokens taken out. More fixes: [Troubleshooting](docs/troubleshooting.md).
 
 <details>
 <summary><b>Monitor says "No NVIDIA GPU detected" on a host that has one</b></summary>
@@ -525,7 +575,8 @@ Fixed in v0.3.0 (virtualized list + throttled WebSocket progress). If you're sti
 You don't need to nuke the database. The sign-in method, username, and password hash all live in the `settings` table — change them directly via the container's Python (the `sqlite3` CLI isn't installed in the image, but Python's stdlib `sqlite3` module is):
 
 ```bash
-# 1. Start sign-in over (fastest unlock — the next visit shows the setup screen again)
+# 1. Start sign-in over (fastest unlock — the next visit shows the setup screen again;
+#    if an API key is set, the sign-in page asks for it first: paste it in the password box)
 docker exec shrinkerr python3 -c "
 import sqlite3
 db = sqlite3.connect('/app/data/shrinkerr.db')
@@ -533,11 +584,13 @@ db.execute(\"UPDATE settings SET value='' WHERE key='auth_method'\")
 db.execute(\"UPDATE settings SET value='false' WHERE key='auth_enabled'\")
 db.commit()"
 
-# 2. Or just clear the password hash (auth stays on, but blank password works)
+# 2. Or let local addresses in without signing in (sign-in stays on for everyone else),
+#    then set a new password from your home network, not through a reverse proxy, and set
+#    Settings → System → Authentication → Who signs in back to "Everyone"
 docker exec shrinkerr python3 -c "
 import sqlite3
 sqlite3.connect('/app/data/shrinkerr.db').execute(
-    \"UPDATE settings SET value='' WHERE key='auth_password_hash'\"
+    \"INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_required', 'local_disabled')\"
 ).connection.commit()"
 
 # Either way, restart so the auth cache invalidates immediately
@@ -573,7 +626,7 @@ Shrinkerr is a FastAPI + React app. Running locally without Docker:
 # Backend — Python 3.11
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m backend.main            # starts on :6680
+SHRINKERR_DB_PATH=./data/shrinkerr.db python -m backend.main   # starts on :6680
 
 # Frontend — Node 20
 cd frontend
@@ -581,7 +634,7 @@ npm ci
 npm run dev                       # starts on :5173 with /api proxy to :6680
 ```
 
-You need `ffmpeg` and `ffprobe` on your `$PATH`. BtbN's static builds are recommended — grab the `n7.1` release tag for your platform.
+You need `ffmpeg` and `ffprobe` on your `$PATH`. BtbN's static builds are recommended — grab the `n8.1` release tag for your platform.
 
 Build both Docker images locally:
 
@@ -606,10 +659,23 @@ backend/
   plex.py               Plex API client
   arr.py                Sonarr/Radarr integration
   health_check.py       File corruption detection
+  auth_policy.py        Who signs in (sign-in page, reverse proxy, local addresses)
+  rule_resolver.py      Which encoding rule applies to a file
+  rule_sharing.py       Rules files (YAML) + the rule library (rule_library.yaml)
+  scan_filters.py       The Scanner's filters, defined once for counts, lists and Add to Queue
+  savings_model.py      Savings estimates, learned from your conversions
+  vmaf_target.py        VMAF target quality search
+  dovi.py               Keeps Dolby Vision through a conversion (dovi_tool)
+  policies.py           Scheduled policies + the Free space planner
+  notifications.py      Discord, Telegram, email, webhook, ntfy, Gotify, Apprise
+  mqtt.py               Home Assistant over MQTT
+  doctor.py             The Doctor page's checks + the diagnostics file
+  locales/              Notification and Home Assistant strings, per language
   routes/               HTTP endpoints (one file per domain)
 frontend/src/
   pages/                One per top-level route (Dashboard, Scanner, Queue, …)
   components/           Shared widgets (JobCard, ProgressBar, FolderBrowser, …)
+  i18n/locales/         UI strings, per language (en, es)
   api.ts                Typed API client + WebSocket hook
   types.ts              Shared TypeScript types
 ```
@@ -630,7 +696,20 @@ Most coverage is in the converter, scanner, and health-check paths — the place
 - **Frontend**: React 19, TypeScript, Vite, Recharts for stats
 - **Realtime**: single WebSocket broadcast channel for job progress + scan progress + node updates
 - **Encoding**: subprocess-spawned `ffmpeg` per job, with progress parsed from stderr
-- **Storage**: everything in `/app/data/shrinkerr.db` — scans, jobs, rules, settings, backups. Bind-mount this directory for persistence.
+- **Storage**: everything in `/app/data` — `shrinkerr.db` (scans, jobs, rules, settings) and its backups. Bind-mount this directory for persistence.
+
+---
+
+## How Shrinkerr is built
+
+The maintainer designs Shrinkerr and decides what goes into it; the code is
+written by Claude, Anthropic's AI model, in Claude Code. Every change is
+tested before it reaches a release: more than 1,300 tests on every push,
+extra review for anything that touches your files, and a run on the
+maintainer's own library first. More in
+[How Shrinkerr is built](docs/how-shrinkerr-is-built.md);
+[CONTRIBUTING](CONTRIBUTING.md) and [SECURITY](SECURITY.md) say how to help
+and how to report a problem.
 
 ---
 
@@ -645,4 +724,8 @@ Shrinkerr is released under the [Apache License 2.0](LICENSE). TL;DR: you can us
 - [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) — static ffmpeg builds used by the Docker images
 - [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit) — GPU passthrough to containers
 - [VMAF](https://github.com/Netflix/vmaf) — perceptual quality measurement
+- [dovi_tool](https://github.com/quietvoid/dovi_tool) — keeps Dolby Vision through a conversion
+- [Tesseract](https://github.com/tesseract-ocr/tesseract), [pgsrip](https://github.com/ratoaq2/pgsrip) and [subtile-ocr](https://github.com/gwen-lg/subtile-ocr) — reading Blu-ray and DVD image subtitles
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — spoken-language detection
+- [Apprise](https://github.com/caronc/apprise) — notifications to 100+ services
 - [Sonarr](https://sonarr.tv/) / [Radarr](https://radarr.video/) / [Plex](https://www.plex.tv/) / [NZBGet](https://nzbget.com/) / [SABnzbd](https://sabnzbd.org/) — the ecosystem this slots into

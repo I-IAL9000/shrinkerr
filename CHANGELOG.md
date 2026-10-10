@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type detection and resolution-aware CQ now set the job's quality** — they only ever changed the queue estimate. Anime, grain, animation and remux files (and each resolution band, if you turn that on) get their own CQ unless a rule or Add to Queue sets one. Content detection is on for new installs; on existing installs it starts off, so nothing changes until you turn it on.
 - **Each content type's quality is yours to set**: an editable table in Settings → Video (with Reset to recommended and an on/off switch per type). The recommended values were reviewed — anime, animation, film grain and remuxes now get slightly *more* quality than everyday content, not less.
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
+- **New documentation**: what happens to your files (every check before an original is replaced, and what becomes of it), hardware (which encoders work where), Unraid / TrueNAS / Synology, a comparison with Tdarr, Unmanic and FileFlows, how Shrinkerr is built, and CONTRIBUTING / SECURITY guides. Every page was checked against the code.
+- Images carry OCI labels (source, version, licence), so update tools such as Renovate and What's Up Docker can find the release notes.
 
 ### Fixed
 - **Remote workers' conversion details were never saved**: their encoding stats and ffmpeg command went nowhere, so those jobs' details had no numbers, and time estimates (and now savings estimates) didn't learn from them. They're kept now.
@@ -99,7 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.
-- Documentation fixes: NVIDIA driver 570+ for the NVENC images, the remote-worker `PATH_MAPPINGS` format, current Settings locations, and features that were described but don't exist.
+- **NVENC in containers started with `--gpus all`**: the NVENC image asked the NVIDIA runtime for compute only, so a container started with `--gpus all` or `capabilities: [gpu]` (as the Nodes page's worker command does) had no hardware encoder. The image now asks for the video libraries itself.
+- Documentation fixes: NVIDIA driver 570+ for the NVENC images, the remote-worker `PATH_MAPPINGS` format (also in the compose files), current Settings locations, a lockout recovery that didn't work, and features that were described but don't exist.
+- In-app help no longer tells you to put the API key in a URL, says that pausing a node stops its running job, and points to the current Settings pages.
 - Activity search treats `%` and `_` as plain characters (they matched anything).
 - Scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 - A VMAF quality cross-check that times out no longer keeps running in the background.
