@@ -110,6 +110,8 @@
     "lossyAudio": "Lossy audio",
     "dubbed": "Dubbed",
     "notApiMatched": "Not API-matched",
+    "arrCutoffUnmet": "Below cutoff",
+    "arrUnmonitored": "Unmonitored",
     "watched": "Watched",
     "unwatched": "Unwatched",
     "movies": "Movies",

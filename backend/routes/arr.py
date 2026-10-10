@@ -334,3 +334,11 @@ async def research_bulk(payload: BulkResearchRequest):
         "failed": len(file_paths) - ok_count,
         "results": results,
     }
+
+
+@router.post("/sync-status")
+async def sync_status():
+    """Read cutoff and monitoring from Sonarr / Radarr now (also after every
+    full scan) for the Scanner's filters. Returns files per service."""
+    from backend.arr import sync_arr_file_status
+    return await sync_arr_file_status()

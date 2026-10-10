@@ -90,6 +90,10 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "dubbed", labelKey: "scanner:filters.dubbed" },
   { key: "not_api_matched", labelKey: "scanner:filters.notApiMatched" },
   { key: "missing_language", labelKey: "scanner:filters.missingLanguage" },
+  // Sonarr / Radarr group (v0.10.0)
+  { key: "_arr", label: "Sonarr/Radarr:", group: "divider" },
+  { key: "arr_cutoff_unmet", labelKey: "scanner:filters.arrCutoffUnmet" },
+  { key: "arr_unmonitored", labelKey: "scanner:filters.arrUnmonitored" },
   // Plex group
   { key: "_plex", label: "Plex:", group: "divider" },
   { key: "plex_watched", labelKey: "scanner:filters.watched" },

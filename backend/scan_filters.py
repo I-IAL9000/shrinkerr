@@ -472,6 +472,11 @@ _FILTER_LIST = [
     Filter("no_savings", "outcome", sql=(
         "EXISTS (SELECT 1 FROM ignored_files i WHERE i.file_path = scan_results.file_path "
         "AND i.reason = 'conversion_larger')")),
+    # What Sonarr / Radarr say (v0.10.0): below the cutoff they'll replace it
+    Filter("arr_cutoff_unmet", "arr", sql=(
+        "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.cutoff_unmet = 1)")),
+    Filter("arr_unmonitored", "arr", sql=(
+        "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.monitored = 0)")),
     # Plex
     *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s))
       for s in ("watched", "unwatched", "watchlist")),

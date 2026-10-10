@@ -22,7 +22,7 @@ import {
   getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
-  type EncoderCaps, getViews, type SavedView,
+  type EncoderCaps, getViews, type SavedView, syncArrStatus,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
@@ -3094,6 +3094,18 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Radarr", error: err.message }), "error"); }
                     }}
                   >{t("settingsIntegrations:arr.testRadarr")}</button>
+                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                    title={t("settingsIntegrations:arr.syncStatusHelp")}
+                    onClick={async () => {
+                      try {
+                        if (!(await saveChanges(true))) return;
+                        const res = await syncArrStatus();
+                        const total = Object.values(res).reduce((a, b) => a + b, 0);
+                        toast(Object.keys(res).length ? t("settingsIntegrations:arr.syncStatusDone", { count: total }) : t("settingsIntegrations:arr.syncStatusNone"),
+                              Object.keys(res).length ? "success" : "error");
+                      } catch (err: any) { toast(err.message, "error"); }
+                    }}
+                  >{t("settingsIntegrations:arr.syncStatus")}</button>
                 </div>
               </div>
 

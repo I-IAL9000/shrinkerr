@@ -978,3 +978,93 @@ async def test_radarr(url: str, api_key: str) -> dict:
         return {"success": False, "error": f"Cannot connect to {url}"}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+# ── Cutoff and monitoring (v0.10.0) ──────────────────────────────────────
+# Which files Sonarr / Radarr still want to replace — below the quality
+# profile's cutoff — or no longer watch (unmonitored), for the Scanner's
+# filters: converting a file they're about to replace is wasted work.
+
+def _from_arr_path(arr_path: str, path_mapping: str) -> str:
+    """A Sonarr/Radarr path as Shrinkerr sees it (_translate_path reversed)."""
+    import posixpath
+    arr_path = posixpath.normpath(arr_path)
+    for mapping in (path_mapping or "").split(";"):
+        if "=" not in mapping:
+            continue
+        container_prefix, arr_prefix = (p.strip().rstrip("/") for p in mapping.split("=", 1))
+        if arr_path.startswith(arr_prefix + "/") or arr_path == arr_prefix:
+            return container_prefix + arr_path[len(arr_prefix):]
+    return arr_path
+
+
+async def _radarr_file_status(client: httpx.AsyncClient, url: str, api_key: str) -> list[tuple[str, bool, bool]]:
+    """(path, monitored, below cutoff) for every movie file: the movie list
+    carries its file."""
+    resp = await client.get(f"{url}/api/v3/movie", headers={"X-Api-Key": api_key})
+    resp.raise_for_status()
+    out = []
+    for movie in resp.json():
+        f = movie.get("movieFile") or {}
+        if f.get("path"):
+            out.append((f["path"], bool(movie.get("monitored")), bool(f.get("qualityCutoffNotMet"))))
+    return out
+
+
+async def _sonarr_file_status(client: httpx.AsyncClient, url: str, api_key: str) -> list[tuple[str, bool, bool]]:
+    """(path, monitored, below cutoff) for every episode file. A file is
+    monitored when its series and one of its episodes are."""
+    import asyncio
+    headers = {"X-Api-Key": api_key}
+    resp = await client.get(f"{url}/api/v3/series", headers=headers)
+    resp.raise_for_status()
+    sem = asyncio.Semaphore(4)
+
+    async def one(series: dict) -> list[tuple[str, bool, bool]]:
+        async with sem:
+            params = {"seriesId": series["id"]}
+            files = (await client.get(f"{url}/api/v3/episodefile", headers=headers, params=params)).json()
+            episodes = (await client.get(f"{url}/api/v3/episode", headers=headers, params=params)).json()
+        watched = {e.get("episodeFileId") for e in episodes if e.get("monitored") and e.get("episodeFileId")}
+        return [(f["path"], bool(series.get("monitored")) and f.get("id") in watched, bool(f.get("qualityCutoffNotMet")))
+                for f in files if f.get("path")]
+
+    out: list[tuple[str, bool, bool]] = []
+    for part in await asyncio.gather(*[one(s) for s in resp.json() if s.get("id") is not None]):
+        out += part
+    return out
+
+
+async def sync_arr_file_status() -> dict:
+    """Ask Sonarr and Radarr which files they'd replace (below cutoff) or
+    don't monitor, and store it per file (arr_file_status). An unconfigured
+    or unreachable service keeps what was stored. Returns files per service."""
+    settings = await _get_arr_settings()
+    counts: dict[str, int] = {}
+    for service, fetch in (("sonarr", _sonarr_file_status), ("radarr", _radarr_file_status)):
+        url = (settings.get(f"{service}_url") or "").rstrip("/")
+        api_key = settings.get(f"{service}_api_key") or ""
+        if not url or not api_key:
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10, read=120)) as client:
+                files = await fetch(client, url, api_key)
+        except Exception as exc:
+            print(f"[ARR] Couldn't read cutoff / monitoring from {service}: {exc}", flush=True)
+            continue
+        mapping = settings.get(f"{service}_path_mapping", "")
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [(_from_arr_path(p, mapping), service, int(m), int(c), now) for p, m, c in files]
+        db = await connect_db()
+        try:
+            await db.execute("DELETE FROM arr_file_status WHERE service = ?", (service,))
+            await db.executemany(
+                "INSERT OR REPLACE INTO arr_file_status (file_path, service, monitored, cutoff_unmet, synced_at) "
+                "VALUES (?, ?, ?, ?, ?)", rows)
+            await db.commit()
+        finally:
+            await db.close()
+        counts[service] = len(rows)
+        print(f"[ARR] {service}: {len(rows)} files, {sum(r[3] for r in rows)} below cutoff, "
+              f"{sum(1 for r in rows if not r[2])} unmonitored", flush=True)
+    return counts

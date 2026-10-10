@@ -124,6 +124,10 @@ async def lib(test_db, monkeypatch):
                          "VALUES (?, 'convert', 'completed', ?, 'errors.vmafRejected')", (PATH["big"], NOW))
         await db.execute("INSERT INTO ignored_files (file_path, reason, ignored_at) VALUES (?, 'conversion_larger', ?)",
                          (PATH["old"], NOW))
+        # Sonarr / Radarr: Heat's Blu-ray is below its cutoff; episode 1 isn't monitored.
+        await db.executemany(
+            "INSERT INTO arr_file_status (file_path, service, monitored, cutoff_unmet, synced_at) VALUES (?, ?, ?, ?, ?)",
+            [(PATH["heat_br"], "radarr", 1, 1, NOW), (PATH["ep1"], "sonarr", 0, 0, NOW), (PATH["ep2"], "sonarr", 1, 0, NOW)])
         # Originals kept 7 days: Old's backup is fresh, Dune's has expired,
         # Heat's conversion was undone.
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
@@ -235,6 +239,8 @@ EXPECTED = {
     "type_tv": {"ep1", "ep2"},
     "type_other": {"clip", "wmv"},
     "plex_watched": {"heat_br", "heat_web"},
+    "arr_cutoff_unmet": {"heat_br"},
+    "arr_unmonitored": {"ep1"},
     "vmaf_excellent": {"old"},
     "vmaf_good": {"big"},
     "vmaf_poor": {"corrupt"},
@@ -371,7 +377,8 @@ def test_the_filter_bar_groups_are_the_server_groups():
     heading_group = {"_video": "codec", "_res": "resolution", "_size": "size", "_audio": "audio",
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
-                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture"}
+                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture",
+                     "_arr": "arr"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

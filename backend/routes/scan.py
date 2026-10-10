@@ -899,6 +899,11 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
             except Exception as exc:
                 print(f"[SCANNER] Emby metadata sync skipped: {exc}", flush=True)
             try:
+                from backend.arr import sync_arr_file_status
+                await sync_arr_file_status()  # cutoff / monitoring (v0.10.0)
+            except Exception as exc:
+                print(f"[SCANNER] Sonarr/Radarr status sync skipped: {exc}", flush=True)
+            try:
                 from backend.routes.posters import start_prefetch
                 await start_prefetch()
                 print(f"[SCANNER] Poster prefetch started", flush=True)

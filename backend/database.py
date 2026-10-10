@@ -723,6 +723,10 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN has_und_tracks_flag INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.10.0: what Sonarr / Radarr say about each file (arr.sync_arr_file_status).
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS arr_file_status (file_path TEXT PRIMARY KEY, service TEXT NOT NULL, "
+            "monitored INTEGER NOT NULL, cutoff_unmet INTEGER NOT NULL, synced_at TEXT NOT NULL)")
         # v0.10.0: saved views — named Scanner filters (routes/views.py).
         await db.execute(
             "CREATE TABLE IF NOT EXISTS saved_views (id INTEGER PRIMARY KEY AUTOINCREMENT, "

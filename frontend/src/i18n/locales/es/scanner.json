@@ -115,6 +115,8 @@
     "lossyAudio": "Audio con pérdida",
     "dubbed": "Doblado",
     "notApiMatched": "Sin coincidencia de API",
+    "arrCutoffUnmet": "Bajo el corte",
+    "arrUnmonitored": "Sin monitorizar",
     "watched": "Visto",
     "unwatched": "No visto",
     "movies": "Películas",

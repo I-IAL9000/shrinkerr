@@ -110,7 +110,13 @@
     "testSonarr": "Probar Sonarr",
     "testRadarr": "Probar Radarr",
     "connected": "{{name}} conectado (v{{version}})",
-    "testFailed": "La prueba de {{name}} falló: {{error}}"
+    "testFailed": "La prueba de {{name}} falló: {{error}}",
+    "syncStatus": "Leer corte y monitorización",
+    "syncStatusHelp": "Pregunta a Sonarr y Radarr qué archivos están por debajo del corte de calidad (los reemplazarán) o sin monitorizar, para los filtros del Escáner. También tras cada escaneo completo.",
+    "syncStatusDone_one": "Leído {{count}} archivo de Sonarr/Radarr",
+    "syncStatusDone_many": "Leídos {{count}} archivos de Sonarr/Radarr",
+    "syncStatusDone_other": "Leídos {{count}} archivos de Sonarr/Radarr",
+    "syncStatusNone": "Ni Sonarr ni Radarr respondieron: revisa la URL y la clave de API"
   },
   "downloaders": {
     "intro": "Convierte automáticamente las descargas cuando NZBGet o SABnzbd terminan. El script comprueba en Sonarr/Radarr si hay etiquetas coincidentes antes de convertir. Los ajustes de conexión de Sonarr/Radarr se heredan de la sección anterior.",

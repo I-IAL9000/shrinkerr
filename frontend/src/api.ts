@@ -767,6 +767,8 @@ export interface QualityPreset {
 export const getQualityPresets = (encoder?: string) =>
   apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
     `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);
+// Sonarr / Radarr cutoff and monitoring, for the Scanner's filters (v0.10.0).
+export const syncArrStatus = () => apiFetch<Record<string, number>>("/arr/sync-status", { method: "POST" });
 // Saved views (v0.10.0): named Scanner filters, kept on the server.
 export interface SavedView { id: number; name: string; filter: string }
 export const getViews = () => apiFetch<SavedView[]>("/views");
