@@ -95,6 +95,9 @@
     "duplicate_count": {
       "label": "Duplicate count"
     },
+    "months_unwatched": {
+      "label": "Months since watched (or added)"
+    },
     "year": {
       "label": "Year"
     },

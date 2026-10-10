@@ -515,6 +515,54 @@ async def get_watch_status_folders() -> dict[str, list[str]]:
     }
 
 
+def _item_folders(item: ET.Element) -> set[str]:
+    """A library item's folders, as Plex sees them: a show's locations, else
+    the folders of its files."""
+    folders = {loc.get("path") for loc in item.findall("Location") if loc.get("path")}
+    return folders or {str(Path(part.get("file")).parent)
+                       for media in item.findall("Media") for part in media.findall("Part") if part.get("file")}
+
+
+async def get_watch_activity() -> dict:
+    """Each movie's and show's folder → (last viewed, added), epoch seconds;
+    a show's last view is its latest episode's (v0.10.0, "Not watched in N
+    months"). Views are the Plex account Shrinkerr connects with. Empty when
+    Plex isn't set up; raises when a library can't be read."""
+    from backend.watch_activity import merge
+    url, token, path_mapping = await _get_plex_settings()
+    if not url or not token:
+        return {}
+    activity: dict = {}
+    async with httpx.AsyncClient(timeout=120) as client:
+        for lib in await get_plex_libraries(url, token):
+            plex_type = _plex_type_for_lib(lib)
+            if not plex_type:
+                continue
+            resp = await client.get(
+                f"{url.rstrip('/')}/library/sections/{lib['id']}/all",
+                params={"type": plex_type, "includeLocations": "1"},
+                headers={"X-Plex-Token": token, "Accept": "application/xml"},
+            )
+            resp.raise_for_status()
+            for item in ET.fromstring(resp.text):
+                last, added = int(item.get("lastViewedAt") or 0) or None, int(item.get("addedAt") or 0) or None
+                for folder in _item_folders(item):
+                    merge(activity, _reverse_translate_path(folder, path_mapping), last, added)
+    return activity
+
+
+async def sync_watch_activity() -> None:
+    """Store when each title was last watched on Plex (v0.10.0). A failed
+    read keeps what was stored."""
+    from backend.watch_activity import store
+    try:
+        count = await store("plex", await get_watch_activity())
+        if count:
+            print(f"[PLEX SYNC] Last watched: {count} titles", flush=True)
+    except Exception as exc:
+        print(f"[PLEX SYNC] Last-watched sync failed: {exc}", flush=True)
+
+
 async def get_available_plex_options() -> dict:
     """Return available labels, collections, and libraries from Plex for rule autocomplete."""
     url, token, _ = await _get_plex_settings()
@@ -638,6 +686,7 @@ async def sync_plex_metadata_cache() -> dict:
     # Without Plex there's nothing to sync — and the cache also holds
     # Jellyfin/Emby data, which the delete below used to wipe after every
     # full scan (v0.10.0).
+    await sync_watch_activity()  # (clears it when Plex is no longer set up)
     url, token, path_mapping = await _get_plex_settings()
     if not url or not token:
         return {"labels_synced": 0, "collections_synced": 0, "genres_synced": 0, "libraries_synced": 0, "watch_synced": 0}

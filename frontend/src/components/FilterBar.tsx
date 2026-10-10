@@ -11,7 +11,7 @@ interface FilterBarProps {
 
 // `labelKey` is a translation key resolved at render time; `label` is a
 // literal kept for pure tech tokens (codecs, resolutions, source tags).
-const FILTERS: { key: string; label?: string; labelKey?: string; group?: string }[] = [
+const FILTERS: { key: string; label?: string; labelKey?: string; hintKey?: string; group?: string }[] = [
   { key: "all", labelKey: "scanner:filters.all" },
   { key: "new", labelKey: "scanner:filters.new" },
   { key: "needs_conversion", labelKey: "scanner:filters.needsConversion" },
@@ -98,6 +98,11 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "_plex", label: "Plex:", group: "divider" },
   { key: "plex_watched", labelKey: "scanner:filters.watched" },
   { key: "plex_unwatched", labelKey: "scanner:filters.unwatched" },
+  // Not watched on Plex / Jellyfin / Emby in N months (v0.10.0)
+  { key: "_not_watched", labelKey: "scanner:filters.groups.notWatched", hintKey: "scanner:filters.notWatchedHint", group: "divider" },
+  { key: "not_watched_6m", labelKey: "scanner:filters.notWatched6m" },
+  { key: "not_watched_12m", labelKey: "scanner:filters.notWatched12m" },
+  { key: "not_watched_24m", labelKey: "scanner:filters.notWatched24m" },
   // Type group
   { key: "_type", labelKey: "scanner:filters.groups.type", group: "divider" },
   { key: "type_movie", labelKey: "scanner:filters.movies" },
@@ -162,7 +167,8 @@ export default function FilterBar({ activeFilters, onFilterToggle, newCount, cou
           return (
             <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
               <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-              <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{f.labelKey ? t(f.labelKey) : f.label}</span>
+              <span style={{ color: "var(--text-muted)", fontSize: 12, cursor: f.hintKey ? "help" : undefined }}
+                title={f.hintKey ? t(f.hintKey) : undefined}>{f.labelKey ? t(f.labelKey) : f.label}</span>
             </span>
           );
         }

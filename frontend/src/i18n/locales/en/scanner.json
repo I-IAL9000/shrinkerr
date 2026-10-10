@@ -134,7 +134,8 @@
       "health": "Health:",
       "outcome": "Outcome:",
       "added": "Added:",
-      "picture": "Picture:"
+      "picture": "Picture:",
+      "notWatched": "Not watched in:"
     },
     "notLabel": "not {{label}}",
     "excluded": "(excluded)",
@@ -154,7 +155,11 @@
     "undoPossible": "Undo possible",
     "noSavings": "No savings",
     "advancedLabel_one": "Advanced: {{count}} condition",
-    "advancedLabel_other": "Advanced: {{count}} conditions"
+    "advancedLabel_other": "Advanced: {{count}} conditions",
+    "notWatched6m": "6 months",
+    "notWatched12m": "1 year",
+    "notWatched24m": "2 years",
+    "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read after each full scan; the plays are those of the account Shrinkerr connects with."
   },
   "stats": {
     "filesToConvert": "Files to convert",

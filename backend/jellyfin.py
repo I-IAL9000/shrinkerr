@@ -247,6 +247,49 @@ async def get_watch_status_folders() -> dict:
     return {"watched": watched_paths, "unwatched": unwatched_paths}
 
 
+async def get_watch_activity() -> dict:
+    """Each movie's and episode's folder → (last played, added), epoch seconds
+    (v0.10.0, "Not watched in N months"), for the Jellyfin user Shrinkerr reads
+    as. Empty when Jellyfin isn't set up; raises when it can't be read."""
+    import os
+    from backend.watch_activity import iso_epoch, merge
+    settings = await _get_jellyfin_settings()
+    url = settings.get("jellyfin_url", "").rstrip("/")
+    api_key = settings.get("jellyfin_api_key", "")
+    if not url or not api_key:
+        return {}
+    user_id = await _get_user_id(url, api_key, settings.get("jellyfin_user_id", ""))
+    if not user_id:
+        raise RuntimeError("no Jellyfin user")
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.get(
+            f"{url}/Users/{user_id}/Items",
+            params={"Recursive": "true", "IncludeItemTypes": "Movie,Episode", "Fields": "Path,DateCreated",
+                    "EnableUserData": "true", "EnableImages": "false", "Limit": "100000"},
+            headers=_headers(api_key),
+        )
+        resp.raise_for_status()
+    activity: dict = {}
+    mapping = settings.get("jellyfin_path_mapping", "")
+    for item in resp.json().get("Items", []):
+        if item.get("Path"):
+            merge(activity, os.path.dirname(_reverse_translate_path(item["Path"], mapping)),
+                  iso_epoch((item.get("UserData") or {}).get("LastPlayedDate")), iso_epoch(item.get("DateCreated")))
+    return activity
+
+
+async def sync_watch_activity() -> None:
+    """Store when each title was last watched on Jellyfin (v0.10.0). A failed
+    read keeps what was stored."""
+    from backend.watch_activity import store
+    try:
+        count = await store("jellyfin", await get_watch_activity())
+        if count:
+            print(f"[JELLYFIN] Last watched: {count} folders", flush=True)
+    except Exception as exc:
+        print(f"[JELLYFIN] Last-watched sync failed: {exc}", flush=True)
+
+
 # ── Metadata (Labels/Collections/Genres) ──
 
 async def get_available_jellyfin_options() -> dict:
@@ -372,6 +415,7 @@ async def sync_jellyfin_metadata_cache() -> dict:
     """
     from datetime import datetime, timezone
 
+    await sync_watch_activity()  # (clears it when Jellyfin is no longer set up)
     settings = await _get_jellyfin_settings()
     url = settings.get("jellyfin_url", "").rstrip("/")
     api_key = settings.get("jellyfin_api_key", "")

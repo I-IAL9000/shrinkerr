@@ -137,6 +137,18 @@ async def lib(test_db, monkeypatch):
                 "INSERT INTO jobs (file_path, job_type, status, created_at, completed_at, backup_path) "
                 "VALUES (?, 'convert', ?, ?, ?, '/backups/x.mkv')", (PATH[name], status, done, done))
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('always_keep_languages', '[\"eng\"]')")
+        # Last played / added on the media servers (v0.10.0): Heat 400 days
+        # ago, Big 250; Dune never (added 900 days ago), Old never (added
+        # last week). The show: never on Plex, but Jellyfin played its
+        # season a week ago.
+        await db.executemany(
+            "INSERT INTO watch_activity (folder_path, server, last_viewed, added_at) VALUES (?, ?, ?, ?)",
+            [("/media/Movies/Heat (1995)/", "plex", int(AGO(400)), int(AGO(2000))),
+             ("/media/Movies/Big/", "plex", int(AGO(250)), int(AGO(2000))),
+             ("/media/Movies/Dune (2021) [tt1160419]/", "plex", None, int(AGO(900))),
+             ("/media/Movies/Old (1950)/", "plex", None, int(AGO(7))),
+             ("/media/TV/Show [tvdb-1]/", "plex", None, int(AGO(3000))),
+             ("/media/TV/Show [tvdb-1]/S01/", "jellyfin", int(AGO(7)), int(AGO(3000)))])
         await db.commit()
     return test_db
 
@@ -241,6 +253,11 @@ EXPECTED = {
     "plex_watched": {"heat_br", "heat_web"},
     "arr_cutoff_unmet": {"heat_br"},
     "arr_unmonitored": {"ep1"},
+    # Nothing played in N months, and in the library that long; no record
+    # (the clips, the disc...): not matched.
+    "not_watched_6m": {"heat_br", "heat_web", "big", "dune"},
+    "not_watched_12m": {"heat_br", "heat_web", "dune"},
+    "not_watched_24m": {"dune"},
     "vmaf_excellent": {"old"},
     "vmaf_good": {"big"},
     "vmaf_poor": {"corrupt"},
@@ -368,6 +385,19 @@ async def test_undo_possible_follows_the_backup_setting(lib):
     assert await names("undo_possible") == {"old", "dune"}
 
 
+@pytest.mark.asyncio
+async def test_months_since_watched_in_advanced_search(lib):
+    from backend.scan_filters import encode_advanced
+
+    def adv(op, value=None, value2=None):
+        return encode_advanced([{"property": "months_unwatched", "op": op, "value": value, "value2": value2}])
+    assert await names(adv("gt", 24)) == {"dune"}  # ~29.6 months
+    assert await names(adv("between", 14, 8)) == {"big", "heat_br", "heat_web"}  # 8.2 and 13.1
+    assert await names(adv("lt", 1)) == {"ep1", "ep2", "old"}
+    assert await names(adv("exists")) == {"heat_br", "heat_web", "big", "dune", "old", "ep1", "ep2"}
+    assert await names(adv("gt")) == set(ROWS)  # no value: not a condition
+
+
 def test_the_filter_bar_groups_are_the_server_groups():
     """The pills shown under a group heading are the ones the server ORs
     together — the bar's hint says so. Every pill is a known filter."""
@@ -378,7 +408,7 @@ def test_the_filter_bar_groups_are_the_server_groups():
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
                      "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture",
-                     "_arr": "arr"}
+                     "_arr": "arr", "_not_watched": "not_watched"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

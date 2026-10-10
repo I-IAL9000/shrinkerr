@@ -85,6 +85,35 @@ def watch_status(fp: str, ctx: dict) -> Optional[str]:
     return None
 
 
+_MONTH = 30.44 * 86400
+
+
+def row_last_watched(row: dict, ctx: dict) -> Optional[float]:
+    """When a media server last played the title — or added it, if it never
+    has — in epoch seconds (v0.10.0); None when no server has it. The
+    file's folders' records (a Plex show's, a Jellyfin season's) combined."""
+    if "_watched_at" not in row:
+        activity = ctx.get("watch_activity") or {}
+        found, last, added = False, None, None
+        path = row["file_path"]
+        while activity and "/" in path.rstrip("/"):
+            path = path.rstrip("/").rsplit("/", 1)[0] + "/"
+            if path in activity:
+                found = True
+                hit_last, hit_added = activity[path]
+                last = max(filter(None, (last, hit_last)), default=None)
+                added = min(filter(None, (added, hit_added)), default=None)
+        row["_watched_at"] = max(last or 0, added or 0) if found else None
+    return row["_watched_at"]
+
+
+def _not_watched(months: int) -> Callable[[dict, dict], bool]:
+    def test(row: dict, ctx: dict) -> bool:
+        at = row_last_watched(row, ctx)
+        return at is not None and at < time.time() - months * _MONTH
+    return test
+
+
 def build_dir_label_index(rows: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """Sort (path, label) pairs into a prefix-match-friendly index.
 
@@ -480,6 +509,9 @@ _FILTER_LIST = [
     # Plex
     *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s))
       for s in ("watched", "unwatched", "watchlist")),
+    # Nothing played on Plex / Jellyfin / Emby in 6 / 12 / 24 months, and in
+    # the library that long (v0.10.0)
+    *(Filter(f"not_watched_{n}m", "not_watched", py=_not_watched(n)) for n in (6, 12, 24)),
     # Type (path IDs, else the media folder's label)
     *(Filter(f"type_{k}", "type", py=(lambda k: lambda r, c: row_type(r, c) == k)(k))
       for k in ("movie", "tv", "other")),
@@ -561,6 +593,8 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
     # State
     "health_status": {"kind": "column", "col": "health_status", "type": "string", "ops": ["eq", "exists", "in"], "label": "Health status", "group": "State", "examples": ["healthy", "corrupt"]},
     "duplicate_count": {"kind": "column", "col": "COALESCE(dup_count, 0)", "type": "number", "ops": ["eq", "gt", "gte"], "label": "Duplicate count", "group": "State"},
+    "months_unwatched": {"kind": "watch_age", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "exists"], "label": "Months since watched (or added)", "group": "State",
+                         "examples": [18]},
 
     # Title: the Poster grid's metadata (TMDB / IMDb, the media server's
     # genres) and the year in the folder name (v0.10.0)
@@ -714,17 +748,33 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
         negate = op == "ne"
         return Filter(fid, py=lambda r, c: (_parse_release_group(r["file_path"]).lower() in wanted) != negate)
 
-    if kind == "title_number":
-        key = prop["field"]
-        if op == "exists":
-            return Filter(fid, titles=True, py=lambda r, c: row_title(r, c)[key] is not None)
+    def number_test() -> Optional[Callable[[float], bool]]:
         lo, hi = _num(value), _num(value2)
         if lo is None or (op == "between" and hi is None):
             return None
         lo, hi = (min(lo, hi), max(lo, hi)) if op == "between" else (lo, hi)
-        test = {"eq": lambda x: x == lo, "gt": lambda x: x > lo, "gte": lambda x: x >= lo, "lt": lambda x: x < lo,
+        return {"eq": lambda x: x == lo, "gt": lambda x: x > lo, "gte": lambda x: x >= lo, "lt": lambda x: x < lo,
                 "lte": lambda x: x <= lo, "between": lambda x: lo <= x <= hi}[op]
+
+    if kind == "title_number":
+        key = prop["field"]
+        if op == "exists":
+            return Filter(fid, titles=True, py=lambda r, c: row_title(r, c)[key] is not None)
+        test = number_test()
+        if test is None:
+            return None
         return Filter(fid, titles=True, py=lambda r, c: (lambda x: x is not None and test(float(x)))(row_title(r, c)[key]))
+
+    if kind == "watch_age":
+        def months(r, c) -> Optional[float]:
+            at = row_last_watched(r, c)
+            return None if at is None else (time.time() - at) / _MONTH
+        if op == "exists":
+            return Filter(fid, py=lambda r, c: months(r, c) is not None)
+        test = number_test()
+        if test is None:
+            return None
+        return Filter(fid, py=lambda r, c: (lambda m: m is not None and test(m))(months(r, c)))
 
     if kind in ("title_genre", "title_text"):
         wanted = [str(v).strip().lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]

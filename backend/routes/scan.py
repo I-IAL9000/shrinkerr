@@ -2079,6 +2079,9 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
         "LOW_BITRATE_THRESHOLD": LOW_BITRATE_THRESHOLD,
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
     }
+    # When each title was last watched, for "Not watched in N months" (v0.10.0)
+    from backend.watch_activity import load as load_watch_activity
+    ctx["watch_activity"] = await load_watch_activity(db)
     if titles:
         ctx["title_meta"], ctx["server_genres"] = await _title_metadata(db)
     return ctx

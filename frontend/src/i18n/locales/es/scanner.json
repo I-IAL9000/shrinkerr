@@ -139,7 +139,8 @@
       "health": "Integridad:",
       "outcome": "Resultado:",
       "added": "Añadido:",
-      "picture": "Imagen:"
+      "picture": "Imagen:",
+      "notWatched": "Sin ver en:"
     },
     "notLabel": "sin {{label}}",
     "excluded": "(excluido)",
@@ -160,7 +161,11 @@
     "noSavings": "Sin ahorro",
     "advancedLabel_one": "Avanzada: {{count}} condición",
     "advancedLabel_many": "Avanzada: {{count}} condiciones",
-    "advancedLabel_other": "Avanzada: {{count}} condiciones"
+    "advancedLabel_other": "Avanzada: {{count}} condiciones",
+    "notWatched6m": "6 meses",
+    "notWatched12m": "1 año",
+    "notWatched24m": "2 años",
+    "notWatchedHint": "Nada reproducido en Plex, Jellyfin o Emby en ese tiempo, y en la biblioteca al menos ese tiempo. Se lee tras cada escaneo completo; las reproducciones son las de la cuenta con la que se conecta Shrinkerr."
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",

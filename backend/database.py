@@ -733,6 +733,11 @@ async def init_db():
         await db.execute(
             "CREATE TABLE IF NOT EXISTS arr_file_status (file_path TEXT PRIMARY KEY, service TEXT NOT NULL, "
             "monitored INTEGER NOT NULL, cutoff_unmet INTEGER NOT NULL, synced_at TEXT NOT NULL)")
+        # v0.10.0: when each title folder was last played and added, per media
+        # server (backend/watch_activity.py) — "Not watched in N months".
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS watch_activity (folder_path TEXT NOT NULL, server TEXT NOT NULL, "
+            "last_viewed INTEGER, added_at INTEGER, PRIMARY KEY (folder_path, server))")
         # v0.10.0: saved views — named Scanner filters (routes/views.py).
         await db.execute(
             "CREATE TABLE IF NOT EXISTS saved_views (id INTEGER PRIMARY KEY AUTOINCREMENT, "
