@@ -97,13 +97,16 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "vmaf_excellent", labelKey: "scanner:filters.vmafExcellent" },
   { key: "vmaf_good", labelKey: "scanner:filters.vmafGood" },
   { key: "vmaf_poor", labelKey: "scanner:filters.vmafPoor" },
+  { key: "vmaf_uncertain", labelKey: "scanner:filters.vmafUncertain" },
   // Health and outcome groups (v0.10.0)
   { key: "_health", labelKey: "scanner:filters.groups.health", group: "divider" },
   { key: "health_never", labelKey: "scanner:filters.healthNever" },
   { key: "health_warnings", labelKey: "scanner:filters.healthWarnings" },
+  { key: "health_stale", labelKey: "scanner:filters.healthStale" },
   { key: "_outcome", labelKey: "scanner:filters.groups.outcome", group: "divider" },
   { key: "failed_before", labelKey: "scanner:filters.failedBefore" },
   { key: "vmaf_rejected", labelKey: "scanner:filters.vmafRejected" },
+  { key: "undo_possible", labelKey: "scanner:filters.undoPossible" },
   { key: "no_savings", labelKey: "scanner:filters.noSavings" },
 ];
 

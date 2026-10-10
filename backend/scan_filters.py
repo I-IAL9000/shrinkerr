@@ -276,6 +276,13 @@ _MAYBE_HDR = ("(hdr_format IS NOT NULL OR file_path LIKE '%hdr%' OR file_path LI
 def _job_exists(condition: str) -> str:
     return f"EXISTS (SELECT 1 FROM jobs j WHERE j.file_path = scan_results.file_path AND {condition})"
 _UNMATCHED = "(language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))"
+# The original kept by the last conversion is still there: backups expire
+# after backup_original_days (none set: kept), and an undone job is
+# "reverted". (Dates are ISO text; julianday() reads them.)
+_BACKUP_DAYS = "(SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'backup_original_days')"
+_UNDO_POSSIBLE = _job_exists(
+    "j.status = 'completed' AND j.backup_path IS NOT NULL AND j.backup_path != '' "
+    f"AND (COALESCE({_BACKUP_DAYS}, 0) <= 0 OR julianday(j.completed_at) > julianday('now') - {_BACKUP_DAYS})")
 
 
 def _new_cutoff() -> tuple:
@@ -369,10 +376,12 @@ _FILTER_LIST = [
     # Health checks (Corrupt is a status pill: a failed probe counts too)
     Filter("health_never", "health", sql="health_status IS NULL"),
     Filter("health_warnings", "health", sql="health_status = 'warnings'"),
+    Filter("health_stale", "health", sql="julianday(health_checked_at) < julianday('now') - 90"),
     # What happened when Shrinkerr tried
     Filter("failed_before", "outcome", sql=_job_exists("j.status = 'failed'")),
     Filter("vmaf_rejected", "outcome",
            sql=_job_exists("j.error_key IN ('errors.vmafRejected', 'errors.vmafBelowThreshold')")),
+    Filter("undo_possible", "outcome", sql=_UNDO_POSSIBLE),
     Filter("no_savings", "outcome", sql=(
         "EXISTS (SELECT 1 FROM ignored_files i WHERE i.file_path = scan_results.file_path "
         "AND i.reason = 'conversion_larger')")),
@@ -393,6 +402,8 @@ _FILTER_LIST = [
     Filter("vmaf_excellent", "vmaf", sql="vmaf_score >= 93"),
     Filter("vmaf_good", "vmaf", sql="vmaf_score >= 87 AND vmaf_score < 93"),
     Filter("vmaf_poor", "vmaf", sql="vmaf_score < 87"),
+    # libvmaf desynced on every window: the score can't be trusted.
+    Filter("vmaf_uncertain", "vmaf", sql="COALESCE(vmaf_uncertain, 0) = 1"),
 ]
 FILTERS: dict[str, Filter] = {f.id: f for f in _FILTER_LIST}
 

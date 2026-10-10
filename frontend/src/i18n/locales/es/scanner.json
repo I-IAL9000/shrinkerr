@@ -117,6 +117,7 @@
     "vmafExcellent": "Excelente (93+)",
     "vmafGood": "Bueno (87-93)",
     "vmafPoor": "Deficiente (<87)",
+    "vmafUncertain": "Dudoso",
     "groups": {
       "video": "Vídeo:",
       "resolution": "Res.:",
@@ -141,8 +142,10 @@
     "missingLanguage": "Sin mis idiomas",
     "healthNever": "Sin comprobar",
     "healthWarnings": "Advertencias",
+    "healthStale": "Comprobado hace +90 días",
     "failedBefore": "Falló antes",
     "vmafRejected": "Rechazado por VMAF",
+    "undoPossible": "Se puede deshacer",
     "noSavings": "Sin ahorro",
     "advancedLabel_one": "Avanzada: {{count}} condición",
     "advancedLabel_many": "Avanzada: {{count}} condiciones",

@@ -112,6 +112,7 @@
     "vmafExcellent": "Excellent (93+)",
     "vmafGood": "Good (87-93)",
     "vmafPoor": "Poor (<87)",
+    "vmafUncertain": "Uncertain",
     "groups": {
       "video": "Video:",
       "resolution": "Res:",
@@ -136,8 +137,10 @@
     "missingLanguage": "Missing my language",
     "healthNever": "Never checked",
     "healthWarnings": "Warnings",
+    "healthStale": "Checked 90+ days ago",
     "failedBefore": "Failed before",
     "vmafRejected": "VMAF-rejected",
+    "undoPossible": "Undo possible",
     "noSavings": "No savings",
     "advancedLabel_one": "Advanced: {{count}} condition",
     "advancedLabel_other": "Advanced: {{count}} conditions"

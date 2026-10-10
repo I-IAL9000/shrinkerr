@@ -7,7 +7,7 @@ pin what each filter means, plus how a filter string combines: ids in a group
 match any, groups must all match, "!id" excludes.
 """
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 import pytest
@@ -19,6 +19,10 @@ from backend.scan_filters import FILTERS, Filter, parse_filter
 
 GB = 1024 ** 3
 NOW = datetime.now(timezone.utc).isoformat()
+
+
+def days_ago(n):
+    return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
 
 
 def tracks(*specs):
@@ -39,7 +43,7 @@ ROWS = {
     "heat_br": dict(file_path="/media/Movies/Heat (1995)/Heat.1995.1080p.BluRay.x264.mkv",
                     file_size=12 * GB, duration=10000, video_codec="h264", video_width=1920, video_height=800,
                     needs_conversion=1, has_removable_tracks_flag=1, dup_count=2, language_source="api",
-                    health_status="healthy",
+                    health_status="healthy", health_checked_at=days_ago(120),
                     audio_tracks_json=tracks(("eng", "dts", 6, "DTS-HD MA 5.1"), ("eng", "ac3", 2, "Director's Commentary")),
                     subtitle_tracks_json=tracks(("eng", "subrip", None, "English SDH"))),
     "heat_web": dict(file_path="/media/Movies/Heat (1995)/Heat.1995.1080p.WEB-DL.mkv",
@@ -63,13 +67,13 @@ ROWS = {
                   audio_tracks_json=tracks(("eng", "ac3", 6)), subtitle_tracks_json=tracks(("fra", "dvd_subtitle"))),
     "old": dict(file_path="/media/Movies/Old (1950)/Old.1950.DVDRip.mkv", file_size=int(1.5 * GB), duration=5400,
                 video_codec="hevc", video_width=720, video_height=540, needs_conversion=0, converted=1,
-                vmaf_score=95.0, language_source="api", health_status="warnings",
+                vmaf_score=95.0, language_source="api", health_status="warnings", health_checked_at=days_ago(10),
                 audio_tracks_json=tracks(("eng", "aac", 2))),  # came out larger once
     "broken": dict(file_path="/media/Movies/Broken/broken.mkv", file_size=0, duration=0, video_codec=None,
                    probe_status="error", needs_conversion=0),
     "corrupt": dict(file_path="/media/Movies/Corrupt/c.mkv", file_size=6 * GB, duration=6000, video_codec="av1",
                     video_width=1920, video_height=1080, needs_conversion=0, health_status="corrupt",
-                    vmaf_score=85.0, language_source="api", hdr_format="hlg",
+                    vmaf_score=85.0, vmaf_uncertain=1, language_source="api", hdr_format="hlg",
                     audio_tracks_json=tracks(("eng", "opus", 2))),
     "big": dict(file_path="/media/Movies/Big/Big.1080p.mp4", file_size=30 * GB, duration=7200, video_codec="h264",
                 video_width=1920, video_height=1080, needs_conversion=1, vmaf_score=90.0, language_source="api",
@@ -114,6 +118,14 @@ async def lib(test_db, monkeypatch):
                          "VALUES (?, 'convert', 'completed', ?, 'errors.vmafRejected')", (PATH["big"], NOW))
         await db.execute("INSERT INTO ignored_files (file_path, reason, ignored_at) VALUES (?, 'conversion_larger', ?)",
                          (PATH["old"], NOW))
+        # Originals kept 7 days: Old's backup is fresh, Dune's has expired,
+        # Heat's conversion was undone.
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
+        for name, status, done in (("old", "completed", days_ago(2)), ("dune", "completed", days_ago(30)),
+                                   ("heat_web", "reverted", days_ago(1))):
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, created_at, completed_at, backup_path) "
+                "VALUES (?, 'convert', ?, ?, ?, '/backups/x.mkv')", (PATH[name], status, done, done))
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('always_keep_languages', '[\"eng\"]')")
         await db.commit()
     return test_db
@@ -189,6 +201,8 @@ EXPECTED = {
     "missing_language": {"clip", "ep1", "broken"},
     "health_never": {"dune", "heat_web", "ep1", "ep2", "clip", "alien", "broken", "big", "web_in_br", "wmv"},
     "health_warnings": {"old"},
+    "health_stale": {"heat_br"},  # checked 120 days ago
+    "undo_possible": {"old"},
     "failed_before": {"heat_web"},
     "vmaf_rejected": {"big"},
     "no_savings": {"old"},
@@ -205,6 +219,7 @@ EXPECTED = {
     "vmaf_excellent": {"old"},
     "vmaf_good": {"big"},
     "vmaf_poor": {"corrupt"},
+    "vmaf_uncertain": {"corrupt"},
     "size_large": {"dune", "heat_br", "big"},
     "size_medium": {"alien", "corrupt"},
 }
@@ -299,6 +314,18 @@ async def test_missing_language_needs_your_languages(lib):
         await db.commit()
     # French audio or subtitles now count as yours (case-insensitive).
     assert await names("missing_language") == set(ROWS) - {"clip", "alien"}
+
+
+@pytest.mark.asyncio
+async def test_undo_possible_follows_the_backup_setting(lib):
+    async with aiosqlite.connect(lib) as db:  # originals kept: every backup counts
+        await db.execute("UPDATE settings SET value = '0' WHERE key = 'backup_original_days'")
+        await db.commit()
+    assert await names("undo_possible") == {"old", "dune"}
+    async with aiosqlite.connect(lib) as db:
+        await db.execute("UPDATE settings SET value = '60' WHERE key = 'backup_original_days'")
+        await db.commit()
+    assert await names("undo_possible") == {"old", "dune"}
 
 
 def test_the_filter_bar_groups_are_the_server_groups():
