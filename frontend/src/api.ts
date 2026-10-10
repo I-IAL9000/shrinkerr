@@ -910,7 +910,7 @@ export const updateEncodingSettings = (settings: any) =>
   });
 
 // API key testing
-export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "emby" | "sonarr" | "radarr" | "bazarr") =>
+export const testApiKey = (service: "tmdb" | "plex" | "jellyfin" | "emby" | "sonarr" | "radarr" | "bazarr" | "mqtt") =>
   apiFetch<{ success: boolean; error: string | null; version?: string }>("/settings/test-api", {
     method: "POST", body: JSON.stringify({ service })
   });

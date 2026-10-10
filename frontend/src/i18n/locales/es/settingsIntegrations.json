@@ -470,5 +470,20 @@
     "url": "URL de Bazarr",
     "apiKey": "Clave de API",
     "test": "Probar Bazarr"
+  },
+  "mqtt": {
+    "intro": "Muestra Shrinkerr en Home Assistant mediante el descubrimiento MQTT: sensores de la cola, el espacio ahorrado y el archivo actual, y un interruptor que inicia y pausa la cola. Necesita un broker MQTT (Mosquitto, por ejemplo) que también use Home Assistant.",
+    "enabled": "Conectar al broker MQTT",
+    "host": "Host del broker",
+    "port": "Puerto",
+    "username": "Usuario",
+    "password": "Contraseña",
+    "more": "TLS y temas",
+    "tls": "TLS",
+    "discoveryPrefix": "Prefijo de descubrimiento (el de Home Assistant: homeassistant)",
+    "baseTopic": "Tema base",
+    "test": "Probar conexión",
+    "connected": "Conectado al broker MQTT",
+    "failed": "MQTT: {{error}}"
   }
 }

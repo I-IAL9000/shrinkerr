@@ -111,7 +111,10 @@
     "restoreInvalidDb": "Base de datos no válida en la copia de seguridad: {{error}}",
     "restoreMissingDb": "El zip de la copia de seguridad debe contener shrinkerr.db o squeezarr.db",
     "restoreNotZip": "Debes subir un archivo .zip",
-    "invalidCompatCodec": "audio_compat_codec debe ser aac, eac3 o ac3"
+    "invalidCompatCodec": "audio_compat_codec debe ser aac, eac3 o ac3",
+    "mqttHostInvalid": "Escribe el nombre o la dirección IP del broker, sin mqtt://.",
+    "mqttPortInvalid": "El puerto MQTT debe estar entre 1 y 65535.",
+    "mqttTopicInvalid": "Un tema MQTT no puede estar vacío, contener + o #, ni empezar o terminar con /."
   },
   "url": {
     "blockedAddress": "{{label}} se resuelve a una dirección bloqueada ({{address}}). Los rangos link-local, IMDS e IPv6 site-local se rechazan para evitar SSRF.",

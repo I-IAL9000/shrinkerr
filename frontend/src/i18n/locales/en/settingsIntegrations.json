@@ -459,5 +459,20 @@
     "url": "Bazarr URL",
     "apiKey": "API key",
     "test": "Test Bazarr"
+  },
+  "mqtt": {
+    "intro": "Shows Shrinkerr in Home Assistant through MQTT discovery: sensors for the queue, the space saved and the current file, and a switch that starts and pauses the queue. Needs an MQTT broker (Mosquitto, say) that Home Assistant uses too.",
+    "enabled": "Connect to the MQTT broker",
+    "host": "Broker host",
+    "port": "Port",
+    "username": "Username",
+    "password": "Password",
+    "more": "TLS and topics",
+    "tls": "TLS",
+    "discoveryPrefix": "Discovery prefix (Home Assistant's: homeassistant)",
+    "baseTopic": "Base topic",
+    "test": "Test connection",
+    "connected": "Connected to the MQTT broker",
+    "failed": "MQTT: {{error}}"
   }
 }

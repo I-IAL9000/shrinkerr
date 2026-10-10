@@ -1,9 +1,9 @@
 # Monitoring and dashboards
 
-Shrinkerr exposes its numbers two ways: Prometheus metrics, and one small
+Shrinkerr exposes its numbers three ways: Prometheus metrics, one small
 JSON object for dashboard widgets (Homepage, Homarr and anything else that
-can read a JSON URL). Both need the API key (Settings → System →
-Authentication) once authentication is set up.
+can read a JSON URL), and Home Assistant over MQTT. The first two need the
+API key (Settings → System → Authentication) once authentication is set up.
 
 ## Prometheus
 
@@ -72,3 +72,42 @@ Jobs cleared from the Queue with "Clear done" still count.
 
 **Homarr** and other dashboards: point a JSON / custom-API widget at the
 same URL with an `X-Api-Key` header.
+
+## Home Assistant (MQTT)
+
+Shrinkerr can show up in Home Assistant through MQTT discovery. You need an
+MQTT broker that Home Assistant already uses (the Mosquitto add-on, say).
+
+1. Settings → Integrations → **Home Assistant (MQTT)**: tick **Connect to
+   the MQTT broker** and enter its host, port (1883, or 8883 with TLS) and
+   the user name and password Home Assistant's MQTT integration uses.
+2. Click **Test connection**, then **Save**.
+
+A **Shrinkerr** device appears in Home Assistant (Settings → Devices &
+services → MQTT) with:
+
+| Entity | What it shows |
+|---|---|
+| Queued jobs, Running jobs, Failed jobs | the queue |
+| Completed jobs | conversions finished, all time |
+| Space saved | GB saved, all time |
+| Files to convert, Estimated savings | what the Scanner found left to do |
+| Current file, Progress | the running job (Idle when nothing runs) |
+| Queue (switch) | on: the queue runs; off: it's paused |
+
+The numbers update every 15 seconds. Entity names follow
+**Notification language** (Settings → Notifications); you can rename them
+in Home Assistant.
+
+**TLS and topics:** turn on TLS for a broker that requires it (the
+broker's certificate must be one your system trusts). The discovery prefix
+must match Home Assistant's (`homeassistant` unless you changed it). Give
+each Shrinkerr its own base topic if you run more than one; each becomes
+its own device.
+
+Topics, with the default base topic:
+
+- `shrinkerr/status`: `online` / `offline` (offline also when Shrinkerr
+  stops or loses the connection)
+- `shrinkerr/state`: everything above as JSON
+- `shrinkerr/queue/set`: send `ON` or `OFF` to start or pause the queue

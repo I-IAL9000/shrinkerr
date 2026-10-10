@@ -330,6 +330,15 @@ class SettingsUpdate(BaseModel):
     radarr_api_key: Optional[str] = None
     bazarr_url: Optional[str] = None  # v0.10.0
     bazarr_api_key: Optional[str] = None
+    # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)
+    mqtt_enabled: Optional[bool] = None
+    mqtt_host: Optional[str] = None
+    mqtt_port: Optional[int] = None
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
+    mqtt_tls: Optional[bool] = None
+    mqtt_discovery_prefix: Optional[str] = None
+    mqtt_base_topic: Optional[str] = None
     radarr_path_mapping: Optional[str] = None
     # Quiet hours
     quiet_hours_enabled: Optional[bool] = None

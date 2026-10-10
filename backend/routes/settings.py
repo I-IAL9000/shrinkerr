@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import zipfile
 from datetime import datetime, timezone
@@ -220,6 +221,15 @@ _ENCODING_DEFAULTS = {
     "radarr_api_key": "",
     "bazarr_url": "",  # v0.10.0: rescanned after Shrinkerr rewrites a file
     "bazarr_api_key": "",
+    # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)
+    "mqtt_enabled": "false",
+    "mqtt_host": "",
+    "mqtt_port": "1883",
+    "mqtt_username": "",
+    "mqtt_password": "",
+    "mqtt_tls": "false",
+    "mqtt_discovery_prefix": "homeassistant",
+    "mqtt_base_topic": "shrinkerr",
     "radarr_path_mapping": "",
     # Quiet hours
     "quiet_hours_enabled": "false",
@@ -809,6 +819,12 @@ async def get_encoding_settings():
     bazarr_key = merged.get("bazarr_api_key", "")
     result["bazarr_url"] = merged.get("bazarr_url", "")
     result["bazarr_api_key"] = ("****" + bazarr_key[-4:]) if bazarr_key else ""
+    result["mqtt_enabled"] = merged.get("mqtt_enabled", "false").lower() == "true"
+    result["mqtt_tls"] = merged.get("mqtt_tls", "false").lower() == "true"
+    for key in ("mqtt_host", "mqtt_username", "mqtt_discovery_prefix", "mqtt_base_topic"):
+        result[key] = merged.get(key, "")
+    result["mqtt_port"] = int(merged.get("mqtt_port") or 1883)
+    result["mqtt_password"] = "********" if merged.get("mqtt_password") else ""
 
     # NZBGet integration
     result["nzbget_enabled"] = merged.get("nzbget_enabled", "false").lower() == "true"
@@ -1391,6 +1407,35 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                                      if update.bazarr_url.strip() else "")
         if update.bazarr_api_key is not None and not update.bazarr_api_key.startswith("****"):
             updates["bazarr_api_key"] = update.bazarr_api_key
+        # Home Assistant over MQTT (v0.10.0)
+        for key in ("mqtt_enabled", "mqtt_tls"):
+            if getattr(update, key) is not None:
+                updates[key] = "true" if getattr(update, key) else "false"
+        if update.mqtt_host is not None:
+            host = update.mqtt_host.strip()
+            if host:
+                from backend.ssrf_guard import validate_outbound_url
+                if not re.fullmatch(r"[A-Za-z0-9.\-]+|\[?[0-9A-Fa-f:]+\]?", host):
+                    raise ApiError(400, "Enter the broker's host name or IP address, without mqtt://.",
+                                   code="settings.mqttHostInvalid")
+                validate_outbound_url(f"http://{host}", label="MQTT broker")
+            updates["mqtt_host"] = host
+        if update.mqtt_port is not None:
+            if not 1 <= update.mqtt_port <= 65535:
+                raise ApiError(400, "The MQTT port must be between 1 and 65535.", code="settings.mqttPortInvalid")
+            updates["mqtt_port"] = str(update.mqtt_port)
+        if update.mqtt_username is not None:
+            updates["mqtt_username"] = update.mqtt_username.strip()
+        if update.mqtt_password is not None and update.mqtt_password != "********":
+            updates["mqtt_password"] = update.mqtt_password
+        for key in ("mqtt_discovery_prefix", "mqtt_base_topic"):
+            value = getattr(update, key)
+            if value is not None:
+                from backend.mqtt import TOPIC_RE
+                if not TOPIC_RE.match(value.strip()):
+                    raise ApiError(400, "An MQTT topic can't be empty, contain + or #, or start or end with /.",
+                                   code="settings.mqttTopicInvalid")
+                updates[key] = value.strip()
         # NZBGet integration
         if update.nzbget_enabled is not None:
             updates["nzbget_enabled"] = "true" if update.nzbget_enabled else "false"
@@ -1751,6 +1796,7 @@ _SECRET_SETTINGS_KEYS = frozenset({
     "sonarr_api_key",
     "radarr_api_key",
     "bazarr_api_key",
+    "mqtt_password",
     "smtp_pass",
     "discord_webhook_url",  # contains the secret path component
     "telegram_bot_token",
@@ -1963,6 +2009,10 @@ async def test_api_key(req: TestApiRequest):
                 return {"success": False, "error": "No Radarr API key configured"}
             from backend.arr import test_radarr
             return await test_radarr(radarr_url, radarr_key)
+
+        elif req.service == "mqtt":
+            from backend.mqtt import load_settings, test_connection
+            return await test_connection(await load_settings())
 
         elif req.service == "bazarr":
             if not settings.get("bazarr_url") or not settings.get("bazarr_api_key"):

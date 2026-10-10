@@ -3270,6 +3270,62 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </label>
                 </div>
 
+                {/* Home Assistant over MQTT (v0.10.0): sensors + a queue switch by discovery */}
+                <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Home Assistant (MQTT)</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:mqtt.intro")}</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+                    <input type="checkbox" checked={!!encoding?.mqtt_enabled}
+                      onChange={e => setEncoding({ ...encoding, mqtt_enabled: e.target.checked })} />
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsIntegrations:mqtt.enabled")}</span>
+                  </label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input style={{ ...inputStyle, flex: "1 1 200px" }} aria-label={t("settingsIntegrations:mqtt.host")}
+                      placeholder={t("settingsIntegrations:mqtt.host")}
+                      value={encoding?.mqtt_host || ""}
+                      onChange={e => setEncoding({ ...encoding, mqtt_host: e.target.value })} />
+                    <input style={{ ...inputStyle, flex: "0 1 90px" }} aria-label={t("settingsIntegrations:mqtt.port")}
+                      type="number" min={1} max={65535}
+                      value={encoding?.mqtt_port ?? 1883}
+                      onChange={e => setEncoding({ ...encoding, mqtt_port: parseInt(e.target.value) || "" })} />
+                    <input style={{ ...inputStyle, flex: "1 1 140px" }} aria-label={t("settingsIntegrations:mqtt.username")}
+                      placeholder={t("settingsIntegrations:mqtt.username")} autoComplete="off"
+                      value={encoding?.mqtt_username || ""}
+                      onChange={e => setEncoding({ ...encoding, mqtt_username: e.target.value })} />
+                    <input style={{ ...inputStyle, flex: "1 1 140px" }} aria-label={t("settingsIntegrations:mqtt.password")}
+                      placeholder={t("settingsIntegrations:mqtt.password")} type="password" autoComplete="new-password"
+                      value={encoding?.mqtt_password || ""}
+                      onChange={e => setEncoding({ ...encoding, mqtt_password: e.target.value })} />
+                  </div>
+                  <details style={{ marginTop: 8 }}>
+                    <summary style={{ fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>{t("settingsIntegrations:mqtt.more")}</summary>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!encoding?.mqtt_tls}
+                          onChange={e => setEncoding({ ...encoding, mqtt_tls: e.target.checked })} />
+                        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsIntegrations:mqtt.tls")}</span>
+                      </label>
+                      <input style={{ ...inputStyle, flex: "1 1 160px" }} aria-label={t("settingsIntegrations:mqtt.discoveryPrefix")}
+                        title={t("settingsIntegrations:mqtt.discoveryPrefix")}
+                        value={encoding?.mqtt_discovery_prefix ?? "homeassistant"}
+                        onChange={e => setEncoding({ ...encoding, mqtt_discovery_prefix: e.target.value })} />
+                      <input style={{ ...inputStyle, flex: "1 1 160px" }} aria-label={t("settingsIntegrations:mqtt.baseTopic")}
+                        title={t("settingsIntegrations:mqtt.baseTopic")}
+                        value={encoding?.mqtt_base_topic ?? "shrinkerr"}
+                        onChange={e => setEncoding({ ...encoding, mqtt_base_topic: e.target.value })} />
+                    </div>
+                  </details>
+                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px", marginTop: 8 }}
+                    onClick={async () => {
+                      try {
+                        if (!(await saveChanges(true))) return;
+                        const res = await testApiKey("mqtt") as any;
+                        if (res.success) toast(t("settingsIntegrations:mqtt.connected"), "success");
+                        else toast(t("settingsIntegrations:mqtt.failed", { error: res.error }), "error");
+                      } catch (err: any) { toast(t("settingsIntegrations:mqtt.failed", { error: err.message }), "error"); }
+                    }}>{t("settingsIntegrations:mqtt.test")}</button>
+                </div>
+
                 {/* Connect → Webhook (v0.10.0): queue each import, for torrent setups */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>{t("settingsIntegrations:arr.connect.title")}</div>

@@ -1,0 +1,15 @@
+{
+  "entities": {
+    "pending": "Queued jobs",
+    "running": "Running jobs",
+    "failed": "Failed jobs",
+    "completed": "Completed jobs",
+    "saved": "Space saved",
+    "to_convert": "Files to convert",
+    "estimated_savings": "Estimated savings",
+    "current_file": "Current file",
+    "progress": "Progress",
+    "queue": "Queue"
+  },
+  "idle": "Idle"
+}

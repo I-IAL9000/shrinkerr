@@ -36,7 +36,8 @@ deeper.
   preset/CRF recommendations for common sources, how to size a worker
   fleet, backup strategy, what to set before your first batch.
 - [**Monitoring and dashboards**](monitoring.md) — Prometheus metrics
-  (`/api/metrics`) and a JSON endpoint for Homepage / Homarr widgets.
+  (`/api/metrics`), a JSON endpoint for Homepage / Homarr widgets, and
+  Home Assistant over MQTT.
 - [**Troubleshooting**](troubleshooting.md) — the Doctor page and
   diagnostics file, then symptoms and fixes, covering
   the VMAF and worker-performance saga from v0.3.10 through v0.3.19 plus

@@ -403,6 +403,9 @@ async def lifespan(app: FastAPI):
     # The savings estimate learns from finished conversions (v0.10.0).
     from backend.savings_model import savings_model_loop
     estimates_task = asyncio.create_task(savings_model_loop())
+    # Home Assistant over MQTT (v0.10.0): idle until it's set up.
+    from backend.mqtt import mqtt_loop
+    mqtt_task = asyncio.create_task(mqtt_loop())
 
     yield
     worker.stop()
@@ -412,6 +415,7 @@ async def lifespan(app: FastAPI):
     local_heartbeat_task.cancel()
     version_check_task.cancel()
     estimates_task.cancel()
+    mqtt_task.cancel()
     digest_task.cancel()
 
 

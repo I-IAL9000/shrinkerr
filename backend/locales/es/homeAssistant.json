@@ -1,0 +1,15 @@
+{
+  "entities": {
+    "pending": "Trabajos en cola",
+    "running": "Trabajos en curso",
+    "failed": "Trabajos fallidos",
+    "completed": "Trabajos completados",
+    "saved": "Espacio ahorrado",
+    "to_convert": "Archivos por convertir",
+    "estimated_savings": "Ahorro estimado",
+    "current_file": "Archivo actual",
+    "progress": "Progreso",
+    "queue": "Cola"
+  },
+  "idle": "Inactivo"
+}
