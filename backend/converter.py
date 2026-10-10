@@ -412,6 +412,9 @@ def _build_ffmpeg_cmd_impl(
     disc_audio_languages: list[str] | None = None,
     # v0.10.0: a stereo compatibility track to add (compat_track_plan).
     compat_track: dict | None = None,
+    # v0.10.0: "av1" encodes AV1 with the encoder's AV1 sibling (the caller
+    # checked encoder_caps.av1_encoder); anything else is HEVC.
+    output_codec: str | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -619,14 +622,15 @@ def _build_ffmpeg_cmd_impl(
             _nvenc_profile = "main10"
             _nvenc_pix_fmt = "p010le"
         cmd += [
-            "-c:v", "hevc_nvenc",
+            "-c:v", "av1_nvenc" if output_codec == "av1" else "hevc_nvenc",
             "-preset", nvenc_preset,
             "-tune", "hq",
             "-rc", "vbr",
-            "-cq", str(cq),
+            "-cq", str(av1_quality("nvenc", cq) if output_codec == "av1" else cq),
             "-b:v", "0",
-            "-profile:v", _nvenc_profile,
         ]
+        if output_codec != "av1":  # AV1's one profile carries 8- and 10-bit
+            cmd += ["-profile:v", _nvenc_profile]
         # v0.5.10: emit -pix_fmt ONLY when frames live in CPU memory
         # (software decode path). With HW decode keeping frames on the
         # GPU, `scale_cuda=format=X` already dictates the surface format
@@ -651,12 +655,15 @@ def _build_ffmpeg_cmd_impl(
         # profile for compatibility with Gen9 / older Quick Sync; 10-bit
         # `main10` is supported on Gen11+ / Arc but we keep the safe
         # default and let users opt in via custom_ffmpeg_flags. v0.3.67+.
-        cmd += [
-            "-c:v", "hevc_qsv",
-            "-preset", qsv_preset,
-            "-global_quality", str(qsv_cq),
-            "-profile:v", "main",
-        ]
+        if output_codec == "av1":
+            cmd += ["-c:v", "av1_qsv", "-preset", qsv_preset, "-global_quality", str(av1_quality("qsv", qsv_cq))]
+        else:
+            cmd += [
+                "-c:v", "hevc_qsv",
+                "-preset", qsv_preset,
+                "-global_quality", str(qsv_cq),
+                "-profile:v", "main",
+            ]
         # Optional look-ahead rate control (v0.3.93+). Slight quality
         # bump at typical 10-20% throughput cost. Off by default.
         if qsv_lookahead:
@@ -688,6 +695,14 @@ def _build_ffmpeg_cmd_impl(
             "-q:v", str(videotoolbox_quality),
             "-profile:v", "main10" if _vt_10bit else "main",
             "-pix_fmt", "p010le" if _vt_10bit else "nv12",
+        ]
+    elif output_codec == "av1":
+        # SVT-AV1 (CPU), 10-bit. libx265's presets map onto SVT's 0–13.
+        cmd += [
+            "-c:v", "libsvtav1",
+            "-preset", str(SVT_PRESETS.get(libx265_preset, 7)),
+            "-crf", str(av1_quality("libx265", crf)),
+            "-pix_fmt", "yuv420p10le",
         ]
     else:
         # libx265
@@ -1001,6 +1016,22 @@ def hw_decode_supports(decoder: str, source_codec: str | None,
     return c in table.get(decoder, frozenset())
 
 
+# v0.10.0: AV1 output. libx265 presets → SVT-AV1's (0 slowest – 13 fastest).
+SVT_PRESETS = {"ultrafast": 12, "superfast": 11, "veryfast": 10, "faster": 9, "fast": 8,
+               "medium": 7, "slow": 6, "slower": 5, "veryslow": 4}
+
+
+def av1_quality(encoder: str, value: int) -> int:
+    """An HEVC quality setting as the AV1 encoder's. libx265 CRF → SVT-AV1
+    CRF: +8 matched VMAF at CRF 22 on test clips. NVENC's CQ is rescaled to
+    AV1's 0–63 range; QSV keeps its value (neither measured)."""
+    if encoder == "libx265":
+        return min(63, value + 8)
+    if encoder == "nvenc":
+        return min(63, round(value * 63 / 51))
+    return value
+
+
 def _hevc_tag_for_encoder(encoder: str | None) -> str:
     """Pick the right codec/encoder label for the output filename.
 
@@ -1013,7 +1044,10 @@ def _hevc_tag_for_encoder(encoder: str | None) -> str:
              misrepresents what produced the file and triggers "this
              isn't a real x265 encode" complaints from picky users and
              scene release-matching heuristics).
+    "av1" (an AV1 output, v0.10.0) → `AV1`.
     """
+    if (encoder or "").lower() == "av1":
+        return "AV1"
     return "x265" if (encoder or "").lower() == "libx265" else "h265"
 
 
@@ -2932,9 +2966,12 @@ async def convert_file(
     delete_merged_subs: Optional[bool] = None,
     command_only: bool = False,
     pre_probe: Optional[dict] = None,
+    output_codec: Optional[str] = None,
 ) -> dict:
     """
-    Convert a video file to HEVC.
+    Convert a video file to HEVC — or AV1 when `output_codec` is "av1" (a
+    rule's, v0.10.0) and the encoder's family has an AV1 encoder here
+    (encoder_caps.av1_encoder; otherwise HEVC, noted in encoding_stats).
 
     `pre_probe` (M7, v0.10.0): the caller's probe_file() of `input_path`, so
     the source isn't probed a second time (a cold probe over a slow mount
@@ -3006,6 +3043,11 @@ async def convert_file(
     vaapi_qp = live_settings.get("vaapi_qp", 22)
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     videotoolbox_quality = live_settings.get("videotoolbox_quality", 55)
+    if output_codec == "av1":
+        from backend.encoder_caps import av1_encoder
+        if not await asyncio.to_thread(av1_encoder, encoder):
+            print(f"[CONVERT] AV1 isn't available with {encoder} here — encoding HEVC", flush=True)
+            output_codec = None
     if override_cq is not None:
         from backend.encoding_estimates import quality_settings
         qsv_cq = quality_settings("qsv", override_cq)["qsv_cq"]
@@ -3192,13 +3234,13 @@ async def convert_file(
     # rename_source_to_target_codec for the rationale).
     if disc_type and probe_data:
         final_path = await build_disc_output_filename(
-            input_path, disc_type, probe_data, encoder=encoder,
+            input_path, disc_type, probe_data, encoder="av1" if output_codec == "av1" else encoder,
             target_resolution=target_resolution,
         )
         temp_path = str(Path(final_path).with_suffix(".converting.mkv"))
     else:
         final_path = get_output_path(
-            input_path, suffix=filename_suffix, encoder=encoder,
+            input_path, suffix=filename_suffix, encoder="av1" if output_codec == "av1" else encoder,
             target_resolution=target_resolution,
             source_width=(probe_data or {}).get("video_width"),
             source_height=(probe_data or {}).get("video_height"),
@@ -3349,7 +3391,8 @@ async def convert_file(
             float(live_settings.get("vmaf_target_score") or 95),
             start=crf - _CRF_OFFSET if encoder == "libx265" else cq,
             convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
-                            "override_target_resolution": override_target_resolution, "pre_settings": live_settings})
+                            "override_target_resolution": override_target_resolution, "pre_settings": live_settings,
+                            "output_codec": output_codec})
         if vmaf_target:
             cq = vmaf_target["cq"]
             crf = quality_settings("libx265", cq)["libx265_crf"]
@@ -3700,6 +3743,7 @@ async def convert_file(
             pre_input_args=ffmpeg_input_args or None,
             disc_audio_languages=disc_audio_languages,
             compat_track=compat_track,
+            output_codec=output_codec,
         )
         # Append custom ffmpeg flags if configured (before the output path).
         if custom_flags:
@@ -4761,6 +4805,7 @@ async def convert_file(
             "lossless_target_codec": (lossless_conversion or {}).get("codec"),
             "lossless_target_bitrate": (lossless_conversion or {}).get("bitrate"),
             "target_resolution": target_resolution,
+            "output_codec": output_codec or "hevc",  # v0.10.0
             # v0.10.0: the quality the VMAF target search chose, and why.
             "vmaf_target": ({k: vmaf_target[k] for k in ("target", "cq", "vmaf", "reached")}
                             if vmaf_target else None),

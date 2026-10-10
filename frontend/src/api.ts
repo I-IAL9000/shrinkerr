@@ -687,6 +687,8 @@ export interface EncoderCaps {
   qsv_decode_available?: boolean;
   vaapi_decode_available?: boolean;
   videotoolbox_decode_available?: boolean;
+  // v0.10.0: which encoders can write AV1 here (libx265 = SVT-AV1).
+  av1?: Record<string, boolean>;
 }
 export const getEncoderCaps = (force = false) =>
   apiFetch<EncoderCaps>(`/stats/encoder-caps${force ? "?force=1" : ""}`);

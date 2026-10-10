@@ -567,6 +567,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             libx265_crf = rule.get("libx265_crf") if rule else None
             libx265_preset = rule.get("libx265_preset") if rule else None
             target_resolution = rule.get("target_resolution") if rule else None
+            output_codec = "av1" if rule and rule.get("output_codec") == "av1" else None
             audio_codec = rule.get("audio_codec") if rule else None
             audio_bitrate = rule.get("audio_bitrate") if rule else None
 
@@ -610,6 +611,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "libx265_crf": libx265_crf,
                 "libx265_preset": libx265_preset,
                 "target_resolution": target_resolution,
+                "output_codec": output_codec,
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "priority": max(
@@ -1229,6 +1231,8 @@ async def start_test_encode(payload: TestEncodeRequest):
             overrides["override_libx265_preset"] = payload.preset or rule.get("libx265_preset")
     if rule.get("target_resolution"):
         overrides["override_target_resolution"] = rule["target_resolution"]
+    if rule.get("output_codec") == "av1":
+        overrides["output_codec"] = "av1"
 
     try:
         result = await run_test_encode(

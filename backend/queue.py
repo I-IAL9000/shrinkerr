@@ -350,6 +350,7 @@ class JobQueue:
                     j.get("target_resolution"),
                     j.get("priority") or 0,
                     j.get("not_before"),
+                    j.get("output_codec"),
                 ))
                 inserted_mask.append(True)
 
@@ -358,8 +359,8 @@ class JobQueue:
                 "INSERT INTO jobs (file_path, job_type, status, encoder, "
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
-                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:
@@ -2499,6 +2500,7 @@ class QueueWorker:
                     subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
                     on_output_placed=lambda: self._finalize(job_id),
                     pre_probe=probe,
+                    output_codec=job.get("output_codec"),
                 )
             if not result["success"]:
                 if job_id in self._cancel_flags:

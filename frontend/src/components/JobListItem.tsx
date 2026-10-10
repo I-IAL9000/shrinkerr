@@ -338,6 +338,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   <span style={{ color: "var(--text-secondary)" }}>
                     {(() => {
                       const enc = (logData.encoding_stats.encoder || "").toLowerCase();
+                      if (logData.encoding_stats.output_codec === "av1") {  // v0.10.0
+                        return enc === "libx265" ? "AV1 (SVT-AV1)" : enc === "qsv" ? "AV1 (QSV)" : "AV1 (NVENC)";
+                      }
                       if (enc === "libx265") return "x265 (CPU)";
                       if (enc === "qsv") return "h265 (QSV)";
                       if (enc === "vaapi") return "h265 (VAAPI)";

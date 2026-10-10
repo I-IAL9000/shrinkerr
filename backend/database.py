@@ -426,12 +426,14 @@ async def init_db():
                 await db.execute(f"ALTER TABLE encoding_rules ADD COLUMN {col} {coltype}")
             except Exception:
                 pass  # Column already exists
-        # Migration: add libx265_preset column to jobs and encoding_rules
+        # Migration: add libx265_preset column to jobs and encoding_rules;
+        # output_codec (v0.10.0: NULL = HEVC, "av1") likewise.
         for table in ["jobs", "encoding_rules"]:
-            try:
-                await db.execute(f"ALTER TABLE {table} ADD COLUMN libx265_preset TEXT DEFAULT NULL")
-            except Exception:
-                pass
+            for col in ("libx265_preset", "output_codec"):
+                try:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT DEFAULT NULL")
+                except Exception:
+                    pass
         # Migration: pre-computed flags on scan_results for performance
         for col, coltype in [
             ("has_removable_tracks_flag", "INTEGER DEFAULT 0"),

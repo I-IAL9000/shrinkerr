@@ -42,6 +42,7 @@ def _make_rule_result(rule: dict) -> dict:
         "nvenc_cq": rule.get("nvenc_cq"),
         "libx265_crf": rule.get("libx265_crf"),
         "libx265_preset": rule.get("libx265_preset"),
+        "output_codec": rule.get("output_codec"),
         "target_resolution": rule.get("target_resolution"),
         "audio_codec": rule.get("audio_codec"),
         "audio_bitrate": rule.get("audio_bitrate"),

@@ -294,6 +294,40 @@ async def videotoolbox_encode_works() -> bool:
 
 # Job-encoder aliases older rows / API callers may carry.
 _ENCODER_ALIASES = {"hevc_nvenc": "nvenc", "x265": "libx265", "cpu": "libx265"}
+
+# v0.10.0: AV1 output (a rule's output codec). The AV1 encoder each family
+# uses; VAAPI and VideoToolbox have none here, so they encode HEVC. The
+# hardware ones need a GPU with AV1 (NVENC: RTX 40 / Ada and later; QSV:
+# Arc / Meteor Lake and later) — ffmpeg lists them regardless, so they're
+# test-encoded once.
+AV1_ENCODERS = {"libx265": "libsvtav1", "nvenc": "av1_nvenc", "qsv": "av1_qsv"}
+_av1_cache: dict[str, bool] = {}
+
+
+def _av1_test_encode(name: str) -> bool:
+    cmd = ["ffmpeg", "-hide_banner", "-y"]
+    if name == "av1_qsv":
+        node = detect_encoders().qsv_render_node or "/dev/dri/renderD128"
+        cmd += ["-init_hw_device", f"vaapi=va:{node}", "-init_hw_device", "qsv=qsv@va"]
+    cmd += ["-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.04:r=25",
+            "-frames:v", "1", "-c:v", name, "-f", "null", "-"]
+    try:
+        return subprocess.run(cmd, capture_output=True, timeout=20).returncode == 0
+    except Exception:
+        return False
+
+
+def av1_encoder(encoder: str | None) -> str | None:
+    """The AV1 encoder `encoder`'s family runs on this host, or None (then
+    HEVC is encoded instead). Blocking on first use per family (a one-frame
+    test encode for the hardware ones)."""
+    family = _ENCODER_ALIASES.get((encoder or "").lower(), (encoder or "").lower())
+    name = AV1_ENCODERS.get(family)
+    if not name:
+        return None
+    if family not in _av1_cache:
+        _av1_cache[family] = name in _ffmpeg_encoders() and (family == "libx265" or _av1_test_encode(name))
+    return name if _av1_cache[family] else None
 # When a node can't run a job's encoder, the first of these it has wins —
 # hardware before CPU. libx265 last: always available, but ~10x slower.
 _TRANSLATE_PREFERENCE = ("nvenc", "videotoolbox", "qsv", "vaapi", "libx265")

@@ -753,9 +753,15 @@ async def get_encoder_caps(force: bool = False):
     "redetect" button for users who plug in / enable hardware after
     container start). v0.3.68+.
     """
-    from backend.encoder_caps import detect_encoders
+    from backend.encoder_caps import _av1_cache, av1_encoder, detect_encoders
     caps = detect_encoders(force=force)
+    if force:
+        _av1_cache.clear()
+    # v0.10.0: which encoders can write AV1 here (a rule's output codec).
+    av1 = {enc: bool(await asyncio.to_thread(av1_encoder, enc)) for enc in ("libx265", "nvenc", "qsv")
+           if enc == "libx265" or getattr(caps, enc)}
     return {
+        "av1": av1,
         "nvenc": caps.nvenc,
         "qsv": caps.qsv,
         "vaapi": caps.vaapi,

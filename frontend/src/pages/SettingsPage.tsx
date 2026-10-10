@@ -330,7 +330,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     name: string; match_mode: string; conditions: { type: string; operator: string; value: string }[];
     action: string; encoder: string; nvenc_preset: string; nvenc_cq: string;
     libx265_crf: string; libx265_preset: string; target_resolution: string; audio_codec: string; audio_bitrate: string;
-    queue_priority: string;
+    queue_priority: string; output_codec?: string;
   }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
@@ -4039,6 +4039,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 rule.action === "encode" && rule.nvenc_cq ? `CQ${rule.nvenc_cq}` : null,
                                 rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
                                 rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
+                                rule.action === "encode" && rule.output_codec === "av1" ? "AV1" : null,
                                 rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
                                 rule.queue_priority != null ? [t("settingsIntegrations:priorities.normal"), t("settingsIntegrations:priorities.high"), t("settingsIntegrations:priorities.highest")][rule.queue_priority] : null,
                               ].filter(Boolean).join(" ") || t("settingsIntegrations:rules.defaults")}
@@ -4062,7 +4063,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   nvenc_preset: rule.nvenc_preset || "", nvenc_cq: rule.nvenc_cq ? String(rule.nvenc_cq) : "",
                                   libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
                                   libx265_preset: rule.libx265_preset || "",
-                                  target_resolution: rule.target_resolution || "",
+                                  target_resolution: rule.target_resolution || "", output_codec: rule.output_codec || "",
                                   audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
                                   queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
                                 });
@@ -4434,6 +4435,20 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               <option value="480p">480p</option>
                             </select>
                           </div>
+                          <div>
+                            <label style={labelStyle}>{t("settingsIntegrations:rules.form.outputCodec")}</label>
+                            <select aria-label={t("settingsIntegrations:rules.form.outputCodec")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.output_codec || ""}
+                              onChange={e => setRuleForm({ ...ruleForm, output_codec: e.target.value })}>
+                              <option value="">HEVC (H.265)</option>
+                              <option value="av1">AV1</option>
+                            </select>
+                            {ruleForm.output_codec === "av1" && encoderCaps?.av1
+                              && !encoderCaps.av1[ruleForm.encoder || encoding?.default_encoder || "nvenc"] && (
+                              <div style={{ ...helpStyle, marginTop: 4, color: "var(--caution)" }}>
+                                {t(encoderCaps.av1.libx265 ? "settingsIntegrations:rules.form.av1Unavailable" : "settingsIntegrations:rules.form.av1None")}
+                              </div>
+                            )}
+                          </div>
                         </>}
                         {ruleForm.action !== "skip" && <>
                           <div>
@@ -4506,6 +4521,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.nvenc_cq = ruleForm.nvenc_cq ? parseInt(ruleForm.nvenc_cq) : null;
                             data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
                             data.target_resolution = ruleForm.target_resolution || null;
+                            data.output_codec = ruleForm.output_codec || null;
                             data.audio_codec = ruleForm.audio_codec || null;
                             data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
                           } else if (ruleForm.action === "ignore") {
@@ -4514,6 +4530,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.nvenc_cq = null;
                             data.libx265_crf = null;
                             data.target_resolution = null;
+                            data.output_codec = null;
                             data.audio_codec = ruleForm.audio_codec || null;
                             data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
                           } else {
@@ -4522,6 +4539,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.nvenc_cq = null;
                             data.libx265_crf = null;
                             data.target_resolution = null;
+                            data.output_codec = null;
                             data.audio_codec = null;
                             data.audio_bitrate = null;
                             data.queue_priority = null;

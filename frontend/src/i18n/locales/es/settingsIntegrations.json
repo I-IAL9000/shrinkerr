@@ -252,7 +252,10 @@
       },
       "queuePriority": "Prioridad en la cola",
       "update": "Actualizar regla",
-      "add": "Añadir regla"
+      "add": "Añadir regla",
+      "outputCodec": "Códec de salida",
+      "av1Unavailable": "Este codificador no puede generar AV1 aquí, así que estos archivos se codifican en HEVC. Elige libx265 (CPU) para AV1 con SVT-AV1, o NVENC en una RTX 40 o posterior, o QSV en Intel Arc.",
+      "av1None": "No se encontró ningún codificador AV1 aquí, así que estos archivos se codifican en HEVC."
     },
     "toasts": {
       "nameRequired": "Introduce un nombre para la regla",

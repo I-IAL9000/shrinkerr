@@ -2,7 +2,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter
 from backend.api_errors import ApiError
@@ -30,6 +30,7 @@ class RuleCreate(BaseModel):
     nvenc_cq: Optional[int] = None
     libx265_crf: Optional[int] = None
     libx265_preset: Optional[str] = None
+    output_codec: Optional[Literal["hevc", "av1"]] = None  # v0.10.0
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -47,6 +48,7 @@ class RuleUpdate(BaseModel):
     nvenc_cq: Optional[int] = None
     libx265_crf: Optional[int] = None
     libx265_preset: Optional[str] = None
+    output_codec: Optional[Literal["hevc", "av1"]] = None  # v0.10.0
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -161,12 +163,12 @@ async def create_rule(payload: RuleCreate):
             """INSERT INTO encoding_rules
                (name, match_type, match_value, match_conditions, priority, action, enabled,
                 encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution,
-                audio_codec, audio_bitrate, queue_priority, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                audio_codec, audio_bitrate, queue_priority, created_at, output_codec)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (payload.name, first.type, first.value, conditions_json, next_priority,
              payload.action, int(payload.enabled), payload.encoder, payload.nvenc_preset,
              payload.nvenc_cq, payload.libx265_crf, payload.libx265_preset, payload.target_resolution,
-             payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now),
+             payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now, payload.output_codec),
         ) as cur:
             rule_id = cur.lastrowid
         await db.commit()

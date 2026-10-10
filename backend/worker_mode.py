@@ -557,6 +557,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 # Sidecar subtitles to merge: the worker has no Scanner rows.
                 external_subs=job.get("external_subs") if "external_subs" in job else None,
                 delete_merged_subs=job.get("delete_external_subs_after_merge"),
+                output_codec=job.get("output_codec"),
             )
 
             # A cancel that came after the output replaced the original (e.g.
