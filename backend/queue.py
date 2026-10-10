@@ -1105,6 +1105,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             update_cols = [
                 "file_path = ?",
                 "video_codec = 'hevc'",
+                "link_count = NULL",  # a new file: no other links (v0.10.0)
                 "needs_conversion = 0",
                 "converted = 1",
                 "is_new = 0",

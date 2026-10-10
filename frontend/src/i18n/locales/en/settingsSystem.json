@@ -19,7 +19,9 @@
       "minFileSize": "Min file size (MB)",
       "minBitrate": "Min bitrate (Mbps)",
       "maxBitrate": "Max bitrate (Mbps)",
-      "help": "Set to 0 to disable. Typical bitrates: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Set min bitrate to 3 to skip already-compressed files. Set max bitrate to 80 to preserve 4K HDR remuxes."
+      "help": "Set to 0 to disable. Typical bitrates: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Set min bitrate to 3 to skip already-compressed files. Set max bitrate to 80 to preserve 4K HDR remuxes.",
+      "skipHardlinked": "Skip files that are still hardlinked (e.g. seeding)",
+      "skipHardlinkedHelp": "A file with another hardlink — a torrent client still seeding it — keeps its space when Shrinkerr writes a new one, so converting or cleaning it frees nothing and uses more. Add to Queue's “Include ignored files and override rules” still queues them."
     },
     "filename": {
       "title": "Output Filename",

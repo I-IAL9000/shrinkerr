@@ -3401,6 +3401,16 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
                     {t("settingsSystem:automation.filters.help")}
                   </div>
+                  {/* v0.10.0: hardlink-aware */}
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12 }}>
+                    <input type="checkbox" checked={encoding?.skip_hardlinked ?? true}
+                      onChange={e => setEncoding({ ...encoding, skip_hardlinked: e.target.checked })}
+                      style={{ flexShrink: 0 }} />
+                    <span style={labelStyle}>{t("settingsSystem:automation.filters.skipHardlinked")}</span>
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
+                    {t("settingsSystem:automation.filters.skipHardlinkedHelp")}
+                  </div>
                 </div>
 
                 {/* Output Filename */}

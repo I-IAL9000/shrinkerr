@@ -27,6 +27,7 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "converted", labelKey: "scanner:filters.converted" },
   { key: "queued", labelKey: "scanner:filters.queued" },
   { key: "extras", labelKey: "scanner:filters.extras" },
+  { key: "hardlinked", labelKey: "scanner:filters.hardlinked" },
   // Added group (v0.10.0)
   { key: "_added", labelKey: "scanner:filters.groups.added", group: "divider" },
   { key: "added_7d", labelKey: "scanner:filters.added7d" },

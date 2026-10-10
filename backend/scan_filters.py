@@ -393,6 +393,8 @@ _FILTER_LIST = [
     Filter("converted", py=row_converted),
     Filter("queued", py=lambda r, c: r["file_path"] in c["queued_paths"]),
     Filter("extras", sql=_EXTRAS),
+    # Still hardlinked elsewhere (seeding): converting frees nothing (v0.10.0)
+    Filter("hardlinked", sql="COALESCE(link_count, 1) > 1"),
     # Added: found by the watcher or written in the last 7 / 30 / 90 days
     *(Filter(f"added_{n}d", "added", sql="(new_detected_at > ? OR file_mtime > ?)", params=_added_within(n))
       for n in (7, 30, 90)),

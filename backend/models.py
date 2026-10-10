@@ -79,6 +79,9 @@ class ScannedFile(BaseModel):
     video_bit_depth: int = 0
     video_interlaced: Optional[bool] = None
     video_vfr: Optional[bool] = None
+    # v0.10.0: hardlinks to the file (st_nlink); above 1 it's still linked
+    # elsewhere (a torrent client seeding it) and converting frees nothing.
+    link_count: Optional[int] = None
     # v0.6.0: 'dvd' / 'bdmv' / None — set when the scanner walks into a
     # VIDEO_TS/BDMV folder structure and registers the marker file as
     # a single scan item instead of recursing into the disc payload.
@@ -244,6 +247,7 @@ class SettingsUpdate(BaseModel):
     auto_queue_new: Optional[bool] = None
     auto_queue_priority: Optional[Any] = None
     auto_queue_view: Optional[Any] = None  # v0.10.0: a saved view's id; "" = every new file
+    skip_hardlinked: Optional[bool] = None  # v0.10.0
     auto_convert_lossless: Optional[bool] = None
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None

@@ -187,8 +187,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, probe_error, video_height,
                     has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format, video_width, probe_json,
-                    video_fps, video_bit_depth, video_interlaced, video_vfr)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+                    video_fps, video_bit_depth, video_interlaced, video_vfr, link_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -238,7 +238,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        video_fps=excluded.video_fps,
                        video_bit_depth=excluded.video_bit_depth,
                        video_interlaced=excluded.video_interlaced,
-                       video_vfr=excluded.video_vfr
+                       video_vfr=excluded.video_vfr,
+                       link_count=excluded.link_count
                 """,
                 (
                     scanned.file_path,
@@ -272,6 +273,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     getattr(scanned, 'video_bit_depth', 0) or None,
                     _bool_or_none(getattr(scanned, 'video_interlaced', None)),
                     _bool_or_none(getattr(scanned, 'video_vfr', None)),
+                    getattr(scanned, 'link_count', None),  # v0.10.0
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )

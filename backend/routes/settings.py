@@ -118,6 +118,9 @@ _ENCODING_DEFAULTS = {
     "auto_queue_new": "false",
     "auto_queue_priority": "0",
     "auto_queue_view": "",
+    # v0.10.0: leave files still hardlinked elsewhere (seeding) alone —
+    # converting them frees nothing. Existing installs keep "false".
+    "skip_hardlinked": "true",
     "auto_convert_lossless": "false",
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
@@ -293,6 +296,14 @@ async def seed_v010_defaults() -> None:
                 await db.execute("INSERT OR REPLACE INTO settings (key, value) "
                                  "VALUES ('content_type_detection', 'false')")
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_cq_default_seeded', '1')")
+        # Skipping hardlinked files is on for new installs; an existing one
+        # keeps converting them, as before (v0.10.0, its own sentinel).
+        async with db.execute("SELECT value FROM settings WHERE key = 'skip_hardlinked_seeded'") as cur:
+            hardlink_seeded = await cur.fetchone()
+        if not hardlink_seeded:
+            if existing:
+                await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('skip_hardlinked', 'false')")
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('skip_hardlinked_seeded', '1')")
         await db.commit()
     finally:
         await db.close()
@@ -600,6 +611,7 @@ async def get_encoding_settings():
         _aqp = 0
     result["auto_queue_priority"] = max(0, min(2, _aqp))
     result["auto_queue_view"] = merged.get("auto_queue_view", "") or ""
+    result["skip_hardlinked"] = merged.get("skip_hardlinked", "true").lower() == "true"
     try:
         result["always_keep_languages"] = json.loads(
             merged.get("always_keep_languages", '[]')
@@ -1052,6 +1064,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                 if await get_view(view) is None:
                     raise ApiError(status_code=400, detail="View not found", code="views.notFound")
             updates["auto_queue_view"] = view
+        if update.skip_hardlinked is not None:
+            updates["skip_hardlinked"] = "true" if update.skip_hardlinked else "false"
         if update.auto_convert_lossless is not None:
             updates["auto_convert_lossless"] = "true" if update.auto_convert_lossless else "false"
         if update.lossless_target_codec is not None:

@@ -19,7 +19,9 @@
       "minFileSize": "Tamaño mínimo de archivo (MB)",
       "minBitrate": "Tasa de bits mínima (Mbps)",
       "maxBitrate": "Tasa de bits máxima (Mbps)",
-      "help": "Pon 0 para desactivar. Tasas de bits habituales: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Pon la tasa mínima en 3 para omitir archivos ya comprimidos. Pon la tasa máxima en 80 para conservar los remux 4K HDR."
+      "help": "Pon 0 para desactivar. Tasas de bits habituales: DVD ~4-5 Mbps, 720p WEB ~3-5 Mbps, 1080p WEB ~5-10 Mbps, 1080p Blu-ray ~20-40 Mbps, 4K SDR ~40-60 Mbps, 4K HDR Remux ~60-100+ Mbps. Pon la tasa mínima en 3 para omitir archivos ya comprimidos. Pon la tasa máxima en 80 para conservar los remux 4K HDR.",
+      "skipHardlinked": "Omitir archivos que siguen con enlaces duros (p. ej. en siembra)",
+      "skipHardlinkedHelp": "Un archivo con otro enlace duro —un cliente torrent que aún lo siembra— conserva su espacio cuando Shrinkerr escribe uno nuevo, así que convertirlo o limpiarlo no libera nada y ocupa más. «Incluir archivos ignorados y anular reglas» en Añadir a la cola los añade igualmente."
     },
     "filename": {
       "title": "Nombre del archivo de salida",

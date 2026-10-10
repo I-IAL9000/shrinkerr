@@ -735,7 +735,8 @@ async def init_db():
         # v0.10.0: frame rate, bit depth, interlaced, variable frame rate
         # (scanner.video_facts; NULL: not read yet / the probe didn't say).
         for col, coltype in (("video_fps", "REAL DEFAULT NULL"), ("video_bit_depth", "INTEGER DEFAULT NULL"),
-                             ("video_interlaced", "INTEGER DEFAULT NULL"), ("video_vfr", "INTEGER DEFAULT NULL")):
+                             ("video_interlaced", "INTEGER DEFAULT NULL"), ("video_vfr", "INTEGER DEFAULT NULL"),
+                             ("link_count", "INTEGER DEFAULT NULL")):  # hardlinks (st_nlink)
             try:
                 await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {coltype}")
             except Exception:

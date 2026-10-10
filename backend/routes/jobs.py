@@ -421,7 +421,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         from backend.content_detect import SMART_CQ_KEYS
         smart_keys = (
             'min_bitrate_mbps', 'max_bitrate_mbps', 'min_file_size_mb',
-            'default_encoder', *SMART_CQ_KEYS,
+            'default_encoder', 'skip_hardlinked', *SMART_CQ_KEYS,
         )
         filter_settings = {}
         async with db.execute(
@@ -433,6 +433,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         min_bitrate_bps = int(filter_settings.get("min_bitrate_mbps", "0")) * 1_000_000
         max_bitrate_bps = int(filter_settings.get("max_bitrate_mbps", "0")) * 1_000_000
         min_file_size_bytes = int(filter_settings.get("min_file_size_mb", "0")) * 1024 * 1024
+        skip_hardlinked = (filter_settings.get("skip_hardlinked") or "true").lower() == "true"  # the default: on
         from backend.content_detect import smart_cq_settings, smart_quality
         smart_settings = smart_cq_settings(filter_settings)
         default_encoder = filter_settings.get("default_encoder", "nvenc")
@@ -461,7 +462,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                 f"subtitle_tracks_json, native_language, duration, COALESCE(video_height, 0) as video_height, "
-                f"COALESCE(video_width, 0) as video_width, disc_type "
+                f"COALESCE(video_width, 0) as video_width, disc_type, link_count "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
             ) as cur:
@@ -510,6 +511,12 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                     bitrate = file_size * 8 / duration
                     if bitrate < min_bitrate_bps:
                         continue  # Below minimum — savings too small
+
+            # Still hardlinked elsewhere (a torrent client seeding it): a new
+            # file frees nothing while the old one is kept (v0.10.0).
+            if skip_hardlinked and not payload.override_rules and (row.get("link_count") or 1) > 1:
+                print(f"[QUEUE] Skipped {fp}: still hardlinked ({row['link_count']} links)", flush=True)
+                continue
 
             audio_remove, sub_remove, has_audio_work = track_work(row)
 
@@ -1865,7 +1872,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # Load settings for smart CQ
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         from backend.content_detect import SMART_CQ_KEYS
-        est_keys = ('backup_original_days', 'trash_original_after_conversion',
+        est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked',
                     *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
@@ -1988,6 +1995,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         removals: dict[str, dict[str, int]] = {"audio": {}, "subtitles": {}}
         skipped = 0
         ignored_count = 0
+        hardlinked = 0
+        skip_hardlinked = (est_settings.get("skip_hardlinked") or "true").lower() == "true"
         # Per-file CQ values actually used in the savings calculation. The
         # response returns the median of these as the "representative" CQ,
         # which the modal's slider initializes to. Pre-v0.3.98 the response
@@ -2026,7 +2035,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
                     f"COALESCE(video_width, 0) as video_width, "
-                    f"COALESCE(duration, 0) as duration, native_language, disc_type "
+                    f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -2047,6 +2056,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
 
             row = scan_rows.get(fp)
             if not row:
+                continue
+            if skip_hardlinked and not payload.override_rules and (row.get("link_count") or 1) > 1:
+                hardlinked += 1  # left out, as add-from-scan leaves it (v0.10.0)
                 continue
 
             # The decision add-from-scan makes (v0.10.0): removals by keep
@@ -2209,6 +2221,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "by_source": by_source,
             "skipped_by_rules": skipped,
             "ignored_files": ignored_count,
+            "hardlinked": hardlinked,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "content_profiles": content_profiles,

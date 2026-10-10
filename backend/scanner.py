@@ -2408,11 +2408,13 @@ async def scan_directory(
         # freshly-added discs as ancient. Use the disc-root folder's mtime
         # instead, which reflects when the user actually copied the disc
         # into their library. v0.6.3+.
+        link_count = None  # v0.10.0: hardlinks (a disc folder: not counted)
         try:
             if disc_type_val:
                 file_mtime = file_path.parent.parent.stat().st_mtime
             else:
-                file_mtime = os.path.getmtime(str(file_path))
+                st = os.stat(str(file_path))
+                file_mtime, link_count = st.st_mtime, st.st_nlink
         except OSError:
             file_mtime = None
         # v0.9.102: a bogus future mtime (ripped media dated 2036) otherwise
@@ -2447,6 +2449,7 @@ async def scan_directory(
             disc_type=disc_type_val,  # v0.6.0
             probe_cache=probe_caches.pop(str(file_path), None),  # v0.10.0 (SC-13)
             **video_facts(probe),  # v0.10.0
+            link_count=link_count,
         )
         if result_callback:
             await result_callback(scanned)

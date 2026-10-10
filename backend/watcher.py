@@ -1620,11 +1620,13 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
     # freshly-added discs as ancient. Use the disc-root folder's mtime
     # instead, which reflects when the user actually copied the disc
     # into their library. v0.6.3+.
+    link_count = None  # v0.10.0: hardlinks (a disc folder: not counted)
     try:
         if disc_type_val:
             file_mtime = (await asyncio.to_thread(p.parent.parent.stat)).st_mtime
         else:
-            file_mtime = await asyncio.to_thread(os.path.getmtime, file_path)
+            st = await asyncio.to_thread(os.stat, file_path)
+            file_mtime, link_count = st.st_mtime, st.st_nlink
     except OSError:
         file_mtime = None
     # v0.9.102: clamp a bogus future mtime (ripped media dated 2036)
@@ -1658,4 +1660,5 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
         video_width=probe.get("video_width", 0),  # v0.10.0
         hdr_format=probe.get("hdr_format"),  # v0.10.0
         **video_facts(probe),  # v0.10.0
+        link_count=link_count,
     )

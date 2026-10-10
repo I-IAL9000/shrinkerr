@@ -46,7 +46,10 @@
       "originalsDelete": "Los originales se eliminan cuando el archivo nuevo está en su sitio",
       "audioRemoved": "Pistas de audio eliminadas: {{list}}",
       "subsRemoved": "Subtítulos eliminados: {{list}}",
-      "nothingRemoved": "No se elimina ninguna pista de audio ni de subtítulos"
+      "nothingRemoved": "No se elimina ninguna pista de audio ni de subtítulos",
+      "hardlinked_one": "{{num}} archivo sigue con enlaces duros (en siembra) y se deja fuera",
+      "hardlinked_many": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera",
+      "hardlinked_other": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera"
     }
   },
   "overrides": {
