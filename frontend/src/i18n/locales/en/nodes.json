@@ -9,10 +9,24 @@
   },
   "setup": {
     "title": "Add a remote worker",
-    "intro": "Run the same Shrinkerr Docker image on another machine with these environment variables:",
-    "gpuComment": "GPU worker (NVIDIA + NVENC):",
-    "cpuComment": "CPU-only worker (no GPU, any architecture):",
-    "footer": "The worker will auto-detect GPU capabilities and appear here within 30 seconds. Media directories must be mounted at the same paths (or configure PATH_MAPPINGS)."
+    "intro": "Run Shrinkerr on another machine as a worker for this server. Pick its GPU, copy the command and run it there.",
+    "gpu": {
+      "nvidia": "NVIDIA",
+      "intel_amd": "Intel / AMD",
+      "cpu": "CPU only"
+    },
+    "format": {
+      "compose": "Compose",
+      "run": "docker run"
+    },
+    "workerName": "Worker name (optional)",
+    "hostMedia": "Library folder on that machine",
+    "noKey": "Workers need an API key — set one in <a>Settings → System</a>.",
+    "localhost": "You opened Shrinkerr as localhost, which another machine can't reach: open it by this machine's network address (or edit SERVER_URL).",
+    "copy": "Copy",
+    "copied": "Copied",
+    "showKey": "Show key",
+    "footer": "The worker mounts your library at {{path}}, where this server sees it, so no path mappings are needed. Its image matches this server's version; it detects its GPU and appears here within 30 seconds."
   },
   "status": {
     "online": "Online",

@@ -8,11 +8,25 @@
     "hint": "Para añadir un trabajador remoto, ejecuta la misma imagen de Docker con <code>SHRINKERR_MODE=worker</code>"
   },
   "setup": {
-    "title": "Añadir un trabajador remoto",
-    "intro": "Ejecuta la misma imagen de Docker de Shrinkerr en otra máquina con estas variables de entorno:",
-    "gpuComment": "Trabajador con GPU (NVIDIA + NVENC):",
-    "cpuComment": "Trabajador solo CPU (sin GPU, cualquier arquitectura):",
-    "footer": "El trabajador detectará automáticamente las capacidades de la GPU y aparecerá aquí en menos de 30 segundos. Los directorios de medios deben montarse en las mismas rutas (o configura PATH_MAPPINGS)."
+    "title": "Añadir un worker remoto",
+    "intro": "Ejecuta Shrinkerr en otra máquina como worker de este servidor. Elige su GPU, copia el comando y ejecútalo allí.",
+    "gpu": {
+      "nvidia": "NVIDIA",
+      "intel_amd": "Intel / AMD",
+      "cpu": "Solo CPU"
+    },
+    "format": {
+      "compose": "Compose",
+      "run": "docker run"
+    },
+    "workerName": "Nombre del worker (opcional)",
+    "hostMedia": "Carpeta de la biblioteca en esa máquina",
+    "noKey": "Los workers necesitan una clave de API: configúrala en <a>Ajustes → Sistema</a>.",
+    "localhost": "Has abierto Shrinkerr como localhost, al que otra máquina no puede llegar: ábrelo con la dirección de red de esta máquina (o edita SERVER_URL).",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "showKey": "Mostrar clave",
+    "footer": "El worker monta tu biblioteca en {{path}}, donde la ve este servidor, así que no hacen falta mapeos de rutas. Su imagen coincide con la versión de este servidor; detecta su GPU y aparece aquí en 30 segundos."
   },
   "status": {
     "online": "En línea",

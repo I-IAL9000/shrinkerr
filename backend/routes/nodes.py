@@ -862,6 +862,40 @@ async def report_metrics(req: MetricsReport, request: Request):
     return {"ok": True}
 
 
+WORKER_IMAGE = "ghcr.io/i-ial9000/shrinkerr"
+
+
+def worker_image_tags(version: str, ffmpeg_build: str) -> dict[str, str]:
+    """The image tags for a worker that matches this server (v0.10.0): its
+    release exactly (v0.10.0, v0.10.0-nvenc...) or, on a development build,
+    the develop channel; edge (ffmpeg master) when the server is."""
+    prefix = "develop" if "-dev." in version else f"v{version}"
+    edge = "-edge" if ffmpeg_build.strip().lower() == "master" else ""
+    cpu = f"{prefix}{edge}"
+    return {"cpu": cpu, "intel_amd": cpu, "nvidia": f"{prefix}{edge}-nvenc"}
+
+
+@router.get("/worker-setup")
+async def worker_setup():
+    """What the Nodes page's worker command needs (v0.10.0): the image tags
+    matching this server, and where its media folders live (a worker that
+    mounts the library at the same path needs no path mappings)."""
+    from backend.routes.stats import _get_current_version
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT path FROM media_dirs WHERE enabled = 1") as cur:
+            dirs = [r[0].rstrip("/") for r in await cur.fetchall() if r[0]]
+    finally:
+        await db.close()
+    try:
+        media_root = os.path.commonpath(dirs) if dirs else "/media"
+    except ValueError:  # mixed absolute / relative
+        media_root = "/media"
+    return {"image": WORKER_IMAGE,
+            "tags": worker_image_tags(_get_current_version(), os.environ.get("SHRINKERR_FFMPEG_BUILD", "")),
+            "media_root": media_root or "/"}
+
+
 @router.get("/metrics")
 async def get_all_node_metrics(request: Request):
     """Return the latest metrics for every active worker node.

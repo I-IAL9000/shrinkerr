@@ -5,6 +5,7 @@ import i18n from "../i18n";
 import { getNodes, removeNode, cancelNodeJob, resetNode, updateNodeSettings } from "../api";
 import type { WorkerNode } from "../types";
 import NodeSettingsModal from "../components/NodeSettingsModal";
+import WorkerSetup from "../components/WorkerSetup";
 import { fmtBytes } from "../fmt";
 
 function fmtRelative(iso: string | null): string {
@@ -92,40 +93,7 @@ export default function NodesPage() {
         />
       )}
 
-      {/* Setup instructions */}
-      <div style={{ marginTop: 32, padding: 16, background: "var(--bg-card)", borderRadius: 6, border: "1px solid var(--border)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", marginBottom: 8 }}>{t("nodes:setup.title")}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-          {t("nodes:setup.intro")}
-        </div>
-        <pre style={{
-          fontSize: 11, padding: 12, marginTop: 8, borderRadius: 4,
-          background: "var(--bg-primary)", border: "1px solid var(--border)",
-          color: "var(--text-secondary)", overflow: "auto", lineHeight: 1.6,
-        }}>
-{`# ${t("nodes:setup.gpuComment")}
-docker run -d \\
-  -e SHRINKERR_MODE=worker \\
-  -e SERVER_URL=http://${window.location.hostname}:${window.location.port || "6680"} \\
-  -e API_KEY=<your-api-key> \\
-  -v /path/to/media:/media:rw \\
-  --runtime=nvidia \\
-  --gpus all \\
-  ghcr.io/i-ial9000/shrinkerr:nvenc
-
-# ${t("nodes:setup.cpuComment")}
-docker run -d \\
-  -e SHRINKERR_MODE=worker \\
-  -e SERVER_URL=http://${window.location.hostname}:${window.location.port || "6680"} \\
-  -e API_KEY=<your-api-key> \\
-  -e CAPABILITIES=libx265 \\
-  -v /path/to/media:/media:rw \\
-  ghcr.io/i-ial9000/shrinkerr:latest`}
-        </pre>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-          {t("nodes:setup.footer")}
-        </div>
-      </div>
+      <WorkerSetup />
     </div>
   );
 }

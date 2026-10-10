@@ -296,6 +296,9 @@ export interface NodeMetricsEntry {
   metrics: NodeMetrics | null;
   age_seconds: number | null;
 }
+// Nodes → "Add a remote worker" (v0.10.0): image tags matching this server.
+export interface WorkerSetupInfo { image: string; tags: { cpu: string; intel_amd: string; nvidia: string }; media_root: string }
+export const getWorkerSetup = () => apiFetch<WorkerSetupInfo>("/nodes/worker-setup");
 export const getNodeMetrics = () => apiFetch<{ nodes: NodeMetricsEntry[] }>("/nodes/metrics");
 export const removeNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}`, { method: "DELETE" });
 export const cancelNodeJob = (nodeId: string) => apiFetch(`/nodes/${nodeId}/cancel`, { method: "POST" });
