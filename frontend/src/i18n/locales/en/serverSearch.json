@@ -76,6 +76,9 @@
     "file_name": {
       "label": "Filename"
     },
+    "release_group": {
+      "label": "Release group"
+    },
     "health_status": {
       "label": "Health status"
     },

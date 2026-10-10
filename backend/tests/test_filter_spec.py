@@ -25,6 +25,11 @@ def days_ago(n):
     return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
 
 
+def AGO(n):  # file_mtime (epoch seconds) n days ago
+    import time
+    return time.time() - n * 86400
+
+
 def tracks(*specs):
     """JSON track list: (language, codec[, channels[, title]])."""
     out = []
@@ -48,11 +53,11 @@ ROWS = {
                     subtitle_tracks_json=tracks(("eng", "subrip", None, "English SDH"))),
     "heat_web": dict(file_path="/media/Movies/Heat (1995)/Heat.1995.1080p.WEB-DL.mkv",
                      file_size=3 * GB, duration=10000, video_codec="h264", video_width=1920, video_height=1080,
-                     needs_conversion=1, dup_count=2, language_source="api",
+                     needs_conversion=1, dup_count=2, language_source="api", file_mtime=AGO(20),
                      audio_tracks_json=tracks(("eng", "eac3", 6))),  # ~2.6 Mbps: low bitrate; failed before
     "ep1": dict(file_path="/media/TV/Show [tvdb-1]/S01/Show.S01E01.720p.HDTV.mkv",
                 file_size=1 * GB, duration=2600, video_codec="h264", video_width=1280, video_height=720,
-                needs_conversion=1, has_und_tracks_flag=1, hdr_format="hdr10",
+                needs_conversion=1, has_und_tracks_flag=1, hdr_format="hdr10", file_mtime=AGO(3),
                 audio_tracks_json=tracks(("und", "aac", 2))),  # ignored below
     "ep2": dict(file_path="/media/TV/Show [tvdb-1]/S01/Show.S01E02.720p.HDTV.mkv",
                 file_size=int(1.2 * GB), duration=2600, video_codec="h264", video_width=1280, video_height=720,
@@ -203,6 +208,10 @@ EXPECTED = {
     "health_warnings": {"old"},
     "health_stale": {"heat_br"},  # checked 120 days ago
     "undo_possible": {"old"},
+    # Found by the watcher (Alien, today) or written to disk lately.
+    "added_7d": {"ep1", "alien"},
+    "added_30d": {"ep1", "alien", "heat_web"},
+    "added_90d": {"ep1", "alien", "heat_web"},
     "failed_before": {"heat_web"},
     "vmaf_rejected": {"big"},
     "no_savings": {"old"},
@@ -317,6 +326,21 @@ async def test_missing_language_needs_your_languages(lib):
 
 
 @pytest.mark.asyncio
+async def test_extras_and_samples(lib):
+    extras = ["/media/Movies/Heat (1995)/Featurettes/Making Of.mkv", "/media/Movies/Heat (1995)/Heat-trailer.mkv",
+              "/media/Movies/Heat (1995)/Sample/heat.mkv", "/media/Movies/Film (2020)/film.sample.mkv",
+              "/media/Movies/Film (2020)/sample.mkv", "/media/TV/Show/Season 1/Behind The Scenes/bts.mkv"]
+    not_extras = ["/media/Other/Home Movie.mkv", "/media/TV/Show/Season 1/Show - S01E03 - The Scene.mkv",
+                  "/media/Movies/Sampler (2019)/Sampler.mkv"]
+    async with aiosqlite.connect(lib) as db:
+        for fp in extras + not_extras:
+            await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, ?)",
+                             (fp, NOW))
+        await db.commit()
+    assert set(await scan_route._paths_matching("extras")) == set(extras)
+
+
+@pytest.mark.asyncio
 async def test_undo_possible_follows_the_backup_setting(lib):
     async with aiosqlite.connect(lib) as db:  # originals kept: every backup counts
         await db.execute("UPDATE settings SET value = '0' WHERE key = 'backup_original_days'")
@@ -337,7 +361,7 @@ def test_the_filter_bar_groups_are_the_server_groups():
     heading_group = {"_video": "codec", "_res": "resolution", "_size": "size", "_audio": "audio",
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
-                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr"}
+                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

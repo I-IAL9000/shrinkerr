@@ -25,6 +25,12 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "corrupt", labelKey: "scanner:filters.corrupt" },
   { key: "converted", labelKey: "scanner:filters.converted" },
   { key: "queued", labelKey: "scanner:filters.queued" },
+  { key: "extras", labelKey: "scanner:filters.extras" },
+  // Added group (v0.10.0)
+  { key: "_added", labelKey: "scanner:filters.groups.added", group: "divider" },
+  { key: "added_7d", labelKey: "scanner:filters.added7d" },
+  { key: "added_30d", labelKey: "scanner:filters.added30d" },
+  { key: "added_90d", labelKey: "scanner:filters.added90d" },
   // Video group
   { key: "_video", labelKey: "scanner:filters.groups.video", group: "divider" },
   { key: "x264", label: "x264" },

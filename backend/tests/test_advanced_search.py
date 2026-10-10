@@ -107,6 +107,24 @@ async def test_the_lists_and_counts_agree_with_the_search(lib):
 
 
 @pytest.mark.asyncio
+async def test_release_group(lib):
+    """As the rules read it: the name's last "-GROUP"."""
+    flux = "/media/Movies/Film (2020)/Film.2020.1080p.WEB-DL.DDP5.1.H.264-FLUX.mkv"
+    ntb = "/media/TV/Show/Show.S01E01.1080p.WEB-DL-NTb.mkv"
+    async with aiosqlite.connect(lib) as db:
+        for fp in (flux, ntb):
+            await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, '2026-10-10')", (fp,))
+        await db.commit()
+
+    async def paths(*cond):
+        return set(await scan_route._paths_matching(adv(cond)))
+    assert await paths("release_group", "eq", "flux") == {flux}
+    assert await paths("release_group", "in", "ntb, FLUX") == {flux, ntb}
+    assert await paths("release_group", "contains", "lu") == {flux}
+    assert flux not in await paths("release_group", "ne", "flux") and ntb in await paths("release_group", "ne", "flux")
+
+
+@pytest.mark.asyncio
 async def test_unknown_properties_are_refused(lib):
     from backend.api_errors import ApiError
     from backend.routes.search import SearchRequest, advanced_search

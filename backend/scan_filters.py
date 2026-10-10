@@ -293,6 +293,25 @@ def _recent_cutoff() -> tuple:
     return (time.time() - 86400,)
 
 
+def _added_within(days: int) -> Callable[[], tuple]:
+    """Found by the watcher, or written to disk, in the last `days` days."""
+    def cutoffs() -> tuple:
+        return ((datetime.now(timezone.utc) - timedelta(days=days)).isoformat(), time.time() - days * 86400)
+    return cutoffs
+
+
+# Plex / Jellyfin extras folders and suffixes, and release samples. Not an
+# "Other" folder: that's also a common media-folder name.
+_EXTRAS = "(" + " OR ".join(
+    [f"file_path LIKE '%/{d}/%'" for d in (
+        "behind the scenes", "deleted scenes", "featurettes", "interviews", "scenes", "shorts",
+        "trailers", "extras", "samples", "sample")]
+    + [f"file_path LIKE '%{s}.%'" for s in (
+        "-trailer", "-behindthescenes", "-deleted", "-featurette", "-interview", "-scene", "-short",
+        "-sample", ".sample")]
+    + ["file_path LIKE '%/sample.%'"]) + ")"
+
+
 _NEEDS = "needs_conversion != 0"
 _NEEDS_TIMED = "needs_conversion != 0 AND duration > 0"
 
@@ -316,6 +335,10 @@ _FILTER_LIST = [
     Filter("corrupt", sql="(COALESCE(probe_status, 'ok') != 'ok' OR COALESCE(health_status, '') = 'corrupt')"),
     Filter("converted", py=row_converted),
     Filter("queued", py=lambda r, c: r["file_path"] in c["queued_paths"]),
+    Filter("extras", sql=_EXTRAS),
+    # Added: found by the watcher or written in the last 7 / 30 / 90 days
+    *(Filter(f"added_{n}d", "added", sql="(new_detected_at > ? OR file_mtime > ?)", params=_added_within(n))
+      for n in (7, 30, 90)),
     # Video codec
     Filter("x264", "codec", sql=_H264),
     Filter("x265", "codec", sql=_HEVC),
@@ -457,6 +480,8 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
                       "options": ["remux", "bluray", "webdl", "hdtv", "dvd", "unknown"]},
     "file_path":     {"kind": "path", "type": "string", "ops": ["contains", "regex"], "label": "File path", "group": "Filename"},
     "file_name":     {"kind": "name", "type": "string", "ops": ["contains", "regex"], "label": "Filename", "group": "Filename"},
+    "release_group": {"kind": "release_group", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Release group", "group": "Filename",
+                      "examples": ["FLUX"]},
 
     # State
     "health_status": {"kind": "column", "col": "health_status", "type": "string", "ops": ["eq", "exists", "in"], "label": "Health status", "group": "State", "examples": ["healthy", "corrupt"]},
@@ -588,6 +613,17 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
             return Filter(fid, py=lambda r, c: bool(pattern.search(r["file_path"].rsplit("/", 1)[-1])))
         needle = text.lower()
         return Filter(fid, py=lambda r, c: needle in r["file_path"].rsplit("/", 1)[-1].lower())
+
+    if kind == "release_group":
+        # As the rules read it: the name's last "-GROUP" (rule_resolver).
+        from backend.rule_resolver import _parse_release_group
+        wanted = [str(v).strip().lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]
+        if not wanted:
+            return None
+        if op == "contains":
+            return Filter(fid, py=lambda r, c: wanted[0] in _parse_release_group(r["file_path"]).lower())
+        negate = op == "ne"
+        return Filter(fid, py=lambda r, c: (_parse_release_group(r["file_path"]).lower() in wanted) != negate)
 
     if kind == "media_type":
         wanted = {str(v).lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()}

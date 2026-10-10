@@ -95,6 +95,10 @@
     "corrupt": "Corrupt",
     "converted": "Converted",
     "queued": "Queued",
+    "extras": "Extras & samples",
+    "added7d": "7 days",
+    "added30d": "30 days",
+    "added90d": "90 days",
     "otherCodecs": "Other codecs",
     "sizeSmall": "Small (<5 GB)",
     "sizeMedium": "Medium (5-10 GB)",
@@ -124,7 +128,8 @@
       "container": "Container:",
       "subtitles": "Subtitles:",
       "health": "Health:",
-      "outcome": "Outcome:"
+      "outcome": "Outcome:",
+      "added": "Added:"
     },
     "notLabel": "not {{label}}",
     "excluded": "(excluded)",
