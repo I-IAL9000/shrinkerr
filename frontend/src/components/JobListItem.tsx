@@ -237,8 +237,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
         <>
           <span className="job-type-badge" style={{ background: "var(--bg-tertiary)" }}>{typeBadge}</span>
           {/* v0.9.38: encoder settings are irrelevant for an audio-only
-              stream-copy remux — don't imply a re-encode that isn't happening. */}
-          {job.job_type !== "audio" && (
+              stream-copy remux — don't imply a re-encode that isn't happening.
+              Nor for a health check (v0.10.0), which encodes nothing; as the
+              running card, conversions only. */}
+          {(job.job_type === "convert" || job.job_type === "combined") && (
           <span style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--text-secondary)", marginLeft: 4 }}>
             {encoderSettingsLabel(job.encoder || encodingDefaults?.default_encoder, jobEncoderSettings(job, encodingDefaults))}
           </span>

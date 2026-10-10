@@ -237,6 +237,7 @@
     "title": "Qué va a pasar",
     "video": "Convierte el vídeo con {{encoder}} ({{settings}})",
     "noVideo": "El vídeo no se recodifica; solo cambian las pistas",
+    "nativeFirst": "Pone primero el audio del idioma original ({{language}}), para que se reproduzca por defecto",
     "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
     "sizeSame": "Se queda en unos {{size}}",
     "originalKeep_one": "El original se guarda {{count}} día, así que puedes deshacerlo",

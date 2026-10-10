@@ -80,9 +80,10 @@ async def test_the_estimate_says_what_will_happen(env, monkeypatch):
     class Caps:
         available = ["libx265", "qsv"]
     monkeypatch.setattr(encoder_caps, "detect_encoders", lambda *a, **kw: Caps())
-    audio = [{"language": "eng", "keep": True}, {"language": "fre", "keep": False},
-             {"language": "fre", "keep": False}, {"language": "ger", "keep": False, "locked": True}]
-    subs = [{"language": "spa", "keep": False}]
+    audio = [{"stream_index": 1, "language": "eng", "keep": True}, {"stream_index": 2, "language": "fre", "keep": False},
+             {"stream_index": 3, "language": "fre", "keep": False},
+             {"stream_index": 4, "language": "ger", "keep": False, "locked": True}]
+    subs = [{"stream_index": 5, "language": "spa", "keep": False}]
     async with aiosqlite.connect(env) as db:
         await db.execute("UPDATE scan_results SET audio_tracks_json = ?, subtitle_tracks_json = ?",
                          (json.dumps(audio), json.dumps(subs)))

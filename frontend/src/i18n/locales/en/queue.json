@@ -212,6 +212,7 @@
     "title": "What will happen",
     "video": "Converts the video with {{encoder}} ({{settings}})",
     "noVideo": "The video isn't re-encoded; only the tracks change",
+    "nativeFirst": "Moves the original-language audio ({{language}}) first, so it plays by default",
     "size": "{{before}} → about {{after}} (saves about {{saved}})",
     "sizeSame": "Stays about {{size}}",
     "originalKeep_one": "The original is kept for {{count}} day, so you can undo",

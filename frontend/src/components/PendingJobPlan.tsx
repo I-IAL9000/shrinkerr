@@ -4,6 +4,7 @@ import type { Job } from "../types";
 import { getJobPlan, updateAudioTracks, updateSubtitleTracks, type JobPlan } from "../api";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { fmtBytes } from "../fmt";
+import { trackLanguageName } from "../utils/languages";
 import { useToast } from "../useToast";
 import AudioTrackRow from "./AudioTrackRow";
 import SubTrackRow from "./SubTrackRow";
@@ -73,6 +74,7 @@ export default function PendingJobPlan({ job, encodingDefaults, onChanged }: {
           })
         : t("queue:plan.noVideo"),
     },
+    ...(plan.native_first ? [{ text: t("queue:plan.nativeFirst", { language: trackLanguageName(plan.native_first) }) }] : []),
     {
       text: plan.estimated_savings > 0
         ? t("queue:plan.size", { before: fmtBytes(plan.file_size), after: fmtBytes(plan.file_size - plan.estimated_savings), saved: fmtBytes(plan.estimated_savings) })

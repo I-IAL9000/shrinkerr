@@ -182,27 +182,36 @@ def track_work(row: dict) -> tuple[list[int], list[int], bool]:
     except (json.JSONDecodeError, ValueError):
         pass
 
-    has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
-
     # Also treat "native language not first" as audio work (reorder-only job)
-    if not has_audio_work:
-        try:
-            from backend.scanner import languages_match, _is_cleanup_enabled
-            if _is_cleanup_enabled("reorder_native_audio"):
-                all_tracks = json.loads(row["audio_tracks_json"] or "[]")
-                if len(all_tracks) > 1:
-                    native = row.get("native_language") or ""
-                    first_lang = (all_tracks[0].get("language") or "").lower()
-                    if native and native.lower() != "und" and first_lang != native.lower():
-                        if not languages_match(first_lang, native.lower()):
-                            has_audio_work = True
-        except Exception:
-            pass
+    has_audio_work = (len(audio_remove) > 0 or len(sub_remove) > 0
+                      or native_first(row, audio_remove) is not None)
     return audio_remove, sub_remove, has_audio_work
 
 
+def native_first(row: dict, audio_remove: list[int]) -> Optional[str]:
+    """The original language when a job moves its audio first — as the worker
+    and the converter do with "reorder_native_audio" on: a track the job keeps
+    is in that language and the first kept track isn't. `row` needs
+    native_language (v0.10.0: the queue never loaded it, so this never fired)."""
+    native = (row.get("native_language") or "").lower()
+    if not native or native == "und":
+        return None
+    from backend.scanner import languages_match, _is_cleanup_enabled
+    if not _is_cleanup_enabled("reorder_native_audio"):
+        return None
+    try:
+        tracks = json.loads(row["audio_tracks_json"] or "[]")
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    removed = set(audio_remove)
+    is_native = [languages_match((t.get("language") or "").lower(), native)
+                 for t in tracks if t.get("stream_index") not in removed]
+    return native if any(is_native) and not is_native[0] else None
+
+
 # The scan_results columns track_work() and the job plans read.
-_TRACK_COLS = "id, file_path, file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, duration, disc_type"
+_TRACK_COLS = ("id, file_path, file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, "
+               "native_language, duration, disc_type")
 
 
 async def _scan_rows_for(db, paths: list[str], cols: str = _TRACK_COLS) -> dict[str, dict]:
@@ -375,18 +384,20 @@ async def job_plan(job_id: int):
     finally:
         await db.close()
     if row is None:
-        return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [],
+        return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [], "native_first": None,
                 "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals}
     audio = json.loads(row["audio_tracks_json"] or "[]")
     subs = json.loads(row["subtitle_tracks_json"] or "[]")
     remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
     remove_s = set(json.loads(job["subtitle_tracks_to_remove"] or "[]"))
+    reorder = native_first(row, list(remove_a))
     for t in audio:
         t["remove"] = t.get("stream_index") in remove_a
     for t in subs:
         t["remove"] = t.get("stream_index") in remove_s
     return {
         "scan_id": row["id"], "job_type": job["job_type"], "audio": audio, "subtitles": subs,
+        "native_first": reorder,  # the original language's audio moved first
         "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, global_cq),
         "originals": originals,
     }
@@ -479,7 +490,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             placeholders = ",".join("?" * len(chunk))
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
-                f"subtitle_tracks_json, duration, COALESCE(video_height, 0) as video_height, "
+                f"subtitle_tracks_json, native_language, duration, COALESCE(video_height, 0) as video_height, "
                 f"COALESCE(video_width, 0) as video_width, disc_type "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
@@ -2099,18 +2110,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             if not row:
                 continue
 
-            has_audio = False
-            try:
-                tracks = json.loads(row["audio_tracks_json"] or "[]")
-                has_audio = any(not t.get("keep", True) and not t.get("locked", False) for t in tracks)
-            except Exception:
-                pass
-            has_subs = False
-            try:
-                stracks = json.loads(row["subtitle_tracks_json"] or "[]")
-                has_subs = any(not t.get("keep", True) and not t.get("locked", False) for t in stracks)
-            except Exception:
-                pass
+            # The decision add-from-scan makes (v0.10.0): removals by keep
+            # alone (v0.9.99), and the original language's audio moved first.
+            audio_remove, sub_remove, has_work = track_work(row)
 
             # force_reencode overrides both needs_conversion AND skip rules.
             # v0.9.120: a disc (disc_type set) always needs conversion — force it
@@ -2120,7 +2122,6 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             needs_conv = bool(row["needs_conversion"]) or bool(row.get("disc_type")) or payload.force_reencode
             if skip_conv and not payload.force_reencode:
                 needs_conv = False
-            has_work = has_audio or has_subs
 
             if needs_conv and has_work:
                 jt = "combined"
@@ -2137,10 +2138,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             total_size += row["file_size"]
             by_type[jt] = by_type.get(jt, 0) + 1
             # Tracks this job removes, by language (the "what will happen" panel).
-            for kind, track_list in (("audio", tracks if has_audio else []),
-                                     ("subtitles", stracks if has_subs else [])):
-                for t in track_list:
-                    if not t.get("keep", True):  # as track_work(): what the job removes
+            for kind, column, remove in (("audio", "audio_tracks_json", audio_remove),
+                                         ("subtitles", "subtitle_tracks_json", sub_remove)):
+                for t in (json.loads(row[column] or "[]") if remove else []):
+                    if t.get("stream_index") in remove:
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
 

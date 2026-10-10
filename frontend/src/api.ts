@@ -776,6 +776,7 @@ export interface JobPlan {
   job_type: string;
   audio: (AudioTrack & { remove: boolean })[];
   subtitles: (SubtitleTrack & { remove: boolean })[];
+  native_first: string | null;  // the original language, when its audio is moved first
   file_size: number;
   estimated_savings: number;
   originals: Originals;
