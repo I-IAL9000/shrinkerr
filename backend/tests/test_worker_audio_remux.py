@@ -80,3 +80,28 @@ async def test_worker_reports_failed_remux_as_failure(tmp_path, monkeypatch):
 
     assert client.completed[-1][0] is False
     assert "ffmpeg exited" in (client.completed[-1][1].get("error") or "")
+
+
+@pytest.mark.asyncio
+async def test_a_direct_play_fix_remuxes_on_a_worker(tmp_path, monkeypatch):
+    """v0.10.0: "Fix for direct play" — the remux to MKV is the fix, with no
+    tracks to remove, and it may add a compatibility track."""
+    src = tmp_path / "Old (1990).avi"
+    src.write_bytes(b"x")
+    calls = []
+
+    async def fake_probe(path, *a, **kw):
+        return dict(PROBE)
+
+    async def fake_remux(input_path, keep_audio_indices, duration=0, **kw):
+        calls.append((keep_audio_indices, kw.get("compat_settings")))
+        return {"success": True, "output_path": input_path, "space_saved": 0}
+
+    monkeypatch.setattr(backend.scanner, "probe_file", fake_probe)
+    monkeypatch.setattr(backend.audio, "remux_audio", fake_remux)
+    job = {**_job(src), "audio_tracks_to_remove": "[]", "subtitle_tracks_to_remove": "[]"}
+    await worker_mode.execute_job(FakeClient(), "node-1", job, ["libx265"])
+    assert calls == []  # nothing to do
+    fix = {**job, "direct_play": 1, "compat_for_direct_play": True}
+    await worker_mode.execute_job(FakeClient(), "node-1", fix, ["libx265"])
+    assert calls == [([1, 2, 3], fix)]

@@ -24,7 +24,7 @@ deeper.
 - [**Audio and subtitles**](audio-and-subtitles.md) — converting lossless
   audio (Atmos / DTS:X kept), a stereo compatibility track with optional
   loudness normalisation, image subtitles (PGS / VobSub) to SRT with OCR,
-  merging sidecar subtitles.
+  merging sidecar subtitles, and fixing files for direct play.
 - [**Notifications**](notifications.md) — Discord, Telegram, email,
   webhooks, ntfy, Gotify and Apprise; failures, VMAF rejections, workers
   going offline, a weekly summary.

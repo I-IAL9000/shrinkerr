@@ -198,18 +198,37 @@ COMPAT_TRACK_TITLE = "Stereo (compatibility)"
 def compat_track_plan(kept_tracks: list[dict], settings: dict) -> Optional[dict]:
     """The stereo compatibility track to add (v0.10.0), or None: made from
     the first kept track when it's surround and its language has no stereo
-    track yet."""
-    if not settings.get("audio_compat_track") or not kept_tracks:
+    track yet — or, fixing for direct play (`compat_for_direct_play`), when
+    its language has no track every player decodes (direct_play.py)."""
+    if not kept_tracks:
         return None
+    from backend.direct_play import DIRECT_PLAY_AUDIO
     main = kept_tracks[0]
     lang = (main.get("language") or "und").lower()
+    same = [t for t in kept_tracks if (t.get("language") or "und").lower() == lang]
     # (the main track itself counts: a stereo main track needs no stereo copy)
-    if any((t.get("channels") or 0) <= 2 and (t.get("language") or "und").lower() == lang for t in kept_tracks):
+    no_stereo = settings.get("audio_compat_track") and not any((t.get("channels") or 0) <= 2 for t in same)
+    undecodable = (settings.get("compat_for_direct_play")
+                   and not any((t.get("codec") or "").lower() in DIRECT_PLAY_AUDIO for t in same))
+    if not (no_stereo or undecodable):
         return None
     return {"source": main["stream_index"], "language": lang, "out_index": len(kept_tracks),
             "codec": (settings.get("audio_compat_codec") or "aac").lower(),
             "bitrate": int(settings.get("audio_compat_bitrate") or 192),
             "loudnorm": bool(settings.get("audio_compat_loudnorm"))}
+
+
+def compat_track_args(compat_track: dict) -> list[str]:
+    """The compatibility track's codec and metadata options, after its
+    `-map`: the main track downmixed, optionally loudness-normalised
+    (loudnorm outputs 192 kHz: back to 48)."""
+    n = compat_track["out_index"]
+    args = [f"-c:a:{n}", *_audio_codec_args(compat_track["codec"], compat_track["bitrate"], n),
+            f"-ac:a:{n}", "2", f"-ar:a:{n}", "48000"]
+    if compat_track.get("loudnorm"):
+        args += [f"-filter:a:{n}", "loudnorm=I=-16:TP=-1.5:LRA=11"]
+    return args + [f"-metadata:s:a:{n}", f"title={COMPAT_TRACK_TITLE}",
+                   f"-metadata:s:a:{n}", f"language={compat_track['language']}", f"-disposition:a:{n}", "0"]
 
 
 RESOLUTION_MAP = {
@@ -810,17 +829,9 @@ def _build_ffmpeg_cmd_impl(
                 if lang:
                     cmd += [f"-metadata:s:a:{idx}", f"language={lang}"]
 
-    # v0.10.0: the stereo compatibility track — the main track downmixed,
-    # optionally loudness-normalised (loudnorm outputs 192 kHz: back to 48).
+    # v0.10.0: the stereo compatibility track.
     if compat_track:
-        n = compat_track["out_index"]
-        cmd += ["-map", f"0:{compat_track['source']}", f"-c:a:{n}",
-                *_audio_codec_args(compat_track["codec"], compat_track["bitrate"], n),
-                f"-ac:a:{n}", "2", f"-ar:a:{n}", "48000"]
-        if compat_track.get("loudnorm"):
-            cmd += [f"-filter:a:{n}", "loudnorm=I=-16:TP=-1.5:LRA=11"]
-        cmd += [f"-metadata:s:a:{n}", f"title={COMPAT_TRACK_TITLE}",
-                f"-metadata:s:a:{n}", f"language={compat_track['language']}", f"-disposition:a:{n}", "0"]
+        cmd += ["-map", f"0:{compat_track['source']}", *compat_track_args(compat_track)]
 
     # Map subtitle streams. Matroska accepts many text/image codecs as-is (copy),
     # but some codecs (notably mp4's `mov_text`) need to be transcoded to a

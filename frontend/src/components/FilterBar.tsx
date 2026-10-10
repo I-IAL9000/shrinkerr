@@ -61,6 +61,12 @@ const FILTERS: { key: string; label?: string; labelKey?: string; hintKey?: strin
   { key: "hi10p", label: "Hi10P" },
   { key: "interlaced", labelKey: "scanner:filters.interlaced" },
   { key: "vfr", label: "VFR" },
+  // Direct play group (v0.10.0): what makes Plex / Jellyfin / Emby transcode
+  { key: "_direct_play", labelKey: "scanner:filters.groups.directPlay", hintKey: "scanner:filters.directPlayHint", group: "divider" },
+  { key: "dp_video", label: "Hi10P" },
+  { key: "dp_subs", labelKey: "scanner:filters.dpSubs" },
+  { key: "dp_audio", labelKey: "scanner:filters.dpAudio" },
+  { key: "dp_container", labelKey: "scanner:filters.dpContainer" },
   // HDR group (v0.10.0): the probe's format, else the name
   { key: "_hdr", label: "HDR:", group: "divider" },
   { key: "hdr_dv", label: "Dolby Vision" },

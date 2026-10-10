@@ -17,7 +17,8 @@
     "healthCheckInline": "health check ($t(serverJobs:labels.healthMode.{{mode}}))",
     "readingImageSubs": "Reading image subtitles (OCR)…",
     "convertingSubtitles": "converting subtitles",
-    "vmafTargetSearch": "Finding the quality for the VMAF target…"
+    "vmafTargetSearch": "Finding the quality for the VMAF target…",
+    "fixingDirectPlay": "Fixing for direct play"
   },
   "errors": {
     "fileNotFound": "File not found",

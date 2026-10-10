@@ -14,6 +14,7 @@ tracks, are covered in [Language detection](language-detection.md).
 - [A stereo compatibility track](#a-stereo-compatibility-track)
 - [Image subtitles to text (SRT)](#image-subtitles-to-text-srt)
 - [Sidecar subtitles](#sidecar-subtitles)
+- [Fix for direct play](#fix-for-direct-play)
 - [Remote workers](#remote-workers)
 
 ## Lossless audio
@@ -79,6 +80,29 @@ track in the same language, titled "OCR", next to each one.
 with the language and forced flag from the file name
 (`Movie.eng.srt`, `Movie.en.forced.srt`). **Delete external subtitles
 after merge** removes the sidecars once they're in.
+
+## Fix for direct play
+
+Some files make Plex, Jellyfin and Emby transcode on many TVs and
+streamers, even when the server could just send them. The Scanner's
+**Direct play** filters find them:
+
+| Filter | What it finds | The fix |
+|---|---|---|
+| Hi10P | 10-bit H.264, which almost no hardware decoder plays | converted (to HEVC) |
+| Image subtitles only | a PGS or VobSub subtitle with no text subtitle in its language; shown, it's burned into the picture | read into SRT with OCR, next to the original |
+| No widely supported audio | no AAC, AC3, E-AC3 or MP3 track in the main audio language (DTS or TrueHD only, say) | a stereo compatibility track is added |
+| Old container | AVI, WMV, MPEG, TS and other old containers | remuxed to MKV |
+
+Select files (or folders) and click **Fix for direct play**. Each file with
+a problem gets one job: Hi10P files are converted, the others are remuxed
+to MKV without re-encoding the video. Either way the job reads image
+subtitles into SRT and adds the compatibility track where the audio needs
+one, whatever the settings above say. Files with no problem are left alone.
+
+Rules and the conversion filters (minimum size, bitrate limits) don't stop
+a fix. A file still hardlinked by a torrent client, or in a Maintainerr
+collection, is left out unless you override them.
 
 ## Remote workers
 

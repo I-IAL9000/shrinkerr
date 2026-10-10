@@ -51,7 +51,9 @@
     "quickCheckDesc": "Header / metadata parse. Fast — a few seconds per file.",
     "thoroughCheck": "Thorough check",
     "thoroughCheckDesc": "Full frame-by-frame decode. Slow — roughly duration / 10 per file.",
-    "trashFiles": "Trash files"
+    "trashFiles": "Trash files",
+    "fixDirectPlay": "Fix for direct play",
+    "fixDirectPlayTitle": "Fix what makes Plex, Jellyfin and Emby transcode these files (the Direct play filters)"
   },
   "arr": {
     "menu": "*arr actions",
@@ -135,7 +137,8 @@
       "outcome": "Outcome:",
       "added": "Added:",
       "picture": "Picture:",
-      "notWatched": "Not watched in:"
+      "notWatched": "Not watched in:",
+      "directPlay": "Direct play:"
     },
     "notLabel": "not {{label}}",
     "excluded": "(excluded)",
@@ -160,7 +163,11 @@
     "notWatched12m": "1 year",
     "notWatched24m": "2 years",
     "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read after each full scan; the plays are those of the account Shrinkerr connects with.",
-    "leavingSoon": "Leaving soon"
+    "leavingSoon": "Leaving soon",
+    "directPlayHint": "What makes Plex, Jellyfin and Emby transcode on many TVs and streamers: Hi10P video, image subtitles with no text subtitle in their language, no AAC / AC3 / E-AC3 / MP3 audio in the main language, and old containers. Select files and use Fix for direct play.",
+    "dpSubs": "Image subtitles only",
+    "dpAudio": "No widely supported audio",
+    "dpContainer": "Old container"
   },
   "stats": {
     "filesToConvert": "Files to convert",
@@ -240,7 +247,10 @@
     "renameApplied": "Rename applied",
     "advSearchMatches_one": "Advanced search: {{count}} match",
     "advSearchMatches_other": "Advanced search: {{count}} matches",
-    "trackSaveFailed": "Couldn't save the track selection — reload the file and try again"
+    "trackSaveFailed": "Couldn't save the track selection — reload the file and try again",
+    "directPlayQueued_one": "Queued {{count}} file to fix for direct play",
+    "directPlayQueued_other": "Queued {{count}} files to fix for direct play",
+    "directPlayNothing": "None of the selected files needs fixing for direct play (or they're queued already)"
   },
   "confirm": {
     "trash_one": "Move {{count}} file to trash? This cannot be undone from Shrinkerr.",
@@ -273,7 +283,8 @@
     "detectAllLabel": "Detect all",
     "detectSelected_one": "Detect languages for the {{count}} selected item?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.",
     "detectSelected_other": "Detect languages for the {{count}} selected items?\n\nUnknown (und) audio and image-subtitle tracks are detected and the corrected tags written to the files. Image-sub OCR can take minutes per file.",
-    "detectSelectedLabel": "Detect languages"
+    "detectSelectedLabel": "Detect languages",
+    "directPlay": "Fix the selected files for direct play? Hi10P files are converted. The others are remuxed to MKV, with SRT copies of image subtitles and a stereo compatibility track where the audio needs one. Files with no problem are left alone."
   },
   "empty": {
     "loading": "Loading scan results...",

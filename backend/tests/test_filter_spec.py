@@ -225,6 +225,13 @@ EXPECTED = {
     "hi10p": {"ep1"},  # H.264 10-bit
     "interlaced": {"alien"},
     "vfr": {"big"},
+    # Direct play (v0.10.0): Hi10P; an image subtitle with no text one in
+    # its language; no AAC / AC3 / E-AC3 / MP3 track in the main language
+    # (TrueHD, Opus, WMA); an old container (not discs).
+    "dp_video": {"ep1"},
+    "dp_subs": {"dune", "alien"},
+    "dp_audio": {"dune", "corrupt", "wmv"},
+    "dp_container": {"clip", "wmv"},
     "hdr_dv": {"web_in_br"},
     "hdr_hdr10": {"ep1"},
     "hdr_hlg": {"corrupt"},
@@ -408,7 +415,8 @@ def test_the_filter_bar_groups_are_the_server_groups():
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
                      "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture",
-                     "_arr": "arr", "_not_watched": "not_watched", "_maintainerr": "maintainerr"}
+                     "_arr": "arr", "_not_watched": "not_watched", "_maintainerr": "maintainerr",
+                     "_direct_play": "direct_play"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

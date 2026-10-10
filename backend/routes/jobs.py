@@ -115,6 +115,10 @@ class BulkQueueFromScanRequest(BaseModel):
     # etc.) that couldn't be written in place. Forces an audio-type (remux)
     # job even when there's no track-removal work.
     language_remux: bool = False
+    # v0.10.0: "Fix for direct play" (backend/direct_play.py): each file with
+    # a problem gets a conversion (Hi10P) or a remux to MKV, which read image
+    # subtitles into SRT and add a compatibility track where needed.
+    direct_play: bool = False
 
 
 def _classify_job_type(
@@ -485,16 +489,28 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 for r in await cur.fetchall():
                     scan_rows[r["file_path"]] = dict(r)
 
+        direct_play: dict[str, list[str]] = {}
+        if payload.direct_play:
+            from backend.direct_play import problems_for
+            direct_play = await problems_for(db, file_paths)
+
         jobs_to_insert: list[dict] = []
         ignored_by_rule = 0
         for fp in file_paths:
             rule = rule_results.get(fp)
+            if payload.direct_play and fp not in direct_play:
+                continue  # plays directly already
+            problems = direct_play.get(fp, [])
+            # An explicit request like the language remux below (v0.10.0):
+            # rules and the conversion filters govern conversion, not fixes.
+            remux_fix = payload.language_remux or (bool(problems) and "video" not in problems)
+            explicit_fix = payload.language_remux or bool(problems)
 
             # "skip" = do nothing at all, skip entirely.
             # language_remux is an explicit per-file request to stamp a
             # detected language via stream-copy — honour it over a skip rule
             # (the rule governs video conversion, not metadata fixes). v0.9.52.
-            if rule and rule["action"] == "skip" and not payload.language_remux:
+            if rule and rule["action"] == "skip" and not explicit_fix:
                 ignored_by_rule += 1
                 continue
 
@@ -513,7 +529,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             # Skip them for a language_remux: a stream-copy tag fix has no
             # video-conversion cost, so size/bitrate gates don't apply and
             # would otherwise drop the file with a "Nothing queued". v0.9.52.
-            if not payload.override_rules and not payload.language_remux:
+            if not payload.override_rules and not explicit_fix:
                 file_size = row["file_size"] or 0
                 duration = row["duration"] or 0
 
@@ -556,9 +572,9 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             # to refresh the needs_conversion column.
             job_type = _classify_job_type(
                 needs_conversion=bool(row["needs_conversion"]) or bool(row.get("disc_type")),
-                force_reencode=payload.force_reencode,
+                force_reencode=payload.force_reencode or "video" in problems,
                 cleanup_only=payload.cleanup_only,
-                language_remux=payload.language_remux,
+                language_remux=remux_fix,
                 has_audio_work=has_audio_work,
                 skip_conversion=skip_conversion,
             )
@@ -626,6 +642,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "target_resolution": target_resolution,
                 "output_codec": output_codec,
                 **job_overrides(rule),
+                "direct_play": bool(problems),
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "priority": max(

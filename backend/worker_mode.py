@@ -507,6 +507,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "audio_compat_loudnorm": bool(job.get("audio_compat_loudnorm", False)),
                 "image_subs_to_srt": bool(job.get("image_subs_to_srt", False)),
                 "image_subs_keep_original": bool(job.get("image_subs_keep_original", True)),
+                "compat_for_direct_play": bool(job.get("compat_for_direct_play", False)),  # v0.10.0
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server
@@ -604,8 +605,10 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             ocr_planned = bool(job.get("image_subs_to_srt")) and bool(srt_plan(
                 probe.get("subtitle_tracks", []),
                 {t["stream_index"] for t in probe.get("subtitle_tracks", [])} - set(sub_remove)))
-            if audio_remove or sub_remove or ocr_planned:
-                await progress_cb(progress=95, step="removing tracks" if audio_remove or sub_remove else "converting subtitles")
+            direct_play = bool(job.get("direct_play"))  # v0.10.0: the remux to MKV is the fix
+            if audio_remove or sub_remove or ocr_planned or direct_play:
+                await progress_cb(progress=95, step="removing tracks" if audio_remove or sub_remove else (
+                    "converting subtitles" if ocr_planned else "fixing for direct play"))
                 # v0.9.155: remux_audio takes KEEP lists. Passing the remove
                 # lists positionally kept exactly the tracks meant to go (and
                 # sent the subtitle list as `duration`). Derive them like the
@@ -620,6 +623,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                         keep_subtitle_indices=keep_subs,
                         image_subs_to_srt=bool(job.get("image_subs_to_srt")),
                         keep_image_subs=bool(job.get("image_subs_keep_original", True)),
+                        compat_settings=job if direct_play else None,
                     )
                 except Exception as exc:
                     audio_result = {"success": False, "error": str(exc)}

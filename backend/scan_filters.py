@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
+from backend.direct_play import PROBLEMS as _DP_PROBLEMS, SQL as _DP_SQL
 from backend.resolution import RANKS, sql_resolution_rank
 
 GB = 1024 ** 3
@@ -478,6 +479,8 @@ _FILTER_LIST = [
     Filter("hi10p", "picture", sql=f"COALESCE(video_bit_depth, 0) >= 10 AND {_H264}"),  # hardware decoders can't
     Filter("interlaced", "picture", sql="video_interlaced = 1"),
     Filter("vfr", "picture", sql="video_vfr = 1"),
+    # Direct play (v0.10.0): what makes media servers transcode (backend/direct_play.py)
+    *(Filter(f"dp_{p}", "direct_play", sql=f"({_DP_SQL[p]})") for p in _DP_PROBLEMS),
     # HDR: the probe's format, else the name (scanned before it was stored)
     *(Filter(f"hdr_{k}", "hdr", pre_sql=_MAYBE_HDR, py=(lambda k: lambda r, c: hdr_kind(r) == k)(k))
       for k in ("dv", "hdr10", "hlg")),

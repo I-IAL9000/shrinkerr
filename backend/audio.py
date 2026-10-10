@@ -94,6 +94,7 @@ def build_remux_cmd(
     subtitle_stream_codecs: dict[int, str] | None = None,
     audio_languages: dict[int, str] | None = None,
     video_map: str = "0:V:0?",
+    compat_track: dict | None = None,
 ) -> list[str]:
     """
     Build an ffmpeg command to remux keeping only the specified audio and subtitle stream indices.
@@ -109,6 +110,9 @@ def build_remux_cmd(
     matroska-unsupported subtitle codecs (notably `mov_text` from mp4→mkv
     remuxes — `Subtitle codec 94213 is not supported`). Backward-compatible
     when None: caller hits the original blanket-copy path.
+
+    `compat_track` (v0.10.0): a compatibility track to encode after the kept
+    audio (converter.compat_track_plan) — the only stream not copied.
     """
     # Subtitle codecs matroska can't accept on -c copy — must be transcoded
     # to srt. mov_text is the mp4/QuickTime text codec; tx3g is its
@@ -220,6 +224,9 @@ def build_remux_cmd(
         cmd += ["-c", "copy"]
 
     cmd += audio_lang_args
+    if compat_track:
+        from backend.converter import compat_track_args
+        cmd += ["-map", f"0:{compat_track['source']}", *compat_track_args(compat_track)]
     cmd += [output_path]
     return cmd
 
@@ -266,18 +273,33 @@ async def remux_audio(
     on_output_placed: Optional[Callable] = None,
     image_subs_to_srt: bool = False,
     keep_image_subs: bool = True,
+    compat_settings: dict | None = None,
 ) -> dict:
     """_remux_audio, after reading the kept image subtitles (PGS / VobSub)
     into SRT tracks with OCR when `image_subs_to_srt` (v0.10.0): they're
     added beside them, or replace them when `keep_image_subs` is False.
-    `progress_callback` then also gets step=…"""
+    `progress_callback` then also gets step=…
+
+    `compat_settings` (v0.10.0, "Fix for direct play"): the settings that
+    decide a compatibility track (converter.compat_track_plan), added after
+    the kept audio."""
     ocr_dir: str | None = None
     ocr_subs: list[dict] = []
+    compat_track = None
+    probe: dict = {}
+    if image_subs_to_srt or compat_settings:
+        from backend.scanner import probe_file
+        probe = (await probe_file(input_path)) or {}
+    if compat_settings:
+        from backend.converter import compat_track_plan
+        by_index = {t["stream_index"]: t for t in probe.get("audio_tracks") or []}
+        compat_track = compat_track_plan([by_index[i] for i in keep_audio_indices if i in by_index], compat_settings)
+        if compat_track:
+            print(f"[REMUX] Adding a compatibility track ({compat_track['codec']} {compat_track['bitrate']}k)", flush=True)
     if image_subs_to_srt:
         from backend.converter import external_subs_to_merge
         from backend.image_sub_ocr import image_subs_to_srt as read_into_srt, ocr_workdir, srt_plan
-        from backend.scanner import probe_file
-        tracks = ((await probe_file(input_path)) or {}).get("subtitle_tracks") or []
+        tracks = probe.get("subtitle_tracks") or []
         kept = set(keep_subtitle_indices) if keep_subtitle_indices is not None else None
         plan = srt_plan(tracks, kept, await external_subs_to_merge(input_path))
         if plan:
@@ -293,7 +315,7 @@ async def remux_audio(
     try:
         return await _remux_audio(input_path, keep_audio_indices, duration, progress_callback,
                                   keep_subtitle_indices, audio_languages, proc_callback, on_output_placed,
-                                  ocr_subs=ocr_subs)
+                                  ocr_subs=ocr_subs, compat_track=compat_track)
     finally:
         if ocr_dir:
             shutil.rmtree(ocr_dir, ignore_errors=True)
@@ -309,6 +331,7 @@ async def _remux_audio(
     proc_callback: Optional[Callable] = None,
     on_output_placed: Optional[Callable] = None,
     ocr_subs: list[dict] | None = None,
+    compat_track: dict | None = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -380,6 +403,7 @@ async def _remux_audio(
         subtitle_stream_codecs=sub_codecs or None,
         audio_languages=audio_languages,
         video_map=await _probe_video_map(input_path),
+        compat_track=compat_track,
     )
     # Used by the worker to populate update_conversion_log so the
     # Completed tab's expanded view has something to show on

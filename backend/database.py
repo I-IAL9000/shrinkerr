@@ -441,7 +441,9 @@ async def init_db():
                             ("encoding_rules", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
                                                 ("vmaf_min_score", "REAL"))),
                             ("jobs", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
-                                      ("vmaf_min_score", "REAL")))):
+                                      ("vmaf_min_score", "REAL"))),
+                            # "Fix for direct play" (backend/direct_play.py)
+                            ("jobs", (("direct_play", "INTEGER"),))):
             for col, coltype in cols:
                 try:
                     await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype} DEFAULT NULL")

@@ -52,7 +52,9 @@
     "quickCheckDesc": "Análisis de cabecera / metadatos. Rápida: unos segundos por archivo.",
     "thoroughCheck": "Comprobación exhaustiva",
     "thoroughCheckDesc": "Decodificación completa fotograma a fotograma. Lenta: aprox. duración / 10 por archivo.",
-    "trashFiles": "Enviar a la papelera"
+    "trashFiles": "Enviar a la papelera",
+    "fixDirectPlay": "Arreglar para reproducción directa",
+    "fixDirectPlayTitle": "Arregla lo que hace que Plex, Jellyfin y Emby transcodifiquen estos archivos (los filtros de Reproducción directa)"
   },
   "arr": {
     "menu": "Acciones *arr",
@@ -140,7 +142,8 @@
       "outcome": "Resultado:",
       "added": "Añadido:",
       "picture": "Imagen:",
-      "notWatched": "Sin ver en:"
+      "notWatched": "Sin ver en:",
+      "directPlay": "Reproducción directa:"
     },
     "notLabel": "sin {{label}}",
     "excluded": "(excluido)",
@@ -166,7 +169,11 @@
     "notWatched12m": "1 año",
     "notWatched24m": "2 años",
     "notWatchedHint": "Nada reproducido en Plex, Jellyfin o Emby en ese tiempo, y en la biblioteca al menos ese tiempo. Se lee tras cada escaneo completo; las reproducciones son las de la cuenta con la que se conecta Shrinkerr.",
-    "leavingSoon": "Se eliminará pronto"
+    "leavingSoon": "Se eliminará pronto",
+    "directPlayHint": "Lo que hace que Plex, Jellyfin y Emby transcodifiquen en muchos televisores y reproductores: vídeo Hi10P, subtítulos de imagen sin subtítulo de texto en su idioma, ningún audio AAC / AC3 / E-AC3 / MP3 en el idioma principal y contenedores antiguos. Selecciona archivos y usa Arreglar para reproducción directa.",
+    "dpSubs": "Solo subtítulos de imagen",
+    "dpAudio": "Sin audio de amplia compatibilidad",
+    "dpContainer": "Contenedor antiguo"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",
@@ -263,7 +270,11 @@
     "advSearchMatches_one": "Búsqueda avanzada: {{count}} coincidencia",
     "advSearchMatches_many": "Búsqueda avanzada: {{count}} coincidencias",
     "advSearchMatches_other": "Búsqueda avanzada: {{count}} coincidencias",
-    "trackSaveFailed": "No se pudo guardar la selección de pistas: vuelve a cargar el archivo e inténtalo de nuevo"
+    "trackSaveFailed": "No se pudo guardar la selección de pistas: vuelve a cargar el archivo e inténtalo de nuevo",
+    "directPlayQueued_one": "{{count}} archivo en cola para arreglar la reproducción directa",
+    "directPlayQueued_many": "{{count}} archivos en cola para arreglar la reproducción directa",
+    "directPlayQueued_other": "{{count}} archivos en cola para arreglar la reproducción directa",
+    "directPlayNothing": "Ninguno de los archivos seleccionados necesita arreglos para la reproducción directa (o ya están en cola)"
   },
   "confirm": {
     "trash_one": "¿Mover {{count}} archivo a la papelera? Esto no se puede deshacer desde Shrinkerr.",
@@ -307,7 +318,8 @@
     "detectSelected_one": "¿Detectar idiomas del {{count}} elemento seleccionado?\n\nSe detectan las pistas de audio y de subtítulos de imagen con idioma desconocido (und) y se escriben las etiquetas corregidas en los archivos. El OCR de subtítulos de imagen puede tardar minutos por archivo.",
     "detectSelected_many": "¿Detectar idiomas de los {{count}} elementos seleccionados?\n\nSe detectan las pistas de audio y de subtítulos de imagen con idioma desconocido (und) y se escriben las etiquetas corregidas en los archivos. El OCR de subtítulos de imagen puede tardar minutos por archivo.",
     "detectSelected_other": "¿Detectar idiomas de los {{count}} elementos seleccionados?\n\nSe detectan las pistas de audio y de subtítulos de imagen con idioma desconocido (und) y se escriben las etiquetas corregidas en los archivos. El OCR de subtítulos de imagen puede tardar minutos por archivo.",
-    "detectSelectedLabel": "Detectar idiomas"
+    "detectSelectedLabel": "Detectar idiomas",
+    "directPlay": "¿Arreglar los archivos seleccionados para la reproducción directa? Los archivos Hi10P se convierten. Los demás se remuxan a MKV, con copias SRT de los subtítulos de imagen y una pista estéreo de compatibilidad donde el audio la necesite. Los archivos sin problemas no se tocan."
   },
   "empty": {
     "loading": "Cargando resultados del escaneo...",

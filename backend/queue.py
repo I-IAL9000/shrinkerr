@@ -354,6 +354,7 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
+                    1 if j.get("direct_play") else None,
                 ))
                 inserted_mask.append(True)
 
@@ -363,8 +364,8 @@ class JobQueue:
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
                 "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec, "
-                "originals_policy, originals_days, vmaf_min_score) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "originals_policy, originals_days, vmaf_min_score, direct_play) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:
@@ -2941,14 +2942,19 @@ class QueueWorker:
             # too (Settings → Subtitles).
             from backend.converter import get_live_encoding_settings
             from backend.image_sub_ocr import srt_plan
-            _live = await get_live_encoding_settings()
+            from backend.rule_actions import settings_overrides
+            _live = {**await get_live_encoding_settings(), **settings_overrides(job)}
             _image_subs_to_srt = bool(_live.get("image_subs_to_srt"))
+            # "Fix for direct play" (v0.10.0): the remux to MKV is the fix
+            # for an old container, so it always runs; it may add a
+            # compatibility track.
+            _direct_play = bool(job.get("direct_play"))
             _ocr_planned = _image_subs_to_srt and bool(srt_plan(
                 raw_subs, set(keep_sub_indices) if keep_sub_indices is not None else None))
 
             if (keep_indices != all_indices
                     or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices)
-                    or _remux_audio_langs or _ocr_planned):
+                    or _remux_audio_langs or _ocr_planned or _direct_play):
                 # Throttled, awaited DB write — see comment on convert
                 # progress_cb above for why we DON'T use create_task here.
                 _audio_last_db = [0.0]
@@ -2968,7 +2974,7 @@ class QueueWorker:
                         fps=None,
                         speed=round(speed, 1) if speed else None,
                         eta=eta_seconds,
-                        step=step or ("removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else ("converting subtitles" if _ocr_planned else "reordering audio")))),
+                        step=step or ("removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else ("converting subtitles" if _ocr_planned else ("fixing for direct play" if _direct_play else "reordering audio"))))),
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
@@ -2988,6 +2994,7 @@ class QueueWorker:
                     on_output_placed=lambda: self._finalize(job_id),
                     image_subs_to_srt=_image_subs_to_srt,
                     keep_image_subs=_live.get("image_subs_keep_original", True),
+                    compat_settings=_live if _direct_play else None,
                 )
                 if not result["success"] and job_id in self._cancel_flags:
                     await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",

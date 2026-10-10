@@ -83,8 +83,12 @@ def job_overrides(rule: Optional[dict]) -> dict:
 
 def settings_overrides(job: dict) -> dict:
     """A job's own originals policy and VMAF minimum, as the encoding
-    settings convert_file reads (empty: the global ones apply)."""
+    settings convert_file reads (empty: the global ones apply). A "Fix for
+    direct play" job (backend/direct_play.py) reads image subtitles into SRT
+    and adds a compatibility track where the audio needs one."""
     out: dict = {}
+    if job.get("direct_play"):
+        out.update(image_subs_to_srt=True, compat_for_direct_play=True)
     policy = job.get("originals_policy")
     if policy == "keep":
         out.update(backup_original_days=max(1, int(job.get("originals_days") or 7)),

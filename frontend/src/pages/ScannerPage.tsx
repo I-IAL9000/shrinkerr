@@ -1102,6 +1102,29 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     setEstimateHasIgnored(hasIgnored);
   };
 
+  // "Fix for direct play" (v0.10.0): the selection's files with a direct-play
+  // problem get a conversion (Hi10P) or a remux to MKV, with SRT copies of
+  // image subtitles and a compatibility track where the audio needs one.
+  const handleFixDirectPlay = async () => {
+    const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
+    if (!paths.length) {
+      toast(t("scanner:toasts.noSelection"));
+      return;
+    }
+    if (!await confirm({ message: t("scanner:confirm.directPlay"), confirmLabel: t("scanner:selection.fixDirectPlay") })) return;
+    try {
+      const extra: Record<string, any> = { direct_play: true };
+      if (filter !== "all") extra.filter = filter;
+      const r = await addJobsFromScan(paths, 0, false, extra) as any;
+      setSelectAllActive(false);
+      setSelectedPaths(new Set());
+      if (r.added > 0) toast(t("scanner:toasts.directPlayQueued", { count: r.added }), "success");
+      else toast(t("scanner:toasts.directPlayNothing"));
+    } catch (e: any) {
+      toast(e?.message || String(e), "error");
+    }
+  };
+
   const handleConfirmAdd = async (priority: number, overrideRules: boolean = false, encodingOverrides?: any, start: boolean = false) => {
     if (!estimatePaths) return;
     // Snapshot the count before clearing estimatePaths — drives the
@@ -1687,6 +1710,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   {t("common:actions.rescan")}
+                </button>
+                <button className="btn btn-secondary" title={t("scanner:selection.fixDirectPlayTitle")} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleFixDirectPlay}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+                  {t("scanner:selection.fixDirectPlay")}
                 </button>
                 {/* v0.9.20: "Detect selected" is now the adaptive button above,
                     so the per-selection detect button here is removed. */}

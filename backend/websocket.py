@@ -42,6 +42,7 @@ STEP_KEYS: dict[str, str] = {
     "VMAF remeasure (retry)": "steps.vmafRemeasureRetry",
     "Reading image subtitles (OCR)…": "steps.readingImageSubs",
     "converting subtitles": "steps.convertingSubtitles",
+    "fixing for direct play": "steps.fixingDirectPlay",
     "Finding the quality for the VMAF target…": "steps.vmafTargetSearch",
 }
 
