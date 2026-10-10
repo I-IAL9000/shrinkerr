@@ -7,9 +7,9 @@
     "autoQueue": {
       "title": "Auto-Queue",
       "newFiles": "Auto-queue new files",
-      "newFilesHelp": "New files detected in scanned folders by the watcher that need conversion or audio cleanup will be automatically added to the queue using your default encoding settings.",
+      "newFilesHelp": "New files the watcher finds in your folders that need conversion or track cleanup are added to the queue as Add to Queue would add them: your rules, conversion filters and audio / subtitle settings apply.",
       "priority": "Auto-queue priority:",
-      "priorityHelp": "Newly-detected files use this priority. Rules with a Queue Priority action override this setting."
+      "priorityHelp": "Newly-detected files use this priority, or a rule's Queue Priority when that is higher."
     },
     "filters": {
       "title": "Conversion Filters",

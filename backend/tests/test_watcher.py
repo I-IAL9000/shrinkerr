@@ -1,219 +1,137 @@
-"""Tests for backend/watcher.py auto-queue priority resolution.
+"""Tests for backend/watcher.py.
 
-v0.5.0+: _auto_queue_new_files now runs through the rules engine instead
-of using global Settings defaults directly. Verify the priority cascade:
-rule.queue_priority > settings.auto_queue_priority > 0.
+Auto-queue (v0.10.0): new files get the jobs Add to Queue would give them
+(routes/jobs.py queue_new_files) — rules, the conversion filters, audio and
+subtitle removals, the original-language audio moved first, an "ignore"
+rule still doing the cleanup — less files with nothing to do. It used to
+decide on its own. Priority: the highest of the setting and the rule's.
 """
+import json
+
+import aiosqlite
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import pytest_asyncio
+from unittest.mock import AsyncMock, patch
 from backend.watcher import FileWatcher
 
 
-def _fake_scanned(path: str = "/media/test.mkv"):
-    """Minimal ScannedFile-shaped object the watcher iterates over."""
-    track = MagicMock()
-    track.stream_index = 1
-    track.keep = True
-    track.locked = False
-    s = MagicMock()
-    s.file_path = path
-    s.file_size = 1_000_000_000
-    s.needs_conversion = True  # so job_type == "convert"
-    s.audio_tracks = [track]
-    return s
+def _track(si, lang, keep=True, locked=False):
+    return {"stream_index": si, "language": lang, "codec": "aac", "channels": 2, "keep": keep, "locked": locked}
+
+
+@pytest_asyncio.fixture
+async def auto_queue(test_db, monkeypatch):
+    """auto_queue_new on, and a helper that stores a scanned file."""
+    import backend.config
+    import backend.scanner as scanner
+    monkeypatch.setattr(scanner, "settings", backend.config.settings)
+    scanner.invalidate_sub_settings_cache()
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
+        await db.commit()
+
+    async def add(path, needs=1, audio=(), subs=(), native="eng", size=1_000_000_000):
+        async with aiosqlite.connect(test_db) as db:
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, video_codec, needs_conversion, native_language, "
+                "duration, audio_tracks_json, subtitle_tracks_json, scan_timestamp) "
+                "VALUES (?, ?, 'h264', ?, ?, 3600, ?, ?, '2026-10-10')",
+                (path, size, needs, native, json.dumps(list(audio)), json.dumps(list(subs))))
+            await db.commit()
+    yield add
+    scanner.invalidate_sub_settings_cache()
+
+
+class _Scanned:
+    def __init__(self, path):
+        self.file_path = path
+
+
+async def _run(test_db, paths, rules=None):
+    with patch("backend.rule_resolver.resolve_rules_for_batch",
+               new=AsyncMock(return_value=rules or {p: None for p in paths})):
+        return await FileWatcher(test_db, interval_minutes=5)._auto_queue_new_files([_Scanned(p) for p in paths])
+
+
+async def _jobs(test_db):
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM jobs ORDER BY file_path") as cur:
+            return {r["file_path"]: dict(r) for r in await cur.fetchall()}
+
+
+def _rule(**values):
+    base = {"rule_name": "Test rule", "action": "encode", "queue_priority": None, "encoder": None, "nvenc_preset": None, "nvenc_cq": None,
+            "libx265_crf": None, "libx265_preset": None, "target_resolution": None, "audio_codec": None,
+            "audio_bitrate": None}
+    return {**base, **values}
 
 
 @pytest.mark.asyncio
-async def test_auto_queue_priority_rule_wins_over_setting(test_db):
-    """When a rule sets queue_priority=2 (Highest) and auto_queue_priority
-    setting is 1 (High), the rule wins (OR-cascade, not max())."""
-    # Seed the auto_queue_priority + auto_queue_new settings
-    import aiosqlite
-    db = await aiosqlite.connect(test_db)
-    try:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_priority', '1')")
-        await db.commit()
-    finally:
-        await db.close()
-
-    watcher = FileWatcher(test_db, interval_minutes=5)
-    scanned = _fake_scanned("/media/test.mkv")
-
-    rule_results = {
-        "/media/test.mkv": {
-            "queue_priority": 2,
-            "action": "encode",
-            "encoder": None, "nvenc_preset": None, "nvenc_cq": None,
-            "libx265_crf": None, "libx265_preset": None,
-            "target_resolution": None, "audio_codec": None,
-            "audio_bitrate": None,
-        },
-    }
-
-    captured = {}
-
-    # NOTE: captured.update overwrites on multi-call. OK for single-file
-    # batches; extend to a list if you add multi-file tests.
-    async def fake_add_job(file_path, job_type, **kwargs):
-        captured["file_path"] = file_path
-        captured["job_type"] = job_type
-        captured.update(kwargs)
-
-    with patch("backend.queue.JobQueue") as MockQueue:
-        instance = MockQueue.return_value
-        instance.add_job = AsyncMock(side_effect=fake_add_job)
-        with patch("backend.rule_resolver.resolve_rules_for_batch",
-                   new=AsyncMock(return_value=rule_results)):
-            await watcher._auto_queue_new_files([scanned])
-
-    assert captured.get("priority") == 2, \
-        f"Expected priority=2 (rule wins), got {captured.get('priority')}"
+async def test_auto_queue_gives_new_files_the_add_to_queue_jobs(auto_queue, test_db):
+    await auto_queue("/m/convert.mkv", needs=1, audio=[_track(1, "eng")])
+    await auto_queue("/m/subs.mkv", needs=0, audio=[_track(1, "eng")], subs=[_track(2, "fre", keep=False)])
+    # A locked track unticked by hand goes too (v0.9.99).
+    await auto_queue("/m/locked.mkv", needs=0, audio=[_track(1, "eng"), _track(2, "ger", keep=False, locked=True)])
+    await auto_queue("/m/reorder.mkv", needs=0, audio=[_track(1, "spa"), _track(2, "eng")])
+    await auto_queue("/m/nothing.mkv", needs=0, audio=[_track(1, "eng")])
+    paths = ["/m/convert.mkv", "/m/subs.mkv", "/m/locked.mkv", "/m/reorder.mkv", "/m/nothing.mkv"]
+    assert await _run(test_db, paths) == 4
+    jobs = await _jobs(test_db)
+    assert {p: j["job_type"] for p, j in jobs.items()} == {
+        "/m/convert.mkv": "convert", "/m/subs.mkv": "audio", "/m/locked.mkv": "audio", "/m/reorder.mkv": "audio"}
+    assert json.loads(jobs["/m/subs.mkv"]["subtitle_tracks_to_remove"]) == [2]
+    assert json.loads(jobs["/m/locked.mkv"]["audio_tracks_to_remove"]) == [2]
+    # The global settings apply when the job runs, as with Add to Queue.
+    assert jobs["/m/convert.mkv"]["nvenc_preset"] is None and jobs["/m/convert.mkv"]["audio_codec"] is None
 
 
 @pytest.mark.asyncio
-async def test_auto_queue_priority_setting_wins_when_no_rule(test_db):
-    """When no rule matches (or rule has no queue_priority), the global
-    auto_queue_priority setting wins. Setting=1 → priority=1."""
-    import aiosqlite
-    db = await aiosqlite.connect(test_db)
-    try:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_priority', '1')")
+async def test_auto_queue_follows_the_conversion_filters(auto_queue, test_db):
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('min_file_size_mb', '500')")
         await db.commit()
-    finally:
-        await db.close()
-
-    watcher = FileWatcher(test_db, interval_minutes=5)
-    scanned = _fake_scanned("/media/test.mkv")
-
-    # rule_results returns None for the path (no matching rule)
-    rule_results = {"/media/test.mkv": None}
-
-    captured = {}
-
-    async def fake_add_job(file_path, job_type, **kwargs):
-        captured["file_path"] = file_path
-        captured["job_type"] = job_type
-        captured.update(kwargs)
-
-    with patch("backend.queue.JobQueue") as MockQueue:
-        instance = MockQueue.return_value
-        instance.add_job = AsyncMock(side_effect=fake_add_job)
-        with patch("backend.rule_resolver.resolve_rules_for_batch",
-                   new=AsyncMock(return_value=rule_results)):
-            await watcher._auto_queue_new_files([scanned])
-
-    assert captured.get("priority") == 1, \
-        f"Expected priority=1 (setting wins, no rule), got {captured.get('priority')}"
+    await auto_queue("/m/small.mkv", size=100 * 1024 * 1024)
+    await auto_queue("/m/big.mkv", size=900 * 1024 * 1024)
+    assert await _run(test_db, ["/m/small.mkv", "/m/big.mkv"]) == 1
+    assert list(await _jobs(test_db)) == ["/m/big.mkv"]
 
 
 @pytest.mark.asyncio
-async def test_auto_queue_skip_action_short_circuits(test_db):
-    """Rule action='skip' must prevent enqueue. add_job should not be called."""
-    import aiosqlite
-    db = await aiosqlite.connect(test_db)
-    try:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
+async def test_auto_queue_priority_is_the_highest_of_setting_and_rule(auto_queue, test_db):
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_priority', '1')")
         await db.commit()
-    finally:
-        await db.close()
-
-    watcher = FileWatcher(test_db, interval_minutes=5)
-    scanned = _fake_scanned("/media/skip-me.mkv")
-
-    rule_results = {"/media/skip-me.mkv": {"action": "skip"}}
-
-    add_job_mock = AsyncMock()
-
-    with patch("backend.queue.JobQueue") as MockQueue:
-        MockQueue.return_value.add_job = add_job_mock
-        with patch("backend.rule_resolver.resolve_rules_for_batch",
-                   new=AsyncMock(return_value=rule_results)):
-            await watcher._auto_queue_new_files([scanned])
-
-    add_job_mock.assert_not_called()
+    for p in ("/m/a.mkv", "/m/b.mkv"):
+        await auto_queue(p)
+    # A rule matched upstream (e.g. on date_added) with Highest; none for b.
+    await _run(test_db, ["/m/a.mkv", "/m/b.mkv"], {"/m/a.mkv": _rule(queue_priority=2), "/m/b.mkv": None})
+    jobs = await _jobs(test_db)
+    assert (jobs["/m/a.mkv"]["priority"], jobs["/m/b.mkv"]["priority"]) == (2, 1)
 
 
 @pytest.mark.asyncio
-async def test_auto_queue_ignore_action_short_circuits(test_db):
-    """Rule action='ignore' must prevent enqueue (parallel to 'skip'). v0.5.0+."""
-    import aiosqlite
-    db = await aiosqlite.connect(test_db)
-    try:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
-        await db.commit()
-    finally:
-        await db.close()
-
-    watcher = FileWatcher(test_db, interval_minutes=5)
-    scanned = _fake_scanned("/media/ignore-me.mkv")
-
-    rule_results = {"/media/ignore-me.mkv": {"action": "ignore"}}
-
-    add_job_mock = AsyncMock()
-
-    with patch("backend.queue.JobQueue") as MockQueue:
-        MockQueue.return_value.add_job = add_job_mock
-        with patch("backend.rule_resolver.resolve_rules_for_batch",
-                   new=AsyncMock(return_value=rule_results)):
-            await watcher._auto_queue_new_files([scanned])
-
-    add_job_mock.assert_not_called()
+async def test_auto_queue_skip_and_ignore_rules(auto_queue, test_db):
+    await auto_queue("/m/skip.mkv", audio=[_track(1, "eng"), _track(2, "fre", keep=False)])
+    await auto_queue("/m/ignore.mkv", audio=[_track(1, "eng"), _track(2, "fre", keep=False)])
+    await auto_queue("/m/ignore-plain.mkv", audio=[_track(1, "eng")])
+    rules = {"/m/skip.mkv": _rule(action="skip"), "/m/ignore.mkv": _rule(action="ignore"),
+             "/m/ignore-plain.mkv": _rule(action="ignore")}
+    await _run(test_db, list(rules), rules)
+    jobs = await _jobs(test_db)
+    # "ignore" keeps the video as it is but still cleans the tracks; with no
+    # tracks to clean there's nothing to queue. "skip" queues nothing.
+    assert {p: j["job_type"] for p, j in jobs.items()} == {"/m/ignore.mkv": "audio"}
 
 
 @pytest.mark.asyncio
-async def test_auto_queue_date_added_rule_fires_with_priority(test_db):
-    """Integration: a rule with date_added condition (matched upstream)
-    correctly contributes queue_priority to the auto-queued job.
-    Condition matching itself is unit-tested in test_rule_resolver.py;
-    this test verifies the watcher applies a date_added-rule's
-    queue_priority value to add_job. v0.5.1+."""
-    import aiosqlite
-    db = await aiosqlite.connect(test_db)
-    try:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_queue_new', 'true')")
+async def test_auto_queue_off_queues_nothing(auto_queue, test_db):
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE settings SET value = 'false' WHERE key = 'auto_queue_new'")
         await db.commit()
-    finally:
-        await db.close()
-
-    watcher = FileWatcher(test_db, interval_minutes=5)
-    scanned = _fake_scanned("/media/fresh.mkv")
-
-    # resolve_rules_for_batch is mocked — assume the date_added condition
-    # matched and the rule resolved to queue_priority=2. The watcher
-    # doesn't care HOW the rule matched, only WHAT the resolved rule says.
-    rule_results = {
-        "/media/fresh.mkv": {
-            "queue_priority": 2,
-            "action": "encode",
-            "encoder": None, "nvenc_preset": None, "nvenc_cq": None,
-            "libx265_crf": None, "libx265_preset": None,
-            "target_resolution": None, "audio_codec": None,
-            "audio_bitrate": None,
-        },
-    }
-
-    captured = {}
-    async def fake_add_job(file_path, job_type, **kwargs):
-        captured["file_path"] = file_path
-        captured.update(kwargs)
-
-    with patch("backend.queue.JobQueue") as MockQueue:
-        MockQueue.return_value.add_job = AsyncMock(side_effect=fake_add_job)
-        with patch("backend.rule_resolver.resolve_rules_for_batch",
-                   new=AsyncMock(return_value=rule_results)):
-            await watcher._auto_queue_new_files([scanned])
-
-    assert captured.get("priority") == 2, \
-        f"Expected priority=2 from date_added rule, got {captured.get('priority')}"
+    await auto_queue("/m/a.mkv")
+    assert await _run(test_db, ["/m/a.mkv"]) == 0
+    assert await _jobs(test_db) == {}
 
 
 # ----------------------------------------------------------------------------

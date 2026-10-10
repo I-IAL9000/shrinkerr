@@ -398,40 +398,14 @@ async def job_plan(job_id: int):
     }
 
 
-@router.post("/add-from-scan")
-async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
-    """Create jobs from scan results — resolves track data from DB automatically."""
-    if _queue is None:
-        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
-
-    file_paths = list(payload.file_paths)
-
-    # Selected folders, or the whole list on "select all", through the
-    # active filter (sorted below).
-    from backend.routes.scan import _paths_matching
-    folder_paths = [p for p in file_paths if p.endswith("/")]
-    if folder_paths:
-        file_paths = [p for p in file_paths if not p.endswith("/")]
-        resolved = await _paths_matching(payload.filter or "all", folder_paths)
-        print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {len(resolved)} files "
-              f"(filter '{payload.filter or 'all'}')", flush=True)
-        file_paths += resolved
-    print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
-    if payload.select_all and not file_paths:
-        file_paths = await _paths_matching(payload.filter or "all")
-
-    if not file_paths:
-        return {"job_ids": [], "added": 0}
-
-    # Sort the resolved paths so queue_order follows show/season/episode
-    # grouping (e.g. all "Thunder in My Heart S01E01..S02E08" land
-    # contiguously, then "Tiffany Haddish Presents..."). Folder-resolution
-    # queries above don't ORDER BY, and the select-all path uses
-    # scan_results.id which is insertion order — neither is meaningful in
-    # the queue. Alphabetical by full path is what users expect when they
-    # bulk-add a chunk of TV shows. v0.3.61.
-    file_paths.sort()
-
+async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanRequest,
+                          new_files: bool = False) -> tuple[list[dict], int]:
+    """The jobs Add to Queue creates for scanned files, and how many a rule
+    skipped or kept from converting: rules, the conversion filters, the track
+    work, the job type and quality. Also the watcher's auto-queue (v0.10.0;
+    it decided on its own, without subtitle removals or the reorder), with
+    `new_files`: a file with nothing to do is left out there, where an
+    explicit Add to Queue still queues it (a remux)."""
     from backend.rule_resolver import resolve_rules_for_batch
 
     # Resolve encoding rules for all files in batch (unless overridden)
@@ -562,6 +536,8 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                 elif payload.cleanup_only:
                     print(f"[QUEUE] Skipped {fp} (cleanup_only: no audio/sub work to do)", flush=True)
                 continue
+            if new_files and job_type == "audio" and not has_audio_work:
+                continue  # nothing to do: only an explicit Add to Queue remuxes it
 
             # Apply encoding rule overrides (if any)
             encoder = (rule.get("encoder") if rule else None) or default_encoder
@@ -626,6 +602,54 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
             await db.commit()
     finally:
         await db.close()
+    return jobs_to_insert, ignored_by_rule
+
+
+async def queue_new_files(file_paths: list[str], priority: int, queue: JobQueue) -> tuple[int, int]:
+    """The watcher's auto-queue: new files get the jobs Add to Queue would
+    give them, less any with nothing to do. Returns (jobs added, files a rule
+    skipped or kept from converting)."""
+    payload = BulkQueueFromScanRequest(file_paths=file_paths, priority=priority)
+    jobs, by_rule = await _jobs_from_scan(sorted(file_paths), payload, new_files=True)
+    ids = await queue.add_jobs_bulk(jobs)
+    return sum(1 for jid in ids if jid), by_rule
+
+
+@router.post("/add-from-scan")
+async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
+    """Create jobs from scan results — resolves track data from DB automatically."""
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+
+    file_paths = list(payload.file_paths)
+
+    # Selected folders, or the whole list on "select all", through the
+    # active filter (sorted below).
+    from backend.routes.scan import _paths_matching
+    folder_paths = [p for p in file_paths if p.endswith("/")]
+    if folder_paths:
+        file_paths = [p for p in file_paths if not p.endswith("/")]
+        resolved = await _paths_matching(payload.filter or "all", folder_paths)
+        print(f"[QUEUE] Resolved {len(folder_paths)} folder(s) -> {len(resolved)} files "
+              f"(filter '{payload.filter or 'all'}')", flush=True)
+        file_paths += resolved
+    print(f"[QUEUE] Total file paths: {len(file_paths)}", flush=True)
+    if payload.select_all and not file_paths:
+        file_paths = await _paths_matching(payload.filter or "all")
+
+    if not file_paths:
+        return {"job_ids": [], "added": 0}
+
+    # Sort the resolved paths so queue_order follows show/season/episode
+    # grouping (e.g. all "Thunder in My Heart S01E01..S02E08" land
+    # contiguously, then "Tiffany Haddish Presents..."). Folder-resolution
+    # queries above don't ORDER BY, and the select-all path uses
+    # scan_results.id which is insertion order — neither is meaningful in
+    # the queue. Alphabetical by full path is what users expect when they
+    # bulk-add a chunk of TV shows. v0.3.61.
+    file_paths.sort()
+
+    jobs_to_insert, ignored_by_rule = await _jobs_from_scan(file_paths, payload)
 
     # Bulk-insert all queued jobs in a single transaction (huge perf win).
     # `all_ids` parallels `jobs_to_insert` — entries are 0 for files that
