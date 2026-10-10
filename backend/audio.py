@@ -460,27 +460,48 @@ async def remux_audio(
     space_saved = original_size - output_size
 
     try:
-        # Check if we should trash or permanently delete the original
-        use_trash = False
+        # What happens to the original: kept N days, trashed or deleted, as
+        # for a conversion (v0.9.158 — a cleanup only ever trashed or deleted
+        # it, and deleted it when the trash failed).
+        originals: dict = {}
         try:
             from backend.database import DB_PATH
             import sqlite3
             db = sqlite3.connect(DB_PATH)
-            row = db.execute("SELECT value FROM settings WHERE key = 'trash_original_after_conversion'").fetchone()
+            originals = dict(db.execute(
+                "SELECT key, value FROM settings WHERE key IN "
+                "('trash_original_after_conversion', 'backup_original_days', 'backup_folder')").fetchall())
             db.close()
-            use_trash = row and row[0].lower() == "true"
         except Exception:
             pass
+        use_trash = (originals.get("trash_original_after_conversion") or "").lower() == "true"
+        try:
+            backup_days = int(originals.get("backup_original_days") or 0)
+        except ValueError:
+            backup_days = 0
+        backup_path = None
 
         def _dispose(src: Path) -> None:
-            if use_trash:
-                try:
-                    from send2trash import send2trash
-                    send2trash(str(src))
-                except Exception:
+            # The output is in place by now: if the original can't be removed
+            # it stays, and the cleanup still succeeded — failing it got the
+            # cleaned file remuxed again on retry, by stream numbers that no
+            # longer match its tracks (v0.9.158).
+            nonlocal backup_path
+            from backend.converter import _keep_original
+            try:
+                if backup_days > 0:
+                    backup_path = _keep_original(src, p.parent, p.name, originals)
+                elif use_trash:
+                    try:
+                        from send2trash import send2trash
+                        send2trash(str(src))
+                    except Exception:
+                        backup_path = _keep_original(src, p.parent, p.name, originals)
+                else:
                     src.unlink()
-            else:
-                src.unlink()
+            except OSError as exc:
+                print(f"[REMUX] Output in place, but the original couldn't be removed and was kept at {src}: {exc}",
+                      flush=True)
 
         # Place the output BEFORE disposing the original. Order matters: the old
         # order (delete/trash original → rename temp) meant a failed rename —
@@ -533,6 +554,7 @@ async def remux_audio(
         "output_path": final_path,
         "space_saved": space_saved,
         "error": None,
+        "backup_path": backup_path,
         # Conversion-log payload (v0.3.117+): lets the worker store the
         # remux command + log + size deltas so the Completed tab's
         # expanded view of an audio-only job has actual content. Worker

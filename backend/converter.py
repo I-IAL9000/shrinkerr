@@ -2201,6 +2201,30 @@ async def _external_sub_is_readable(path: str) -> bool:
     return b"subtitle" in out
 
 
+
+def _keep_original(src: Path, folder: Path, name: str, live_settings: dict) -> str:
+    """Move an original into the backup folder — the custom one (in a
+    subfolder named after `folder`) or .shrinkerr_backup in `folder` —
+    never onto an earlier backup. Returns where it went.
+
+    v0.9.158: when "move to the trash" fails (no trash folder on the share,
+    a cross-device move…) the original is kept here; it was deleted."""
+    custom = live_settings.get("backup_folder", "")
+    if custom:
+        backup_dir = Path(custom) / folder.name
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        legacy = folder / ".squeezarr_backup"
+        backup_dir = legacy if legacy.exists() else (folder / ".shrinkerr_backup")
+        backup_dir.mkdir(exist_ok=True)
+    target = backup_dir / name
+    n = 0
+    while os.path.lexists(target):
+        n += 1
+        target = backup_dir / f"{Path(name).stem}.{n}{Path(name).suffix}"
+    shutil.move(str(src), str(target))
+    return str(target)
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -3926,8 +3950,7 @@ async def convert_file(
             """Backup / trash / delete a regular-file original that the placed
             output has already superseded. `src` is where the original now lives
             (possibly a sidecar); `backup_name` is the name to preserve in the
-            backup folder. Mirrors the pre-v0.9.126 modes incl. trash→delete
-            fallback. Runs only after the output is safely in place."""
+            backup folder. Runs only after the output is safely in place."""
             nonlocal result_backup_path
             if backup_days and backup_days > 0:
                 custom_backup = live_settings.get("backup_folder", "")
@@ -3952,8 +3975,9 @@ async def convert_file(
                     await asyncio.to_thread(send2trash, str(src))  # v0.9.32: off-loop
                     print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
                 except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    src.unlink()
+                    result_backup_path = await asyncio.to_thread(_keep_original, src, p.parent, backup_name, live_settings)
+                    print(f"[CONVERT] Trash failed ({trash_exc}); original kept in the backup folder: "
+                          f"{result_backup_path}", flush=True)
             else:
                 src.unlink()
 
@@ -3987,8 +4011,10 @@ async def convert_file(
                     await asyncio.to_thread(send2trash, str(iso_source))  # v0.9.32: off-loop
                     print(f"[CONVERT] ISO moved to trash: {iso_source.name}", flush=True)
                 except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    iso_source.unlink()
+                    result_backup_path = await asyncio.to_thread(
+                        _keep_original, iso_source, iso_source.parent, iso_source.name, live_settings)
+                    print(f"[CONVERT] Trash failed ({trash_exc}); ISO kept in the backup folder: "
+                          f"{result_backup_path}", flush=True)
             else:
                 iso_source.unlink()
                 print(f"[CONVERT] Removed ISO: {iso_source}", flush=True)
@@ -4024,8 +4050,10 @@ async def convert_file(
                     await asyncio.to_thread(send2trash, str(source_to_handle))  # v0.9.32: off-loop
                     print(f"[CONVERT] Disc subdir moved to trash: {source_to_handle.name}", flush=True)
                 except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
+                    result_backup_path = await asyncio.to_thread(
+                        _keep_original, source_to_handle, p.parent.parent, source_to_handle.name, live_settings)
+                    print(f"[CONVERT] Trash failed ({trash_exc}); disc kept in the backup folder: "
+                          f"{result_backup_path}", flush=True)
             else:
                 await asyncio.to_thread(shutil.rmtree, source_to_handle)  # v0.9.32: off-loop
                 print(f"[CONVERT] Removed disc subdir: {source_to_handle}", flush=True)

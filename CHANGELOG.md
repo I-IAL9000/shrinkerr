@@ -5,6 +5,13 @@ All notable changes to Shrinkerr are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.158] — 2026-10-10
+
+### Fixed
+- **Originals the trash couldn't take were deleted**: with "move to the trash", an original — a converted file, an ISO or a disc folder — that the trash refused (no trash folder on the share, a cross-device move) was deleted for good. It's kept in the backup folder now.
+- **Audio / subtitle cleanups ignored "keep originals"**: they only ever trashed or deleted the original. They now keep it in the backup folder like a conversion does, and the job can be undone.
+- An audio / subtitle cleanup whose original couldn't be removed afterwards was reported as failed, so Retry cleaned the already-cleaned file again; it now succeeds and keeps the original.
+
 ## [0.9.157] — 2026-10-08
 
 ### Security

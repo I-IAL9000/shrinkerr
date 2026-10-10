@@ -2525,6 +2525,11 @@ class QueueWorker:
                                                        error_params=result.get("error_params"))
                     return
                 space_saved += result.get("space_saved", 0)
+                if result.get("backup_path"):  # v0.9.158: cleanups keep originals too (Undo)
+                    try:
+                        await self.queue.update_backup_path(job_id, result["backup_path"], current_file_path)
+                    except Exception as exc:
+                        print(f"[WORKER] Failed to store backup path: {exc}", flush=True)
 
                 # v0.9.39: remux_audio always writes a .mkv and replaces the
                 # original, so on a non-mkv source (AVI) the path changes. Point
