@@ -768,6 +768,23 @@ export interface RuleTestResult {
 }
 export const testEncodingRule = (filePath: string) =>
   apiFetch<RuleTestResult>("/rules/test", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
+// Rules files (v0.10.0): the rules as YAML, and the library's ready-made ones.
+export interface RuleImportResult {
+  added: number;
+  replaced: number;
+  errors: { name: string; error: string; code: string; params: Record<string, unknown> }[];
+}
+export interface LibraryRule {
+  id: string;
+  rule: { action: string; match?: string; conditions: { type: string; operator?: string; value: string | number }[];
+          settings?: Record<string, unknown> };
+}
+export const downloadRulesFile = () => saveDownload("/rules/export", "shrinkerr-rules.yaml");
+export const importRulesFile = (text: string) =>
+  apiFetch<RuleImportResult>("/rules/import", { method: "POST", body: JSON.stringify({ text }) });
+export const getRuleLibrary = () => apiFetch<LibraryRule[]>("/rules/library");
+export const addLibraryRule = (id: string, name: string) =>
+  apiFetch<RuleImportResult>(`/rules/library/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ name }) });
 export const reorderEncodingRules = (ruleIds: number[]) =>
   apiFetch("/rules/reorder", { method: "PUT", body: JSON.stringify({ rule_ids: ruleIds }) });
 export const syncPlexRuleMetadata = () =>
@@ -1000,13 +1017,17 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
 export interface DoctorCheck { id: string; status: "ok" | "warn" | "error" | "info"; target: string | null; data: Record<string, any> }
 export interface DoctorReport { checked_at: string; version: string; checks: DoctorCheck[] }
 export const getDoctor = () => apiFetch<DoctorReport>("/doctor");
-export async function downloadDiagnostics(): Promise<void> {
+export const downloadDiagnostics = () => saveDownload("/doctor/diagnostics", "shrinkerr-diagnostics.zip");
+
+/** Save the file a GET of `path` returns (with the API key, which a plain
+ *  link can't send). */
+async function saveDownload(path: string, fallbackName: string): Promise<void> {
   const headers: Record<string, string> = {};
   const apiKey = getStoredApiKey();
   if (apiKey) headers["X-Api-Key"] = apiKey;
-  const resp = await fetch(`${API_BASE}/doctor/diagnostics`, { headers, credentials: "include" });
+  const resp = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const name = /filename="([^"]+)"/.exec(resp.headers.get("Content-Disposition") || "")?.[1] || "shrinkerr-diagnostics.zip";
+  const name = /filename="([^"]+)"/.exec(resp.headers.get("Content-Disposition") || "")?.[1] || fallbackName;
   const url = URL.createObjectURL(await resp.blob());
   const a = document.createElement("a");
   a.href = url;

@@ -37,6 +37,7 @@ import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../
 import SettingsSearch from "../components/SettingsSearch";
 import RuleTester from "../components/RuleTester";
 import PoliciesSection from "../components/PoliciesSection";
+import RuleSharing from "../components/RuleSharing";
 import LanguagePicker from "../components/LanguagePicker";
 import { useConfirm } from "../components/ConfirmModal";
 
@@ -3936,7 +3937,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {/* Encoding Rules */}
               <div style={sectionStyle}>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 4 }}>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+                    <RuleSharing ruleNames={rules.map(r => r.name)} onChanged={loadRules} />
                     {encoding?.plex_configured && (
                       <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                         disabled={ruleSyncing}

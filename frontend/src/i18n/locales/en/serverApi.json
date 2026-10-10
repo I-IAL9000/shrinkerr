@@ -60,7 +60,16 @@
     "jellyfinSyncFailed": "Jellyfin sync failed: {{error}}",
     "noFieldsToUpdate": "No fields to update",
     "plexOptionsFailed": "Failed to fetch Plex options: {{error}}",
-    "plexSyncFailed": "Plex sync failed: {{error}}"
+    "plexSyncFailed": "Plex sync failed: {{error}}",
+    "import": {
+      "notYaml": "This isn't a YAML file: {{error}}",
+      "notRulesFile": "This isn't a Shrinkerr rules file.",
+      "tooMany": "A rules file can hold up to {{max}} rules.",
+      "nameRequired": "A rule has no name.",
+      "invalid": "Not a valid rule: {{error}}",
+      "missingView": "The saved view {{view}} is missing.",
+      "unknownPreset": "No such rule in the library."
+    }
   },
   "scan": {
     "alreadyRunning": "Scan already in progress",

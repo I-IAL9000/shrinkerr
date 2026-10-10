@@ -60,7 +60,16 @@
     "jellyfinSyncFailed": "Falló la sincronización con Jellyfin: {{error}}",
     "noFieldsToUpdate": "No hay campos que actualizar",
     "plexOptionsFailed": "No se pudieron obtener las opciones de Plex: {{error}}",
-    "plexSyncFailed": "Falló la sincronización con Plex: {{error}}"
+    "plexSyncFailed": "Falló la sincronización con Plex: {{error}}",
+    "import": {
+      "notYaml": "No es un archivo YAML: {{error}}",
+      "notRulesFile": "No es un archivo de reglas de Shrinkerr.",
+      "tooMany": "Un archivo de reglas puede contener hasta {{max}} reglas.",
+      "nameRequired": "Una regla no tiene nombre.",
+      "invalid": "No es una regla válida: {{error}}",
+      "missingView": "Falta la vista guardada {{view}}.",
+      "unknownPreset": "Esa regla no está en la biblioteca."
+    }
   },
   "scan": {
     "alreadyRunning": "Ya hay un escaneo en curso",

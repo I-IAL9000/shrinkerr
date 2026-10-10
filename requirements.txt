@@ -19,3 +19,4 @@ charset-normalizer==3.4.5
 pytesseract==0.3.13
 pgsrip==0.1.11
 apprise==1.9.3
+PyYAML==6.0.3  # v0.10.0: rules files (apprise needs it too)

@@ -1,0 +1,52 @@
+# Ready-made rules (v0.10.0): Settings → Automation → Rules → Rule library.
+# Each preset is one rule in the rules-file format (backend/rule_sharing.py);
+# its name and description are translated in the UI by id
+# (settingsIntegrations:rules.library.presets.<id>). They avoid encoder-specific
+# choices, so they work with any encoder.
+presets:
+  - id: remux-keep-originals
+    rule:
+      action: encode
+      match: any
+      conditions:
+        - {type: source, operator: is, value: Remux}
+      settings: {originals_policy: keep, originals_days: 30, vmaf_min_score: 93}
+
+  - id: animation-av1
+    rule:
+      action: encode
+      match: any
+      conditions:
+        - {type: content_type, operator: is, value: animation}
+        - {type: content_type, operator: is, value: anime}
+      settings: {output_codec: av1}
+
+  - id: 4k-quality
+    rule:
+      action: encode
+      match: any
+      conditions:
+        - {type: resolution, operator: is, value: 4K}
+      settings: {nvenc_cq: 18, libx265_crf: 18, vmaf_min_score: 93}
+
+  - id: webdl-worth-it
+    rule:
+      action: encode
+      match: any
+      conditions:
+        - {type: source, operator: is, value: WEB-DL}
+      settings: {min_savings_pct: 20}
+
+  - id: small-files-tracks-only
+    rule:
+      action: ignore
+      match: any
+      conditions:
+        - {type: file_size, operator: less_than, value: "1"}
+
+  - id: skip-samples
+    rule:
+      action: skip
+      match: any
+      conditions:
+        - {type: title, operator: contains, value: sample}

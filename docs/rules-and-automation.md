@@ -8,6 +8,7 @@ right settings, without having to touch the UI for each one.
   - [Conditions](#conditions)
   - [Actions and overrides](#actions-and-overrides)
   - [Order and precedence](#order-and-precedence)
+  - [Sharing rules and the rule library](#sharing-rules-and-the-rule-library)
 - [Watch folders](#watch-folders)
 - [NZBGet / SABnzbd](#nzbget--sabnzbd)
 - [Sonarr / Radarr](#sonarr--radarr)
@@ -95,6 +96,60 @@ Practical layout that most users arrive at:
 3. **Source-specific rules** — e.g. "directory starts with `/media/Anime`,
    use `libx265 slow / CRF 20`" (animation compresses differently).
 4. **Catch-all at the bottom** — let global settings do the work.
+
+### Sharing rules and the rule library
+
+**Export** (above the rule list) saves your rules as a YAML file,
+`shrinkerr-rules.yaml`, with the saved views they use. **Import…** reads
+such a file:
+
+- Its rules are added after yours, in the file's order.
+- A rule with the same name as one of yours replaces it but keeps its
+  place in the order. Importing the same file again changes nothing.
+- A saved view the file brings is created, unless you already have a view
+  of that name. Then your view is used.
+- A rule that can't be imported (an unknown condition, a bad value) is
+  listed with the reason. The rest are imported.
+
+The file is plain text, so you can write or edit it by hand:
+
+```yaml
+shrinkerr_rules: 1
+rules:
+  - name: Anime in AV1
+    action: encode            # encode | ignore (tracks only) | skip
+    enabled: true
+    match: any                # any | all
+    conditions:
+      - {type: content_type, operator: is, value: anime}
+      - {type: saved_view, operator: is, value: Big x264}
+    settings:                 # anything the rule form sets; leave out what it doesn't
+      output_codec: av1
+      vmaf_min_score: 93
+      originals_policy: keep  # keep | trash | delete
+      originals_days: 30
+saved_views:
+  - {name: Big x264, filter: x264}
+```
+
+`settings` takes the rule form's fields: `encoder`, `nvenc_preset`,
+`nvenc_cq`, `libx265_crf`, `libx265_preset`, `output_codec`,
+`target_resolution`, `audio_codec`, `audio_bitrate`, `queue_priority`,
+`audio_keep_languages`, `sub_policy`, `sub_keep_languages`,
+`originals_policy`, `originals_days`, `vmaf_min_score` and
+`min_savings_pct`.
+
+**Rule library** has ready-made rules to start from:
+
+- Remuxes: keep the originals
+- Animation and anime in AV1
+- 4K: higher quality
+- WEB-DL: only when it's worth it
+- Small files: tracks only
+- Skip samples
+
+They work with any encoder. Each one is added after your rules, and you
+can edit it like any other rule. Adding it again resets it.
 
 ## Watch folders
 

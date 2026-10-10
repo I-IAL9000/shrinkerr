@@ -154,13 +154,17 @@ def _check_condition_types(conditions) -> None:
             raise ApiError(400, f"Invalid match type: {ctype}", code="rules.invalidMatchType", params={"type": ctype})
 
 
-@router.post("/")
-async def create_rule(payload: RuleCreate):
+def _check_rule(payload: RuleCreate) -> None:
     if not payload.match_conditions:
         raise ApiError(400, "At least one match condition required", code="rules.conditionRequired")
     _check_condition_types(payload.match_conditions)
     if payload.action not in ("encode", "ignore", "skip"):
         raise ApiError(400, "action must be encode, ignore, or skip", code="rules.invalidAction")
+
+
+@router.post("/")
+async def create_rule(payload: RuleCreate):
+    _check_rule(payload)
 
     db = await connect_db()
     try:
@@ -199,6 +203,44 @@ async def create_rule(payload: RuleCreate):
         return {"id": rule_id, "priority": next_priority}
     finally:
         await db.close()
+
+
+class ImportRulesRequest(BaseModel):
+    text: str = Field(max_length=2_000_000)
+
+
+class LibraryImportRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+@router.get("/export")
+async def export_rules_file():
+    """The rules (and the saved views they use) as a YAML file (v0.10.0)."""
+    from fastapi import Response
+    from backend.rule_sharing import export_rules
+    return Response(await export_rules(), media_type="application/yaml", headers={
+        "Content-Disposition": 'attachment; filename="shrinkerr-rules.yaml"', "Cache-Control": "no-store"})
+
+
+@router.post("/import")
+async def import_rules_file(payload: ImportRulesRequest):
+    from backend.rule_sharing import import_rules, parse
+    return await import_rules(parse(payload.text))
+
+
+@router.get("/library")
+async def rule_library():
+    from backend.rule_sharing import library
+    return library()
+
+
+@router.post("/library/{preset_id}")
+async def import_library_rule(preset_id: str, payload: LibraryImportRequest):
+    from backend.rule_sharing import import_preset
+    result = await import_preset(preset_id, payload.name.strip())
+    if result is None:
+        raise ApiError(404, "No such rule in the library.", code="rules.import.unknownPreset")
+    return result
 
 
 @router.put("/reorder")

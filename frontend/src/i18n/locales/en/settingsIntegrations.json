@@ -306,6 +306,50 @@
       "earlierWins": "matches, but an earlier rule wins",
       "noMatch": "doesn't match",
       "noRules": "No enabled rules."
+    },
+    "sharing": {
+      "library": "Rule library",
+      "import": "Import…",
+      "export": "Export",
+      "imported": "Rules added: {{added}}, replaced: {{replaced}}.",
+      "importFailed": "Couldn't import the rules file.",
+      "problemsTitle": "Some rules weren't imported",
+      "notImported_one": "{{count}} rule wasn't imported:",
+      "notImported_other": "{{count}} rules weren't imported:",
+      "unnamed": "(no name)"
+    },
+    "library": {
+      "title": "Rule library",
+      "intro": "Ready-made rules to start from. Each is added after your rules, so rules above it still win, and you can edit it like any other. Adding one again resets it.",
+      "add": "Add",
+      "reset": "Reset",
+      "added": "Added the rule “{{name}}”.",
+      "presets": {
+        "remux-keep-originals": {
+          "name": "Remuxes: keep the originals",
+          "description": "Remux files keep their original for 30 days and need a VMAF score of at least 93."
+        },
+        "animation-av1": {
+          "name": "Animation and anime in AV1",
+          "description": "Encodes animation and anime to AV1, which handles flat colour well. Where your encoder has no AV1, they're encoded HEVC."
+        },
+        "4k-quality": {
+          "name": "4K: higher quality",
+          "description": "4K files get a lower CQ / CRF (18) and need a VMAF score of at least 93."
+        },
+        "webdl-worth-it": {
+          "name": "WEB-DL: only when it's worth it",
+          "description": "WEB-DL files are usually encoded efficiently already: they're re-encoded only when the estimate saves at least 20 %. Track cleanup still happens."
+        },
+        "small-files-tracks-only": {
+          "name": "Small files: tracks only",
+          "description": "Files under 1 GB aren't re-encoded; unwanted audio and subtitle tracks are still removed."
+        },
+        "skip-samples": {
+          "name": "Skip samples",
+          "description": "Files with “sample” in their name are left alone."
+        }
+      }
     }
   },
   "conditions": {

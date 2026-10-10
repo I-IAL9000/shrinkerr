@@ -315,6 +315,51 @@
       "earlierWins": "coincide, pero gana una regla anterior",
       "noMatch": "no coincide",
       "noRules": "No hay reglas activadas."
+    },
+    "sharing": {
+      "library": "Biblioteca de reglas",
+      "import": "Importar…",
+      "export": "Exportar",
+      "imported": "Reglas añadidas: {{added}}, reemplazadas: {{replaced}}.",
+      "importFailed": "No se pudo importar el archivo de reglas.",
+      "problemsTitle": "Algunas reglas no se importaron",
+      "notImported_one": "{{count}} regla no se importó:",
+      "notImported_many": "{{count}} reglas no se importaron:",
+      "notImported_other": "{{count}} reglas no se importaron:",
+      "unnamed": "(sin nombre)"
+    },
+    "library": {
+      "title": "Biblioteca de reglas",
+      "intro": "Reglas listas para usar como punto de partida. Cada una se añade después de tus reglas, así que las de arriba siguen teniendo prioridad, y puedes editarla como cualquier otra. Añadirla de nuevo la restablece.",
+      "add": "Añadir",
+      "reset": "Restablecer",
+      "added": "Se añadió la regla «{{name}}».",
+      "presets": {
+        "remux-keep-originals": {
+          "name": "Remuxes: conservar los originales",
+          "description": "Los archivos remux conservan su original durante 30 días y necesitan una puntuación VMAF de al menos 93."
+        },
+        "animation-av1": {
+          "name": "Animación y anime en AV1",
+          "description": "Codifica la animación y el anime en AV1, que maneja bien los colores planos. Si tu codificador no tiene AV1, se codifican en HEVC."
+        },
+        "4k-quality": {
+          "name": "4K: más calidad",
+          "description": "Los archivos 4K usan un CQ / CRF más bajo (18) y necesitan una puntuación VMAF de al menos 93."
+        },
+        "webdl-worth-it": {
+          "name": "WEB-DL: solo si merece la pena",
+          "description": "Los archivos WEB-DL suelen estar ya codificados de forma eficiente: solo se recodifican si la estimación ahorra al menos un 20 %. La limpieza de pistas se hace igualmente."
+        },
+        "small-files-tracks-only": {
+          "name": "Archivos pequeños: solo pistas",
+          "description": "Los archivos de menos de 1 GB no se recodifican; las pistas de audio y subtítulos no deseadas se eliminan igualmente."
+        },
+        "skip-samples": {
+          "name": "Omitir samples",
+          "description": "Los archivos con «sample» en el nombre no se tocan."
+        }
+      }
     }
   },
   "conditions": {
