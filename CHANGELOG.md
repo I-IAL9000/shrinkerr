@@ -13,7 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Your settings stay as they were.** The new defaults (keep originals 7 days, reject encodes below VMAF 88, leave subtitles alone until languages are chosen, skip hardlinked files, content type detection) are for new installs; turn them on in Settings if you want them.
 - **The first full scan after updating takes longer**: it reads every file once more, for the new 10-bit, interlaced, frame-rate and hardlink details.
 - **Update remote workers to 0.10 as well**: older workers don't know the new per-job settings (a rule's originals policy, Fix for direct play, before / after frames, Dolby Vision).
-- **Track cleanups keep originals too**: with "keep originals for N days" on, an audio / subtitle cleanup now keeps the original in the backup folder like a conversion does (and can be undone), so backups take a little more space.
 - **Dolby Vision profile 7 and 8 files can now be converted** (keeping their Dolby Vision) when HEVC is among the codecs you convert from; before, they were never converted.
 
 ### Added
@@ -102,8 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.
-- **Originals the trash couldn't take were deleted**: with "move to the trash", an original (or a converted disc) the trash refused — no trash folder on the share, a cross-device move — was deleted for good. It's kept in the backup folder now.
-- **Track cleanups ignored your originals setting**: they only ever trashed or deleted the original, so "keep originals", a rule's originals policy and Undo didn't cover the tracks they removed — and on a remote worker they always deleted it.
+- **Track cleanups follow a rule's originals policy**, and on a remote worker they no longer delete the original whatever the server says (0.9.158 made them keep originals on this server).
 - **Renaming left subtitle files behind**: Scanner → Rename and the rename after a conversion renamed only the video, so `Movie.en.srt` kept the old name and Plex lost it (and merging left it out). Subtitle files named after the video now move with it, never onto an existing file; the conversion's own rename no longer takes `Saw II.en.srt` along with `Saw.mkv`. The rename after a conversion also updates the Scanner rows under renamed folders.
 - **Remote workers can use Quick Sync and VAAPI**: they never detected them, so an Intel / AMD worker (as the Nodes page writes its command) encoded on the CPU. Workers also get the server's Quick Sync / VAAPI quality and NVENC bit depth — they always encoded NVENC at 10-bit, which a Maxwell GPU can't.
 - **Pausing a remote node put its running job back in the queue only in name**: the job ended as failed. It returns to the queue now; a job cancelled on a worker shows as cancelled, not failed; neither counts towards suspending the worker; and a job that really fails on a worker sends the "job failed" notification.
@@ -175,6 +173,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A file whose streams couldn't be read when its conversion started (e.g. a stalled NAS) was converted without its subtitles; the job now fails and keeps the original.
 - **A conversion that kept the file's name left the Scanner with its old track list**, so a later cleanup could remove the wrong (or the only) audio track; tracks are now re-read after every job and sorted against the TMDB/manual original language, not a stale guess (if the file can't be read right then, its track list is cleared until the next scan instead of kept).
 - A Blu-ray/DVD rip in a release subfolder now converts into the movie folder, named after the movie instead of the release (no doubled tech tags), and leftover CERTIFICATE / AACS (and empty AUDIO_TS / JACKET_P) folders are removed with the disc. Anything else in the release folder — subtitles, an .nfo, other files — is left alone; the folder itself is removed only once it's empty.
+
+## [0.9.158] — 2026-10-10
+
+### Fixed
+- **Originals the trash couldn't take were deleted**: with "move to the trash", an original — a converted file, an ISO or a disc folder — that the trash refused (no trash folder on the share, a cross-device move) was deleted for good. It's kept in the backup folder now.
+- **Audio / subtitle cleanups ignored "keep originals"**: they only ever trashed or deleted the original. They now keep it in the backup folder like a conversion does, and the job can be undone.
+- An audio / subtitle cleanup whose original couldn't be removed afterwards was reported as failed, so Retry cleaned the already-cleaned file again; it now succeeds and keeps the original.
 
 ## [0.9.157] — 2026-10-08
 
