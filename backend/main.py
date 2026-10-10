@@ -295,6 +295,14 @@ async def lifespan(app: FastAPI):
             await backfill_normalized_language_keeps()
         except Exception as exc:
             print(f"[STARTUP] language-code keep backfill skipped: {exc}", flush=True)
+        # v0.10.0: the Audio cleanup flag counts moving the original-language
+        # audio first by the queue's rule (it fired with no such track, and
+        # most writers left it out).
+        try:
+            from backend.routes.scan import realign_audio_flags_once
+            await realign_audio_flags_once()
+        except Exception as exc:
+            print(f"[STARTUP] audio cleanup flag re-check skipped: {exc}", flush=True)
         # v0.10.0: languages found by an unchecked title search are looked up
         # again with the checked one.
         try:

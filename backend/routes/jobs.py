@@ -189,24 +189,19 @@ def track_work(row: dict) -> tuple[list[int], list[int], bool]:
 
 
 def native_first(row: dict, audio_remove: list[int]) -> Optional[str]:
-    """The original language when a job moves its audio first — as the worker
-    and the converter do with "reorder_native_audio" on: a track the job keeps
-    is in that language and the first kept track isn't. `row` needs
-    native_language (v0.10.0: the queue never loaded it, so this never fired)."""
-    native = (row.get("native_language") or "").lower()
-    if not native or native == "und":
-        return None
-    from backend.scanner import languages_match, _is_cleanup_enabled
-    if not _is_cleanup_enabled("reorder_native_audio"):
-        return None
+    """The original language when a job moves its audio first (the Scanner's
+    rule, scanner.needs_native_reorder, over the tracks the job keeps). `row`
+    needs native_language (v0.10.0: the queue never loaded it, so this never
+    fired)."""
+    from backend.scanner import needs_native_reorder
     try:
         tracks = json.loads(row["audio_tracks_json"] or "[]")
     except (json.JSONDecodeError, ValueError, TypeError):
         return None
     removed = set(audio_remove)
-    is_native = [languages_match((t.get("language") or "").lower(), native)
-                 for t in tracks if t.get("stream_index") not in removed]
-    return native if any(is_native) and not is_native[0] else None
+    kept = [{**t, "keep": t.get("stream_index") not in removed} for t in tracks]
+    native = row.get("native_language")
+    return native.lower() if needs_native_reorder(kept, native) else None
 
 
 # The scan_results columns track_work() and the job plans read.

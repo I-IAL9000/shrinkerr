@@ -113,3 +113,123 @@ async def test_the_estimate_and_the_plans_agree(jobs_env):
             ids = dict(await cur.fetchall())
     assert (await job_plan(ids["/m/convert.mkv"]))["native_first"] == "jpn"
     assert (await job_plan(ids["/m/nothing.mkv"]))["native_first"] is None
+
+
+# ── The Scanner's flag (the Audio cleanup filter) uses the same rule ──────────
+
+def test_the_flag_rule(cleanup_settings):
+    from backend.models import AudioTrack
+    from backend.scanner import removable_audio_flag
+    assert removable_audio_flag([a(1, "eng"), a(2, "jpn")], "jpn") == 1
+    assert removable_audio_flag([a(1, "eng"), a(2, "spa")], "jpn") == 0   # nothing to move
+    assert removable_audio_flag([a(1, "jpn"), a(2, "eng", keep=False)], "jpn") == 1  # a removal
+    models = [AudioTrack(stream_index=1, language="eng", codec="aac", channels=2, keep=True),
+              AudioTrack(stream_index=2, language="jpn", codec="aac", channels=2, keep=True)]
+    assert removable_audio_flag(models, "jpn") == 1
+
+
+async def _flags(db_path):
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT file_path, has_removable_tracks_flag FROM scan_results") as cur:
+            return dict(await cur.fetchall())
+
+
+@pytest.mark.asyncio
+async def test_a_scan_sets_the_flag(jobs_env):
+    import backend.routes.scan as scan_route
+    from backend.models import AudioTrack, ScannedFile
+    async with aiosqlite.connect(jobs_env) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('always_keep_languages', '[\"eng\", \"fre\"]')")
+        # A stored TMDB native (French) wins over the scan's guess (English).
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_size, native_language, language_source, audio_tracks_json, "
+            "scan_timestamp) VALUES ('/m/C/c.mkv', 1, 'fre', 'api', '[]', ?)", (NOW,))
+        await db.commit()
+
+    def scanned(path, langs, native):
+        return ScannedFile(
+            file_path=path, file_name=path.rsplit("/", 1)[1], folder_name="x", file_size=1, file_size_gb=0.0,
+            video_codec="h264", needs_conversion=False, native_language=native, has_removable_tracks=False,
+            estimated_savings_bytes=0, estimated_savings_gb=0.0,
+            audio_tracks=[AudioTrack(stream_index=i, language=lang, codec="aac", channels=2, keep=True)
+                          for i, lang in enumerate(langs, 1)])
+
+    scan_route._write_batch_sync(jobs_env, [
+        scanned("/m/A/a.mkv", ["eng", "jpn"], "jpn"),
+        scanned("/m/B/b.mkv", ["eng", "spa"], "jpn"),
+        scanned("/m/C/c.mkv", ["fre", "eng"], "eng"),
+    ], NOW)
+    flags = await _flags(jobs_env)
+    assert (flags["/m/A/a.mkv"], flags["/m/B/b.mkv"], flags["/m/C/c.mkv"]) == (1, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_track_edit_keeps_the_reorder_in_the_flag(jobs_env):
+    import backend.routes.scan as scan_route
+    async with aiosqlite.connect(jobs_env) as db:
+        async with db.execute("SELECT id FROM scan_results WHERE file_path = '/m/reorder.mkv'") as cur:
+            (rid,) = await cur.fetchone()
+    await scan_route.update_audio_tracks(rid, scan_route.UpdateTracksRequest(
+        audio_tracks_json=json.dumps([a(1, "eng"), a(2, "jpn")])))
+    assert (await _flags(jobs_env))["/m/reorder.mkv"] == 1
+
+
+@pytest.mark.asyncio
+async def test_existing_flags_are_rechecked_once(jobs_env):
+    import backend.routes.scan as scan_route
+    from backend.routes.jobs import BulkQueueFromScanRequest, add_jobs_from_scan
+    async with aiosqlite.connect(jobs_env) as db:
+        # As older versions left them: the reorder missing, or set with no
+        # Japanese track to move.
+        await db.execute("UPDATE scan_results SET has_removable_tracks_flag = 0")
+        await db.execute(
+            "INSERT INTO scan_results (file_path, file_size, native_language, audio_tracks_json, "
+            "has_removable_tracks_flag, scan_timestamp) VALUES ('/m/dubs.mkv', 1, 'jpn', ?, 1, ?)",
+            (json.dumps([a(1, "eng"), a(2, "spa")]), NOW))
+        await db.commit()
+    await add_jobs_from_scan(BulkQueueFromScanRequest(file_paths=["/m/convert.mkv"]))
+    async with aiosqlite.connect(jobs_env) as db:  # queued before: no reorder
+        await db.execute("UPDATE jobs SET job_type = 'convert'")
+        await db.commit()
+
+    assert await scan_route.realign_audio_flags_once() == 3
+    assert await _flags(jobs_env) == {"/m/convert.mkv": 1, "/m/reorder.mkv": 1, "/m/nothing.mkv": 0, "/m/dubs.mkv": 0}
+    assert (await _jobs(jobs_env))["/m/convert.mkv"] == "combined"  # the pending job follows
+    async with aiosqlite.connect(jobs_env) as db:
+        await db.execute("UPDATE scan_results SET has_removable_tracks_flag = 0")
+        await db.commit()
+    assert await scan_route.realign_audio_flags_once() == 0  # once
+
+
+@pytest.mark.asyncio
+async def test_turning_the_reorder_off_rechecks_the_flags(jobs_env, monkeypatch):
+    import backend.routes.scan as scan_route
+    import backend.routes.settings as settings_route
+    from backend.models import SettingsUpdate
+    monkeypatch.setattr(settings_route, "DB_PATH", jobs_env)
+    scheduled = []
+    monkeypatch.setattr(scan_route, "schedule_audio_flags_realign", lambda: scheduled.append(1))
+    await settings_route.update_encoding_settings(SettingsUpdate(nvenc_cq=21))
+    assert scheduled == []
+    await settings_route.update_encoding_settings(SettingsUpdate(reorder_native_audio=False))
+    assert scheduled == [1]
+    async with aiosqlite.connect(jobs_env) as db:
+        await db.execute("UPDATE scan_results SET has_removable_tracks_flag = 1")
+        await db.commit()
+    await scan_route.realign_audio_flags()
+    assert set((await _flags(jobs_env)).values()) == {0}  # off: no reorder counts
+
+
+@pytest.mark.asyncio
+async def test_a_language_change_keeps_the_reorder_in_the_flag(jobs_env):
+    """English was removed; keeping it now leaves only the reorder to do."""
+    import backend.routes.scan as scan_route
+    from backend.scanner import TrackRules
+    async with aiosqlite.connect(jobs_env) as db:
+        await db.execute("UPDATE scan_results SET audio_tracks_json = ?, has_removable_tracks_flag = 1 "
+                         "WHERE file_path = '/m/reorder.mkv'", (json.dumps([a(1, "eng", keep=False), a(2, "jpn")]),))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('always_keep_languages', '[\"eng\"]')")
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sub_cleanup_enabled', 'false')")
+        await db.commit()
+    await scan_route.reapply_track_rules(TrackRules(audio_keep=frozenset(), subs_enabled=False))
+    assert (await _flags(jobs_env))["/m/reorder.mkv"] == 1

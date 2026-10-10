@@ -911,8 +911,9 @@ def _require_password_login(request) -> None:
 async def update_encoding_settings(update: SettingsUpdate, request: Request = None):
     # The track rules as they are before this save, to re-apply them to the
     # scanned files if it changes them (v0.10.0).
-    from backend.scanner import current_track_rules
+    from backend.scanner import _is_cleanup_enabled, current_track_rules
     rules_before = current_track_rules()
+    reorder_before = _is_cleanup_enabled("reorder_native_audio")
     db = await aiosqlite.connect(DB_PATH)
     try:
         updates = {}
@@ -1426,6 +1427,11 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         if current_track_rules() != rules_before:
             from backend.routes.scan import schedule_track_rules_update
             schedule_track_rules_update(rules_before)
+        # The Audio cleanup filter (and pending jobs) count moving the
+        # original-language audio first only while it's on (v0.10.0).
+        if _is_cleanup_enabled("reorder_native_audio") != reorder_before:
+            from backend.routes.scan import schedule_audio_flags_realign
+            schedule_audio_flags_realign()
 
     # Invalidate auth cache if auth-related keys changed
     auth_keys = {"auth_enabled", "auth_username", "auth_password_hash", "api_key", "session_secret"}

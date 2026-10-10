@@ -1004,8 +1004,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
     try:
         from backend.scanner import (
             classify_audio_tracks, classify_subtitle_tracks,
-            classification_native, _is_cleanup_enabled,
-            languages_match,
+            classification_native, removable_audio_flag,
         )
         from backend.converter import is_lossless_audio
         fresh = await probe_file(current_file_path)
@@ -1042,11 +1041,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             new_audio_json = _json.dumps([t.model_dump() for t in classified_audio])
             new_sub_json = _json.dumps([t.model_dump() for t in classified_subs])
             # Flag includes both removable tracks AND reorder-needed (if enabled)
-            needs_reorder = False
-            if _is_cleanup_enabled("reorder_native_audio") and len(classified_audio) > 1 and native_lang and native_lang.lower() != "und":
-                first_lang = (classified_audio[0].language or "").lower()
-                needs_reorder = not languages_match(first_lang, native_lang.lower())
-            new_has_removable_audio = 1 if (any(not t.keep for t in classified_audio) or needs_reorder) else 0
+            new_has_removable_audio = removable_audio_flag(classified_audio, native_lang)
             new_has_removable_subs = 1 if any(not t.keep for t in classified_subs) else 0
             new_lossless = 1 if any(
                 is_lossless_audio(t.codec, getattr(t, "profile", ""))
@@ -2858,7 +2853,7 @@ class QueueWorker:
                         from backend.scanner import (
                             probe_file as _rpf, classify_audio_tracks as _rca,
                             classify_subtitle_tracks as _rcs, classification_native as _rcn,
-                            _is_cleanup_enabled as _ric, languages_match as _rlm,
+                            removable_audio_flag as _rraf,
                         )
                         _rp = await _rpf(_new_out, detect_und_subs=False)
                         for _ in range(2):  # a stalled mount often answers a moment later
@@ -2899,10 +2894,7 @@ class QueueWorker:
                                 _rat = _rca(_rp.get("audio_tracks", []) or [], _rnl, _rp.get("duration", 0) or 0)
                                 _rst = _rcs(_rp.get("subtitle_tracks", []) or [], _rnl)
                                 _rund = 1 if any((t.language or "und").lower() == "und" for t in list(_rat) + list(_rst)) else 0
-                                _rreorder = False
-                                if _ric("reorder_native_audio") and len(_rat) > 1 and _rnl and _rnl.lower() != "und":
-                                    _rreorder = not _rlm((_rat[0].language or "").lower(), _rnl.lower())
-                                _rrem_a = 1 if (any(not t.keep for t in _rat) or _rreorder) else 0
+                                _rrem_a = _rraf(_rat, _rnl)
                                 _rrem_s = 1 if any(not t.keep for t in _rst) else 0
                                 _cols += ["audio_tracks_json = ?", "subtitle_tracks_json = ?",
                                           "has_und_tracks_flag = ?", "has_removable_tracks_flag = ?",

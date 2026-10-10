@@ -17,7 +17,7 @@ from backend.scan_filters import (
     build_dir_label_index as _build_dir_label_index,
 )
 from backend.scanner import (
-    keep_manual_choices, keep_manual_choices_json, mark_manual_choices, scan_directory,
+    keep_manual_choices, keep_manual_choices_json, mark_manual_choices, removable_audio_flag, scan_directory,
 )
 from backend.websocket import ws_manager
 
@@ -154,7 +154,13 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     return 1 if any(not t.get("keep", True) for t in json.loads(js or "[]")) else 0
                 except (ValueError, TypeError):
                     return 0
-            has_removable = _has_removable(audio_json)
+            # Audio: also the original-language audio to move first, against
+            # the native the upsert keeps (a stored TMDB / manual one wins).
+            _native = _ex[3] if (_ex and _ex[0] in AUTHORITATIVE_NATIVE_SOURCES) else scanned.native_language
+            try:
+                has_removable = removable_audio_flag(json.loads(audio_json or "[]"), _native)
+            except (ValueError, TypeError):
+                has_removable = 0
             has_removable_subs = _has_removable(sub_json)
             has_lossless = 0
             for t in scanned.audio_tracks:
@@ -242,7 +248,7 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     getattr(scanned, 'probe_status', 'ok'),
                     getattr(scanned, 'probe_error', None),  # v0.9.153
                     getattr(scanned, 'video_height', 0),
-                    1 if (has_removable or getattr(scanned, 'needs_audio_reorder', False)) else 0,
+                    has_removable,
                     has_removable_subs,
                     has_lossless,
                     1 if getattr(scanned, 'has_external_subs', False) else 0,
@@ -1437,7 +1443,7 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     audio_list = keep_manual_choices([t.model_dump() for t in audio_tracks], stored_audio, audio=True)
     sub_list = keep_manual_choices([t.model_dump() for t in subtitle_tracks], stored_subs)
     audio_json, subtitle_json = json.dumps(audio_list), json.dumps(sub_list)
-    has_removable = 1 if any(not t.get("keep", True) for t in audio_list) else 0
+    has_removable = removable_audio_flag(audio_list, native_lang)
     has_removable_subs = 1 if any(not t.get("keep", True) for t in sub_list) else 0
     db = await connect_db()
     try:
@@ -1650,7 +1656,7 @@ async def set_track_language(req: SetTrackLanguageRequest):
     audio_list = keep_manual_choices([t.model_dump() for t in audio_tracks], stored_audio, audio=True)
     sub_list = keep_manual_choices([t.model_dump() for t in subtitle_tracks], stored_subs)
     audio_json, subtitle_json = json.dumps(audio_list), json.dumps(sub_list)
-    has_removable = 1 if any(not t.get("keep", True) for t in audio_list) else 0
+    has_removable = removable_audio_flag(audio_list, native_lang)
     has_removable_subs = 1 if any(not t.get("keep", True) for t in sub_list) else 0
     db = await connect_db()
     try:
@@ -2464,7 +2470,7 @@ def _reapply_track_rules(row: dict, old_rules, new_rules) -> dict | None:
     und = 1 if any((t.get("language") or "und").lower() == "und" for t in audio + subs) else 0
     return {"rid": row["id"], "a_json": json.dumps(audio),
             "s_json": json.dumps(subs) if row["subtitle_tracks_json"] is not None else None,
-            "rem_a": 1 if any(not t.get("keep", True) for t in audio) else 0,
+            "rem_a": removable_audio_flag(audio, native),
             "rem_s": 1 if any(not t.get("keep", True) for t in subs) else 0, "und": und}
 
 
@@ -2513,6 +2519,84 @@ async def reapply_track_rules(old_rules) -> int:
 def schedule_track_rules_update(old_rules) -> None:
     """reapply_track_rules() in the background (a settings save)."""
     task = asyncio.create_task(reapply_track_rules(old_rules))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def realign_audio_flags() -> int:
+    """Recompute every scanned file's "has audio work" flag (the Audio cleanup
+    filter) with scanner.removable_audio_flag, the queue's rule — after the
+    reorder setting changes, and once for rows written under the old rules
+    (v0.10.0). Pending jobs follow. Returns the files changed."""
+    async with _reclass_lock:
+        changed, last_id = 0, 0
+        while True:
+            db = await connect_db()
+            try:
+                async with db.execute(
+                    "SELECT id, audio_tracks_json, native_language, has_removable_tracks_flag "
+                    f"FROM scan_results WHERE {_SCAN_WHERE} AND id > ? ORDER BY id LIMIT 1000", (last_id,),
+                ) as cur:
+                    rows = [dict(r) for r in await cur.fetchall()]
+            finally:
+                await db.close()
+            if not rows:
+                break
+            last_id = rows[-1]["id"]
+
+            def stale() -> list[tuple[int, int]]:
+                out = []
+                for r in rows:
+                    try:
+                        flag = removable_audio_flag(json.loads(r["audio_tracks_json"] or "[]"), r["native_language"])
+                    except (ValueError, TypeError):
+                        continue
+                    if flag != (r["has_removable_tracks_flag"] or 0):
+                        out.append((flag, r["id"]))
+                return out
+            updates = await asyncio.to_thread(stale)
+            if updates:
+                db = await connect_db()
+                try:
+                    await db.executemany("UPDATE scan_results SET has_removable_tracks_flag = ? WHERE id = ?", updates)
+                    await db.commit()
+                finally:
+                    await db.close()
+                changed += len(updates)
+        if changed:
+            from backend.routes.jobs import refresh_pending_jobs
+            jobs = await refresh_pending_jobs()
+            print(f"[SCAN] Audio cleanup flag re-checked: {changed} file(s) and {jobs} pending job(s) updated",
+                  flush=True)
+            await ws_manager.send_scan_results_changed(added=0, removed=0)
+        return changed
+
+
+async def realign_audio_flags_once() -> int:
+    """realign_audio_flags() once per install (startup, settings sentinel)."""
+    sentinel = "audio_flags_realigned"
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (sentinel,)) as cur:
+            if await cur.fetchone():
+                return 0
+    finally:
+        await db.close()
+    changed = await realign_audio_flags()
+    db = await connect_db()
+    try:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, '1') "
+            "ON CONFLICT(key) DO UPDATE SET value = '1'", (sentinel,))
+        await db.commit()
+    finally:
+        await db.close()
+    return changed
+
+
+def schedule_audio_flags_realign() -> None:
+    """realign_audio_flags() in the background (the reorder setting changed)."""
+    task = asyncio.create_task(realign_audio_flags())
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
@@ -2590,7 +2674,7 @@ def _reclassify_keep_flags(audio_json_str, sub_json_str, native, duration):
         f = s_flags.get(t.get("stream_index"))
         if f and not t.get("manual"):
             t["keep"], t["locked"] = f
-    has_rem_a = 1 if any(not t.get("keep", True) for t in raw_audio) else 0
+    has_rem_a = removable_audio_flag(raw_audio, native)
     has_rem_s = 1 if any(not t.get("keep", True) for t in raw_subs) else 0
     und = 1 if any((t.get("language") or "und").lower() == "und"
                    for t in list(raw_audio) + list(raw_subs)) else 0
@@ -2695,7 +2779,7 @@ def _keeps_from_normalized_codes(row) -> dict | None:
         return None
     return {
         "rid": row["id"], "a_json": json.dumps(old_a), "s_json": json.dumps(old_s),
-        "rem_a": 1 if any(not t.get("keep", True) for t in old_a) else 0,
+        "rem_a": removable_audio_flag(old_a, row["native_language"]),
         "rem_s": 1 if any(not t.get("keep", True) for t in old_s) else 0,
         "und": 1 if any((t.get("language") or "und").lower() == "und" for t in old_a + old_s) else 0,
     }
@@ -2979,14 +3063,19 @@ async def _save_track_edit(result_id: int, column: str, flag_column: str, edited
         raise ApiError(status_code=400, detail="That track list couldn't be read.", code="scan.invalidTracks")
     db = await aiosqlite.connect(DB_PATH)
     try:
-        async with db.execute(f"SELECT {column}, file_path FROM scan_results WHERE id = ?", (result_id,)) as cur:
+        async with db.execute(
+            f"SELECT {column}, file_path, native_language FROM scan_results WHERE id = ?", (result_id,),
+        ) as cur:
             row = await cur.fetchone()
         try:
             stored = json.loads(row[0] or "[]") if row else []
         except (ValueError, TypeError):
             stored = []
         edited = mark_manual_choices(edited, stored)
-        removable = 1 if any(not t.get("keep", True) for t in edited) else 0
+        if column == "audio_tracks_json":
+            removable = removable_audio_flag(edited, row[2] if row else None)
+        else:
+            removable = 1 if any(not t.get("keep", True) for t in edited) else 0
         await db.execute(
             f"UPDATE scan_results SET {column} = ?, {flag_column} = ? WHERE id = ?",
             (json.dumps(edited), removable, result_id),

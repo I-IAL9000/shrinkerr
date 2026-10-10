@@ -56,7 +56,6 @@ class ScannedFile(BaseModel):
     native_language: str
     has_removable_tracks: bool
     has_removable_subs: bool = False
-    needs_audio_reorder: bool = False
     has_external_subs: bool = False
     estimated_savings_bytes: int
     estimated_savings_gb: float

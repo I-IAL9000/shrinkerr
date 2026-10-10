@@ -9,7 +9,7 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path, already_converted, clamp_future_mtime, folder_candidates, SUBTITLE_EXTENSIONS, walk_media_dir
+from backend.scanner import _classify_disc, _disc_marker_path, already_converted, clamp_future_mtime, folder_candidates, removable_audio_flag, SUBTITLE_EXTENSIONS, walk_media_dir
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -915,7 +915,7 @@ class FileWatcher:
             # leave it alone; same for has_external_subs_flag, disc_type,
             # video_codec, etc. native_language can change because 'und' may
             # now resolve to a real ISO code.
-            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable = removable_audio_flag(audio_tracks, native_lang)
             has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
 
             db2 = await aiosqlite.connect(self.db_path)
@@ -1128,7 +1128,7 @@ class FileWatcher:
             audio_json = _json.dumps([t.model_dump() for t in audio_tracks])
             subtitle_json = _json.dumps([t.model_dump() for t in subtitle_tracks])
 
-            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable = removable_audio_flag(audio_tracks, native_lang)
             has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
 
             db2 = await aiosqlite.connect(self.db_path)
@@ -1254,7 +1254,7 @@ class FileWatcher:
             audio_json = _json.dumps([t.model_dump() for t in audio_tracks])
             subtitle_json = _json.dumps([t.model_dump() for t in subtitle_tracks])
 
-            has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
+            has_removable = removable_audio_flag(audio_tracks, native_lang)
             has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
 
             db2 = await aiosqlite.connect(self.db_path)

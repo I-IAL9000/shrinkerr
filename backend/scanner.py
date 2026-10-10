@@ -1401,6 +1401,30 @@ def _is_cleanup_enabled(key: str, default: bool = True) -> bool:
     return val
 
 
+def needs_native_reorder(audio_tracks, native_language: Optional[str]) -> bool:
+    """Whether a cleanup or conversion moves the original language's audio
+    first ("reorder_native_audio"): a kept track is in that language and the
+    first kept track isn't — what the worker and the converter do. Tracks are
+    dicts or AudioTracks. v0.10.0: one rule for the Scanner's flag and the
+    queue; the flag used to fire with no such track, or not at all."""
+    native = (native_language or "").lower()
+    if not native or native == "und" or not _is_cleanup_enabled("reorder_native_audio"):
+        return False
+    def get(t, key, default=None):
+        return t.get(key, default) if isinstance(t, dict) else getattr(t, key, default)
+    is_native = [languages_match((get(t, "language") or "").lower(), native)
+                 for t in audio_tracks if get(t, "keep", True)]
+    return any(is_native) and not is_native[0]
+
+
+def removable_audio_flag(audio_tracks, native_language: Optional[str]) -> int:
+    """scan_results.has_removable_tracks_flag (the Audio cleanup filter): the
+    file has audio work — a track to remove, or its original-language audio
+    to move first."""
+    removes = any(not (t.get("keep", True) if isinstance(t, dict) else t.keep) for t in audio_tracks)
+    return 1 if removes or needs_native_reorder(audio_tracks, native_language) else 0
+
+
 @dataclass(frozen=True)
 class TrackRules:
     """The settings that decide which audio and subtitle tracks stay
@@ -2311,12 +2335,6 @@ async def scan_directory(
         tracks_to_remove = [t for t in audio_tracks if not t.keep]
         has_removable = len(tracks_to_remove) > 0
         has_removable_subs = any(not t.keep for t in subtitle_tracks)
-
-        # Check if native-language audio isn't the first stream (needs reorder)
-        needs_audio_reorder = False
-        if _is_cleanup_enabled("reorder_native_audio") and len(audio_tracks) > 1 and native_lang and native_lang.lower() != "und":
-            first_lang = (audio_tracks[0].language or "").lower()
-            needs_audio_reorder = not languages_match(first_lang, native_lang.lower())
 
         savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
         savings_gb = round(savings_bytes / (1024 ** 3), 3)
