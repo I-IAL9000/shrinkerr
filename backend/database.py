@@ -615,6 +615,9 @@ async def init_db():
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_order ON jobs(status, queue_order)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status_completed ON jobs(status, completed_at)")
+        # Per-file job lookups: the Scanner's "Failed before" / "VMAF-rejected"
+        # filters and adding a job (de-dupe by path). v0.10.0.
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_file_path ON jobs(file_path)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_filepath ON scan_results(file_path)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_scan_results_health ON scan_results(health_status)")
         # Performance indexes for common filter queries on /scan/tree

@@ -2240,10 +2240,11 @@ async def get_scan_tree(filter: str = "all"):
     try:
         expr = parse_filter(filter)
         ctx = await _build_enrichment_context(db) if expr.needs_ctx else None
-        # The folder sums need path, size and mtime; the rest is what the
-        # Python filters read.
+        # The folder sums need path, size, mtime and the savings estimate;
+        # the rest is what the Python filters read.
         async with db.execute(
-            f"SELECT file_path, file_size, file_mtime, duration, needs_conversion, converted{expr.select_sql} "
+            "SELECT file_path, file_size, file_mtime, COALESCE(video_conv_savings_bytes, 0) AS est_savings, "
+            f"duration, needs_conversion, converted{expr.select_sql} "
             f"FROM scan_results WHERE {_SCAN_WHERE}{expr.where_sql}",
             [*expr.select_params, *expr.where_params],
         ) as cur:
@@ -2264,6 +2265,7 @@ async def get_scan_tree(filter: str = "all"):
                 continue
             fp = r["file_path"]
             sz = r["file_size"] or 0
+            est = r["est_savings"]
 
             parent = fp.rsplit("/", 1)[0] if "/" in fp else ""
             if parent not in folders:
@@ -2272,10 +2274,13 @@ async def get_scan_tree(filter: str = "all"):
                     "file_count": 0,
                     "total_size": 0,
                     "newest_mtime": 0,
+                    # What converting it would save (the "Savings" sort).
+                    "est_savings": 0,
                 }
             fd = folders[parent]
             fd["file_count"] += 1
             fd["total_size"] += sz
+            fd["est_savings"] += est
             mt = r.get("file_mtime") or 0
             if mt > fd["newest_mtime"]:
                 fd["newest_mtime"] = mt
@@ -2291,6 +2296,7 @@ async def get_scan_tree(filter: str = "all"):
                     "file_count": 1,
                     "total_size": sz,
                     "newest_mtime": mt,
+                    "est_savings": est,
                     "is_file": True,
                 }
 

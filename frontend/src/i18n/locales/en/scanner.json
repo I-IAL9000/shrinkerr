@@ -33,7 +33,8 @@
     "size": "Size",
     "files": "Files",
     "date": "Date",
-    "reverse": "Reverse order"
+    "reverse": "Reverse order",
+    "savings": "Savings"
   },
   "selection": {
     "selected_one": "{{count}} selected",
@@ -118,12 +119,23 @@
       "audio": "Audio:",
       "language": "Language:",
       "type": "Type:",
-      "source": "Source:"
+      "source": "Source:",
+      "container": "Container:",
+      "subtitles": "Subtitles:",
+      "health": "Health:",
+      "outcome": "Outcome:"
     },
     "notLabel": "not {{label}}",
     "excluded": "(excluded)",
     "excludeHint": "Alt-click to exclude",
-    "hint": "Pills in the same group match any of them; different groups must all match. Alt-click a pill to exclude it."
+    "hint": "Pills in the same group match any of them; different groups must all match. Alt-click a pill to exclude it.",
+    "imageSubs": "Image subtitles",
+    "missingLanguage": "Missing my language",
+    "healthNever": "Never checked",
+    "healthWarnings": "Warnings",
+    "failedBefore": "Failed before",
+    "vmafRejected": "VMAF-rejected",
+    "noSavings": "No savings"
   },
   "stats": {
     "filesToConvert": "Files to convert",

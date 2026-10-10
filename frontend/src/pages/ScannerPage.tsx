@@ -37,6 +37,12 @@ const menuItemStyle: CSSProperties = {
   width: "100%",
 };
 
+// "Savings": what converting would save, biggest first (v0.10.0).
+const SORT_OPTIONS = [
+  ["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"],
+  ["date", "scanner:sort.date"], ["savings", "scanner:sort.savings"],
+] as const;
+
 interface ScannerPageProps {
   scanProgress: ScanProgress | null;
   onClearScanProgress?: () => void;
@@ -98,7 +104,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [refreshingMetadata, setRefreshingMetadata] = useState(false);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  const [sortBy, setSortBy] = useState<"name" | "size" | "files" | "date">("name");
+  const [sortBy, setSortBy] = useState<"name" | "size" | "files" | "date" | "savings">("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");  // raw input, debounced into `search`
@@ -1319,11 +1325,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           they wrapped the toolbar onto extra lines. */}
       <span className="sort-pills">
         <span style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>{t("scanner:sort.label")}</span>
-        {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
+        {(SORT_OPTIONS).map(([val, labelKey]) => (
           <button key={val}
             className={`sort-pill ${sortBy === val ? "active" : ""}`}
             aria-pressed={sortBy === val}
-            onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); } }}>
+            onClick={() => { if (sortBy === val) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortBy(val); setSortDir(val === "name" || val === "files" ? "asc" : "desc"); } }}>
             {t(labelKey)} {sortBy === val && (sortDir === "asc"
               ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 5 6 11"/><polyline points="12 5 18 11"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
               : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "middle", marginLeft: 2 }}><polyline points="12 19 6 13"/><polyline points="12 19 18 13"/><line x1="12" y1="19" x2="12" y2="5"/></svg>
@@ -1336,9 +1342,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           className="sort-select"
           aria-label={t("scanner:sort.label")}
           value={sortBy}
-          onChange={(e) => { const val = e.target.value as typeof sortBy; setSortBy(val); setSortDir(val === "size" || val === "date" ? "desc" : "asc"); }}
+          onChange={(e) => { const val = e.target.value as typeof sortBy; setSortBy(val); setSortDir(val === "name" || val === "files" ? "asc" : "desc"); }}
         >
-          {([["name", "scanner:sort.name"], ["size", "scanner:sort.size"], ["files", "scanner:sort.files"], ["date", "scanner:sort.date"]] as const).map(([val, labelKey]) => (
+          {(SORT_OPTIONS).map(([val, labelKey]) => (
             <option key={val} value={val}>{t(labelKey)}</option>
           ))}
         </select>

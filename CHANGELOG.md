@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Scanner filters combine the way you'd expect**: pills in the same group match any of them (4K + 1080p), different groups must all match, and Alt-click excludes a pill. Every pill shows its count, and the filter is part of the address, so a view can be bookmarked or shared — the Dashboard's codec chart links straight into it.
+- **New Scanner filters**: MPEG-2, VC-1 / WMV, MPEG-4 / Xvid and VP9 (split out of "Other codecs"); container (MKV, MP4, AVI, other); Atmos / DTS:X and 7.1 audio; image subtitles (PGS / VobSub); missing my language (no audio or subtitle track in your keep languages); health (never checked, warnings); and outcome (failed before, VMAF-rejected, no savings). A **Savings** sort puts the biggest wins first.
 - **Settings has a page per topic** — Media, Video, Audio & subtitles, Automation, Integrations, Notifications and System — instead of one very long page, plus a search box that jumps to any setting. One Save bar replaces the Save button each section had: it counts your unsaved changes, sends only those, and warns before you leave Settings without saving. Old links such as `/settings#connections` still land on the right page.
 - **Theme: System, Light or Dark** (Settings → User interface). System follows your device's light / dark setting and is what a browser that never chose a theme gets; a saved Light or Dark is kept.
 - The setup wizard asks you to protect Shrinkerr with a password (recommended, can be skipped).

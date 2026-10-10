@@ -29,7 +29,17 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "x264", label: "x264" },
   { key: "x265", label: "x265" },
   { key: "av1", label: "AV1" },
+  { key: "codec_mpeg2", label: "MPEG-2" },
+  { key: "codec_vc1", label: "VC-1 / WMV" },
+  { key: "codec_mpeg4", label: "MPEG-4 / Xvid" },
+  { key: "codec_vp9", label: "VP9" },
   { key: "misc_codec", labelKey: "scanner:filters.otherCodecs" },
+  // Container group (v0.10.0)
+  { key: "_container", labelKey: "scanner:filters.groups.container", group: "divider" },
+  { key: "container_mkv", label: "MKV" },
+  { key: "container_mp4", label: "MP4" },
+  { key: "container_avi", label: "AVI" },
+  { key: "container_other", labelKey: "scanner:filters.other" },
   // Resolution group
   { key: "_res", labelKey: "scanner:filters.groups.resolution", group: "divider" },
   { key: "res_4k", label: "4K" },
@@ -46,10 +56,16 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "audio_cleanup", labelKey: "scanner:filters.audioCleanup" },
   { key: "lossless_audio", labelKey: "scanner:filters.losslessAudio" },
   { key: "lossy_audio", labelKey: "scanner:filters.lossyAudio" },
+  { key: "object_audio", label: "Atmos / DTS:X" },
+  { key: "audio_71", label: "7.1" },
+  // Subtitles group (v0.10.0)
+  { key: "_subs", labelKey: "scanner:filters.groups.subtitles", group: "divider" },
+  { key: "image_subs", labelKey: "scanner:filters.imageSubs" },
   // Language group
   { key: "_lang", labelKey: "scanner:filters.groups.language", group: "divider" },
   { key: "dubbed", labelKey: "scanner:filters.dubbed" },
   { key: "not_api_matched", labelKey: "scanner:filters.notApiMatched" },
+  { key: "missing_language", labelKey: "scanner:filters.missingLanguage" },
   // Plex group
   { key: "_plex", label: "Plex:", group: "divider" },
   { key: "plex_watched", labelKey: "scanner:filters.watched" },
@@ -71,6 +87,14 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "vmaf_excellent", labelKey: "scanner:filters.vmafExcellent" },
   { key: "vmaf_good", labelKey: "scanner:filters.vmafGood" },
   { key: "vmaf_poor", labelKey: "scanner:filters.vmafPoor" },
+  // Health and outcome groups (v0.10.0)
+  { key: "_health", labelKey: "scanner:filters.groups.health", group: "divider" },
+  { key: "health_never", labelKey: "scanner:filters.healthNever" },
+  { key: "health_warnings", labelKey: "scanner:filters.healthWarnings" },
+  { key: "_outcome", labelKey: "scanner:filters.groups.outcome", group: "divider" },
+  { key: "failed_before", labelKey: "scanner:filters.failedBefore" },
+  { key: "vmaf_rejected", labelKey: "scanner:filters.vmafRejected" },
+  { key: "no_savings", labelKey: "scanner:filters.noSavings" },
 ];
 
 // Maps filter key → translation key (or literal tech-token label). Resolve

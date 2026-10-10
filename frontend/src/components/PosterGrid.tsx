@@ -31,6 +31,7 @@ interface TitleGroup {
   folders: FolderInfo[];
   fileCount: number;
   totalSize: number;
+  estSavings: number;
   // True when the group represents a single stray file (key is the file
   // path, not a directory prefix). Selection must use the exact path.
   isFile?: boolean;
@@ -57,7 +58,7 @@ interface PosterGridProps {
   onDeleteFile?: (filePath: string) => void;
   onFolderFilesLoaded?: (folderPath: string, files: ScannedFile[]) => void;
   mediaDirs?: string[];
-  sortBy?: "name" | "size" | "files" | "date";
+  sortBy?: "name" | "size" | "files" | "date" | "savings";
   sortDir?: "asc" | "desc";
 }
 
@@ -83,12 +84,13 @@ export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): Ti
     if (!groups.has(groupPath)) {
       const yearMatch = name.match(/\((\d{4})\)/);
       let title = name.replace(/\s*\[(?:tt\d+|tvdb-\d+)\]/, "").replace(/\s*\(\d{4}\)/, "").trim();
-      groups.set(groupPath, { key: groupPath, title: title || name, year: yearMatch ? yearMatch[1] : null, folders: [], fileCount: 0, totalSize: 0, isFile: folder.is_file });
+      groups.set(groupPath, { key: groupPath, title: title || name, year: yearMatch ? yearMatch[1] : null, folders: [], fileCount: 0, totalSize: 0, estSavings: 0, isFile: folder.is_file });
     }
     const g = groups.get(groupPath)!;
     g.folders.push(folder);
     g.fileCount += folder.file_count;
     g.totalSize += folder.total_size;
+    g.estSavings += folder.est_savings || 0;
   }
   return Array.from(groups.values());
 }
@@ -103,6 +105,7 @@ export function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string
   const sorted = [...groups].sort((a, b) => {
     if (sortBy === "size") return a.totalSize - b.totalSize;
     if (sortBy === "files") return a.fileCount - b.fileCount;
+    if (sortBy === "savings") return a.estSavings - b.estSavings;
     if (sortBy === "date") return Math.max(0, ...a.folders.map(f => f.newest_mtime)) - Math.max(0, ...b.folders.map(f => f.newest_mtime));
     return naturalCompare(a.title, b.title);
   });

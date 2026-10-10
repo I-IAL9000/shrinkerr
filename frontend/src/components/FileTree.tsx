@@ -11,7 +11,7 @@ import { naturalCompare } from "../utils/naturalCompare";
 import { fmtBytes } from "../fmt";
 import { pressable } from "../utils/a11y";
 
-export type SortBy = "name" | "size" | "files" | "date";
+export type SortBy = "name" | "size" | "files" | "date" | "savings";
 export type SortDirection = "asc" | "desc";
 
 /** Server-returned folder info */
@@ -20,6 +20,8 @@ export interface FolderInfo {
   file_count: number;
   total_size: number;
   newest_mtime: number;
+  // What converting its files would save (the "Savings" sort), v0.10.0.
+  est_savings?: number;
   // Set when this entry represents a stray file at a media root (emitted so
   // the poster view can render per-file cards). FileTree ignores these — the
   // file surfaces naturally when its parent folder is expanded.
@@ -59,10 +61,12 @@ interface TreeNode {
   file_count: number;
   total_size: number;
   newest_mtime: number;
+  est_savings: number;
   // Aggregated (includes children)
   agg_file_count: number;
   agg_total_size: number;
   agg_newest_mtime: number;
+  agg_est_savings: number;
   isLeaf: boolean; // true = directly contains files
 }
 
@@ -74,14 +78,14 @@ interface TreeNode {
 function buildTreeFromFolders(folders: FolderInfo[], mediaRoots: { path: string; name: string }[] = []): TreeNode {
   const root: TreeNode = {
     name: "root", path: "", children: new Map(),
-    file_count: 0, total_size: 0, newest_mtime: 0,
-    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
+    file_count: 0, total_size: 0, newest_mtime: 0, est_savings: 0,
+    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0, agg_est_savings: 0,
     isLeaf: false,
   };
   const newNode = (name: string, path: string): TreeNode => ({
     name, path, children: new Map(),
-    file_count: 0, total_size: 0, newest_mtime: 0,
-    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
+    file_count: 0, total_size: 0, newest_mtime: 0, est_savings: 0,
+    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0, agg_est_savings: 0,
     isLeaf: false,
   });
   // Longest first, so a media folder inside another gets its own row.
@@ -114,6 +118,7 @@ function buildTreeFromFolders(folders: FolderInfo[], mediaRoots: { path: string;
     node.file_count = folder.file_count;
     node.total_size = folder.total_size;
     node.newest_mtime = folder.newest_mtime;
+    node.est_savings = folder.est_savings || 0;
   }
 
   // Aggregate stats bottom-up
@@ -121,10 +126,12 @@ function buildTreeFromFolders(folders: FolderInfo[], mediaRoots: { path: string;
     node.agg_file_count = node.file_count;
     node.agg_total_size = node.total_size;
     node.agg_newest_mtime = node.newest_mtime;
+    node.agg_est_savings = node.est_savings;
     for (const child of node.children.values()) {
       aggregate(child);
       node.agg_file_count += child.agg_file_count;
       node.agg_total_size += child.agg_total_size;
+      node.agg_est_savings += child.agg_est_savings;
       if (child.agg_newest_mtime > node.agg_newest_mtime) {
         node.agg_newest_mtime = child.agg_newest_mtime;
       }
@@ -140,8 +147,8 @@ function buildTreeFromFolders(folders: FolderInfo[], mediaRoots: { path: string;
 function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
   const root: TreeNode = {
     name: "root", path: "", children: new Map(),
-    file_count: 0, total_size: 0, newest_mtime: 0,
-    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
+    file_count: 0, total_size: 0, newest_mtime: 0, est_savings: 0,
+    agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0, agg_est_savings: 0,
     isLeaf: false,
   };
 
@@ -176,8 +183,8 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
   for (const [groupPath, { name, folders: groupFolders }] of groups) {
     const titleNode: TreeNode = {
       name, path: groupPath, children: new Map(),
-      file_count: 0, total_size: 0, newest_mtime: 0,
-      agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0,
+      file_count: 0, total_size: 0, newest_mtime: 0, est_savings: 0,
+      agg_file_count: 0, agg_total_size: 0, agg_newest_mtime: 0, agg_est_savings: 0,
       isLeaf: groupFolders.length === 1 && groupFolders[0].path === groupPath,
     };
 
@@ -187,14 +194,15 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
       titleNode.file_count = groupFolders[0].file_count;
       titleNode.total_size = groupFolders[0].total_size;
       titleNode.newest_mtime = groupFolders[0].newest_mtime;
+      titleNode.est_savings = groupFolders[0].est_savings || 0;
     } else {
       // Multiple folders (TV seasons) — add as children
       for (const f of groupFolders) {
         const seasonName = f.path.substring(groupPath.length + 1).split("/").filter(Boolean)[0] || f.path.split("/").pop() || "Files";
         const seasonNode: TreeNode = {
           name: seasonName, path: f.path, children: new Map(),
-          file_count: f.file_count, total_size: f.total_size, newest_mtime: f.newest_mtime,
-          agg_file_count: f.file_count, agg_total_size: f.total_size, agg_newest_mtime: f.newest_mtime,
+          file_count: f.file_count, total_size: f.total_size, newest_mtime: f.newest_mtime, est_savings: f.est_savings || 0,
+          agg_file_count: f.file_count, agg_total_size: f.total_size, agg_newest_mtime: f.newest_mtime, agg_est_savings: f.est_savings || 0,
           isLeaf: true,
         };
         titleNode.children.set(seasonName, seasonNode);
@@ -205,9 +213,11 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
     titleNode.agg_file_count = titleNode.file_count;
     titleNode.agg_total_size = titleNode.total_size;
     titleNode.agg_newest_mtime = titleNode.newest_mtime;
+    titleNode.agg_est_savings = titleNode.est_savings;
     for (const child of titleNode.children.values()) {
       titleNode.agg_file_count += child.agg_file_count;
       titleNode.agg_total_size += child.agg_total_size;
+      titleNode.agg_est_savings += child.agg_est_savings;
       if (child.agg_newest_mtime > titleNode.agg_newest_mtime) {
         titleNode.agg_newest_mtime = child.agg_newest_mtime;
       }
@@ -220,6 +230,7 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
   for (const child of root.children.values()) {
     root.agg_file_count += child.agg_file_count;
     root.agg_total_size += child.agg_total_size;
+    root.agg_est_savings += child.agg_est_savings;
     if (child.agg_newest_mtime > root.agg_newest_mtime) {
       root.agg_newest_mtime = child.agg_newest_mtime;
     }
@@ -238,6 +249,7 @@ function sortNodes(nodes: TreeNode[], sortBy: SortBy, sortDir: SortDirection): T
     if (sortBy === "size") return a.agg_total_size - b.agg_total_size;
     if (sortBy === "files") return a.agg_file_count - b.agg_file_count;
     if (sortBy === "date") return a.agg_newest_mtime - b.agg_newest_mtime;
+    if (sortBy === "savings") return a.agg_est_savings - b.agg_est_savings;
     return _nameCmp(a.name, b.name);
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;
@@ -247,6 +259,7 @@ function sortFiles(files: ScannedFile[], sortBy: SortBy, sortDir: SortDirection)
   const sorted = [...files].sort((a, b) => {
     if (sortBy === "size") return a.file_size - b.file_size;
     if (sortBy === "date") return (a.file_mtime || 0) - (b.file_mtime || 0);
+    if (sortBy === "savings") return (a.video_conv_savings_bytes || 0) - (b.video_conv_savings_bytes || 0);
     return _nameCmp(a.file_name, b.file_name);
   });
   return sortDir === "desc" ? sorted.reverse() : sorted;

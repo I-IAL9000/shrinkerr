@@ -219,6 +219,37 @@ _CODEC = "COALESCE(video_codec, '')"  # LIKE ignores ASCII case
 _H264 = f"({_CODEC} LIKE '%264%' OR {_CODEC} LIKE '%avc%')"
 _HEVC = f"({_CODEC} LIKE '%265%' OR {_CODEC} LIKE '%hevc%')"
 _AV1 = f"{_CODEC} LIKE '%av1%'"
+_MPEG2 = f"{_CODEC} LIKE '%mpeg2%'"
+_VC1 = f"({_CODEC} LIKE '%vc1%' OR {_CODEC} LIKE '%wmv%')"
+_MPEG4 = f"({_CODEC} LIKE '%mpeg4%' OR {_CODEC} LIKE '%xvid%' OR {_CODEC} LIKE '%divx%')"
+_VP9 = f"{_CODEC} LIKE '%vp9%'"
+_NAMED_CODECS = f"({_H264} OR {_HEVC} OR {_AV1} OR {_MPEG2} OR {_VC1} OR {_MPEG4} OR {_VP9})"
+_MKV = "file_path LIKE '%.mkv'"
+_MP4 = "(file_path LIKE '%.mp4' OR file_path LIKE '%.m4v' OR file_path LIKE '%.mov')"
+_AVI = "file_path LIKE '%.avi'"
+
+
+def _tracks(column: str, condition: str, hint: tuple[str, ...] = ()) -> str:
+    """Any track in a JSON track-list column meets `condition` (on t.value).
+    `hint`: substrings one of which the raw JSON must contain — a cheap test
+    that spares the per-track check on almost every row."""
+    exists = (f"EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END) t "
+              f"WHERE {condition})")
+    if not hint:
+        return exists
+    return "(" + " OR ".join(f"{column} LIKE '%{h}%'" for h in hint) + f") AND {exists}"
+
+
+# Your languages: the audio and subtitle keep lists (Settings).
+_MY_LANGS = ("(SELECT lower(k.value) FROM settings s, json_each(s.value) k "
+             "WHERE s.key IN ('always_keep_languages', 'sub_keep_languages') AND json_valid(s.value))")
+_TRACK_LANG = "lower(COALESCE(json_extract(t.value, '$.language'), ''))"
+_TRACK_TEXT = "(COALESCE(json_extract(t.value, '$.profile'), '') || ' ' || COALESCE(json_extract(t.value, '$.title'), ''))"
+_IMAGE_SUB_CODECS = "('hdmv_pgs_subtitle', 'pgssub', 'dvd_subtitle', 'vobsub', 'dvb_subtitle', 'xsub')"
+
+
+def _job_exists(condition: str) -> str:
+    return f"EXISTS (SELECT 1 FROM jobs j WHERE j.file_path = scan_results.file_path AND {condition})"
 _UNMATCHED = "(language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))"
 
 
@@ -257,7 +288,16 @@ _FILTER_LIST = [
     Filter("x264", "codec", sql=_H264),
     Filter("x265", "codec", sql=_HEVC),
     Filter("av1", "codec", sql=_AV1),
-    Filter("misc_codec", "codec", sql=f"NOT ({_H264} OR {_HEVC} OR {_AV1})"),
+    Filter("codec_mpeg2", "codec", sql=_MPEG2),
+    Filter("codec_vc1", "codec", sql=_VC1),
+    Filter("codec_mpeg4", "codec", sql=_MPEG4),
+    Filter("codec_vp9", "codec", sql=_VP9),
+    Filter("misc_codec", "codec", sql=f"NOT {_NAMED_CODECS}"),
+    # Container, from the extension (discs and ISOs are "other")
+    Filter("container_mkv", "container", sql=_MKV),
+    Filter("container_mp4", "container", sql=_MP4),
+    Filter("container_avi", "container", sql=_AVI),
+    Filter("container_other", "container", sql=f"NOT ({_MKV} OR {_MP4} OR {_AVI})"),
     # Resolution: the one classifier in backend/resolution.py (SC-22).
     *(Filter(f"res_{tier}", "resolution", sql=f"{sql_resolution_rank()} = {RANKS[tier]}")
       for tier in ("4k", "1080p", "720p", "sd")),
@@ -271,9 +311,33 @@ _FILTER_LIST = [
            sql="(COALESCE(has_removable_tracks_flag, 0) = 1 OR COALESCE(has_und_tracks_flag, 0) = 1)"),
     Filter("lossless_audio", "audio", sql="COALESCE(has_lossless_audio_flag, 0) = 1"),
     Filter("lossy_audio", "audio", sql="COALESCE(has_lossless_audio_flag, 0) = 0"),
+    Filter("object_audio", "audio", sql=_tracks("audio_tracks_json",
+           f"{_TRACK_TEXT} LIKE '%atmos%' OR {_TRACK_TEXT} LIKE '%dts:x%' "
+           f"OR {_TRACK_TEXT} LIKE '%dts-x%' OR {_TRACK_TEXT} LIKE '%dtsx%'",
+           hint=("atmos", "dts:x", "dts-x", "dtsx"))),
+    Filter("audio_71", "audio", sql=_tracks("audio_tracks_json", "json_extract(t.value, '$.channels') >= 8")),
+    # Subtitles
+    Filter("image_subs", "subtitles", sql=_tracks(
+        "subtitle_tracks_json", f"lower(COALESCE(json_extract(t.value, '$.codec'), '')) IN {_IMAGE_SUB_CODECS}",
+        hint=("pgs", "dvd_subtitle", "vobsub", "dvb_subtitle", "xsub"))),
     # Language
     Filter("dubbed", "language", sql="COALESCE(is_dubbed_flag, 0) = 1"),
     Filter("not_api_matched", "language", sql=_UNMATCHED),
+    # No audio or subtitle track in your languages (none set: nothing matches).
+    Filter("missing_language", "language", sql=(
+        f"EXISTS {_MY_LANGS} "
+        f"AND NOT {_tracks('audio_tracks_json', f'{_TRACK_LANG} IN {_MY_LANGS}')} "
+        f"AND NOT {_tracks('subtitle_tracks_json', f'{_TRACK_LANG} IN {_MY_LANGS}')}")),
+    # Health checks (Corrupt is a status pill: a failed probe counts too)
+    Filter("health_never", "health", sql="health_status IS NULL"),
+    Filter("health_warnings", "health", sql="health_status = 'warnings'"),
+    # What happened when Shrinkerr tried
+    Filter("failed_before", "outcome", sql=_job_exists("j.status = 'failed'")),
+    Filter("vmaf_rejected", "outcome",
+           sql=_job_exists("j.error_key IN ('errors.vmafRejected', 'errors.vmafBelowThreshold')")),
+    Filter("no_savings", "outcome", sql=(
+        "EXISTS (SELECT 1 FROM ignored_files i WHERE i.file_path = scan_results.file_path "
+        "AND i.reason = 'conversion_larger')")),
     # Plex
     *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s))
       for s in ("watched", "unwatched", "watchlist")),

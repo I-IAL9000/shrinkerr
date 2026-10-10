@@ -33,7 +33,8 @@
     "size": "Tamaño",
     "files": "Archivos",
     "date": "Fecha",
-    "reverse": "Invertir el orden"
+    "reverse": "Invertir el orden",
+    "savings": "Ahorro"
   },
   "selection": {
     "selected_one": "{{count}} seleccionado",
@@ -123,12 +124,23 @@
       "audio": "Audio:",
       "language": "Idioma:",
       "type": "Tipo:",
-      "source": "Origen:"
+      "source": "Origen:",
+      "container": "Contenedor:",
+      "subtitles": "Subtítulos:",
+      "health": "Integridad:",
+      "outcome": "Resultado:"
     },
     "notLabel": "sin {{label}}",
     "excluded": "(excluido)",
     "excludeHint": "Alt+clic para excluir",
-    "hint": "Los filtros de un mismo grupo coinciden con cualquiera; los de grupos distintos deben cumplirse todos. Alt+clic en un filtro para excluirlo."
+    "hint": "Los filtros de un mismo grupo coinciden con cualquiera; los de grupos distintos deben cumplirse todos. Alt+clic en un filtro para excluirlo.",
+    "imageSubs": "Subtítulos de imagen",
+    "missingLanguage": "Sin mis idiomas",
+    "healthNever": "Sin comprobar",
+    "healthWarnings": "Advertencias",
+    "failedBefore": "Falló antes",
+    "vmafRejected": "Rechazado por VMAF",
+    "noSavings": "Sin ahorro"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",
