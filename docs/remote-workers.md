@@ -361,6 +361,10 @@ can't mark it failed or completed under whoever runs it now; it's told
 to stop. One that was only briefly unreachable gets its job back — and a
 conversion it finished is kept — if nobody has claimed the job meanwhile.
 
+A worker's container reports **healthy** while its heartbeats reach the
+server (Docker's health status, as shown by `docker ps`); unhealthy means
+it hasn't reached the server for 3 minutes.
+
 ## Verifying the setup
 
 From the primary, Nodes page:

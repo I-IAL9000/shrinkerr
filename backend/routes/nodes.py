@@ -420,6 +420,8 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'libx265_gpu_fallback_preset', 'libx265_gpu_fallback_cq', "
             "              'nvenc_hw_decode', 'qsv_hw_decode', 'vaapi_hw_decode', 'libx265_use_nvdec', "
             "              'videotoolbox_quality', 'videotoolbox_hw_decode', "
+            "              'qsv_cq', 'qsv_preset', 'qsv_lookahead', 'vaapi_qp', 'vaapi_compression_level', "
+            "              'nvenc_bit_depth', "
             "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder', "
             "              'filename_suffix', 'custom_ffmpeg_flags', 'auto_convert_lossless', "
             "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
@@ -476,6 +478,17 @@ async def request_job(req: RequestJobBody, request: Request):
     assigned["image_subs_to_srt"] = (srv_settings.get("image_subs_to_srt") or "false").lower() == "true"
     assigned["image_subs_keep_original"] = (srv_settings.get("image_subs_keep_original") or "true").lower() == "true"
     assigned["compare_frames"] = (srv_settings.get("compare_frames") or "true").lower() == "true"
+    # Quick Sync / VAAPI quality and NVENC bit depth (v0.10.0): workers used
+    # the defaults — 10-bit NVENC whatever the server said, which a Maxwell
+    # GPU can't encode.
+    for key, default in (("qsv_cq", 22), ("vaapi_qp", 22), ("vaapi_compression_level", 4)):
+        try:
+            assigned[key] = int(srv_settings.get(key) or default)
+        except (TypeError, ValueError):
+            assigned[key] = default
+    assigned["qsv_preset"] = srv_settings.get("qsv_preset") or "medium"
+    assigned["qsv_lookahead"] = (srv_settings.get("qsv_lookahead") or "false").lower() == "true"
+    assigned["nvenc_bit_depth"] = srv_settings.get("nvenc_bit_depth") or "10bit"
     from backend.converter import external_subs_to_merge
     external = []
     for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned
@@ -763,6 +776,7 @@ async def report_complete(req: CompletionReport, request: Request):
     if output_path:
         output_path = await nm.translate_path(output_path, req.node_id, "to_server")
 
+    outcome = "completed" if req.success else "failed"
     db = await connect_db()
     try:
         # A finished conversion is kept even when the job was released
@@ -771,6 +785,9 @@ async def report_complete(req: CompletionReport, request: Request):
         if not await _reporting_node_owns(db, req.job_id, req.node_id, adopt=req.success):
             await _drop_stale_report(db, req.job_id, req.node_id, "a completion" if req.success else "a failure")
             return {"ok": True, "ignored": True}
+        # Read before clearing: clear_cancel() also forgets it, so a node
+        # pause never put its job back in the queue (v0.10.0).
+        requeue = nm.should_requeue(req.job_id)
         nm.clear_cancel(req.job_id)
         if req.success and req.frames:
             from backend import frames as frames_mod
@@ -820,7 +837,8 @@ async def report_complete(req: CompletionReport, request: Request):
             now = datetime.now(timezone.utc).isoformat()
             # If the job was cancelled via a pause (node pause), return it to
             # pending instead of marking as failed, so it can be picked up again.
-            if nm.should_requeue(req.job_id):
+            if requeue:
+                outcome = "pending"
                 await db.execute(
                     "UPDATE jobs SET status = 'pending', progress = 0, fps = NULL, "
                     "eta_seconds = NULL, started_at = NULL, error_log = NULL, "
@@ -831,11 +849,13 @@ async def report_complete(req: CompletionReport, request: Request):
                 )
                 print(f"[NODES] Job {req.job_id} returned to pending (node paused)", flush=True)
             else:
+                # A cancel is "cancelled", as on this server — it was "failed" (v0.10.0).
+                outcome = "cancelled" if req.error_key == "errors.cancelledByUser" else "failed"
                 await db.execute(
-                    "UPDATE jobs SET status = 'failed', completed_at = ?, error_log = ?, "
+                    "UPDATE jobs SET status = ?, completed_at = ?, error_log = ?, "
                     "error_key = ?, error_params = ?, "
                     "assigned_node_id = NULL, assigned_at = NULL WHERE id = ?",
-                    (now, req.error, req.error_key,
+                    (outcome, now, req.error, req.error_key,
                      json.dumps(req.error_params) if req.error_params else None, req.job_id),
                 )
         await db.commit()
@@ -878,11 +898,22 @@ async def report_complete(req: CompletionReport, request: Request):
         except Exception as exc:
             print(f"[NODES] VMAF-rejected notification failed: {exc}", flush=True)
 
-    # Update node stats (only counts successes, tracks consecutive failures)
+    # A job that failed on a worker notifies like one that fails here (v0.10.0).
+    if outcome == "failed" and job:
+        try:
+            from backend.notifications import notify_job_failed
+            await notify_job_failed(job["file_path"].rsplit("/", 1)[-1], (req.error or "")[:200])
+        except Exception as exc:
+            print(f"[NODES] Job-failed notification failed: {exc}", flush=True)
+
+    # Update node stats (only counts successes, tracks consecutive failures).
+    # A cancel or a node pause isn't the node failing (v0.10.0: both counted
+    # towards suspending it).
     await nm.complete_job_on_node(
         req.node_id, req.job_id,
         success=req.success,
         space_saved=req.space_saved if req.success else 0,
+        counts=outcome in ("completed", "failed"),
     )
 
     # Broadcast completion
@@ -890,7 +921,7 @@ async def report_complete(req: CompletionReport, request: Request):
     await ws_manager.broadcast({
         "type": "job_complete",
         "job_id": req.job_id,
-        "status": "completed" if req.success else "failed",
+        "status": outcome,
         "space_saved": req.space_saved if req.success else 0,
         "error": req.error,
         **({"error_key": req.error_key, "error_params": req.error_params}

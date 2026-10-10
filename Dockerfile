@@ -285,6 +285,7 @@ RUN mkdir -p /app/data
 
 # Opt-in PUID / PGID / UMASK: run as that user instead of root (v0.10.0).
 COPY docker/entrypoint.sh /usr/local/bin/shrinkerr-entrypoint
+COPY docker/healthcheck.py /usr/local/bin/shrinkerr-healthcheck
 RUN chmod +x /usr/local/bin/shrinkerr-entrypoint \
     && command -v setpriv && command -v useradd && command -v groupadd && command -v usermod
 
@@ -299,7 +300,7 @@ ARG TMDB_API_KEY=""
 ENV SHRINKERR_TMDB_API_KEY=${TMDB_API_KEY}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:6680/api/health')" || exit 1
+  CMD python3 /usr/local/bin/shrinkerr-healthcheck
 
 # SHRINKERR_MODE=worker → run as a remote worker node (no server, no UI).
 # Default → run the FastAPI server + UI.

@@ -453,14 +453,20 @@ class NodeManager:
 
     async def complete_job_on_node(
         self, node_id: str, job_id: int, success: bool = True, space_saved: int = 0,
+        counts: bool = True,
     ) -> None:
         """Update node stats after a job completes.
 
         On success: increment jobs_completed, reset consecutive_failures.
         On failure: increment consecutive_failures. If threshold hit, set status='error'.
+        `counts=False` (a cancel, a node pause): only free the node.
         """
         db = await self._db()
         try:
+            if not counts:
+                await db.execute("UPDATE worker_nodes SET current_job_id = NULL WHERE id = ?", (node_id,))
+                await db.commit()
+                return
             if success:
                 await db.execute(
                     "UPDATE worker_nodes SET current_job_id = NULL, status = 'online', "

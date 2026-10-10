@@ -11,6 +11,7 @@ import os
 import platform
 import signal
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -59,6 +60,13 @@ async def _detect_capabilities(gpu_name: str | None = None) -> tuple[list[str], 
         out = stdout.decode(errors="replace")
         if "libx265" in out:
             caps.append("libx265")
+        # Intel / AMD, as the server detects them (v0.10.0: workers never
+        # offered them, so the Nodes page's Intel / AMD worker ran on the CPU).
+        from backend.encoder_caps import _intel_render_node, _vaapi_render_node
+        if "hevc_qsv" in out and _intel_render_node():
+            caps.append("qsv")
+        if "hevc_vaapi" in out and _vaapi_render_node():
+            caps.append("vaapi")
         from backend.encoder_caps import videotoolbox_encode_works
         if "hevc_videotoolbox" in out and await videotoolbox_encode_works():
             caps.append("videotoolbox")
@@ -176,6 +184,20 @@ def _clear_stored_token() -> None:
         pass
 
 
+# The container health check (docker/healthcheck.py) reads this file's age:
+# a worker is healthy while its heartbeats reach the server (v0.10.0).
+ALIVE_FILE = os.path.join(tempfile.gettempdir(), "shrinkerr-worker-alive")
+
+
+def _mark_alive() -> None:
+    try:
+        with open(ALIVE_FILE, "a"):
+            pass
+        os.utime(ALIVE_FILE)
+    except OSError:
+        pass
+
+
 class ServerClient:
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url
@@ -258,6 +280,7 @@ class ServerClient:
         # or after admin rotation. Persist it so subsequent calls carry
         # X-Node-Token.
         self._accept_token(data.get("token"))
+        _mark_alive()
         return data
 
     async def request_job(self, node_id: str) -> tuple[dict | None, dict]:
@@ -512,6 +535,14 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "image_subs_keep_original": bool(job.get("image_subs_keep_original", True)),
                 "compare_frames": bool(job.get("compare_frames", True)),
                 "compat_for_direct_play": bool(job.get("compat_for_direct_play", False)),  # v0.10.0
+                # Quick Sync / VAAPI quality and NVENC bit depth from the server
+                # (v0.10.0; the defaults otherwise, as before).
+                "qsv_cq": int(job.get("qsv_cq") or 22),
+                "qsv_preset": job.get("qsv_preset") or "medium",
+                "qsv_lookahead": bool(job.get("qsv_lookahead", False)),
+                "vaapi_qp": int(job.get("vaapi_qp") or 22),
+                "vaapi_compression_level": int(job.get("vaapi_compression_level") or 4),
+                "nvenc_bit_depth": job.get("nvenc_bit_depth") or "10bit",
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server
