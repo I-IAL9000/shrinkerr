@@ -32,7 +32,7 @@ def test_the_command():
     i = cmd.index("0:1")
     assert cmd[i - 1] == "-map" and cmd.index("0:a?") < i  # after the original audio
     tail = " ".join(cmd[i:])
-    assert "-c:a:1 eac3 -b:a 224k -ac:a:1 2 -ar:a:1 48000 -filter:a:1 loudnorm=I=-16:TP=-1.5:LRA=11" in tail
+    assert "-c:a:1 eac3 -b:a:1 224k -ac:a:1 2 -ar:a:1 48000 -filter:a:1 loudnorm=I=-16:TP=-1.5:LRA=11" in tail
     assert f"-metadata:s:a:1 title={COMPAT_TRACK_TITLE} -metadata:s:a:1 language=eng -disposition:a:1 0" in tail
 
 
@@ -103,3 +103,41 @@ async def test_a_real_encode_converts_dts(test_db, tmp_path):
     result = await convert_file(str(clip), "libx265", 2.0, override_libx265_preset="ultrafast")
     assert result["success"], result.get("error")
     assert [s["codec_name"] for s in _streams(result["output_path"])] == ["eac3"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not all(e in _encoders() for e in ("libx265", " dca ", "eac3", " aac ")), reason="needs ffmpeg encoders")
+async def test_each_encoded_track_keeps_its_bitrate(test_db, tmp_path):
+    """Two encoded audio tracks at different bitrates: `-b:a` without a
+    stream index set the last one's bitrate on every track (a converted
+    EAC3 640k track came out at the compatibility track's 96k)."""
+    from backend.converter import convert_file
+    clip = tmp_path / "Film (2020).mkv"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x240:r=24:d=4",
+                    "-f", "lavfi", "-i", "anoisesrc=d=4:c=pink:r=48000",
+                    "-c:v", "libx264", "-qp", "0", "-c:a", "dca", "-strict", "-2", "-ac", "6", str(clip)], check=True)
+    await _settings(test_db, auto_convert_lossless="true", lossless_target_codec="eac3",
+                    lossless_target_bitrate="640", convert_dts="true",
+                    audio_compat_track="true", audio_compat_codec="aac", audio_compat_bitrate="96")
+    result = await convert_file(str(clip), "libx265", 4.0, override_libx265_preset="ultrafast")
+    assert result["success"], result.get("error")
+    rates = json.loads(subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name,bit_rate",
+         "-of", "json", result["output_path"]], capture_output=True, text=True, check=True).stdout)["streams"]
+    assert [s["codec_name"] for s in rates] == ["eac3", "aac"]
+    assert int(rates[0]["bit_rate"]) == 640_000
+
+
+def test_kept_tracks_get_their_own_bitrates():
+    lossless = {"codec": "eac3", "bitrate": 640}
+    keep = [_t(1, "eng", 8, "truehd"), _t(2, "fre", 6, "ac3")]
+    cmd = " ".join(_build_ffmpeg_cmd_impl("/m/in.mkv", "/m/out.mkv", encoder="libx265", audio_streams_to_keep=keep,
+                                          lossless_conversion=lossless, audio_codec="aac", audio_bitrate=128))
+    assert "-c:a:0 eac3 -b:a:0 640k" in cmd and "-c:a:1 aac -b:a:1 128k" in cmd
+    mapped_all = " ".join(_build_ffmpeg_cmd_impl(
+        "/m/in.mkv", "/m/out.mkv", encoder="libx265", audio_stream_codecs=["truehd", "ac3"],
+        lossless_conversion={**lossless, "profiles": ["", ""]}, audio_codec="aac", audio_bitrate=128))
+    assert "-c:a:0 eac3 -b:a:0 640k" in mapped_all and "-c:a:1 aac -b:a:1 128k" in mapped_all
+    every = " ".join(_build_ffmpeg_cmd_impl("/m/in.mkv", "/m/out.mkv", encoder="libx265", audio_codec="aac",
+                                            audio_bitrate=128))
+    assert "-c:a aac -b:a 128k" in every  # one setting for every track: unindexed

@@ -274,21 +274,25 @@ def _ffmpeg_cwd() -> str:
     return _ffmpeg_cwd_path
 
 
-def _audio_codec_args(codec: str, bitrate: int) -> list[str]:
-    """Return ffmpeg args for a given audio codec."""
+def _audio_codec_args(codec: str, bitrate: int, stream: int | None = None) -> list[str]:
+    """Return ffmpeg args for a given audio codec. `stream`: the output audio
+    stream they're for (v0.10.0): an unindexed `-b:a` sets every encoded
+    track's bitrate, so the last one won (EAC3 640k beside a 96k AAC track
+    came out at 96k)."""
+    b = "-b:a" if stream is None else f"-b:a:{stream}"
     if codec == "copy":
         return ["copy"]
     if codec == "eac3":
-        return ["eac3", "-b:a", f"{bitrate}k"]
+        return ["eac3", b, f"{bitrate}k"]
     if codec == "ac3":
-        return ["ac3", "-b:a", f"{bitrate}k"]
+        return ["ac3", b, f"{bitrate}k"]
     if codec == "aac":
-        return ["aac", "-b:a", f"{bitrate}k"]
+        return ["aac", b, f"{bitrate}k"]
     if codec == "opus":
-        return ["libopus", "-b:a", f"{bitrate}k"]
+        return ["libopus", b, f"{bitrate}k"]
     if codec == "flac":
         return ["flac"]
-    return [codec, "-b:a", f"{bitrate}k"]
+    return [codec, b, f"{bitrate}k"]
 
 
 def build_ffmpeg_cmd(
@@ -759,9 +763,9 @@ def _build_ffmpeg_cmd_impl(
                     src_codec, src_profile, track.get("title") or "",
                     (lossless_conversion or {}).get("keep_objects", True),
                     (lossless_conversion or {}).get("convert_dts", False)):
-                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate)
+                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate, out_idx)
             else:
-                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate)
+                cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate, out_idx)
             # v0.7.29: for disc conversions, stamp the detected language on
             # the output stream (the bluray:/concat: input protocol strips
             # it). The keep-list track dict carries `language` and is in
@@ -789,10 +793,10 @@ def _build_ffmpeg_cmd_impl(
                 title = titles[idx] if idx < len(titles) else ""
                 if lossless_to_convert(stream_codec, profile, title, lossless_conversion.get("keep_objects", True),
                                        lossless_conversion.get("convert_dts", False)):
-                    args = _audio_codec_args(target_codec, target_bitrate)
+                    args = _audio_codec_args(target_codec, target_bitrate, idx)
                     cmd += [f"-c:a:{idx}"] + args
                 else:
-                    args = _audio_codec_args(audio_codec, audio_bitrate)
+                    args = _audio_codec_args(audio_codec, audio_bitrate, idx)
                     cmd += [f"-c:a:{idx}"] + args
         else:
             args = _audio_codec_args(audio_codec, audio_bitrate)
@@ -811,7 +815,7 @@ def _build_ffmpeg_cmd_impl(
     if compat_track:
         n = compat_track["out_index"]
         cmd += ["-map", f"0:{compat_track['source']}", f"-c:a:{n}",
-                *_audio_codec_args(compat_track["codec"], compat_track["bitrate"]),
+                *_audio_codec_args(compat_track["codec"], compat_track["bitrate"], n),
                 f"-ac:a:{n}", "2", f"-ar:a:{n}", "48000"]
         if compat_track.get("loudnorm"):
             cmd += [f"-filter:a:{n}", "loudnorm=I=-16:TP=-1.5:LRA=11"]
