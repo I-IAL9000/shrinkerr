@@ -81,7 +81,10 @@ async def _probe_says(monkeypatch, hdr_format):
                                                ("hdr10", "qsv", "errors.hdrNeeds10Bit"),
                                                ("hlg", "vaapi", "errors.hdrNeeds10Bit")])
 async def test_unsafe_hdr_encodes_are_refused_up_front(test_db, tmp_path, monkeypatch, hdr, encoder, key):
+    from backend import dovi
     from backend.tests.test_same_name_conversion import _mkv
+    # v0.10.0: profile 8 keeps its Dolby Vision where dovi_tool is installed (test_dovi.py)
+    monkeypatch.setattr(dovi, "tools_available", lambda: False)
     src = tmp_path / "Movie (2020) 2160p WEB h264.mkv"
     _mkv(src, ["eng"])
     before = src.read_bytes()
