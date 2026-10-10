@@ -25,7 +25,29 @@ RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
-# Stage 2: runtime image.
+# Stage 2: subtile-ocr, the VobSub (DVD subtitle) OCR tool (v0.10.0). The
+# NVENC image has built it since v0.9.8; this one never had it, so DVD
+# subtitles were neither language-detected nor converted to SRT. It's a Rust
+# build (a rustup toolchain — subtile-ocr's deps need Cargo >= 1.85) against
+# the runtime's tesseract / leptonica, so it runs on the same base, for the
+# target architecture. Its own stage keeps the toolchain out of the image and
+# lets the layer cache skip the compile (minutes; far longer for arm64 under
+# emulation) until this stage changes. GUARDED: a failed build leaves /out
+# empty, and the runtime code is fail-open (VobSub tracks stay images / und).
+FROM mirror.gcr.io/library/python:3.11-slim-bookworm AS subtile-ocr-build
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl gcc libc6-dev clang libclang-dev libtesseract-dev libleptonica-dev pkg-config; \
+    mkdir -p /out; \
+    ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
+        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+        && /opt/cargo/bin/cargo install subtile-ocr --version 0.2.6 --root /out \
+        && /out/bin/subtile-ocr --version ) \
+        || echo "[BUILD] subtile-ocr build failed — VobSub OCR will be unavailable"; \
+    rm -f /out/.crates.toml /out/.crates2.json
+
+# Stage 3: runtime image.
 # python:3.11-slim-bookworm is multi-arch (amd64 + arm64) and much smaller
 # than the ubuntu/CUDA image used by the :nvenc variant.
 #
@@ -235,6 +257,8 @@ COPY VERSION .
 # section in Settings can show release notes without a network call.
 COPY CHANGELOG.md .
 COPY --from=frontend-build /app/frontend/dist frontend/dist
+# DVD subtitle OCR (stage 2); runs against the tesseract-ocr installed above.
+COPY --from=subtile-ocr-build /out/ /usr/local/
 
 RUN mkdir -p /app/data
 
