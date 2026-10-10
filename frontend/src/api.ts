@@ -728,6 +728,17 @@ export const updateEncodingRule = (id: number, data: any) =>
   apiFetch(`/rules/${id}`, { method: "PUT", body: JSON.stringify(data) });
 export const deleteEncodingRule = (id: number) =>
   apiFetch(`/rules/${id}`, { method: "DELETE" });
+// Settings → Rules → "Test a file" (v0.10.0): every rule, with which of its
+// conditions matched; the first match is the one that applies.
+export interface RuleTestResult {
+  file_path: string;
+  matched_rule: { rule_id: number; rule_name: string; action: string } | null;
+  scanned: boolean | null;
+  rules: { rule_id: number; rule_name: string; match_mode: string; matched: boolean;
+           conditions: { type: string; operator?: string; value?: string; matched: boolean }[] }[];
+}
+export const testEncodingRule = (filePath: string) =>
+  apiFetch<RuleTestResult>("/rules/test", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const reorderEncodingRules = (ruleIds: number[]) =>
   apiFetch("/rules/reorder", { method: "PUT", body: JSON.stringify({ rule_ids: ruleIds }) });
 export const syncPlexRuleMetadata = () =>

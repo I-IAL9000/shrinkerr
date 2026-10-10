@@ -251,7 +251,21 @@
       "created": "Regla creada",
       "saveFailed": "No se pudo guardar la regla"
     },
-    "moveRule": "Mover la regla {{n}} (flechas arriba y abajo)"
+    "moveRule": "Mover la regla {{n}} (flechas arriba y abajo)",
+    "tester": {
+      "title": "Probar un archivo",
+      "hint": "Pega la ruta de un archivo para ver qué regla se le aplica y por qué.",
+      "placeholder": "/media/Movies/Película (2020)/Película.mkv",
+      "test": "Probar",
+      "testing": "Probando…",
+      "applies": "Se aplica «{{name}}» ({{action}})",
+      "none": "Ninguna regla coincide: se aplican los ajustes generales.",
+      "notScanned": "Este archivo no está en el Escáner: las condiciones sobre su códec, tamaño o resolución no pueden coincidir hasta que se escanee.",
+      "wins": "se aplica",
+      "earlierWins": "coincide, pero gana una regla anterior",
+      "noMatch": "no coincide",
+      "noRules": "No hay reglas activadas."
+    }
   },
   "conditions": {
     "groups": {
@@ -280,13 +294,16 @@
       "emby_watched": "Visto en Emby",
       "nzbget_category": "Categoría de descarga",
       "content_type": "Tipo de contenido",
-      "saved_view": "Vista guardada"
+      "saved_view": "Vista guardada",
+      "plex_watched": "Plex visto",
+      "jellyfin_watched": "Jellyfin visto"
     },
     "plexOptions": {
       "label": "Etiqueta",
       "collection": "Colección",
       "genre": "Género",
-      "library": "Biblioteca"
+      "library": "Biblioteca",
+      "watched": "Visto"
     },
     "operators": {
       "is": "es",
@@ -318,7 +335,9 @@
       "emby_tag": "etiqueta emby",
       "emby_watched": "visto emby",
       "nzbget_category": "categoría nzbget",
-      "content_type": "tipo de contenido"
+      "content_type": "tipo de contenido",
+      "plex_watched": "plex visto",
+      "jellyfin_watched": "jellyfin visto"
     },
     "values": {
       "selectDirectory": "Selecciona un directorio...",

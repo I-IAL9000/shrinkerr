@@ -477,9 +477,12 @@ async def get_condition_options():
 
 @router.post("/test")
 async def test_rule(payload: dict):
-    file_path = payload.get("file_path")
+    file_path = str(payload.get("file_path") or "").strip().strip("'\"")  # a pasted path, quotes and all
     if not file_path:
         raise ApiError(400, "file_path required", code="common.filePathRequired")
     from backend.rule_resolver import resolve_rules_for_batch
-    results = await resolve_rules_for_batch([file_path])
-    return {"file_path": file_path, "matched_rule": results.get(file_path)}
+    # Every rule, with which of its conditions matched (v0.10.0, the
+    # Settings tester); the first match is the one that applies.
+    result = (await resolve_rules_for_batch([file_path], explain=True))[file_path]
+    return {"file_path": file_path, "matched_rule": result["matched"], "scanned": result["scanned"],
+            "rules": result["rules"]}

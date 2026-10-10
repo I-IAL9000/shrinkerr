@@ -533,7 +533,7 @@ class JobQueue:
         """Shared WHERE/ORDER for a status tab, so the full list and the
         id-only poll (get_job_ids_by_status) can never sort differently."""
         order = "completed_at DESC" if status == "completed" else "priority DESC, queue_order ASC"
-        sql = f"SELECT {select} FROM jobs WHERE status = ?"
+        sql = f"SELECT {select} FROM jobs WHERE status = ? AND cleared = 0"
         params: list = [status]
         if search:
             # Case-insensitive filename substring match. LIKE '%x%' can't use
@@ -571,7 +571,7 @@ class JobQueue:
         db = await self._connect()
         try:
             cols = await _list_select_cols(db)
-            sql = f"SELECT {cols} FROM jobs ORDER BY queue_order ASC"
+            sql = f"SELECT {cols} FROM jobs WHERE cleared = 0 ORDER BY queue_order ASC"
             params: list = []
             if limit > 0:
                 sql += " LIMIT ? OFFSET ?"
@@ -774,9 +774,12 @@ class JobQueue:
             await db.close()
 
     async def remove_job(self, job_id: int) -> None:
+        """Remove a job from the Queue. A completed one is only hidden (v0.10.0):
+        it still counts in the Dashboard's totals and can still be undone."""
         db = await self._connect()
         try:
-            await db.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            await db.execute("UPDATE jobs SET cleared = 1 WHERE id = ? AND status = 'completed'", (job_id,))
+            await db.execute("DELETE FROM jobs WHERE id = ? AND status != 'completed'", (job_id,))
             await db.commit()
         finally:
             await db.close()
@@ -792,12 +795,18 @@ class JobQueue:
     async def delete_jobs_where(self, where: str) -> int:
         """Delete the jobs matching `where` (a fixed SQL condition, never user
         input) in chunks; returns how many were deleted."""
+        return await self._in_chunks("DELETE FROM jobs", where)
+
+    async def _in_chunks(self, statement: str, where: str) -> int:
+        """Run `statement` ("DELETE FROM jobs" / "UPDATE jobs SET ...") on the
+        jobs matching `where`, in chunks — `where` must stop matching a row
+        once it's done."""
         db = await self._connect()
         total = 0
         try:
             while True:
                 cur = await db.execute(
-                    f"DELETE FROM jobs WHERE id IN (SELECT id FROM jobs WHERE {where} LIMIT ?)",
+                    f"{statement} WHERE id IN (SELECT id FROM jobs WHERE {where} LIMIT ?)",
                     (self._CLEAR_CHUNK,),
                 )
                 await db.commit()
@@ -809,7 +818,11 @@ class JobQueue:
             await db.close()
 
     async def clear_completed(self) -> None:
-        await self.delete_jobs_where("status IN ('completed', 'failed', 'cancelled')")
+        """"Clear done": completed jobs are hidden, not deleted (v0.10.0) —
+        clearing used to reset the Dashboard's totals and lose Undo; failed
+        and cancelled ones are deleted."""
+        await self._in_chunks("UPDATE jobs SET cleared = 1", "status = 'completed' AND cleared = 0")
+        await self.delete_jobs_where("status IN ('failed', 'cancelled')")
 
     async def clear_pending(self) -> None:
         await self.delete_jobs_where("status = 'pending'")
@@ -826,7 +839,7 @@ class JobQueue:
                     SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed,
                     COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN space_saved ELSE 0 END), 0) as total_space_saved,
                     COALESCE(SUM(CASE WHEN status='completed' AND original_size > 0 THEN original_size ELSE 0 END), 0) as total_original_size
-                FROM jobs"""
+                FROM jobs WHERE cleared = 0"""
             ) as cur:
                 row = await cur.fetchone()
             return {

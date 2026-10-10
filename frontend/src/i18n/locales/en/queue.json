@@ -82,8 +82,8 @@
     "rerequest_one": "Re-request {{count}} file from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.",
     "rerequest_other": "Re-request {{count}} files from Sonarr/Radarr?\n\nThis will: blocklist the current release, delete the file from disk, and trigger a fresh search for each one.",
     "rerequestLabel": "Re-request {{count}}",
-    "clearDone_one": "Delete the history of {{count}} completed job, plus all failed and cancelled ones? Lifetime space saved, Undo and the converted badges come from this history.",
-    "clearDone_other": "Delete the history of {{count}} completed jobs, plus all failed and cancelled ones? Lifetime space saved, Undo and the converted badges come from this history.",
+    "clearDone_one": "Clear {{count}} completed job from the Queue, and delete failed and cancelled ones? Completed jobs stay in your savings totals and can still be undone.",
+    "clearDone_other": "Clear {{count}} completed jobs from the Queue, and delete failed and cancelled ones? Completed jobs stay in your savings totals and can still be undone.",
     "clearFailed_one": "Clear all {{count}} failed job?",
     "clearFailed_other": "Clear all {{count}} failed jobs?"
   },

@@ -243,7 +243,21 @@
       "created": "Rule created",
       "saveFailed": "Failed to save rule"
     },
-    "moveRule": "Move rule {{n}} (up and down arrow keys)"
+    "moveRule": "Move rule {{n}} (up and down arrow keys)",
+    "tester": {
+      "title": "Test a file",
+      "hint": "Paste a file's path to see which rule applies to it, and why.",
+      "placeholder": "/media/Movies/Film (2020)/Film.mkv",
+      "test": "Test",
+      "testing": "Testing…",
+      "applies": "\"{{name}}\" applies ({{action}})",
+      "none": "No rule matches — the global settings apply.",
+      "notScanned": "This file isn't in the Scanner, so conditions about its codec, size or resolution can't match until it's scanned.",
+      "wins": "applies",
+      "earlierWins": "matches, but an earlier rule wins",
+      "noMatch": "doesn't match",
+      "noRules": "No enabled rules."
+    }
   },
   "conditions": {
     "groups": {
@@ -272,13 +286,16 @@
       "emby_watched": "Emby Watched",
       "nzbget_category": "Download Category",
       "content_type": "Content type",
-      "saved_view": "Saved view"
+      "saved_view": "Saved view",
+      "plex_watched": "Plex Watched",
+      "jellyfin_watched": "Jellyfin Watched"
     },
     "plexOptions": {
       "label": "Label",
       "collection": "Collection",
       "genre": "Genre",
-      "library": "Library"
+      "library": "Library",
+      "watched": "Watched"
     },
     "operators": {
       "is": "is",
@@ -310,7 +327,9 @@
       "emby_tag": "emby tag",
       "emby_watched": "emby watched",
       "nzbget_category": "nzbget category",
-      "content_type": "content type"
+      "content_type": "content type",
+      "plex_watched": "plex watched",
+      "jellyfin_watched": "jellyfin watched"
     },
     "values": {
       "selectDirectory": "Select directory...",

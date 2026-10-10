@@ -490,7 +490,8 @@ async def get_skip_prefixes() -> list[str]:
         await db.close()
 
 
-async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | None = None) -> dict[str, Optional[dict]]:
+async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | None = None,
+                                  explain: bool = False) -> dict[str, Optional[dict]]:
     """For each file path, find the first matching encoding rule.
 
     Condition types include directory, source, resolution, video_codec,
@@ -502,6 +503,9 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
       - "all": rule matches only if ALL conditions match (AND logic)
 
     Returns a dict mapping file_path -> matched rule dict (or None).
+    `explain` (the Settings tester, v0.10.0): file_path -> {"matched": that,
+    "scanned": bool, "rules": every rule with whether it and each of its
+    conditions matched}.
     """
     if not file_paths:
         return {}
@@ -515,7 +519,7 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
             rules = [dict(r) for r in await cur.fetchall()]
 
         if not rules:
-            return {fp: None for fp in file_paths}
+            return {fp: {"matched": None, "scanned": None, "rules": []} if explain else None for fp in file_paths}
 
         # Pre-parse conditions for each rule
         rules_with_conds = [(rule, _parse_rule_conditions(rule)) for rule in rules]
@@ -604,6 +608,7 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
             meta = folder_metadata.get(folder, [])
 
             matched = None
+            trace = []
             for rule, (match_mode, conditions) in rules_with_conds:
                 if not conditions:
                     continue
@@ -617,11 +622,16 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                 else:  # "any" (default)
                     rule_matches = any(cond_results)
 
-                if rule_matches:
+                if explain:
+                    trace.append({"rule_id": rule["id"], "rule_name": rule["name"], "match_mode": match_mode,
+                                  "matched": rule_matches,
+                                  "conditions": [{**c, "matched": hit} for c, hit in zip(conditions, cond_results)]})
+                if rule_matches and matched is None:
                     matched = _make_rule_result(rule)
-                    break
+                    if not explain:
+                        break
 
-            results[fp] = matched
+            results[fp] = {"matched": matched, "scanned": fp in scan_data, "rules": trace} if explain else matched
 
         return results
     finally:

@@ -519,6 +519,13 @@ async def init_db():
                 await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {coltype}")
             except Exception:
                 pass
+        # v0.10.0: "Clear done" hides finished jobs from the Queue instead of
+        # deleting them — the Dashboard's totals, Undo and the Scanner's
+        # "Converted" read them.
+        try:
+            await db.execute("ALTER TABLE jobs ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         # Migration: conversion log per file
         for col, coltype in [
             ("ffmpeg_command", "TEXT DEFAULT NULL"),

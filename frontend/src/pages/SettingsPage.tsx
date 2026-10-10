@@ -35,6 +35,7 @@ import { ALL_LANGUAGES } from "../languageCodes";
 import { presetSetting } from "../qualityPresets";
 import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../settingsSections";
 import SettingsSearch from "../components/SettingsSearch";
+import RuleTester from "../components/RuleTester";
 import { useConfirm } from "../components/ConfirmModal";
 
 // Settings compare as text: the API returns "true" / "30" where the controls
@@ -373,8 +374,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     collection: { label: ct("types.collection"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     genre: { label: ct("types.genre"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     library: { label: ct("types.library"), group: "Plex", operators: [op("is")], valueType: "select" },
+    plex_watched: { label: ct("types.plex_watched"), group: "Plex", operators: [op("is")], valueType: "select" },
     arr_tag: { label: ct("types.arr_tag"), group: "Arr", operators: [op("is"), op("is_not")], valueType: "select" },
     jellyfin_tag: { label: ct("types.jellyfin_tag"), group: "Jellyfin", operators: [op("is"), op("is_not")], valueType: "select" },
+    jellyfin_watched: { label: ct("types.jellyfin_watched"), group: "Jellyfin", operators: [op("is")], valueType: "select" },
     emby_tag: { label: ct("types.emby_tag"), group: "Emby", operators: [op("is"), op("is_not")], valueType: "select" },
     emby_watched: { label: ct("types.emby_watched"), group: "Emby", operators: [op("is")], valueType: "select" },
     nzbget_category: { label: ct("types.nzbget_category"), group: ct("groups.downloads"), operators: [op("is"), op("is_not")], valueType: "select" },
@@ -3919,6 +3922,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 )}
 
+                {rules.length > 0 && !showAddRule && <RuleTester inputStyle={inputStyle} />}
+
                 {/* Add/Edit Rule form */}
                 {showAddRule && (
                   <div id="rule-form" style={{ background: "var(--bg-primary)", borderRadius: 4, padding: 16, marginTop: rules.length > 0 ? 0 : 8, scrollMarginTop: 80 }}>
@@ -3969,12 +3974,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 <option value="collection">{t("settingsIntegrations:conditions.plexOptions.collection")}</option>
                                 <option value="genre">{t("settingsIntegrations:conditions.plexOptions.genre")}</option>
                                 <option value="library">{t("settingsIntegrations:conditions.plexOptions.library")}</option>
+                                <option value="plex_watched">{t("settingsIntegrations:conditions.plexOptions.watched")}</option>
                               </optgroup>
                               <optgroup label="Arr">
                                 <option value="arr_tag">{t("settingsIntegrations:conditions.types.arr_tag")}</option>
                               </optgroup>
                               <optgroup label="Jellyfin">
                                 <option value="jellyfin_tag">{t("settingsIntegrations:conditions.types.jellyfin_tag")}</option>
+                                <option value="jellyfin_watched">{t("settingsIntegrations:conditions.types.jellyfin_watched")}</option>
                               </optgroup>
                               <optgroup label="Emby">
                                 <option value="emby_tag">{t("settingsIntegrations:conditions.types.emby_tag")}</option>
@@ -4122,7 +4129,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 </select>;
                               }
 
-                              if (cond.type === "emby_watched") {
+                              if (cond.type === "emby_watched" || cond.type === "plex_watched" || cond.type === "jellyfin_watched") {
                                 return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
                                   <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
                                   <option value="true">{t("settingsIntegrations:conditions.values.watched")}</option>

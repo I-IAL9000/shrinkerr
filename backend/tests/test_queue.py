@@ -280,7 +280,7 @@ async def test_clearing_deletes_in_committed_chunks(test_db, monkeypatch):
     monkeypatch.setattr(q, "_connect", counting_connect)
 
     await q.clear_completed()
-    assert commits == 3  # 8 finished jobs in chunks of 3
+    assert commits == 4  # 5 completed hidden in chunks of 3, then 3 failed / cancelled deleted (+ an empty chunk)
     assert sorted({j["status"] for j in await q.get_jobs_by_status("pending")}) == ["pending"]
     assert len(await q.get_jobs_by_status("pending")) == 7
     assert await q.get_jobs_by_status("completed") == []
