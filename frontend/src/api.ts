@@ -816,6 +816,33 @@ export const getViews = () => apiFetch<SavedView[]>("/views");
 export const saveView = (name: string, filter: string) =>
   apiFetch<SavedView>("/views", { method: "POST", body: JSON.stringify({ name, filter }) });
 export const deleteView = (id: number) => apiFetch<{ deleted: number }>(`/views/${id}`, { method: "DELETE" });
+// Policies (v0.10.0): a saved view + an action + a schedule + a budget.
+export interface PolicyInput {
+  name: string; view_id: number; action: "queue" | "health_check";
+  every: "daily" | "weekly"; weekday: number | null; at: string;
+  max_files: number | null; max_gb: number | null; start_queue: boolean; enabled: boolean;
+}
+export interface PolicyRunResult { matched?: number; chosen?: number; queued?: number; bytes?: number; error?: string }
+export interface Policy extends PolicyInput {
+  id: number; last_run_at: string | null; last_result: PolicyRunResult | null; next_run_at: string | null;
+}
+export const getPolicies = () => apiFetch<Policy[]>("/policies");
+export const createPolicy = (p: PolicyInput) =>
+  apiFetch<Policy>("/policies", { method: "POST", body: JSON.stringify(p) });
+export const updatePolicy = (id: number, p: PolicyInput) =>
+  apiFetch<Policy>(`/policies/${id}`, { method: "PUT", body: JSON.stringify(p) });
+export const deletePolicy = (id: number) => apiFetch(`/policies/${id}`, { method: "DELETE" });
+export const runPolicy = (id: number) => apiFetch<PolicyRunResult>(`/policies/${id}/run`, { method: "POST" });
+// The planner: the conversions that free N GB fastest.
+export interface SpacePlanInput { target_gb: number; deadline?: string | null; view_id?: number | null }
+export interface SpacePlan {
+  files: number; savings: number; seconds: number; finish_at: string;
+  reached: boolean; available: number; on_time: boolean;
+}
+export const planSpace = (p: SpacePlanInput) =>
+  apiFetch<SpacePlan>("/policies/plan", { method: "POST", body: JSON.stringify(p) });
+export const queueSpacePlan = (p: SpacePlanInput) =>
+  apiFetch<{ queued: number }>("/policies/plan/queue", { method: "POST", body: JSON.stringify(p) });
 // What pending jobs will do (v0.10.0). A plan's tracks are its file's, each
 // with whether the job removes it; edit them with updateAudioTracks /
 // updateSubtitleTracks on scan_id, which updates the job.

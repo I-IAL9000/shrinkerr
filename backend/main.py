@@ -362,6 +362,8 @@ async def lifespan(app: FastAPI):
     app.state.node_manager = node_manager
     init_job_routes(worker, queue)
     init_scheduler(worker.start)
+    from backend.policies import schedule_policies
+    await schedule_policies()
     await worker.restore_run_state()
     watcher.start()
     # Weekly database backup task (keeps last 4)
@@ -882,6 +884,9 @@ app.include_router(search_router)
 
 from backend.routes.views import router as views_router
 app.include_router(views_router)
+
+from backend.routes.policies import router as policies_router
+app.include_router(policies_router)
 
 from backend.routes.rename import router as rename_router
 app.include_router(rename_router)

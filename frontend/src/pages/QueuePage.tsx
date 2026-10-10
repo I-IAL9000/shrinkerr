@@ -1,4 +1,5 @@
 import ReviewList from "../components/ReviewList";
+import PlannerModal from "../components/PlannerModal";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
@@ -28,6 +29,7 @@ export default function QueuePage() {
   jobsRef.current = jobs;
   const [stats, setStats] = useState<any>(null);
   const [tab, setTab] = useState<"pending" | "completed" | "failed" | "review">("pending");
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -769,6 +771,11 @@ export default function QueuePage() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+          {tab === "pending" && (
+            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setPlannerOpen(true)}>
+              {t("queue:planner.open")}
+            </button>
+          )}
           {tab === "pending" && tabJobs.length > 0 && (<>
                 <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
                   onClick={async () => { if (await confirm({ message: t("queue:confirm.clearPending", { count: pendingCount }), confirmLabel: t("common:actions.clearAll"), danger: true })) { clearPending().then(() => load()); } }}>
@@ -944,6 +951,7 @@ export default function QueuePage() {
         </>
       )}
 
+      {plannerOpen && <PlannerModal onClose={() => setPlannerOpen(false)} onQueued={() => load()} />}
     </div>
   );
 }

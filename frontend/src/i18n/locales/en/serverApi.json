@@ -115,9 +115,19 @@
     "emptyFilter": "Choose a filter to save first.",
     "notFound": "View not found",
     "inUseByAutoQueue": "The auto-queue is limited to this view.",
-    "inUseByRules": "Rules use this view: {{rules}}."
+    "inUseByRules": "Rules use this view: {{rules}}.",
+    "inUseByPolicies": "Policies use this view: {{policies}}."
   },
   "arr": {
     "maintainerrFailed": "Maintainerr: {{error}}"
+  },
+  "policies": {
+    "nameRequired": "Give the policy a name.",
+    "viewMissing": "That saved view doesn't exist.",
+    "invalidTime": "The time must be HH:MM.",
+    "weekdayRequired": "Choose the day of the week.",
+    "invalidBudget": "A budget must be above zero.",
+    "notFound": "No such policy.",
+    "invalidTarget": "Choose how much space to free."
   }
 }

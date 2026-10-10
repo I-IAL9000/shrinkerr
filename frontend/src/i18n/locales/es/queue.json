@@ -291,5 +291,30 @@
     "rejectConfirm_one": "¿Borrar {{count}} archivo convertido y conservar el original? No se volverá a encolar (Escáner → Ignorados para deshacerlo).",
     "rejectConfirm_many": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo).",
     "rejectConfirm_other": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo)."
+  },
+  "planner": {
+    "open": "Liberar espacio…",
+    "title": "Liberar espacio",
+    "intro": "Las conversiones que liberan el espacio más rápido —el mayor ahorro estimado por hora de codificación— entre los archivos que necesitan convertirse (ni ignorados ni ya en la cola).",
+    "free": "Liberar",
+    "unit": "Unidad",
+    "by": "Antes de (opcional)",
+    "from": "De",
+    "everything": "Todo lo que necesita convertirse",
+    "calculate": "Calcular",
+    "result_one": "{{count}} archivo liberaría unos {{savings}} en {{time}} de codificación.",
+    "result_many": "{{count}} archivos liberarían unos {{savings}} en {{time}} de codificación.",
+    "result_other": "{{count}} archivos liberarían unos {{savings}} en {{time}} de codificación.",
+    "finish": "Terminaría hacia {{when}}, si se ejecutan primero.",
+    "notReached": "Es todo lo que pueden liberar estos archivos: unos {{available}}.",
+    "late": "Eso es después de la hora que elegiste; más trabajadores o un ajuste más rápido ayudarían.",
+    "nothing": "Aquí no hay nada que convertir.",
+    "note": "Los ahorros son estimaciones; la cola los ejecuta antes de lo que espera.",
+    "queue_one": "Añadir {{count}} archivo a la cola",
+    "queue_many": "Añadir {{count}} archivos a la cola",
+    "queue_other": "Añadir {{count}} archivos a la cola",
+    "queued_one": "{{count}} archivo añadido a la cola",
+    "queued_many": "{{count}} archivos añadidos a la cola",
+    "queued_other": "{{count}} archivos añadidos a la cola"
   }
 }

@@ -36,6 +36,7 @@ import { presetSetting } from "../qualityPresets";
 import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../settingsSections";
 import SettingsSearch from "../components/SettingsSearch";
 import RuleTester from "../components/RuleTester";
+import PoliciesSection from "../components/PoliciesSection";
 import { useConfirm } from "../components/ConfirmModal";
 
 // Settings compare as text: the API returns "true" / "30" where the controls
@@ -3890,6 +3891,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     ].map(v => <div key={v}>{v}</div>)}
                   </div>
                 </details>
+              </div>
+
+              {/* v0.10.0: policies — a saved view + an action + a schedule + a budget */}
+              <h2 id="policies" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+                {t("settingsSystem:policies.title")}
+              </h2>
+              <div style={sectionStyle}>
+                <PoliciesSection views={views} inputStyle={inputStyle} labelStyle={labelStyle} />
               </div>
 
               <h2 id="rules" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>

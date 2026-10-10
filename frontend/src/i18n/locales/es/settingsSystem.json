@@ -245,5 +245,55 @@
     "updateAvailable": "v{{version}} está disponible",
     "upToDate": "Tienes la última versión",
     "updateCheckFailed": "No se pudo conectar con GitHub; inténtalo de nuevo en un momento"
+  },
+  "policies": {
+    "title": "Políticas",
+    "intro": "Ejecuta una vista guardada según una programación y dentro de un límite: cada noche, añade a la cola hasta 200 GB de los archivos de una vista —primero los de mayor ahorro— o comprueba el estado de los que llevan más tiempo sin comprobarse. Los archivos que ya están en la cola se omiten.",
+    "add": "Añadir política",
+    "edit": "Editar",
+    "name": "Nombre",
+    "view": "Vista guardada",
+    "chooseView": "Elige una vista…",
+    "action": "Acción",
+    "when": "Cuándo",
+    "day": "Día",
+    "time": "Hora",
+    "actions": {
+      "queue": "Añadir a la cola",
+      "health_check": "Comprobación rápida de estado"
+    },
+    "daily": "Cada día",
+    "weekly": "Cada semana",
+    "dailyAt": "cada día a las {{at}}",
+    "weeklyAt": "cada {{day}} a las {{at}}",
+    "days": {
+      "0": "lunes",
+      "1": "martes",
+      "2": "miércoles",
+      "3": "jueves",
+      "4": "viernes",
+      "5": "sábado",
+      "6": "domingo"
+    },
+    "maxFiles": "Como máximo (archivos)",
+    "maxGb": "Como máximo (GB de archivos)",
+    "noLimit": "Sin límite",
+    "upToFiles_one": "hasta {{count}} archivo",
+    "upToFiles_many": "hasta {{count}} archivos",
+    "upToFiles_other": "hasta {{count}} archivos",
+    "upToGb": "hasta {{gb}} GB",
+    "startQueue": "Iniciar la cola",
+    "enabled": "Activada",
+    "off": "Desactivada",
+    "runNow": "Ejecutar ahora",
+    "nextRun": "Próxima ejecución: {{when}}",
+    "lastRun": "Última ejecución {{when}}:",
+    "lastResult": "{{queued}} de {{matched}} añadidos a la cola ({{size}})",
+    "viewGone": "(vista eliminada)",
+    "noViews": "Primero guarda una vista en el Escáner (Vistas → Guardar).",
+    "deleteConfirm": "¿Eliminar la política «{{name}}»?",
+    "errors": {
+      "viewMissing": "su vista guardada ya no existe"
+    }
   }
 }

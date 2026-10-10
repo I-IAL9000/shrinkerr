@@ -258,5 +258,27 @@
     "rejected_other": "{{count}} rejected; the originals are kept and won't be queued again",
     "rejectConfirm_one": "Delete {{count}} converted file and keep the original? It won't be queued again (Scanner → Ignored to undo).",
     "rejectConfirm_other": "Delete {{count}} converted files and keep the originals? They won't be queued again (Scanner → Ignored to undo)."
+  },
+  "planner": {
+    "open": "Free space…",
+    "title": "Free up space",
+    "intro": "The conversions that free the space fastest — the most estimated savings per hour of encoding — from the files that need converting (not ignored or already queued).",
+    "free": "Free",
+    "unit": "Unit",
+    "by": "By (optional)",
+    "from": "From",
+    "everything": "Everything that needs converting",
+    "calculate": "Calculate",
+    "result_one": "{{count}} file would free about {{savings}} in {{time}} of encoding.",
+    "result_other": "{{count}} files would free about {{savings}} in {{time}} of encoding.",
+    "finish": "Done around {{when}}, if they run first.",
+    "notReached": "That's all these files can free: about {{available}}.",
+    "late": "That's after the time you chose — more workers or a faster preset would help.",
+    "nothing": "There's nothing to convert here.",
+    "note": "Savings are estimates; the queue runs them ahead of what's waiting.",
+    "queue_one": "Queue {{count}} file",
+    "queue_other": "Queue {{count}} files",
+    "queued_one": "{{count}} file queued",
+    "queued_other": "{{count}} files queued"
   }
 }

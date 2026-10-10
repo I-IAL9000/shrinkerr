@@ -768,6 +768,14 @@ async def init_db():
         await db.execute(
             "CREATE TABLE IF NOT EXISTS saved_views (id INTEGER PRIMARY KEY AUTOINCREMENT, "
             "name TEXT NOT NULL UNIQUE, filter TEXT NOT NULL, created_at TEXT NOT NULL)")
+        # v0.10.0: policies — a saved view, an action, a schedule and a budget
+        # (backend/policies.py).
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS policies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+            "view_id INTEGER NOT NULL, action TEXT NOT NULL DEFAULT 'queue', every TEXT NOT NULL DEFAULT 'daily', "
+            "weekday INTEGER, at TEXT NOT NULL DEFAULT '01:00', max_files INTEGER, max_gb REAL, "
+            "start_queue INTEGER NOT NULL DEFAULT 1, enabled INTEGER NOT NULL DEFAULT 1, "
+            "last_run_at TEXT, last_result TEXT, created_at TEXT NOT NULL)")
         # v0.10.0: HDR10 / HLG / Dolby Vision ("dv<profile>"), from the probe.
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN hdr_format TEXT DEFAULT NULL")

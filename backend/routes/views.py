@@ -76,8 +76,8 @@ async def save_view(req: SaveViewRequest):
 
 @router.delete("/{view_id}")
 async def delete_view(view_id: int):
-    """Refused while the auto-queue or a rule uses the view: without it they
-    would act on everything (or nothing) instead."""
+    """Refused while the auto-queue, a rule or a policy uses the view:
+    without it they would act on everything (or nothing) instead."""
     from backend.rule_resolver import _parse_rule_conditions
     db = await connect_db()
     try:
@@ -99,6 +99,11 @@ async def delete_view(view_id: int):
         if rules:
             raise ApiError(status_code=409, detail=f"Rules use this view: {', '.join(rules)}.",
                            code="views.inUseByRules", params={"rules": ", ".join(rules)})
+        async with db.execute("SELECT name FROM policies WHERE view_id = ?", (view_id,)) as cur:
+            used_by = [r["name"] for r in await cur.fetchall()]
+        if used_by:  # v0.10.0
+            raise ApiError(status_code=409, detail=f"Policies use this view: {', '.join(used_by)}.",
+                           code="views.inUseByPolicies", params={"policies": ", ".join(used_by)})
         cur = await db.execute("DELETE FROM saved_views WHERE id = ?", (view_id,))
         await db.commit()
         if cur.rowcount == 0:

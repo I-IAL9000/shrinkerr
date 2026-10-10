@@ -242,5 +242,54 @@
     "updateAvailable": "v{{version}} is available",
     "upToDate": "You're on the latest release",
     "updateCheckFailed": "Couldn't reach GitHub — try again in a moment"
+  },
+  "policies": {
+    "title": "Policies",
+    "intro": "Run a saved view on a schedule, within a budget: every night, queue up to 200 GB of the files a view lists — the biggest savings first — or health-check the ones checked longest ago. Files already in the queue are left out.",
+    "add": "Add policy",
+    "edit": "Edit",
+    "name": "Name",
+    "view": "Saved view",
+    "chooseView": "Choose a view…",
+    "action": "Action",
+    "when": "When",
+    "day": "Day",
+    "time": "Time",
+    "actions": {
+      "queue": "Add to Queue",
+      "health_check": "Quick health check"
+    },
+    "daily": "Every day",
+    "weekly": "Every week",
+    "dailyAt": "every day at {{at}}",
+    "weeklyAt": "every {{day}} at {{at}}",
+    "days": {
+      "0": "Monday",
+      "1": "Tuesday",
+      "2": "Wednesday",
+      "3": "Thursday",
+      "4": "Friday",
+      "5": "Saturday",
+      "6": "Sunday"
+    },
+    "maxFiles": "At most (files)",
+    "maxGb": "At most (GB of files)",
+    "noLimit": "No limit",
+    "upToFiles_one": "up to {{count}} file",
+    "upToFiles_other": "up to {{count}} files",
+    "upToGb": "up to {{gb}} GB",
+    "startQueue": "Start the queue",
+    "enabled": "On",
+    "off": "Off",
+    "runNow": "Run now",
+    "nextRun": "Next run {{when}}",
+    "lastRun": "Last run {{when}}:",
+    "lastResult": "queued {{queued}} of {{matched}} ({{size}})",
+    "viewGone": "(deleted view)",
+    "noViews": "Save a view in the Scanner first (Views → Save).",
+    "deleteConfirm": "Delete the policy “{{name}}”?",
+    "errors": {
+      "viewMissing": "its saved view no longer exists"
+    }
   }
 }

@@ -14,6 +14,8 @@ right settings, without having to touch the UI for each one.
   - [Queue each import (Connect → Webhook)](#queue-each-import-connect--webhook)
 - [Plex / Jellyfin integration](#plex--jellyfin-integration)
 - [Scheduling](#scheduling)
+  - [Policies](#policies)
+  - [Freeing space by a date](#freeing-space-by-a-date)
 - [Batch rename](#batch-rename)
 - [Post-conversion scripts](#post-conversion-scripts)
 
@@ -318,6 +320,34 @@ hours the node may process jobs. Combines with global quiet hours.
 **Run hours / scheduled start** (Schedule page): pick the hours the queue
 may run (it pauses automatically outside them), or schedule a one-off
 queue start.
+
+### Policies
+
+Settings → Automation → Policies runs a **saved view** (Scanner → Views →
+Save) on a **schedule**, within a **budget**:
+
+- **Action** — *Add to Queue* (as the Scanner's button would: rules, ignore
+  lists and hardlink / Maintainerr skips apply) or a *quick health check*.
+- **When** — every day, or one day a week, at a time (the server's local
+  time).
+- **Budget** — at most N files and / or N GB of files per run. Add to Queue
+  takes the files with the biggest estimated savings first; a health check
+  takes the ones never checked, then the longest ago. Files already waiting
+  in the queue are left out, so each run picks up where the last stopped.
+- **Start the queue** after adding (never over a pause you set).
+
+*Run now* runs it at once; each policy shows its next and last run. A
+saved view can't be deleted while a policy uses it.
+
+### Freeing space by a date
+
+Queue → Pending → **Free space…** works out which conversions free the
+space you ask for fastest: the files that need converting (not ignored,
+queued, hardlinked or leaving soon), by estimated savings per hour of
+encoding, until the target is reached — optionally from one saved view.
+It says how long that takes at your parallel jobs (from your past encode
+speeds) and whether it finishes before the date you give; *Queue N files*
+adds them ahead of what's waiting and starts the queue.
 
 ## Batch rename
 
