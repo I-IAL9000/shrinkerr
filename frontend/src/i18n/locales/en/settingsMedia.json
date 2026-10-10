@@ -346,7 +346,9 @@
       "label": "Auto-convert lossless audio",
       "help": "Automatically convert lossless audio tracks (DTS-HD MA, TrueHD, PCM, FLAC) to a smaller lossy codec during video conversion. Lossy tracks are left untouched.",
       "targetCodec": "Target Codec",
-      "targetBitrate": "Target Bitrate"
+      "targetBitrate": "Target Bitrate",
+      "keepObjects": "Keep Atmos and DTS:X tracks lossless",
+      "keepObjectsHelp": "Converting them keeps the 5.1 / 7.1 channels but loses the height and object information. On by default; turn off to convert them too."
     },
     "guide": {
       "title": "Audio Guide",

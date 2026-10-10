@@ -405,7 +405,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'videotoolbox_quality', 'videotoolbox_hw_decode', "
             "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder', "
             "              'filename_suffix', 'custom_ffmpeg_flags', 'auto_convert_lossless', "
-            "              'lossless_target_codec', 'lossless_target_bitrate', "
+            "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
             "              'delete_external_subs_after_merge')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
@@ -443,6 +443,7 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["lossless_target_bitrate"] = int(srv_settings.get("lossless_target_bitrate") or 640)
     except (TypeError, ValueError):
         assigned["lossless_target_bitrate"] = 640
+    assigned["lossless_keep_object_audio"] = (srv_settings.get("lossless_keep_object_audio") or "true").lower() == "true"
     from backend.converter import external_subs_to_merge
     external = []
     for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned

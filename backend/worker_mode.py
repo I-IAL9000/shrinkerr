@@ -490,6 +490,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "auto_convert_lossless": bool(job.get("auto_convert_lossless", False)),
                 "lossless_target_codec": job.get("lossless_target_codec") or "eac3",
                 "lossless_target_bitrate": int(job.get("lossless_target_bitrate") or 640),
+                "lossless_keep_object_audio": bool(job.get("lossless_keep_object_audio", True)),
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server

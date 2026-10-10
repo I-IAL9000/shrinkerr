@@ -124,6 +124,8 @@ _ENCODING_DEFAULTS = {
     "auto_convert_lossless": "false",
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
+    # Atmos / DTS:X tracks stay lossless when lossless audio is converted (v0.10.0)
+    "lossless_keep_object_audio": "true",
     "tmdb_api_key": "",
     "plex_url": "",
     "plex_token": "",
@@ -601,6 +603,7 @@ async def get_encoding_settings():
         "auto_convert_lossless": merged.get("auto_convert_lossless", "false").lower() == "true",
         "lossless_target_codec": merged.get("lossless_target_codec", "eac3"),
         "lossless_target_bitrate": int(merged.get("lossless_target_bitrate", 640)),
+        "lossless_keep_object_audio": merged.get("lossless_keep_object_audio", "true").lower() == "true",
         "plex_ignore_labels": merged.get("plex_ignore_labels", ""),
         "plex_scan_after_conversion": merged.get("plex_scan_after_conversion", "true").lower() == "true",
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
@@ -1072,6 +1075,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["lossless_target_codec"] = update.lossless_target_codec
         if update.lossless_target_bitrate is not None:
             updates["lossless_target_bitrate"] = str(update.lossless_target_bitrate)
+        if update.lossless_keep_object_audio is not None:
+            updates["lossless_keep_object_audio"] = "true" if update.lossless_keep_object_audio else "false"
         if update.tmdb_api_key is not None and not update.tmdb_api_key.startswith("****"):
             updates["tmdb_api_key"] = update.tmdb_api_key
         if update.plex_url is not None:

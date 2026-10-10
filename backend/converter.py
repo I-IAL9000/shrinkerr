@@ -84,6 +84,7 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("auto_convert_lossless",            _ABSENT,   _str_to_bool),
     ("lossless_target_codec",            _ABSENT,   str),
     ("lossless_target_bitrate",          _ABSENT,   int),
+    ("lossless_keep_object_audio",       _ABSENT,   _str_to_bool),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
     ("custom_ffmpeg_flags",              _ABSENT,   str),
@@ -155,8 +156,24 @@ def is_lossless_audio(codec: str, profile: str = "") -> bool:
     if c in LOSSLESS_AUDIO_CODECS:
         return True
     if c == "dts" and profile:
-        return profile.lower() in DTS_LOSSLESS_PROFILES
+        # ffmpeg 6.1+ names DTS:X "DTS-HD MA + DTS:X" (v0.10.0: it didn't count).
+        p = profile.lower()
+        return any(p == x or p.startswith(x + " ") for x in DTS_LOSSLESS_PROFILES)
     return False
+
+
+def is_object_audio(profile: str = "", title: str = "") -> bool:
+    """Dolby Atmos or DTS:X — by the stream's profile (ffmpeg 6.1+: "Dolby
+    TrueHD + Dolby Atmos", "DTS-HD MA + DTS:X") or its title."""
+    text = f"{profile} {title}".lower()
+    return "atmos" in text or any(x in text for x in ("dts:x", "dts-x", "dtsx"))
+
+
+def lossless_to_convert(codec: str, profile: str = "", title: str = "", keep_object_audio: bool = True) -> bool:
+    """Whether "Convert lossless audio" re-encodes this track. Not Atmos or
+    DTS:X while `keep_object_audio` (v0.10.0): a lossy encode keeps the bed
+    and drops the objects."""
+    return is_lossless_audio(codec, profile) and not (keep_object_audio and is_object_audio(profile, title))
 
 
 RESOLUTION_MAP = {
@@ -685,7 +702,9 @@ def _build_ffmpeg_cmd_impl(
             cmd += ["-map", f"0:{src_idx}"]
             src_codec = (track.get("codec") or "").lower()
             src_profile = (track.get("profile") or "")
-            if target_lossless_codec and is_lossless_audio(src_codec, src_profile):
+            if target_lossless_codec and lossless_to_convert(
+                    src_codec, src_profile, track.get("title") or "",
+                    (lossless_conversion or {}).get("keep_objects", True)):
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate)
             else:
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate)
@@ -710,9 +729,11 @@ def _build_ffmpeg_cmd_impl(
             target_codec = lossless_conversion["codec"]
             target_bitrate = lossless_conversion["bitrate"]
             profiles = lossless_conversion.get("profiles", [""] * len(audio_stream_codecs))
+            titles = lossless_conversion.get("titles", [])
             for idx, stream_codec in enumerate(audio_stream_codecs):
                 profile = profiles[idx] if idx < len(profiles) else ""
-                if is_lossless_audio(stream_codec, profile):
+                title = titles[idx] if idx < len(titles) else ""
+                if lossless_to_convert(stream_codec, profile, title, lossless_conversion.get("keep_objects", True)):
                     args = _audio_codec_args(target_codec, target_bitrate)
                     cmd += [f"-c:a:{idx}"] + args
                 else:
@@ -1197,7 +1218,7 @@ def _build_audio_conversion_summary(
         for t in probe_audio_tracks:
             codec = t.get("codec", "")
             profile = t.get("profile", "")
-            if is_lossless_audio(codec, profile):
+            if lossless_to_convert(codec, profile, t.get("title") or "", lossless_conversion.get("keep_objects", True)):
                 name = get_audio_display_name(codec, profile)
                 if name:
                     sources.add(name)
@@ -2837,11 +2858,18 @@ async def convert_file(
                 target_bitrate = live_settings.get("lossless_target_bitrate", 640)
                 audio_stream_codecs = [t.get("codec", "unknown") for t in probe_audio_tracks]
                 audio_stream_profiles = [t.get("profile", "") for t in probe_audio_tracks]
-                has_lossless = any(is_lossless_audio(c, p) for c, p in zip(audio_stream_codecs, audio_stream_profiles))
-                if has_lossless:
-                    lossless_conversion = {"codec": target_codec, "bitrate": target_bitrate, "profiles": audio_stream_profiles}
-                    lossless_names = [c for c, p in zip(audio_stream_codecs, audio_stream_profiles) if is_lossless_audio(c, p)]
-                    print(f"[CONVERT] Lossless audio detected ({', '.join(lossless_names)}), converting to {target_codec} {target_bitrate}k", flush=True)
+                audio_stream_titles = [t.get("title") or "" for t in probe_audio_tracks]
+                keep_objects = live_settings.get("lossless_keep_object_audio", True)
+                tracks = list(zip(audio_stream_codecs, audio_stream_profiles, audio_stream_titles))
+                to_convert = [c for c, p, ti in tracks if lossless_to_convert(c, p, ti, keep_objects)]
+                kept = [c for c, p, ti in tracks if is_lossless_audio(c, p) and not lossless_to_convert(c, p, ti, keep_objects)]
+                if kept:
+                    print(f"[CONVERT] Keeping Atmos / DTS:X lossless ({', '.join(kept)})", flush=True)
+                if to_convert:
+                    lossless_conversion = {"codec": target_codec, "bitrate": target_bitrate,
+                                           "profiles": audio_stream_profiles, "titles": audio_stream_titles,
+                                           "keep_objects": keep_objects}
+                    print(f"[CONVERT] Lossless audio detected ({', '.join(to_convert)}), converting to {target_codec} {target_bitrate}k", flush=True)
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
     if not probe_data:

@@ -253,6 +253,7 @@ class SettingsUpdate(BaseModel):
     auto_convert_lossless: Optional[bool] = None
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None
+    lossless_keep_object_audio: Optional[bool] = None
     tmdb_api_key: Optional[str] = None
     plex_url: Optional[str] = None
     plex_token: Optional[str] = None

@@ -2175,6 +2175,16 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               <span>128 kbps</span><span>256</span><span>384</span><span>512</span><span>640 kbps</span>
                             </div>
                           </div>
+                          {/* v0.10.0: a lossy encode keeps the bed and drops the objects */}
+                          <div>
+                            <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                              <input type="checkbox" checked={encoding.lossless_keep_object_audio ?? true}
+                                onChange={() => setEncoding({ ...encoding, lossless_keep_object_audio: !(encoding.lossless_keep_object_audio ?? true) })}
+                                style={{ flexShrink: 0 }} />
+                              <span style={labelStyle}>{t("settingsMedia:audio.lossless.keepObjects")}</span>
+                            </label>
+                            <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.lossless.keepObjectsHelp")}</div>
+                          </div>
                         </div>
                       )}
                     </div>

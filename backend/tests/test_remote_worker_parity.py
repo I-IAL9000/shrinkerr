@@ -124,7 +124,8 @@ async def test_workers_get_the_output_and_audio_settings_and_sidecar_subtitles(n
     srt.write_text("1\n00:00:00,500 --> 00:00:01,500\nHalló\n\n")
     await _setup(test_db, {"filename_suffix": "-Shrinkerr", "custom_ffmpeg_flags": "-tune grain",
                            "auto_convert_lossless": "true", "lossless_target_codec": "ac3",
-                           "lossless_target_bitrate": "448", "merge_external_subs": "true",
+                           "lossless_target_bitrate": "448", "lossless_keep_object_audio": "false",
+                           "merge_external_subs": "true",
                            "delete_external_subs_after_merge": "true"},
                  mappings=[{"server": str(media), "worker": "/mnt/media"}])
     subs = [{"stream_index": -1, "language": "ice", "codec": "subrip", "keep": True,
@@ -139,6 +140,7 @@ async def test_workers_get_the_output_and_audio_settings_and_sidecar_subtitles(n
 
     assert (job["filename_suffix"], job["custom_ffmpeg_flags"]) == ("-Shrinkerr", "-tune grain")
     assert (job["auto_convert_lossless"], job["lossless_target_codec"], job["lossless_target_bitrate"]) == (True, "ac3", 448)
+    assert job["lossless_keep_object_audio"] is False
     if shutil.which("ffprobe"):  # sidecars are only merged when ffmpeg can read them
         assert [(s["path"], s["language"]) for s in job["external_subs"]] == [("/mnt/media/b.is.srt", "ice")]
     assert job["delete_external_subs_after_merge"] is True
@@ -168,12 +170,13 @@ async def test_the_worker_hands_them_to_convert_file(tmp_path, monkeypatch):
         "id": 9, "file_path": str(src), "job_type": "convert", "encoder": "libx265",
         "filename_suffix": "-Shrinkerr", "custom_ffmpeg_flags": "-tune grain",
         "auto_convert_lossless": True, "lossless_target_codec": "ac3", "lossless_target_bitrate": 448,
-        "external_subs": subs, "delete_external_subs_after_merge": True,
+        "lossless_keep_object_audio": False, "external_subs": subs, "delete_external_subs_after_merge": True,
     }, ["libx265"])
 
     settings = seen["pre_settings"]
     assert (settings["filename_suffix"], settings["custom_ffmpeg_flags"]) == ("-Shrinkerr", "-tune grain")
     assert (settings["auto_convert_lossless"], settings["lossless_target_codec"], settings["lossless_target_bitrate"]) == (True, "ac3", 448)
+    assert settings["lossless_keep_object_audio"] is False
     assert seen["external_subs"] == subs and seen["delete_merged_subs"] is True
 
 

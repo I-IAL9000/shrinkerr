@@ -350,7 +350,9 @@
       "label": "Convertir automáticamente el audio sin pérdida",
       "help": "Convierte automáticamente las pistas de audio sin pérdida (DTS-HD MA, TrueHD, PCM, FLAC) a un códec con pérdida más ligero durante la conversión de vídeo. Las pistas con pérdida no se modifican.",
       "targetCodec": "Códec de destino",
-      "targetBitrate": "Tasa de bits de destino"
+      "targetBitrate": "Tasa de bits de destino",
+      "keepObjects": "Mantener sin pérdida las pistas Atmos y DTS:X",
+      "keepObjectsHelp": "Al convertirlas se conservan los canales 5.1 / 7.1, pero se pierde la información de altura y de objetos. Activado de forma predeterminada; desactívalo para convertirlas también."
     },
     "guide": {
       "title": "Guía de audio",
