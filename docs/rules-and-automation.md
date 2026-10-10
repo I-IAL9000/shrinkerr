@@ -12,6 +12,8 @@ right settings, without having to touch the UI for each one.
 - [NZBGet / SABnzbd](#nzbget--sabnzbd)
 - [Sonarr / Radarr](#sonarr--radarr)
   - [Queue each import (Connect → Webhook)](#queue-each-import-connect--webhook)
+  - [Replacing corrupt files](#replacing-corrupt-files)
+- [Bazarr and Maintainerr](#bazarr-and-maintainerr)
 - [Plex / Jellyfin integration](#plex--jellyfin-integration)
 - [Scheduling](#scheduling)
   - [Policies](#policies)
@@ -21,8 +23,8 @@ right settings, without having to touch the UI for each one.
 
 ## Encoding rules
 
-Settings → Rules. Each rule is a set of conditions that select files,
-plus an action with optional encoder overrides.
+Settings → Automation → Rules. Each rule is a set of conditions that
+select files, plus an action with optional encoder overrides.
 
 ### Conditions
 
@@ -42,6 +44,8 @@ plus an action with optional encoder overrides.
 - **Plex label / collection / genre / library** — requires Plex connected
 - **Jellyfin / Emby tag**, **Emby watched** — requires the corresponding integration
 - **Sonarr / Radarr tag** — the tag on the file's series / movie; requires the corresponding integration
+- **Watched** (Plex) / **Jellyfin watched**
+- **Saved view** — the files a Scanner view lists (Scanner → Views)
 - **NZBGet category** — for downloads queued by the NZBGet script
 
 Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
@@ -51,8 +55,9 @@ Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
 
 - **Encode** — the default. Apply the rule's encoder override (any
   combination of `encoder`, `nvenc_preset`, `nvenc_cq`, `libx265_preset`,
-  `libx265_crf`, `target_resolution`, `audio_codec`, `audio_bitrate`,
-  `queue_priority`).
+  `libx265_crf`, `target_resolution`, output codec, `audio_codec`,
+  `audio_bitrate`, `queue_priority`). **Output codec** HEVC (the default)
+  or **AV1** — see [AV1 output](encoding-guide.md#av1-output).
 - **Skip** — file is tagged "skipped by rule" during scan/estimate and
   won't show up in conversion filters.
 - **Audio/sub only** — skip video encoding entirely; only do the
@@ -61,6 +66,9 @@ Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
 ### Order and precedence
 
 Rules evaluate top-down. The first matching rule wins. Drag to reorder.
+
+**Test a file** (under the rule list): enter a file's path to see which
+rule applies to it, and for every rule which of its conditions matched.
 
 Practical layout that most users arrive at:
 
@@ -284,6 +292,37 @@ seed; with **Skip files that are still hardlinked** on (Settings →
 Automation) they're left out until seeding stops, since converting them
 would save nothing.
 
+### Replacing corrupt files
+
+The health check (Scanner → select → Health check) marks files whose
+video can't be decoded cleanly as **Corrupt**. With the Corrupt filter on,
+**Replace via Sonarr/Radarr…** lists every corrupt file with the episodes
+or movie it belongs to and the release that would be blocklisted — or why
+it can't be replaced (not in Sonarr / Radarr, or Radarr lists a different
+file for that movie). Nothing changes until you tick files and press
+**Replace**: Sonarr / Radarr then blocklist the release, delete the file
+and search for a new download. A replaced file leaves the Scanner, so its
+replacement starts with no health result.
+
+## Bazarr and Maintainerr
+
+**Bazarr** adds subtitles a few minutes after Sonarr / Radarr import a
+file. **Settings → Automation → Wait after an import** holds newly
+imported files — auto-queued, from the download-client scripts or the
+Sonarr / Radarr webhook — for that many minutes before converting, so
+those subtitles arrive first and are merged in (with **Merge external
+subtitles** on — see [Audio and subtitles](audio-and-subtitles.md)). The
+Queue shows "waits until …"; remote workers wait too. Files you add
+yourself aren't held.
+
+**Maintainerr** collects titles it is about to remove ("Leaving soon").
+Enter its URL in **Settings → Integrations → Maintainerr** and Shrinkerr
+reads its collections after every full scan (or **Read collections**): with
+**Don't queue titles Maintainerr is about to remove** on, they're left out
+of the queue and estimates — no point spending hours converting them — and
+the Scanner's **Leaving soon** filter shows them. "Include ignored" in Add
+to Queue still queues them.
+
 ## Plex / Jellyfin integration
 
 **Plex** — Settings → Connections → Plex. Use the built-in OAuth flow
@@ -324,7 +363,8 @@ queue start.
 ### Policies
 
 Settings → Automation → Policies runs a **saved view** (Scanner → Views →
-Save) on a **schedule**, within a **budget**:
+Save; saved views are also listed in the sidebar under Scanner) on a
+**schedule**, within a **budget**:
 
 - **Action** — *Add to Queue* (as the Scanner's button would: rules, ignore
   lists and hardlink / Maintainerr skips apply) or a *quick health check*.

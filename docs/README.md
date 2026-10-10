@@ -15,11 +15,19 @@ deeper.
   chain.
 - [**Encoding guide**](encoding-guide.md) — NVENC vs libx265, preset and
   quality tuning for each, CPU/GPU fallback settings, VMAF quality
-  validation, and resolution-aware CQ.
+  validation, VMAF target quality, AV1 output, and resolution-aware CQ.
 - [**Rules and automation**](rules-and-automation.md) — encoding rules
-  (conditions, actions, overrides), watch folders, Sonarr / Radarr /
-  NZBGet / SABnzbd integration, scheduling (quiet hours, per-node hours),
-  Plex / Jellyfin integration, batch rename.
+  (conditions, actions, overrides, testing a file), watch folders, Sonarr /
+  Radarr / NZBGet / SABnzbd integration, replacing corrupt files, Bazarr and
+  Maintainerr, scheduling, policies and freeing space by a date, Plex /
+  Jellyfin integration, batch rename.
+- [**Audio and subtitles**](audio-and-subtitles.md) — converting lossless
+  audio (Atmos / DTS:X kept), a stereo compatibility track with optional
+  loudness normalisation, image subtitles (PGS / VobSub) to SRT with OCR,
+  merging sidecar subtitles.
+- [**Notifications**](notifications.md) — Discord, Telegram, email,
+  webhooks, ntfy, Gotify and Apprise; failures, VMAF rejections, workers
+  going offline, a weekly summary.
 - [**Language detection**](language-detection.md) — detecting the language
   of `und` (undetermined) audio and subtitle tracks: text subs at scan,
   audio via faster-whisper, image subs (PGS/VobSub) via OCR; writing the
@@ -29,7 +37,8 @@ deeper.
   fleet, backup strategy, what to set before your first batch.
 - [**Monitoring and dashboards**](monitoring.md) — Prometheus metrics
   (`/api/metrics`) and a JSON endpoint for Homepage / Homarr widgets.
-- [**Troubleshooting**](troubleshooting.md) — symptoms and fixes, covering
+- [**Troubleshooting**](troubleshooting.md) — the Doctor page and
+  diagnostics file, then symptoms and fixes, covering
   the VMAF and worker-performance saga from v0.3.10 through v0.3.19 plus
   classic issues (spinner on first launch, NVENC unavailable, AFP / NFS
   quirks).

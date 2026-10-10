@@ -12,6 +12,8 @@ This is the "what do I actually pick" guide. For system-level setup see
 - [Hardware decode (NVDEC / QSV / VAAPI)](#hardware-decode-nvdec--qsv--vaapi)
 - [FFmpeg threads per job](#ffmpeg-threads-per-job)
 - [VMAF quality validation](#vmaf-quality-validation)
+- [VMAF target quality](#vmaf-target-quality)
+- [AV1 output](#av1-output)
 - [Resolution-aware CQ](#resolution-aware-cq)
 - [Cross-encoder fallback settings](#cross-encoder-fallback-settings)
 - [Source-codec filter](#source-codec-filter)
@@ -208,6 +210,64 @@ usually rescues it.
   mismatch issues), SSIM + PSNR cross-check kicks in automatically.
 - Required: ffmpeg built with `libvmaf`. `:latest`, `:nvenc`, and the
   `:edge*` images all ship with it.
+
+## VMAF target quality
+
+**Settings → Video → "Target a VMAF score".** Instead of one quality
+setting for every title, Shrinkerr finds each title's own: before the
+encode it takes three 10-second samples (at 20 %, 50 % and 80 % of the
+file), encodes them at a few quality settings and scores each with VMAF,
+then encodes the whole file at the lowest quality whose samples still
+average the target. Grainy films get more bits, clean animation fewer —
+the way [ab-av1](https://github.com/alexheretic/ab-av1)'s CRF search
+works.
+
+- **Target:** 80–99, 95 by default (≈ "transparent" on the table above).
+- **The search** runs on NVENC's CQ scale from 14 to 34 (mapped to each
+  encoder's own setting, e.g. libx265's CRF is CQ + 2), starting from the
+  job's quality, and needs about five rounds of samples. If even CQ 14
+  misses the target, CQ 14 is used.
+- **It replaces** the quality from presets, rules and content type for
+  that file. The job's details show the quality chosen and the samples'
+  score ("VMAF target: CQ 23: samples scored 95.4 (target 95)").
+- **Cost:** a few minutes per file on a GPU encoder; more on libx265
+  (fifteen-odd sample encodes at your preset).
+- **Not searched:** files under two minutes, discs, and ffmpeg builds
+  without libvmaf — they keep the job's quality. A failed sample also
+  falls back to it.
+- The post-encode check and **minimum score** still apply to the whole
+  file.
+
+## AV1 output
+
+HEVC is the default output. An **encoding rule** can choose **AV1**
+instead (Settings → Automation → Rules → Output codec) for the files it matches — for
+example, a rule for animation. The encode uses the AV1 encoder of the
+rule's (or the default) encoder family:
+
+| Encoder | AV1 with | Needs |
+|---|---|---|
+| libx265 (CPU) | SVT-AV1 (`libsvtav1`), 10-bit | any CPU; the images include it |
+| NVENC | `av1_nvenc` | an RTX 40 series or later GPU |
+| QSV | `av1_qsv` | Intel Arc or Core Ultra (Meteor Lake) or later |
+| VAAPI, VideoToolbox | — | not supported: encoded HEVC |
+
+Shrinkerr checks the hardware ones with a one-frame test encode, since
+ffmpeg lists them on GPUs that can't run them. Where a family has no AV1
+here, files are encoded HEVC — the rule editor warns about it, and the
+job's details say which codec was used.
+
+- **Quality:** set on the HEVC scale and translated. SVT-AV1's CRF is
+  libx265's + 8 (that matched VMAF on test clips); NVENC's CQ is rescaled
+  to AV1's 0–63 range; QSV keeps its value. The last two are estimates —
+  [VMAF target quality](#vmaf-target-quality) finds the right one per
+  title.
+- **Presets:** libx265's preset maps to SVT-AV1's (`medium` → 7, `slow`
+  → 6, `veryslow` → 4, `fast` → 8 …).
+- **File names** get an `AV1` tag where the source codec was named
+  (`x264` → `AV1`).
+- Only files that need converting are encoded; existing HEVC and AV1 files
+  aren't re-encoded.
 
 ## Resolution-aware CQ
 

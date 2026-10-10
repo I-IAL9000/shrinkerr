@@ -4,6 +4,7 @@ Symptoms and fixes. If you're stuck, include the relevant docker log
 excerpts when opening an issue.
 
 ## Contents
+- [Start with the Doctor page](#start-with-the-doctor-page)
 - [Dashboard stuck on loading spinner](#dashboard-stuck-on-loading-spinner)
 - [Setup wizard doesn't show on fresh install](#setup-wizard-doesnt-show-on-fresh-install)
 - [Scanner shows "Loading files…" forever](#scanner-shows-loading-files-forever)
@@ -16,6 +17,26 @@ excerpts when opening an issue.
 - [Queue is "running" but nothing happens](#queue-is-running-but-nothing-happens)
 - [Lost / broken database](#lost--broken-database)
 - [Reading the logs](#reading-the-logs)
+
+## Start with the Doctor page
+
+**Doctor** (in the sidebar, under System) checks what Shrinkerr depends
+on and says what to fix:
+
+- **Media folders** — found, readable, writable (a read-only mount or the
+  wrong PUID/PGID shows here), answering within 15 seconds, and their free
+  space.
+- **Data folder** and **database** — writable, room to spare, integrity.
+- **ffmpeg / ffprobe**, **VMAF**, and whether your **default encoder** is
+  available on this machine.
+- **Connections** — TMDB, Plex, Jellyfin, Emby, Sonarr, Radarr — and each
+  **remote worker**'s last check-in.
+- **Password** — whether signing in is required.
+
+Reporting a problem? **Download diagnostics** saves a zip of the checks,
+your settings and environment (passwords, API keys and tokens taken out),
+the library's shape, the recent log and recent failed jobs; **Report a
+problem** opens a GitHub issue to attach it to.
 
 ## Dashboard stuck on loading spinner
 

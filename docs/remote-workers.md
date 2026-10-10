@@ -62,9 +62,15 @@ docker run -d \
 ```
 
 For CPU-only workers drop `--runtime=nvidia --gpus all` and use the
-`:latest` image. Shrinkerr also offers a copy-paste snippet under
-**Nodes → "Add a remote worker"** with the current server URL
-pre-filled.
+`:latest` image.
+
+Easier: **Nodes → "Add a remote worker"** writes the command for you —
+pick the worker's GPU (NVIDIA, Intel / AMD with `/dev/dri`, or CPU only)
+and Compose or `docker run`, and it fills in this server's URL, your API
+key, an image tag matching this server's version, and the library mount.
+Mount the library at the same path the server sees it and no path
+mappings are needed. (Open Shrinkerr by its network address, not
+`localhost`, or the worker can't reach it.)
 
 Within ~30 seconds the worker appears on the Nodes page with its
 detected capabilities (`libx265`, `nvenc`, both).
@@ -266,6 +272,11 @@ and (v0.5.7+) the four hardware decode toggles
 (`nvenc_bit_depth`). Change a setting on the server and the next
 job dispatched to a worker picks it up automatically — no per-worker
 config edit needed.
+
+Since v0.10.0 that also covers the originals policy, output name and
+custom flags, lossless and compatibility audio, image subtitles to SRT,
+review before replace, VMAF target quality, a rule's AV1 output, and the
+sidecar subtitles to merge (the worker has no Scanner of its own).
 
 If a worker's hardware doesn't match what the server requested (e.g.
 `nvenc_hw_decode=true` on a worker without an NVIDIA card), the

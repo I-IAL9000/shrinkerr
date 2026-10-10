@@ -116,6 +116,15 @@ Don't start in Reckless mode. The total space cost of Paranoid for a
 month is ~50% of your library for 30 days. If you're doing 100 files a
 night at 2GB each, you need ~200GB of scratch space. Plan accordingly.
 
+**Review before replace** (Settings → Automation → Originals & Backups) is
+a real dry run for your first batches: converted files wait in **Queue →
+Review** — the original untouched, the new file in a hidden
+`.shrinkerr-review` folder beside it — until you approve them (put in
+place, ahead of the rest of the queue) or reject them (deleted; the file
+isn't queued again). If Sonarr / Radarr replaces the original meanwhile,
+approving discards the stale conversion instead. The held files take
+space, so review them before they pile up.
+
 ## Multi-node sizing
 
 Rule of thumb: **one worker is worth it only if it adds enough
