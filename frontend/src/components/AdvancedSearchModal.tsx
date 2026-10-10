@@ -38,21 +38,6 @@ const groupLabel = (group: string) =>
 const optionLabel = (propKey: string, p: SearchProperty, value: string) =>
   serverText("serverSearch", `properties.${propKey}.options.${value}`, null, p.option_labels?.[value] ?? value);
 
-const SAVED_VIEWS_KEY = "shrinkerr_saved_search_views";
-
-interface SavedView { name: string; predicates: SearchPredicate[]; }
-
-function loadSavedViews(): SavedView[] {
-  try {
-    return JSON.parse(localStorage.getItem(SAVED_VIEWS_KEY) || "[]");
-  } catch {
-    return [];
-  }
-}
-function persistSavedViews(views: SavedView[]) {
-  localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(views));
-}
-
 interface Props {
   initial: AdvancedSpec | null;
   /** The filter token for the conditions, and how many files match. */
@@ -71,8 +56,6 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
   const [matchMode, setMatchMode] = useState<"all" | "any">(initial?.m ?? "all");
   const [previewing, setPreviewing] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
-  const [savedViews, setSavedViews] = useState<SavedView[]>(loadSavedViews());
-  const [newViewName, setNewViewName] = useState("");
 
   useEffect(() => {
     getSearchProperties().then(setProps).catch(() => setProps({}));
@@ -130,23 +113,6 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
     onApply(res.filter, res.total);
   };
 
-  const saveView = () => {
-    const name = newViewName.trim();
-    if (!name) return;
-    const next = [...savedViews.filter(v => v.name !== name), { name, predicates: [...predicates] }];
-    persistSavedViews(next);
-    setSavedViews(next);
-    setNewViewName("");
-  };
-  const loadView = (v: SavedView) => {
-    setPredicates(v.predicates);
-    setPreviewCount(null);
-  };
-  const deleteView = (name: string) => {
-    const next = savedViews.filter(v => v.name !== name);
-    persistSavedViews(next);
-    setSavedViews(next);
-  };
 
   const renderValueInput = (pred: SearchPredicate, i: number) => {
     const prop = props[pred.property];
@@ -263,19 +229,6 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
           <button onClick={onClose} aria-label={t("common:actions.close")} style={closeBtnStyle}>&times;</button>
         </div>
 
-        {savedViews.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{t("scannerModals:search.savedViews")}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {savedViews.map(v => (
-                <span key={v.name} style={{ display: "inline-flex", gap: 4, alignItems: "center", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, padding: "3px 4px 3px 10px", fontSize: 11 }}>
-                  <button onClick={() => loadView(v)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", fontSize: 11 }}>{v.name}</button>
-                  <button aria-label={t("common:actions.delete")} onClick={() => deleteView(v.name)} title={t("common:actions.delete")} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: "0 4px" }}>&times;</button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("scannerModals:search.filesMatching")}</span>
@@ -316,19 +269,6 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             );
           })}
           <button onClick={addRow} className="btn btn-secondary" style={{ alignSelf: "flex-start", fontSize: 11, padding: "4px 10px" }}>{t("scannerModals:search.addCondition")}</button>
-        </div>
-
-        {/* Save view */}
-        <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "8px 0 12px 0", borderTop: "1px solid var(--border)" }}>
-          <input
-            type="text"
-            value={newViewName}
-            onChange={e => setNewViewName(e.target.value)}
-            aria-label={t("scannerModals:search.saveViewPlaceholder")} placeholder={t("scannerModals:search.saveViewPlaceholder")}
-            style={{ ...inputStyle, flex: "1 1 200px", maxWidth: 260 }}
-            onKeyDown={e => { if (e.key === "Enter") saveView(); }}
-          />
-          <button onClick={saveView} disabled={!newViewName.trim()} className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 12px", opacity: newViewName.trim() ? 1 : 0.5 }}>{t("scannerModals:search.saveView")}</button>
         </div>
 
         {/* Footer */}

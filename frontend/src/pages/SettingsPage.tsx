@@ -22,7 +22,7 @@ import {
   getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
-  type EncoderCaps,
+  type EncoderCaps, getViews, type SavedView,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
@@ -339,6 +339,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   const [backupList, setBackupList] = useState<{ name: string; size: number; created_at: string }[]>([]);
   const [backupCreating, setBackupCreating] = useState(false);
   const [ruleDropIdx, setRuleDropIdx] = useState<number | null>(null);
+  // Saved views (v0.10.0): for the rules' condition and the auto-queue limit.
+  const [views, setViews] = useState<SavedView[]>([]);
 
   const loadRules = () => {
     const headers: Record<string, string> = {};
@@ -366,6 +368,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     title: { label: ct("types.title"), group: ct("groups.file"), operators: [op("contains"), op("does_not_contain")], valueType: "text" },
     release_group: { label: ct("types.release_group"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     content_type: { label: ct("types.content_type"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    saved_view: { label: ct("types.saved_view"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     label: { label: ct("types.label"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     collection: { label: ct("types.collection"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     genre: { label: ct("types.genre"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
@@ -417,6 +420,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     loadRules();
     loadBackups();
     getConditionOptions().then(setCondOpts).catch(() => {});
+    getViews().then(setViews).catch(() => {});
     // Don't load Plex options on page load — fetched on demand when adding/editing rules
     loadEncoding();
     // Hardware encoder availability — filters the dropdown so we don't
@@ -3355,6 +3359,22 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </span>
                 </div>
 
+                {/* v0.10.0: only the new files a saved view lists */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 16, flexWrap: "wrap",
+                              opacity: encoding?.auto_queue_new ? 1 : 0.5 }}>
+                  <span style={labelStyle}>{t("settingsSystem:automation.autoQueue.view")}</span>
+                  <select aria-label={t("settingsSystem:automation.autoQueue.view")} style={{ ...inputStyle, width: 220 }}
+                    value={String(encoding?.auto_queue_view ?? "")}
+                    disabled={!encoding?.auto_queue_new}
+                    onChange={e => setEncoding({ ...encoding, auto_queue_view: e.target.value })}>
+                    <option value="">{t("settingsSystem:automation.autoQueue.allFiles")}</option>
+                    {views.map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
+                  </select>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 6 }}>
+                    {t("settingsSystem:automation.autoQueue.viewHelp")}
+                  </span>
+                </div>
+
                 {/* Conversion filters */}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 16 }}>
                   <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.filters.title")}</div>
@@ -3794,7 +3814,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 ? c.value.split("/").filter(Boolean).pop() || c.value
                                 : c.type === "content_type"
                                   ? t(`settingsMedia:video.smart.types.${c.value}`, { defaultValue: c.value })
-                                  : c.value;
+                                  : c.type === "saved_view"
+                                    ? views.find(v => String(v.id) === String(c.value))?.name ?? c.value
+                                    : c.value;
                               const opLabel = c.operator === "is" ? "" : c.operator === "is_not" ? "!=" : c.operator === "contains" ? "~" : c.operator === "does_not_contain" ? "!~" : c.operator === "greater_than" ? ">" : c.operator === "less_than" ? "<" : "";
                               const suffix = c.type === "file_size" ? " GB" : "";
                               return (
@@ -3918,6 +3940,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 <option value="title">{t("settingsIntegrations:conditions.types.title")}</option>
                                 <option value="release_group">{t("settingsIntegrations:conditions.types.release_group")}</option>
                                 <option value="content_type">{t("settingsIntegrations:conditions.types.content_type")}</option>
+                                <option value="saved_view">{t("settingsIntegrations:conditions.types.saved_view")}</option>
                               </optgroup>
                               <optgroup label="Plex">
                                 <option value="label">{t("settingsIntegrations:conditions.plexOptions.label")}</option>
@@ -3999,6 +4022,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   {["anime", "animation", "grain", "remux", "other"].map(v => (
                                     <option key={v} value={v}>{t(`settingsMedia:video.smart.types.${v}`)}</option>
                                   ))}
+                                </select>;
+                              }
+
+                              if (cond.type === "saved_view") {
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                  <option value="">{t("settingsIntegrations:conditions.values.selectView")}</option>
+                                  {views.map(v => <option key={v.id} value={String(v.id)}>{v.name}</option>)}
                                 </select>;
                               }
 

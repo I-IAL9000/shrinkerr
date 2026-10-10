@@ -9,7 +9,10 @@
       "newFiles": "Auto-queue new files",
       "newFilesHelp": "New files the watcher finds in your folders that need conversion or track cleanup are added to the queue as Add to Queue would add them: your rules, conversion filters and audio / subtitle settings apply.",
       "priority": "Auto-queue priority:",
-      "priorityHelp": "Newly-detected files use this priority, or a rule's Queue Priority when that is higher."
+      "priorityHelp": "Newly-detected files use this priority, or a rule's Queue Priority when that is higher.",
+      "view": "Only files in:",
+      "allFiles": "Every new file",
+      "viewHelp": "A saved view from the Scanner's Views menu."
     },
     "filters": {
       "title": "Conversion Filters",

@@ -485,11 +485,12 @@ class FileWatcher:
         still doing the cleanup — it decided on its own before, and froze the
         global settings into each job. Files with nothing to do are left out.
         Priority: the highest of settings.auto_queue_priority and the rule's.
+        settings.auto_queue_view limits it to the files a saved view lists.
         """
         db = await aiosqlite.connect(self.db_path)
         try:
             async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN ('auto_queue_new', 'auto_queue_priority')"
+                "SELECT key, value FROM settings WHERE key IN ('auto_queue_new', 'auto_queue_priority', 'auto_queue_view')"
             ) as cur:
                 settings = {r[0]: r[1] for r in await cur.fetchall()}
         finally:
@@ -497,11 +498,15 @@ class FileWatcher:
         if (settings.get("auto_queue_new") or "").lower() != "true":
             return 0
         priority = max(0, min(2, _safe_int(settings.get("auto_queue_priority", "0") or 0, 0)))
+        paths = [s.file_path for s in results]
+        if settings.get("auto_queue_view"):  # only files in that saved view (v0.10.0)
+            from backend.routes.views import paths_in_view
+            listed = await paths_in_view(settings["auto_queue_view"], paths)
+            paths = [p for p in paths if p in listed]
 
         from backend.queue import JobQueue
         from backend.routes.jobs import queue_new_files
-        queued, by_rule = await queue_new_files(
-            [s.file_path for s in results], priority, JobQueue(self.db_path))
+        queued, by_rule = await queue_new_files(paths, priority, JobQueue(self.db_path))
         if queued or by_rule:
             msg = f"[WATCHER] Auto-queued {queued} new files"
             if by_rule:

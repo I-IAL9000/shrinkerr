@@ -88,7 +88,6 @@
   },
   "search": {
     "title": "Advanced Search",
-    "savedViews": "Saved views",
     "filesMatching": "Files matching",
     "matchAll": "all conditions (AND)",
     "matchAny": "any condition (OR)",
@@ -103,8 +102,6 @@
     "commaSeparated": "comma,separated",
     "example": "e.g. {{example}}",
     "addCondition": "+ Add condition",
-    "saveViewPlaceholder": "Save current as view…",
-    "saveView": "Save view",
     "previewing": "Previewing…",
     "failed": "Search failed",
     "matches_one": "{{num}} match",

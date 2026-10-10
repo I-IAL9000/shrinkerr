@@ -767,6 +767,12 @@ export interface QualityPreset {
 export const getQualityPresets = (encoder?: string) =>
   apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
     `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);
+// Saved views (v0.10.0): named Scanner filters, kept on the server.
+export interface SavedView { id: number; name: string; filter: string }
+export const getViews = () => apiFetch<SavedView[]>("/views");
+export const saveView = (name: string, filter: string) =>
+  apiFetch<SavedView>("/views", { method: "POST", body: JSON.stringify({ name, filter }) });
+export const deleteView = (id: number) => apiFetch<{ deleted: number }>(`/views/${id}`, { method: "DELETE" });
 // What pending jobs will do (v0.10.0). A plan's tracks are its file's, each
 // with whether the job removes it; edit them with updateAudioTracks /
 // updateSubtitleTracks on scan_id, which updates the job.

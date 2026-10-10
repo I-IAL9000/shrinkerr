@@ -6,6 +6,7 @@ import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
+import ViewsMenu from "../components/ViewsMenu";
 import { decodeAdvanced } from "../advancedSearch";
 import FilterBar, { filterLabel } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
@@ -1281,6 +1282,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           </span>
         )}
       </button>
+      <ViewsMenu filter={filter} onApply={(f) => setFilters(f.split(",").map(x => x.trim()).filter(Boolean))} />
       <span style={{ width: 1, height: 16, background: "var(--border)" }} />
       {/* U7 (v0.10.0): below 1100 px the sort pills become a dropdown —
           they wrapped the toolbar onto extra lines. */}

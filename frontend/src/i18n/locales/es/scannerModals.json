@@ -90,7 +90,6 @@
   },
   "search": {
     "title": "Búsqueda avanzada",
-    "savedViews": "Vistas guardadas",
     "filesMatching": "Archivos que cumplen",
     "matchAll": "todas las condiciones (Y)",
     "matchAny": "cualquier condición (O)",
@@ -105,8 +104,6 @@
     "commaSeparated": "separados,por,comas",
     "example": "p. ej. {{example}}",
     "addCondition": "+ Añadir condición",
-    "saveViewPlaceholder": "Guardar actual como vista…",
-    "saveView": "Guardar vista",
     "previewing": "Generando vista previa…",
     "failed": "La búsqueda falló",
     "matches_one": "{{num}} coincidencia",

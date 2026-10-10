@@ -243,6 +243,7 @@ class SettingsUpdate(BaseModel):
     audio_bitrate: Optional[int] = None
     auto_queue_new: Optional[bool] = None
     auto_queue_priority: Optional[Any] = None
+    auto_queue_view: Optional[Any] = None  # v0.10.0: a saved view's id; "" = every new file
     auto_convert_lossless: Optional[bool] = None
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None

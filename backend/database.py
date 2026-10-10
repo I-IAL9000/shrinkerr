@@ -723,6 +723,10 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN has_und_tracks_flag INTEGER DEFAULT 0")
         except Exception:
             pass
+        # v0.10.0: saved views — named Scanner filters (routes/views.py).
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS saved_views (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL UNIQUE, filter TEXT NOT NULL, created_at TEXT NOT NULL)")
         # v0.10.0: HDR10 / HLG / Dolby Vision ("dv<profile>"), from the probe.
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN hdr_format TEXT DEFAULT NULL")

@@ -2642,17 +2642,24 @@ def schedule_audio_flags_realign() -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
-async def _paths_matching(filter: str, folders: list[str] | None = None) -> list[str]:
+async def _paths_matching(filter: str, folders: list[str] | None = None,
+                          files: list[str] | None = None) -> list[str]:
     """Paths in the Scanner list matching `filter`: under any of `folders`
     (paths ending in "/"), or the whole list when None. For Add to Queue,
-    estimates and health checks on selected folders or "select all"."""
+    estimates and health checks on selected folders or "select all".
+    `files`: only these (a saved view in a rule or the auto-queue, v0.10.0)."""
     expr = parse_filter(filter)
+    if files is not None and not files:
+        return []
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx else None
-        if folders is None:
-            scopes: list = [(_SCAN_WHERE, [])]
+        if files is not None:
+            scopes: list = [(f"{_SCAN_WHERE} AND file_path IN ({','.join('?' * len(files[i:i + 900]))})",
+                             files[i:i + 900]) for i in range(0, len(files), 900)]
+        elif folders is None:
+            scopes = [(_SCAN_WHERE, [])]
         else:
             # Chunked: 1000+ folders in one query exceeded SQLite's
             # expression-depth limit and the action did nothing (v0.5.23).

@@ -117,6 +117,7 @@ _ENCODING_DEFAULTS = {
     "audio_bitrate": "128",
     "auto_queue_new": "false",
     "auto_queue_priority": "0",
+    "auto_queue_view": "",
     "auto_convert_lossless": "false",
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
@@ -598,6 +599,7 @@ async def get_encoding_settings():
     except (TypeError, ValueError):
         _aqp = 0
     result["auto_queue_priority"] = max(0, min(2, _aqp))
+    result["auto_queue_view"] = merged.get("auto_queue_view", "") or ""
     try:
         result["always_keep_languages"] = json.loads(
             merged.get("always_keep_languages", '[]')
@@ -1043,6 +1045,13 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             except (TypeError, ValueError):
                 v = 0
             updates["auto_queue_priority"] = str(max(0, min(2, v)))
+        if update.auto_queue_view is not None:
+            view = str(update.auto_queue_view or "").strip()
+            if view:
+                from backend.routes.views import get_view
+                if await get_view(view) is None:
+                    raise ApiError(status_code=400, detail="View not found", code="views.notFound")
+            updates["auto_queue_view"] = view
         if update.auto_convert_lossless is not None:
             updates["auto_convert_lossless"] = "true" if update.auto_convert_lossless else "false"
         if update.lossless_target_codec is not None:

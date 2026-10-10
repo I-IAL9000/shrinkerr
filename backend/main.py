@@ -852,6 +852,9 @@ app.include_router(nodes_router)
 from backend.routes.search import router as search_router
 app.include_router(search_router)
 
+from backend.routes.views import router as views_router
+app.include_router(views_router)
+
 from backend.routes.rename import router as rename_router
 app.include_router(rename_router)
 

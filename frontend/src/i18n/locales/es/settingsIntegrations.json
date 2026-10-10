@@ -273,7 +273,8 @@
       "emby_tag": "Etiqueta de Emby",
       "emby_watched": "Visto en Emby",
       "nzbget_category": "Categoría de descarga",
-      "content_type": "Tipo de contenido"
+      "content_type": "Tipo de contenido",
+      "saved_view": "Vista guardada"
     },
     "plexOptions": {
       "label": "Etiqueta",
@@ -330,7 +331,8 @@
       "weeks": "semanas",
       "sizePlaceholder": "Tamaño en GB...",
       "enterValue": "Introduce un valor...",
-      "removeCondition": "Quitar condición"
+      "removeCondition": "Quitar condición",
+      "selectView": "— elige una vista —"
     }
   }
 }

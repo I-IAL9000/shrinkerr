@@ -284,5 +284,15 @@
     "conditions_one": "from {{count}} condition",
     "conditions_other": "from {{count}} conditions",
     "edit": "Edit"
+  },
+  "views": {
+    "button": "Views",
+    "title": "Saved views",
+    "none": "No saved views yet.",
+    "namePlaceholder": "Name the current filter…",
+    "save": "Save",
+    "saved": "Saved view “{{name}}”",
+    "delete": "Delete view {{name}}",
+    "pickFirst": "Choose some filters first, then name them here."
   }
 }

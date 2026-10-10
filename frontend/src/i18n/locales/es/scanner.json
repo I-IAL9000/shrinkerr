@@ -321,5 +321,15 @@
     "conditions_many": "de {{count}} condiciones",
     "conditions_other": "de {{count}} condiciones",
     "edit": "Editar"
+  },
+  "views": {
+    "button": "Vistas",
+    "title": "Vistas guardadas",
+    "none": "Aún no hay vistas guardadas.",
+    "namePlaceholder": "Pon nombre al filtro actual…",
+    "save": "Guardar",
+    "saved": "Vista «{{name}}» guardada",
+    "delete": "Eliminar la vista {{name}}",
+    "pickFirst": "Elige primero algunos filtros y ponles nombre aquí."
   }
 }

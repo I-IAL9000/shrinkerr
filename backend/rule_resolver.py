@@ -190,7 +190,7 @@ CONDITION_TYPES = frozenset({
     "date_added", "media_type", "title", "release_group",
     "label", "collection", "genre", "library", "plex_watched",
     "jellyfin_tag", "jellyfin_watched", "emby_tag", "emby_watched",
-    "arr_tag", "nzbget_category", "content_type",
+    "arr_tag", "nzbget_category", "content_type", "saved_view",
 })
 # Conditions matched through plex_metadata_cache. Only Plex label /
 # collection / genre / library rules used to load it, so a watched or
@@ -204,7 +204,8 @@ _CACHE_CONDITION_TYPES = frozenset({
 def _check_condition(cond: dict, file_path: str, scan_row: dict,
                      folder_metadata: list[tuple[str, str]],
                      extra_context: dict | None = None,
-                     arr_tags: set[str] | frozenset = frozenset()) -> bool:
+                     arr_tags: set[str] | frozenset = frozenset(),
+                     views: dict[str, set[str]] | None = None) -> bool:
     """Check if a single condition matches a file.
 
     Args:
@@ -217,6 +218,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
                         from plex_metadata_cache for this file's folder hierarchy.
         extra_context: Optional dict with additional context (e.g. nzbget_category).
         arr_tags: Lower-cased Sonarr/Radarr tags of the file's series / movie.
+        views: saved view id -> the batch's files it lists (v0.10.0).
     """
     ctype = cond.get("type", "")
     op = cond.get("operator", "is")
@@ -224,6 +226,11 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
 
     if not value:
         return False
+
+    # A saved view (v0.10.0): the file is in the Scanner filter it names.
+    if ctype == "saved_view":
+        listed = file_path in (views or {}).get(str(value), set())
+        return not listed if op == "is_not" else listed
 
     # 1. Directory — always prefix match, ignore operator
     if ctype == "directory":
@@ -538,6 +545,14 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
             any(c.get("type") in _CACHE_CONDITION_TYPES for c in conds)
             for _, (_, conds) in rules_with_conds
         )
+        # Saved views' members among these files, once per view (v0.10.0).
+        views: dict[str, set[str]] = {}
+        view_ids = {str(c.get("value")) for _, (_, conds) in rules_with_conds for c in conds
+                    if c.get("type") == "saved_view" and c.get("value")}
+        if view_ids:
+            from backend.routes.views import paths_in_view
+            for vid in view_ids:
+                views[vid] = await paths_in_view(vid, file_paths)
         arr_tags: dict[str, set[str]] = {}
         if any(c.get("type") in ("arr_tag", "tag") for _, (_, conds) in rules_with_conds for c in conds):
             from backend.arr import arr_tags_for_paths
@@ -593,7 +608,8 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                 if not conditions:
                     continue
 
-                cond_results = [_check_condition(c, fp, scan_row, meta, extra_context, arr_tags.get(fp, frozenset()))
+                cond_results = [_check_condition(c, fp, scan_row, meta, extra_context, arr_tags.get(fp, frozenset()),
+                                                 views)
                                 for c in conditions]
 
                 if match_mode == "all":

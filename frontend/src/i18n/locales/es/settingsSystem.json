@@ -9,7 +9,10 @@
       "newFiles": "Añadir automáticamente los archivos nuevos a la cola",
       "newFilesHelp": "Los archivos nuevos que el vigilante encuentre en tus carpetas y que necesiten conversión o limpieza de pistas se añaden a la cola como lo haría Añadir a la cola: se aplican tus reglas, los filtros de conversión y los ajustes de audio y subtítulos.",
       "priority": "Prioridad de la cola automática:",
-      "priorityHelp": "Los archivos recién detectados usan esta prioridad, o la prioridad en cola de una regla cuando es mayor."
+      "priorityHelp": "Los archivos recién detectados usan esta prioridad, o la prioridad en cola de una regla cuando es mayor.",
+      "view": "Solo archivos de:",
+      "allFiles": "Todos los archivos nuevos",
+      "viewHelp": "Una vista guardada del menú Vistas del Escáner."
     },
     "filters": {
       "title": "Filtros de conversión",

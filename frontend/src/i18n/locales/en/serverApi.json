@@ -108,5 +108,12 @@
     "invalid": "{{label}} is not a valid URL: {{error}}",
     "invalidScheme": "{{label}} must use http:// or https:// (got {{scheme}})",
     "noHostname": "{{label}} has no hostname"
+  },
+  "views": {
+    "nameRequired": "Give the view a name.",
+    "emptyFilter": "Choose a filter to save first.",
+    "notFound": "View not found",
+    "inUseByAutoQueue": "The auto-queue is limited to this view.",
+    "inUseByRules": "Rules use this view: {{rules}}."
   }
 }

@@ -5,6 +5,14 @@ import type { SearchPredicate } from "./api";
  *  builds tokens (/scan/search); the page only reads them back. v0.10.0. */
 export interface AdvancedSpec { m: "all" | "any"; p: SearchPredicate[] }
 
+/** The token for a set of conditions (what the server builds; for moving the
+ *  views this browser saved to the server). */
+export function encodeAdvanced(spec: AdvancedSpec): string {
+  const bytes = new TextEncoder().encode(JSON.stringify({ m: spec.m, p: spec.p }));
+  const b64 = btoa(String.fromCharCode(...bytes));
+  return "adv:" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export function decodeAdvanced(token: string): AdvancedSpec | null {
   if (!token.startsWith("adv:")) return null;
   try {
