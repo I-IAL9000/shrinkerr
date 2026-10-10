@@ -56,7 +56,7 @@
       "restart": "Después ejecuta <code>docker compose down && up -d</code> y pulsa <em>Volver a detectar</em> arriba.",
       "verify": "Ejecuta <code>docker exec shrinkerr vainfo</code> para comprobar los perfiles de codificación que expone tu hardware."
     },
-    "targetCodec": "Códec de destino",
+    "outputCodec": {"label": "Códec de salida", "help": "HEVC (H.265). Para codificar algunos archivos en AV1, pon AV1 como códec de salida de una regla de codificación (Ajustes → Automatización → Reglas de codificación)."},
     "parallelJobs": "Trabajos en paralelo",
     "parallelJobsHelp": "Número de trabajos de codificación simultáneos. Más = la cola avanza más rápido, pero con más carga de GPU/CPU.",
     "ffmpegThreads": "Hilos de FFmpeg por trabajo",
@@ -325,10 +325,6 @@
       "label": "Mover el idioma original a la primera pista de audio",
       "help": "Durante la conversión o la limpieza de audio, mueve las pistas de audio en el idioma original a la primera posición para que sean la pista de reproducción predeterminada. Los archivos en los que el idioma original no vaya primero se marcarán para limpieza de audio."
     },
-    "keepUnknown": {
-      "label": "Conservar pistas desconocidas/sin definir",
-      "help": "Pistas etiquetadas como \"und\" o sin metadatos de idioma"
-    },
     "autoDetect": {
       "label": "Detectar automáticamente el idioma de las pistas desconocidas antes de convertir",
       "help": "Antes de convertir o limpiar el audio, ejecuta la detección de idioma en las pistas de audio y de subtítulos de texto \"und\"/desconocidas para que las reglas de conservar/eliminar usen idiomas reales. También puedes ejecutar la detección manualmente en cada archivo desde su vista de detalles."
@@ -439,7 +435,7 @@
     "noLanguagesWarning": "No has elegido idiomas: se eliminarán todos los subtítulos con etiqueta de idioma, incluidos los forzados.",
     "keepLanguages": "Idiomas de subtítulos que se conservan",
     "searchPlaceholder": "Buscar idiomas para añadir...",
-    "keepHelp": "Las pistas de subtítulos internas en estos idiomas se conservarán siempre. Los subtítulos forzados se conservan siempre, sea cual sea el idioma. Solo se marcarán para eliminar las pistas en otros idiomas.",
+    "keepHelp": "Las pistas de subtítulos en estos idiomas se conservan; las de otros idiomas se marcan para eliminar. Los subtítulos forzados siguen la misma regla: se quedan en estos idiomas, en el idioma original cuando se conserva, o sin idioma.",
     "keepUnknown": {
       "label": "Conservar subtítulos desconocidos/sin definir",
       "help": "Pistas de subtítulos etiquetadas como \"und\" o sin metadatos de idioma"
@@ -495,16 +491,6 @@
       "p7": {
         "label": "El más lento",
         "desc": "La mejor compresión de NVENC (mejor calidad por bit → archivos más pequeños con el mismo CQ). Velocidad mínima."
-      }
-    },
-    "targetCodecs": {
-      "hevc": {
-        "label": "HEVC / H.265",
-        "desc": "Códec moderno con una compresión excelente. Ampliamente compatible."
-      },
-      "av1": {
-        "label": "AV1 (futuro)",
-        "desc": "Códec de nueva generación con la mejor compresión. Requiere una GPU compatible con AV1."
       }
     },
     "sourceCodecs": {

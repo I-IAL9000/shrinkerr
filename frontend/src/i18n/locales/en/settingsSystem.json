@@ -101,8 +101,7 @@
     "path": "Script path",
     "pathHelp": "Absolute path to an executable script inside the container. Leave empty to disable.",
     "timeout": "Timeout (seconds)",
-    "envReference": "Environment Variables Reference",
-    "envErrorValue": "(error message if failed)"
+    "envReference": "Environment Variables Reference"
   },
   "system": {
     "title": "System"

@@ -53,11 +53,6 @@ const settingValue = (v: any): string =>
 const PRESET_IDS = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
 
 // label/desc text for these lists lives in settingsMedia:options.* — keyed by value.
-const TARGET_CODECS = [
-  { value: "hevc" },
-  { value: "av1" },
-];
-
 const SOURCE_CODECS = [
   { value: "h264", always: false, defaultOn: true },
   { value: "mpeg2", always: false, defaultOn: true },
@@ -973,19 +968,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     )}
                   </div>
 
-                  {/* Target Codec */}
+                  {/* Output codec (v0.10.0): HEVC; AV1 is a rule's choice. The
+                      Target Codec dropdown here was never saved. */}
                   <div>
-                    <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.targetCodec")}</div>
-                    <select aria-label={t("settingsMedia:video.targetCodec")} value={encoding.target_codec || "hevc"}
-                      onChange={(e) => setEncoding({ ...encoding, target_codec: e.target.value })}
-                      style={{ ...inputStyle, width: "100%" }}>
-                      {TARGET_CODECS.map(c => (
-                        <option key={c.value} value={c.value}>{t(`settingsMedia:options.targetCodecs.${c.value}.label`)}</option>
-                      ))}
-                    </select>
-                    <div style={helpStyle}>
-                      {(() => { const c = TARGET_CODECS.find(c => c.value === (encoding.target_codec || "hevc")); return c && t(`settingsMedia:options.targetCodecs.${c.value}.desc`); })()}
-                    </div>
+                    <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.outputCodec.label")}</div>
+                    <div style={helpStyle}>{t("settingsMedia:video.outputCodec.help")}</div>
                   </div>
 
                   {/* Parallel Jobs */}
@@ -2001,10 +1988,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     style={{ flexShrink: 0 }} />
                   <span style={labelStyle}>{t("settingsMedia:audio.removeUnwanted")}</span>
                 </label>
-                {(encoding?.audio_cleanup_enabled ?? true) && (
+                {/* v0.10.0: only the languages to keep depend on removing tracks —
+                    language detection, conversion and the stereo track were
+                    hidden with it off. */}
                 <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 20, flex: "1 1 300px", minWidth: 0, maxWidth: 500 }}>
 
+                  {(encoding?.audio_cleanup_enabled ?? true) && (<>
                   {/* Always Keep Languages */}
                   <div>
                     <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:audio.alwaysKeep")}</div>
@@ -2081,6 +2071,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     {t("settingsMedia:audio.keepNative.help")}
                   </div>
 
+                  </>)}
+
                   {/* Reorder native language first */}
                   <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
                     <input type="checkbox" checked={encoding.reorder_native_audio !== false}
@@ -2090,18 +2082,6 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
                     {t("settingsMedia:audio.reorderNative.help")}
-                  </div>
-
-                  {/* Ignore Unknown Tracks */}
-                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
-                    <input type="checkbox" checked={encoding.ignore_unknown_tracks}
-                      readOnly
-                      onClick={() => setEncoding({ ...encoding, ignore_unknown_tracks: !encoding.ignore_unknown_tracks })}
-                      style={{ flexShrink: 0 }} />
-                    <span style={labelStyle}>{t("settingsMedia:audio.keepUnknown.label")}</span>
-                  </label>
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26 }}>
-                    {t("settingsMedia:audio.keepUnknown.help")}
                   </div>
 
                   {/* v0.8.0: auto-detect languages for und tracks */}
@@ -2378,7 +2358,6 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 </div>
                 </div>
-                )}
               </div>
 
               <h2 id="subtitles" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
@@ -3981,13 +3960,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       "SHRINKERR_JOB_TYPE=convert|audio|combined",
                       "SHRINKERR_SPACE_SAVED=1234567890 (bytes)",
                       "SHRINKERR_ORIGINAL_SIZE=5000000000 (bytes)",
-                      "SHRINKERR_ENCODER=nvenc|libx265",
+                      "SHRINKERR_ENCODER=nvenc|libx265|qsv|vaapi|videotoolbox",
                       "SHRINKERR_PRESET=p3",
                       "SHRINKERR_CQ=27",
                       "SHRINKERR_FPS=195.5",
                       "SHRINKERR_VMAF_SCORE=96.2",
-                      "SHRINKERR_STATUS=completed|failed",
-                      `SHRINKERR_ERROR=${t("settingsSystem:script.envErrorValue")}`,
                       // The legacy SQUEEZARR_* variants are also set for backward
                       // compatibility with scripts written before the rename.
                     ].map(v => <div key={v}>{v}</div>)}

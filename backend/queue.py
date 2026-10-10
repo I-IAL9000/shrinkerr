@@ -126,7 +126,7 @@ async def _run_post_conversion_script(job_id: int, file_path: str, original_path
         "FPS": str(round(job_data.get("fps", 0) or 0, 1)),
         "VMAF_SCORE": str(result.get("vmaf_score", "")),
         "STATUS": "completed" if result.get("success") else "failed",
-        "ERROR": str(result.get("error", "")),
+        "ERROR": str(result.get("error") or ""),  # "None" when the result said None
     }
     for _k, _v in hook_vars.items():
         env[f"SHRINKERR_{_k}"] = _v

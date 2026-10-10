@@ -56,7 +56,7 @@
       "restart": "Then <code>docker compose down && up -d</code> and click <em>Re-detect</em> above.",
       "verify": "Run <code>docker exec shrinkerr vainfo</code> to verify the encoder profiles your hardware exposes."
     },
-    "targetCodec": "Target Codec",
+    "outputCodec": {"label": "Output codec", "help": "HEVC (H.265). To encode some files to AV1, give an encoding rule the output codec AV1 (Settings → Automation → Encoding Rules)."},
     "parallelJobs": "Parallel Jobs",
     "parallelJobsHelp": "Number of simultaneous encoding jobs. Higher = faster queue processing but more GPU/CPU load.",
     "ffmpegThreads": "FFmpeg Threads Per Job",
@@ -321,10 +321,6 @@
       "label": "Reorder native language to first audio stream",
       "help": "During conversion or audio cleanup, move native-language audio tracks to the first position so they become the default playback stream. Files where native isn't first will be tagged for audio cleanup."
     },
-    "keepUnknown": {
-      "label": "Keep unknown/undefined tracks",
-      "help": "Tracks tagged as \"und\" or with no language metadata"
-    },
     "autoDetect": {
       "label": "Auto-detect languages for unknown tracks before converting",
       "help": "Before converting or cleaning up audio, run language detection on \"und\"/unknown audio and text-subtitle tracks so keep/remove rules use real languages. You can also run detection manually per file from the file detail view."
@@ -434,7 +430,7 @@
     "noLanguagesWarning": "No languages chosen: every subtitle with a language tag will be removed, forced ones included.",
     "keepLanguages": "Keep Subtitle Languages",
     "searchPlaceholder": "Search languages to add...",
-    "keepHelp": "Internal subtitle tracks in these languages will always be kept. Forced subtitles are always kept regardless of language. Only tracks in other languages will be marked for removal.",
+    "keepHelp": "Subtitle tracks in these languages are kept; tracks in other languages are marked for removal. Forced subtitles follow the same rule: they stay in these languages, in the original language when that's kept, or with no language.",
     "keepUnknown": {
       "label": "Keep unknown/undefined subtitles",
       "help": "Subtitle tracks tagged as \"und\" or with no language metadata"
@@ -490,16 +486,6 @@
       "p7": {
         "label": "Slowest",
         "desc": "Best compression NVENC offers (best quality-per-bit → smaller files at the same CQ). Slowest speed."
-      }
-    },
-    "targetCodecs": {
-      "hevc": {
-        "label": "HEVC / H.265",
-        "desc": "Modern codec, excellent compression. Widely supported."
-      },
-      "av1": {
-        "label": "AV1 (future)",
-        "desc": "Next-gen codec, best compression. Requires AV1-capable GPU."
       }
     },
     "sourceCodecs": {

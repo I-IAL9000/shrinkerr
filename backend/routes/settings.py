@@ -75,7 +75,7 @@ _ENCODING_DEFAULTS = {
     "ffprobe_timeout": "30",
     "audio_cleanup_enabled": "true",
     "always_keep_languages": '[]',
-    "ignore_unknown_tracks": "true",
+    "ignore_unknown_tracks": "true",  # unused: audio with no language always stays (v0.10.0 removed its switch)
     "keep_native_language": "true",
     # v0.5.20: native-language rule for subs is independent of audio
     # and defaults OFF. Pre-v0.5.20 native-language subs were kept

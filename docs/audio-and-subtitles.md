@@ -26,10 +26,10 @@ A conversion or cleanup removes the tracks your languages don't keep. The
 Scanner shows each file's tracks and which ones go; its **Audio cleanup**
 and **Subtitle cleanup** filters list the files with something to remove.
 
-**Audio** is the **Audio Track Rules** card. Its options — language
-detection and Audio Conversion included — only show while **Remove
-unwanted audio tracks** is on (the default); with it off, every audio track
-stays.
+**Audio** is the **Audio Track Rules** card. **Remove unwanted audio
+tracks** is on by default; with it off, every audio track stays and the
+first three options below are hidden (reordering, language detection and
+Audio Conversion stay available).
 
 - **Always Keep Languages** — audio in these languages stays.
 - **Auto-keep native language audio tracks** (on) — the original language
@@ -44,8 +44,9 @@ stays.
 - **Reorder native language to first audio stream** (on) — a conversion or
   cleanup moves the original-language audio to the first audio track. A
   file that needs only this counts as audio cleanup.
-- Audio with no language (`und`) always stays — the **Keep
-  unknown/undefined tracks** switch doesn't change that — and so does the
+- Audio with no language (`und`) always stays — often it's the main
+  track, just untagged; [language detection](language-detection.md) can
+  identify it — and so does the
   [stereo compatibility track](#a-stereo-compatibility-track). A file
   always keeps at least one audio track.
 

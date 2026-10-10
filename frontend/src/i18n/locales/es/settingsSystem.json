@@ -103,8 +103,7 @@
     "path": "Ruta del script",
     "pathHelp": "Ruta absoluta a un script ejecutable dentro del contenedor. Déjalo vacío para desactivarlo.",
     "timeout": "Tiempo límite (segundos)",
-    "envReference": "Referencia de variables de entorno",
-    "envErrorValue": "(mensaje de error si falló)"
+    "envReference": "Referencia de variables de entorno"
   },
   "system": {
     "title": "Sistema"
