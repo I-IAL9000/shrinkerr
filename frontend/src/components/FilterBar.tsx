@@ -18,6 +18,7 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "disc_iso", labelKey: "scanner:filters.discIso" },
   { key: "high_bitrate", labelKey: "scanner:filters.highBitrate" },
   { key: "low_bitrate", labelKey: "scanner:filters.lowBitrate" },
+  { key: "bloated", labelKey: "scanner:filters.bloated" },
   { key: "sub_cleanup", labelKey: "scanner:filters.subCleanup" },
   { key: "unknown_language", labelKey: "scanner:filters.unknownLanguage" },
   { key: "ignored", labelKey: "scanner:filters.ignored" },

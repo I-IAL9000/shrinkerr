@@ -31,6 +31,9 @@
     "file_size_gb": {
       "label": "Tamaño de archivo (GB)"
     },
+    "bits_per_pixel": {
+      "label": "Bits por píxel"
+    },
     "bitrate_mbps": {
       "label": "Tasa de bits (Mbps)"
     },

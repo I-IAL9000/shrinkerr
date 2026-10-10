@@ -177,6 +177,11 @@ EXPECTED = {
     "needs_conversion": {"heat_br", "clip", "alien", "big", "ep2", "web_in_br"},  # not low-bitrate, not ignored
     "low_bitrate": {"heat_web"},
     "high_bitrate": {"big"},
+    # Bits per pixel over 0.15 (HEVC, AV1, VP9) or 0.25 (older codecs): the
+    # remux, the DVD, the Xvid and WMV clips, 35 Mbps H.264 at 1080p, 2.4 Mbps
+    # HEVC at 540p, 8.6 Mbps AV1 at 1080p. Heat's Blu-ray is 0.28 at 24 fps
+    # but 0.13 at its 50 fps; Heat's WEB-DL 0.05; untimed Broken: no.
+    "bloated": {"dune", "alien", "clip", "wmv", "big", "old", "corrupt"},
     "ignored": {"ep1", "old"},
     "queued": {"ep2"},
     "converted": {"old"},

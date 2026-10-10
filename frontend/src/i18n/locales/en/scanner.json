@@ -88,6 +88,7 @@
     "discIso": "Disc / ISO",
     "highBitrate": "High bitrate",
     "lowBitrate": "Low bitrate",
+    "bloated": "Big for its resolution",
     "subCleanup": "Subtitle cleanup",
     "unknownLanguage": "Unknown language",
     "ignored": "Ignored",

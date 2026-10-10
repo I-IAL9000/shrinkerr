@@ -57,6 +57,7 @@ def test_the_token_round_trips():
     (("frame_rate", "gte", 50), {"heat_br"}),
     (("frame_rate", "between", 23, 24), {"big"}),
     (("bit_depth", "eq", 10), {"dune", "ep1"}),
+    (("bits_per_pixel", "gt", 0.5), {"alien", "big"}),  # 0.86 and 0.72
 ])
 async def test_each_condition(lib, cond, expected):
     assert await names(adv(cond)) == expected

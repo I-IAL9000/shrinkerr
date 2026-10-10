@@ -245,6 +245,14 @@ _VC1 = f"({_CODEC} LIKE '%vc1%' OR {_CODEC} LIKE '%wmv%')"
 _MPEG4 = f"({_CODEC} LIKE '%mpeg4%' OR {_CODEC} LIKE '%xvid%' OR {_CODEC} LIKE '%divx%')"
 _VP9 = f"{_CODEC} LIKE '%vp9%'"
 _NAMED_CODECS = f"({_H264} OR {_HEVC} OR {_AV1} OR {_MPEG2} OR {_VC1} OR {_MPEG4} OR {_VP9})"
+# Bits per pixel per frame: the bitrate over width x height x frame rate (the
+# width from the height when unknown, 24 fps when unknown). Bloated: more
+# than an efficient codec (HEVC / AV1 / VP9) needs at 0.15, or an older one
+# at 0.25 — about 7.5 / 12.5 Mbps at 1080p, scaling with the resolution
+# where the high-bitrate pill's 15 Mbps doesn't.
+_PIXELS = "((CASE WHEN COALESCE(video_width, 0) > 0 THEN video_width ELSE video_height * 16.0 / 9 END) * video_height)"
+_BPP = f"(file_size * 8.0 / duration / ({_PIXELS} * COALESCE(NULLIF(video_fps, 0), 24.0)))"
+_HAS_BPP = "duration > 0 AND COALESCE(video_height, 0) > 0"
 _MKV = "file_path LIKE '%.mkv'"
 _MP4 = "(file_path LIKE '%.mp4' OR file_path LIKE '%.m4v' OR file_path LIKE '%.mov')"
 _AVI = "file_path LIKE '%.avi'"
@@ -325,6 +333,7 @@ _FILTER_LIST = [
            py=lambda r, c: row_low_bitrate(r) and not row_ignored(r, c)),
     Filter("high_bitrate", pre_sql=_NEEDS_TIMED,
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_ignored(r, c) and row_bitrate(r) > HIGH_BITRATE),
+    Filter("bloated", sql=f"{_HAS_BPP} AND {_BPP} > (CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 0.15 ELSE 0.25 END)"),
     # Ignore means "don't convert", not "don't tidy tracks / don't say the
     # audio is untagged" (v0.9.26, v0.9.31): these include ignored titles.
     Filter("sub_cleanup", sql="COALESCE(has_removable_subs_flag, 0) = 1"),
@@ -467,6 +476,8 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
     # Size / bitrate
     "file_size_mb":  {"kind": "column", "col": "(COALESCE(file_size, 0) / 1048576.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "File size (MB)", "group": "Size"},
     "file_size_gb":  {"kind": "column", "col": "(COALESCE(file_size, 0) / 1073741824.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "File size (GB)", "group": "Size"},
+    "bits_per_pixel": {"kind": "column", "col": f"(CASE WHEN {_HAS_BPP} THEN {_BPP} ELSE 0 END)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "Bits per pixel", "group": "Size",
+                       "examples": [0.15]},
     "bitrate_mbps":  {"kind": "column", "col": "(CASE WHEN duration > 0 THEN (file_size * 8.0 / duration / 1000000.0) ELSE 0 END)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "Bitrate (Mbps)", "group": "Size"},
 
     # Audio
