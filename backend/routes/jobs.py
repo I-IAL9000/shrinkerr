@@ -787,6 +787,15 @@ async def list_jobs(status: Optional[str] = None, limit: int = 0, offset: int = 
     return await _queue.get_all_jobs(limit=limit, offset=offset)
 
 
+@router.get("/{job_id}/frames")
+async def job_frames(job_id: int):
+    """The job's before / after frames (v0.10.0, backend/frames.py):
+    [{"t", "before", "after"}] with data URLs; [] when it has none."""
+    import asyncio
+    from backend import frames
+    return await asyncio.to_thread(frames.load, job_id)
+
+
 @router.get("/ids")
 async def list_job_ids(status: str, search: str = ""):
     """Ordered job ids for one status tab (v0.9.139) — the Queue page polls

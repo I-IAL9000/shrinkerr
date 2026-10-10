@@ -301,7 +301,8 @@ class ServerClient:
                               vmaf_reject_reason: str | None = None,
                               vmaf_reject_params: dict | None = None,
                               review: dict | None = None,
-                              review_result: dict | None = None) -> dict:
+                              review_result: dict | None = None,
+                              frames: list | None = None) -> dict:
         resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
@@ -313,6 +314,7 @@ class ServerClient:
             "vmaf_rejected": vmaf_rejected, "vmaf_reject_reason": vmaf_reject_reason,
             "vmaf_reject_params": vmaf_reject_params,
             "review": review, "review_result": review_result,
+            "frames": frames,
         })
         resp.raise_for_status()
         return resp.json()
@@ -417,6 +419,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
         space_saved = 0
         current_file_path = file_path
         result = None
+        frames = None
         replaced_source = False  # did an output replace the original? (v0.10.0)
 
         if job_type in ("convert", "combined"):
@@ -507,6 +510,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "audio_compat_loudnorm": bool(job.get("audio_compat_loudnorm", False)),
                 "image_subs_to_srt": bool(job.get("image_subs_to_srt", False)),
                 "image_subs_keep_original": bool(job.get("image_subs_keep_original", True)),
+                "compare_frames": bool(job.get("compare_frames", True)),
                 "compat_for_direct_play": bool(job.get("compat_for_direct_play", False)),  # v0.10.0
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
@@ -560,6 +564,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 delete_merged_subs=job.get("delete_external_subs_after_merge"),
                 output_codec=job.get("output_codec"),
             )
+            frames = result.pop("frames", None)  # before / after (v0.10.0), sent with the result
 
             # A cancel that came after the output replaced the original (e.g.
             # during VMAF, which can't be killed) is too late: report what
@@ -588,6 +593,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                     encoding_stats=result.get("encoding_stats"), replaced_source=False,
                     review=result["review_state"],
                     review_result={k: v for k, v in result.items() if k not in ("review", "review_state", "ffmpeg_log")},
+                    frames=frames,
                 )
                 return
             space_saved = result.get("space_saved", 0)
@@ -654,6 +660,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             vmaf_rejected=bool(result.get("vmaf_rejected")) if result else None,
             vmaf_reject_reason=result.get("vmaf_reject_reason") if result else None,
             vmaf_reject_params=result.get("vmaf_reject_params") if result else None,
+            frames=frames,
         )
 
     except Exception as exc:

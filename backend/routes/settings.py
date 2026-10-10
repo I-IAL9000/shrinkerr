@@ -221,6 +221,7 @@ _ENCODING_DEFAULTS = {
     "radarr_api_key": "",
     "bazarr_url": "",  # v0.10.0: rescanned after Shrinkerr rewrites a file
     "bazarr_api_key": "",
+    "compare_frames": "true",  # v0.10.0: before / after frames (backend/frames.py)
     # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)
     "mqtt_enabled": "false",
     "mqtt_host": "",
@@ -819,6 +820,7 @@ async def get_encoding_settings():
     bazarr_key = merged.get("bazarr_api_key", "")
     result["bazarr_url"] = merged.get("bazarr_url", "")
     result["bazarr_api_key"] = ("****" + bazarr_key[-4:]) if bazarr_key else ""
+    result["compare_frames"] = merged.get("compare_frames", "true").lower() == "true"
     result["mqtt_enabled"] = merged.get("mqtt_enabled", "false").lower() == "true"
     result["mqtt_tls"] = merged.get("mqtt_tls", "false").lower() == "true"
     for key in ("mqtt_host", "mqtt_username", "mqtt_discovery_prefix", "mqtt_base_topic"):
@@ -1407,8 +1409,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                                      if update.bazarr_url.strip() else "")
         if update.bazarr_api_key is not None and not update.bazarr_api_key.startswith("****"):
             updates["bazarr_api_key"] = update.bazarr_api_key
-        # Home Assistant over MQTT (v0.10.0)
-        for key in ("mqtt_enabled", "mqtt_tls"):
+        # Home Assistant over MQTT (v0.10.0); before / after frames
+        for key in ("mqtt_enabled", "mqtt_tls", "compare_frames"):
             if getattr(update, key) is not None:
                 updates[key] = "true" if getattr(update, key) else "false"
         if update.mqtt_host is not None:

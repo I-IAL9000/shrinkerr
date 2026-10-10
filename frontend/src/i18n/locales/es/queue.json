@@ -218,7 +218,16 @@
       "health_check": "Comprobación de estado"
     },
     "waitingUntil": "espera hasta las {{time}}",
-    "waitingHelp": "Recién importado: espera para que Bazarr añada antes los subtítulos (Ajustes → Automatización)."
+    "waitingHelp": "Recién importado: espera para que Bazarr añada antes los subtítulos (Ajustes → Automatización).",
+    "frames": {
+      "show": "Comparar antes / después",
+      "loading": "Cargando fotogramas…",
+      "none": "Este trabajo no tiene fotogramas (convertido antes de la 0.10, desde un disco o con los fotogramas desactivados).",
+      "before": "Antes",
+      "after": "Después",
+      "slider": "Divisor antes / después",
+      "moments": "Momento"
+    }
   },
   "panel": {
     "selected_one": "{{count}} seleccionado",

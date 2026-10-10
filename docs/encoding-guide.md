@@ -13,6 +13,7 @@ This is the "what do I actually pick" guide. For system-level setup see
 - [FFmpeg threads per job](#ffmpeg-threads-per-job)
 - [VMAF quality validation](#vmaf-quality-validation)
 - [VMAF target quality](#vmaf-target-quality)
+- [Before / after frames](#before--after-frames)
 - [AV1 output](#av1-output)
 - [Resolution-aware CQ](#resolution-aware-cq)
 - [Cross-encoder fallback settings](#cross-encoder-fallback-settings)
@@ -238,6 +239,21 @@ works.
   falls back to it.
 - The post-encode check and **minimum score** still apply to the whole
   file.
+
+## Before / after frames
+
+Each conversion grabs the same three moments (at 20 %, 50 % and 80 % of
+the film) from the original and the converted file, while both still
+exist. Open a finished job in Queue → Completed and click **Compare before
+/ after**: drag across the picture (or use the slider) to move the
+divider, and switch between the moments.
+
+- Frames are JPEGs up to 960 pixels wide, shown with square pixels (an
+  anamorphic DVD looks as it plays). The last 100 jobs keep theirs, about
+  0.5 MB each, in the data folder.
+- Remote workers grab them too and send them with the result.
+- Not for discs. Turn it off in Settings → Video (**Keep before / after
+  frames**).
 
 ## AV1 output
 

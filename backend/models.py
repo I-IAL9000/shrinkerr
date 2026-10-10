@@ -330,6 +330,7 @@ class SettingsUpdate(BaseModel):
     radarr_api_key: Optional[str] = None
     bazarr_url: Optional[str] = None  # v0.10.0
     bazarr_api_key: Optional[str] = None
+    compare_frames: Optional[bool] = None  # v0.10.0, backend/frames.py
     # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)
     mqtt_enabled: Optional[bool] = None
     mqtt_host: Optional[str] = None

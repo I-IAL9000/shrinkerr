@@ -1560,6 +1560,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={helpStyle}>
                       <Trans i18nKey="settingsMedia:video.smart.vmafHelp" components={{ b: <strong /> }} />
                     </div>
+                    {/* Before / after frames (v0.10.0) */}
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, cursor: "pointer" }}>
+                      <input type="checkbox" checked={encoding.compare_frames ?? true}
+                        onChange={(e) => setEncoding({ ...encoding, compare_frames: e.target.checked })}
+                        style={{ accentColor: "var(--accent)" }} />
+                      <span style={labelStyle}>{t("settingsMedia:video.smart.compareFrames")}</span>
+                    </label>
+                    <div style={helpStyle}>{t("settingsMedia:video.smart.compareFramesHelp")}</div>
                     <table style={{ fontSize: 12, borderCollapse: "collapse", marginTop: 8, width: "100%" }}>
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--border)" }}>

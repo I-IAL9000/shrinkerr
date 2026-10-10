@@ -94,6 +94,7 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("image_subs_to_srt",                _ABSENT,   _str_to_bool),
     ("image_subs_keep_original",         _ABSENT,   _str_to_bool),
     ("vmaf_target_enabled",              _ABSENT,   _str_to_bool),
+    ("compare_frames",                   _ABSENT,   _str_to_bool),
     ("vmaf_target_score",                _ABSENT,   float),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
@@ -4842,6 +4843,16 @@ async def convert_file(
             "output_bitrate": round(output_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
         },
     }
+
+    # v0.10.0: the same moments of the original and the output for the
+    # job's before / after comparison (frames.py), while both exist. Not
+    # for discs (the input isn't a file).
+    if live_settings.get("compare_frames", True) and not disc_type:
+        from backend.frames import grab
+        try:
+            success["frames"] = await grab(input_path, temp_path, duration)
+        except Exception as exc:
+            print(f"[CONVERT] Before / after frames skipped: {exc}", flush=True)
 
     if live_settings.get("review_before_replace"):
         review_dir = Path(final_path).parent / ".shrinkerr-review"

@@ -768,6 +768,9 @@ export interface RuleTestResult {
 }
 export const testEncodingRule = (filePath: string) =>
   apiFetch<RuleTestResult>("/rules/test", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
+// Before / after frames of a conversion (v0.10.0): data URLs, [] when none.
+export interface JobFrame { t: number; before: string; after: string }
+export const getJobFrames = (jobId: number) => apiFetch<JobFrame[]>(`/jobs/${jobId}/frames`);
 // Rules files (v0.10.0): the rules as YAML, and the library's ready-made ones.
 export interface RuleImportResult {
   added: number;

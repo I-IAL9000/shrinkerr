@@ -10,6 +10,7 @@ import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { pressable } from "../utils/a11y";
 import PendingJobPlan from "./PendingJobPlan";
+import BeforeAfter from "./BeforeAfter";
 
 interface JobListItemProps {
   job: Job;
@@ -283,6 +284,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           </div>
         ) : logData ? (
           <>
+            {job.job_type !== "audio" && <BeforeAfter jobId={job.id} />}
             {/* Comparison table: original vs encoded.
                 Audio-only jobs (job_type="audio") get a cleanup-flavoured
                 variant that drops the codec/bitrate rows (no video

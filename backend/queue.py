@@ -2514,6 +2514,10 @@ class QueueWorker:
                     output_codec=job.get("output_codec"),
                     pre_settings=job_settings,
                 )
+            frames = result.pop("frames", None)  # before / after (v0.10.0): kept with the job
+            if frames:
+                from backend import frames as frames_mod
+                await asyncio.to_thread(frames_mod.save, job_id, frames)
             if not result["success"]:
                 if job_id in self._cancel_flags:
                     # Check if this cancel was triggered by a node pause — if so,

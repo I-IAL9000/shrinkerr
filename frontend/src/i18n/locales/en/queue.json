@@ -194,7 +194,16 @@
       "health_check": "Health check"
     },
     "waitingUntil": "waits until {{time}}",
-    "waitingHelp": "Imported just now: it waits so Bazarr can add subtitles first (Settings → Automation)."
+    "waitingHelp": "Imported just now: it waits so Bazarr can add subtitles first (Settings → Automation).",
+    "frames": {
+      "show": "Compare before / after",
+      "loading": "Loading frames…",
+      "none": "No frames for this job (converted before 0.10, from a disc, or with frames turned off).",
+      "before": "Before",
+      "after": "After",
+      "slider": "Before / after divider",
+      "moments": "Moment"
+    }
   },
   "panel": {
     "selected_one": "{{count}} selected",
