@@ -1967,35 +1967,16 @@ SUBTITLE_EXTENSIONS = {".srt", ".sub", ".idx", ".ass", ".ssa", ".sup", ".vtt"}
 
 
 def rename_external_subtitles(original_path: str, new_stem: str) -> None:
-    """Rename external subtitle files that match the original filename stem.
-
-    No-op when the parent dir is gone. v0.6.4: disc conversions delete the
-    source subdirectory (VIDEO_TS/ or BDMV/) before this runs, so the
-    original_path's parent is missing; that's expected, not an error.
-    Discs don't have sidecar subs anyway — their subtitles are internal
-    PGS/VobSub streams on the disc itself."""
+    """Rename the subtitle files named after the original to the output's
+    name (scanner.move_sidecar_subtitles). No-op when the parent dir is
+    gone: disc conversions remove VIDEO_TS/ or BDMV/ first, and discs have
+    no sidecar subs anyway."""
+    from backend.scanner import move_sidecar_subtitles
     p = Path(original_path)
-    original_stem = p.stem
-    parent = p.parent
-
-    if not parent.exists():
+    if not p.parent.exists():
         return
-
-    for f in parent.iterdir():
-        if (
-            f.is_file()
-            and f.name.startswith(original_stem)
-            and f.suffix.lower() in SUBTITLE_EXTENSIONS
-        ):
-            # The part after the original stem (e.g. ".eng" in "Movie.x264-GROUP.eng.srt")
-            remainder = f.name[len(original_stem):]
-            new_name = new_stem + remainder
-            new_path = parent / new_name
-            try:
-                f.rename(new_path)
-                print(f"[CONVERT] Renamed subtitle: {f.name} -> {new_name}", flush=True)
-            except OSError as exc:
-                print(f"[CONVERT] Failed to rename subtitle {f.name}: {exc}", flush=True)
+    for old, new in move_sidecar_subtitles(str(p), str(p.with_name(new_stem + p.suffix))):
+        print(f"[CONVERT] Renamed subtitle: {Path(old).name} -> {Path(new).name}", flush=True)
 
 
 _SPEED_RE = re.compile(r'speed=\s*(\d+(?:\.\d+)?)x')

@@ -1298,6 +1298,41 @@ def sidecar_tags(sub_stem: str) -> tuple[str, bool, bool]:
     return language, forced, sdh
 
 
+def move_sidecar_subtitles(old_video: str, new_video: str) -> list[tuple[str, str]]:
+    """Move the subtitle files named after a video with it when the video is
+    renamed — `Movie.en.srt`, `Movie.forced.en.srt`, a VobSub `.idx` / `.sub`
+    pair: `old stem + "."` and a subtitle extension, the names media servers
+    match by. Never onto an existing file. Returns the (old, new) paths moved.
+
+    v0.10.0: renaming (Scanner → Rename, or after a conversion) left them
+    under the old name, so Plex lost them; the conversion's own codec-tag
+    rename also took "Saw II.en.srt" along with "Saw.mkv" and could replace
+    an existing file."""
+    old, new = Path(old_video), Path(new_video)
+    if old.stem == new.stem and old.parent == new.parent:
+        return []
+    prefix = old.stem.lower() + "."
+    moved: list[tuple[str, str]] = []
+    try:
+        siblings = list(old.parent.iterdir())
+    except OSError:
+        return moved
+    for f in siblings:
+        if (f.suffix.lower() not in SUBTITLE_EXTENSIONS or not f.name.lower().startswith(prefix)
+                or not f.is_file()):
+            continue
+        target = new.parent / (new.stem + f.name[len(old.stem):])
+        try:
+            if os.path.lexists(target) and not (target.exists() and os.path.samefile(f, target)):
+                print(f"[RENAME] Not moving subtitle {f.name}: {target.name} already exists", flush=True)
+                continue
+            os.rename(f, target)
+            moved.append((str(f), str(target)))
+        except OSError as exc:
+            print(f"[RENAME] Could not move subtitle {f.name}: {exc}", flush=True)
+    return moved
+
+
 def detect_external_subtitles(video_path: str, siblings: Optional[list] = None) -> list[dict]:
     """Detect external subtitle files alongside a video file.
 

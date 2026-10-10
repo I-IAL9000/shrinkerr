@@ -691,6 +691,32 @@ async def build_plan(file_path: str, probe_info: Optional[dict] = None, settings
     return plan
 
 
+async def repoint_external_subs(db, where_sql: str, params: tuple, repoint) -> None:
+    """Point the external subtitle tracks of the Scanner rows matched by
+    `where_sql` at their new paths (`repoint(old) -> new`) after a rename:
+    merging reads them from the row, so moved sidecars were left out
+    (v0.10.0)."""
+    async with db.execute(
+        f"SELECT id, subtitle_tracks_json FROM scan_results WHERE {where_sql} "
+        "AND subtitle_tracks_json LIKE '%external_path%'", params,
+    ) as cur:
+        rows = await cur.fetchall()
+    for row_id, subs_json in rows:
+        try:
+            subs = json.loads(subs_json)
+        except (TypeError, ValueError):
+            continue
+        changed = False
+        for t in subs:
+            path = t.get("external_path") if isinstance(t, dict) else None
+            if path and repoint(path) != path:
+                t["external_path"] = repoint(path)
+                changed = True
+        if changed:
+            await db.execute("UPDATE scan_results SET subtitle_tracks_json = ? WHERE id = ?",
+                             (json.dumps(subs), row_id))
+
+
 def _rename_no_overwrite(src: str, dst: str) -> None:
     """os.rename that refuses to replace an existing path (v0.9.155).
 
@@ -733,6 +759,9 @@ async def apply_plan(plan: RenamePlan) -> dict:
             await asyncio.to_thread(os.makedirs, os.path.dirname(plan.new_path), exist_ok=True)
             await asyncio.to_thread(_rename_no_overwrite, plan.old_path, plan.new_path)
             current_path = plan.new_path
+            # Its subtitle files go with it (v0.10.0: they kept the old name).
+            from backend.scanner import move_sidecar_subtitles
+            result["sidecars"] = await asyncio.to_thread(move_sidecar_subtitles, plan.old_path, plan.new_path)
 
         # 2. Season folder rename (TV only)
         if plan.old_season_folder and plan.new_season_folder and plan.new_season_folder != plan.old_season_folder:
@@ -752,5 +781,10 @@ async def apply_plan(plan: RenamePlan) -> dict:
         result["error"] = str(exc)
     result["new_path"] = current_path
     result["renamed_folders"] = renamed_folders
+    # Where the moved subtitle files are now, after the folder renames.
+    sidecars = result.get("sidecars") or []
+    for old_f, new_f in renamed_folders:
+        sidecars = [(o, new_f + n[len(old_f):] if n.startswith(old_f + "/") else n) for o, n in sidecars]
+    result["sidecars"] = sidecars
 
     return result

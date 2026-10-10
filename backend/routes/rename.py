@@ -20,6 +20,7 @@ from backend.rename import (
     save_settings,
     build_plan,
     apply_plan,
+    repoint_external_subs,
     render_pattern,
     resolve_metadata,
 )
@@ -209,6 +210,24 @@ async def _move_rows_under(db, old_folder: str, new_folder: str) -> None:
             f"WHERE {under_sql}{only_pending}",
             (new_folder, len(old_folder) + 1, *under_params),
         )
+    # Their sidecar subtitles moved with the folder too (v0.10.0).
+    new_sql, new_params = prefix_clause([new_folder + "/"])
+    await repoint_external_subs(
+        db, new_sql, tuple(new_params),
+        lambda p: new_folder + p[len(old_folder):] if p.startswith(old_folder + "/") else p)
+
+
+async def record_rename(db, fp: str, result: dict) -> None:
+    """Point the Scanner rows at where a renamed file (apply_plan's result),
+    its subtitle files and its renamed folders are now."""
+    new_path = result.get("new_path")
+    if new_path and new_path != fp:
+        await db.execute("UPDATE scan_results SET file_path = ? WHERE file_path = ?", (new_path, fp))
+    if result.get("sidecars"):  # v0.10.0: merging reads their paths from the row
+        moves = dict(result["sidecars"])
+        await repoint_external_subs(db, "file_path = ?", (new_path,), lambda p: moves.get(p, p))
+    for old, new in result.get("renamed_folders") or []:
+        await _move_rows_under(db, old, new)
 
 
 def _outside_media_dirs(plan: RenamePlan, media_dirs: list[str]) -> str | None:
@@ -274,14 +293,8 @@ async def apply_rename(req: ApplyRequest):
             try:
                 db = await connect_db()
                 try:
-                    if result.get("new_path") and result["new_path"] != fp:
-                        await db.execute(
-                            "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
-                            (result["new_path"], fp),
-                        )
-                    for old, new in result.get("renamed_folders") or []:
-                        moved.append((old, new))
-                        await _move_rows_under(db, old, new)
+                    await record_rename(db, fp, result)
+                    moved.extend(result.get("renamed_folders") or [])
                     await db.commit()
                 finally:
                     await db.close()

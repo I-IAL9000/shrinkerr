@@ -103,7 +103,8 @@ folder is removed only if that left it empty.
   deleted afterwards only if you turned that on (Settings → Audio &
   subtitles).
 - **Renaming** (Scanner → Rename, or after each conversion if you turned it
-  on) renames the file, and its folders if you turned that on.
+  on) renames the file and the subtitle files named after it, and its
+  folders if you turned that on. It never renames onto an existing file.
 - **Scanner → Trash files** moves the files to the trash. Shrinkerr can't
   restore them; your system's trash can.
 - **Sonarr / Radarr replace** (Scanner, or a corrupt file's details) asks

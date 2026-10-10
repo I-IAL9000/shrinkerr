@@ -3552,10 +3552,10 @@ class QueueWorker:
                         try:
                             db_r = await self._db()
                             try:
-                                await db_r.execute(
-                                    "UPDATE scan_results SET file_path = ? WHERE file_path = ?",
-                                    (current_file_path, old_path),
-                                )
+                                # v0.10.0: also its moved subtitle files and the
+                                # rows under renamed folders, as Scanner → Rename.
+                                from backend.routes.rename import record_rename
+                                await record_rename(db_r, old_path, rename_result)
                                 await db_r.commit()
                             finally:
                                 await db_r.close()
