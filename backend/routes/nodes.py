@@ -5,6 +5,7 @@ and report completion. The frontend uses GET /api/nodes for the Nodes page.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, Optional
@@ -734,6 +735,16 @@ async def _record_review(db, nm, req: "CompletionReport") -> dict:
     return {"ok": True}
 
 
+async def _tell_arrs(path: str) -> None:
+    from backend.arr import trigger_arr_rescan
+    from backend.bazarr import schedule_rescan
+    try:
+        await trigger_arr_rescan(path)
+    except Exception as exc:
+        print(f"[NODES] Sonarr/Radarr rescan failed (non-fatal): {exc}", flush=True)
+    schedule_rescan(path)
+
+
 @router.post("/report-complete")
 async def report_complete(req: CompletionReport, request: Request):
     """Worker reports job completion or failure."""
@@ -847,6 +858,9 @@ async def report_complete(req: CompletionReport, request: Request):
                 await db.commit()
             finally:
                 await db.close()
+            # Sonarr / Radarr and Bazarr learn of the new file, as after a
+            # local job — a worker's conversions never told them (v0.10.0).
+            asyncio.create_task(_tell_arrs(output_path))
 
     if req.success and req.vmaf_rejected and job:
         try:

@@ -315,6 +315,14 @@ subtitles** on — see [Audio and subtitles](audio-and-subtitles.md)). The
 Queue shows "waits until …"; remote workers wait too. Files you add
 yourself aren't held.
 
+Give Shrinkerr **Bazarr's URL and API key** (Settings → Integrations →
+Bazarr) and, after each file it rewrites — sidecars merged in, image
+subtitles read into SRT, the file renamed — it asks Bazarr to re-sync that
+series or movie from Sonarr / Radarr and scan its subtitles, a minute
+later (once Sonarr / Radarr have rescanned). Otherwise Bazarr still lists
+the sidecars it downloaded and, with them merged and deleted, downloads
+them again. Needs Sonarr / Radarr set up in Shrinkerr too.
+
 **Maintainerr** collects titles it is about to remove ("Leaving soon").
 Enter its URL in **Settings → Integrations → Maintainerr** and Shrinkerr
 reads its collections after every full scan (or **Read collections**): with

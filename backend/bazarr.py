@@ -1,0 +1,95 @@
+"""Bazarr (v0.10.0): after Shrinkerr rewrites a file — sidecar subtitles
+merged in (and maybe deleted), image subtitles read into SRT, the file
+renamed — Bazarr still has the old picture, and would download the
+"missing" subtitles again. Tell it to re-sync the series / movie from
+Sonarr / Radarr and scan its subtitles on disk.
+
+Bazarr's API: PATCH /api/series?seriesid=<Sonarr id>&action=sync|scan-disk,
+PATCH /api/movies?radarrid=<Radarr id>&action=…, with the X-API-KEY header.
+"""
+from __future__ import annotations
+
+import asyncio
+
+import httpx
+
+from backend.database import connect_db
+
+# Sonarr / Radarr rescan the file first (Shrinkerr asks them right after a
+# job); Bazarr's sync reads what they found, so give them a moment.
+RESCAN_DELAY = 60
+_ACTIONS = ("sync", "scan-disk")
+
+
+async def _settings() -> tuple[str, str]:
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT key, value FROM settings WHERE key IN ('bazarr_url', 'bazarr_api_key')") as cur:
+            s = {r["key"]: r["value"] for r in await cur.fetchall()}
+    finally:
+        await db.close()
+    return (s.get("bazarr_url") or "").strip().rstrip("/"), (s.get("bazarr_api_key") or "").strip()
+
+
+async def test_bazarr(url: str, api_key: str) -> dict:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{url.rstrip('/')}/api/system/status", headers={"X-API-KEY": api_key})
+        resp.raise_for_status()
+        return {"success": True, "version": ((resp.json() or {}).get("data") or {}).get("bazarr_version")}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+async def _owner(client: httpx.AsyncClient, file_path: str) -> tuple[str, int] | None:
+    """("series", Sonarr id) or ("movies", Radarr id) for the file."""
+    from backend import arr
+    settings = await arr._get_arr_settings()
+    services = {"tv": ("sonarr",), "movie": ("radarr",)}.get(arr._detect_media_type(file_path), ("sonarr", "radarr"))
+    for service in services:
+        url = (settings.get(f"{service}_url") or "").rstrip("/")
+        key = settings.get(f"{service}_api_key") or ""
+        if not url or not key:
+            continue
+        path = arr._translate_path(file_path, settings.get(f"{service}_path_mapping", ""))
+        find = arr._find_sonarr_series_for_path if service == "sonarr" else arr._find_radarr_movie_for_path
+        item = await find(client, url, key, path)
+        if item:
+            return ("series" if service == "sonarr" else "movies", item["id"])
+    return None
+
+
+async def rescan_for_file(file_path: str) -> dict | None:
+    """Have Bazarr re-sync and scan the file's series / movie. None when
+    Bazarr isn't set up or the file isn't in Sonarr / Radarr."""
+    url, api_key = await _settings()
+    if not url or not api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            owner = await _owner(client, file_path)
+            if owner is None:
+                return None
+            kind, item_id = owner
+            id_param = "seriesid" if kind == "series" else "radarrid"
+            ok = True
+            for action in _ACTIONS:
+                resp = await client.patch(f"{url}/api/{kind}", params={id_param: item_id, "action": action},
+                                          headers={"X-API-KEY": api_key})
+                ok = ok and resp.status_code < 300
+    except Exception as exc:
+        print(f"[BAZARR] Rescan failed for {file_path}: {exc}", flush=True)
+        return {"ok": False, "error": str(exc)}
+    print(f"[BAZARR] Rescan of {kind} {item_id} {'requested' if ok else 'failed'}", flush=True)
+    return {"ok": ok, "kind": kind, "id": item_id}
+
+
+def schedule_rescan(file_path: str, delay: float = RESCAN_DELAY) -> None:
+    """rescan_for_file in the background, after `delay` seconds."""
+    async def later():
+        await asyncio.sleep(delay)
+        await rescan_for_file(file_path)
+    try:
+        asyncio.get_running_loop().create_task(later())
+    except RuntimeError:
+        pass

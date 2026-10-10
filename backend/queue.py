@@ -3557,6 +3557,9 @@ class QueueWorker:
                     print(f"[WORKER] No Sonarr/Radarr match for {file_name}", flush=True)
             except Exception as exc:
                 print(f"[WORKER] Sonarr/Radarr rescan failed (non-fatal): {exc}", flush=True)
+            # Then Bazarr, once they've seen the new file (v0.10.0).
+            from backend.bazarr import schedule_rescan
+            schedule_rescan(current_file_path)
         else:
             print(f"[WORKER] Skipping arr rescan for non-library file: {file_name}", flush=True)
 

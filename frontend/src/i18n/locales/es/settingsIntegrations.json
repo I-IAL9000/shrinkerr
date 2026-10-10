@@ -382,5 +382,11 @@
     "synced_other": "{{count}} carpetas en las colecciones de Maintainerr",
     "notSetUp": "Introduce primero la URL de Maintainerr",
     "skip": "No encolar títulos que Maintainerr va a eliminar"
+  },
+  "bazarr": {
+    "intro": "Cuando Shrinkerr reescribe un archivo —subtítulos incorporados, subtítulos de imagen leídos a SRT, el archivo renombrado—, se pide a Bazarr que vuelva a sincronizar la serie o la película y examine sus subtítulos, para que no los descargue de nuevo. Requiere Sonarr / Radarr configurados arriba.",
+    "url": "URL de Bazarr",
+    "apiKey": "Clave de API",
+    "test": "Probar Bazarr"
   }
 }

@@ -373,5 +373,11 @@
     "synced_other": "{{count}} folders in Maintainerr's collections",
     "notSetUp": "Enter Maintainerr's URL first",
     "skip": "Don't queue titles Maintainerr is about to remove"
+  },
+  "bazarr": {
+    "intro": "After Shrinkerr rewrites a file — subtitles merged in, image subtitles read into SRT, the file renamed — Bazarr is asked to re-sync the series or movie and scan its subtitles, so it doesn't download them again. Needs Sonarr / Radarr set up above.",
+    "url": "Bazarr URL",
+    "apiKey": "API key",
+    "test": "Test Bazarr"
   }
 }

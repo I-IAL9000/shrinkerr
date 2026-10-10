@@ -218,6 +218,8 @@ _ENCODING_DEFAULTS = {
     "sonarr_path_mapping": "",
     "radarr_url": "",
     "radarr_api_key": "",
+    "bazarr_url": "",  # v0.10.0: rescanned after Shrinkerr rewrites a file
+    "bazarr_api_key": "",
     "radarr_path_mapping": "",
     # Quiet hours
     "quiet_hours_enabled": "false",
@@ -804,6 +806,9 @@ async def get_encoding_settings():
     result["radarr_api_key"] = ("****" + radarr_key[-4:]) if radarr_key else ""
     result["radarr_configured"] = bool(radarr_key and merged.get("radarr_url", ""))
     result["radarr_path_mapping"] = merged.get("radarr_path_mapping", "")
+    bazarr_key = merged.get("bazarr_api_key", "")
+    result["bazarr_url"] = merged.get("bazarr_url", "")
+    result["bazarr_api_key"] = ("****" + bazarr_key[-4:]) if bazarr_key else ""
 
     # NZBGet integration
     result["nzbget_enabled"] = merged.get("nzbget_enabled", "false").lower() == "true"
@@ -1380,6 +1385,12 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["radarr_api_key"] = update.radarr_api_key
         if update.radarr_path_mapping is not None:
             updates["radarr_path_mapping"] = update.radarr_path_mapping
+        if update.bazarr_url is not None:
+            from backend.ssrf_guard import validate_outbound_url
+            updates["bazarr_url"] = (validate_outbound_url(update.bazarr_url.strip().rstrip("/"), label="Bazarr URL")
+                                     if update.bazarr_url.strip() else "")
+        if update.bazarr_api_key is not None and not update.bazarr_api_key.startswith("****"):
+            updates["bazarr_api_key"] = update.bazarr_api_key
         # NZBGet integration
         if update.nzbget_enabled is not None:
             updates["nzbget_enabled"] = "true" if update.nzbget_enabled else "false"
@@ -1737,6 +1748,7 @@ _SECRET_SETTINGS_KEYS = frozenset({
     "emby_api_key",
     "sonarr_api_key",
     "radarr_api_key",
+    "bazarr_api_key",
     "smtp_pass",
     "discord_webhook_url",  # contains the secret path component
     "telegram_bot_token",
@@ -1949,6 +1961,12 @@ async def test_api_key(req: TestApiRequest):
                 return {"success": False, "error": "No Radarr API key configured"}
             from backend.arr import test_radarr
             return await test_radarr(radarr_url, radarr_key)
+
+        elif req.service == "bazarr":
+            if not settings.get("bazarr_url") or not settings.get("bazarr_api_key"):
+                return {"success": False, "error": "Enter Bazarr's URL and API key first"}
+            from backend.bazarr import test_bazarr
+            return await test_bazarr(settings["bazarr_url"], settings["bazarr_api_key"])
 
         else:
             return {"success": False, "error": "Unknown service"}

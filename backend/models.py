@@ -328,6 +328,8 @@ class SettingsUpdate(BaseModel):
     sonarr_path_mapping: Optional[str] = None
     radarr_url: Optional[str] = None
     radarr_api_key: Optional[str] = None
+    bazarr_url: Optional[str] = None  # v0.10.0
+    bazarr_api_key: Optional[str] = None
     radarr_path_mapping: Optional[str] = None
     # Quiet hours
     quiet_hours_enabled: Optional[bool] = None

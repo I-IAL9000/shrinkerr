@@ -3212,6 +3212,31 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   >{t("settingsIntegrations:arr.syncStatus")}</button>
                 </div>
 
+                {/* Bazarr (v0.10.0): rescanned after Shrinkerr rewrites a file */}
+                <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Bazarr</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:bazarr.intro")}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input style={{ ...inputStyle, flex: "1 1 220px" }} aria-label={t("settingsIntegrations:bazarr.url")}
+                      placeholder="http://bazarr:6767"
+                      value={encoding?.bazarr_url || ""}
+                      onChange={e => setEncoding({ ...encoding, bazarr_url: e.target.value })} />
+                    <input style={{ ...inputStyle, flex: "1 1 180px" }} aria-label={t("settingsIntegrations:bazarr.apiKey")}
+                      placeholder={t("settingsIntegrations:bazarr.apiKey")}
+                      value={encoding?.bazarr_api_key || ""}
+                      onChange={e => setEncoding({ ...encoding, bazarr_api_key: e.target.value })} />
+                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                      onClick={async () => {
+                        try {
+                          if (!(await saveChanges(true))) return;
+                          const res = await testApiKey("bazarr") as any;
+                          if (res.success) toast(t("settingsIntegrations:arr.connected", { name: "Bazarr", version: res.version }), "success");
+                          else toast(`Bazarr: ${res.error}`, "error");
+                        } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Bazarr", error: err.message }), "error"); }
+                      }}>{t("settingsIntegrations:bazarr.test")}</button>
+                  </div>
+                </div>
+
                 {/* Maintainerr (v0.10.0): leave out what it's about to remove */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Maintainerr</div>
