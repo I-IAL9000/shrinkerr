@@ -71,7 +71,8 @@
     "noPaths": "No hay rutas que escanear",
     "probeFailed": "No se pudo analizar el archivo",
     "trackNotFound": "Pista no encontrada",
-    "trashFailed": "No se pudo mover el archivo a la papelera: {{error}}"
+    "trashFailed": "No se pudo mover el archivo a la papelera: {{error}}",
+    "invalidTracks": "No se pudo leer esa lista de pistas."
   },
   "schedule": {
     "invalidDatetime": "Fecha y hora no válidas: {{error}}"

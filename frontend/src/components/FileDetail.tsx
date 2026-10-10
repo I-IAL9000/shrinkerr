@@ -125,13 +125,13 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   // stale after a language change, so unticking two tracks and ticking a
   // third queued all three for removal.
   const handleToggleAudioLocal = (idx: number) => {
-    const next = audioTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t);
+    const next = audioTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep, manual: true } : t);
     setFetchedAudio(next);
     setDetected(true);
     onAudioTracksChange?.(file, next, true);
   };
   const handleToggleSubLocal = (_fp: string, idx: number) => {
-    const next = subtitleTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep } : t);
+    const next = subtitleTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep, manual: true } : t);
     setFetchedSubs(next);
     setDetected(true);
     onSubTracksChange?.(file, next, true);
@@ -620,6 +620,7 @@ function SubTrackRow({ track, filePath, onToggle, isExternal, onSetLanguage, bus
       {isExternal && basename && (
         <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{basename}</span>
       )}
+      {track.manual && <span className="track-manual" title={t("fileDetail:tracks.manualTitle")}>{t("fileDetail:tracks.manual")}</span>}
       {track.detect_note && !track.detected_language && (track.language || "und").toLowerCase() === "und" && (
         <span style={{ fontSize: 10, color: "var(--warning)" }} title={t("fileDetail:tracks.detectNoteTitle")}>
           {detectNote(track)}

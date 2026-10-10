@@ -19,7 +19,9 @@
     "detectNoteTitle": "Por qué la detección automática no asignó un idioma",
     "setLanguageManually": "Asignar idioma manualmente",
     "settingLanguage": "Asignando idioma a la pista… (los archivos mp4 se remuxan, puede tardar un poco)",
-    "allAudioRemoved": "Todas las pistas de audio están marcadas para eliminar: el archivo se quedaría sin sonido. Shrinkerr no lo procesará así; conserva al menos una pista."
+    "allAudioRemoved": "Todas las pistas de audio están marcadas para eliminar: el archivo se quedaría sin sonido. Shrinkerr no lo procesará así; conserva al menos una pista.",
+    "manual": "tu elección",
+    "manualTitle": "Elegido por ti: cambiar los idiomas que conservar o volver a escanear no lo modifica."
   },
   "subtitles": {
     "heading": "Pistas de subtítulos:",

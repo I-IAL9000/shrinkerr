@@ -42,6 +42,7 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
       <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
       {track.title && <span style={{ color: "var(--text-muted)", ...removeStyle }}>&quot;{track.title}&quot;</span>}
       <span className="track-size" style={removeStyle}>{sizeLabel}</span>
+      {track.manual && <span className="track-manual" title={t("fileDetail:tracks.manualTitle")}>{t("fileDetail:tracks.manual")}</span>}
       {/* v0.9.35: a language (detected or set by hand) that couldn't be written
           to the file in place — applied by the "Remux to MKV" action below. */}
       {track.detected_language && (track.language || "und").toLowerCase() === "und" && (

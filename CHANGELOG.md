@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Changing the languages to keep updates the files already scanned**, in the background, with no rescan. Tracks you kept or removed by hand stay as you set them (shown as "your choice") — through language changes, rescans and language detection.
 - **One set of quality presets** — Max quality, Quality, Balanced, Max savings and Smallest — in the setup wizard (the middle three), the queue panel and Settings → Video's guide, for every encoder, with the savings each gives. The queue panel's presets now set the quality only; the speed preset stays your Settings choice.
 - **Scanner filters combine the way you'd expect**: pills in the same group match any of them (4K + 1080p), different groups must all match, and Alt-click excludes a pill. Every pill shows its count, and the filter is part of the address, so a view can be bookmarked or shared — the Dashboard's codec chart links straight into it.
 - **New Scanner filters**: MPEG-2, VC-1 / WMV, MPEG-4 / Xvid and VP9 (split out of "Other codecs"); container (MKV, MP4, AVI, other); Atmos / DTS:X and 7.1 audio; image subtitles (PGS / VobSub); missing my language (no audio or subtitle track in your keep languages); health (never checked, warnings); and outcome (failed before, VMAF-rejected, no savings). A **Savings** sort puts the biggest wins first.
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
 
 ### Fixed
+- **A rescan undid the tracks you'd kept or removed by hand.** Also, editing a file's tracks didn't update the Audio / Subtitle cleanup filters.
 - **A job's own quality now reaches QSV, VAAPI and VideoToolbox**: queue presets, rules and content-type quality only ever changed NVENC and CPU encodes.
 - A changed list of audio languages to keep reached new scans only after a restart.
 - **Filter counts match their lists**: the counts, the folder tree, the file lists and Add to Queue / estimates / health checks on selected folders now share one definition of each filter. The Audio cleanup count left out files whose only issue was untagged audio, Low bitrate counted files that don't need converting, Converted counted jobs rather than files, a file whose name had two sources (e.g. WEB-DL and HDTV) was listed under both, and Dubbed matched nothing when queueing a selected folder.

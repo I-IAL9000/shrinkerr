@@ -71,7 +71,8 @@
     "noPaths": "No paths to scan",
     "probeFailed": "Could not probe file",
     "trackNotFound": "Track not found",
-    "trashFailed": "Failed to trash file: {{error}}"
+    "trashFailed": "Failed to trash file: {{error}}",
+    "invalidTracks": "That track list couldn't be read."
   },
   "schedule": {
     "invalidDatetime": "Invalid datetime: {{error}}"

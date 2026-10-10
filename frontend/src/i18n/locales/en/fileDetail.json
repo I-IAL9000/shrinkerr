@@ -19,7 +19,9 @@
     "detectNoteTitle": "Why auto-detection didn't set a language",
     "setLanguageManually": "Set language manually",
     "settingLanguage": "Setting track language… (mp4 files are remuxed, this can take a moment)",
-    "allAudioRemoved": "All audio tracks are marked for removal — the file would have no sound. Shrinkerr won't process it like this; keep at least one track."
+    "allAudioRemoved": "All audio tracks are marked for removal — the file would have no sound. Shrinkerr won't process it like this; keep at least one track.",
+    "manual": "your choice",
+    "manualTitle": "Set by you: changing the languages to keep, and rescans, leave it as it is."
   },
   "subtitles": {
     "heading": "Subtitle tracks:",

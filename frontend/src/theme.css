@@ -1045,3 +1045,6 @@ input[type="checkbox"] { cursor: pointer; }
   .wizard-step-name { display: none; }
   .wizard-steps .current .wizard-step-name { display: inline; }
 }
+
+/* A track kept or removed by hand (v0.10.0) */
+.track-manual { font-size: 0.8em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; white-space: nowrap; }

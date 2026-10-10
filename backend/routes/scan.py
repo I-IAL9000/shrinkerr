@@ -16,7 +16,9 @@ from backend.scan_filters import (
     row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
     build_dir_label_index as _build_dir_label_index,
 )
-from backend.scanner import scan_directory
+from backend.scanner import (
+    keep_manual_choices, keep_manual_choices_json, mark_manual_choices, scan_directory,
+)
 from backend.websocket import ws_manager
 
 router = APIRouter(prefix="/api/scan")
@@ -139,6 +141,11 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                 if _reclass:
                     audio_json = _reclass[0]
                     sub_json = _reclass[1] if sub_json is not None else None
+
+            # Keep/remove choices made by hand survive a rescan (v0.10.0).
+            if _ex and not _preserved:
+                audio_json = keep_manual_choices_json(audio_json, _ex[1], audio=True)
+                sub_json = keep_manual_choices_json(sub_json, _ex[2])
 
             # Pre-compute flags at scan time (avoids 226K JSON parses per page
             # load) from the FINAL json — which may be the preserved stored one.
@@ -1425,10 +1432,13 @@ async def detect_languages(req: DetectLanguagesRequest, notify_plex: bool = True
     for t in subtitle_tracks:
         if ("sub", t.stream_index) in detect_notes:
             _attach_note(t, detect_notes[("sub", t.stream_index)])
-    audio_json = json.dumps([t.model_dump() for t in audio_tracks])
-    subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
-    has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
-    has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+    # Keep/remove choices made by hand stay (v0.10.0).
+    stored_audio, stored_subs = await _stored_track_lists(req.file_path)
+    audio_list = keep_manual_choices([t.model_dump() for t in audio_tracks], stored_audio, audio=True)
+    sub_list = keep_manual_choices([t.model_dump() for t in subtitle_tracks], stored_subs)
+    audio_json, subtitle_json = json.dumps(audio_list), json.dumps(sub_list)
+    has_removable = 1 if any(not t.get("keep", True) for t in audio_list) else 0
+    has_removable_subs = 1 if any(not t.get("keep", True) for t in sub_list) else 0
     db = await connect_db()
     try:
         # v0.9.68: record that detection ran via `tracks_detected`, and DON'T
@@ -1635,10 +1645,13 @@ async def set_track_language(req: SetTrackLanguageRequest):
         if t.stream_index in sub_detected:
             t.detected_language = sub_detected[t.stream_index]
 
-    audio_json = json.dumps([t.model_dump() for t in audio_tracks])
-    subtitle_json = json.dumps([t.model_dump() for t in subtitle_tracks])
-    has_removable = 1 if any(not t.keep for t in audio_tracks) else 0
-    has_removable_subs = 1 if any(not t.keep for t in subtitle_tracks) else 0
+    # Keep/remove choices made by hand stay (v0.10.0).
+    stored_audio, stored_subs = await _stored_track_lists(req.file_path)
+    audio_list = keep_manual_choices([t.model_dump() for t in audio_tracks], stored_audio, audio=True)
+    sub_list = keep_manual_choices([t.model_dump() for t in subtitle_tracks], stored_subs)
+    audio_json, subtitle_json = json.dumps(audio_list), json.dumps(sub_list)
+    has_removable = 1 if any(not t.get("keep", True) for t in audio_list) else 0
+    has_removable_subs = 1 if any(not t.get("keep", True) for t in sub_list) else 0
     db = await connect_db()
     try:
         await db.execute(
@@ -2407,6 +2420,122 @@ async def get_scan_files(folder: str, filter: str = "all"):
         await db.close()
 
 
+async def _stored_track_lists(file_path: str) -> tuple[list, list]:
+    """The stored audio and subtitle track lists of a file ([] when none)."""
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT audio_tracks_json, subtitle_tracks_json FROM scan_results WHERE file_path = ?", (file_path,)
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    out = []
+    for js in (row or (None, None)):
+        try:
+            out.append(json.loads(js or "[]"))
+        except (ValueError, TypeError):
+            out.append([])
+    return out[0], out[1]
+
+
+# ── Re-applying the language rules after a settings change (v0.10.0) ─────
+# Changing the languages to keep (or the other track settings) used to reach
+# only files scanned afterwards. Now the scanned files follow too — except
+# tracks whose keep/remove the user chose by hand: those marked "manual", and
+# (edits made before the mark existed) any track the old settings wouldn't
+# have given its current keep/remove.
+
+_reclass_lock = asyncio.Lock()
+_background_tasks: set = set()
+
+
+def _reapply_track_rules(row: dict, old_rules, new_rules) -> dict | None:
+    """A _write_lang_batch item for a row whose tracks change under the new
+    rules, or None."""
+    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks
+    try:
+        audio = json.loads(row["audio_tracks_json"] or "[]")
+        subs = json.loads(row["subtitle_tracks_json"] or "[]")
+    except (ValueError, TypeError):
+        return None
+    native, dur = row["native_language"] or "und", row["duration"] or 0
+
+    def classify(tracks, kind, rules):
+        copies = [dict(t) for t in tracks]
+        if kind == "audio":
+            return classify_audio_tracks(copies, native, dur, rules=rules)
+        return classify_subtitle_tracks(copies, native, rules=rules)
+
+    changed = False
+    for tracks, kind in ((audio, "audio"), (subs, "subs")):
+        if not tracks:
+            continue
+        old = {t.stream_index: t.keep for t in classify(tracks, kind, old_rules)}
+        new = {t.stream_index: (t.keep, t.locked) for t in classify(tracks, kind, new_rules)}
+        for t in tracks:
+            si = t.get("stream_index")
+            if t.get("manual") or si not in old or si not in new:
+                continue
+            if bool(t.get("keep", True)) != old[si]:
+                continue  # not what the old rules said: chosen by hand
+            if (bool(t.get("keep", True)), bool(t.get("locked", False))) != new[si]:
+                t["keep"], t["locked"] = new[si]
+                changed = True
+    if not changed or (audio and not any(t.get("keep", True) for t in audio)):
+        return None  # nothing to do — and never leave a file without audio
+    und = 1 if any((t.get("language") or "und").lower() == "und" for t in audio + subs) else 0
+    return {"rid": row["id"], "a_json": json.dumps(audio),
+            "s_json": json.dumps(subs) if row["subtitle_tracks_json"] is not None else None,
+            "rem_a": 1 if any(not t.get("keep", True) for t in audio) else 0,
+            "rem_s": 1 if any(not t.get("keep", True) for t in subs) else 0, "und": und}
+
+
+async def reapply_track_rules(old_rules) -> int:
+    """Bring every scanned file's track keep/remove in line with the saved
+    rules, which were `old_rules` before the change. Waits for a running scan
+    (its worker uses the rules it started with) and for an earlier pass.
+    Returns the number of files changed."""
+    from backend.scanner import current_track_rules
+    async with _reclass_lock:
+        while scan_is_actively_running():
+            await asyncio.sleep(5)
+        new_rules = current_track_rules()
+        if new_rules == old_rules:
+            return 0
+        changed, last_id = 0, 0
+        while True:
+            db = await connect_db()
+            try:
+                async with db.execute(
+                    "SELECT id, audio_tracks_json, subtitle_tracks_json, native_language, duration "
+                    f"FROM scan_results WHERE {_SCAN_WHERE} AND id > ? ORDER BY id LIMIT 1000", (last_id,),
+                ) as cur:
+                    rows = [dict(r) for r in await cur.fetchall()]
+            finally:
+                await db.close()
+            if not rows:
+                break
+            last_id = rows[-1]["id"]
+            # CPU-bound (JSON + classification): off the event loop.
+            pending = await asyncio.to_thread(
+                lambda: [it for it in (_reapply_track_rules(r, old_rules, new_rules) for r in rows) if it])
+            if pending:
+                await _write_lang_batch(pending)
+                changed += len(pending)
+        if changed:
+            print(f"[SCAN] Track settings changed: updated {changed} file(s), keeping choices made by hand", flush=True)
+            await ws_manager.send_scan_results_changed(added=0, removed=0)
+        return changed
+
+
+def schedule_track_rules_update(old_rules) -> None:
+    """reapply_track_rules() in the background (a settings save)."""
+    task = asyncio.create_task(reapply_track_rules(old_rules))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 async def _paths_matching(filter: str, folders: list[str] | None = None) -> list[str]:
     """Paths in the Scanner list matching `filter`: under any of `folders`
     (paths ending in "/"), or the whole list when None. For Add to Queue,
@@ -2470,11 +2599,15 @@ def _reclassify_keep_flags(audio_json_str, sub_json_str, native, duration):
                for t in classify_subtitle_tracks(list(raw_subs), native)}
     for t in raw_audio:
         f = a_flags.get(t.get("stream_index"))
-        if f:
+        if f and not t.get("manual"):  # a choice made by hand stays (v0.10.0)
             t["keep"], t["locked"] = f
+    if raw_audio and not any(t.get("keep", True) for t in raw_audio):
+        # The choices removed every track the rules keep: a file keeps audio.
+        first = next((t for t in raw_audio if a_flags.get(t.get("stream_index"), (False,))[0]), raw_audio[0])
+        first["keep"] = True
     for t in raw_subs:
         f = s_flags.get(t.get("stream_index"))
-        if f:
+        if f and not t.get("manual"):
             t["keep"], t["locked"] = f
     has_rem_a = 1 if any(not t.get("keep", True) for t in raw_audio) else 0
     has_rem_s = 1 if any(not t.get("keep", True) for t in raw_subs) else 0
@@ -2855,18 +2988,37 @@ class UpdateTracksRequest(BaseModel):
     audio_tracks_json: str
 
 
-@router.put("/results/{result_id}/tracks")
-async def update_audio_tracks(result_id: int, req: UpdateTracksRequest):
-    """Persist audio track keep/remove changes to the DB."""
+async def _save_track_edit(result_id: int, column: str, flag_column: str, edited_json: str) -> None:
+    """Persist a keep/remove edit, marking the tracks it changed as chosen by
+    hand (rescans and settings changes leave those alone, v0.10.0) and
+    keeping the row's "has removable" flag in step (it went stale)."""
+    try:
+        edited = json.loads(edited_json or "[]")
+    except (ValueError, TypeError):
+        raise ApiError(status_code=400, detail="That track list couldn't be read.", code="scan.invalidTracks")
     db = await aiosqlite.connect(DB_PATH)
     try:
+        async with db.execute(f"SELECT {column} FROM scan_results WHERE id = ?", (result_id,)) as cur:
+            row = await cur.fetchone()
+        try:
+            stored = json.loads(row[0] or "[]") if row else []
+        except (ValueError, TypeError):
+            stored = []
+        edited = mark_manual_choices(edited, stored)
+        removable = 1 if any(not t.get("keep", True) for t in edited) else 0
         await db.execute(
-            "UPDATE scan_results SET audio_tracks_json = ? WHERE id = ?",
-            (req.audio_tracks_json, result_id),
+            f"UPDATE scan_results SET {column} = ?, {flag_column} = ? WHERE id = ?",
+            (json.dumps(edited), removable, result_id),
         )
         await db.commit()
     finally:
         await db.close()
+
+
+@router.put("/results/{result_id}/tracks")
+async def update_audio_tracks(result_id: int, req: UpdateTracksRequest):
+    """Persist audio track keep/remove changes to the DB."""
+    await _save_track_edit(result_id, "audio_tracks_json", "has_removable_tracks_flag", req.audio_tracks_json)
     return {"status": "updated", "id": result_id}
 
 
@@ -2877,15 +3029,7 @@ class UpdateSubTracksRequest(BaseModel):
 @router.put("/results/{result_id}/subtitle-tracks")
 async def update_subtitle_tracks(result_id: int, req: UpdateSubTracksRequest):
     """Persist subtitle track keep/remove changes to the DB."""
-    db = await aiosqlite.connect(DB_PATH)
-    try:
-        await db.execute(
-            "UPDATE scan_results SET subtitle_tracks_json = ? WHERE id = ?",
-            (req.subtitle_tracks_json, result_id),
-        )
-        await db.commit()
-    finally:
-        await db.close()
+    await _save_track_edit(result_id, "subtitle_tracks_json", "has_removable_subs_flag", req.subtitle_tracks_json)
     return {"status": "updated", "id": result_id}
 
 

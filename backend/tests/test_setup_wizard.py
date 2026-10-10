@@ -126,15 +126,25 @@ def test_the_sample_spreads_over_folders(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_saving_the_audio_keep_languages_reaches_the_scanner(settings_route, test_db):
+async def test_saving_the_audio_keep_languages_reaches_the_scanner(settings_route, test_db, monkeypatch):
     """The scanner caches the list; saving it must drop the cache (it took a
-    restart before)."""
+    restart before) — and the scanned files get updated from the old rules."""
+    import backend.config
+    import backend.routes.scan as scan_route
     import backend.scanner as scanner
     from backend.models import SettingsUpdate
+    monkeypatch.setattr(scanner, "settings", backend.config.settings)
+    scanner.invalidate_sub_settings_cache()
     scanner._audio_settings_cache = {"fra"}
     scanner._audio_settings_loaded = True
+    scheduled = []
+    monkeypatch.setattr(scan_route, "schedule_track_rules_update", scheduled.append)
     await settings_route.update_encoding_settings(SettingsUpdate(always_keep_languages=["eng"]))
-    assert scanner._audio_settings_loaded is False
+    assert scanner.current_track_rules().audio_keep == {"eng"}
+    assert [r.audio_keep for r in scheduled] == [{"fra"}]
+    # A save that changes nothing about tracks doesn't start a pass.
+    await settings_route.update_encoding_settings(SettingsUpdate(nvenc_cq=21))
+    assert len(scheduled) == 1
 
 
 @pytest.mark.asyncio

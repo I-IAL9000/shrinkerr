@@ -909,6 +909,10 @@ def _require_password_login(request) -> None:
 
 @router.put("/encoding")
 async def update_encoding_settings(update: SettingsUpdate, request: Request = None):
+    # The track rules as they are before this save, to re-apply them to the
+    # scanned files if it changes them (v0.10.0).
+    from backend.scanner import current_track_rules
+    rules_before = current_track_rules()
     db = await aiosqlite.connect(DB_PATH)
     try:
         updates = {}
@@ -1417,6 +1421,11 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
     if cache_keys & set(updates.keys()):
         from backend.scanner import invalidate_sub_settings_cache
         invalidate_sub_settings_cache()
+        # Scanned files follow the new languages / track settings, keeping
+        # the choices made by hand (backend/routes/scan.py).
+        if current_track_rules() != rules_before:
+            from backend.routes.scan import schedule_track_rules_update
+            schedule_track_rules_update(rules_before)
 
     # Invalidate auth cache if auth-related keys changed
     auth_keys = {"auth_enabled", "auth_username", "auth_password_hash", "api_key", "session_secret"}
@@ -1532,14 +1541,19 @@ class _LanguagePreviewBody(BaseModel):
 async def language_preview(body: _LanguagePreviewBody):
     """Which tracks of a few sample files these keep languages would keep
     and remove — nothing is saved."""
-    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, detect_native_language
-    audio_keep = {lang.lower() for lang in body.audio_languages}
-    sub_keep = {lang.lower() for lang in body.sub_languages}
+    import dataclasses
+    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, current_track_rules, detect_native_language
+    sub_keep = frozenset(lang.lower() for lang in body.sub_languages)
+    # The saved rules with these languages; choosing subtitle languages is
+    # what turns subtitle cleanup on.
+    rules = dataclasses.replace(
+        current_track_rules(), audio_keep=frozenset(lang.lower() for lang in body.audio_languages),
+        sub_keep=sub_keep, subs_enabled=bool(sub_keep))
     out = []
     for f in await _language_sample():
         native = detect_native_language(f["audio"])
-        audio = classify_audio_tracks(list(f["audio"]), native, f["duration"], keep_languages=audio_keep)
-        subs = classify_subtitle_tracks(list(f["subs"]), native, keep_languages=sub_keep)
+        audio = classify_audio_tracks(list(f["audio"]), native, f["duration"], rules=rules)
+        subs = classify_subtitle_tracks(list(f["subs"]), native, rules=rules)
         out.append({
             "name": os.path.basename(f["path"]),
             "native": native,

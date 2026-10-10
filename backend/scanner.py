@@ -6,6 +6,7 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 from backend.config import settings
@@ -1400,15 +1401,97 @@ def _is_cleanup_enabled(key: str, default: bool = True) -> bool:
     return val
 
 
+@dataclass(frozen=True)
+class TrackRules:
+    """The settings that decide which audio and subtitle tracks stay
+    (v0.10.0), as one value: classification can then use settings not saved
+    yet (the setup wizard's preview), and a change can be compared with the
+    settings before it."""
+    audio_enabled: bool = True
+    audio_keep: frozenset = frozenset()
+    keep_native_audio: bool = True
+    dedup: bool = True
+    subs_enabled: bool = True
+    sub_keep: frozenset = frozenset()
+    sub_keep_unknown: bool = True
+    keep_native_subs: bool = False
+
+
+def current_track_rules() -> TrackRules:
+    """The saved rules (cached; settings saves invalidate the cache)."""
+    sub_keep, sub_keep_unknown = _load_sub_settings()
+    return TrackRules(
+        audio_enabled=_is_cleanup_enabled("audio_cleanup_enabled"),
+        audio_keep=frozenset(lang.lower() for lang in _load_audio_keep_languages()),
+        keep_native_audio=_is_cleanup_enabled("keep_native_language"),
+        dedup=_is_cleanup_enabled("always_keep_dedup"),
+        subs_enabled=_is_cleanup_enabled("sub_cleanup_enabled"),
+        sub_keep=frozenset(sub_keep),
+        sub_keep_unknown=sub_keep_unknown,
+        keep_native_subs=_is_cleanup_enabled("keep_native_subs", default=False),
+    )
+
+
+# ── Keep/remove choices made by hand (v0.10.0) ───────────────────────────
+# A track whose keep/remove the user set themselves is marked "manual": true
+# in the stored JSON. Rescans and settings changes re-apply the language
+# rules to every other track, but leave these as they are.
+
+def _same_stream(a: dict, b: dict) -> bool:
+    return (a.get("stream_index") == b.get("stream_index")
+            and (a.get("codec") or "") == (b.get("codec") or "")
+            and a.get("channels") == b.get("channels"))
+
+
+def mark_manual_choices(edited: list[dict], stored: list[dict]) -> list[dict]:
+    """Mark the tracks of an edit whose keep/remove differs from the stored
+    one (or were marked before)."""
+    before = {t.get("stream_index"): t for t in stored}
+    for t in edited:
+        old = before.get(t.get("stream_index"))
+        if old is None or old.get("manual") or bool(old.get("keep", True)) != bool(t.get("keep", True)):
+            t["manual"] = True
+    return edited
+
+
+def keep_manual_choices(fresh: list[dict], stored: list[dict], audio: bool = False) -> list[dict]:
+    """Carry the hand-made choices of `stored` onto a fresh classification of
+    the same file — only onto the same stream (index, codec, channels); the
+    language may have been corrected since. `audio`: a file keeps at least
+    one audio track — if the choices would remove every one, the first track
+    the rules keep stays."""
+    manual = [t for t in stored if t.get("manual")]
+    rules_kept = next((t for t in fresh if t.get("keep", True)), None)
+    for t in fresh:
+        old = next((m for m in manual if _same_stream(m, t)), None)
+        if old is not None:
+            t["keep"] = bool(old.get("keep", True))
+            t["manual"] = True
+    if audio and fresh and rules_kept is not None and not any(t.get("keep", True) for t in fresh):
+        rules_kept["keep"] = True
+    return fresh
+
+
+def keep_manual_choices_json(fresh_json: Optional[str], stored_json: Optional[str], audio: bool = False) -> Optional[str]:
+    """keep_manual_choices() on JSON track lists (either may be empty)."""
+    if not fresh_json or not stored_json or '"manual"' not in stored_json:
+        return fresh_json
+    try:
+        fresh, stored = json.loads(fresh_json), json.loads(stored_json)
+    except (ValueError, TypeError):
+        return fresh_json
+    return json.dumps(keep_manual_choices(fresh, stored, audio=audio))
+
+
 def classify_audio_tracks(
     tracks: list[dict], native_language: str, duration: float = 0,
-    keep_languages: Optional[set[str]] = None,
+    rules: Optional["TrackRules"] = None,
 ) -> list[AudioTrack]:
     """
     Classify audio tracks for keep/remove.
 
-    `keep_languages` replaces the saved always-keep list (the setup
-    wizard's preview of a list not saved yet).
+    `rules`: the settings to classify by (default: the saved ones) — the
+    setup wizard's preview, and comparing old and new settings.
 
     Rules:
     - Always keep (locked=True): languages in settings.always_keep_languages
@@ -1416,8 +1499,9 @@ def classify_audio_tracks(
     - Ignore (keep=True, locked=False) und/unknown tracks
     - Everything else: keep=False
     """
+    r = rules or current_track_rules()
     # If audio cleanup is disabled, keep all tracks
-    if not _is_cleanup_enabled("audio_cleanup_enabled"):
+    if not r.audio_enabled:
         return [
             AudioTrack(
                 stream_index=t.get("stream_index", 0),
@@ -1431,10 +1515,9 @@ def classify_audio_tracks(
             ) for t in tracks
         ]
 
-    always_keep = (_load_audio_keep_languages() if keep_languages is None
-                   else {lang.lower() for lang in keep_languages})
+    always_keep = r.audio_keep
     native = native_language.lower() if native_language else "und"
-    auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
+    auto_keep_native = r.keep_native_audio
 
     # v0.5.16: smart selection per always-keep language.
     # Pre-v0.5.16: any track in an always-keep language got `locked=True`
@@ -1483,7 +1566,7 @@ def classify_audio_tracks(
     # pre-v0.5.16 behaviour (every track kept). Default True. When off,
     # every always-keep-language track is added to the winners set so
     # the keep=True branch fires for all of them.
-    dedup_enabled = _is_cleanup_enabled("always_keep_dedup")  # defaults True
+    dedup_enabled = r.dedup
 
     # First pass: for each always-keep language, decide which tracks
     # default to keep=True.
@@ -1650,22 +1733,20 @@ def invalidate_sub_settings_cache():
 
 def classify_subtitle_tracks(
     tracks: list[dict], native_language: str,
-    keep_languages: Optional[set[str]] = None,
+    rules: Optional["TrackRules"] = None,
 ) -> list["SubtitleTrack"]:
     """
     Classify subtitle tracks for keep/remove.
 
     Uses separate settings: sub_keep_languages and sub_keep_unknown.
     Forced subtitles stay when they're in a keep language, the native one
-    (if native subs are kept) or unknown. `keep_languages` replaces the saved
-    list for a preview, and turns cleanup on when it has any (choosing
-    subtitle languages is what turns it on).
+    (if native subs are kept) or unknown. `rules`: as classify_audio_tracks.
     """
     from backend.models import SubtitleTrack
 
+    r = rules or current_track_rules()
     # If subtitle cleanup is disabled, keep all tracks
-    enabled = bool(keep_languages) if keep_languages is not None else _is_cleanup_enabled("sub_cleanup_enabled")
-    if not enabled:
+    if not r.subs_enabled:
         return [
             SubtitleTrack(
                 stream_index=t.get("stream_index", 0),
@@ -1678,9 +1759,7 @@ def classify_subtitle_tracks(
             ) for t in tracks
         ]
 
-    sub_keep_langs, sub_keep_unknown = _load_sub_settings()
-    if keep_languages is not None:
-        sub_keep_langs = {lang.lower() for lang in keep_languages}
+    sub_keep_langs, sub_keep_unknown = r.sub_keep, r.sub_keep_unknown
     native = native_language.lower() if native_language else "und"
     # v0.5.20: subs use a SEPARATE native-language toggle from audio.
     # Pre-v0.5.20 they shared `keep_native_language`, which meant
@@ -1688,7 +1767,7 @@ def classify_subtitle_tracks(
     # almost always noise (German subs on a German movie etc.). The new
     # `keep_native_subs` defaults False; users who want native subs for
     # SDH / hearing-impaired reasons can opt in explicitly.
-    auto_keep_native = _is_cleanup_enabled("keep_native_subs", default=False)
+    auto_keep_native = r.keep_native_subs
 
     result = []
     for track in tracks:
