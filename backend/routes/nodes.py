@@ -420,6 +420,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
             "              'review_before_replace', 'convert_dts', 'audio_compat_track', 'audio_compat_codec', "
             "              'audio_compat_bitrate', 'audio_compat_loudnorm', "
+            "              'image_subs_to_srt', 'image_subs_keep_original', "
             "              'delete_external_subs_after_merge')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
@@ -467,6 +468,8 @@ async def request_job(req: RequestJobBody, request: Request):
     except (TypeError, ValueError):
         assigned["audio_compat_bitrate"] = 192
     assigned["audio_compat_loudnorm"] = (srv_settings.get("audio_compat_loudnorm") or "false").lower() == "true"
+    assigned["image_subs_to_srt"] = (srv_settings.get("image_subs_to_srt") or "false").lower() == "true"
+    assigned["image_subs_keep_original"] = (srv_settings.get("image_subs_keep_original") or "true").lower() == "true"
     from backend.converter import external_subs_to_merge
     external = []
     for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned

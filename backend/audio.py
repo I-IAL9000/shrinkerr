@@ -189,6 +189,8 @@ def build_remux_cmd(
             sub_codec_args += [f"-c:s:{out_sub_idx}", "copy"]
         lang = es.get("language") or "und"
         sub_codec_args += [f"-metadata:s:s:{out_sub_idx}", f"language={lang}"]
+        if es.get("title"):
+            sub_codec_args += [f"-metadata:s:s:{out_sub_idx}", f"title={es['title']}"]
         if es.get("forced"):
             sub_codec_args += [f"-disposition:s:{out_sub_idx}", "forced"]
         out_sub_idx += 1
@@ -262,6 +264,51 @@ async def remux_audio(
     audio_languages: dict[int, str] | None = None,
     proc_callback: Optional[Callable] = None,
     on_output_placed: Optional[Callable] = None,
+    image_subs_to_srt: bool = False,
+    keep_image_subs: bool = True,
+) -> dict:
+    """_remux_audio, after reading the kept image subtitles (PGS / VobSub)
+    into SRT tracks with OCR when `image_subs_to_srt` (v0.10.0): they're
+    added beside them, or replace them when `keep_image_subs` is False.
+    `progress_callback` then also gets step=…"""
+    ocr_dir: str | None = None
+    ocr_subs: list[dict] = []
+    if image_subs_to_srt:
+        from backend.converter import external_subs_to_merge
+        from backend.image_sub_ocr import image_subs_to_srt as read_into_srt, ocr_workdir, srt_plan
+        from backend.scanner import probe_file
+        tracks = ((await probe_file(input_path)) or {}).get("subtitle_tracks") or []
+        kept = set(keep_subtitle_indices) if keep_subtitle_indices is not None else None
+        plan = srt_plan(tracks, kept, await external_subs_to_merge(input_path))
+        if plan:
+            if progress_callback:
+                await progress_callback(0.0, step="Reading image subtitles (OCR)…")
+            ocr_dir = await asyncio.to_thread(ocr_workdir, input_path)
+            ocr_subs = await read_into_srt(input_path, plan, ocr_dir)
+            print(f"[REMUX] {len(ocr_subs)} of {len(plan)} image subtitle(s) read into SRT", flush=True)
+            if ocr_subs and not keep_image_subs:
+                replaced = {s["stream_index"] for s in ocr_subs}
+                every = keep_subtitle_indices if keep_subtitle_indices is not None else [t["stream_index"] for t in tracks]
+                keep_subtitle_indices = [i for i in every if i not in replaced]
+    try:
+        return await _remux_audio(input_path, keep_audio_indices, duration, progress_callback,
+                                  keep_subtitle_indices, audio_languages, proc_callback, on_output_placed,
+                                  ocr_subs=ocr_subs)
+    finally:
+        if ocr_dir:
+            shutil.rmtree(ocr_dir, ignore_errors=True)
+
+
+async def _remux_audio(
+    input_path: str,
+    keep_audio_indices: list[int],
+    duration: float = 0,
+    progress_callback: Optional[Callable] = None,
+    keep_subtitle_indices: list[int] | None = None,
+    audio_languages: dict[int, str] | None = None,
+    proc_callback: Optional[Callable] = None,
+    on_output_placed: Optional[Callable] = None,
+    ocr_subs: list[dict] | None = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -329,7 +376,7 @@ async def remux_audio(
     cmd = build_remux_cmd(
         input_path, temp_path, keep_audio_indices,
         keep_subtitle_indices=keep_subtitle_indices,
-        external_subtitle_files=ext_subs or None,
+        external_subtitle_files=[*(ext_subs or []), *(ocr_subs or [])] or None,
         subtitle_stream_codecs=sub_codecs or None,
         audio_languages=audio_languages,
         video_map=await _probe_video_map(input_path),

@@ -263,6 +263,8 @@ class SettingsUpdate(BaseModel):
     audio_compat_codec: Optional[str] = None
     audio_compat_bitrate: Optional[int] = None
     audio_compat_loudnorm: Optional[bool] = None
+    image_subs_to_srt: Optional[bool] = None  # v0.10.0
+    image_subs_keep_original: Optional[bool] = None
     tmdb_api_key: Optional[str] = None
     plex_url: Optional[str] = None
     plex_token: Optional[str] = None

@@ -2468,6 +2468,28 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     </div>
                   )}
                 </div>
+
+                {/* v0.10.0: image subtitles (PGS / VobSub) read into SRT tracks with OCR */}
+                <div style={{ borderTop: "1px solid var(--border)", marginTop: 16, paddingTop: 16 }}>
+                  <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsMedia:subtitles.imageSubs.title")}</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
+                    <input type="checkbox" checked={encoding.image_subs_to_srt ?? false}
+                      onChange={() => setEncoding({ ...encoding, image_subs_to_srt: !(encoding.image_subs_to_srt ?? false) })}
+                      style={{ flexShrink: 0 }} />
+                    <span style={labelStyle}>{t("settingsMedia:subtitles.imageSubs.toSrt")}</span>
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: -4, paddingLeft: 26, marginBottom: 12 }}>
+                    {t("settingsMedia:subtitles.imageSubs.toSrtHelp")}
+                  </div>
+                  {(encoding.image_subs_to_srt ?? false) && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 8 }}>
+                      <input type="checkbox" checked={encoding.image_subs_keep_original ?? true}
+                        onChange={() => setEncoding({ ...encoding, image_subs_keep_original: !(encoding.image_subs_keep_original ?? true) })}
+                        style={{ flexShrink: 0 }} />
+                      <span style={labelStyle}>{t("settingsMedia:subtitles.imageSubs.keepOriginal")}</span>
+                    </label>
+                  )}
+                </div>
               </div>
 
             </>

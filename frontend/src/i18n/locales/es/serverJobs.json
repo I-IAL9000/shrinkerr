@@ -14,7 +14,9 @@
     "vmafRemeasureRetry": "Nueva medición de VMAF (reintento)",
     "healthCheckMode": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",
     "healthCheckStatus": "comprobación de estado ($t(serverJobs:labels.healthStatus.{{status}}))",
-    "healthCheckInline": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))"
+    "healthCheckInline": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",
+    "readingImageSubs": "Leyendo los subtítulos de imagen (OCR)…",
+    "convertingSubtitles": "convirtiendo subtítulos"
   },
   "errors": {
     "fileNotFound": "Archivo no encontrado",

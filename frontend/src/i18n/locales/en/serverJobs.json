@@ -14,7 +14,9 @@
     "vmafRemeasureRetry": "VMAF remeasure (retry)",
     "healthCheckMode": "health-check ($t(serverJobs:labels.healthMode.{{mode}}))",
     "healthCheckStatus": "health-check ($t(serverJobs:labels.healthStatus.{{status}}))",
-    "healthCheckInline": "health check ($t(serverJobs:labels.healthMode.{{mode}}))"
+    "healthCheckInline": "health check ($t(serverJobs:labels.healthMode.{{mode}}))",
+    "readingImageSubs": "Reading image subtitles (OCR)…",
+    "convertingSubtitles": "converting subtitles"
   },
   "errors": {
     "fileNotFound": "File not found",

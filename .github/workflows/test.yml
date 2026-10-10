@@ -41,9 +41,9 @@ jobs:
           cache: pip
 
       - name: System deps
-        # A few tests shell out to ffmpeg / mkvtoolnix; install the binaries so
-        # they run rather than skip/error.
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix
+        # A few tests shell out to ffmpeg / mkvtoolnix / tesseract (subtitle
+        # OCR); install the binaries so they run rather than skip/error.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg mkvtoolnix tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra
 
       - name: Install Python deps
         run: |

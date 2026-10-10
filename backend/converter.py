@@ -91,6 +91,8 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("audio_compat_codec",               _ABSENT,   str),
     ("audio_compat_bitrate",             _ABSENT,   int),
     ("audio_compat_loudnorm",            _ABSENT,   _str_to_bool),
+    ("image_subs_to_srt",                _ABSENT,   _str_to_bool),
+    ("image_subs_keep_original",         _ABSENT,   _str_to_bool),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
     ("custom_ffmpeg_flags",              _ABSENT,   str),
@@ -882,6 +884,8 @@ def _build_ffmpeg_cmd_impl(
             # Set language metadata
             lang = es.get("language") or "und"
             cmd += [f"-metadata:s:s:{out_sub_idx}", f"language={lang}"]
+            if es.get("title"):
+                cmd += [f"-metadata:s:s:{out_sub_idx}", f"title={es['title']}"]
             # Set forced disposition
             if es.get("forced"):
                 cmd += [f"-disposition:s:{out_sub_idx}", "forced"]
@@ -3483,6 +3487,31 @@ async def convert_file(
         print(f"[CONVERT] Adding a stereo compatibility track ({compat_track['codec']} {compat_track['bitrate']}k"
               f"{', loudness-normalised' if compat_track['loudnorm'] else ''})", flush=True)
 
+    # v0.10.0: kept image subtitles (PGS / VobSub) read into SRT tracks with
+    # OCR and merged like sidecars. Not for discs (their subtitle streams
+    # aren't the probe's), after a pre-strip (indices changed) or for a
+    # command preview.
+    ocr_subs: list[dict] = []
+    ocr_dir: str | None = None
+    if (live_settings.get("image_subs_to_srt") and probe_data and not disc_type
+            and not prestrip_path and not command_only):
+        from backend.image_sub_ocr import image_subs_to_srt, ocr_workdir, srt_plan
+        _sub_tracks = probe_data.get("subtitle_tracks") or []
+        _ocr_plan = srt_plan(_sub_tracks, {t.get("stream_index") for t in _sub_tracks} - sub_remove_set,
+                             external_sub_files)
+        if _ocr_plan:
+            if progress_callback:
+                await progress_callback(progress=0, fps=0, eta_seconds=None, step="Reading image subtitles (OCR)…")
+            ocr_dir = await asyncio.to_thread(ocr_workdir, input_path)
+            ocr_subs = await image_subs_to_srt(input_path, _ocr_plan, ocr_dir)
+            if ocr_subs and not live_settings.get("image_subs_keep_original", True):
+                sub_remove_set |= {s["stream_index"] for s in ocr_subs}
+            print(f"[CONVERT] {len(ocr_subs)} of {len(_ocr_plan)} image subtitle(s) read into SRT", flush=True)
+
+    def _drop_ocr_dir() -> None:
+        if ocr_dir:
+            shutil.rmtree(ocr_dir, ignore_errors=True)
+
     # v0.5.6: thread cap from live settings (0 = ffmpeg auto).
     try:
         ffmpeg_threads = int(live_settings.get("ffmpeg_threads", 0) or 0)
@@ -3636,7 +3665,7 @@ async def convert_file(
             audio_streams_to_keep=audio_streams_to_keep,
             subtitle_streams_to_remove=sub_remove_set if sub_remove_set else None,
             video_map=video_map,
-            external_subtitle_files=external_sub_files,
+            external_subtitle_files=[*(external_sub_files or []), *ocr_subs] or None,
             ffmpeg_threads=ffmpeg_threads,
             use_hw_decode=use_hw,
             hw_decode_backend=_hw_backend,
@@ -3881,6 +3910,7 @@ async def convert_file(
             if prestrip_path:
                 try: Path(prestrip_path).unlink(missing_ok=True)
                 except OSError: pass
+            _drop_ocr_dir()
             return {"outcome": "fail", "result": {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}}
 
         return {"outcome": "ok"}
@@ -4029,6 +4059,7 @@ async def convert_file(
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
+        _drop_ocr_dir()
         return {"success": False, "output_path": None, "space_saved": 0, **_truncated}
     _out_dur = await _probe_output_duration(temp_path)
 
@@ -4144,6 +4175,7 @@ async def convert_file(
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
+        _drop_ocr_dir()
         # Capture the same encoding_stats payload a successful encode would
         # write, so the completed-jobs report shows the original-vs-discarded
         # comparison (size, bitrate, settings used). Without this the row
@@ -4629,6 +4661,7 @@ async def convert_file(
         if prestrip_path:
             try: Path(prestrip_path).unlink(missing_ok=True)
             except OSError: pass
+        _drop_ocr_dir()
         return {
             "success": True,              # the encode process worked; we just didn't accept the output
             "output_path": input_path,    # original untouched
@@ -4733,6 +4766,7 @@ async def convert_file(
                 Path(prestrip_path).unlink(missing_ok=True)
             except OSError:
                 pass
+        _drop_ocr_dir()
         print(f"[CONVERT] Holding the output for review: {review_path}", flush=True)
         return {
             **success,
@@ -4766,5 +4800,6 @@ async def convert_file(
             Path(prestrip_path).unlink(missing_ok=True)
         except OSError as exc:
             print(f"[CONVERT] Could not remove pre-strip temp {prestrip_path}: {exc}", flush=True)
+    _drop_ocr_dir()
 
     return {**success, "output_path": final_path, "backup_path": result_backup_path}

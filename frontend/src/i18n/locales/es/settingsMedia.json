@@ -453,6 +453,12 @@
       "mergeHelp": "Durante la conversión o el remux, incrusta en el contenedor MKV los archivos .srt, .ass, .ssa, .sub y .vtt externos que estén junto al vídeo. El idioma se detecta a partir del nombre del archivo (p. ej., <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Eliminar los archivos de subtítulos externos tras integrarlos",
       "deleteWarning": "Los archivos .srt/.ass originales se eliminarán permanentemente tras una integración correcta."
+    },
+    "imageSubs": {
+      "title": "Subtítulos de imagen",
+      "toSrt": "Convertir los subtítulos de imagen en texto (SRT)",
+      "toSrtHelp": "Los subtítulos PGS (Blu-ray) y VobSub (DVD) obligan a muchos reproductores a transcodificar para incrustarlos. Al convertir o limpiar un archivo, los subtítulos de imagen que conserva se leen con OCR y se añaden como pistas SRT en el mismo idioma (con el título «OCR»), salvo que ya tenga una pista de texto en ese idioma. La lectura tarda unos minutos por pista y no es perfecta. Cada idioma necesita su paquete de idioma de OCR (la imagen incluye los habituales).",
+      "keepOriginal": "Conservar también los subtítulos de imagen"
     }
   },
   "options": {

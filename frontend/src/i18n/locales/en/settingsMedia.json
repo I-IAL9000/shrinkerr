@@ -448,6 +448,12 @@
       "mergeHelp": "During conversion or remux, embed external .srt, .ass, .ssa, .sub, .vtt files found alongside the video into the MKV container. Language is detected from the filename (e.g. <code>.eng.srt</code>, <code>.en.forced.srt</code>).",
       "deleteAfter": "Delete external subtitle files after merge",
       "deleteWarning": "The original .srt/.ass files will be permanently deleted after a successful merge."
+    },
+    "imageSubs": {
+      "title": "Image subtitles",
+      "toSrt": "Convert image subtitles to text (SRT)",
+      "toSrtHelp": "PGS (Blu-ray) and VobSub (DVD) subtitles make many players transcode to burn them in. When a file is converted or cleaned up, the image subtitles it keeps are read with OCR and added as SRT tracks in the same language (titled \"OCR\"), unless it already has a text track in that language. Reading takes a few minutes per track and isn't perfect. Languages need their OCR language pack (the image includes the common ones).",
+      "keepOriginal": "Keep the image subtitles too"
     }
   },
   "options": {

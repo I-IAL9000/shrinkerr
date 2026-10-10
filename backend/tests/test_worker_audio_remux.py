@@ -47,7 +47,7 @@ async def test_worker_audio_job_passes_keep_lists(tmp_path, monkeypatch):
         return dict(PROBE)
 
     async def fake_remux(input_path, keep_audio_indices, duration=0, progress_callback=None,
-                         keep_subtitle_indices=None, audio_languages=None):
+                         keep_subtitle_indices=None, audio_languages=None, **kw):
         calls.append((keep_audio_indices, duration, keep_subtitle_indices))
         return {"success": True, "output_path": input_path, "space_saved": 10}
 

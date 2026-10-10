@@ -2924,13 +2924,22 @@ class QueueWorker:
             from backend.converter import _load_detected_audio_languages
             _remux_audio_langs = await _load_detected_audio_languages(current_file_path)
 
+            # v0.10.0: image subtitles to read into SRT tracks are a reason
+            # too (Settings → Subtitles).
+            from backend.converter import get_live_encoding_settings
+            from backend.image_sub_ocr import srt_plan
+            _live = await get_live_encoding_settings()
+            _image_subs_to_srt = bool(_live.get("image_subs_to_srt"))
+            _ocr_planned = _image_subs_to_srt and bool(srt_plan(
+                raw_subs, set(keep_sub_indices) if keep_sub_indices is not None else None))
+
             if (keep_indices != all_indices
                     or (keep_sub_indices is not None and keep_sub_indices != all_sub_indices)
-                    or _remux_audio_langs):
+                    or _remux_audio_langs or _ocr_planned):
                 # Throttled, awaited DB write — see comment on convert
                 # progress_cb above for why we DON'T use create_task here.
                 _audio_last_db = [0.0]
-                async def audio_progress_cb(progress: float, eta_seconds=None, speed=None):
+                async def audio_progress_cb(progress: float, eta_seconds=None, speed=None, step=None):
                     now = time.monotonic()
                     is_terminal = progress >= 99.99
                     if is_terminal or (now - _audio_last_db[0]) >= _PROGRESS_DB_WRITE_INTERVAL:
@@ -2946,7 +2955,7 @@ class QueueWorker:
                         fps=None,
                         speed=round(speed, 1) if speed else None,
                         eta=eta_seconds,
-                        step="removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else "reordering audio")),
+                        step=step or ("removing tracks" if audio_tracks_to_remove else ("removing subtitles" if subtitle_tracks_to_remove else ("applying language" if _remux_audio_langs else ("converting subtitles" if _ocr_planned else "reordering audio")))),
                         jobs_completed=jobs_completed,
                         jobs_total=jobs_total,
                         total_saved=total_saved,
@@ -2964,6 +2973,8 @@ class QueueWorker:
                     # v0.9.156: register the ffmpeg so Cancel can kill it.
                     proc_callback=lambda proc: self._active_procs.__setitem__(job_id, proc),
                     on_output_placed=lambda: self._finalize(job_id),
+                    image_subs_to_srt=_image_subs_to_srt,
+                    keep_image_subs=_live.get("image_subs_keep_original", True),
                 )
                 if not result["success"] and job_id in self._cancel_flags:
                     await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",

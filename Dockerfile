@@ -73,6 +73,7 @@ RUN set -eux; \
     apt-get upgrade -y --no-install-recommends; \
     apt-get install -y --no-install-recommends curl xz-utils libarchive-tools libbluray-bin mkvtoolnix \
         tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim tesseract-ocr-chi-tra tesseract-ocr-jpn tesseract-ocr-kor tesseract-ocr-rus tesseract-ocr-ara \
+        tesseract-ocr-fra tesseract-ocr-deu tesseract-ocr-spa tesseract-ocr-ita tesseract-ocr-por tesseract-ocr-nld tesseract-ocr-swe tesseract-ocr-dan tesseract-ocr-nor tesseract-ocr-fin tesseract-ocr-isl tesseract-ocr-pol tesseract-ocr-ces tesseract-ocr-hun tesseract-ocr-tur tesseract-ocr-ell tesseract-ocr-heb \
         libgl1 libglib2.0-0; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
         # All VA-API packages (runtime libs + Intel iHD + AMD radeonsi +

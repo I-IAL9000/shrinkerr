@@ -13,10 +13,15 @@ can't identify the result (typically because the sub is non-Latin and
 the Latin model produced garbage), re-OCR with the CJK/Cyrillic/Arabic
 tesseract packs and try again. langdetect then names the language.
 
-On-demand only. Fail-open: any failure returns (None, 0.0)."""
+On-demand only. Fail-open: any failure returns (None, 0.0).
+
+The same OCR also turns kept image subtitles into SRT tracks (v0.10.0,
+srt_plan / image_subs_to_srt) — players that can't show PGS or VobSub
+transcode to burn them in."""
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import shutil
 import tempfile
@@ -179,11 +184,11 @@ class _PgsRipError(Exception):
     burning minutes re-extracting. v0.9.53."""
 
 
-def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
-    """Run pgsrip on a .sup with the given tesseract language(s); read the
-    produced .srt and return its dialogue text. Sync (pgsrip is blocking);
-    the caller runs it in an executor. Returns None on empty output; raises
-    _PgsRipError when pgsrip cannot decode the .sup at all."""
+def _pgsrip_rip(sup_path: str, tess_langs: tuple[str, ...] = ()) -> str | None:
+    """Run pgsrip on a .sup; the path of the .srt it wrote, or None. Sync
+    (pgsrip is blocking). Raises _PgsRipError when pgsrip cannot decode the
+    .sup at all. pgsrip OCRs in the language named in the .sup's file name
+    (none: tesseract's default, English); `tess_langs` only labels the logs."""
     import io
     import logging
     _buf = io.StringIO()
@@ -213,6 +218,17 @@ def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
         # pass and the full-track retry, which fail identically. v0.9.53.
         if "error while trying to rip" in _pgs_err.lower():
             raise _PgsRipError(",".join(tess_langs))
+        return None
+    return srt
+
+
+def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
+    """Run pgsrip on a .sup with the given tesseract language(s); read the
+    produced .srt and return its dialogue text. Sync (pgsrip is blocking);
+    the caller runs it in an executor. Returns None on empty output; raises
+    _PgsRipError when pgsrip cannot decode the .sup at all."""
+    srt = _pgsrip_rip(sup_path, tess_langs)
+    if not srt:
         return None
     try:
         with open(srt, "rb") as fh:
@@ -298,10 +314,10 @@ def _normalize_idx_palette(idx_path: str) -> None:
         pass
 
 
-def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
-    """OCR a VobSub .idx/.sub pair to text with subtile-ocr (tesseract under
-    the hood). Sync (blocking); caller runs it in an executor. Fail-open:
-    returns None if the tool is absent or OCR fails."""
+def _subtile_ocr_run(idx_path: str, tess_lang: str) -> str | None:
+    """OCR a VobSub .idx/.sub pair with subtile-ocr (tesseract under the
+    hood) into an .srt beside it; its path, or None if the tool is absent or
+    OCR fails. Sync (blocking)."""
     import shutil as _shutil
     import subprocess
     exe = _shutil.which("subtile-ocr")
@@ -330,6 +346,16 @@ def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
         return None
     if not os.path.exists(out_srt):
         print(f"[IMG-OCR] subtile-ocr produced no srt ({tess_lang})", flush=True)
+        return None
+    return out_srt
+
+
+def _subtile_ocr_to_text(idx_path: str, tess_lang: str) -> str | None:
+    """OCR a VobSub .idx/.sub pair to text with subtile-ocr (tesseract under
+    the hood). Sync (blocking); caller runs it in an executor. Fail-open:
+    returns None if the tool is absent or OCR fails."""
+    out_srt = _subtile_ocr_run(idx_path, tess_lang)
+    if not out_srt:
         return None
     try:
         with open(out_srt, "rb") as fh:
@@ -494,3 +520,154 @@ async def detect_external_vobsub_language(idx_path: str) -> tuple[str | None, fl
         return (None, 0.0)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+# ── Image subtitles → SRT (v0.10.0) ────────────────────────────────────────
+
+IMAGE_SUB_CODECS = _PGS_CODECS + _VOBSUB_CODECS
+_TEXT_SUB_CODECS = ("subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "tx3g", "text")
+OCR_TRACK_TITLE = "OCR"
+
+
+@functools.lru_cache(maxsize=1)
+def tesseract_languages() -> frozenset:
+    """The installed tesseract language packs (empty: no tesseract)."""
+    import subprocess
+    try:
+        proc = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return frozenset()
+    lines = (proc.stdout or proc.stderr or "").splitlines()
+    return frozenset(line.strip() for line in lines if line.strip() and " " not in line.strip())
+
+
+def ocr_pack(language: str | None) -> str | None:
+    """The tesseract pack that reads subtitles in `language` (English for an
+    unknown one), or None when it isn't installed."""
+    from backend.scanner import _ISO_T_TO_B, normalize_lang
+    lang = normalize_lang(language)
+    to_t = {b: t for t, b in _ISO_T_TO_B.items()}
+    pack = "eng" if lang == "und" else {"chi": "chi_sim"}.get(lang) or to_t.get(lang, lang)
+    return pack if pack in tesseract_languages() else None
+
+
+def srt_plan(sub_tracks: list[dict], kept=None, merged: list[dict] | None = None) -> list[dict]:
+    """The image subtitle tracks (PGS / VobSub) to read into SRT tracks: the
+    kept ones with no text track in the same language (forced alike) kept or
+    merged from a sidecar, in a language whose tesseract pack is installed.
+    `sub_tracks`: a probe's subtitle_tracks; `kept`: the stream indices that
+    stay (None: all); `merged`: the sidecar subtitles being merged."""
+    from backend.scanner import normalize_lang
+    keep = [t for t in sub_tracks if kept is None or t.get("stream_index") in kept]
+    text = {(normalize_lang(t.get("language")), bool(t.get("forced")))
+            for t in [*keep, *(merged or [])] if (t.get("codec") or "").lower() in _TEXT_SUB_CODECS}
+    plan = []
+    for t in keep:
+        codec = (t.get("codec") or "").lower()
+        lang = normalize_lang(t.get("language"))
+        if codec not in IMAGE_SUB_CODECS or (lang, bool(t.get("forced"))) in text:
+            continue
+        pack = ocr_pack(lang)
+        # pgsrip names the pack by the language's code: no chi_sim, aze_cyrl…
+        if not pack or (codec in _PGS_CODECS and "_" in pack):
+            print(f"[IMG-OCR] No OCR language pack for {lang}: subtitle #{t.get('stream_index')} "
+                  f"stays an image", flush=True)
+            continue
+        plan.append({"stream_index": t.get("stream_index"), "codec": codec, "language": lang,
+                     "forced": bool(t.get("forced")), "title": t.get("title") or "", "pack": pack})
+    return plan
+
+
+def ocr_workdir(input_path: str) -> str:
+    """A fresh folder for one file's OCR under the system temp folder (never
+    the media folder). Folders over a day old — left by a job that failed
+    before removing its own — are swept first."""
+    import hashlib
+    import time
+    root = os.path.join(tempfile.gettempdir(), "shrinkerr-ocr")
+    os.makedirs(root, exist_ok=True)
+    for name in os.listdir(root):
+        path = os.path.join(root, name)
+        try:
+            if time.time() - os.path.getmtime(path) > 86400:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+    work = os.path.join(root, hashlib.sha1(input_path.encode()).hexdigest()[:16])
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
+    return work
+
+
+def _sup_path(workdir: str, stream_index: int, pack: str) -> str | None:
+    """Where pgsrip reads track `stream_index` with tesseract pack `pack`: it
+    takes the OCR language from the .sup's name, spelt its own way ("fra"
+    becomes ".fr.sup"). None when it can't name that pack."""
+    from pgsrip.media_path import MediaPath
+    path = str(MediaPath(os.path.join(workdir, f"s{stream_index}.{pack}.sup")))
+    language = MediaPath(path).language
+    return path if language and language.alpha3 == pack else None
+
+
+def _srt_has_text(path: str) -> bool:
+    try:
+        with open(path, "rb") as fh:
+            return bool(_strip_srt(fh.read().decode("utf-8", errors="replace")))
+    except OSError:
+        return False
+
+
+async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> list[dict]:
+    """Read the planned tracks (srt_plan) into .srt files in `workdir`, as
+    subtitles to merge: {path, codec, language, forced, title, stream_index}.
+    A track that can't be read is left out. One extraction pass per kind:
+    ffmpeg (mkvextract as the fallback) for PGS, mkvextract for VobSub."""
+    pgs: list[tuple[dict, str]] = []
+    for t in plan:
+        if t["codec"] not in _PGS_CODECS:
+            continue
+        try:
+            sup = _sup_path(workdir, t["stream_index"], t["pack"])
+        except Exception as exc:  # pgsrip missing
+            print(f"[IMG-OCR] PGS OCR unavailable: {exc}", flush=True)
+            sup = None
+        if sup:
+            pgs.append((t, sup))
+    vob = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in plan if t["codec"] in _VOBSUB_CODECS]
+    if pgs:
+        cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
+        for t, sup in pgs:
+            cmd += ["-map", f"0:{t['stream_index']}", "-c:s", "copy", sup]
+        if not await _run_extract(cmd, pgs[0][1], timeout=3600):
+            await _run_extract(_build_mkvextract_cmd(input_path, pgs[0][0]["stream_index"], pgs[0][1])
+                               + [f"{t['stream_index']}:{sup}" for t, sup in pgs[1:]], pgs[0][1], timeout=3600)
+    if vob:
+        await _run_extract(["mkvextract", "tracks", input_path, *[f"{t['stream_index']}:{idx}" for t, idx in vob]],
+                           vob[0][1], timeout=3600)
+
+    loop = asyncio.get_running_loop()
+    out = []
+    for t, src in [*pgs, *vob]:
+        if not (os.path.exists(src) and os.path.getsize(src) > 0):
+            print(f"[IMG-OCR] Couldn't extract subtitle #{t['stream_index']} for OCR", flush=True)
+            continue
+        try:
+            if t["codec"] in _PGS_CODECS:
+                srt = await loop.run_in_executor(None, _pgsrip_rip, src)
+            else:
+                srt = await loop.run_in_executor(None, _subtile_ocr_run, src, t["pack"])
+        except _PgsRipError:
+            srt = None
+        for leftover in (src, os.path.splitext(src)[0] + ".sub"):  # the image track's served its turn
+            try:
+                os.unlink(leftover)
+            except OSError:
+                pass
+        if not srt or not _srt_has_text(srt):
+            print(f"[IMG-OCR] OCR read no text from subtitle #{t['stream_index']}", flush=True)
+            continue
+        print(f"[IMG-OCR] Subtitle #{t['stream_index']} ({t['language']}, {t['pack']}) read into SRT", flush=True)
+        out.append({"path": srt, "codec": "subrip", "language": t["language"], "forced": t["forced"],
+                    "title": f"{t['title']} (OCR)" if t["title"] else OCR_TRACK_TITLE,
+                    "stream_index": t["stream_index"]})
+    return out
