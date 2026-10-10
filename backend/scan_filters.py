@@ -506,6 +506,10 @@ _FILTER_LIST = [
         "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.cutoff_unmet = 1)")),
     Filter("arr_unmonitored", "arr", sql=(
         "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.monitored = 0)")),
+    # In a Maintainerr collection: about to be removed (v0.10.0)
+    Filter("leaving_soon", "maintainerr", sql=(
+        "EXISTS (SELECT 1 FROM maintainerr_media m "
+        "WHERE substr(scan_results.file_path, 1, length(m.folder_path)) = m.folder_path)")),
     # Plex
     *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s))
       for s in ("watched", "unwatched", "watchlist")),

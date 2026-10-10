@@ -49,7 +49,10 @@
       "nothingRemoved": "No se elimina ninguna pista de audio ni de subtítulos",
       "hardlinked_one": "{{num}} archivo sigue con enlaces duros (en siembra) y se deja fuera",
       "hardlinked_many": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera",
-      "hardlinked_other": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera"
+      "hardlinked_other": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera",
+      "leavingSoon_one": "{{num}} archivo está en una colección de Maintainerr (se eliminará pronto) y se deja fuera",
+      "leavingSoon_many": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
+      "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera"
     }
   },
   "overrides": {

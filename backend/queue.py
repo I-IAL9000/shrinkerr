@@ -349,6 +349,7 @@ class JobQueue:
                     j.get("libx265_preset"),
                     j.get("target_resolution"),
                     j.get("priority") or 0,
+                    j.get("not_before"),
                 ))
                 inserted_mask.append(True)
 
@@ -357,8 +358,8 @@ class JobQueue:
                 "INSERT INTO jobs (file_path, job_type, status, encoder, "
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
-                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:
@@ -507,6 +508,8 @@ class JobQueue:
                     + ",".join(f"'{e}'" for e in native) + "))"
                 )
 
+            # Not before its time: an import waiting for Bazarr (v0.10.0).
+            affinity_sql += " AND (not_before IS NULL OR not_before <= ?)"
             if exclude_ids:
                 placeholders = ",".join("?" * len(exclude_ids))
                 query = (
@@ -514,12 +517,12 @@ class JobQueue:
                     f"AND id NOT IN ({placeholders}) "
                     f"ORDER BY priority DESC, queue_order ASC LIMIT 1"
                 )
-                async with db.execute(query, exclude_ids) as cur:
+                async with db.execute(query, [_utcnow(), *exclude_ids]) as cur:
                     row = await cur.fetchone()
             else:
                 async with db.execute(
                     f"SELECT * FROM jobs WHERE status = 'pending'{affinity_sql} "
-                    f"ORDER BY priority DESC, queue_order ASC LIMIT 1"
+                    f"ORDER BY priority DESC, queue_order ASC LIMIT 1", (_utcnow(),)
                 ) as cur:
                     row = await cur.fetchone()
             if row is None:

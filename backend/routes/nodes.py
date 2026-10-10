@@ -370,10 +370,12 @@ async def request_job(req: RequestJobBody, request: Request):
     try:
         # Health checks run on the server: workers had no handler for them and
         # reported them as passed without checking anything (v0.10.0).
+        from datetime import datetime, timezone
         async with db.execute(
             f"SELECT * FROM jobs WHERE status = 'pending' AND job_type != 'health_check' {affinity_filter} "
+            f"AND (not_before IS NULL OR not_before <= ?) "  # an import waiting for Bazarr (v0.10.0)
             f"ORDER BY priority DESC, queue_order ASC LIMIT 1",
-            affinity_params,
+            [*affinity_params, datetime.now(timezone.utc).isoformat()],
         ) as cur:
             job = await cur.fetchone()
     finally:

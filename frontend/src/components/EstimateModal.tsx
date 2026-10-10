@@ -317,7 +317,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 )}
               </div>
             )}
-            {estimate.total_files === 0 && (estimate.ignored_files > 0 || estimate.skipped_by_rules > 0 || estimate.hardlinked > 0) && (
+            {estimate.total_files === 0 && (estimate.ignored_files > 0 || estimate.skipped_by_rules > 0 || estimate.hardlinked > 0 || estimate.leaving_soon > 0) && (
               <div style={{ textAlign: "center", marginBottom: 12 }}>
                 <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: "var(--text-secondary)" }}>
                   <input type="checkbox" checked={overrideRules}
@@ -351,6 +351,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
               if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));
+              if (estimate.leaving_soon > 0) rows.push(t("scannerModals:estimate.whatHappens.leavingSoon", { count: estimate.leaving_soon, num: fmtNum(estimate.leaving_soon) }));
               return (
                 <div style={{ background: "var(--bg-primary)", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>{t("scannerModals:estimate.whatHappens.title")}</div>

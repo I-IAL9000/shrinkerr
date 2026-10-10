@@ -526,6 +526,12 @@ async def init_db():
             await db.execute("ALTER TABLE jobs ADD COLUMN cleared INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass
+        # v0.10.0: an imported file waits this long (Settings → Automation)
+        # so Bazarr can add its subtitles before it's converted and renamed.
+        try:
+            await db.execute("ALTER TABLE jobs ADD COLUMN not_before TEXT DEFAULT NULL")
+        except Exception:
+            pass
         # Migration: conversion log per file
         for col, coltype in [
             ("ffmpeg_command", "TEXT DEFAULT NULL"),
@@ -745,6 +751,10 @@ async def init_db():
         await db.execute(
             "CREATE TABLE IF NOT EXISTS watch_activity (folder_path TEXT NOT NULL, server TEXT NOT NULL, "
             "last_viewed INTEGER, added_at INTEGER, PRIMARY KEY (folder_path, server))")
+        # v0.10.0: folders of titles in Maintainerr's collections (backend/maintainerr.py).
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS maintainerr_media (folder_path TEXT PRIMARY KEY, collection TEXT, "
+            "synced_at TEXT)")
         # v0.10.0: saved views — named Scanner filters (routes/views.py).
         await db.execute(
             "CREATE TABLE IF NOT EXISTS saved_views (id INTEGER PRIMARY KEY AUTOINCREMENT, "

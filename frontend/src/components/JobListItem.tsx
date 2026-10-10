@@ -236,6 +236,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       {job.status === "pending" && (
         <>
           <span className="job-type-badge" style={{ background: "var(--bg-tertiary)" }}>{typeBadge}</span>
+          {/* v0.10.0: an import waiting for Bazarr's subtitles */}
+          {job.not_before && new Date(job.not_before).getTime() > Date.now() && (
+            <span title={t("queue:item.waitingHelp")}
+              style={{ fontSize: 10, padding: "1px 5px", borderRadius: 3, background: "var(--bg-tertiary)", color: "var(--caution)", marginLeft: 4 }}>
+              {t("queue:item.waitingUntil", { time: new Date(job.not_before).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}
+            </span>
+          )}
           {/* v0.9.38: encoder settings are irrelevant for an audio-only
               stream-copy remux — don't imply a re-encode that isn't happening.
               Nor for a health check (v0.10.0), which encodes nothing; as the

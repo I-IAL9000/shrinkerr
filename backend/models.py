@@ -250,6 +250,9 @@ class SettingsUpdate(BaseModel):
     auto_queue_priority: Optional[Any] = None
     auto_queue_view: Optional[Any] = None  # v0.10.0: a saved view's id; "" = every new file
     skip_hardlinked: Optional[bool] = None  # v0.10.0
+    import_delay_minutes: Optional[int] = None  # v0.10.0
+    maintainerr_url: Optional[str] = None
+    maintainerr_skip: Optional[bool] = None
     auto_convert_lossless: Optional[bool] = None
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None

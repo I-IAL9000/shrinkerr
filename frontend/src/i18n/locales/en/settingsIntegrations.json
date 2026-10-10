@@ -361,5 +361,14 @@
       "removeCondition": "Remove condition",
       "selectView": "— choose a view —"
     }
+  },
+  "maintainerr": {
+    "intro": "Titles in Maintainerr's collections are about to be removed: Shrinkerr leaves them out of the queue. Read after every full scan.",
+    "url": "Maintainerr URL",
+    "sync": "Read collections",
+    "synced_one": "{{count}} folder in Maintainerr's collections",
+    "synced_other": "{{count}} folders in Maintainerr's collections",
+    "notSetUp": "Enter Maintainerr's URL first",
+    "skip": "Don't queue titles Maintainerr is about to remove"
   }
 }

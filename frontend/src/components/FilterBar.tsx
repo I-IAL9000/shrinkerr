@@ -94,6 +94,9 @@ const FILTERS: { key: string; label?: string; labelKey?: string; hintKey?: strin
   { key: "_arr", label: "Sonarr/Radarr:", group: "divider" },
   { key: "arr_cutoff_unmet", labelKey: "scanner:filters.arrCutoffUnmet" },
   { key: "arr_unmonitored", labelKey: "scanner:filters.arrUnmonitored" },
+  // Maintainerr (v0.10.0): titles in its collections, about to be removed
+  { key: "_maintainerr", label: "Maintainerr:", group: "divider" },
+  { key: "leaving_soon", labelKey: "scanner:filters.leavingSoon" },
   // Plex group
   { key: "_plex", label: "Plex:", group: "divider" },
   { key: "plex_watched", labelKey: "scanner:filters.watched" },

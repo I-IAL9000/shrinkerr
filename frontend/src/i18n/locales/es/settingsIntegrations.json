@@ -369,5 +369,15 @@
       "removeCondition": "Quitar condición",
       "selectView": "— elige una vista —"
     }
+  },
+  "maintainerr": {
+    "intro": "Los títulos de las colecciones de Maintainerr se van a eliminar: Shrinkerr los deja fuera de la cola. Se lee tras cada escaneo completo.",
+    "url": "URL de Maintainerr",
+    "sync": "Leer colecciones",
+    "synced_one": "{{count}} carpeta en las colecciones de Maintainerr",
+    "synced_many": "{{count}} carpetas en las colecciones de Maintainerr",
+    "synced_other": "{{count}} carpetas en las colecciones de Maintainerr",
+    "notSetUp": "Introduce primero la URL de Maintainerr",
+    "skip": "No encolar títulos que Maintainerr va a eliminar"
   }
 }

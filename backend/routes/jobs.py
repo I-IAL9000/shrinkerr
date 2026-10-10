@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
@@ -421,7 +421,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         from backend.content_detect import SMART_CQ_KEYS
         smart_keys = (
             'min_bitrate_mbps', 'max_bitrate_mbps', 'min_file_size_mb',
-            'default_encoder', 'skip_hardlinked', *SMART_CQ_KEYS,
+            'default_encoder', 'skip_hardlinked', 'import_delay_minutes', 'maintainerr_skip', *SMART_CQ_KEYS,
         )
         filter_settings = {}
         async with db.execute(
@@ -434,6 +434,16 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
         max_bitrate_bps = int(filter_settings.get("max_bitrate_mbps", "0")) * 1_000_000
         min_file_size_bytes = int(filter_settings.get("min_file_size_mb", "0")) * 1024 * 1024
         skip_hardlinked = (filter_settings.get("skip_hardlinked") or "true").lower() == "true"  # the default: on
+        # Imports wait for Bazarr's subtitles (v0.10.0): new files only.
+        try:
+            delay = int(filter_settings.get("import_delay_minutes") or 0) if new_files else 0
+        except ValueError:
+            delay = 0
+        not_before = (datetime.now(timezone.utc) + timedelta(minutes=delay)).isoformat() if delay > 0 else None
+        # Titles Maintainerr is about to remove (v0.10.0).
+        from backend.maintainerr import in_folders, leaving_folders
+        leaving = (await leaving_folders(db)
+                   if (filter_settings.get("maintainerr_skip") or "true").lower() == "true" else [])
         from backend.content_detect import smart_cq_settings, smart_quality
         smart_settings = smart_cq_settings(filter_settings)
         default_encoder = filter_settings.get("default_encoder", "nvenc")
@@ -516,6 +526,9 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             # file frees nothing while the old one is kept (v0.10.0).
             if skip_hardlinked and not payload.override_rules and (row.get("link_count") or 1) > 1:
                 print(f"[QUEUE] Skipped {fp}: still hardlinked ({row['link_count']} links)", flush=True)
+                continue
+            if leaving and not payload.override_rules and in_folders(fp, leaving):
+                print(f"[QUEUE] Skipped {fp}: in a Maintainerr collection (leaving soon)", flush=True)
                 continue
 
             audio_remove, sub_remove, has_audio_work = track_work(row)
@@ -604,6 +617,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                     rule.get("queue_priority") or 0 if rule else 0,
                     1 if plex_prioritize and any(fp.startswith(uf) for uf in unwatched_folders) else 0,
                 ),
+                "not_before": not_before,
             })
 
         if ignored_by_rule > 0:
@@ -1872,7 +1886,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         # Load settings for smart CQ
         from backend.encoding_estimates import QUALITY_KEYS, effective_cq
         from backend.content_detect import SMART_CQ_KEYS
-        est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked',
+        est_keys = ('backup_original_days', 'trash_original_after_conversion', 'skip_hardlinked', 'maintainerr_skip',
                     *SMART_CQ_KEYS, *QUALITY_KEYS)
         est_settings = {}
         async with db.execute(
@@ -1997,6 +2011,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
         ignored_count = 0
         hardlinked = 0
         skip_hardlinked = (est_settings.get("skip_hardlinked") or "true").lower() == "true"
+        leaving_soon = 0
+        from backend.maintainerr import in_folders, leaving_folders
+        leaving = (await leaving_folders(db)
+                   if (est_settings.get("maintainerr_skip") or "true").lower() == "true" else [])
         # Per-file CQ values actually used in the savings calculation. The
         # response returns the median of these as the "representative" CQ,
         # which the modal's slider initializes to. Pre-v0.3.98 the response
@@ -2059,6 +2077,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 continue
             if skip_hardlinked and not payload.override_rules and (row.get("link_count") or 1) > 1:
                 hardlinked += 1  # left out, as add-from-scan leaves it (v0.10.0)
+                continue
+            if leaving and not payload.override_rules and in_folders(fp, leaving):
+                leaving_soon += 1  # in a Maintainerr collection, as add-from-scan leaves it
                 continue
 
             # The decision add-from-scan makes (v0.10.0): removals by keep
@@ -2222,6 +2243,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "skipped_by_rules": skipped,
             "ignored_files": ignored_count,
             "hardlinked": hardlinked,
+            "leaving_soon": leaving_soon,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
             "content_profiles": content_profiles,

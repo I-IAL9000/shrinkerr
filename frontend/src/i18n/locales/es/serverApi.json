@@ -115,5 +115,8 @@
     "notFound": "Vista no encontrada",
     "inUseByAutoQueue": "La cola automática está limitada a esta vista.",
     "inUseByRules": "Estas reglas usan la vista: {{rules}}."
+  },
+  "arr": {
+    "maintainerrFailed": "Maintainerr: {{error}}"
   }
 }

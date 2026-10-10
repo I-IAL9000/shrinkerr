@@ -212,7 +212,9 @@
       "audio": "Limpieza de audio/subtítulos",
       "combined": "Conversión + limpieza",
       "health_check": "Comprobación de estado"
-    }
+    },
+    "waitingUntil": "espera hasta las {{time}}",
+    "waitingHelp": "Recién importado: espera para que Bazarr añada antes los subtítulos (Ajustes → Automatización)."
   },
   "panel": {
     "selected_one": "{{count}} seleccionado",

@@ -121,6 +121,10 @@ _ENCODING_DEFAULTS = {
     # v0.10.0: leave files still hardlinked elsewhere (seeding) alone —
     # converting them frees nothing. Existing installs keep "false".
     "skip_hardlinked": "true",
+    # v0.10.0: imports wait N minutes for Bazarr; Maintainerr's collections are skipped
+    "import_delay_minutes": "0",
+    "maintainerr_url": "",
+    "maintainerr_skip": "true",
     "auto_convert_lossless": "false",
     "lossless_target_codec": "eac3",
     "lossless_target_bitrate": "640",
@@ -628,6 +632,9 @@ async def get_encoding_settings():
     result["auto_queue_priority"] = max(0, min(2, _aqp))
     result["auto_queue_view"] = merged.get("auto_queue_view", "") or ""
     result["skip_hardlinked"] = merged.get("skip_hardlinked", "true").lower() == "true"
+    result["import_delay_minutes"] = int(merged.get("import_delay_minutes", "0") or 0)
+    result["maintainerr_url"] = merged.get("maintainerr_url", "")
+    result["maintainerr_skip"] = merged.get("maintainerr_skip", "true").lower() == "true"
     try:
         result["always_keep_languages"] = json.loads(
             merged.get("always_keep_languages", '[]')
@@ -1084,6 +1091,14 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["auto_queue_view"] = view
         if update.skip_hardlinked is not None:
             updates["skip_hardlinked"] = "true" if update.skip_hardlinked else "false"
+        if update.import_delay_minutes is not None:
+            updates["import_delay_minutes"] = str(max(0, min(1440, update.import_delay_minutes)))
+        if update.maintainerr_skip is not None:
+            updates["maintainerr_skip"] = "true" if update.maintainerr_skip else "false"
+        if update.maintainerr_url is not None:
+            from backend.ssrf_guard import validate_outbound_url
+            updates["maintainerr_url"] = (validate_outbound_url(update.maintainerr_url.strip(), label="Maintainerr URL")
+                                          if update.maintainerr_url.strip() else "")
         if update.auto_convert_lossless is not None:
             updates["auto_convert_lossless"] = "true" if update.auto_convert_lossless else "false"
         if update.lossless_target_codec is not None:

@@ -165,7 +165,8 @@
     "notWatched6m": "6 meses",
     "notWatched12m": "1 año",
     "notWatched24m": "2 años",
-    "notWatchedHint": "Nada reproducido en Plex, Jellyfin o Emby en ese tiempo, y en la biblioteca al menos ese tiempo. Se lee tras cada escaneo completo; las reproducciones son las de la cuenta con la que se conecta Shrinkerr."
+    "notWatchedHint": "Nada reproducido en Plex, Jellyfin o Emby en ese tiempo, y en la biblioteca al menos ese tiempo. Se lee tras cada escaneo completo; las reproducciones son las de la cuenta con la que se conecta Shrinkerr.",
+    "leavingSoon": "Se eliminará pronto"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",

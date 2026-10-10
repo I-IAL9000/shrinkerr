@@ -408,7 +408,7 @@ def test_the_filter_bar_groups_are_the_server_groups():
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
                      "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture",
-                     "_arr": "arr", "_not_watched": "not_watched"}
+                     "_arr": "arr", "_not_watched": "not_watched", "_maintainerr": "maintainerr"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

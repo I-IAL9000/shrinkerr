@@ -22,7 +22,7 @@ import {
   getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
   type PlexAuthStatus, type PlexServer, type ChangelogEntry,
-  type EncoderCaps, getViews, type SavedView, syncArrStatus,
+  type EncoderCaps, getViews, type SavedView, syncArrStatus, syncMaintainerr,
 } from "../api";
 import ChangelogEntryView from "../components/ChangelogEntry";
 import ChangelogModal from "../components/ChangelogModal";
@@ -3121,6 +3121,32 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   >{t("settingsIntegrations:arr.syncStatus")}</button>
                 </div>
 
+                {/* Maintainerr (v0.10.0): leave out what it's about to remove */}
+                <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>Maintainerr</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:maintainerr.intro")}</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input style={{ ...inputStyle, flex: "1 1 260px" }} aria-label={t("settingsIntegrations:maintainerr.url")}
+                      placeholder="http://maintainerr:6246"
+                      value={encoding?.maintainerr_url || ""}
+                      onChange={e => setEncoding({ ...encoding, maintainerr_url: e.target.value })} />
+                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                      onClick={async () => {
+                        try {
+                          if (!(await saveChanges(true))) return;
+                          const res = await syncMaintainerr();
+                          if (res.folders == null) toast(t("settingsIntegrations:maintainerr.notSetUp"), "error");
+                          else toast(t("settingsIntegrations:maintainerr.synced", { count: res.folders }), "success");
+                        } catch (err: any) { toast(err.message, "error"); }
+                      }}>{t("settingsIntegrations:maintainerr.sync")}</button>
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginTop: 10 }}>
+                    <input type="checkbox" checked={encoding?.maintainerr_skip ?? true}
+                      onChange={e => setEncoding({ ...encoding, maintainerr_skip: e.target.checked })} />
+                    <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsIntegrations:maintainerr.skip")}</span>
+                  </label>
+                </div>
+
                 {/* Connect → Webhook (v0.10.0): queue each import, for torrent setups */}
                 <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>{t("settingsIntegrations:arr.connect.title")}</div>
@@ -3454,6 +3480,18 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </label>
                   <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
                     {t("settingsSystem:automation.filters.skipHardlinkedHelp")}
+                  </div>
+                  {/* v0.10.0: give Bazarr time to add subtitles before an import is converted */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+                    <span style={labelStyle}>{t("settingsSystem:automation.filters.importDelay")}</span>
+                    <input type="number" min={0} max={1440} style={{ ...inputStyle, width: 80 }}
+                      aria-label={t("settingsSystem:automation.filters.importDelay")}
+                      value={encoding?.import_delay_minutes ?? 0}
+                      onChange={e => setEncoding({ ...encoding, import_delay_minutes: Math.max(0, parseInt(e.target.value) || 0) })} />
+                    <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("settingsSystem:automation.filters.minutes")}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.6 }}>
+                    {t("settingsSystem:automation.filters.importDelayHelp")}
                   </div>
                 </div>
 

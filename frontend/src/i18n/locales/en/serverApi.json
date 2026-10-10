@@ -115,5 +115,8 @@
     "notFound": "View not found",
     "inUseByAutoQueue": "The auto-queue is limited to this view.",
     "inUseByRules": "Rules use this view: {{rules}}."
+  },
+  "arr": {
+    "maintainerrFailed": "Maintainerr: {{error}}"
   }
 }

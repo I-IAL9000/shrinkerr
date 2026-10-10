@@ -909,6 +909,11 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
             except Exception as exc:
                 print(f"[SCANNER] Sonarr/Radarr status sync skipped: {exc}", flush=True)
             try:
+                from backend.maintainerr import sync_maintainerr
+                await sync_maintainerr()  # its "leaving soon" collections (v0.10.0)
+            except Exception as exc:
+                print(f"[SCANNER] Maintainerr sync skipped: {exc}", flush=True)
+            try:
                 from backend.routes.posters import start_prefetch
                 await start_prefetch()
                 print(f"[SCANNER] Poster prefetch started", flush=True)

@@ -159,7 +159,8 @@
     "notWatched6m": "6 months",
     "notWatched12m": "1 year",
     "notWatched24m": "2 years",
-    "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read after each full scan; the plays are those of the account Shrinkerr connects with."
+    "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read after each full scan; the plays are those of the account Shrinkerr connects with.",
+    "leavingSoon": "Leaving soon"
   },
   "stats": {
     "filesToConvert": "Files to convert",

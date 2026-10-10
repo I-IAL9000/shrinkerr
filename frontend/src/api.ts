@@ -298,6 +298,8 @@ export interface NodeMetricsEntry {
 }
 // Nodes → "Add a remote worker" (v0.10.0): image tags matching this server.
 export interface WorkerSetupInfo { image: string; tags: { cpu: string; intel_amd: string; nvidia: string }; media_root: string }
+// Maintainerr (v0.10.0): read its collections now. folders: null = not set up.
+export const syncMaintainerr = () => apiFetch<{ folders: number | null }>("/arr/maintainerr-sync", { method: "POST" });
 export const getWorkerSetup = () => apiFetch<WorkerSetupInfo>("/nodes/worker-setup");
 export const getNodeMetrics = () => apiFetch<{ nodes: NodeMetricsEntry[] }>("/nodes/metrics");
 export const removeNode = (nodeId: string) => apiFetch(`/nodes/${nodeId}`, { method: "DELETE" });

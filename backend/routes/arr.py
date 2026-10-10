@@ -336,6 +336,17 @@ async def research_bulk(payload: BulkResearchRequest):
     }
 
 
+@router.post("/maintainerr-sync")
+async def maintainerr_sync():
+    """Read Maintainerr's collections now (also after every full scan): the
+    folders the queue leaves out. {"folders": n}, or null when not set up."""
+    from backend.maintainerr import sync_maintainerr
+    try:
+        return {"folders": await sync_maintainerr()}
+    except Exception as exc:
+        raise ApiError(502, f"Maintainerr: {exc}", code="arr.maintainerrFailed", params={"error": str(exc)})
+
+
 @router.post("/sync-status")
 async def sync_status():
     """Read cutoff and monitoring from Sonarr / Radarr now (also after every

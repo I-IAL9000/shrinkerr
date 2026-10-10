@@ -46,7 +46,9 @@
       "subsRemoved": "Subtitles removed: {{list}}",
       "nothingRemoved": "No audio or subtitle tracks are removed",
       "hardlinked_one": "{{num}} file is still hardlinked (seeding) and is left out",
-      "hardlinked_other": "{{num}} files are still hardlinked (seeding) and are left out"
+      "hardlinked_other": "{{num}} files are still hardlinked (seeding) and are left out",
+      "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
+      "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out"
     }
   },
   "overrides": {

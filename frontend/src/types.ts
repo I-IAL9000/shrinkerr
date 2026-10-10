@@ -128,6 +128,8 @@ export interface Job {
   vmaf_uncertain?: boolean;
   // VMAF score on completed jobs (mirrored from scan_results).
   vmaf_score?: number | null;
+  // An import waiting for Bazarr until then (v0.10.0)
+  not_before?: string | null;
 }
 
 export interface WorkerNode {
