@@ -500,6 +500,11 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "lossless_target_bitrate": int(job.get("lossless_target_bitrate") or 640),
                 "lossless_keep_object_audio": bool(job.get("lossless_keep_object_audio", True)),
                 "review_before_replace": bool(job.get("review_before_replace", False)),
+                "convert_dts": bool(job.get("convert_dts", False)),
+                "audio_compat_track": bool(job.get("audio_compat_track", False)),
+                "audio_compat_codec": job.get("audio_compat_codec") or "aac",
+                "audio_compat_bitrate": int(job.get("audio_compat_bitrate") or 192),
+                "audio_compat_loudnorm": bool(job.get("audio_compat_loudnorm", False)),
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server

@@ -101,7 +101,8 @@
     "postScriptNeedsAuth": "post_conversion_script runs arbitrary commands after every job. Enable password auth (Settings → System → Authentication) before configuring this setting so it can't be changed with just an API key.",
     "restoreInvalidDb": "Invalid database in backup: {{error}}",
     "restoreMissingDb": "Backup zip must contain shrinkerr.db or squeezarr.db",
-    "restoreNotZip": "Must upload a .zip file"
+    "restoreNotZip": "Must upload a .zip file",
+    "invalidCompatCodec": "audio_compat_codec must be aac, eac3 or ac3"
   },
   "url": {
     "blockedAddress": "{{label}} resolves to a blocked address ({{address}}). Link-local / IMDS / IPv6 site-local ranges are rejected to prevent SSRF.",

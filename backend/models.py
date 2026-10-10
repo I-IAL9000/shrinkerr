@@ -258,6 +258,11 @@ class SettingsUpdate(BaseModel):
     lossless_target_codec: Optional[str] = None
     lossless_target_bitrate: Optional[int] = None
     lossless_keep_object_audio: Optional[bool] = None
+    convert_dts: Optional[bool] = None  # v0.10.0
+    audio_compat_track: Optional[bool] = None
+    audio_compat_codec: Optional[str] = None
+    audio_compat_bitrate: Optional[int] = None
+    audio_compat_loudnorm: Optional[bool] = None
     tmdb_api_key: Optional[str] = None
     plex_url: Optional[str] = None
     plex_token: Optional[str] = None

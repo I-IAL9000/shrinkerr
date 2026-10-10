@@ -86,6 +86,11 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("lossless_target_bitrate",          _ABSENT,   int),
     ("lossless_keep_object_audio",       _ABSENT,   _str_to_bool),
     ("review_before_replace",            _ABSENT,   _str_to_bool),
+    ("convert_dts",                      _ABSENT,   _str_to_bool),
+    ("audio_compat_track",               _ABSENT,   _str_to_bool),
+    ("audio_compat_codec",               _ABSENT,   str),
+    ("audio_compat_bitrate",             _ABSENT,   int),
+    ("audio_compat_loudnorm",            _ABSENT,   _str_to_bool),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
     ("custom_ffmpeg_flags",              _ABSENT,   str),
@@ -170,11 +175,37 @@ def is_object_audio(profile: str = "", title: str = "") -> bool:
     return "atmos" in text or any(x in text for x in ("dts:x", "dts-x", "dtsx"))
 
 
-def lossless_to_convert(codec: str, profile: str = "", title: str = "", keep_object_audio: bool = True) -> bool:
-    """Whether "Convert lossless audio" re-encodes this track. Not Atmos or
-    DTS:X while `keep_object_audio` (v0.10.0): a lossy encode keeps the bed
-    and drops the objects."""
-    return is_lossless_audio(codec, profile) and not (keep_object_audio and is_object_audio(profile, title))
+def lossless_to_convert(codec: str, profile: str = "", title: str = "", keep_object_audio: bool = True,
+                        convert_dts: bool = False) -> bool:
+    """Whether "Convert lossless audio" re-encodes this track — and, with
+    `convert_dts` (v0.10.0), lossy DTS too. Not Atmos or DTS:X while
+    `keep_object_audio` (v0.10.0): a lossy encode keeps the bed and drops
+    the objects."""
+    if keep_object_audio and is_object_audio(profile, title):
+        return False
+    return is_lossless_audio(codec, profile) or (convert_dts and (codec or "").lower() == "dts")
+
+
+# The stereo compatibility track's title (v0.10.0): how scans recognise it
+# and keep it.
+COMPAT_TRACK_TITLE = "Stereo (compatibility)"
+
+
+def compat_track_plan(kept_tracks: list[dict], settings: dict) -> Optional[dict]:
+    """The stereo compatibility track to add (v0.10.0), or None: made from
+    the first kept track when it's surround and its language has no stereo
+    track yet."""
+    if not settings.get("audio_compat_track") or not kept_tracks:
+        return None
+    main = kept_tracks[0]
+    lang = (main.get("language") or "und").lower()
+    # (the main track itself counts: a stereo main track needs no stereo copy)
+    if any((t.get("channels") or 0) <= 2 and (t.get("language") or "und").lower() == lang for t in kept_tracks):
+        return None
+    return {"source": main["stream_index"], "language": lang, "out_index": len(kept_tracks),
+            "codec": (settings.get("audio_compat_codec") or "aac").lower(),
+            "bitrate": int(settings.get("audio_compat_bitrate") or 192),
+            "loudnorm": bool(settings.get("audio_compat_loudnorm"))}
 
 
 RESOLUTION_MAP = {
@@ -375,6 +406,8 @@ def _build_ffmpeg_cmd_impl(
     # language at scan time. Regular files pass None and rely on ffmpeg's
     # tag-copy (the source container still has the tags).
     disc_audio_languages: list[str] | None = None,
+    # v0.10.0: a stereo compatibility track to add (compat_track_plan).
+    compat_track: dict | None = None,
 ) -> list[str]:
     # Hardware-device init for VAAPI / QSV. Both must come BEFORE -i.
     #
@@ -705,7 +738,8 @@ def _build_ffmpeg_cmd_impl(
             src_profile = (track.get("profile") or "")
             if target_lossless_codec and lossless_to_convert(
                     src_codec, src_profile, track.get("title") or "",
-                    (lossless_conversion or {}).get("keep_objects", True)):
+                    (lossless_conversion or {}).get("keep_objects", True),
+                    (lossless_conversion or {}).get("convert_dts", False)):
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(target_lossless_codec, target_lossless_bitrate)
             else:
                 cmd += [f"-c:a:{out_idx}"] + _audio_codec_args(audio_codec, audio_bitrate)
@@ -734,7 +768,8 @@ def _build_ffmpeg_cmd_impl(
             for idx, stream_codec in enumerate(audio_stream_codecs):
                 profile = profiles[idx] if idx < len(profiles) else ""
                 title = titles[idx] if idx < len(titles) else ""
-                if lossless_to_convert(stream_codec, profile, title, lossless_conversion.get("keep_objects", True)):
+                if lossless_to_convert(stream_codec, profile, title, lossless_conversion.get("keep_objects", True),
+                                       lossless_conversion.get("convert_dts", False)):
                     args = _audio_codec_args(target_codec, target_bitrate)
                     cmd += [f"-c:a:{idx}"] + args
                 else:
@@ -751,6 +786,18 @@ def _build_ffmpeg_cmd_impl(
                 lang = _real_lang(lang_code)
                 if lang:
                     cmd += [f"-metadata:s:a:{idx}", f"language={lang}"]
+
+    # v0.10.0: the stereo compatibility track — the main track downmixed,
+    # optionally loudness-normalised (loudnorm outputs 192 kHz: back to 48).
+    if compat_track:
+        n = compat_track["out_index"]
+        cmd += ["-map", f"0:{compat_track['source']}", f"-c:a:{n}",
+                *_audio_codec_args(compat_track["codec"], compat_track["bitrate"]),
+                f"-ac:a:{n}", "2", f"-ar:a:{n}", "48000"]
+        if compat_track.get("loudnorm"):
+            cmd += [f"-filter:a:{n}", "loudnorm=I=-16:TP=-1.5:LRA=11"]
+        cmd += [f"-metadata:s:a:{n}", f"title={COMPAT_TRACK_TITLE}",
+                f"-metadata:s:a:{n}", f"language={compat_track['language']}", f"-disposition:a:{n}", "0"]
 
     # Map subtitle streams. Matroska accepts many text/image codecs as-is (copy),
     # but some codecs (notably mp4's `mov_text`) need to be transcoded to a
@@ -1219,7 +1266,8 @@ def _build_audio_conversion_summary(
         for t in probe_audio_tracks:
             codec = t.get("codec", "")
             profile = t.get("profile", "")
-            if lossless_to_convert(codec, profile, t.get("title") or "", lossless_conversion.get("keep_objects", True)):
+            if lossless_to_convert(codec, profile, t.get("title") or "", lossless_conversion.get("keep_objects", True),
+                                   lossless_conversion.get("convert_dts", False)):
                 name = get_audio_display_name(codec, profile)
                 if name:
                     sources.add(name)
@@ -3044,15 +3092,17 @@ async def convert_file(
                 audio_stream_profiles = [t.get("profile", "") for t in probe_audio_tracks]
                 audio_stream_titles = [t.get("title") or "" for t in probe_audio_tracks]
                 keep_objects = live_settings.get("lossless_keep_object_audio", True)
+                convert_dts = bool(live_settings.get("convert_dts"))
                 tracks = list(zip(audio_stream_codecs, audio_stream_profiles, audio_stream_titles))
-                to_convert = [c for c, p, ti in tracks if lossless_to_convert(c, p, ti, keep_objects)]
-                kept = [c for c, p, ti in tracks if is_lossless_audio(c, p) and not lossless_to_convert(c, p, ti, keep_objects)]
+                to_convert = [c for c, p, ti in tracks if lossless_to_convert(c, p, ti, keep_objects, convert_dts)]
+                kept = [c for c, p, ti in tracks
+                        if is_lossless_audio(c, p) and not lossless_to_convert(c, p, ti, keep_objects, convert_dts)]
                 if kept:
                     print(f"[CONVERT] Keeping Atmos / DTS:X lossless ({', '.join(kept)})", flush=True)
                 if to_convert:
                     lossless_conversion = {"codec": target_codec, "bitrate": target_bitrate,
                                            "profiles": audio_stream_profiles, "titles": audio_stream_titles,
-                                           "keep_objects": keep_objects}
+                                           "keep_objects": keep_objects, "convert_dts": convert_dts}
                     print(f"[CONVERT] Lossless audio detected ({', '.join(to_convert)}), converting to {target_codec} {target_bitrate}k", flush=True)
     except Exception as exc:
         print(f"[CONVERT] Failed to probe file: {exc}", flush=True)
@@ -3424,6 +3474,15 @@ async def convert_file(
     # Load external subtitle files to merge (if the setting is enabled)
     external_sub_files = external_subs if external_subs is not None else await external_subs_to_merge(input_path)
 
+    # v0.10.0: a stereo compatibility track, from the main kept track (after
+    # any pre-strip pass, whose re-probe set the stream indices). Not for
+    # discs: their stream indices aren't the probe's.
+    compat_track = None if disc_type else compat_track_plan(
+        audio_streams_to_keep if audio_streams_to_keep is not None else (probe_audio_tracks or []), live_settings)
+    if compat_track:
+        print(f"[CONVERT] Adding a stereo compatibility track ({compat_track['codec']} {compat_track['bitrate']}k"
+              f"{', loudness-normalised' if compat_track['loudnorm'] else ''})", flush=True)
+
     # v0.5.6: thread cap from live settings (0 = ffmpeg auto).
     try:
         ffmpeg_threads = int(live_settings.get("ffmpeg_threads", 0) or 0)
@@ -3588,6 +3647,7 @@ async def convert_file(
             nvenc_bit_depth=nvenc_effective_bit_depth,
             pre_input_args=ffmpeg_input_args or None,
             disc_audio_languages=disc_audio_languages,
+            compat_track=compat_track,
         )
         # Append custom ffmpeg flags if configured (before the output path).
         if custom_flags:

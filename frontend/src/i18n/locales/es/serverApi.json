@@ -101,7 +101,8 @@
     "postScriptNeedsAuth": "post_conversion_script ejecuta comandos arbitrarios después de cada trabajo. Activa la autenticación por contraseña (Ajustes → Sistema → Autenticación) antes de configurar este ajuste, para que no se pueda cambiar solo con una clave de API.",
     "restoreInvalidDb": "Base de datos no válida en la copia de seguridad: {{error}}",
     "restoreMissingDb": "El zip de la copia de seguridad debe contener shrinkerr.db o squeezarr.db",
-    "restoreNotZip": "Debes subir un archivo .zip"
+    "restoreNotZip": "Debes subir un archivo .zip",
+    "invalidCompatCodec": "audio_compat_codec debe ser aac, eac3 o ac3"
   },
   "url": {
     "blockedAddress": "{{label}} se resuelve a una dirección bloqueada ({{address}}). Los rangos link-local, IMDS e IPv6 site-local se rechazan para evitar SSRF.",

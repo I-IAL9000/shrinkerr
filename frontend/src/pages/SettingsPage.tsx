@@ -2175,6 +2175,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               <span>128 kbps</span><span>256</span><span>384</span><span>512</span><span>640 kbps</span>
                             </div>
                           </div>
+                          {/* v0.10.0: lossy DTS to the same codec */}
+                          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                            <input type="checkbox" checked={encoding.convert_dts ?? false}
+                              onChange={() => setEncoding({ ...encoding, convert_dts: !encoding.convert_dts })}
+                              style={{ flexShrink: 0 }} />
+                            <span style={labelStyle}>{t("settingsMedia:audio.lossless.convertDts")}</span>
+                          </label>
                           {/* v0.10.0: a lossy encode keeps the bed and drops the objects */}
                           <div>
                             <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -2185,6 +2192,38 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             </label>
                             <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.lossless.keepObjectsHelp")}</div>
                           </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* v0.10.0: a stereo compatibility track beside the original audio */}
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 16 }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                        <input type="checkbox" checked={encoding.audio_compat_track ?? false}
+                          onChange={() => setEncoding({ ...encoding, audio_compat_track: !encoding.audio_compat_track })}
+                          style={{ flexShrink: 0 }} />
+                        <span style={labelStyle}>{t("settingsMedia:audio.compat.label")}</span>
+                      </label>
+                      <div style={{ ...helpStyle, paddingLeft: 26 }}>{t("settingsMedia:audio.compat.help")}</div>
+                      {encoding.audio_compat_track && (
+                        <div style={{ paddingLeft: 26, marginTop: 10, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+                          <select aria-label={t("settingsMedia:audio.compat.codec")} value={encoding.audio_compat_codec || "aac"}
+                            onChange={e => setEncoding({ ...encoding, audio_compat_codec: e.target.value })}
+                            style={{ ...inputStyle, width: "auto" }}>
+                            <option value="aac">AAC</option>
+                            <option value="eac3">EAC3 (Dolby Digital Plus)</option>
+                            <option value="ac3">AC3 (Dolby Digital)</option>
+                          </select>
+                          <select aria-label={t("settingsMedia:audio.compat.bitrate")} value={encoding.audio_compat_bitrate || 192}
+                            onChange={e => setEncoding({ ...encoding, audio_compat_bitrate: parseInt(e.target.value) })}
+                            style={{ ...inputStyle, width: "auto" }}>
+                            {[128, 160, 192, 224, 256, 320].map(b => <option key={b} value={b}>{b} kbps</option>)}
+                          </select>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                            <input type="checkbox" checked={encoding.audio_compat_loudnorm ?? false}
+                              onChange={() => setEncoding({ ...encoding, audio_compat_loudnorm: !encoding.audio_compat_loudnorm })} />
+                            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsMedia:audio.compat.loudnorm")}</span>
+                          </label>
                         </div>
                       )}
                     </div>

@@ -1681,6 +1681,8 @@ def classify_audio_tracks(
         # standard rules below.
         if idx in always_keep_winners:
             keep = True
+        elif (track.get("title") or "") == "Stereo (compatibility)":
+            keep = True  # the stereo track Shrinkerr added (v0.10.0: converter.COMPAT_TRACK_TITLE)
         elif auto_keep_native and languages_match(lang, native):
             keep = True
         elif lang == "und":

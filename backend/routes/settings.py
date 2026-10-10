@@ -130,6 +130,12 @@ _ENCODING_DEFAULTS = {
     "lossless_target_bitrate": "640",
     # Atmos / DTS:X tracks stay lossless when lossless audio is converted (v0.10.0)
     "lossless_keep_object_audio": "true",
+    # v0.10.0: lossy DTS converted with lossless audio; a stereo compatibility track
+    "convert_dts": "false",
+    "audio_compat_track": "false",
+    "audio_compat_codec": "aac",
+    "audio_compat_bitrate": "192",
+    "audio_compat_loudnorm": "false",
     "tmdb_api_key": "",
     "plex_url": "",
     "plex_token": "",
@@ -623,6 +629,11 @@ async def get_encoding_settings():
         "lossless_target_codec": merged.get("lossless_target_codec", "eac3"),
         "lossless_target_bitrate": int(merged.get("lossless_target_bitrate", 640)),
         "lossless_keep_object_audio": merged.get("lossless_keep_object_audio", "true").lower() == "true",
+        "convert_dts": merged.get("convert_dts", "false").lower() == "true",
+        "audio_compat_track": merged.get("audio_compat_track", "false").lower() == "true",
+        "audio_compat_codec": merged.get("audio_compat_codec", "aac"),
+        "audio_compat_bitrate": int(merged.get("audio_compat_bitrate", "192") or 192),
+        "audio_compat_loudnorm": merged.get("audio_compat_loudnorm", "false").lower() == "true",
         "plex_ignore_labels": merged.get("plex_ignore_labels", ""),
         "plex_scan_after_conversion": merged.get("plex_scan_after_conversion", "true").lower() == "true",
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
@@ -1110,6 +1121,15 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["lossless_target_bitrate"] = str(update.lossless_target_bitrate)
         if update.lossless_keep_object_audio is not None:
             updates["lossless_keep_object_audio"] = "true" if update.lossless_keep_object_audio else "false"
+        for key in ("convert_dts", "audio_compat_track", "audio_compat_loudnorm"):
+            if getattr(update, key) is not None:
+                updates[key] = "true" if getattr(update, key) else "false"
+        if update.audio_compat_codec is not None:
+            if update.audio_compat_codec not in ("aac", "eac3", "ac3"):
+                raise ApiError(400, "audio_compat_codec must be aac, eac3 or ac3", code="settings.invalidCompatCodec")
+            updates["audio_compat_codec"] = update.audio_compat_codec
+        if update.audio_compat_bitrate is not None:
+            updates["audio_compat_bitrate"] = str(max(64, min(640, update.audio_compat_bitrate)))
         if update.tmdb_api_key is not None and not update.tmdb_api_key.startswith("****"):
             updates["tmdb_api_key"] = update.tmdb_api_key
         if update.plex_url is not None:

@@ -352,7 +352,8 @@
       "targetCodec": "Códec de destino",
       "targetBitrate": "Tasa de bits de destino",
       "keepObjects": "Mantener sin pérdida las pistas Atmos y DTS:X",
-      "keepObjectsHelp": "Al convertirlas se conservan los canales 5.1 / 7.1, pero se pierde la información de altura y de objetos. Activado de forma predeterminada; desactívalo para convertirlas también."
+      "keepObjectsHelp": "Al convertirlas se conservan los canales 5.1 / 7.1, pero se pierde la información de altura y de objetos. Activado de forma predeterminada; desactívalo para convertirlas también.",
+      "convertDts": "Convertir también DTS con pérdida"
     },
     "guide": {
       "title": "Guía de audio",
@@ -418,6 +419,13 @@
         "keptCount_many": "{{count}} idiomas conservados por defecto, más el original detectado en cada archivo",
         "keptCount_other": "{{count}} idiomas conservados por defecto, más el original detectado en cada archivo"
       }
+    },
+    "compat": {
+      "label": "Añadir una pista estéreo de compatibilidad",
+      "help": "Conserva el audio original y añade una pista estéreo creada a partir de él, para que los televisores, móviles y navegadores que no reproducen envolvente ni DTS / TrueHD lo reproduzcan directamente en lugar de transcodificar. Solo cuando la pista principal es envolvente y aún no hay una pista estéreo en su idioma.",
+      "codec": "Códec",
+      "bitrate": "Tasa de bits",
+      "loudnorm": "Igualar el volumen (EBU R128): diálogos bajos y efectos fuertes más parejos"
     }
   },
   "subtitles": {

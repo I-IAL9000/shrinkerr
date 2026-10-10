@@ -348,7 +348,8 @@
       "targetCodec": "Target Codec",
       "targetBitrate": "Target Bitrate",
       "keepObjects": "Keep Atmos and DTS:X tracks lossless",
-      "keepObjectsHelp": "Converting them keeps the 5.1 / 7.1 channels but loses the height and object information. On by default; turn off to convert them too."
+      "keepObjectsHelp": "Converting them keeps the 5.1 / 7.1 channels but loses the height and object information. On by default; turn off to convert them too.",
+      "convertDts": "Also convert lossy DTS"
     },
     "guide": {
       "title": "Audio Guide",
@@ -413,6 +414,13 @@
         "keptCount_one": "{{count}} language kept by default, plus native auto-detected per file",
         "keptCount_other": "{{count}} languages kept by default, plus native auto-detected per file"
       }
+    },
+    "compat": {
+      "label": "Add a stereo compatibility track",
+      "help": "Keeps the original audio and adds a stereo track made from it, so TVs, phones and browsers that can't play surround or DTS / TrueHD direct-play instead of transcoding. Only when the main track is surround and there's no stereo track in its language yet.",
+      "codec": "Codec",
+      "bitrate": "Bitrate",
+      "loudnorm": "Even out loudness (EBU R128) — quiet dialogue and loud effects closer together"
     }
   },
   "subtitles": {
