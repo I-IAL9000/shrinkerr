@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Your settings stay as they were.** The new defaults (keep originals 7 days, reject encodes below VMAF 88, leave subtitles alone until languages are chosen, skip hardlinked files, content type detection) are for new installs; turn them on in Settings if you want them.
 - **The first full scan after updating takes longer**: it reads every file once more, for the new 10-bit, interlaced, frame-rate and hardlink details.
 - **Update remote workers to 0.10 as well**: older workers don't know the new per-job settings (a rule's originals policy, Fix for direct play, before / after frames, Dolby Vision).
+- **Track cleanups keep originals too**: with "keep originals for N days" on, an audio / subtitle cleanup now keeps the original in the backup folder like a conversion does (and can be undone), so backups take a little more space.
 - **Dolby Vision profile 7 and 8 files can now be converted** (keeping their Dolby Vision) when HEVC is among the codecs you convert from; before, they were never converted.
 
 ### Added
@@ -101,6 +102,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dolby Vision files are no longer re-encoded, and HDR10/HLG conversions keep their HDR.** A re-encode turned Dolby Vision profile 5 purple and green and dropped Dolby Vision from the others; an HDR output that lost its HDR or came out 8-bit (Quick Sync / VAAPI) now keeps the original instead.
 - Links in the in-app changelog only open http(s) addresses.
 - Removed the "Downmix surround to stereo" setting: it never did anything.
+- **Originals the trash couldn't take were deleted**: with "move to the trash", an original (or a converted disc) the trash refused — no trash folder on the share, a cross-device move — was deleted for good. It's kept in the backup folder now.
+- **Track cleanups ignored your originals setting**: they only ever trashed or deleted the original, so "keep originals", a rule's originals policy and Undo didn't cover the tracks they removed — and on a remote worker they always deleted it.
 - **NVENC in containers started with `--gpus all`**: the NVENC image asked the NVIDIA runtime for compute only, so a container started with `--gpus all` or `capabilities: [gpu]` (as the Nodes page's worker command does) had no hardware encoder. The image now asks for the video libraries itself.
 - Documentation fixes: NVIDIA driver 570+ for the NVENC images, the remote-worker `PATH_MAPPINGS` format (also in the compose files), current Settings locations, a lockout recovery that didn't work, and features that were described but don't exist.
 - In-app help no longer tells you to put the API key in a URL, says that pausing a node stops its running job, and points to the current Settings pages.

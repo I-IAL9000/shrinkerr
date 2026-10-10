@@ -1651,6 +1651,51 @@ def _move_into_backup(src: str, dst: str) -> str:
     return str(target)
 
 
+def _backup_dir_for(folder: Path, backup_folder: str) -> Path:
+    """Where an original from `folder` is kept: the custom backup folder
+    (a subfolder named after `folder`), else .shrinkerr_backup beside it."""
+    if backup_folder:
+        backup_dir = Path(backup_folder) / folder.name
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        legacy = folder / ".squeezarr_backup"
+        backup_dir = legacy if legacy.exists() else (folder / ".shrinkerr_backup")
+        backup_dir.mkdir(exist_ok=True)
+    return backup_dir
+
+
+async def dispose_original(src: Path, backup_name: str, folder: Path, settings: dict) -> Optional[str]:
+    """Keep, trash or delete an original once its replacement is in place, as
+    the originals setting says (`backup_original_days`,
+    `trash_original_after_conversion`, `backup_folder`). Returns the backup
+    path, if it was kept. `folder` is where the original came from.
+
+    v0.10.0: when the trash can't take it (no trash folder on the share, a
+    cross-device move…) the original is kept in the backup folder — it was
+    deleted, though "trash" was chosen to be able to get it back."""
+    backup_days = int(settings.get("backup_original_days") or 0)
+    backup_folder = settings.get("backup_folder") or ""
+    if backup_days > 0:
+        backup_dir = await asyncio.to_thread(_backup_dir_for, folder, backup_folder)
+        kept = await asyncio.to_thread(_move_into_backup, str(src), str(backup_dir / backup_name))
+        print(f"[CONVERT] Original backed up to: {kept}", flush=True)
+        return kept
+    if _str_to_bool(settings.get("trash_original_after_conversion")):
+        try:
+            from send2trash import send2trash
+            await asyncio.to_thread(send2trash, str(src))
+            print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
+            return None
+        except Exception as trash_exc:
+            backup_dir = await asyncio.to_thread(_backup_dir_for, folder, backup_folder)
+            kept = await asyncio.to_thread(_move_into_backup, str(src), str(backup_dir / backup_name))
+            print(f"[CONVERT] Trash failed ({trash_exc}); original kept in the backup folder instead: {kept}",
+                  flush=True)
+            return kept
+    await asyncio.to_thread(src.unlink)
+    return None
+
+
 # Left behind by Finder / Explorer; they don't keep a release folder alive.
 _FOLDER_JUNK = {".ds_store", "thumbs.db", "desktop.ini"}
 
@@ -1701,8 +1746,7 @@ async def _dispose_disc_source(
             except OSError:
                 pass
 
-    slot = None
-    if backup_days and backup_days > 0:
+    def _new_slot() -> Path:
         if backup_folder:
             base = Path(backup_folder) / home.name
         else:
@@ -1727,21 +1771,28 @@ async def _dispose_disc_source(
             n += 1
             slot = base / f"{disc_root.name}.{n}"
         slot.mkdir(parents=True, exist_ok=True)
+        return slot
+
+    slot = _new_slot() if backup_days and backup_days > 0 else None
 
     async def _dispose(unit: Path) -> str | None:
-        if slot is not None:
-            backup_path = slot / unit.name
-            backup_path = await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
-            print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
-            return backup_path
-        if use_trash:
+        nonlocal slot
+        if slot is None and use_trash:
             try:
                 from send2trash import send2trash
                 await asyncio.to_thread(send2trash, str(unit))  # v0.9.32: off-loop
                 print(f"[CONVERT] Disc folder moved to trash: {unit.name}", flush=True)
                 return None
             except Exception as trash_exc:
-                print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+                # v0.10.0: kept in the backup folder, not deleted (see dispose_original).
+                print(f"[CONVERT] Trash failed ({trash_exc}); keeping the disc in the backup folder instead",
+                      flush=True)
+                slot = await asyncio.to_thread(_new_slot)
+        if slot is not None:
+            backup_path = slot / unit.name
+            backup_path = await asyncio.to_thread(_move_into_backup, str(unit), str(backup_path))  # v0.9.32: off-loop
+            print(f"[CONVERT] Disc folder backed up to: {backup_path}", flush=True)
+            return backup_path
         await asyncio.to_thread(shutil.rmtree, unit)  # v0.9.32: off-loop
         print(f"[CONVERT] Removed disc folder: {unit}", flush=True)
         return None
@@ -2802,31 +2853,9 @@ async def _place_output(input_path: str, temp_path: str, final_path: str, disc_t
         """Backup / trash / delete a regular-file original that the placed
         output has already superseded. `src` is where the original now lives
         (possibly a sidecar); `backup_name` is the name to preserve in the
-        backup folder. Mirrors the pre-v0.9.126 modes incl. trash→delete
-        fallback. Runs only after the output is safely in place."""
+        backup folder. Runs only after the output is safely in place."""
         nonlocal result_backup_path
-        if backup_days and backup_days > 0:
-            custom_backup = live_settings.get("backup_folder", "")
-            if custom_backup:
-                backup_dir = Path(custom_backup) / p.parent.name
-                backup_dir.mkdir(parents=True, exist_ok=True)
-            else:
-                legacy = p.parent / ".squeezarr_backup"
-                backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
-                backup_dir.mkdir(exist_ok=True)
-            result_backup_path = await asyncio.to_thread(
-                _move_into_backup, str(src), str(backup_dir / backup_name))  # v0.9.32: off-loop
-            print(f"[CONVERT] Original backed up to: {result_backup_path}", flush=True)
-        elif use_trash:
-            try:
-                from send2trash import send2trash
-                await asyncio.to_thread(send2trash, str(src))  # v0.9.32: off-loop
-                print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
-            except Exception as trash_exc:
-                print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                src.unlink()
-        else:
-            src.unlink()
+        result_backup_path = await dispose_original(src, backup_name, p.parent, live_settings)
 
     async def _after_placement(dispose):
         """Dispose of the original once the output is in place. If that

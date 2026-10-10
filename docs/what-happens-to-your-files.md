@@ -61,9 +61,9 @@ Backups says, or the way a matching rule says:
   folder you set (in a subfolder named after the file's folder). Originals
   older than N days are deleted after each job.
 - **Move to the trash.** Shrinkerr uses the system trash: on Linux, a
-  `.Trash-<uid>` folder at the top of the drive or share. **If the trash
-  can't be used, the original is deleted instead**, so check that it works on
-  your shares before relying on it.
+  `.Trash-<uid>` folder at the top of the drive or share. If the trash can't
+  take a file, the original goes to the backup folder instead (kept until you
+  delete backups), and Undo works for it.
 - **Delete** once the new file is in place.
 
 If the original can't be removed (a permission error, say), it stays where
@@ -92,7 +92,7 @@ folder is removed only if that left it empty.
 
 - **Removing tracks** (audio or subtitle cleanup without converting the video)
   writes a new file and goes through the same checks and the same
-  replacement as a conversion.
+  replacement as a conversion, originals setting and Undo included.
 - **Language detection** writes the detected language into the file's track
   tags. MKV files are edited in place (only the header changes). MP4 and MOV
   files are copied into a new file with the tags, without converting

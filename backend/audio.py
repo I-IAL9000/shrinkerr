@@ -274,6 +274,7 @@ async def remux_audio(
     image_subs_to_srt: bool = False,
     keep_image_subs: bool = True,
     compat_settings: dict | None = None,
+    originals: dict | None = None,
 ) -> dict:
     """_remux_audio, after reading the kept image subtitles (PGS / VobSub)
     into SRT tracks with OCR when `image_subs_to_srt` (v0.10.0): they're
@@ -282,7 +283,11 @@ async def remux_audio(
 
     `compat_settings` (v0.10.0, "Fix for direct play"): the settings that
     decide a compatibility track (converter.compat_track_plan), added after
-    the kept audio."""
+    the kept audio.
+
+    `originals` (v0.10.0): what happens to the original — the settings
+    converter.dispose_original reads, with the job's rule applied. Without
+    it they're read from this server's settings."""
     ocr_dir: str | None = None
     ocr_subs: list[dict] = []
     compat_track = None
@@ -315,7 +320,7 @@ async def remux_audio(
     try:
         return await _remux_audio(input_path, keep_audio_indices, duration, progress_callback,
                                   keep_subtitle_indices, audio_languages, proc_callback, on_output_placed,
-                                  ocr_subs=ocr_subs, compat_track=compat_track)
+                                  ocr_subs=ocr_subs, compat_track=compat_track, originals=originals)
     finally:
         if ocr_dir:
             shutil.rmtree(ocr_dir, ignore_errors=True)
@@ -332,6 +337,7 @@ async def _remux_audio(
     on_output_placed: Optional[Callable] = None,
     ocr_subs: list[dict] | None = None,
     compat_track: dict | None = None,
+    originals: dict | None = None,
 ) -> dict:
     """
     Remux a file, keeping only the specified audio streams.
@@ -577,20 +583,17 @@ async def _remux_audio(
     space_saved = original_size - output_size
 
     try:
-        # Check if we should trash or permanently delete the original
-        use_trash = False
-        try:
-            from backend.database import DB_PATH
-            import aiosqlite
-            # Async read (M10, v0.10.0): blocking sqlite3 on the event loop.
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute(
-                    "SELECT value FROM settings WHERE key = 'trash_original_after_conversion'"
-                ) as cur:
-                    row = await cur.fetchone()
-            use_trash = bool(row and row[0].lower() == "true")
-        except Exception:
-            pass
+        # What happens to the original: kept N days, trashed or deleted, as
+        # for a conversion (v0.10.0 — a cleanup only ever trashed or deleted
+        # it, so "keep originals" and Undo didn't cover removed tracks).
+        if originals is None:
+            originals = {}
+            try:
+                from backend.converter import get_live_encoding_settings
+                originals = await get_live_encoding_settings()
+            except Exception:
+                pass
+        backup_path: str | None = None
 
         async def _placed() -> None:
             # The output replaced the original: let the queue record that
@@ -601,21 +604,16 @@ async def _remux_audio(
                 except Exception as exc:
                     print(f"[REMUX] on_output_placed failed: {exc}", flush=True)
 
-        def _dispose(src: Path) -> None:
+        async def _dispose(src: Path) -> None:
             # Runs once the output is in place. If the original can't be
             # removed it stays (beside the output or in .shrinkerr-replacing/)
             # and the job still succeeded: reporting a failure got the
             # cleaned output remuxed again on retry, by stream indexes that
             # no longer match its tracks (v0.10.0).
+            nonlocal backup_path
+            from backend.converter import dispose_original
             try:
-                if use_trash:
-                    try:
-                        from send2trash import send2trash
-                        send2trash(str(src))
-                    except Exception:
-                        src.unlink()
-                else:
-                    src.unlink()
+                backup_path = await dispose_original(src, p.name, p.parent, originals)
             except OSError as exc:
                 print(f"[REMUX] Output in place, but the original couldn't be removed and was kept at {src}: {exc}",
                       flush=True)
@@ -651,7 +649,7 @@ async def _remux_audio(
                     print(f"[REMUX] CRITICAL: could not restore original from {staged}", flush=True)
                 raise
             await _placed()
-            _dispose(staged)
+            await _dispose(staged)
             try:
                 stage_dir.rmdir()  # remove if now empty
             except OSError:
@@ -660,7 +658,7 @@ async def _remux_audio(
             # Different target name (e.g. .avi→.mkv) — original isn't in the way.
             temp.rename(final_path)
             await _placed()
-            _dispose(p)
+            await _dispose(p)
     except OSError as exc:
         print(f"[REMUX] Placement failed, original preserved: {exc}", flush=True)
         print(f"  Original: {p} (exists={p.exists()})  Temp: {temp} (exists={temp.exists()})", flush=True)
@@ -674,6 +672,7 @@ async def _remux_audio(
         "output_path": final_path,
         "space_saved": space_saved,
         "error": None,
+        "backup_path": backup_path,
         # Conversion-log payload (v0.3.117+): lets the worker store the
         # remux command + log + size deltas so the Completed tab's
         # expanded view of an audio-only job has actual content. Worker

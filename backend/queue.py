@@ -2999,6 +2999,7 @@ class QueueWorker:
                     image_subs_to_srt=_image_subs_to_srt,
                     keep_image_subs=_live.get("image_subs_keep_original", True),
                     compat_settings=_live if _direct_play else None,
+                    originals=_live,
                 )
                 if not result["success"] and job_id in self._cancel_flags:
                     await self.queue.update_status(job_id, "cancelled", error_log="Cancelled by user",
@@ -3016,6 +3017,11 @@ class QueueWorker:
                     return
                 space_saved += result.get("space_saved", 0)
                 await self._finalize(job_id)  # H5: the remux replaced the original
+                if result.get("backup_path"):  # v0.10.0: cleanups keep originals too (Undo)
+                    try:
+                        await self.queue.update_backup_path(job_id, result["backup_path"], current_file_path)
+                    except Exception as exc:
+                        print(f"[WORKER] Failed to store backup path: {exc}", flush=True)
 
                 # v0.9.39: remux_audio always writes a .mkv and replaces the
                 # original, so on a non-mkv source (AVI) the path changes. Point

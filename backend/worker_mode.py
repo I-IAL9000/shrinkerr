@@ -602,6 +602,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
 
         # Audio/subtitle track removal — only "audio" jobs need the separate remux pass.
         # "combined" jobs already applied the removals inline during conversion.
+        cleanup_backup = None
         if job_type == "audio":
             audio_remove = json.loads(job.get("audio_tracks_to_remove") or "[]") if isinstance(job.get("audio_tracks_to_remove"), str) else (job.get("audio_tracks_to_remove") or [])
             sub_remove = json.loads(job.get("subtitle_tracks_to_remove") or "[]") if isinstance(job.get("subtitle_tracks_to_remove"), str) else (job.get("subtitle_tracks_to_remove") or [])
@@ -630,6 +631,11 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                         image_subs_to_srt=bool(job.get("image_subs_to_srt")),
                         keep_image_subs=bool(job.get("image_subs_keep_original", True)),
                         compat_settings=job if direct_play else None,
+                        # The server's originals setting, with the job's rule (v0.10.0):
+                        # a worker's cleanup read its own empty settings and deleted.
+                        originals={"backup_original_days": int(job.get("backup_original_days") or 0),
+                                   "trash_original_after_conversion": bool(job.get("trash_original_after_conversion")),
+                                   "backup_folder": job.get("backup_folder") or ""},
                     )
                 except Exception as exc:
                     audio_result = {"success": False, "error": str(exc)}
@@ -644,6 +650,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 replaced_source = True
                 if audio_result.get("output_path"):
                     current_file_path = audio_result["output_path"]
+                cleanup_backup = audio_result.get("backup_path")
 
         print(f"[WORKER] Job {job_id} completed: saved {space_saved / (1024**3):.2f} GB", flush=True)
 
@@ -652,7 +659,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             output_path=current_file_path,
             space_saved=space_saved,
             vmaf_score=result.get("vmaf_score") if result else None,
-            backup_path=result.get("backup_path") if result else None,
+            backup_path=(result.get("backup_path") if result else None) or cleanup_backup,
             ffmpeg_command=result.get("ffmpeg_command") if result else None,
             encoding_stats=result.get("encoding_stats") if result else None,
             replaced_source=replaced_source,
