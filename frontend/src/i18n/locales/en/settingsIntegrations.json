@@ -113,7 +113,17 @@
     "syncStatusHelp": "Asks Sonarr and Radarr which files are below their quality cutoff (they'll be replaced) or unmonitored, for the Scanner's filters. Also done after every full scan.",
     "syncStatusDone_one": "Read {{count}} file from Sonarr/Radarr",
     "syncStatusDone_other": "Read {{count}} files from Sonarr/Radarr",
-    "syncStatusNone": "Neither Sonarr nor Radarr answered — check the URL and API key"
+    "syncStatusNone": "Neither Sonarr nor Radarr answered — check the URL and API key",
+    "connect": {
+      "title": "Queue each import (Connect → Webhook)",
+      "intro": "For setups without the NZBGet / SABnzbd scripts, such as torrents: Sonarr and Radarr tell Shrinkerr about each file they import, and it's queued as Add to Queue would queue it.",
+      "step1": "In Sonarr or Radarr: Settings → Connect → + → Webhook. Notification triggers: On Import (and On Upgrade).",
+      "step2": "URL, method POST:",
+      "copy": "Copy",
+      "copied": "Copied",
+      "step3": "Password: your Shrinkerr API key (Settings → System); the username can be anything. Or add the header X-Api-Key with the key.",
+      "hardlinks": "Torrent imports are usually hardlinks while they seed. With “Skip files that are still hardlinked” on (Settings → Automation), they're left out until seeding stops — converting them would save nothing."
+    }
   },
   "downloaders": {
     "intro": "Automatically convert downloads after NZBGet or SABnzbd completes. The script checks Sonarr/Radarr for matching tags before converting. Sonarr/Radarr connection settings are inherited from above.",

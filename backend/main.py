@@ -636,6 +636,18 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+def _basic_auth_password(request: Request) -> str | None:
+    """The password of an `Authorization: Basic` header, if there is one."""
+    import base64
+    header = request.headers.get("Authorization") or ""
+    if not header.lower().startswith("basic "):
+        return None
+    try:
+        return base64.b64decode(header[6:].strip()).decode("utf-8").partition(":")[2]
+    except Exception:
+        return None
+
+
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):
     path = request.url.path
@@ -687,6 +699,12 @@ async def api_key_auth(request: Request, call_next):
     # scripts and must not be enough for those.
     supplied_key = request.headers.get("X-Api-Key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
+        request.state.auth_method = "api_key"
+        return await call_next(request)
+    # Webhooks can also send it as the Basic-auth password (v0.10.0):
+    # Sonarr / Radarr's Connect → Webhook has Username / Password fields.
+    basic = _basic_auth_password(request) if path.startswith("/api/webhooks/") else None
+    if basic and configured_api_key and hmac.compare_digest(basic, configured_api_key):
         request.state.auth_method = "api_key"
         return await call_next(request)
 

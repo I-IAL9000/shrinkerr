@@ -116,7 +116,17 @@
     "syncStatusDone_one": "Leído {{count}} archivo de Sonarr/Radarr",
     "syncStatusDone_many": "Leídos {{count}} archivos de Sonarr/Radarr",
     "syncStatusDone_other": "Leídos {{count}} archivos de Sonarr/Radarr",
-    "syncStatusNone": "Ni Sonarr ni Radarr respondieron: revisa la URL y la clave de API"
+    "syncStatusNone": "Ni Sonarr ni Radarr respondieron: revisa la URL y la clave de API",
+    "connect": {
+      "title": "Encolar cada importación (Connect → Webhook)",
+      "intro": "Para instalaciones sin los scripts de NZBGet / SABnzbd, como los torrents: Sonarr y Radarr avisan a Shrinkerr de cada archivo que importan, y se encola como lo haría Añadir a la cola.",
+      "step1": "En Sonarr o Radarr: Settings → Connect → + → Webhook. Disparadores: On Import (y On Upgrade).",
+      "step2": "URL, método POST:",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "step3": "Password: tu clave de API de Shrinkerr (Ajustes → Sistema); el usuario puede ser cualquiera. O añade la cabecera X-Api-Key con la clave.",
+      "hardlinks": "Las importaciones de torrents suelen ser enlaces duros mientras se comparten. Con «Omitir archivos que siguen con enlaces duros (p. ej. en siembra)» activado (Ajustes → Automatización), se dejan fuera hasta que termina la compartición: convertirlos no ahorraría nada."
+    }
   },
   "downloaders": {
     "intro": "Convierte automáticamente las descargas cuando NZBGet o SABnzbd terminan. El script comprueba en Sonarr/Radarr si hay etiquetas coincidentes antes de convertir. Los ajustes de conexión de Sonarr/Radarr se heredan de la sección anterior.",

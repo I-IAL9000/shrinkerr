@@ -90,6 +90,57 @@ async def webhook_queue(request: WebhookQueueRequest):
     return {"added": added, "errors": errors}
 
 
+def arr_import_paths(payload: dict) -> tuple[Optional[str], list[str]]:
+    """The service and the files a Sonarr / Radarr "Download" (import or
+    upgrade) event carries — as Sonarr / Radarr see them."""
+    import posixpath
+    if isinstance(payload.get("series"), dict):
+        service, root = "sonarr", payload["series"].get("path") or ""
+        files = [payload.get("episodeFile"), *(payload.get("episodeFiles") or [])]
+    elif isinstance(payload.get("movie"), dict):
+        service, root = "radarr", payload["movie"].get("folderPath") or ""
+        files = [payload.get("movieFile")]
+    else:
+        return None, []
+    paths: list[str] = []
+    for f in files:
+        if not isinstance(f, dict):
+            continue
+        path = f.get("path") or (posixpath.join(root, f["relativePath"]) if root and f.get("relativePath") else None)
+        if path and path not in paths:
+            paths.append(path)
+    return service, paths
+
+
+@router.post("/arr")
+async def webhook_arr(payload: dict):
+    """Sonarr / Radarr Connect → Webhook (v0.10.0), for setups without the
+    NZBGet / SABnzbd scripts — torrent users: an imported file is stored in
+    the Scanner and queued as Add to Queue would queue it (rules, hardlink
+    skipping and the media-folder check included). Other events are
+    acknowledged and ignored."""
+    from backend.arr import _from_arr_path
+    from backend.routes.jobs import BulkQueueFromScanRequest, _queue, queue_files_by_path
+
+    event = str(payload.get("eventType") or "")
+    if event == "Test":
+        return {"status": "ok"}
+    service, arr_paths = arr_import_paths(payload) if event == "Download" else (None, [])
+    if not service or not arr_paths:
+        return {"status": "ignored", "event": event}
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (f"{service}_path_mapping",)) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    paths = [_from_arr_path(p, row[0] if row else "") for p in arr_paths]
+    added, errors = await queue_files_by_path(paths, BulkQueueFromScanRequest(), source=service.upper())
+    return {"status": "queued", "service": service, "added": added, "errors": errors}
+
+
 @router.post("/pause")
 async def webhook_pause():
     """Pause the conversion queue."""

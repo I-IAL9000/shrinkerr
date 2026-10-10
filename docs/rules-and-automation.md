@@ -11,6 +11,7 @@ right settings, without having to touch the UI for each one.
 - [Watch folders](#watch-folders)
 - [NZBGet / SABnzbd](#nzbget--sabnzbd)
 - [Sonarr / Radarr](#sonarr--radarr)
+  - [Queue each import (Connect → Webhook)](#queue-each-import-connect--webhook)
 - [Plex / Jellyfin integration](#plex--jellyfin-integration)
 - [Scheduling](#scheduling)
 - [Batch rename](#batch-rename)
@@ -261,6 +262,25 @@ Once connected:
   actually there (a common thing after a restore from backup).
 - **Tag-based rules** in the rule editor — condition "Sonarr tag is
   X" / "Radarr tag is Y".
+
+### Queue each import (Connect → Webhook)
+
+For setups without the NZBGet / SABnzbd scripts — torrent clients, for
+example — Sonarr and Radarr can tell Shrinkerr about every file they import:
+
+1. In Sonarr or Radarr: **Settings → Connect → + → Webhook**, with the
+   triggers **On Import** (and **On Upgrade** if you want upgrades too).
+2. URL `http://<shrinkerr>:6680/api/webhooks/arr`, method **POST**.
+3. **Password**: your Shrinkerr API key (Settings → System → Authentication);
+   the username can be anything. Or add an `X-Api-Key` header with the key.
+
+Each imported file is stored in the Scanner and queued as Add to Queue
+would queue it — encoding rules, "skip hardlinked files" and the
+media-folder check included. Sonarr / Radarr paths go through the path
+mapping you set for each. Torrent imports are usually hardlinks while they
+seed; with **Skip files that are still hardlinked** on (Settings →
+Automation) they're left out until seeding stops, since converting them
+would save nothing.
 
 ## Plex / Jellyfin integration
 

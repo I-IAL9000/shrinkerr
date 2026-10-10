@@ -207,3 +207,19 @@ async def test_websocket_tickets_work_once(client, test_db, monkeypatch):
     expired = (await client.post("/api/auth/ws-ticket", headers={"X-Api-Key": "k3y-for-tests"})).json()["ticket"]
     main_module._ws_tickets[expired] = 0
     assert await main_module._check_ws_auth(ws(ticket=expired)) is False
+
+
+@pytest.mark.asyncio
+async def test_webhooks_take_the_key_as_a_basic_auth_password(client, test_db):
+    """Sonarr / Radarr's Connect → Webhook has Username / Password fields
+    (v0.10.0); only webhook routes take it that way."""
+    import base64
+    await _set_api_key(test_db, "k3y-for-tests")
+
+    def basic(password):
+        return {"Authorization": "Basic " + base64.b64encode(f"sonarr:{password}".encode()).decode()}
+    test_event = {"eventType": "Test"}
+    assert (await client.post("/api/webhooks/arr", json=test_event, headers=basic("k3y-for-tests"))).json() == {"status": "ok"}
+    assert (await client.post("/api/webhooks/arr", json=test_event, headers=basic("wrong"))).status_code == 401
+    assert (await client.post("/api/webhooks/arr", json=test_event)).status_code == 401
+    assert (await client.get("/api/settings/dirs", headers=basic("k3y-for-tests"))).status_code == 401

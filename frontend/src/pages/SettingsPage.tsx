@@ -3120,6 +3120,25 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     }}
                   >{t("settingsIntegrations:arr.syncStatus")}</button>
                 </div>
+
+                {/* Connect → Webhook (v0.10.0): queue each import, for torrent setups */}
+                <div style={{ marginTop: 16, padding: 14, background: "var(--bg-primary)", borderRadius: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "white" }}>{t("settingsIntegrations:arr.connect.title")}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", margin: "4px 0 8px" }}>{t("settingsIntegrations:arr.connect.intro")}</div>
+                  <ol style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 18, lineHeight: 1.8, margin: 0 }}>
+                    <li>{t("settingsIntegrations:arr.connect.step1")}</li>
+                    <li>
+                      {t("settingsIntegrations:arr.connect.step2")}{" "}
+                      <code style={{ background: "var(--bg-card)", padding: "1px 6px", borderRadius: 3 }}>{`${window.location.origin}/api/webhooks/arr`}</code>{" "}
+                      <button className="btn btn-secondary" style={{ fontSize: 11, padding: "1px 8px" }}
+                        onClick={async () => { await copyText(`${window.location.origin}/api/webhooks/arr`); toast(t("settingsIntegrations:arr.connect.copied"), "success"); }}>
+                        {t("settingsIntegrations:arr.connect.copy")}
+                      </button>
+                    </li>
+                    <li>{t("settingsIntegrations:arr.connect.step3")}</li>
+                  </ol>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>{t("settingsIntegrations:arr.connect.hardlinks")}</div>
+                </div>
               </div>
 
               {/* Download Client Integration */}
