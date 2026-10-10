@@ -19,9 +19,9 @@ whatever language each browser shows the interface in.
 | Gotify | The server URL and an application token |
 | Apprise | Service URLs, one per line — Pushover, Slack, Matrix, Pushbullet, Teams and more; see the [Apprise wiki](https://github.com/caronc/apprise/wiki) for each service's URL |
 
-The email password and the ntfy and Gotify tokens are shown masked after
-saving. Settings exports leave out the password, the tokens, and the
-Discord, webhook, ntfy and Apprise URLs.
+The email password, the Telegram bot token and the ntfy and Gotify tokens
+are shown masked after saving. Settings exports leave out the password, the
+tokens, and the Discord, webhook, ntfy and Apprise URLs.
 
 ## Events
 

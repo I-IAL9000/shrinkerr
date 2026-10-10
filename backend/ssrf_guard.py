@@ -15,7 +15,11 @@ CAN'T blanket-block private ranges. What we DO block:
     - 169.254.170.2   (ECS task metadata)
 * ::ffff:169.254.0.0/112 — the IPv4-mapped IPv6 form
 * fe80::/10         — IPv6 link-local
-* fd00::/8          — IPv6 metadata can appear here too; block defensively
+* fec0::/10         — deprecated IPv6 site-local
+* fd00:ec2::254 (AWS) and fd20:ce::254 (Google Cloud) — the IPv6 metadata
+  endpoints. They sit in fd00::/8, unique-local addresses that home LANs
+  use too, so only these are blocked (v0.10.0: the check meant to cover
+  fd00::/8 tested fec0::/10, and blocked neither).
 
 Loopback / private ranges are ALLOWED by default (your Plex server is
 probably on 192.168.x.x or 10.x.x.x and talking to it is the whole
@@ -43,17 +47,20 @@ def _iter_resolved_ips(hostname: str) -> list[str]:
         return []
 
 
+_CLOUD_METADATA_V6 = {ipaddress.IPv6Address("fd00:ec2::254"), ipaddress.IPv6Address("fd20:ce::254")}
+
+
 def _is_blocked_ip(ip_str: str, *, block_private: bool = False) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
-    # Always block link-local + IPv6 link-local + IPv6 unique-local —
-    # those ranges serve cloud metadata + no legitimate self-hosted use
-    # case reaches them for Plex/Sonarr/etc.
+    # Always block link-local, IPv6 site-local and the IPv6 cloud metadata
+    # addresses — they serve cloud metadata, and no self-hosted Plex /
+    # Sonarr / etc. lives there.
     if ip.is_link_local:
         return True
-    if isinstance(ip, ipaddress.IPv6Address) and ip.is_site_local:
+    if isinstance(ip, ipaddress.IPv6Address) and (ip.is_site_local or ip in _CLOUD_METADATA_V6):
         return True
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         if ipaddress.IPv4Address(ip.ipv4_mapped).is_link_local:

@@ -857,14 +857,14 @@ async def get_encoding_settings():
     result["quiet_hours_nice"] = merged.get("quiet_hours_nice", "true").lower() == "true"
 
     # Notification settings — mask secrets
-    for key in ["discord_webhook_url", "telegram_bot_token", "telegram_chat_id",
+    for key in ["discord_webhook_url", "telegram_chat_id",
                  "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to",
                  "webhook_url", "notify_queue_complete", "notify_job_failed",
                  "notify_disk_low", "disk_space_threshold_gb",
                  "ntfy_url", "gotify_url", "apprise_urls", *_NOTIFY_EVENTS_V010]:
         result[key] = merged.get(key, "")
     result["notification_language"] = merged.get("notification_language", "en")
-    for key in ("smtp_pass", "ntfy_token", "gotify_token"):
+    for key in ("smtp_pass", "ntfy_token", "gotify_token", "telegram_bot_token"):  # the bot token too (v0.10.0)
         secret = merged.get(key, "")
         result[key] = ("****" + secret[-4:]) if secret else ""
     # Parse booleans for frontend
@@ -1519,7 +1519,7 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         # cloud-metadata endpoints is rejected at save time.
         from backend.ssrf_guard import validate_outbound_url
         _url_notify_keys = {"discord_webhook_url", "webhook_url", "ntfy_url", "gotify_url"}
-        for key in ["discord_webhook_url", "telegram_bot_token", "telegram_chat_id",
+        for key in ["discord_webhook_url", "telegram_chat_id",
                      "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to", "webhook_url", "disk_space_threshold_gb",
                      "ntfy_url", "gotify_url", "apprise_urls"]:
             val = getattr(update, key, None)
@@ -1527,7 +1527,7 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                 if key in _url_notify_keys and val:
                     val = validate_outbound_url(val, label=f"{key} URL")
                 updates[key] = val
-        for key in ("smtp_pass", "ntfy_token", "gotify_token"):  # "****1234": unchanged
+        for key in ("smtp_pass", "ntfy_token", "gotify_token", "telegram_bot_token"):  # "****1234": unchanged
             val = getattr(update, key, None)
             if val is not None and not val.startswith("****"):
                 updates[key] = val

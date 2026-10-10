@@ -108,8 +108,8 @@ the user; there's no multi-tenant model.
   response. A dedicated `GET /api/settings/api-key` returns the raw
   value on demand for the UI copy button.
 - **Integration keys and tokens** (TMDB, Plex, Jellyfin, Emby, Sonarr,
-  Radarr, Bazarr, SMTP password, ntfy and Gotify tokens) are all masked
-  the same way; the MQTT password is masked in full.
+  Radarr, Bazarr, SMTP password, Telegram bot token, ntfy and Gotify tokens)
+  are all masked the same way; the MQTT password is masked in full.
 - **Settings export** strips every secret row: `api_key`,
   `session_secret`, `auth_password_hash`, each integration key and
   token (MQTT password, ntfy and Gotify tokens included), SMTP password,
@@ -155,6 +155,8 @@ covering:
   cloud metadata endpoints
 - IPv6 link-local `fe80::/10`
 - IPv6 site-local `fec0::/10`
+- the IPv6 cloud metadata addresses `fd00:ec2::254` (AWS) and `fd20:ce::254`
+  (Google Cloud) — the rest of `fd00::/8` is allowed, as home networks use it
 - IPv4-mapped IPv6 variants of the above
 
 Loopback and RFC 1918 private ranges are **allowed by default** —
