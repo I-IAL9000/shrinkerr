@@ -4,13 +4,13 @@ import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import SubTrackRow from "./SubTrackRow";
+import VideoDetails from "./VideoDetails";
 import EventTimeline from "./EventTimeline";
 import { vmafLabel } from "../utils/vmaf";
 import { useToast } from "../useToast";
 import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
-import { hdrLabel } from "../codecLabels";
 import { fmtBytes } from "../fmt";
 
 interface FileDetailProps {
@@ -271,9 +271,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
     <div className="file-detail">
       {/* Tree rows truncate long names; the full one lives here. */}
       <div style={{ color: "var(--text-secondary)", marginBottom: 2, overflowWrap: "anywhere" }}>{file.file_name}</div>
-      <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
-        {file.video_codec}{file.hdr_format && <> &middot; {hdrLabel(file.hdr_format)}</>} &middot; {file.file_size_gb} GB
-      </div>
+      <VideoDetails file={file} />
       {file.hdr_format?.startsWith("dv") && (
         <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 4 }}>{t("library:badges.dolbyVision")}</div>
       )}

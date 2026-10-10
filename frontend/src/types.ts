@@ -8,6 +8,7 @@ export interface AudioTrack {
   size_estimate_bytes: number | null;
   keep: boolean;
   locked: boolean;
+  profile?: string | null;  // e.g. "DTS-HD MA", "LC"
   detected_language?: string | null;  // v0.9.35: detected but not writable in place (AVI); applied on convert
   detect_note?: string | null;         // v0.9.44: why detection left it und
   detect_note_key?: string | null;     // v0.9.132 message code
@@ -41,6 +42,17 @@ export interface ScannedFile {
   file_size_gb: number;
   video_codec: string;
   hdr_format?: string | null;  // v0.10.0: "hdr10" / "hlg" / "dv<profile>"
+  // v0.10.0: the file panel's video details (null: not read yet)
+  video_width?: number;
+  video_height?: number;
+  video_fps?: number | null;
+  video_bit_depth?: number | null;
+  video_interlaced?: number | boolean | null;
+  video_vfr?: number | boolean | null;
+  video_dar?: string | null;
+  video_bitrate?: number | null;
+  link_count?: number | null;
+  resolution?: "4k" | "1080p" | "720p" | "sd" | null;  // the resolution pills' tier
   needs_conversion: boolean;
   audio_tracks: AudioTrack[];
   subtitle_tracks: SubtitleTrack[];

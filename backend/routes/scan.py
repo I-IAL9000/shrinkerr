@@ -16,6 +16,7 @@ from backend.scan_filters import (
     row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
     build_dir_label_index as _build_dir_label_index,
 )
+from backend.resolution import resolution_tier
 from backend.scanner import (
     keep_manual_choices, keep_manual_choices_json, mark_manual_choices, removable_audio_flag, scan_directory,
 )
@@ -187,8 +188,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                    (file_path, file_size, video_codec, needs_conversion,
                     audio_tracks_json, subtitle_tracks_json, native_language, language_source, scan_timestamp, removed_from_list, is_new, file_mtime, new_detected_at, duration, probe_status, probe_error, video_height,
                     has_removable_tracks_flag, has_removable_subs_flag, has_lossless_audio_flag, has_external_subs_flag, disc_type, video_conv_savings_bytes, has_und_tracks_flag, is_dubbed_flag, hdr_format, video_width, probe_json,
-                    video_fps, video_bit_depth, video_interlaced, video_vfr, link_count)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+                    video_fps, video_bit_depth, video_interlaced, video_vfr, link_count, video_dar, video_bitrate)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(file_path) DO UPDATE SET
                        file_size=excluded.file_size,
                        video_codec=excluded.video_codec,
@@ -239,7 +240,9 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                        video_bit_depth=excluded.video_bit_depth,
                        video_interlaced=excluded.video_interlaced,
                        video_vfr=excluded.video_vfr,
-                       link_count=excluded.link_count
+                       link_count=excluded.link_count,
+                       video_dar=excluded.video_dar,
+                       video_bitrate=excluded.video_bitrate
                 """,
                 (
                     scanned.file_path,
@@ -274,6 +277,8 @@ def _write_batch_sync_inner(db_path: str, batch: list, now: str, mark_new: bool 
                     _bool_or_none(getattr(scanned, 'video_interlaced', None)),
                     _bool_or_none(getattr(scanned, 'video_vfr', None)),
                     getattr(scanned, 'link_count', None),  # v0.10.0
+                    getattr(scanned, 'video_dar', "") or None,
+                    getattr(scanned, 'video_bitrate', None),
                     is_new_val,  # CASE expression param in ON CONFLICT clause (? = 1 AND removed_from_list = 1)
                 ),
             )
@@ -2125,6 +2130,16 @@ def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
         "video_height": row.get("video_height", 0),
         "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
+        # v0.10.0: the file panel's video details (None: not read yet)
+        "video_fps": row.get("video_fps"),
+        "video_bit_depth": row.get("video_bit_depth"),
+        "video_interlaced": row.get("video_interlaced"),
+        "video_vfr": row.get("video_vfr"),
+        "video_dar": row.get("video_dar"),
+        "video_bitrate": row.get("video_bitrate"),
+        "link_count": row.get("link_count"),
+        # The resolution pills' tier: "4k" / "1080p" / "720p" / "sd" / None
+        "resolution": resolution_tier(row.get("video_width"), row.get("video_height"), row["file_path"]),
         "plex_watch_status": row_watch_status(row, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
         "duplicate_group": row.get("duplicate_group"),
@@ -2227,6 +2242,16 @@ def _enrich_row(row: dict, ctx: dict) -> dict:
         "video_height": row.get("video_height", 0),
         "video_width": row.get("video_width", 0),  # v0.10.0 (SC-22)
         "hdr_format": row.get("hdr_format"),  # v0.10.0
+        # v0.10.0: the file panel's video details (None: not read yet)
+        "video_fps": row.get("video_fps"),
+        "video_bit_depth": row.get("video_bit_depth"),
+        "video_interlaced": row.get("video_interlaced"),
+        "video_vfr": row.get("video_vfr"),
+        "video_dar": row.get("video_dar"),
+        "video_bitrate": row.get("video_bitrate"),
+        "link_count": row.get("link_count"),
+        # The resolution pills' tier: "4k" / "1080p" / "720p" / "sd" / None
+        "resolution": resolution_tier(row.get("video_width"), row.get("video_height"), row["file_path"]),
         "plex_watch_status": row_watch_status(row, ctx),
         "duplicate_count": row.get("duplicate_count", 0),
         "duplicate_group": row.get("duplicate_group"),
@@ -2261,6 +2286,7 @@ _SCAN_SELECT_COLS = """id, file_path, file_size, video_codec, needs_conversion,
     COALESCE(video_height, 0) as video_height,
     COALESCE(video_width, 0) as video_width,
     hdr_format,
+    video_fps, video_bit_depth, video_interlaced, video_vfr, video_dar, video_bitrate, link_count,
     COALESCE(has_removable_tracks_flag, 0) as has_removable_tracks,
     COALESCE(has_und_tracks_flag, 0) as has_und_tracks,
     COALESCE(has_removable_subs_flag, 0) as has_removable_subs,

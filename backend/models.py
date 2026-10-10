@@ -79,6 +79,8 @@ class ScannedFile(BaseModel):
     video_bit_depth: int = 0
     video_interlaced: Optional[bool] = None
     video_vfr: Optional[bool] = None
+    video_dar: str = ""  # display aspect ratio, e.g. "16:9"
+    video_bitrate: Optional[int] = None  # the video stream's, when the container says
     # v0.10.0: hardlinks to the file (st_nlink); above 1 it's still linked
     # elsewhere (a torrent client seeding it) and converting frees nothing.
     link_count: Optional[int] = None

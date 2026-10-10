@@ -4,6 +4,7 @@
     "files_many": "{{count}} archivos",
     "files_other": "{{count}} archivos",
     "openOnImdb": "Abrir {{id}} en IMDb",
+    "findOnImdb": "Buscar {{title}} en IMDb",
     "openOnTvdb": "Abrir en TheTVDB",
     "rescanFolder": "Volver a escanear {{name}}",
     "ignoreFolderConfirm_one": "¿Ignorar {{count}} archivo en {{name}}/?",

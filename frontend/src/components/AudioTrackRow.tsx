@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { AudioTrack } from "../types";
 import { languageOptions } from "../utils/languages";
 import { detectNote } from "../i18n/server";
-import { fmtBytes } from "../fmt";
+import { fmtBitrate, fmtBytes } from "../fmt";
 
 interface AudioTrackRowProps {
   track: AudioTrack;
@@ -39,7 +39,11 @@ export default function AudioTrackRow({ track, onToggle, onSetLanguage, busy }: 
         style={{ accentColor: "var(--accent)", cursor: "pointer" }}
       />
       <span style={removeStyle}>{track.language}</span>
-      <span style={removeStyle}>&mdash; {track.codec} {track.channels > 0 ? channelLabel : ""}</span>
+      <span style={removeStyle}>
+        &mdash; {track.codec}{track.profile && track.profile.toLowerCase() !== track.codec.toLowerCase() ? ` (${track.profile})` : ""}
+        {" "}{track.channels > 0 ? channelLabel : ""}
+        {track.bitrate ? ` · ${fmtBitrate(track.bitrate)}` : ""}
+      </span>
       {track.title && <span style={{ color: "var(--text-muted)", ...removeStyle }}>&quot;{track.title}&quot;</span>}
       <span className="track-size" style={removeStyle}>{sizeLabel}</span>
       {track.manual && <span className="track-manual" title={t("fileDetail:tracks.manualTitle")}>{t("fileDetail:tracks.manual")}</span>}

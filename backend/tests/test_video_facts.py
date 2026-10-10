@@ -19,8 +19,10 @@ def test_the_helpers():
     assert [bit_depth_of(f) for f in ("yuv420p10le", "p010le", "yuv420p12le", "yuv420p", "yuv410p", "nv12", "")] \
         == [10, 10, 12, 8, 8, 8, 0]
     assert [_frame_rate(f) for f in ("24000/1001", "25", "0/0", "", None)] == [24000 / 1001, 25.0, 0.0, 0.0, 0.0]
-    assert video_facts({"video_fps": 23.9760239, "video_pix_fmt": "yuv420p10le", "video_interlaced": True}) == {
-        "video_fps": 23.976, "video_bit_depth": 10, "video_interlaced": True, "video_vfr": None}
+    assert video_facts({"video_fps": 23.9760239, "video_pix_fmt": "yuv420p10le", "video_interlaced": True,
+                        "video_dar": "16:9", "video_bitrate": 5000000}) == {
+        "video_fps": 23.976, "video_bit_depth": 10, "video_interlaced": True, "video_vfr": None,
+        "video_dar": "16:9", "video_bitrate": 5000000}
 
 
 def _clip(path, *args, rate=24, seconds=2):
@@ -66,13 +68,20 @@ async def test_a_scan_stores_them(test_db, monkeypatch):
                            has_removable_tracks=False, estimated_savings_bytes=0, estimated_savings_gb=0.0,
                            audio_tracks=[], **facts)
     scan_route._write_batch_sync(test_db, [
-        scanned("/m/a.mkv", video_fps=29.97, video_bit_depth=10, video_interlaced=True, video_vfr=True),
+        scanned("/m/a.mkv", video_fps=29.97, video_bit_depth=10, video_interlaced=True, video_vfr=True,
+                video_dar="2.39:1", video_bitrate=8000000, video_width=1920, video_height=800),
         scanned("/m/b.mkv", video_interlaced=False),  # nothing else known
     ], "2026-10-10")
     async with aiosqlite.connect(test_db) as db:
-        async with db.execute("SELECT file_path, video_fps, video_bit_depth, video_interlaced, video_vfr "
-                              "FROM scan_results ORDER BY file_path") as cur:
-            assert await cur.fetchall() == [("/m/a.mkv", 29.97, 10, 1, 1), ("/m/b.mkv", None, None, 0, None)]
+        async with db.execute("SELECT file_path, video_fps, video_bit_depth, video_interlaced, video_vfr, video_dar, "
+                              "video_bitrate FROM scan_results ORDER BY file_path") as cur:
+            assert await cur.fetchall() == [("/m/a.mkv", 29.97, 10, 1, 1, "2.39:1", 8000000),
+                                            ("/m/b.mkv", None, None, 0, None, None, None)]
+    # The Scanner's file lists carry them, for the file panel.
+    rows = await scan_route.get_scan_files("/m/")
+    a = next(r for r in rows if r["file_path"] == "/m/a.mkv")
+    assert (a["video_fps"], a["video_dar"], a["video_bitrate"], a["video_bit_depth"]) == (29.97, "2.39:1", 8000000, 10)
+    assert a["resolution"] == "1080p"  # the resolution pills' tier: 1920 wide
 
 
 @pytest.mark.asyncio
@@ -91,13 +100,15 @@ async def test_a_conversion_refreshes_them_from_the_output(test_db, tmp_path, mo
 
     async def probe(path, *a, **kw):
         return {"video_codec": "hevc", "video_pix_fmt": "yuv420p10le", "video_fps": 25.0, "video_interlaced": False,
-                "video_vfr": None, "audio_tracks": [], "subtitle_tracks": [], "duration": 60, "file_size": 1}
+                "video_vfr": None, "video_dar": "16:9", "video_bitrate": 3000000,
+                "audio_tracks": [], "subtitle_tracks": [], "duration": 60, "file_size": 1}
     monkeypatch.setattr(scanner, "probe_file", probe)
     job_id = await JobQueue(test_db).add_job(str(src), "convert", encoder="libx265")
     await refresh_converted_scan_row(test_db, job_id, str(src), str(src))
     async with aiosqlite.connect(test_db) as db:
-        async with db.execute("SELECT video_fps, video_bit_depth, video_interlaced, video_vfr FROM scan_results") as cur:
-            assert await cur.fetchone() == (25.0, 10, 0, None)
+        async with db.execute("SELECT video_fps, video_bit_depth, video_interlaced, video_vfr, video_dar, video_bitrate "
+                              "FROM scan_results") as cur:
+            assert await cur.fetchone() == (25.0, 10, 0, None, "16:9", 3000000)
 
 
 @pytest.mark.asyncio

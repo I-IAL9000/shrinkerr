@@ -3,6 +3,7 @@
     "files_one": "{{count}} file",
     "files_other": "{{count}} files",
     "openOnImdb": "Open {{id}} on IMDb",
+    "findOnImdb": "Find {{title}} on IMDb",
     "openOnTvdb": "Open on TheTVDB",
     "rescanFolder": "Rescan {{name}}",
     "ignoreFolderConfirm_one": "Ignore all {{count}} file in {{name}}/?",

@@ -40,6 +40,13 @@ export function fmtBytes(bytes: number | null | undefined): string {
   return `${b < 0 ? "-" : ""}${fmtDecimal(value, digits)} ${BYTE_UNITS[unit]}`;
 }
 
+/** A bitrate in bits per second: "12.3 Mb/s", "640 kb/s" (v0.10.0). */
+export function fmtBitrate(bps: number | null | undefined): string {
+  const b = Number(bps) || 0;
+  if (b >= 1_000_000) return `${fmtDecimal(b / 1_000_000, 1)} Mb/s`;
+  return `${fmtNum(Math.round(b / 1000))} kb/s`;
+}
+
 /**
  * A duration from whole seconds: "45s", "2m 5s", "1h 59m", "2d 3h".
  * v0.10.0: the old one rounded each part, giving "2m 60s" and "1h 60m".

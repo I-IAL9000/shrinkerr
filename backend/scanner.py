@@ -425,12 +425,15 @@ def bit_depth_of(pix_fmt: str) -> int:
 
 def video_facts(probe: dict) -> dict:
     """The scan_results video columns a probe gives (v0.10.0): frame rate,
-    bit depth, interlaced and variable frame rate (None: unknown)."""
+    bit depth, interlaced, variable frame rate, display aspect ratio and the
+    video stream's bitrate (None / 0 / "": unknown)."""
     return {
         "video_fps": round(float(probe.get("video_fps") or 0), 3),
         "video_bit_depth": bit_depth_of(probe.get("video_pix_fmt") or ""),
         "video_interlaced": probe.get("video_interlaced"),
         "video_vfr": probe.get("video_vfr"),
+        "video_dar": probe.get("video_dar") or "",
+        "video_bitrate": probe.get("video_bitrate"),
     }
 
 

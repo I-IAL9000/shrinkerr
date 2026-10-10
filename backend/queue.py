@@ -1140,10 +1140,12 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             if fresh:  # the output's frame rate / bit depth / scan type (v0.10.0)
                 from backend.scanner import video_facts
                 facts = video_facts(fresh)
-                update_cols += ["video_fps = ?", "video_bit_depth = ?", "video_interlaced = ?", "video_vfr = ?"]
+                update_cols += ["video_fps = ?", "video_bit_depth = ?", "video_interlaced = ?", "video_vfr = ?",
+                                "video_dar = ?", "video_bitrate = ?"]
                 update_params += [facts["video_fps"] or None, facts["video_bit_depth"] or None,
                                   None if facts["video_interlaced"] is None else int(facts["video_interlaced"]),
-                                  None if facts["video_vfr"] is None else int(facts["video_vfr"])]
+                                  None if facts["video_vfr"] is None else int(facts["video_vfr"]),
+                                  facts["video_dar"] or None, facts["video_bitrate"]]
             update_params.append(file_path)  # WHERE
             await db_path.execute(
                 f"UPDATE scan_results SET {', '.join(update_cols)} WHERE file_path = ?",

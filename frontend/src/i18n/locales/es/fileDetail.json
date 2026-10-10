@@ -131,5 +131,21 @@
       "bluray": "Abre la ISO en tu ordenador y copia sus carpetas BDMV y CERTIFICATE junto a ella: Shrinkerr convierte carpetas de Blu-ray.",
       "unknown": "Comprueba que la imagen se abre en tu ordenador. Si es un DVD o Blu-ray, copia su carpeta VIDEO_TS o BDMV junto a ella: Shrinkerr convierte carpetas de disco."
     }
+  },
+  "details": {
+    "duration": "Duración",
+    "codec": "Códec",
+    "size": "Tamaño",
+    "bitrate": "Tasa de bits",
+    "width": "Ancho",
+    "height": "Alto",
+    "aspectRatio": "Relación de aspecto",
+    "resolution": "Resolución",
+    "frameRate": "Fotogramas por segundo",
+    "container": "Contenedor",
+    "bitDepth": "{{bits}} bits",
+    "videoBitrate": "vídeo {{rate}}",
+    "variable": "variable",
+    "interlaced": "entrelazado"
   }
 }
