@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
 
 ### Fixed
+- **Language detection never read non-Latin Blu-ray subtitles**: the second OCR pass (Chinese, Japanese, Korean, Russian, Arabic) for PGS tracks ran with the English model, so those tracks stayed unknown. It uses those models now — and Chinese PGS subtitles can be converted to SRT too.
 - **Request replacement could delete the wrong movie file**: Radarr deletes *its* file for the movie, which may not be the one you picked (an older copy beside it). It now refuses when they differ, as Sonarr already did.
 - **Advanced Search uses the Scanner's own filters**: no 5,000-file limit — its conditions now apply to the tree, the lists, the counts and Add to Queue — and it's part of the page address like the pills. "Matches regex" is a real regular expression, "Filename" searches the file name rather than the whole path, "Type" agrees with the Movies / TV pills, "audio codec is not X" means no track is X, and HDR uses the HDR format the scan found (the name only for files scanned before that was stored).
 - **A rescan undid the tracks you'd kept or removed by hand.** Also, editing a file's tracks didn't update the Audio / Subtitle cleanup filters.

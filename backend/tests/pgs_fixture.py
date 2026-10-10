@@ -30,12 +30,13 @@ def _rle(pixels, width: int, height: int) -> bytes:
     return bytes(out)
 
 
-def write_sup(path, cues: list[tuple[float, float, str]], size=(1920, 1080)) -> None:
+def write_sup(path, cues: list[tuple[float, float, str]], size=(1920, 1080), font_path: str | None = None) -> None:
     """A .sup with one display set per (start s, end s, text) cue, and one
-    clearing it."""
+    clearing it. `font_path`: a TrueType font for scripts Pillow's own
+    lacks (Cyrillic…)."""
     from PIL import Image, ImageDraw, ImageFont
     width, height = size
-    font = ImageFont.load_default(size=64)
+    font = ImageFont.truetype(font_path, 64) if font_path else ImageFont.load_default(size=64)
     out = bytearray()
     for n, (start, end, text) in enumerate(cues):
         left, top, right, bottom = ImageDraw.Draw(Image.new("L", (1, 1))).textbbox((0, 0), text, font=font)
@@ -62,12 +63,12 @@ def write_sup(path, cues: list[tuple[float, float, str]], size=(1920, 1080)) -> 
 
 
 def make_video(path, subs: list[tuple[str, list[tuple[float, float, str]]]], seconds: int = 8,
-               vobsub: bool = False, extra_args: list[str] | None = None) -> None:
+               vobsub: bool = False, extra_args: list[str] | None = None, font_path: str | None = None) -> None:
     """An MKV with a test video and one image subtitle per (language, cues)."""
     sups = []
     for i, (_, cues) in enumerate(subs):
         sups.append(f"{path}.{i}.sup")
-        write_sup(sups[-1], cues)
+        write_sup(sups[-1], cues, font_path=font_path)
     # -copyts: ffmpeg would start each .sup input at 0, moving its cues.
     cmd = ["ffmpeg", "-v", "error", "-y", "-copyts", "-f", "lavfi", "-i", f"testsrc2=s=320x240:r=24:d={seconds}"]
     for sup in sups:

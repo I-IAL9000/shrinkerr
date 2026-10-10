@@ -25,12 +25,14 @@ import functools
 import os
 import shutil
 import tempfile
+import threading
 
-# babelfish languages passed to pgsrip; it maps them to tesseract packs.
-# Pass 1 is Latin (eng) — clean + fast for the common case. Pass 2 covers
-# the non-Latin scripts we installed packs for.
+# Tesseract packs for pgsrip's two passes. Pass 1 is Latin (eng) — clean +
+# fast for the common case. Pass 2 covers the non-Latin scripts we installed
+# packs for. (Until v0.10.0 pass 2 ran in English too: pgsrip took the
+# language from the .sup's file name only — see _TessShim.)
 _LATIN_LANGS = ("eng",)
-_NON_LATIN_LANGS = ("zho", "jpn", "kor", "rus", "ara")
+_NON_LATIN_LANGS = ("chi_sim", "chi_tra", "jpn", "kor", "rus", "ara")
 
 # v0.9.8: codec → pipeline. PGS (Blu-ray) goes through pgsrip; VobSub (DVD,
 # dvd_subtitle) is a different bitstream pgsrip can't read, so it goes through
@@ -184,26 +186,59 @@ class _PgsRipError(Exception):
     burning minutes re-extracting. v0.9.53."""
 
 
+_tess_lang = threading.local()
+
+
+class _TessShim:
+    """pgsrip's handle on pytesseract, OCRing in `_tess_lang.value` when it's
+    set. pgsrip takes the language only from the .sup's file name (one
+    babelfish code, so no "chi_sim+jpn+…") and ignores Options.languages, so
+    every detection pass ran in English (v0.10.0). A rip runs in one thread
+    (pgsrip has none of its own), so a thread-local is enough."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def image_to_data(self, image, **config):
+        if getattr(_tess_lang, "value", None):
+            config["lang"] = _tess_lang.value
+        return self._real.image_to_data(image, **config)
+
+
+def _patch_pgsrip_tesseract() -> None:
+    from pgsrip import ripper
+    if not isinstance(ripper.tess, _TessShim):
+        ripper.tess = _TessShim(ripper.tess)
+
+
 def _pgsrip_rip(sup_path: str, tess_langs: tuple[str, ...] = ()) -> str | None:
-    """Run pgsrip on a .sup; the path of the .srt it wrote, or None. Sync
-    (pgsrip is blocking). Raises _PgsRipError when pgsrip cannot decode the
-    .sup at all. pgsrip OCRs in the language named in the .sup's file name
-    (none: tesseract's default, English); `tess_langs` only labels the logs."""
+    """Run pgsrip on a .sup, OCRing with the tesseract packs `tess_langs`
+    (the installed ones; none installed: nothing is read); the path of the
+    .srt it wrote, or None. Sync (pgsrip is blocking). Raises _PgsRipError
+    when pgsrip cannot decode the .sup at all."""
     import io
     import logging
+    packs = [p for p in tess_langs if p in tesseract_languages()]
+    if not packs:
+        print(f"[IMG-OCR] No tesseract pack installed for {','.join(tess_langs) or '?'}", flush=True)
+        return None
     _buf = io.StringIO()
     _handler = logging.StreamHandler(_buf)
     _pgs_logger = logging.getLogger("pgsrip")
     try:
         from pgsrip import pgsrip, Sup, Options
-        from babelfish import Language
         _patch_pgsrip_from_hex()  # v0.9.22: survive empty-byte reads
+        _patch_pgsrip_tesseract()
         media = Sup(sup_path)
-        langs = {Language(code) for code in tess_langs}
         _pgs_logger.addHandler(_handler)  # capture pgsrip's swallowed errors
+        _tess_lang.value = "+".join(packs)
         try:
-            pgsrip.rip(media, Options(languages=langs, overwrite=True))
+            pgsrip.rip(media, Options(overwrite=True))
         finally:
+            _tess_lang.value = None
             _pgs_logger.removeHandler(_handler)
     except Exception as exc:
         print(f"[IMG-OCR] pgsrip failed ({','.join(tess_langs)}): {exc}", flush=True)
@@ -546,9 +581,11 @@ def ocr_pack(language: str | None) -> str | None:
     unknown one), or None when it isn't installed."""
     from backend.scanner import _ISO_T_TO_B, normalize_lang
     lang = normalize_lang(language)
-    to_t = {b: t for t, b in _ISO_T_TO_B.items()}
-    pack = "eng" if lang == "und" else {"chi": "chi_sim"}.get(lang) or to_t.get(lang, lang)
-    return pack if pack in tesseract_languages() else None
+    installed = tesseract_languages()
+    if lang == "chi":  # simplified or traditional: read with both
+        return "+".join(p for p in ("chi_sim", "chi_tra") if p in installed) or None
+    pack = "eng" if lang == "und" else {b: t for t, b in _ISO_T_TO_B.items()}.get(lang, lang)
+    return pack if pack in installed else None
 
 
 def srt_plan(sub_tracks: list[dict], kept=None, merged: list[dict] | None = None) -> list[dict]:
@@ -568,8 +605,7 @@ def srt_plan(sub_tracks: list[dict], kept=None, merged: list[dict] | None = None
         if codec not in IMAGE_SUB_CODECS or (lang, bool(t.get("forced"))) in text:
             continue
         pack = ocr_pack(lang)
-        # pgsrip names the pack by the language's code: no chi_sim, aze_cyrl…
-        if not pack or (codec in _PGS_CODECS and "_" in pack):
+        if not pack:
             print(f"[IMG-OCR] No OCR language pack for {lang}: subtitle #{t.get('stream_index')} "
                   f"stays an image", flush=True)
             continue
@@ -599,16 +635,6 @@ def ocr_workdir(input_path: str) -> str:
     return work
 
 
-def _sup_path(workdir: str, stream_index: int, pack: str) -> str | None:
-    """Where pgsrip reads track `stream_index` with tesseract pack `pack`: it
-    takes the OCR language from the .sup's name, spelt its own way ("fra"
-    becomes ".fr.sup"). None when it can't name that pack."""
-    from pgsrip.media_path import MediaPath
-    path = str(MediaPath(os.path.join(workdir, f"s{stream_index}.{pack}.sup")))
-    language = MediaPath(path).language
-    return path if language and language.alpha3 == pack else None
-
-
 def _srt_has_text(path: str) -> bool:
     try:
         with open(path, "rb") as fh:
@@ -622,17 +648,7 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
     subtitles to merge: {path, codec, language, forced, title, stream_index}.
     A track that can't be read is left out. One extraction pass per kind:
     ffmpeg (mkvextract as the fallback) for PGS, mkvextract for VobSub."""
-    pgs: list[tuple[dict, str]] = []
-    for t in plan:
-        if t["codec"] not in _PGS_CODECS:
-            continue
-        try:
-            sup = _sup_path(workdir, t["stream_index"], t["pack"])
-        except Exception as exc:  # pgsrip missing
-            print(f"[IMG-OCR] PGS OCR unavailable: {exc}", flush=True)
-            sup = None
-        if sup:
-            pgs.append((t, sup))
+    pgs = [(t, os.path.join(workdir, f"s{t['stream_index']}.sup")) for t in plan if t["codec"] in _PGS_CODECS]
     vob = [(t, os.path.join(workdir, f"s{t['stream_index']}.idx")) for t in plan if t["codec"] in _VOBSUB_CODECS]
     if pgs:
         cmd = ["ffmpeg", "-v", "error", "-y", "-i", input_path]
@@ -653,7 +669,7 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
             continue
         try:
             if t["codec"] in _PGS_CODECS:
-                srt = await loop.run_in_executor(None, _pgsrip_rip, src)
+                srt = await loop.run_in_executor(None, _pgsrip_rip, src, tuple(t["pack"].split("+")))
             else:
                 srt = await loop.run_in_executor(None, _subtile_ocr_run, src, t["pack"])
         except _PgsRipError:

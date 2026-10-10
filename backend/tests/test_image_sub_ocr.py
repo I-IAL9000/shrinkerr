@@ -276,6 +276,8 @@ def test_pgsrip_reads_srt_and_returns_text(monkeypatch, tmp_path):
     sup.write_bytes(b"\x00")
     srt = tmp_path / "sub.srt"
     monkeypatch.setattr(io, "_patch_pgsrip_from_hex", lambda: None)
+    monkeypatch.setattr(io, "_patch_pgsrip_tesseract", lambda: None)
+    monkeypatch.setattr(io, "tesseract_languages", lambda: frozenset({"eng"}))
 
     fake_pgsrip = types.ModuleType("pgsrip")
 

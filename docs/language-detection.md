@@ -33,9 +33,11 @@ legacy non-Unicode encodings — GB2312 / GBK / Big5 (Chinese), Shift-JIS
 (Japanese), EUC-KR (Korean), Windows-1252 / Latin-1 (Western) — are decoded
 correctly instead of turning into gibberish the detector can't read.
 
-Image-subtitle OCR is multi-script: it detects Latin, Han (Chinese),
-Japanese, Korean, Cyrillic, and Arabic scripts and OCRs with the matching
-model.
+Image-subtitle OCR is multi-script: it reads the track with the English
+(Latin) model first and, when that text isn't a recognisable language,
+again with the Chinese, Japanese, Korean, Russian (Cyrillic) and Arabic
+models. (Before v0.10.0 the second pass of a Blu-ray PGS track still used
+the English model, so those tracks stayed unknown.)
 
 ## How to run it
 

@@ -34,8 +34,8 @@ def test_the_plan(monkeypatch):
         _t(3, "fre"), _t(6, "fre", "subrip"),     # a text track in its language already
         _t(13, "fr", forced=True),                # but not a forced one
         _t(4, "is", forced=True),                 # Icelandic, read with the isl pack
-        _t(5, "chi", "dvd_subtitle"),             # VobSub can use chi_sim…
-        _t(7, "chi"),                             # …pgsrip can't
+        _t(5, "chi", "dvd_subtitle"),             # Chinese: the Chinese packs installed
+        _t(7, "chi"),
         _t(8, "ger"),                             # no pack
         _t(9, "eng"),                             # removed
         _t(10, "spa"),                            # a sidecar in Spanish is merged
@@ -44,10 +44,19 @@ def test_the_plan(monkeypatch):
     plan = image_sub_ocr.srt_plan(tracks, kept={2, 3, 6, 13, 4, 5, 7, 8, 10, 11},
                                   merged=[{"path": "/m/a.es.srt", "codec": "subrip", "language": "spa"}])
     assert [(p["stream_index"], p["pack"], p["forced"]) for p in plan] == [
-        (2, "eng", False), (13, "fra", True), (4, "isl", True), (5, "chi_sim", False), (11, "eng", False)]
+        (2, "eng", False), (13, "fra", True), (4, "isl", True), (5, "chi_sim", False), (7, "chi_sim", False),
+        (11, "eng", False)]
     assert plan[0]["title"] == "English" and plan[2]["language"] == "ice"
     monkeypatch.setattr(image_sub_ocr, "tesseract_languages", lambda: frozenset())
     assert image_sub_ocr.srt_plan(tracks) == []  # no tesseract
+
+
+def test_no_pack_no_ocr(monkeypatch, capsys):
+    """A pass whose packs aren't installed doesn't run (tesseract would read
+    nothing, or fail the rip)."""
+    monkeypatch.setattr(image_sub_ocr, "tesseract_languages", lambda: frozenset({"eng"}))
+    assert image_sub_ocr._pgsrip_rip("/nowhere/s1.sup", ("rus", "ara")) is None
+    assert "No tesseract pack installed for rus,ara" in capsys.readouterr().out
 
 
 def test_the_tracks_are_titled():
@@ -177,7 +186,7 @@ async def test_pgs_tracks_are_read(tmp_path, monkeypatch):
     assert [start for start, _ in english] == [0.5, 3.0, 5.5]
     assert all(phrase in _words(text) for phrase, (_, text) in zip(PHRASES, english, strict=True))
     assert "manger ce soir" in _words(open(out[1]["path"], encoding="utf-8").read())
-    assert sorted(os.listdir(os.path.dirname(out[0]["path"]))) == ["s1.en.srt", "s2.fr.srt"]  # .sup files gone
+    assert sorted(os.listdir(os.path.dirname(out[0]["path"]))) == ["s1.srt", "s2.srt"]  # .sup files gone
 
 
 @needs_vobsub
@@ -198,6 +207,37 @@ async def test_detection_still_reads_them(tmp_path):
     make_video(film, [("und", ENGLISH)])
     lang, confidence = await image_sub_ocr.detect_image_sub_language(str(film), 1, "hdmv_pgs_subtitle")
     assert lang == "eng" and confidence > 0.5
+
+
+RUSSIAN = [(0.5, 2.5, "Сегодня прекрасная погода"), (3.0, 5.0, "Я хотел бы чашку чая"),
+           (5.5, 7.5, "Где ты оставил ключи от дома")]
+CYRILLIC_FONT = next((p for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                                  "/usr/share/fonts/dejavu/DejaVuSans.ttf") if os.path.exists(p)), None)
+needs_russian = pytest.mark.skipif(
+    not (_has("ffmpeg", "mkvextract", "tesseract") and _pgsrip() and CYRILLIC_FONT
+         and "rus" in image_sub_ocr.tesseract_languages()),
+    reason="needs tesseract's Russian pack and a Cyrillic font")
+
+
+@needs_russian
+@pytest.mark.asyncio
+async def test_detection_reads_other_scripts(tmp_path):
+    """The second pass OCRs with the non-Latin packs — it ran in English
+    until v0.10.0, so a Russian PGS track stayed unknown."""
+    film = tmp_path / "Film (2020).mkv"
+    make_video(film, [("und", RUSSIAN)], font_path=CYRILLIC_FONT)
+    lang, _ = await image_sub_ocr.detect_image_sub_language(str(film), 1, "hdmv_pgs_subtitle")
+    assert lang == "rus"
+
+
+@needs_russian
+@pytest.mark.asyncio
+async def test_a_russian_track_is_read(tmp_path, monkeypatch):
+    film = tmp_path / "Film (2020).mkv"
+    make_video(film, [("rus", RUSSIAN)], font_path=CYRILLIC_FONT)
+    [out] = await _read(film, monkeypatch, tmp_path)
+    text = open(out["path"], encoding="utf-8").read().lower()
+    assert out["language"] == "rus" and "погода" in text and "чашку" in text
 
 
 @needs_vobsub
