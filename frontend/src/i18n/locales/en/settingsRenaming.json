@@ -46,10 +46,7 @@
     "seasonFolder": "Season folder",
     "loadingPreview": "loading preview…"
   },
-  "save": "Save Renaming Settings",
-  "saving": "Saving...",
   "toast": {
-    "saved": "Renaming settings saved",
     "saveFailed": "Save failed"
   }
 }

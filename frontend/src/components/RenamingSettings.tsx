@@ -38,13 +38,21 @@ const selectStyle: React.CSSProperties = {
   paddingRight: 26,
 };
 
-export default function RenamingSettings() {
+/** What the renaming editor has unsaved, for Settings' Save bar (v0.10.0). */
+export interface SaveBarPart {
+  changed: number;
+  save: () => Promise<boolean>;
+  discard: () => void;
+}
+
+export default function RenamingSettings({ onSaveBarChange }: { onSaveBarChange?: (part: SaveBarPart | null) => void }) {
   const { t } = useTranslation(["settingsRenaming", "common"]);
   const toast = useToast();
   const [settings, setSettings] = useState<RenameSettings | null>(null);
+  // As saved on the server; edits are `settings` minus this.
+  const [saved, setSaved] = useState<RenameSettings | null>(null);
   const [tokens, setTokens] = useState<RenameTokenCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   // Active input for click-to-insert — which pattern field is focused
   const [activeField, setActiveField] = useState<"movie_file_pattern" | "tv_file_pattern" | "movie_folder_pattern" | "tv_folder_pattern" | "season_folder_pattern">("movie_file_pattern");
   const refs = {
@@ -62,6 +70,7 @@ export default function RenamingSettings() {
     Promise.all([getRenameSettings(), getRenameTokens()])
       .then(([s, t]) => {
         setSettings(s);
+        setSaved(s);
         setTokens(t.categories);
       })
       .finally(() => setLoading(false));
@@ -93,6 +102,31 @@ export default function RenamingSettings() {
     return () => clearTimeout(t);
   }, [settings]);
 
+  // Report unsaved edits to the Save bar (it saves / discards them).
+  const changed = settings && saved
+    ? (Object.keys(settings) as (keyof RenameSettings)[]).filter(k => JSON.stringify(settings[k]) !== JSON.stringify(saved[k])).length
+    : 0;
+  useEffect(() => {
+    if (!onSaveBarChange || !settings) return;
+    onSaveBarChange({
+      changed,
+      save: async () => {
+        try {
+          const updated = await saveRenameSettings(settings);
+          setSettings(updated);
+          setSaved(updated);
+          return true;
+        } catch (e: any) {
+          toast(e?.message || t("settingsRenaming:toast.saveFailed"), "error");
+          return false;
+        }
+      },
+      discard: () => setSettings(saved),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings, saved]);
+  useEffect(() => () => onSaveBarChange?.(null), []);  // eslint-disable-line react-hooks/exhaustive-deps
+
   if (loading || !settings) {
     return (
       <div style={sectionStyle}>
@@ -103,20 +137,6 @@ export default function RenamingSettings() {
 
   const update = (patch: Partial<RenameSettings>) => {
     setSettings({ ...settings, ...patch });
-  };
-
-  const save = async () => {
-    if (!settings) return;
-    setSaving(true);
-    try {
-      const updated = await saveRenameSettings(settings);
-      setSettings(updated);
-      toast(t("settingsRenaming:toast.saved"), "success");
-    } catch (e: any) {
-      toast(e?.message || t("settingsRenaming:toast.saveFailed"), "error");
-    } finally {
-      setSaving(false);
-    }
   };
 
   const insertToken = (token: string) => {
@@ -264,14 +284,6 @@ export default function RenamingSettings() {
         {settings.rename_folders && field(t("settingsRenaming:patterns.seasonFolder"), "season_folder_pattern")}
       </div>
 
-      {/* Left-align the Save button to match every other section in
-          Settings (encoding, audio, lossless, etc. all use
-          `alignSelf: "flex-start"`). v0.3.48+. */}
-      <div style={{ display: "flex", justifyContent: "flex-start", marginTop: 20 }}>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? t("settingsRenaming:saving") : t("settingsRenaming:save")}
-        </button>
-      </div>
     </div>
   );
 }

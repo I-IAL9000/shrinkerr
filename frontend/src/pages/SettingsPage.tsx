@@ -3,7 +3,7 @@ import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { useVisibleInterval } from "../useVisibleInterval";
 import { useRangeFill } from "../useRangeFill";
 import FolderBrowser from "../components/FolderBrowser";
-import RenamingSettings from "../components/RenamingSettings";
+import RenamingSettings, { type SaveBarPart } from "../components/RenamingSettings";
 import { vmafColor } from "../utils/vmaf";
 import { copyText } from "../utils/clipboard";
 import { shortcutsEnabled, setShortcutsEnabled } from "../shortcuts";
@@ -561,6 +561,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
       k === "auth_password" ? !!cur[k] : settingValue(cur[k]) !== settingValue(saved[k]));
   const dirtyKeys = changedKeys(encoding, savedEncoding);
   const dirty = dirtyKeys.length > 0;
+  // The renaming editor keeps its own settings (a separate API); its unsaved
+  // edits join the Save bar too.
+  const [renamingPart, setRenamingPart] = useState<SaveBarPart | null>(null);
+  const unsavedCount = dirtyKeys.length + (renamingPart?.changed || 0);
+  const anyUnsaved = unsavedCount > 0;
 
   const encodingRef = useRef<any>(null);
   encodingRef.current = encoding;
@@ -602,18 +607,29 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     }
   };
 
+  /** The Save bar: the settings and the renaming editor's edits. */
+  const saveAll = async () => {
+    const okSettings = await saveChanges(true);
+    const okRenaming = renamingPart?.changed ? await renamingPart.save() : true;
+    if (okSettings && okRenaming) toast(t("settingsMedia:header.saved"), "success");
+  };
+  const discardAll = () => {
+    setEncoding(savedEncoding);
+    renamingPart?.discard();
+  };
+
   // Leaving with unsaved edits: the tab (beforeunload) or another page.
   useEffect(() => {
-    if (!dirty) return;
+    if (!anyUnsaved) return;
     const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
     window.addEventListener("beforeunload", onUnload);
     return () => window.removeEventListener("beforeunload", onUnload);
-  }, [dirty]);
-  const blocker = useBlocker(({ nextLocation }) => dirty && !nextLocation.pathname.startsWith("/settings"));
+  }, [anyUnsaved]);
+  const blocker = useBlocker(({ nextLocation }) => anyUnsaved && !nextLocation.pathname.startsWith("/settings"));
   useEffect(() => {
     if (blocker.state !== "blocked") return;
     askConfirm({
-      message: t("settings:saveBar.leaveConfirm", { count: dirtyKeys.length }),
+      message: t("settings:saveBar.leaveConfirm", { count: unsavedCount }),
       confirmLabel: t("settings:saveBar.leave"),
       danger: true,
     }).then(leave => (leave ? blocker.proceed() : blocker.reset()));
@@ -805,12 +821,16 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
             />
           </div>
 
-          <h2 id="renaming" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
-            {t("settingsSystem:renaming.title")}
-          </h2>
-          <RenamingSettings />
         </>
       )}
+      {/* Mounted on every sub-page (shown on Media) so an unsaved renaming
+          edit survives switching pages, like the other settings. */}
+      <div hidden={section !== "media"}>
+        <h2 id="renaming" style={{ color: "var(--text-primary)", fontSize: 18, marginTop: 24, marginBottom: 12, scrollMarginTop: 20 }}>
+          {t("settingsSystem:renaming.title")}
+        </h2>
+        <RenamingSettings onSaveBarChange={setRenamingPart} />
+      </div>
 
       {!encoding && encodingError && (
         <div style={{ ...sectionStyle, marginTop: 24, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -5046,13 +5066,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
         </>
       )}
 
-      {dirty && (
+      {anyUnsaved && (
         <div className="settings-save-bar" role="region" aria-label={t("settings:saveBar.label")}>
-          <span aria-live="polite">{t("settings:saveBar.unsaved", { count: dirtyKeys.length })}</span>
-          <button className="btn btn-secondary" onClick={() => setEncoding(savedEncoding)} disabled={savingAll}>
+          <span aria-live="polite">{t("settings:saveBar.unsaved", { count: unsavedCount })}</span>
+          <button className="btn btn-secondary" onClick={discardAll} disabled={savingAll}>
             {t("settings:saveBar.discard")}
           </button>
-          <button className="btn btn-primary" onClick={() => saveChanges()} disabled={savingAll}>
+          <button className="btn btn-primary" onClick={saveAll} disabled={savingAll}>
             {t("common:actions.save")}
           </button>
         </div>

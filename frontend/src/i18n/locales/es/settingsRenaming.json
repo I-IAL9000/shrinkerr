@@ -46,10 +46,7 @@
     "seasonFolder": "Carpeta de temporada",
     "loadingPreview": "cargando vista previa…"
   },
-  "save": "Guardar ajustes de renombrado",
-  "saving": "Guardando...",
   "toast": {
-    "saved": "Ajustes de renombrado guardados",
     "saveFailed": "Error al guardar"
   }
 }
