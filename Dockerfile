@@ -47,6 +47,25 @@ RUN set -eux; \
         || echo "[BUILD] subtile-ocr build failed — VobSub OCR will be unavailable"; \
     rm -f /out/.crates.toml /out/.crates2.json
 
+# dovi_tool (v0.10.0): keeps Dolby Vision through a conversion (backend/dovi.py):
+# it takes the RPU from the original and puts it into the new HEVC stream.
+# Not on crates.io: built from its repository at a pinned release, with the
+# built-in font (its plot command's) so it needs no fontconfig. GUARDED: a
+# failed build leaves /out empty, and Dolby Vision files then stay
+# unconverted, as before.
+FROM mirror.gcr.io/library/python:3.11-slim-bookworm AS dovi-build
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev git; \
+    mkdir -p /out; \
+    ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
+        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+        && /opt/cargo/bin/cargo install --git https://github.com/quietvoid/dovi_tool --tag 2.3.4 --locked \
+           --no-default-features --features internal-font dovi_tool --root /out \
+        && /out/bin/dovi_tool --version ) \
+        || echo "[BUILD] dovi_tool build failed — Dolby Vision files won't be converted"; \
+    rm -f /out/.crates.toml /out/.crates2.json
+
 # Stage 3: runtime image.
 # python:3.11-slim-bookworm is multi-arch (amd64 + arm64) and much smaller
 # than the ubuntu/CUDA image used by the :nvenc variant.
@@ -259,6 +278,8 @@ COPY CHANGELOG.md .
 COPY --from=frontend-build /app/frontend/dist frontend/dist
 # DVD subtitle OCR (stage 2); runs against the tesseract-ocr installed above.
 COPY --from=subtile-ocr-build /out/ /usr/local/
+# Dolby Vision (dovi-build); mkvmerge comes with mkvtoolnix above.
+COPY --from=dovi-build /out/ /usr/local/
 
 RUN mkdir -p /app/data
 

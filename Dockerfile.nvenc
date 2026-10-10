@@ -36,6 +36,25 @@ RUN npm run build
 # ship 4.8.1) needs cuDNN 9, which this image carries; the plain -runtime
 # image has none, so whisper silently fell back to CPU. device="auto" still
 # falls back to CPU when no GPU/cuDNN is present, so nothing else changes.
+# dovi_tool (v0.10.0): keeps Dolby Vision through a conversion (backend/dovi.py):
+# it takes the RPU from the original and puts it into the new HEVC stream.
+# Not on crates.io: built from its repository at a pinned release, with the
+# built-in font (its plot command's) so it needs no fontconfig. GUARDED: a
+# failed build leaves /out empty, and Dolby Vision files then stay
+# unconverted, as before.
+FROM mirror.gcr.io/library/python:3.11-slim-bookworm AS dovi-build
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev git; \
+    mkdir -p /out; \
+    ( export RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo \
+        && curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable \
+        && /opt/cargo/bin/cargo install --git https://github.com/quietvoid/dovi_tool --tag 2.3.4 --locked \
+           --no-default-features --features internal-font dovi_tool --root /out \
+        && /out/bin/dovi_tool --version ) \
+        || echo "[BUILD] dovi_tool build failed — Dolby Vision files won't be converted"; \
+    rm -f /out/.crates.toml /out/.crates2.json
+
 FROM nvcr.io/nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
 
 # Install Python, curl, and GPG for repo signing.
@@ -202,6 +221,8 @@ COPY CHANGELOG.md .
 
 # Copy built frontend
 COPY --from=frontend-build /app/frontend/dist frontend/dist
+# Dolby Vision (dovi-build: glibc 2.36, runs on 24.04); mkvmerge comes with mkvtoolnix.
+COPY --from=dovi-build /out/ /usr/local/
 
 # Create data directory
 RUN mkdir -p /app/data

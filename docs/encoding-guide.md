@@ -15,6 +15,7 @@ This is the "what do I actually pick" guide. For system-level setup see
 - [VMAF target quality](#vmaf-target-quality)
 - [Before / after frames](#before--after-frames)
 - [AV1 output](#av1-output)
+- [HDR and Dolby Vision](#hdr-and-dolby-vision)
 - [Resolution-aware CQ](#resolution-aware-cq)
 - [Cross-encoder fallback settings](#cross-encoder-fallback-settings)
 - [Source-codec filter](#source-codec-filter)
@@ -285,6 +286,36 @@ job's details say which codec was used.
   (`x264` → `AV1`).
 - Only files that need converting are encoded; existing HEVC and AV1 files
   aren't re-encoded.
+
+## HDR and Dolby Vision
+
+**HDR10 and HLG** files keep their HDR: they're encoded 10-bit with the
+colour signalling carried over, and an output that lost it (an encoder or
+ffmpeg build that drops it) is thrown away and the original kept. Quick
+Sync and VAAPI encode 8-bit here, so they don't convert HDR files at all.
+
+**Dolby Vision** profiles 7 and 8 keep their Dolby Vision. Shrinkerr
+encodes the HDR10 (or HLG) base layer as usual, and
+[dovi_tool](https://github.com/quietvoid/dovi_tool) moves the Dolby Vision
+metadata (the RPU) from the original into the new file. Profile 7 becomes
+profile 8.1: its enhancement layer isn't kept, as most players ignore it.
+Every frame's metadata goes back with its frame, and a job that ends up
+with a different number of frames, or loses Dolby Vision on the way, keeps
+the original instead.
+
+Dolby Vision files are left alone (as before) when they're:
+
+- profile 5 (streaming releases): its base layer isn't HDR10, so a
+  re-encode turns it purple and green;
+- resized (a rule's or the queue's target resolution) or encoded to AV1;
+- encoded with Quick Sync or VAAPI;
+- on an install without dovi_tool and mkvmerge (both images include them;
+  on a native install, install them yourself).
+
+Dolby Vision files are HEVC, so they're only converted when HEVC is among
+the codecs you convert from (Settings → Video). Keeping Dolby Vision needs
+room for about twice the converted video next to the output while the job
+runs.
 
 ## Resolution-aware CQ
 

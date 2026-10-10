@@ -39,7 +39,7 @@
     "outputTruncated": "Output is shorter than the source ({{output}}s of {{source}}s), so the source read was probably interrupted. Original kept; retry the job.",
     "sourceReadFailed": "The source couldn't be read to the end ({{error}}). Original kept; retry the job.",
     "outputUnverifiable": "Couldn't read the output's length to check it's complete. Original kept; retry the job.",
-    "dolbyVisionSkipped": "Dolby Vision video isn't re-encoded: it would lose Dolby Vision or its colours. Nothing was converted.",
+    "dolbyVisionSkipped": "Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same size, with dovi_tool and mkvmerge installed; this file isn't. Nothing was converted.",
     "hdrNeeds10Bit": "HDR video needs a 10-bit encoder; {{encoder}} encodes 8-bit here. Use NVENC, libx265 or VideoToolbox. Nothing was converted.",
     "hdrLost": "The {{format}} source lost its HDR in the encode. Original kept.",
     "remuxOutputMissing": "Output file missing or empty after remux.",
@@ -51,7 +51,8 @@
     "wouldRemoveAllAudio": "Refusing to remove every audio track — the file would have no sound. Check the file's audio tracks in the Scanner and queue it again.",
     "reviewRejected": "Rejected in review",
     "reviewOriginalChanged": "The original changed or went away since it was reviewed; the converted file was discarded",
-    "reviewOutputMissing": "The converted file waiting for review is gone"
+    "reviewOutputMissing": "The converted file waiting for review is gone",
+    "dolbyVisionLost": "Couldn't keep Dolby Vision: {{reason}}. Original kept."
   },
   "labels": {
     "healthMode": {

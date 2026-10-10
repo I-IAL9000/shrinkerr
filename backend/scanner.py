@@ -281,9 +281,15 @@ def hdr_format_of(stream: dict) -> Optional[str]:
 
 
 def is_dolby_vision(hdr_format: Optional[str]) -> bool:
-    """Dolby Vision isn't re-encoded: profile 5 turns purple and green, and
-    every profile loses its Dolby Vision layer (v0.10.0)."""
     return bool(hdr_format and hdr_format.startswith("dv"))
+
+
+def _dv_stays(hdr_format: Optional[str]) -> bool:
+    """Dolby Vision that isn't converted: profile 5 would turn purple and
+    green; profiles 7 and 8 keep their Dolby Vision with dovi_tool (v0.10.0,
+    backend/dovi.py), and aren't converted without it."""
+    from backend.dovi import convertible
+    return is_dolby_vision(hdr_format) and not convertible(hdr_format)
 
 
 async def first_frame_info(source: str, input_args: Optional[list[str]] = None) -> Optional[dict]:
@@ -860,7 +866,7 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
         # v0.9.120: discs always need conversion regardless of the (often blank)
         # probed codec — mirror the scan-time rule so a settings recompute
         # doesn't flip them back to cleanup-only. Dolby Vision never does.
-        should_convert = 1 if (disc_type or vc in codec_names) and not is_dolby_vision(hdr_format) else 0
+        should_convert = 1 if (disc_type or vc in codec_names) and not _dv_stays(hdr_format) else 0
         if int(needs_conversion or 0) != should_convert:
             await db.execute(
                 "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
@@ -2366,7 +2372,7 @@ async def scan_directory(
         # must go through the convert path. Force it.
         if probe.get("disc_type"):
             needs_conversion = True
-        if is_dolby_vision(probe.get("hdr_format")):
+        if _dv_stays(probe.get("hdr_format")):
             needs_conversion = False
         audio_tracks = classify_audio_tracks(raw_tracks, native_lang, duration)
         raw_subs = probe.get("subtitle_tracks", [])

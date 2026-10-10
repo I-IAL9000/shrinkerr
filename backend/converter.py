@@ -3182,12 +3182,19 @@ async def convert_file(
     # v0.10.0: HDR guardrails. Dolby Vision is never re-encoded (profile 5
     # turns purple and green; the others lose Dolby Vision). Quick Sync and
     # VAAPI encode 8-bit here, which bands HDR.
+    from backend import dovi
     from backend.scanner import is_dolby_vision
     source_hdr = probe_data.get("hdr_format")
-    if is_dolby_vision(source_hdr):
+    _target_res = (override_target_resolution if override_target_resolution is not None
+                   else live_settings.get("target_resolution", "copy"))
+    # v0.10.0: profiles 7 and 8 keep Dolby Vision (dovi.py); the rest aren't re-encoded.
+    keep_dv = is_dolby_vision(source_hdr) and dovi.can_keep(
+        source_hdr, encoder=encoder, output_codec=output_codec, target_resolution=_target_res, disc_type=disc_type)
+    if is_dolby_vision(source_hdr) and not keep_dv:
         return {
             "success": False, "output_path": None, "space_saved": 0,
-            "error": "Dolby Vision video isn't re-encoded: it would lose Dolby Vision or its colours. Nothing was converted.",
+            "error": ("Dolby Vision is kept for profiles 7 and 8 encoded to HEVC at the same size, with dovi_tool "
+                      "and mkvmerge installed; this file isn't. Nothing was converted."),
             "error_key": "errors.dolbyVisionSkipped",
         }
     if source_hdr and encoder in ("qsv", "vaapi"):
@@ -4133,6 +4140,16 @@ async def convert_file(
     # H6 (v0.10.0): never let an output that stops early replace the original.
     _truncated = (await _truncation_failure(input_path, temp_path, duration, disc_type, all_lines)
                   or await _hdr_failure(source_hdr, temp_path))
+    if not _truncated and keep_dv:
+        # v0.10.0: the original's Dolby Vision into the encode (dovi.py)
+        _dv_error = await dovi.keep(input_path, temp_path, source_hdr)
+        if _dv_error:
+            _truncated = {"error": f"Couldn't keep Dolby Vision: {_dv_error}. Original kept.",
+                          "error_key": "errors.dolbyVisionLost", "error_params": {"reason": _dv_error}}
+        else:
+            print(f"[CONVERT] Dolby Vision kept ({source_hdr})", flush=True)
+            output_size = temp.stat().st_size
+            space_saved = original_size - output_size
     if _truncated:
         print(f"[CONVERT] {_truncated['error']}", flush=True)
         try:

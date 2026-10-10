@@ -39,7 +39,7 @@
     "outputTruncated": "La salida es más corta que el original ({{output}} s de {{source}} s): probablemente se interrumpió la lectura del archivo. Se ha conservado el original; vuelve a intentar el trabajo.",
     "sourceReadFailed": "No se pudo leer el original hasta el final ({{error}}). Se ha conservado el original; vuelve a intentar el trabajo.",
     "outputUnverifiable": "No se pudo leer la duración de la salida para comprobar que está completa. Se ha conservado el original; vuelve a intentar el trabajo.",
-    "dolbyVisionSkipped": "El vídeo Dolby Vision no se recodifica: perdería Dolby Vision o sus colores. No se ha convertido nada.",
+    "dolbyVisionSkipped": "Dolby Vision se conserva en los perfiles 7 y 8 codificados a HEVC al mismo tamaño, con dovi_tool y mkvmerge instalados; este archivo no lo cumple. No se ha convertido nada.",
     "hdrNeeds10Bit": "El vídeo HDR necesita un codificador de 10 bits; {{encoder}} codifica a 8 bits aquí. Usa NVENC, libx265 o VideoToolbox. No se ha convertido nada.",
     "hdrLost": "El original {{format}} perdió su HDR en la codificación. Se ha conservado el original.",
     "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",
@@ -51,7 +51,8 @@
     "wouldRemoveAllAudio": "Se ha evitado eliminar todas las pistas de audio: el archivo se quedaría sin sonido. Revisa las pistas de audio del archivo en el Escáner y vuelve a añadirlo a la cola.",
     "reviewRejected": "Rechazado en la revisión",
     "reviewOriginalChanged": "El original cambió o desapareció desde la revisión; se descartó el archivo convertido",
-    "reviewOutputMissing": "El archivo convertido pendiente de revisión ya no existe"
+    "reviewOutputMissing": "El archivo convertido pendiente de revisión ya no existe",
+    "dolbyVisionLost": "No se pudo conservar Dolby Vision: {{reason}}. Se ha conservado el original."
   },
   "labels": {
     "healthMode": {

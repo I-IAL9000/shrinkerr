@@ -1,3 +1,5 @@
+import json
+
 import aiosqlite
 from pathlib import Path
 from backend.config import settings
@@ -235,6 +237,19 @@ async def compact_if_bloated(min_free_bytes: int = 1024 ** 3) -> bool:
         return True
     finally:
         await db.close()
+
+
+async def _source_codecs(db) -> list[str]:
+    """The source_codecs setting (Settings → Convert from)."""
+    from backend.scanner import DEFAULT_SOURCE_CODECS
+    async with db.execute("SELECT value FROM settings WHERE key = 'source_codecs'") as cur:
+        row = await cur.fetchone()
+    if row and row[0]:
+        try:
+            return json.loads(row[0])
+        except Exception:
+            pass
+    return list(DEFAULT_SOURCE_CODECS)
 
 
 async def init_db():
@@ -1125,19 +1140,7 @@ async def init_db():
             ) as cur:
                 already_run = await cur.fetchone() is not None
             if not already_run:
-                from backend.scanner import DEFAULT_SOURCE_CODECS
-                async with db.execute(
-                    "SELECT value FROM settings WHERE key = 'source_codecs'"
-                ) as cur:
-                    row = await cur.fetchone()
-                if row and row[0]:
-                    try:
-                        import json as _json
-                        source_codecs = _json.loads(row[0])
-                    except Exception:
-                        source_codecs = list(DEFAULT_SOURCE_CODECS)
-                else:
-                    source_codecs = list(DEFAULT_SOURCE_CODECS)
+                source_codecs = await _source_codecs(db)
                 from backend.scanner import recompute_needs_conversion
                 flipped = await recompute_needs_conversion(db, source_codecs)
                 await db.execute(
@@ -1153,6 +1156,24 @@ async def init_db():
                     )
         except Exception as exc:
             print(f"[DB] v0.5.4 heal skipped: {exc}", flush=True)
+
+        # v0.10.0: Dolby Vision profiles 7 / 8 convert where dovi_tool and
+        # mkvmerge are installed (backend/dovi.py) — realign the scanned
+        # files whenever that changes (and once on upgrade).
+        try:
+            from backend.dovi import tools_available
+            have = "true" if tools_available() else "false"
+            async with db.execute("SELECT value FROM settings WHERE key = 'dovi_tools'") as cur:
+                row = await cur.fetchone()
+            if (row[0] if row else None) != have:
+                from backend.scanner import recompute_needs_conversion
+                flipped = await recompute_needs_conversion(db, await _source_codecs(db))
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('dovi_tools', ?)", (have,))
+                if flipped:
+                    print(f"[DB] Dolby Vision tools {'found' if have == 'true' else 'gone'}: "
+                          f"realigned {flipped} file(s)", flush=True)
+        except Exception as exc:
+            print(f"[DB] Dolby Vision realign skipped: {exc}", flush=True)
 
         # v0.9.85 backfill: compute is_dubbed_flag for rows whose native is from
         # an audio-independent source (api/manual/tmdb-manual). Heuristic rows

@@ -1570,9 +1570,9 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
     # a convert, not a no-op audio cleanup.
     if probe.get("disc_type"):
         needs_conversion = True
-    from backend.scanner import is_dolby_vision
-    if is_dolby_vision(probe.get("hdr_format")):
-        needs_conversion = False  # v0.10.0: never re-encoded
+    from backend.scanner import _dv_stays
+    if _dv_stays(probe.get("hdr_format")):
+        needs_conversion = False  # v0.10.0: Dolby Vision converts only where it's kept (dovi.py)
     audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
     raw_subs = probe.get("subtitle_tracks", [])
     subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
