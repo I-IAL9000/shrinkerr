@@ -627,9 +627,17 @@ _AUTH_ALWAYS_REQUIRED_PREFIXES = (
     "/api/nodes/report-progress",
     "/api/nodes/report-complete",
     "/api/nodes/report-metrics",
+    "/api/settings/nzbget-config",       # returns unmasked integration api_keys (the scripts read it)
+)
+
+# What the Settings page downloads or restores: never anonymous — the API
+# key, a password session, or a reverse proxy's sign-in (External). Their
+# plain download links can't send the key, so with External sign-in none of
+# them worked (v0.10.0). A local address that skips sign-in still can't:
+# these hold every stored secret.
+_NEVER_ANONYMOUS_PREFIXES = (
     "/api/settings/backup/download",     # DB snapshot incl. every stored secret
     "/api/settings/backup/restore",      # replaces the DB — trivial takeover if open
-    "/api/settings/nzbget-config",       # returns unmasked integration api_keys
     "/api/settings/nzbget-script",       # script with the api_key baked in
     "/api/settings/sabnzbd-script",      # same
 )
@@ -708,7 +716,13 @@ async def api_key_auth(request: Request, call_next):
     # primitives (webhook path injection, worker-node spoofing, backup
     # download) to anyone who can reach port 6680.
     needs_auth = False
+    never_anonymous = any(path.startswith(p) for p in _NEVER_ANONYMOUS_PREFIXES)
     if any(path.startswith(p) for p in _AUTH_ALWAYS_REQUIRED_PREFIXES):
+        needs_auth = True
+    elif never_anonymous and auth_policy.bypass(auth_settings, request) == "external":
+        request.state.auth_method = "external"
+        return await call_next(request)
+    elif never_anonymous:
         needs_auth = True
     elif bypass := auth_policy.bypass(auth_settings, request):
         # v0.10.0: a reverse proxy signs people in ("external"), or the

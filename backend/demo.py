@@ -9,7 +9,8 @@ made-up library, for a public demo (docs/demo.md, docker-compose.demo.yml).
   and episodes with made-up titles (no files behind them), their tracks,
   and a history of conversions, so the Dashboard, Scanner and Queue have
   something to show.
-- The watcher, the queue, scheduled backups and update checks don't run.
+- The watcher and the queue don't run (update checks and the weekly
+  database backup still do).
 """
 from __future__ import annotations
 
@@ -27,8 +28,17 @@ READ_ONLY_POSTS = frozenset({
 })
 
 
+# Reads that hand out secrets: everyone counts as signed in here (v0.10.0:
+# the API key was served to anyone).
+SECRET_READS = ("/api/settings/api-key", "/api/settings/backup/download", "/api/settings/nzbget-config",
+                "/api/settings/nzbget-script", "/api/settings/sabnzbd-script")
+
+
 def blocked(method: str, path: str) -> bool:
-    """A request the demo refuses: one that would change something."""
+    """A request the demo refuses: one that would change something, or read
+    a secret."""
+    if any(path.startswith(p) for p in SECRET_READS):
+        return True
     return (path.startswith("/api/") and method.upper() not in ("GET", "HEAD", "OPTIONS")
             and path.rstrip("/") not in READ_ONLY_POSTS)
 

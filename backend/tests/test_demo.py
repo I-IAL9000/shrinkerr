@@ -9,7 +9,9 @@ from backend import demo
 
 def test_what_the_demo_refuses():
     for method, path in (("POST", "/api/jobs/start"), ("PUT", "/api/settings/encoding"), ("DELETE", "/api/views/1"),
-                         ("POST", "/api/rules/"), ("PATCH", "/api/x"), ("POST", "/api/auth/setup")):
+                         ("POST", "/api/rules/"), ("PATCH", "/api/x"), ("POST", "/api/auth/setup"),
+                         ("GET", "/api/settings/api-key"), ("GET", "/api/settings/backup/download/a.zip"),
+                         ("GET", "/api/settings/nzbget-script"), ("GET", "/api/settings/nzbget-config")):
         assert demo.blocked(method, path), (method, path)
     for method, path in (("GET", "/api/jobs/"), ("POST", "/api/jobs/estimate"), ("POST", "/api/rules/test"),
                          ("POST", "/api/auth/ws-ticket"), ("POST", "/api/scan/search"), ("HEAD", "/api/health"),

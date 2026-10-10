@@ -416,6 +416,56 @@ def find_movie_in_radarr(nzb_name, radarr_url, radarr_key):
 # ---------------------------------------------------------------------------
 # Tag matching
 # ---------------------------------------------------------------------------
+def tag_check(nzb_name, config):
+    """Whether to process this download, by its series' or movie's tags in
+    Sonarr / Radarr. TV downloads are checked in Sonarr and movies in Radarr
+    only when that check is on and the app is set up; otherwise downloads of
+    that kind are processed (v0.10.0: with a check off, every download was
+    skipped)."""
+    tags = [t.lower() for t in config.get("tags", ["convert"])]
+    sonarr_url = config.get("sonarr_url", "")
+    sonarr_key = config.get("sonarr_api_key", "")
+    radarr_url = config.get("radarr_url", "")
+    radarr_key = config.get("radarr_api_key", "")
+    tv_checked = bool(config.get("check_sonarr_tags", True) and sonarr_url and sonarr_key)
+    movie_checked = bool(config.get("check_radarr_tags", True) and radarr_url and radarr_key)
+
+    # Determine whether this NZB is a TV episode or a movie.
+    # TV episodes have S##E## (or similar season patterns) in the name.
+    # This prevents Sonarr's fuzzy /parse endpoint from mismatching a movie
+    # NZB to a similarly-named TV series.
+    looks_like_tv = bool(re.search(r"[Ss]\d{1,2}[Ee]\d{1,2}|[Ss]\d{1,2}\.", nzb_name))
+    if (looks_like_tv and not tv_checked) or (not looks_like_tv and not movie_checked):
+        log("No Sonarr / Radarr tag check for this download — processing")
+        return True
+
+    found_anywhere = False
+    if looks_like_tv:
+        series = find_series_in_sonarr(nzb_name, sonarr_url, sonarr_key)
+        if series:
+            found_anywhere = True
+            log(f"Found series in Sonarr: {series.get('title', '?')}")
+            if media_has_any_tag(series, tags, get_sonarr_tags(sonarr_url, sonarr_key)):
+                log("Series has matching tag — proceeding")
+                return True
+            log(f"Series does not have any of {tags} — skipping")
+            return False
+
+    # Radarr — movie-like NZBs, or TV-like ones Sonarr didn't know
+    if movie_checked and (not looks_like_tv or not found_anywhere):
+        movie = find_movie_in_radarr(nzb_name, radarr_url, radarr_key)
+        if movie:
+            log(f"Found movie in Radarr: {movie.get('title', '?')}")
+            if media_has_any_tag(movie, tags, get_radarr_tags(radarr_url, radarr_key)):
+                log("Movie has matching tag — proceeding")
+                return True
+            log(f"Movie does not have any of {tags} — skipping")
+            return False
+
+    log("Not found in Sonarr or Radarr — skipping")
+    return False
+
+
 def media_has_any_tag(media, tag_names, all_tags):
     """Check if a media item (series or movie) has ANY of the configured tags."""
     if not media or not media.get("tags"):
@@ -490,64 +540,8 @@ def main():
     log(f"Category: {CATEGORY}")
 
     # 4. Check Sonarr/Radarr tags
-    tags = [t.lower() for t in config.get("tags", ["convert"])]
-
-    sonarr_url = config.get("sonarr_url", "")
-    sonarr_key = config.get("sonarr_api_key", "")
-    radarr_url = config.get("radarr_url", "")
-    radarr_key = config.get("radarr_api_key", "")
-    check_sonarr = config.get("check_sonarr_tags", True)
-    check_radarr = config.get("check_radarr_tags", True)
-
-    # Determine whether this NZB is a TV episode or a movie.
-    # TV episodes have S##E## (or similar season patterns) in the name.
-    # This prevents Sonarr's fuzzy /parse endpoint from mismatching a movie
-    # NZB to a similarly-named TV series.
-    looks_like_tv = bool(re.search(r"[Ss]\d{1,2}[Ee]\d{1,2}|[Ss]\d{1,2}\.", NZB_NAME))
-    looks_like_movie = not looks_like_tv
-
-    has_tag = False
-    found_anywhere = False
-
-    # Sonarr check — only for TV-like NZBs
-    if check_sonarr and sonarr_url and sonarr_key and looks_like_tv:
-        series = find_series_in_sonarr(NZB_NAME, sonarr_url, sonarr_key)
-        if series:
-            found_anywhere = True
-            log(f"Found series in Sonarr: {series.get('title', '?')}")
-            all_tags = get_sonarr_tags(sonarr_url, sonarr_key)
-            has_tag = media_has_any_tag(series, tags, all_tags)
-            if has_tag:
-                log("Series has matching tag — proceeding")
-            else:
-                log(f"Series does not have any of {tags} — skipping")
-                sys.exit(POSTPROCESS_NONE)
-    elif check_sonarr and sonarr_url and sonarr_key and looks_like_movie:
-        log("Skipping Sonarr check — NZB looks like a movie (no S##E## pattern)")
-
-    # Radarr check — only for movie-like NZBs (or if not found in Sonarr)
-    if not has_tag and check_radarr and radarr_url and radarr_key and (looks_like_movie or not found_anywhere):
-        movie = find_movie_in_radarr(NZB_NAME, radarr_url, radarr_key)
-        if movie:
-            found_anywhere = True
-            log(f"Found movie in Radarr: {movie.get('title', '?')}")
-            all_tags = get_radarr_tags(radarr_url, radarr_key)
-            has_tag = media_has_any_tag(movie, tags, all_tags)
-            if has_tag:
-                log("Movie has matching tag — proceeding")
-            else:
-                log(f"Movie does not have any of {tags} — skipping")
-                sys.exit(POSTPROCESS_NONE)
-        elif looks_like_movie:
-            log("Movie not found in Radarr — skipping")
-            sys.exit(POSTPROCESS_NONE)
-
-    if not has_tag:
-        if not (sonarr_url and sonarr_key) and not (radarr_url and radarr_key):
-            log("No Sonarr/Radarr configured — processing all downloads")
-        else:
-            log("Not found in Sonarr or Radarr — skipping")
-            sys.exit(POSTPROCESS_NONE)
+    if not tag_check(NZB_NAME, config):
+        sys.exit(POSTPROCESS_NONE)
 
     # 5. Find media files
     media_files = find_media_files(DOWNLOAD_DIR)

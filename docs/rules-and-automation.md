@@ -308,7 +308,9 @@ Settings → Integrations → NZBGet / SABnzbd (same options apply to SABnzbd):
   queue — on by default.
 - **Check Sonarr tags** / **Check Radarr tags** — whether the script looks
   TV downloads up in Sonarr and movies in Radarr for those tags. On by
-  default. It's opt-in: tag the shows and movies you want converted.
+  default. It's opt-in: tag the shows and movies you want converted. With a
+  check off (or that app not set up), every download of that kind is
+  converted.
 
 ### Troubleshooting
 

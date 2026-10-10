@@ -151,3 +151,26 @@ async def test_the_settings(app, test_db):
     # A person in the UI (signed in, or let in by the proxy or as a local address) may set code-running settings.
     for method, ok in (("session", True), ("external", True), ("local", True), ("api_key", False), (None, False)):
         assert settings_route._signed_in_with_password(SimpleNamespace(state=SimpleNamespace(auth_method=method))) is ok
+
+
+@pytest.mark.asyncio
+async def test_settings_downloads_work_when_sign_in_trusts_the_request(app, test_db):
+    """v0.10.0: the download-script and backup links can't send the API key,
+    so with External sign-in they always failed. A reverse proxy's sign-in
+    counts now — but a local address that skips sign-in doesn't (they hold
+    every stored secret), nothing is ever anonymous, and the integration
+    endpoints still need the key."""
+    await _set(test_db, app, auth_method="external", api_key="K")
+    async with _client(app, REMOTE) as c:
+        assert (await c.get("/api/settings/nzbget-script")).status_code == 200
+        assert (await c.get("/api/settings/sabnzbd-script")).status_code == 200
+        assert (await c.get("/api/settings/nzbget-config")).status_code == 401
+    await _set(test_db, app, auth_method="forms", auth_username="me", auth_password_hash="x",
+               auth_required="local_disabled")
+    async with _client(app, LOCAL) as c:
+        assert (await c.get("/api/settings/nzbget-script")).status_code == 401
+    await _set(test_db, app, auth_method="", auth_enabled="false", api_key="", auth_username="",
+               auth_password_hash="", auth_required="enabled")
+    async with _client(app, LOCAL) as c:  # no sign-in set up at all: still never anonymous
+        assert (await c.get("/api/settings/nzbget-script")).status_code in (401, 503)
+        assert (await c.get("/api/settings/backup/download/x.zip")).status_code in (401, 503)
