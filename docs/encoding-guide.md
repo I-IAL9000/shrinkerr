@@ -18,6 +18,7 @@ This is the "what do I actually pick" guide. For system-level setup see
 - [Cross-encoder fallback settings](#cross-encoder-fallback-settings)
 - [Source-codec filter](#source-codec-filter)
 - [Content-type detection](#content-type-detection)
+- [Savings estimates](#savings-estimates)
 - [Custom ffmpeg flags](#custom-ffmpeg-flags)
 
 ## NVENC vs libx265
@@ -363,6 +364,28 @@ Before v0.10.0 this (and resolution-aware CQ) only changed the queue
 estimate; jobs always used the global CQ. It is on for new installs and was
 switched off once on installs that existed before, so their output doesn't
 change without warning — turn it on if you want it.
+
+## Savings estimates
+
+The Scanner, Add to Queue, policies, the "skip if savings below" rule
+setting and the quality presets all use the same estimate. It starts from
+typical results: a percentage of the file's size for the quality you
+chose (CQ 20 saves about 45 %).
+
+What a conversion actually saves depends a lot on the file's bitrate: a
+30 Mb/s remux shrinks far more than a 4 Mb/s WEB-DL. So Shrinkerr learns
+from your own finished conversions. It groups files by bits per pixel and
+source codec and adjusts the estimate for each group. A group with few
+conversions of its own leans on the broader one, so a handful of unusual
+files can't skew it.
+
+- It learns from conversions that kept the audio as it was, encoded HEVC
+  and used a fixed quality (not a VMAF target), so the size change is the
+  video's. An output that came out larger counts as no savings.
+- The estimates update within about ten minutes of conversions finishing,
+  and within a minute of a change to the default quality.
+- Add to Queue and Settings → Video → Conversion Guide say how many
+  conversions it learned from.
 
 ## Custom ffmpeg flags
 

@@ -1602,8 +1602,10 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
 
     # Include x265 files so converted content shows with "x265 ✓" badge
 
-    savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
-    video_conv_bytes = video_conv_savings_bytes(file_size, global_cq) if needs_conversion else 0
+    features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec}
+    savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq, **features)
+    video_conv_bytes = (video_conv_savings_bytes(file_size, global_cq, duration=duration, **features)
+                        if needs_conversion else 0)
 
     p = Path(file_path)
     # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO

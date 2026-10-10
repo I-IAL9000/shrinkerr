@@ -53,7 +53,11 @@
       "leavingSoon_one": "{{num}} archivo está en una colección de Maintainerr (se eliminará pronto) y se deja fuera",
       "leavingSoon_many": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
       "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera"
-    }
+    },
+    "learnedFrom_one": "aprendido de {{count}} conversión tuya",
+    "learnedFrom_many": "aprendido de {{count}} conversiones tuyas",
+    "learnedFrom_other": "aprendido de {{count}} conversiones tuyas",
+    "typicalSavings": "resultados típicos, hasta que tus conversiones le enseñen"
   },
   "overrides": {
     "encodingSettings": "Configuración de codificación",

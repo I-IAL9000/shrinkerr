@@ -1567,8 +1567,9 @@ async def get_quality_presets(encoder: Optional[str] = None):
     """The quality presets for `encoder` (default: the saved one): what each
     sets and saves, whether the setup wizard offers it, and which one the
     saved settings are (None: something else)."""
+    from backend import savings_model
     from backend.encoding_estimates import (
-        QUALITY_PRESETS, WIZARD_PRESETS, cq_to_savings_pct, effective_cq, preset_settings, quality_settings,
+        QUALITY_PRESETS, WIZARD_PRESETS, effective_cq, preset_settings, quality_settings,
     )
     db = await aiosqlite.connect(DB_PATH)
     try:
@@ -1585,11 +1586,12 @@ async def get_quality_presets(encoder: Optional[str] = None):
         presets.append({"id": pid, "cq": cq, "settings": values,
                         # A job's own quality: the CQ (every encoder reads it) and libx265's CRF.
                         "job": {**quality_settings("nvenc", cq), **quality_settings("libx265", cq)},
-                        "savings_pct": round(cq_to_savings_pct(effective_cq(as_saved)) * 100),
+                        # v0.10.0: on files like yours, once conversions taught the estimate
+                        "savings_pct": round(savings_model.current().video_pct(effective_cq(as_saved)) * 100),
                         "wizard": pid in WIZARD_PRESETS})
         if all(str(saved.get(k, "")) == str(v) for k, v in values.items()):
             current = pid
-    return {"encoder": enc, "presets": presets, "current": current}
+    return {"encoder": enc, "presets": presets, "current": current, "learned_from": savings_model.current().samples}
 
 
 # The setup wizard's language preview (v0.10.0) classifies the tracks of a

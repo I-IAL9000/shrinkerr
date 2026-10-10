@@ -109,11 +109,14 @@ async def load_effective_cq(db) -> int:
         return effective_cq({r[0]: r[1] for r in await cur.fetchall()})
 
 
-def video_conv_savings_bytes(file_size: int, cq: int) -> int:
+def video_conv_savings_bytes(file_size: int, cq: int, **features) -> int:
     """Bytes saved from re-encoding the video stream at `cq`. Does NOT
     include audio/sub track-removal savings (those are tracked
-    separately)."""
-    return int(file_size * cq_to_savings_pct(cq))
+    separately). v0.10.0: refined by what your conversions saved on files
+    like this one (savings_model; `features`: duration, width, height,
+    codec)."""
+    from backend.savings_model import current
+    return int(file_size * current().video_pct(cq, file_size=file_size, **features))
 
 
 def total_estimated_savings_bytes(
@@ -122,11 +125,12 @@ def total_estimated_savings_bytes(
     cq: int,
     audio_tracks_to_remove: list,  # list of objects with .bitrate attribute
     duration: float,
+    **features,
 ) -> int:
     """Sum of video-conversion savings + audio-track-removal savings."""
     savings = 0
     if needs_conversion:
-        savings += video_conv_savings_bytes(file_size, cq)
+        savings += video_conv_savings_bytes(file_size, cq, duration=duration, **features)
     for track in audio_tracks_to_remove:
         bitrate = getattr(track, "bitrate", None)
         if bitrate and duration:

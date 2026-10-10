@@ -299,7 +299,8 @@
       },
       "presets": {
         "title": "Ajustes de calidad",
-        "desc": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el típico con fuentes H.264."
+        "desc": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el típico con fuentes H.264.",
+        "descLearned": "Los ajustes que ofrecen el asistente de configuración y el panel de la cola. Solo cambian la calidad; el preset de velocidad se queda como lo pongas. El ahorro es el de archivos como los tuyos, aprendido de {{count}} de tus conversiones."
       }
     }
   },

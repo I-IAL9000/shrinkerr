@@ -281,8 +281,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   const guideEncoder: string = encoding?.default_encoder || "nvenc";
   // The shared quality presets for the guide's table (v0.10.0).
   const [guidePresets, setGuidePresets] = useState<QualityPreset[]>([]);
+  const [guideLearned, setGuideLearned] = useState(0);
   useEffect(() => {
-    getQualityPresets(guideEncoder).then(r => setGuidePresets(r.presets)).catch(() => {});
+    getQualityPresets(guideEncoder).then(r => { setGuidePresets(r.presets); setGuideLearned(r.learned_from); }).catch(() => {});
   }, [guideEncoder]);
   // Encoder caps from /api/stats/encoder-caps. Drives which options the
   // default-encoder dropdown surfaces. Null while loading; once loaded,
@@ -1780,7 +1781,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     {
                       encoders: ["nvenc", "libx265", "qsv", "vaapi", "videotoolbox"],
                       title: t("settingsMedia:video.guide.presets.title"),
-                      desc: t("settingsMedia:video.guide.presets.desc"),
+                      desc: guideLearned > 0 ? t("settingsMedia:video.guide.presets.descLearned", { count: guideLearned })
+                        : t("settingsMedia:video.guide.presets.desc"),
                       cols: [t("settingsMedia:video.guide.cols.priority"), t("settingsMedia:video.guide.cols.settings"), t("settingsMedia:video.guide.cols.savings")],
                       rows: guidePresets.map(p => [t(`common:qualityPresets.${p.id}.name`), presetSetting(p), `~${p.savings_pct}%`]),
                     },

@@ -206,7 +206,7 @@ def native_first(row: dict, audio_remove: list[int]) -> Optional[str]:
 
 # The scan_results columns track_work() and the job plans read.
 _TRACK_COLS = ("id, file_path, file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, "
-               "native_language, duration, disc_type")
+               "native_language, duration, disc_type, video_width, video_height, video_codec")
 
 
 async def _scan_rows_for(db, paths: list[str], cols: str = _TRACK_COLS) -> dict[str, dict]:
@@ -287,7 +287,8 @@ async def _originals_setting(db) -> dict:
 def _job_savings(job: dict, row: dict, audio: list[dict], global_cq: int) -> int:
     """About what a pending job saves: the removed tracks, and the video
     conversion at the job's quality (else the default encoder's)."""
-    from backend.encoding_estimates import _CRF_OFFSET, cq_to_savings_pct
+    from backend.encoding_estimates import _CRF_OFFSET
+    from backend.savings_model import current
     size = row.get("file_size") or job.get("original_size") or 0
     remove = set(json.loads(job.get("audio_tracks_to_remove") or "[]"))
     removed = sum(t.get("size_estimate_bytes") or 0 for t in audio if t.get("stream_index") in remove)
@@ -299,7 +300,9 @@ def _job_savings(job: dict, row: dict, audio: list[dict], global_cq: int) -> int
             cq = job["nvenc_cq"]
         else:
             cq = global_cq
-        saved += int((size - saved) * cq_to_savings_pct(cq))
+        saved += int((size - saved) * current().video_pct(
+            cq, file_size=size, duration=row.get("duration") or 0, width=row.get("video_width") or 0,
+            height=row.get("video_height") or 0, codec=row.get("video_codec")))
     return saved
 
 
@@ -1867,10 +1870,9 @@ class EstimateRequest(BaseModel):
     force_reencode: bool = False
 
 
-# v0.6.7: hoisted into backend.encoding_estimates so the scanner /
-# watcher / file-detail panel can share the same curve. Kept the local
-# alias so existing call sites in this module need no churn.
-from backend.encoding_estimates import cq_to_savings_pct as _cq_to_savings_pct
+# v0.10.0: the estimate learned from finished conversions, shared with the
+# scanner / watcher / Scanner card (backend.savings_model).
+from backend import savings_model
 
 
 async def encode_speed_factors(db) -> dict[str, float]:
@@ -2103,7 +2105,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
                     f"COALESCE(video_width, 0) as video_width, "
                     f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count, "
-                    f"video_conv_savings_bytes "
+                    f"video_conv_savings_bytes, video_codec "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -2226,7 +2228,10 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                                 content_profiles[ctype] = {"count": 0, "cq": file_cq}
                             content_profiles[ctype]["count"] += 1
 
-                pct = _cq_to_savings_pct(savings_cq if savings_cq is not None else file_cq)
+                pct = savings_model.current().video_pct(
+                    savings_cq if savings_cq is not None else file_cq, file_size=row["file_size"] or 0,
+                    duration=row["duration"], width=row["video_width"], height=row["video_height"],
+                    codec=row.get("video_codec"))
                 estimated_savings += int(row["file_size"] * pct)
                 file_cqs.append(file_cq)
 
@@ -2302,6 +2307,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             "leaving_soon": leaving_soon,
             "cq": representative_cq,
             "savings_pct": round((estimated_savings / total_size * 100) if total_size > 0 else 0),
+            "learned_from": savings_model.current().samples,  # v0.10.0
             "content_profiles": content_profiles,
             "resolution_breakdown": resolution_breakdown,
             "smart_encoding": smart_settings["content_detect"] or smart_settings["resolution_aware"],

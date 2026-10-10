@@ -4281,6 +4281,11 @@ async def convert_file(
                 "target_resolution": target_resolution,
                 "input_size": original_size,
                 "output_size": output_size,
+                # v0.10.0: what the savings estimate learns from (savings_model)
+                "output_codec": output_codec or "hevc",
+                "source_codec": source_video_codec,
+                "source_width": (probe_data or {}).get("video_width"),
+                "source_height": (probe_data or {}).get("video_height"),
                 # ratio will be negative here (the whole point — encode grew the
                 # file). Frontend renders negative ratios in a warning colour
                 # so it doesn't look like a successful saving.
@@ -4811,6 +4816,10 @@ async def convert_file(
                             if vmaf_target else None),
             "input_size": original_size,
             "output_size": output_size,
+            # v0.10.0: what the savings estimate learns from (savings_model)
+            "source_codec": source_video_codec,
+            "source_width": (probe_data or {}).get("video_width"),
+            "source_height": (probe_data or {}).get("video_height"),
             "ratio": round((1 - output_size / original_size) * 100, 1) if original_size > 0 else 0,
             "encode_seconds": round(encode_time, 1),
             "duration": duration,

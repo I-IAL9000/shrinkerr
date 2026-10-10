@@ -49,7 +49,10 @@
       "hardlinked_other": "{{num}} files are still hardlinked (seeding) and are left out",
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
       "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out"
-    }
+    },
+    "learnedFrom_one": "learned from {{count}} of your conversions",
+    "learnedFrom_other": "learned from {{count}} of your conversions",
+    "typicalSavings": "typical results, until your conversions teach it"
   },
   "overrides": {
     "encodingSettings": "Encoding Settings",

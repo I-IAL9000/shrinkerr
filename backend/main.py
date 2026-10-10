@@ -400,6 +400,9 @@ async def lifespan(app: FastAPI):
     # Weekly digest notification (v0.10.0): checked hourly, sent when due.
     from backend.notifications import weekly_digest_loop
     digest_task = asyncio.create_task(weekly_digest_loop())
+    # The savings estimate learns from finished conversions (v0.10.0).
+    from backend.savings_model import savings_model_loop
+    estimates_task = asyncio.create_task(savings_model_loop())
 
     yield
     worker.stop()
@@ -408,6 +411,7 @@ async def lifespan(app: FastAPI):
     stale_task.cancel()
     local_heartbeat_task.cancel()
     version_check_task.cancel()
+    estimates_task.cancel()
     digest_task.cancel()
 
 

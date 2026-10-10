@@ -295,7 +295,8 @@
       },
       "presets": {
         "title": "Quality presets",
-        "desc": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are typical for H.264 sources."
+        "desc": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are typical for H.264 sources.",
+        "descLearned": "The presets the setup wizard and the queue panel offer. They set the quality only — the speed preset stays as you set it. Savings are for files like yours, learned from {{count}} of your conversions."
       }
     }
   },

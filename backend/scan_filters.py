@@ -536,7 +536,8 @@ _FILTER_LIST = [
 FILTERS: dict[str, Filter] = {f.id: f for f in _FILTER_LIST}
 
 # Columns the Python predicates read.
-PY_COLUMNS = "file_path, file_size, duration, needs_conversion, converted, hdr_format"
+PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_format, "
+              "COALESCE(video_conv_savings_bytes, 0) AS video_conv_savings_bytes")
 
 
 # ── Advanced Search conditions (v0.10.0) ─────────────────────────────────
@@ -932,9 +933,9 @@ def parse_filter(text: Optional[str]) -> FilterExpr:
 
 # ── Counts ────────────────────────────────────────────────────────────────
 
-async def count_all(db, ctx: dict) -> tuple[dict[str, int], int]:
+async def count_all(db, ctx: dict) -> tuple[dict[str, int], tuple[int, int]]:
     """Every filter's count over the Scanner list (the pills), and the total
-    size of the files that need converting."""
+    size of the files that need converting and their estimated savings."""
     sql_filters = [f for f in _FILTER_LIST if f.sql]
     params: list = []
     sums = []
@@ -955,8 +956,8 @@ async def count_all(db, ctx: dict) -> tuple[dict[str, int], int]:
         names = [d[0] for d in cur.description]
         rows = [dict(zip(names, values)) for values in await cur.fetchall()]
 
-    def tally() -> int:
-        needs_conversion_bytes = 0
+    def tally() -> tuple[int, int]:
+        needs_conversion_bytes = savings = 0
         for f in py_filters:
             counts[f.id] = 0
         for r in rows:
@@ -965,7 +966,8 @@ async def count_all(db, ctx: dict) -> tuple[dict[str, int], int]:
                     counts[f.id] += 1
                     if f.id == "needs_conversion":
                         needs_conversion_bytes += r["file_size"] or 0
-        return needs_conversion_bytes
+                        savings += r["video_conv_savings_bytes"]
+        return needs_conversion_bytes, savings
 
     # CPU-bound (~0.3 s for 60k files): off the event loop.
     return counts, await asyncio.to_thread(tally)

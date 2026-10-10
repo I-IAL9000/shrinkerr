@@ -823,7 +823,7 @@ export interface QualityPreset {
   wizard: boolean;
 }
 export const getQualityPresets = (encoder?: string) =>
-  apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
+  apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null; learned_from: number }>(
     `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);
 // Sonarr / Radarr cutoff and monitoring, for the Scanner's filters (v0.10.0).
 export const syncArrStatus = () => apiFetch<Record<string, number>>("/arr/sync-status", { method: "POST" });

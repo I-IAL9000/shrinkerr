@@ -46,8 +46,10 @@ async def env(test_db, monkeypatch):
 
 
 async def _both(db_path):
+    from backend import savings_model
     from backend.routes.jobs import EstimateRequest, estimate_jobs
     from backend.routes.scan import get_scan_stats
+    await savings_model.reestimate_scan_rows()  # as the app does when the quality changes
     card = (await get_scan_stats())["summary"]["estimated_savings_bytes"]
     modal = (await estimate_jobs(EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"])))["estimated_savings"]
     return card, modal
@@ -57,6 +59,19 @@ async def _both(db_path):
 async def test_the_scanner_card_and_add_to_queue_agree(env):
     card, modal = await _both(env)
     assert card == modal == int(GB * cq_to_savings_pct(20))
+
+
+@pytest.mark.asyncio
+async def test_they_use_what_conversions_taught(env, monkeypatch):
+    """v0.10.0: the estimate learned from finished conversions, for files
+    like this one (an h264 1080p film at ~0.29 bits per pixel: band 3)."""
+    from backend import savings_model as sm
+    from backend.routes.jobs import _job_savings
+    monkeypatch.setattr(sm, "_model", sm.SavingsModel({(): 1.0, (3,): 1.0, (3, "h264"): 0.5}, samples=40))
+    card, modal = await _both(env)
+    assert card == modal == int(GB * cq_to_savings_pct(20) * 0.5)
+    row = {"file_size": GB, "duration": 600, "video_width": 1920, "video_height": 1080, "video_codec": "h264"}
+    assert _job_savings({"job_type": "convert", "nvenc_cq": 20}, row, [], 20) == int(GB * cq_to_savings_pct(20) * 0.5)
 
 
 @pytest.mark.asyncio

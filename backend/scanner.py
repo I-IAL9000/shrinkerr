@@ -1917,6 +1917,7 @@ def estimate_savings(
     tracks_to_remove: list[AudioTrack],
     duration: float,
     cq: int = 25,
+    **features,
 ) -> int:
     """Estimate bytes saved by re-encoding + removing tracks.
 
@@ -1927,7 +1928,7 @@ def estimate_savings(
     """
     from backend.encoding_estimates import total_estimated_savings_bytes
     return total_estimated_savings_bytes(
-        file_size, needs_conversion, cq, tracks_to_remove, duration,
+        file_size, needs_conversion, cq, tracks_to_remove, duration, **features,
     )
 
 
@@ -2392,13 +2393,16 @@ async def scan_directory(
         has_removable = len(tracks_to_remove) > 0
         has_removable_subs = any(not t.keep for t in subtitle_tracks)
 
-        savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
+        features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec}
+        savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq,
+                                         **features)
         savings_gb = round(savings_bytes / (1024 ** 3), 3)
         # v0.6.7: video-only portion of savings stored separately so the
         # frontend file-detail panel (which shows the "Convert to x265
         # (est. save ~X GB)" hint) reads the same CQ-calibrated number
         # instead of recomputing file_size * 0.3 client-side.
-        video_conv_bytes = video_conv_savings_bytes(file_size, global_cq) if needs_conversion else 0
+        video_conv_bytes = (video_conv_savings_bytes(file_size, global_cq, duration=duration, **features)
+                            if needs_conversion else 0)
 
         # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
         # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the

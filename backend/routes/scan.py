@@ -1897,7 +1897,7 @@ async def get_scan_stats():
     db.row_factory = aiosqlite.Row
     try:
         ctx = await _build_enrichment_context(db)
-        counts, needs_conversion_bytes = await count_all(db, ctx)
+        counts, (_, estimated_savings) = await count_all(db, ctx)
         async with db.execute(
             f"""SELECT SUM(file_size) AS total_size,
                 SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))
@@ -1907,11 +1907,9 @@ async def get_scan_stats():
             extra = dict(await cur.fetchone())
         counts["not_api_matched_no_tmdb"] = extra["not_api_matched_no_tmdb"] or 0
 
-        # Savings estimate: the same curve and quality as the per-file and
-        # Add to Queue estimates (v0.10.0: this card had its own curve, 25%
-        # at CQ 20 where the estimate said 45%).
-        from backend.encoding_estimates import cq_to_savings_pct, load_effective_cq
-        est_pct = cq_to_savings_pct(await load_effective_cq(db))
+        # Savings estimate: the sum of the files' own (v0.10.0: this card
+        # had its own curve, 25% at CQ 20 where the estimate said 45%; then
+        # one percentage of their size).
 
         return {
             "counts": counts,
@@ -1920,7 +1918,7 @@ async def get_scan_stats():
                 "audio_cleanup": counts["audio_cleanup"],
                 "unknown_language": counts["unknown_language"],
                 "ignored_count": counts["ignored"],
-                "estimated_savings_bytes": int(needs_conversion_bytes * est_pct),
+                "estimated_savings_bytes": estimated_savings,
                 "total_size": extra["total_size"] or 0,
             },
         }

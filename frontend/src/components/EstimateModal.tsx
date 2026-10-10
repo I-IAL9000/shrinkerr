@@ -233,6 +233,12 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--success)" }}>~{fmtBytes(estimate.estimated_savings)}</div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{t("scannerModals:estimate.estSavings", { pct: estimate.savings_pct })}</div>
+                {estimate.learned_from != null && (
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
+                    {estimate.learned_from > 0 ? t("scannerModals:estimate.learnedFrom", { count: estimate.learned_from })
+                      : t("scannerModals:estimate.typicalSavings")}
+                  </div>
+                )}
               </div>
               <div style={{ background: "var(--bg-primary)", padding: 12, borderRadius: 4, textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: "bold", color: "var(--accent-text)" }}>~{formatTime(estimate.estimated_time_seconds)}</div>
