@@ -181,7 +181,9 @@
         "grain": "Film grain",
         "remux": "Remux",
         "other": "Other (live action)"
-      }
+      },
+      "target": "Target a VMAF score",
+      "targetHelp": "Choose each title's quality for it instead of one quality for all: before encoding, three 10-second samples are encoded at a few quality settings and scored with VMAF, and the file is encoded at the lowest quality whose samples still average the target — grainy films get more bits, clean animation fewer. It replaces the quality from presets, rules and content type, and adds a few minutes per file (more on a CPU encoder). Files under two minutes and discs keep their quality. Needs ffmpeg with VMAF."
     },
     "vmafRemeasure": {
       "title": "Re-measure suspect VMAF scores",

@@ -93,6 +93,8 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("audio_compat_loudnorm",            _ABSENT,   _str_to_bool),
     ("image_subs_to_srt",                _ABSENT,   _str_to_bool),
     ("image_subs_keep_original",         _ABSENT,   _str_to_bool),
+    ("vmaf_target_enabled",              _ABSENT,   _str_to_bool),
+    ("vmaf_target_score",                _ABSENT,   float),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
     ("custom_ffmpeg_flags",              _ABSENT,   str),
@@ -3334,6 +3336,27 @@ async def convert_file(
     # filename reflects the downscaled resolution. The same resolved
     # value flows through to the encoder below.
 
+    # v0.10.0: VMAF target quality — this title's own quality, found on a few
+    # encoded samples (vmaf_target). Replaces the job's; not for discs.
+    vmaf_target = None
+    if live_settings.get("vmaf_target_enabled") and not command_only and not disc_type:
+        from backend.encoding_estimates import _CRF_OFFSET, quality_settings
+        from backend.vmaf_target import find_quality
+        if progress_callback:
+            await progress_callback(progress=0, fps=0, eta_seconds=None, step="Finding the quality for the VMAF target…")
+        vmaf_target = await find_quality(
+            input_path, encoder, float((probe_data or {}).get("duration") or duration or 0),
+            float(live_settings.get("vmaf_target_score") or 95),
+            start=crf - _CRF_OFFSET if encoder == "libx265" else cq,
+            convert_kwargs={"override_preset": override_preset, "override_libx265_preset": override_libx265_preset,
+                            "override_target_resolution": override_target_resolution, "pre_settings": live_settings})
+        if vmaf_target:
+            cq = vmaf_target["cq"]
+            crf = quality_settings("libx265", cq)["libx265_crf"]
+            qsv_cq = quality_settings("qsv", cq)["qsv_cq"]
+            vaapi_qp = quality_settings("vaapi", cq)["vaapi_qp"]
+            videotoolbox_quality = quality_settings("videotoolbox", cq)["videotoolbox_quality"]
+
     if encoder == "libx265":
         active_preset, active_quality = libx265_preset, f"crf={crf}"
     elif encoder == "qsv":
@@ -4738,6 +4761,9 @@ async def convert_file(
             "lossless_target_codec": (lossless_conversion or {}).get("codec"),
             "lossless_target_bitrate": (lossless_conversion or {}).get("bitrate"),
             "target_resolution": target_resolution,
+            # v0.10.0: the quality the VMAF target search chose, and why.
+            "vmaf_target": ({k: vmaf_target[k] for k in ("target", "cq", "vmaf", "reached")}
+                            if vmaf_target else None),
             "input_size": original_size,
             "output_size": output_size,
             "ratio": round((1 - output_size / original_size) * 100, 1) if original_size > 0 else 0,

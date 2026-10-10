@@ -181,6 +181,9 @@ _ENCODING_DEFAULTS = {
     # notice. 0 = disabled (never reject). Only applied when vmaf_analysis_enabled
     # is true AND an encode produced a valid VMAF score.
     "vmaf_min_score": "88",  # v0.10.0: reject encodes scoring below this (0 = never)
+    # v0.10.0: each title's quality found on samples to score this VMAF
+    "vmaf_target_enabled": "false",
+    "vmaf_target_score": "95",
     "resolution_aware_cq": "false",
     "resolution_cq_4k": "24",
     "resolution_cq_1080p": "20",
@@ -737,6 +740,11 @@ async def get_encoding_settings():
         result["vmaf_min_score"] = float(merged.get("vmaf_min_score", "0") or "0")
     except (TypeError, ValueError):
         result["vmaf_min_score"] = 0.0
+    result["vmaf_target_enabled"] = merged.get("vmaf_target_enabled", "false").lower() == "true"
+    try:
+        result["vmaf_target_score"] = float(merged.get("vmaf_target_score", "95") or "95")
+    except (TypeError, ValueError):
+        result["vmaf_target_score"] = 95.0
     result["content_type_detection"] = merged.get("content_type_detection", "true").lower() == "true"
     result["resolution_aware_cq"] = merged.get("resolution_aware_cq", "false").lower() == "true"
     from backend.content_detect import CONTENT_TYPES, CQ_TABLE, content_cq_table
@@ -1284,6 +1292,10 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             except (TypeError, ValueError):
                 _vms = 0.0
             updates["vmaf_min_score"] = str(_vms)
+        if update.vmaf_target_enabled is not None:
+            updates["vmaf_target_enabled"] = "true" if update.vmaf_target_enabled else "false"
+        if update.vmaf_target_score is not None:
+            updates["vmaf_target_score"] = str(max(80.0, min(99.0, float(update.vmaf_target_score))))
         for key in ("content_type_detection", "resolution_aware_cq"):
             val = getattr(update, key)
             if val is not None:

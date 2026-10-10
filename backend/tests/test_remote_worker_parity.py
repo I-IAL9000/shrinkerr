@@ -177,6 +177,8 @@ async def test_the_worker_hands_them_to_convert_file(tmp_path, monkeypatch):
         "lossless_keep_object_audio": False, "external_subs": subs,
         "convert_dts": True, "audio_compat_track": True, "audio_compat_codec": "eac3", "audio_compat_bitrate": 256,
         "audio_compat_loudnorm": True, "delete_external_subs_after_merge": True,
+        "image_subs_to_srt": True, "image_subs_keep_original": False,
+        "vmaf_target_enabled": True, "vmaf_target_score": 93.0,
     }, ["libx265"])
 
     settings = seen["pre_settings"]
@@ -185,6 +187,8 @@ async def test_the_worker_hands_them_to_convert_file(tmp_path, monkeypatch):
     assert settings["lossless_keep_object_audio"] is False
     assert (settings["convert_dts"], settings["audio_compat_track"], settings["audio_compat_codec"],
             settings["audio_compat_bitrate"], settings["audio_compat_loudnorm"]) == (True, True, "eac3", 256, True)
+    assert (settings["image_subs_to_srt"], settings["image_subs_keep_original"]) == (True, False)
+    assert (settings["vmaf_target_enabled"], settings["vmaf_target_score"]) == (True, 93.0)
     assert seen["external_subs"] == subs and seen["delete_merged_subs"] is True
 
 

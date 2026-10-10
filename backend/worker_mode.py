@@ -513,6 +513,8 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 # talking to a newer worker).
                 "vmaf_analysis_enabled": bool(job.get("vmaf_analysis_enabled", False)),
                 "vmaf_min_score": float(job.get("vmaf_min_score") or 0),
+                "vmaf_target_enabled": bool(job.get("vmaf_target_enabled", False)),
+                "vmaf_target_score": float(job.get("vmaf_target_score") or 95),
                 # HW decode settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # defaults if the server didn't send the fields (older server

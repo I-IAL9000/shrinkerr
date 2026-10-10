@@ -408,7 +408,7 @@ async def request_job(req: RequestJobBody, request: Request):
     try:
         async with db.execute(
             "SELECT key, value FROM settings "
-            "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', "
+            "WHERE key IN ('vmaf_analysis_enabled', 'vmaf_min_score', 'vmaf_target_enabled', 'vmaf_target_score', "
             "              'libx265_preset', 'libx265_crf', "
             "              'nvenc_preset', 'nvenc_cq', 'default_encoder', "
             "              'nvenc_cpu_fallback_preset', 'nvenc_cpu_fallback_crf', "
@@ -483,6 +483,11 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
         assigned["vmaf_min_score"] = 0.0
+    assigned["vmaf_target_enabled"] = (srv_settings.get("vmaf_target_enabled") or "false").lower() == "true"
+    try:
+        assigned["vmaf_target_score"] = float(srv_settings.get("vmaf_target_score") or 95)
+    except (TypeError, ValueError):
+        assigned["vmaf_target_score"] = 95.0
     # libx265 defaults the CPU worker should use for an NVENC job:
     #   1. Explicit "NVENC→CPU fallback" (user intentionally tuned these)
     #   2. Main libx265 settings IF libx265 is the server's default encoder

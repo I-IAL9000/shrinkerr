@@ -16,7 +16,8 @@
     "healthCheckStatus": "comprobación de estado ($t(serverJobs:labels.healthStatus.{{status}}))",
     "healthCheckInline": "comprobación de estado ($t(serverJobs:labels.healthMode.{{mode}}))",
     "readingImageSubs": "Leyendo los subtítulos de imagen (OCR)…",
-    "convertingSubtitles": "convirtiendo subtítulos"
+    "convertingSubtitles": "convirtiendo subtítulos",
+    "vmafTargetSearch": "Buscando la calidad para el objetivo VMAF…"
   },
   "errors": {
     "fileNotFound": "Archivo no encontrado",

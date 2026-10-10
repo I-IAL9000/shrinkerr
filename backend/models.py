@@ -303,6 +303,8 @@ class SettingsUpdate(BaseModel):
     vmaf_analysis_enabled: Optional[bool] = None
     # Min VMAF score (0-100) required to accept an encode. 0 = disabled.
     vmaf_min_score: Optional[Any] = None
+    vmaf_target_enabled: Optional[bool] = None  # v0.10.0
+    vmaf_target_score: Optional[float] = None
     # v0.10.0: used by jobs and estimates but missing here, so Settings edits
     # were silently dropped (FE#3).
     content_type_detection: Optional[bool] = None

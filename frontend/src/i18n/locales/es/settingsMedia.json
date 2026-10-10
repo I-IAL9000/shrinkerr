@@ -181,7 +181,9 @@
         "grain": "Grano de película",
         "remux": "Remux",
         "other": "Otro (imagen real)"
-      }
+      },
+      "target": "Apuntar a una puntuación VMAF",
+      "targetHelp": "Elige la calidad de cada título en lugar de una misma calidad para todos: antes de codificar, se codifican tres muestras de 10 segundos con varios ajustes de calidad y se puntúan con VMAF, y el archivo se codifica con la calidad más baja cuyas muestras aún alcanzan de media el objetivo; las películas con grano reciben más bits y la animación limpia, menos. Sustituye la calidad de los ajustes predefinidos, las reglas y el tipo de contenido, y añade unos minutos por archivo (más con un codificador de CPU). Los archivos de menos de dos minutos y los discos conservan su calidad. Requiere ffmpeg con VMAF."
     },
     "vmafRemeasure": {
       "title": "Volver a medir puntuaciones VMAF dudosas",

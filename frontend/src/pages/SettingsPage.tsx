@@ -1628,6 +1628,35 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       );
                     })()}
 
+                    {/* v0.10.0: VMAF target quality — each title's quality found
+                        on encoded samples (backend/vmaf_target.py). */}
+                    {(() => {
+                      const on = encoding.vmaf_target_enabled === true || encoding.vmaf_target_enabled === "true";
+                      const target = Number(encoding.vmaf_target_score ?? 95) || 95;
+                      return (
+                        <div style={{ marginTop: 16, padding: 12, background: "var(--bg-primary)", borderRadius: 4 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                            <input type="checkbox" checked={on}
+                              onChange={(e) => setEncoding({ ...encoding, vmaf_target_enabled: e.target.checked })}
+                              style={{ accentColor: "var(--accent)" }} />
+                            <span style={labelStyle}>{t("settingsMedia:video.smart.target")}</span>
+                          </label>
+                          <div style={{ ...helpStyle, marginLeft: 26 }}>{t("settingsMedia:video.smart.targetHelp")}</div>
+                          {on && (
+                            <div style={{ marginTop: 10, marginLeft: 26, display: "flex", alignItems: "center", gap: 12 }}>
+                              <input type="range" aria-label={t("settingsMedia:video.smart.target")} min={80} max={99} step={1}
+                                value={target} onChange={(e) => setEncoding({ ...encoding, vmaf_target_score: parseFloat(e.target.value) })}
+                                style={{ flex: 1 }} />
+                              <div style={{ minWidth: 64, textAlign: "center", padding: "4px 10px", borderRadius: 4,
+                                background: "var(--bg-card)", color: vmafColor(target), fontWeight: 700, fontSize: 14 }}>
+                                {target.toFixed(0)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Re-measure suspect VMAF scores (v0.3.32+).
                         Iterates completed jobs whose recorded score is either
                         flagged uncertain or dropped below the Excellent tier,

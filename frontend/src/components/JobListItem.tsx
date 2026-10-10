@@ -347,6 +347,20 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
                   </span>
                 </>}
 
+                {/* v0.10.0: the quality the VMAF target search chose. */}
+                {logData.encoding_stats.vmaf_target && (() => {
+                  const vt = logData.encoding_stats.vmaf_target;
+                  const quality = (logData.encoding_stats.encoder || "").toLowerCase() === "libx265"
+                    ? `CRF ${logData.encoding_stats.crf}` : `CQ ${vt.cq}`;
+                  return <>
+                    <span style={{ color: "var(--text-muted)" }}>{t("queue:item.stats.vmafTarget")}</span>
+                    <span style={{ color: "var(--text-secondary)", gridColumn: "2 / span 2" }}>
+                      {t(vt.reached ? "queue:item.stats.vmafTargetFound" : "queue:item.stats.vmafTargetMissed",
+                        { quality, vmaf: vt.vmaf, target: vt.target })}
+                    </span>
+                  </>;
+                })()}
+
                 {/* Audio-conversion row — shown when one or more source
                     tracks were re-encoded to a new codec/bitrate
                     (lossless→lossy auto-conversion or global audio_codec
