@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
 from backend.scan_filters import (
-    HIGH_BITRATE, LISTED, LOW_BITRATE, PY_COLUMNS, count_all, parse_filter,
+    HIGH_BITRATE, LISTED, LOW_BITRATE, PY_COLUMNS, count_all, facet_counts, parse_filter,
     row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
     build_dir_label_index as _build_dir_label_index,
 )
@@ -2239,6 +2239,23 @@ async def _get_converted_folders(db) -> set[str]:
     has successfully converted at least one file. Used to infer that other HEVC
     files in the same folder are 'already converted'."""
     return (await _converted_sets(db))[1]
+
+
+@router.get("/filter-counts")
+async def get_filter_counts(filter: str = "all"):
+    """The pills' counts under the active filter: what clicking each would
+    give (v0.10.0). With no filter, the library-wide counts."""
+    expr = parse_filter(filter)
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    try:
+        ctx = await _build_enrichment_context(db)
+        if expr.is_all:
+            counts, _ = await count_all(db, ctx)
+            return {"counts": counts}
+        return {"counts": await facet_counts(db, ctx, expr)}
+    finally:
+        await db.close()
 
 
 @router.get("/tree")

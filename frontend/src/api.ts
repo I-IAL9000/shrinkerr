@@ -111,6 +111,9 @@ export const clearNewFileCount = () => apiFetch("/scan/clear-new", { method: "PO
 export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
 export const getScanTree = (filter: string = "all", signal?: AbortSignal) =>
   apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
+/** Each pill's count under `filter`: what clicking it would give (v0.10.0). */
+export const getFilterCounts = (filter: string, signal?: AbortSignal) =>
+  apiFetch<{ counts: Record<string, number> }>(`/scan/filter-counts?filter=${encodeURIComponent(filter)}`, { signal });
 export const getScanFiles = (folder: string, filter: string = "all", signal?: AbortSignal) =>
   apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`, { signal });
 export const getFilesByTitle = (prefix: string, filter: string = "all", signal?: AbortSignal) =>

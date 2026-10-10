@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -143,6 +143,17 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [posterPrefetching, setPosterPrefetching] = useState(false);
   const [posterProgress, setPosterProgress] = useState({ total: 0, resolved: 0 });
   const [serverStats, setServerStats] = useState<any>(null);
+  // With a filter active the pills count what clicking each would give —
+  // the other active groups still apply (v0.10.0). Refreshed with the stats.
+  const [facetCounts, setFacetCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (filter === "all") { setFacetCounts(null); return; }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts(r.counts)).catch(() => {});
+    }, 200);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [filter, serverStats]);
   const [estimatePaths, setEstimatePaths] = useState<string[] | null>(null);
   const [estimateHasIgnored, setEstimateHasIgnored] = useState(false);
   const [renamePaths, setRenamePaths] = useState<string[] | null>(null);
@@ -1155,9 +1166,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const newCount = serverStats?.counts?.new || 0;
   // Use tree-derived "all" count during scanning so pill stays in sync with tree
   const treeTotalFiles = folders.reduce((sum, f) => sum + f.file_count, 0);
-  const filterCounts: Record<string, number> = serverStats?.counts
+  const libraryCounts: Record<string, number> = serverStats?.counts
     ? { ...serverStats.counts, all: Math.max(serverStats.counts.all || 0, treeTotalFiles) }
     : { all: treeTotalFiles };
+  // "All" (clear the filter) keeps the library's total.
+  const filterCounts = facetCounts && filter !== "all" ? { ...facetCounts, all: libraryCounts.all } : libraryCounts;
 
   // Count selected items — for folder paths, use the folder's file count from tree data
   const selectedCount = useMemo(() => {

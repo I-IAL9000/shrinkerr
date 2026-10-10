@@ -711,3 +711,95 @@ async def count_all(db, ctx: dict) -> tuple[dict[str, int], int]:
 
     # CPU-bound (~0.3 s for 60k files): off the event loop.
     return counts, await asyncio.to_thread(tally)
+
+
+# ── "If you click this" counts (v0.10.0) ──────────────────────────────────
+# With a filter active, each pill's count is what clicking it would give:
+# the files matching every active constraint except the pill's own group
+# (an OR group it would join, or that it's already part of) and its own
+# exclusion — and the pill. Every active group and every exclusion is a
+# constraint. One pass records which constraints each file fails; files
+# failing more than two can't count for any pill and are dropped.
+
+def _group_key(f: Filter) -> str:
+    return f.group or f"_{f.id}"
+
+
+async def facet_counts(db, ctx: dict, expr: FilterExpr) -> dict[str, int]:
+    """Every filter's count under `expr` as described above; "matching" is
+    how many files the whole filter matches."""
+    constraints: list[tuple[int, list[Filter], bool]] = []  # (bit, filters, is_exclusion)
+    group_bit: dict[str, int] = {}
+    excluded_bit: dict[str, int] = {}
+    for group in expr.groups:
+        bit = 1 << len(constraints)
+        constraints.append((bit, group, False))
+        group_bit[_group_key(group[0])] = bit
+    for f in expr.excluded:
+        bit = 1 << len(constraints)
+        constraints.append((bit, [f], True))
+        excluded_bit[f.id] = bit
+
+    def ignored_bits(f: Filter) -> int:
+        """The constraints a pill's own click replaces."""
+        return group_bit.get(_group_key(f), 0) | excluded_bit.get(f.id, 0)
+
+    # The SQL filters the constraints use, as columns.
+    members, params = [], []
+    for _, fs, _ in constraints:
+        for f in fs:
+            if f.sql and f.id not in {m.id for m in members}:
+                members.append(f)
+                if f.params:
+                    params.extend(f.params())
+    cols = "".join(f", ({f.sql}) AS _f_{f.id}" for f in members)
+    async with db.execute(f"SELECT id, {PY_COLUMNS}{cols} FROM scan_results WHERE {LISTED}", params) as cur:
+        names = [d[0] for d in cur.description]
+        rows = [dict(zip(names, values)) for values in await cur.fetchall()]
+
+    py_pills = [f for f in _FILTER_LIST if f.py]
+    counts = {f.id: 0 for f in _FILTER_LIST}
+
+    def tally() -> tuple[list[tuple[int, int]], int]:
+        kept, matching = [], 0
+        for r in rows:
+            failed = 0
+            for bit, fs, is_exclusion in constraints:
+                hit = any(_value(f, r, ctx) for f in fs)
+                if hit == is_exclusion:  # an exclusion hit, or a group missed
+                    failed |= bit
+            if bin(failed).count("1") > 2:
+                continue
+            kept.append((r["id"], failed))
+            matching += failed == 0
+            for f in py_pills:
+                if failed & ~ignored_bits(f) == 0 and f.py(r, ctx):
+                    counts[f.id] += 1
+        return kept, matching
+
+    kept, matching = await asyncio.to_thread(tally)
+
+    # The SQL pills: one aggregate over those files, by what they fail.
+    sql_pills = [f for f in _FILTER_LIST if f.sql]
+    await db.execute("CREATE TEMP TABLE IF NOT EXISTS _facet (id INTEGER PRIMARY KEY, failed INTEGER)")
+    await db.execute("DELETE FROM _facet")
+    await db.executemany("INSERT INTO _facet (id, failed) VALUES (?, ?)", kept)
+    params = []
+    sums = []
+    for f in sql_pills:
+        if f.params:
+            params.extend(f.params())
+        sums.append(f"SUM(CASE WHEN ({f.sql}) THEN 1 ELSE 0 END)")
+    async with db.execute(
+        f"SELECT _facet.failed, {', '.join(sums)} FROM scan_results "
+        f"JOIN _facet ON _facet.id = scan_results.id GROUP BY _facet.failed", params,
+    ) as cur:
+        by_failed = await cur.fetchall()
+    await db.execute("DROP TABLE _facet")
+    for row in by_failed:
+        failed = row[0]
+        for i, f in enumerate(sql_pills, start=1):
+            if failed & ~ignored_bits(f) == 0:
+                counts[f.id] += row[i] or 0
+    counts["matching"] = matching
+    return counts
