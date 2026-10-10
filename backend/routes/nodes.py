@@ -197,6 +197,11 @@ class CompletionReport(BaseModel):
     # False when the encode was thrown away (VMAF / larger) and the original
     # is untouched; older workers omit it (v0.10.0).
     replaced_source: bool | None = None
+    # Thrown away for its VMAF score (v0.10.0): recorded like a local
+    # rejection — the "VMAF-rejected" filter and the notification.
+    vmaf_rejected: bool | None = None
+    vmaf_reject_reason: str | None = None
+    vmaf_reject_params: dict | None = None
 
 
 class MetricsReport(BaseModel):
@@ -723,6 +728,14 @@ async def report_complete(req: CompletionReport, request: Request):
                     "UPDATE jobs SET vmaf_score = ? WHERE id = ?",
                     (req.vmaf_score, req.job_id),
                 )
+            if req.vmaf_rejected:
+                params = req.vmaf_reject_params if req.vmaf_reject_reason else None
+                await db.execute(
+                    "UPDATE jobs SET error_log = ?, error_key = ?, error_params = ? WHERE id = ?",
+                    (req.vmaf_reject_reason or "VMAF below threshold",
+                     "errors.vmafRejected" if params else "errors.vmafBelowThreshold",
+                     json.dumps(params) if params else None, req.job_id),
+                )
             # Store backup path
             if req.backup_path:
                 bp = await nm.translate_path(req.backup_path, req.node_id, "to_server")
@@ -781,6 +794,14 @@ async def report_complete(req: CompletionReport, request: Request):
                 await db.commit()
             finally:
                 await db.close()
+
+    if req.success and req.vmaf_rejected and job:
+        try:
+            from backend.notifications import notify_vmaf_rejected
+            min_score = (req.vmaf_reject_params or {}).get("min")
+            await notify_vmaf_rejected(job["file_path"].rsplit("/", 1)[-1], req.vmaf_score, min_score)
+        except Exception as exc:
+            print(f"[NODES] VMAF-rejected notification failed: {exc}", flush=True)
 
     # Update node stats (only counts successes, tracks consecutive failures)
     await nm.complete_job_on_node(

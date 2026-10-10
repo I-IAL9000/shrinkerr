@@ -25,5 +25,24 @@
     "emailSubject": "Shrinkerr: Notificación de prueba",
     "fieldStatus": "Estado",
     "statusSuccess": "Prueba exitosa"
+  },
+  "vmafRejected": {
+    "title": "Conversión rechazada",
+    "message": "{{fileName}} se convirtió, pero su puntuación VMAF era demasiado baja: se conservó el original",
+    "fieldScore": "VMAF",
+    "fieldThreshold": "Mínimo"
+  },
+  "nodeOffline": {
+    "title": "Worker desconectado",
+    "message": "El worker remoto {{name}} dejó de responder; su trabajo volvió a la cola",
+    "fieldLastSeen": "Visto por última vez"
+  },
+  "weeklyDigest": {
+    "title": "Resumen semanal",
+    "message_one": "{{count}} archivo convertido esta semana, ahorrando {{saved}}.",
+    "message_other": "{{count}} archivos convertidos esta semana, ahorrando {{saved}}.",
+    "fieldFailed": "Fallidos",
+    "fieldPending": "En espera en la cola",
+    "fieldTotal": "Ahorrado en total"
   }
 }

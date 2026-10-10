@@ -125,7 +125,10 @@
     "events": {
       "queueComplete": "Cola completada",
       "jobFailed": "Trabajo fallido",
-      "diskLow": "Poco espacio en disco"
+      "diskLow": "Poco espacio en disco",
+      "vmafRejected": "Rechazado por VMAF",
+      "nodeOffline": "Worker desconectado",
+      "weeklyDigest": "Resumen semanal"
     },
     "diskThreshold": "Umbral de disco (GB)",
     "webhookUrl": "URL del webhook",
@@ -140,7 +143,13 @@
     "genericWebhook": "Webhook genérico",
     "genericWebhookUrl": "URL (recibe un POST JSON)",
     "payload": "Contenido:",
-    "test": "Probar notificaciones"
+    "test": "Probar notificaciones",
+    "ntfyUrl": "URL del tema",
+    "accessToken": "Token de acceso (opcional)",
+    "serverUrl": "URL del servidor",
+    "appToken": "Token de la aplicación",
+    "appriseUrls": "URL de los servicios, una por línea",
+    "appriseHelp": "Pushover, Slack, Matrix, Pushbullet, Teams y más de 100 servicios: consulta la <a>wiki de Apprise</a> para la URL de cada uno."
   },
   "backups": {
     "title": "Copias de seguridad",

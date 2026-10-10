@@ -2730,6 +2730,12 @@ class QueueWorker:
                     )
                 except Exception:
                     pass
+                try:
+                    from backend.notifications import notify_vmaf_rejected
+                    await notify_vmaf_rejected(file_path.rsplit("/", 1)[-1], result.get("vmaf_score"),
+                                               result.get("vmaf_min_score"))
+                except Exception as exc:
+                    print(f"[WORKER] VMAF-rejected notification failed: {exc}", flush=True)
                 print(f"[WORKER] {reason}", flush=True)
 
         # For "combined" jobs, track removal is now handled inline during conversion

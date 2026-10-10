@@ -224,7 +224,7 @@ async def run_checks() -> dict:
 # ── Diagnostics bundle ───────────────────────────────────────────────────
 
 # Secrets, and the personal details a public bug report shouldn't carry.
-_SECRET_KEY = re.compile(r"key|token|password|secret|webhook|session|pass$|smtp_user|smtp_from|chat_id", re.IGNORECASE)
+_SECRET_KEY = re.compile(r"key|token|password|secret|webhook|session|pass$|smtp_user|smtp_from|chat_id|apprise|ntfy_url", re.IGNORECASE)
 _SECRET_IN_TEXT = re.compile(
     r"(?i)(x-plex-token|x-api-key|api[_-]?key|apikey|token|password|secret)([=:]\s*\"?)([^\s&\"',;]{4,})")
 

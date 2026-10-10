@@ -221,6 +221,15 @@ _ENCODING_DEFAULTS = {
     "notify_queue_complete": "false",
     "notify_job_failed": "false",
     "notify_disk_low": "false",
+    # v0.10.0: ntfy / Gotify / Apprise, and three more events
+    "ntfy_url": "",
+    "ntfy_token": "",
+    "gotify_url": "",
+    "gotify_token": "",
+    "apprise_urls": "",
+    "notify_vmaf_rejected": "false",
+    "notify_node_offline": "false",
+    "notify_weekly_digest": "false",
     "disk_space_threshold_gb": "50",
     # Language for outbound notification text (backend/locales/<code>/).
     "notification_language": "en",
@@ -537,6 +546,10 @@ async def regenerate_api_key():
     return {"api_key": new_key}
 
 
+# Notification events added in v0.10.0.
+_NOTIFY_EVENTS_V010 = ("notify_vmaf_rejected", "notify_node_offline", "notify_weekly_digest")
+
+
 @router.get("/encoding")
 async def get_encoding_settings():
     db = await aiosqlite.connect(DB_PATH)
@@ -783,14 +796,16 @@ async def get_encoding_settings():
     for key in ["discord_webhook_url", "telegram_bot_token", "telegram_chat_id",
                  "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to",
                  "webhook_url", "notify_queue_complete", "notify_job_failed",
-                 "notify_disk_low", "disk_space_threshold_gb"]:
+                 "notify_disk_low", "disk_space_threshold_gb",
+                 "ntfy_url", "gotify_url", "apprise_urls", *_NOTIFY_EVENTS_V010]:
         result[key] = merged.get(key, "")
     result["notification_language"] = merged.get("notification_language", "en")
-    smtp_pass = merged.get("smtp_pass", "")
-    result["smtp_pass"] = ("****" + smtp_pass[-4:]) if smtp_pass else ""
+    for key in ("smtp_pass", "ntfy_token", "gotify_token"):
+        secret = merged.get(key, "")
+        result[key] = ("****" + secret[-4:]) if secret else ""
     # Parse booleans for frontend
-    for key in ["notify_queue_complete", "notify_job_failed", "notify_disk_low"]:
-        result[key] = result.get(key, "false").lower() == "true"
+    for key in ["notify_queue_complete", "notify_job_failed", "notify_disk_low", *_NOTIFY_EVENTS_V010]:
+        result[key] = (result.get(key) or "false").lower() == "true"
 
     return result
 
@@ -1354,7 +1369,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             val = getattr(update, key, None)
             if val is not None:
                 updates[key] = str(val)
-        for key in ["quiet_hours_enabled", "quiet_hours_nice", "notify_queue_complete", "notify_job_failed", "notify_disk_low"]:
+        for key in ["quiet_hours_enabled", "quiet_hours_nice", "notify_queue_complete", "notify_job_failed", "notify_disk_low",
+                    *_NOTIFY_EVENTS_V010]:
             val = getattr(update, key, None)
             if val is not None:
                 updates[key] = "true" if val else "false"
@@ -1362,16 +1378,19 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         # validation so pointing a webhook at 169.254.169.254 / ::ffff:
         # cloud-metadata endpoints is rejected at save time.
         from backend.ssrf_guard import validate_outbound_url
-        _url_notify_keys = {"discord_webhook_url", "webhook_url"}
+        _url_notify_keys = {"discord_webhook_url", "webhook_url", "ntfy_url", "gotify_url"}
         for key in ["discord_webhook_url", "telegram_bot_token", "telegram_chat_id",
-                     "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to", "webhook_url", "disk_space_threshold_gb"]:
+                     "smtp_host", "smtp_port", "smtp_user", "smtp_from", "email_to", "webhook_url", "disk_space_threshold_gb",
+                     "ntfy_url", "gotify_url", "apprise_urls"]:
             val = getattr(update, key, None)
             if val is not None:
                 if key in _url_notify_keys and val:
                     val = validate_outbound_url(val, label=f"{key} URL")
                 updates[key] = val
-        if update.smtp_pass is not None and not update.smtp_pass.startswith("****"):
-            updates["smtp_pass"] = update.smtp_pass
+        for key in ("smtp_pass", "ntfy_token", "gotify_token"):  # "****1234": unchanged
+            val = getattr(update, key, None)
+            if val is not None and not val.startswith("****"):
+                updates[key] = val
         if update.notification_language is not None:
             from backend.i18n import available_languages
             _nl = update.notification_language.strip()
@@ -1664,6 +1683,10 @@ _SECRET_SETTINGS_KEYS = frozenset({
     "discord_webhook_url",  # contains the secret path component
     "telegram_bot_token",
     "webhook_url",          # often signed / secret URL
+    "ntfy_url",             # whoever has the topic URL reads the messages
+    "ntfy_token",
+    "gotify_token",
+    "apprise_urls",         # carry each service's credentials
 })
 
 

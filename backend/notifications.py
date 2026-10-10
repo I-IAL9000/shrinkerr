@@ -1,4 +1,5 @@
-"""Notification system — Discord, Telegram, email, and generic webhook."""
+"""Notification system — Discord, Telegram, email, generic webhook, and
+(v0.10.0) ntfy, Gotify and Apprise (100+ services by URL)."""
 
 import asyncio
 import smtplib
@@ -20,6 +21,7 @@ async def _get_notification_settings() -> dict:
             "SELECT key, value FROM settings WHERE key LIKE 'notify_%' OR key LIKE 'discord_%' "
             "OR key LIKE 'telegram_%' OR key LIKE 'smtp_%' OR key LIKE 'email_%' "
             "OR key LIKE 'webhook_%' OR key = 'disk_space_threshold_gb' "
+            "OR key LIKE 'ntfy_%' OR key LIKE 'gotify_%' OR key LIKE 'apprise_%' "
             "OR key = 'notification_language'"
         ) as cur:
             for row in await cur.fetchall():
@@ -127,6 +129,77 @@ async def _send_webhook(url: str, event: str, title: str, message: str, fields: 
         return False
 
 
+# Events that need attention: sent with a higher priority where it exists.
+_URGENT = ("failed", "low", "rejected", "offline")
+
+
+def _plain(message: str, fields: dict) -> str:
+    return message + ("\n\n" + "\n".join(f"{k}: {v}" for k, v in fields.items()) if fields else "")
+
+
+async def _send_ntfy(url: str, token: str, event: str, title: str, message: str, fields: dict) -> bool:
+    """ntfy (v0.10.0): `url` is the topic's URL, e.g. https://ntfy.sh/my-topic.
+    Published as JSON, so the title can be any language."""
+    base, _, topic = url.rstrip("/").rpartition("/")
+    payload = {"topic": topic, "title": title, "message": _plain(message, fields),
+               "priority": 4 if any(w in event for w in _URGENT) else 3, "tags": ["shrinkerr"]}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(base, json=payload, headers=headers)
+            resp.raise_for_status()
+        return True
+    except Exception as exc:
+        print(f"[NOTIFY] ntfy failed: {exc}", flush=True)
+        return False
+
+
+async def _send_gotify(url: str, token: str, event: str, title: str, message: str, fields: dict) -> bool:
+    """Gotify (v0.10.0): the server's URL and an application token."""
+    payload = {"title": title, "message": _plain(message, fields),
+               "priority": 8 if any(w in event for w in _URGENT) else 5}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{url.rstrip('/')}/message", json=payload, headers={"X-Gotify-Key": token})
+            resp.raise_for_status()
+        return True
+    except Exception as exc:
+        print(f"[NOTIFY] Gotify failed: {exc}", flush=True)
+        return False
+
+
+async def _send_apprise(urls: str, title: str, message: str, fields: dict) -> bool:
+    """Apprise (v0.10.0): one service URL per line (pover://, tgram://, slack://,
+    matrix://, ...; see the Apprise wiki)."""
+    targets = [u.strip() for u in urls.replace(",", "\n").splitlines() if u.strip()]
+
+    def send() -> bool:
+        import apprise
+        sender = apprise.Apprise()
+        for target in targets:
+            sender.add(target)
+        return bool(len(sender)) and bool(sender.notify(title=title, body=_plain(message, fields)))
+    try:
+        return await asyncio.to_thread(send)
+    except Exception as exc:
+        print(f"[NOTIFY] Apprise failed: {exc}", flush=True)
+        return False
+
+
+async def _send_more(settings: dict, event: str, title: str, message: str, fields: dict) -> dict:
+    """The v0.10.0 providers: ntfy, Gotify, Apprise."""
+    results = {}
+    if (settings.get("ntfy_url") or "").strip():
+        results["ntfy"] = await _send_ntfy(settings["ntfy_url"].strip(), settings.get("ntfy_token", ""),
+                                           event, title, message, fields)
+    if (settings.get("gotify_url") or "").strip() and settings.get("gotify_token"):
+        results["gotify"] = await _send_gotify(settings["gotify_url"].strip(), settings["gotify_token"],
+                                               event, title, message, fields)
+    if (settings.get("apprise_urls") or "").strip():
+        results["apprise"] = await _send_apprise(settings["apprise_urls"], title, message, fields)
+    return results
+
+
 async def send_notification(event: str, title: str, message: str, fields: dict | None = None) -> dict:
     """Send notifications for an event to all configured providers.
 
@@ -169,6 +242,8 @@ async def _dispatch(settings: dict, event: str, title: str, message: str, fields
     webhook_url = settings.get("webhook_url", "")
     if webhook_url:
         results["webhook"] = await _send_webhook(webhook_url, event, title, message, fields)
+
+    results.update(await _send_more(settings, event, title, message, fields))
 
     if results:
         ok = [k for k, v in results.items() if v]
@@ -251,4 +326,114 @@ async def test_notifications() -> dict:
             webhook_url, "test", title, t("notifications:test.webhookMessage", lang), fields,
         )
 
+    results.update(await _send_more(settings, "test", title, message, fields))
     return results
+
+
+async def notify_vmaf_rejected(file_name: str, score, threshold) -> dict:
+    """`vmaf_rejected` (v0.10.0): a conversion was thrown away for its VMAF
+    score; the original is untouched."""
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    fields = {t("notifications:vmafRejected.fieldScore", lang): f"{float(score):.1f}"} if score is not None else {}
+    if threshold:
+        fields[t("notifications:vmafRejected.fieldThreshold", lang)] = f"{float(threshold):g}"
+    return await _dispatch(
+        settings, "vmaf_rejected",
+        t("notifications:vmafRejected.title", lang),
+        t("notifications:vmafRejected.message", lang, fileName=file_name),
+        fields,
+    )
+
+
+async def notify_node_offline(name: str, last_seen: str | None) -> dict:
+    """`node_offline` (v0.10.0): a remote worker stopped checking in; its job
+    went back to the queue."""
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    return await _dispatch(
+        settings, "node_offline",
+        t("notifications:nodeOffline.title", lang),
+        t("notifications:nodeOffline.message", lang, name=name),
+        {t("notifications:nodeOffline.fieldLastSeen", lang): last_seen or "—"},
+    )
+
+
+def _fmt_size(n) -> str:
+    size = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{size:.0f} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+async def notify_weekly_digest() -> dict:
+    """`weekly_digest` (v0.10.0): the last seven days — files converted, space
+    saved, failures — and what's waiting in the queue."""
+    from datetime import datetime, timedelta, timezone
+    settings = await _get_notification_settings()
+    lang = _lang(settings)
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN space_saved > 0 THEN space_saved ELSE 0 END), 0) "
+            "FROM jobs WHERE status = 'completed' AND completed_at >= ?", (since,)) as cur:
+            done, saved = await cur.fetchone()
+        async with db.execute("SELECT COUNT(*) FROM jobs WHERE status = 'failed' AND completed_at >= ?", (since,)) as cur:
+            failed = (await cur.fetchone())[0]
+        async with db.execute("SELECT COUNT(*) FROM jobs WHERE status = 'pending'") as cur:
+            pending = (await cur.fetchone())[0]
+        async with db.execute(
+            "SELECT COALESCE(SUM(CASE WHEN space_saved > 0 THEN space_saved ELSE 0 END), 0) FROM jobs "
+            "WHERE status = 'completed'") as cur:
+            total = (await cur.fetchone())[0]
+    finally:
+        await db.close()
+    return await _dispatch(
+        settings, "weekly_digest",
+        t("notifications:weeklyDigest.title", lang),
+        t("notifications:weeklyDigest.message", lang, count=done, saved=_fmt_size(saved)),
+        {t("notifications:weeklyDigest.fieldFailed", lang): failed,
+         t("notifications:weeklyDigest.fieldPending", lang): pending,
+         t("notifications:weeklyDigest.fieldTotal", lang): _fmt_size(total)},
+    )
+
+
+async def weekly_digest_due(now=None) -> bool:
+    """Whether the weekly digest should go out now — a week after the last
+    one (or after it was turned on: the first doesn't go out at once)."""
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc)
+    settings = await _get_notification_settings()
+    if not _is_enabled(settings, "weekly_digest"):
+        return False
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'weekly_digest_last_sent'") as cur:
+            row = await cur.fetchone()
+        last = None
+        try:
+            last = datetime.fromisoformat(row[0]) if row and row[0] else None
+        except ValueError:
+            pass
+        due = last is not None and now - last >= timedelta(days=7)
+        if last is None or due:
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('weekly_digest_last_sent', ?)",
+                             (now.isoformat(),))
+            await db.commit()
+        return due
+    finally:
+        await db.close()
+
+
+async def weekly_digest_loop() -> None:
+    """Checks hourly; sends the digest when it's due."""
+    while True:
+        try:
+            if await weekly_digest_due():
+                await notify_weekly_digest()
+        except Exception as exc:
+            print(f"[NOTIFY] Weekly digest failed: {exc}", flush=True)
+        await asyncio.sleep(3600)

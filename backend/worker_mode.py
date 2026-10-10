@@ -296,7 +296,10 @@ class ServerClient:
                               encoding_stats: dict | None = None,
                               error_key: str | None = None,
                               error_params: dict | None = None,
-                              replaced_source: bool | None = None) -> dict:
+                              replaced_source: bool | None = None,
+                              vmaf_rejected: bool | None = None,
+                              vmaf_reject_reason: str | None = None,
+                              vmaf_reject_params: dict | None = None) -> dict:
         resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
@@ -305,6 +308,8 @@ class ServerClient:
             "vmaf_score": vmaf_score, "backup_path": backup_path,
             "ffmpeg_command": ffmpeg_command, "encoding_stats": encoding_stats,
             "replaced_source": replaced_source,
+            "vmaf_rejected": vmaf_rejected, "vmaf_reject_reason": vmaf_reject_reason,
+            "vmaf_reject_params": vmaf_reject_params,
         })
         resp.raise_for_status()
         return resp.json()
@@ -611,6 +616,10 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
             ffmpeg_command=result.get("ffmpeg_command") if result else None,
             encoding_stats=result.get("encoding_stats") if result else None,
             replaced_source=replaced_source,
+            # The server records a VMAF rejection as it does its own (v0.10.0).
+            vmaf_rejected=bool(result.get("vmaf_rejected")) if result else None,
+            vmaf_reject_reason=result.get("vmaf_reject_reason") if result else None,
+            vmaf_reject_params=result.get("vmaf_reject_params") if result else None,
         )
 
     except Exception as exc:

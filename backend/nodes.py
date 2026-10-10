@@ -579,7 +579,7 @@ class NodeManager:
         try:
             # Find stale nodes that are still "online" or "working"
             async with db.execute(
-                "SELECT id, current_job_id FROM worker_nodes "
+                "SELECT id, name, last_heartbeat, current_job_id FROM worker_nodes "
                 "WHERE id != 'local' AND status IN ('online', 'working') "
                 # last_heartbeat is ISO ("2026-10-08T12:00:00+00:00"); as a
                 # string it sorts after datetime()'s "2026-10-08 11:55:00",
@@ -630,6 +630,13 @@ class NodeManager:
                 print(f"[NODES] Released {released} stale job(s) back to pending", flush=True)
         finally:
             await db.close()
+        # Once per outage: only nodes that were online until now (v0.10.0).
+        for node in stale_nodes:
+            try:
+                from backend.notifications import notify_node_offline
+                await notify_node_offline(node["name"] or node["id"], node["last_heartbeat"])
+            except Exception as exc:
+                print(f"[NODES] Offline notification failed: {exc}", flush=True)
         return released
 
     async def remove_node(self, node_id: str) -> bool:

@@ -395,6 +395,9 @@ async def lifespan(app: FastAPI):
     # running instance, not only after a manual image refresh.
     from backend.routes.stats import update_check_loop
     version_check_task = asyncio.create_task(update_check_loop())
+    # Weekly digest notification (v0.10.0): checked hourly, sent when due.
+    from backend.notifications import weekly_digest_loop
+    digest_task = asyncio.create_task(weekly_digest_loop())
 
     yield
     worker.stop()
@@ -403,6 +406,7 @@ async def lifespan(app: FastAPI):
     stale_task.cancel()
     local_heartbeat_task.cancel()
     version_check_task.cancel()
+    digest_task.cancel()
 
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)

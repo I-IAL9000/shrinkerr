@@ -123,7 +123,10 @@
     "events": {
       "queueComplete": "Queue complete",
       "jobFailed": "Job failed",
-      "diskLow": "Disk space low"
+      "diskLow": "Disk space low",
+      "vmafRejected": "VMAF rejected",
+      "nodeOffline": "Worker offline",
+      "weeklyDigest": "Weekly summary"
     },
     "diskThreshold": "Disk threshold (GB)",
     "webhookUrl": "Webhook URL",
@@ -138,7 +141,13 @@
     "genericWebhook": "Generic Webhook",
     "genericWebhookUrl": "URL (receives JSON POST)",
     "payload": "Payload:",
-    "test": "Test Notifications"
+    "test": "Test Notifications",
+    "ntfyUrl": "Topic URL",
+    "accessToken": "Access token (optional)",
+    "serverUrl": "Server URL",
+    "appToken": "Application token",
+    "appriseUrls": "Service URLs, one per line",
+    "appriseHelp": "Pushover, Slack, Matrix, Pushbullet, Teams and 100+ more — see the <a>Apprise wiki</a> for each service's URL."
   },
   "backups": {
     "title": "Backups",

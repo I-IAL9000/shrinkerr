@@ -4446,6 +4446,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     ["notify_queue_complete", t("settingsSystem:notifications.events.queueComplete")],
                     ["notify_job_failed", t("settingsSystem:notifications.events.jobFailed")],
                     ["notify_disk_low", t("settingsSystem:notifications.events.diskLow")],
+                    ["notify_vmaf_rejected", t("settingsSystem:notifications.events.vmafRejected")],
+                    ["notify_node_offline", t("settingsSystem:notifications.events.nodeOffline")],
+                    ["notify_weekly_digest", t("settingsSystem:notifications.events.weeklyDigest")],
                   ].map(([key, label]) => (
                     <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
                       <input type="checkbox" checked={encoding?.[key] ?? false}
@@ -4538,6 +4541,46 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       onChange={e => setEncoding({ ...encoding, webhook_url: e.target.value })} />
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                       {t("settingsSystem:notifications.payload")} {"{ event, title, message, fields }"}
+                    </div>
+                  </div>
+
+                  {/* ntfy (v0.10.0) */}
+                  <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>ntfy</div>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.ntfyUrl")}</label>
+                    <input style={{ ...inputStyle, width: "100%", marginBottom: 8 }} aria-label={`ntfy ${t("settingsSystem:notifications.ntfyUrl")}`} placeholder="https://ntfy.sh/my-shrinkerr"
+                      value={encoding?.ntfy_url || ""}
+                      onChange={e => setEncoding({ ...encoding, ntfy_url: e.target.value })} />
+                    <label style={labelStyle}>{t("settingsSystem:notifications.accessToken")}</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} aria-label={`ntfy ${t("settingsSystem:notifications.accessToken")}`} placeholder="tk_..."
+                      value={encoding?.ntfy_token || ""}
+                      onChange={e => setEncoding({ ...encoding, ntfy_token: e.target.value })} />
+                  </div>
+
+                  {/* Gotify (v0.10.0) */}
+                  <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Gotify</div>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.serverUrl")}</label>
+                    <input style={{ ...inputStyle, width: "100%", marginBottom: 8 }} aria-label={`Gotify ${t("settingsSystem:notifications.serverUrl")}`} placeholder="https://gotify.example.com"
+                      value={encoding?.gotify_url || ""}
+                      onChange={e => setEncoding({ ...encoding, gotify_url: e.target.value })} />
+                    <label style={labelStyle}>{t("settingsSystem:notifications.appToken")}</label>
+                    <input type="password" style={{ ...inputStyle, width: "100%" }} aria-label={`Gotify ${t("settingsSystem:notifications.appToken")}`}
+                      value={encoding?.gotify_token || ""}
+                      onChange={e => setEncoding({ ...encoding, gotify_token: e.target.value })} />
+                  </div>
+
+                  {/* Apprise (v0.10.0): 100+ services by URL */}
+                  <div style={{ background: "var(--bg-primary)", padding: 14, borderRadius: 4, gridColumn: "1 / -1" }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: "white", marginBottom: 8 }}>Apprise</div>
+                    <label style={labelStyle}>{t("settingsSystem:notifications.appriseUrls")}</label>
+                    <textarea rows={3} style={{ ...inputStyle, width: "100%", fontFamily: "monospace", resize: "vertical" }}
+                      aria-label={t("settingsSystem:notifications.appriseUrls")} placeholder={"pover://user@token\nslack://TokenA/TokenB/TokenC/#channel"}
+                      value={encoding?.apprise_urls || ""}
+                      onChange={e => setEncoding({ ...encoding, apprise_urls: e.target.value })} />
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+                      <Trans i18nKey="settingsSystem:notifications.appriseHelp"
+                        components={{ a: <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent-text)" }} /> }} />
                     </div>
                   </div>
                 </div>

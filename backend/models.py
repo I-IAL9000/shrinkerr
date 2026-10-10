@@ -336,6 +336,15 @@ class SettingsUpdate(BaseModel):
     notify_queue_complete: Optional[bool] = None
     notify_job_failed: Optional[bool] = None
     notify_disk_low: Optional[bool] = None
+    # v0.10.0
+    notify_vmaf_rejected: Optional[bool] = None
+    notify_node_offline: Optional[bool] = None
+    notify_weekly_digest: Optional[bool] = None
+    ntfy_url: Optional[str] = None
+    ntfy_token: Optional[str] = None
+    gotify_url: Optional[str] = None
+    gotify_token: Optional[str] = None
+    apprise_urls: Optional[str] = None
     disk_space_threshold_gb: Optional[Any] = None
     notification_language: Optional[str] = None
     # NZBGet integration
