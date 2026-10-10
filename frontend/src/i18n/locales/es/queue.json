@@ -232,5 +232,40 @@
       "streaming": "streaming",
       "compact": "compacto"
     }
+  },
+  "plan": {
+    "title": "Qué va a pasar",
+    "video": "Convierte el vídeo con {{encoder}} ({{settings}})",
+    "noVideo": "El vídeo no se recodifica; solo cambian las pistas",
+    "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
+    "sizeSame": "Se queda en unos {{size}}",
+    "originalKeep_one": "El original se guarda {{count}} día, así que puedes deshacerlo",
+    "originalKeep_many": "El original se guarda {{count}} días, así que puedes deshacerlo",
+    "originalKeep_other": "El original se guarda {{count}} días, así que puedes deshacerlo",
+    "originalTrash": "El original va a la papelera",
+    "originalDelete": "El original se elimina cuando el archivo nuevo está en su sitio",
+    "tickToRemove": "Las pistas marcadas se eliminan. Cada cambio se guarda en el archivo como elección tuya, así que el Escáner también lo muestra y los nuevos ajustes de idioma no lo modifican.",
+    "notScanned": "Este archivo no está en los resultados del escaneo, así que no se conocen sus pistas.",
+    "loading": "Cargando…",
+    "loadFailed": "No se pudo cargar lo que hará este trabajo.",
+    "saveFailed": "No se pudo guardar el cambio."
+  },
+  "summary": {
+    "title": "Qué hará la cola",
+    "jobs_one": "{{formatted}} trabajo",
+    "jobs_many": "{{formatted}} trabajos",
+    "jobs_other": "{{formatted}} trabajos",
+    "size": "{{before}} → unos {{after}} (ahorra unos {{saved}})",
+    "conversions_one": "{{count}} conversión",
+    "conversions_many": "{{count}} conversiones",
+    "conversions_other": "{{count}} conversiones",
+    "trackOnly_one": "{{count}} limpieza de pistas (sin recodificar)",
+    "trackOnly_many": "{{count}} limpiezas de pistas (sin recodificar)",
+    "trackOnly_other": "{{count}} limpiezas de pistas (sin recodificar)",
+    "healthChecks_one": "{{count}} comprobación de estado",
+    "healthChecks_many": "{{count}} comprobaciones de estado",
+    "healthChecks_other": "{{count}} comprobaciones de estado",
+    "encoders": "Codifica con {{list}}",
+    "perJob": "Haz clic en un trabajo para ver sus pistas y cambiar cuáles se eliminan."
   }
 }

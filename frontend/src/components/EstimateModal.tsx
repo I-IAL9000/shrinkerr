@@ -6,6 +6,7 @@ import { estimateJobs, startTestEncode, getEncodingSettings, getEncoderCaps, wsU
 import { useRangeFill } from "../useRangeFill";
 import { fmtNum, fmtBytes } from "../fmt";
 import { vmafColor, vmafTintBg } from "../utils/vmaf";
+import { trackLanguageList } from "../utils/languages";
 
 function formatTime(seconds: number): string {
   if (seconds < 60) return i18n.t("scannerModals:time.seconds", { n: seconds });
@@ -331,14 +332,6 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                 the originals, which tracks are removed — before anything is
                 queued. */}
             {estimate.total_files > 0 && estimate.encoder && (() => {
-              // Tracks use ISO 639-2/B codes ("fre", "ger"); the catalog names
-              // those "(alt)", so look up the 639-2/T name instead.
-              const B_TO_T: Record<string, string> = { fre: "fra", ger: "deu", chi: "zho", cze: "ces", dut: "nld", gre: "ell", ice: "isl", per: "fas", rum: "ron", slo: "slk", wel: "cym", arm: "hye", baq: "eus", bur: "mya", geo: "kat", mac: "mkd", mao: "mri", may: "msa", alb: "sqi", tib: "bod" };
-              const langName = (code: string) => t(`settingsMedia:languages.${B_TO_T[code] || code}`, { defaultValue: code });
-              const trackList = (by: Record<string, number>) => Object.entries(by)
-                .sort((a, b) => b[1] - a[1])
-                .map(([code, n]) => n > 1 ? `${langName(code)} ×${n}` : langName(code))
-                .join(", ");
               const audio = estimate.removals?.audio || {};
               const subs = estimate.removals?.subtitles || {};
               const enc = estimate.encoder;
@@ -354,8 +347,8 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                     ? t("scannerModals:estimate.whatHappens.originalsTrash")
                     : t("scannerModals:estimate.whatHappens.originalsDelete"),
               ];
-              if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackList(audio) }));
-              if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackList(subs) }));
+              if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }));
+              if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
               if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
               return (
                 <div style={{ background: "var(--bg-primary)", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>

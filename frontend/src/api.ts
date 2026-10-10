@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { WSMessage } from "./types";
+import type { AudioTrack, SubtitleTrack, WSMessage } from "./types";
 import i18n from "./i18n";
 
 const API_BASE = "/api";
@@ -767,6 +767,30 @@ export interface QualityPreset {
 export const getQualityPresets = (encoder?: string) =>
   apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
     `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);
+// What pending jobs will do (v0.10.0). A plan's tracks are its file's, each
+// with whether the job removes it; edit them with updateAudioTracks /
+// updateSubtitleTracks on scan_id, which updates the job.
+export interface Originals { action: "keep" | "trash" | "delete"; days?: number }
+export interface JobPlan {
+  scan_id: number | null;
+  job_type: string;
+  audio: (AudioTrack & { remove: boolean })[];
+  subtitles: (SubtitleTrack & { remove: boolean })[];
+  file_size: number;
+  estimated_savings: number;
+  originals: Originals;
+}
+export const getJobPlan = (id: number) => apiFetch<JobPlan>(`/jobs/${id}/plan`);
+export interface PendingSummary {
+  jobs: number;
+  by_type: Record<string, number>;
+  by_encoder: Record<string, number>;
+  removals: { audio: Record<string, number>; subtitles: Record<string, number> };
+  total_size: number;
+  estimated_savings: number;
+  originals: Originals;
+}
+export const getPendingSummary = () => apiFetch<PendingSummary>("/jobs/pending-summary");
 export interface PreviewTrack { language: string; codec: string; keep: boolean; channels?: number; title?: string; forced?: boolean }
 export const getLanguagePreview = (audioLanguages: string[], subLanguages: string[]) =>
   apiFetch<{ files: { name: string; native: string; audio: PreviewTrack[]; subs: PreviewTrack[] }[] }>(

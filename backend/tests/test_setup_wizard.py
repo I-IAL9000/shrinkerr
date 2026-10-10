@@ -26,6 +26,18 @@ def test_videotoolbox_gets_the_nearest_measured_quality():
     assert vt_quality_for_cq(24) == 55 and vt_quality_for_cq(25) == 50
 
 
+def test_the_queue_labels_videotoolbox_jobs_with_the_same_table():
+    """The queue shows a job's own quality as VideoToolbox's -q:v from a copy
+    of the server's table (frontend/src/utils/encoderLabel.ts)."""
+    import json
+    import re
+    from pathlib import Path
+    from backend.encoding_estimates import _VT_Q_AS_CQ
+    src = (Path(__file__).resolve().parents[2] / "frontend/src/utils/encoderLabel.ts").read_text()
+    table = re.search(r"VT_Q_AS_CQ[^=]*=\s*(\[\[.*?\]\]);", src).group(1)
+    assert tuple(tuple(p) for p in json.loads(table)) == _VT_Q_AS_CQ
+
+
 def test_presets_are_the_same_quality_on_every_encoder():
     """Each preset lands within one CQ step of its target on every encoder,
     so the savings shown don't depend on the hardware much."""

@@ -89,7 +89,8 @@ async def test_the_estimate_says_what_will_happen(env, monkeypatch):
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('backup_original_days', '7')")
         await db.commit()
     est = await estimate_jobs(EstimateRequest(file_paths=["/m/Film (2020)/film.mkv"], encoder="nvenc"))
-    assert est["removals"] == {"audio": {"fre": 2}, "subtitles": {"spa": 1}}  # a locked track stays
+    # A locked track unticked by hand goes too — the job removes it (v0.9.99).
+    assert est["removals"] == {"audio": {"fre": 2, "ger": 1}, "subtitles": {"spa": 1}}
     assert est["originals"] == {"action": "keep", "days": 7}
     assert est["encoder"] == {"requested": "nvenc", "runs_here": "qsv"}
 

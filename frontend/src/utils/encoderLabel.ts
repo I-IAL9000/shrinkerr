@@ -32,19 +32,35 @@ export function encoderSettingsLabel(encoder: string | null | undefined, s: Enco
   }
 }
 
+// VideoToolbox -q:v measured against NVENC's CQ — backend/encoding_estimates.py
+// _VT_Q_AS_CQ (a backend test keeps the two in step).
+const VT_Q_AS_CQ: [number, number][] = [[40, 29], [45, 28], [50, 26], [55, 23], [60, 21], [62, 18], [65, 15]];
+
+/** The -q:v nearest to `cq` (the better quality on a tie), as the server picks it. */
+function vtQualityForCq(cq: number): number {
+  let best = VT_Q_AS_CQ[0];
+  for (const p of VT_Q_AS_CQ) {
+    const d = Math.abs(p[1] - cq), bestD = Math.abs(best[1] - cq);
+    if (d < bestD || (d === bestD && p[0] > best[0])) best = p;
+  }
+  return best[0];
+}
+
 /** A job's own per-job overrides, falling back to the global defaults.
- *  Only NVENC and libx265 have per-job overrides (rules / bulk edits);
- *  QSV, VAAPI and VideoToolbox always use the global settings. */
+ *  The job's quality (rules / bulk edits) is on NVENC's CQ scale and reaches
+ *  every encoder (v0.10.0): QSV and VAAPI share the scale, VideoToolbox maps
+ *  it, libx265 has its own CRF. Only presets stay global for QSV. */
 export function jobEncoderSettings(job: EncoderSettings, defaults: EncoderSettings | null | undefined): EncoderSettings {
   const d = defaults || {};
+  const cq = job.nvenc_cq;
   return {
     nvenc_preset: job.nvenc_preset || d.nvenc_preset,
-    nvenc_cq: job.nvenc_cq ?? d.nvenc_cq,
+    nvenc_cq: cq ?? d.nvenc_cq,
     libx265_preset: job.libx265_preset || d.libx265_preset,
     libx265_crf: job.libx265_crf ?? d.libx265_crf,
     qsv_preset: d.qsv_preset,
-    qsv_cq: d.qsv_cq,
-    vaapi_qp: d.vaapi_qp,
-    videotoolbox_quality: d.videotoolbox_quality,
+    qsv_cq: cq ?? d.qsv_cq,
+    vaapi_qp: cq ?? d.vaapi_qp,
+    videotoolbox_quality: cq != null ? vtQualityForCq(cq) : d.videotoolbox_quality,
   };
 }

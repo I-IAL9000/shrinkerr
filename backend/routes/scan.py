@@ -2501,7 +2501,11 @@ async def reapply_track_rules(old_rules) -> int:
                 await _write_lang_batch(pending)
                 changed += len(pending)
         if changed:
-            print(f"[SCAN] Track settings changed: updated {changed} file(s), keeping choices made by hand", flush=True)
+            # Pending jobs follow their files (v0.10.0).
+            from backend.routes.jobs import refresh_pending_jobs
+            jobs = await refresh_pending_jobs()
+            print(f"[SCAN] Track settings changed: updated {changed} file(s) and {jobs} pending job(s), "
+                  "keeping choices made by hand", flush=True)
             await ws_manager.send_scan_results_changed(added=0, removed=0)
         return changed
 
@@ -2975,7 +2979,7 @@ async def _save_track_edit(result_id: int, column: str, flag_column: str, edited
         raise ApiError(status_code=400, detail="That track list couldn't be read.", code="scan.invalidTracks")
     db = await aiosqlite.connect(DB_PATH)
     try:
-        async with db.execute(f"SELECT {column} FROM scan_results WHERE id = ?", (result_id,)) as cur:
+        async with db.execute(f"SELECT {column}, file_path FROM scan_results WHERE id = ?", (result_id,)) as cur:
             row = await cur.fetchone()
         try:
             stored = json.loads(row[0] or "[]") if row else []
@@ -2990,6 +2994,10 @@ async def _save_track_edit(result_id: int, column: str, flag_column: str, edited
         await db.commit()
     finally:
         await db.close()
+    # A pending job for the file follows the edit (v0.10.0).
+    if row:
+        from backend.routes.jobs import refresh_pending_jobs
+        await refresh_pending_jobs([row[1]])
 
 
 @router.put("/results/{result_id}/tracks")

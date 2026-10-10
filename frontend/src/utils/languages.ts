@@ -76,3 +76,20 @@ export function languageOptions(): { code: string; name: string }[] {
   };
   return _LANGUAGES.map(l => ({ code: l.code, name: label(l) })).sort((a, b) => naturalCompare(a.name, b.name));
 }
+
+// Tracks use ISO 639-2/B codes ("fre", "ger"); the settings catalog names
+// those "(alt)", so look up the 639-2/T name instead.
+const B_TO_T: Record<string, string> = { fre: "fra", ger: "deu", chi: "zho", cze: "ces", dut: "nld", gre: "ell", ice: "isl", per: "fas", rum: "ron", slo: "slk", wel: "cym", arm: "hye", baq: "eus", bur: "mya", geo: "kat", mac: "mkd", mao: "mri", may: "msa", alb: "sqi", tib: "bod" };
+
+/** A track's language code named in the interface language ("fre" → "French"). */
+export function trackLanguageName(code: string): string {
+  return i18n.t(`settingsMedia:languages.${B_TO_T[code] || code}`, { defaultValue: code });
+}
+
+/** "French ×2, Spanish" — tracks counted by language, most first. */
+export function trackLanguageList(by: Record<string, number>): string {
+  return Object.entries(by)
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, n]) => n > 1 ? `${trackLanguageName(code)} ×${n}` : trackLanguageName(code))
+    .join(", ");
+}

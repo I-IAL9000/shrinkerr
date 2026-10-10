@@ -8,6 +8,7 @@ import { getJobs, getJobIds, getJobStats, startQueue, pauseQueue, cancelJob, can
 import { fmtNum, fmtBytes } from "../fmt";
 import JobCard from "../components/JobCard";
 import JobListItem from "../components/JobListItem";
+import PendingSummary from "../components/PendingSummary";
 import QueueControlPanel from "../components/QueueControlPanel";
 import { useShiftSelect } from "../useShiftSelect";
 import { useToast } from "../useToast";
@@ -325,11 +326,16 @@ export default function QueuePage() {
   // A quality preset sets both the CQ (NVENC, QSV, VAAPI and VideoToolbox
   // read it) and libx265's CRF, so it holds whichever encoder runs the job.
   // Optimistic UI update — apply immediately, then sync in background.
+  // A change to what pending jobs do (a track edit in a job's panel, a
+  // quality preset) — the pending summary reloads.
+  const [planEdits, setPlanEdits] = useState(0);
+
   const handleBulkVideoPreset = async (job: { nvenc_cq: number; libx265_crf: number }) => {
     const selectedSet = new Set(selectedIds);
     setJobs(prev => prev.map(j => selectedSet.has(j.id) ? { ...j, ...job } : j));
     toast(t("queue:toasts.videoPresetApplied", { count: selectedIds.length }), "success");
-    bulkUpdateJobSettings({ job_ids: selectedIds, ...job });
+    await bulkUpdateJobSettings({ job_ids: selectedIds, ...job });
+    setPlanEdits(n => n + 1);
   };
 
   const handleBulkAudioPreset = async (codec: string, bitrate: number) => {
@@ -474,6 +480,9 @@ export default function QueuePage() {
             toast(t("queue:toasts.fileIgnored"));
           }}
           encodingDefaults={encodingDefaults}
+          expanded={expandedIds.has(job.id)}
+          onToggleExpand={toggleExpanded}
+          onPlanChanged={() => { loadRef.current(); setPlanEdits(n => n + 1); }}
         />
       </div>
     );
@@ -814,6 +823,7 @@ export default function QueuePage() {
       {/* Pending tab */}
       {tab === "pending" && (
         <>
+          {pendingCount > 0 && <PendingSummary refreshKey={`${pendingCount}|${planEdits}`} />}
           {selectedJobIds.size > 0 && (
             <QueueControlPanel
               selectedCount={selectedJobIds.size}

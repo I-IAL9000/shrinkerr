@@ -156,6 +156,242 @@ def _classify_job_type(
     return "audio"
 
 
+def track_work(row: dict) -> tuple[list[int], list[int], bool]:
+    """The audio and subtitle tracks a job for this scanned file removes, and
+    whether it has audio work at all (removals, or the original language's
+    audio not first). `row`: scan_results columns (audio_tracks_json,
+    subtitle_tracks_json, native_language if known)."""
+    # v0.9.99: gate on keep alone, NOT `keep and not locked`.
+    # Classification never emits keep=False together with locked=True —
+    # that pair only arises when a user deliberately unticks a locked
+    # (forced / keep-language) track in the detail panel. The old
+    # `and not locked` guard silently discarded exactly that override,
+    # so an explicitly-unticked forced sub was never removed.
+    audio_remove: list[int] = []
+    sub_remove: list[int] = []
+    try:
+        for t in json.loads(row["audio_tracks_json"] or "[]"):
+            if not t.get("keep", True):
+                audio_remove.append(t["stream_index"])
+    except (json.JSONDecodeError, ValueError):
+        pass
+    try:
+        for t in json.loads(row["subtitle_tracks_json"] or "[]"):
+            if not t.get("keep", True):
+                sub_remove.append(t["stream_index"])
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
+
+    # Also treat "native language not first" as audio work (reorder-only job)
+    if not has_audio_work:
+        try:
+            from backend.scanner import languages_match, _is_cleanup_enabled
+            if _is_cleanup_enabled("reorder_native_audio"):
+                all_tracks = json.loads(row["audio_tracks_json"] or "[]")
+                if len(all_tracks) > 1:
+                    native = row.get("native_language") or ""
+                    first_lang = (all_tracks[0].get("language") or "").lower()
+                    if native and native.lower() != "und" and first_lang != native.lower():
+                        if not languages_match(first_lang, native.lower()):
+                            has_audio_work = True
+        except Exception:
+            pass
+    return audio_remove, sub_remove, has_audio_work
+
+
+# The scan_results columns track_work() and the job plans read.
+_TRACK_COLS = "id, file_path, file_size, needs_conversion, audio_tracks_json, subtitle_tracks_json, duration, disc_type"
+
+
+async def _scan_rows_for(db, paths: list[str], cols: str = _TRACK_COLS) -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    for i in range(0, len(paths), 900):
+        chunk = paths[i:i + 900]
+        async with db.execute(
+            f"SELECT {cols} FROM scan_results WHERE file_path IN ({','.join('?' * len(chunk))})", chunk,
+        ) as cur:
+            for r in await cur.fetchall():
+                rows[r["file_path"]] = dict(r)
+    return rows
+
+
+async def refresh_pending_jobs(paths: Optional[list[str]] = None) -> int:
+    """Re-derive pending jobs' track removals from their files' tracks — after
+    the keep languages change, or a file's tracks are edited (in the Scanner
+    or the queue). A conversion gains or drops its cleanup ("combined" /
+    "convert"); a cleanup-only job keeps its type (with nothing left to do it
+    finishes without rewriting the file). Returns the jobs changed. v0.10.0."""
+    db = await connect_db()
+    try:
+        where, params = "status = 'pending' AND job_type IN ('convert', 'combined', 'audio')", []
+        jobs = []
+        scopes = [None] if paths is None else [paths[i:i + 900] for i in range(0, len(paths), 900)]
+        for chunk in scopes:
+            extra = "" if chunk is None else f" AND file_path IN ({','.join('?' * len(chunk))})"
+            async with db.execute(
+                f"SELECT id, file_path, job_type, audio_tracks_to_remove, subtitle_tracks_to_remove "
+                f"FROM jobs WHERE {where}{extra}", [*params, *(chunk or [])],
+            ) as cur:
+                jobs += [dict(r) for r in await cur.fetchall()]
+        if not jobs:
+            return 0
+        rows = await _scan_rows_for(db, sorted({j["file_path"] for j in jobs}))
+        updates = []
+        for job in jobs:
+            row = rows.get(job["file_path"])
+            if row is None:
+                continue
+            audio_remove, sub_remove, has_audio_work = track_work(row)
+            job_type = job["job_type"] if job["job_type"] == "audio" else ("combined" if has_audio_work else "convert")
+            try:
+                before = (json.loads(job["audio_tracks_to_remove"] or "[]"), json.loads(job["subtitle_tracks_to_remove"] or "[]"))
+            except (ValueError, TypeError):
+                before = None
+            if before != (audio_remove, sub_remove) or job_type != job["job_type"]:
+                updates.append((json.dumps(audio_remove), json.dumps(sub_remove), job_type, job["id"]))
+        if updates:
+            await db.executemany(
+                "UPDATE jobs SET audio_tracks_to_remove = ?, subtitle_tracks_to_remove = ?, job_type = ? "
+                "WHERE id = ? AND status = 'pending'", updates)
+            await db.commit()
+        return len(updates)
+    finally:
+        await db.close()
+
+
+async def _originals_setting(db) -> dict:
+    async with db.execute(
+        "SELECT key, value FROM settings WHERE key IN ('backup_original_days', 'trash_original_after_conversion')"
+    ) as cur:
+        values = {r["key"]: r["value"] for r in await cur.fetchall()}
+    try:
+        days = int(values.get("backup_original_days") or 0)
+    except ValueError:
+        days = 0
+    if days > 0:
+        return {"action": "keep", "days": days}
+    if str(values.get("trash_original_after_conversion", "false")).lower() == "true":
+        return {"action": "trash"}
+    return {"action": "delete"}
+
+
+def _job_savings(job: dict, row: dict, audio: list[dict], global_cq: int) -> int:
+    """About what a pending job saves: the removed tracks, and the video
+    conversion at the job's quality (else the default encoder's)."""
+    from backend.encoding_estimates import _CRF_OFFSET, cq_to_savings_pct
+    size = row.get("file_size") or job.get("original_size") or 0
+    remove = set(json.loads(job.get("audio_tracks_to_remove") or "[]"))
+    removed = sum(t.get("size_estimate_bytes") or 0 for t in audio if t.get("stream_index") in remove)
+    saved = min(removed, size)
+    if job["job_type"] in ("convert", "combined"):
+        if (job.get("encoder") or "") == "libx265" and job.get("libx265_crf") is not None:
+            cq = job["libx265_crf"] - _CRF_OFFSET
+        elif job.get("nvenc_cq") is not None:
+            cq = job["nvenc_cq"]
+        else:
+            cq = global_cq
+        saved += int((size - saved) * cq_to_savings_pct(cq))
+    return saved
+
+
+_JOB_PLAN_COLS = ("id, file_path, job_type, encoder, nvenc_cq, libx265_crf, original_size, "
+                  "audio_tracks_to_remove, subtitle_tracks_to_remove")
+
+
+@router.get("/pending-summary")
+async def pending_summary():
+    """What the pending queue will do (v0.10.0): jobs by type and encoder,
+    the tracks it removes by language, the size and about what it saves, and
+    what becomes of the originals."""
+    from backend.encoding_estimates import load_effective_cq
+    db = await connect_db()
+    try:
+        async with db.execute(f"SELECT {_JOB_PLAN_COLS} FROM jobs WHERE status = 'pending'") as cur:
+            jobs = [dict(r) for r in await cur.fetchall()]
+        rows = await _scan_rows_for(db, sorted({j["file_path"] for j in jobs}))
+        global_cq = await load_effective_cq(db)
+        originals = await _originals_setting(db)
+        async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
+            r = await cur.fetchone()
+        default_encoder = (r["value"] if r else None) or "nvenc"
+    finally:
+        await db.close()
+
+    def tally() -> dict:
+        by_type: dict[str, int] = {}
+        by_encoder: dict[str, int] = {}
+        removals: dict[str, dict[str, int]] = {"audio": {}, "subtitles": {}}
+        total_size = saved = 0
+        for job in jobs:
+            by_type[job["job_type"]] = by_type.get(job["job_type"], 0) + 1
+            if job["job_type"] == "health_check":  # reads the file, changes nothing
+                continue
+            row = rows.get(job["file_path"], {})
+            size = row.get("file_size") or job.get("original_size") or 0
+            total_size += size
+            if job["job_type"] in ("convert", "combined"):
+                enc = job.get("encoder") or default_encoder
+                by_encoder[enc] = by_encoder.get(enc, 0) + 1
+            try:
+                audio = json.loads(row.get("audio_tracks_json") or "[]")
+                subs = json.loads(row.get("subtitle_tracks_json") or "[]")
+                lists = (json.loads(job["audio_tracks_to_remove"] or "[]"), json.loads(job["subtitle_tracks_to_remove"] or "[]"))
+            except (ValueError, TypeError):
+                continue
+            for kind, tracks, remove in (("audio", audio, lists[0]), ("subtitles", subs, lists[1])):
+                for t in tracks:
+                    if t.get("stream_index") in remove:
+                        lang = (t.get("language") or "und").lower()
+                        removals[kind][lang] = removals[kind].get(lang, 0) + 1
+            saved += _job_savings(job, row, audio, global_cq) if row else 0
+        return {"jobs": len(jobs), "by_type": by_type, "by_encoder": by_encoder, "removals": removals,
+                "total_size": total_size, "estimated_savings": saved}
+
+    import asyncio
+    out = await asyncio.to_thread(tally)
+    out["originals"] = originals
+    return out
+
+
+@router.get("/{job_id}/plan")
+async def job_plan(job_id: int):
+    """What a pending job will do (v0.10.0): its file's tracks and which it
+    removes, about what it saves, and what becomes of the original. The
+    tracks are edited on the file (PUT /api/scan/results/{scan_id}/tracks),
+    which updates the job."""
+    from backend.encoding_estimates import load_effective_cq
+    db = await connect_db()
+    try:
+        async with db.execute(f"SELECT {_JOB_PLAN_COLS} FROM jobs WHERE id = ?", (job_id,)) as cur:
+            job = await cur.fetchone()
+        if job is None:
+            raise ApiError(status_code=404, detail="Job not found", code="jobs.notFound")
+        job = dict(job)
+        row = (await _scan_rows_for(db, [job["file_path"]])).get(job["file_path"])
+        global_cq = await load_effective_cq(db)
+        originals = await _originals_setting(db)
+    finally:
+        await db.close()
+    if row is None:
+        return {"scan_id": None, "job_type": job["job_type"], "audio": [], "subtitles": [],
+                "file_size": job.get("original_size") or 0, "estimated_savings": 0, "originals": originals}
+    audio = json.loads(row["audio_tracks_json"] or "[]")
+    subs = json.loads(row["subtitle_tracks_json"] or "[]")
+    remove_a = set(json.loads(job["audio_tracks_to_remove"] or "[]"))
+    remove_s = set(json.loads(job["subtitle_tracks_to_remove"] or "[]"))
+    for t in audio:
+        t["remove"] = t.get("stream_index") in remove_a
+    for t in subs:
+        t["remove"] = t.get("stream_index") in remove_s
+    return {
+        "scan_id": row["id"], "job_type": job["job_type"], "audio": audio, "subtitles": subs,
+        "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, global_cq),
+        "originals": originals,
+    }
+
+
 @router.post("/add-from-scan")
 async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
     """Create jobs from scan results — resolves track data from DB automatically."""
@@ -294,44 +530,7 @@ async def add_jobs_from_scan(payload: BulkQueueFromScanRequest):
                     if bitrate < min_bitrate_bps:
                         continue  # Below minimum — savings too small
 
-            # Determine tracks to remove from stored classifications.
-            # v0.9.99: gate on keep alone, NOT `keep and not locked`.
-            # Classification never emits keep=False together with locked=True —
-            # that pair only arises when a user deliberately unticks a locked
-            # (forced / keep-language) track in the detail panel. The old
-            # `and not locked` guard silently discarded exactly that override,
-            # so an explicitly-unticked forced sub was never removed.
-            audio_remove = []
-            sub_remove = []
-            try:
-                for t in json.loads(row["audio_tracks_json"] or "[]"):
-                    if not t.get("keep", True):
-                        audio_remove.append(t["stream_index"])
-            except (json.JSONDecodeError, ValueError):
-                pass
-            try:
-                for t in json.loads(row["subtitle_tracks_json"] or "[]"):
-                    if not t.get("keep", True):
-                        sub_remove.append(t["stream_index"])
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-            has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
-
-            # Also treat "native language not first" as audio work (reorder-only job)
-            if not has_audio_work:
-                try:
-                    from backend.scanner import languages_match, _is_cleanup_enabled
-                    if _is_cleanup_enabled("reorder_native_audio"):
-                        all_tracks = json.loads(row["audio_tracks_json"] or "[]")
-                        if len(all_tracks) > 1:
-                            native = row.get("native_language") or ""
-                            first_lang = (all_tracks[0].get("language") or "").lower()
-                            if native and native.lower() != "und" and first_lang != native.lower():
-                                if not languages_match(first_lang, native.lower()):
-                                    has_audio_work = True
-                except Exception:
-                    pass
+            audio_remove, sub_remove, has_audio_work = track_work(row)
 
             # force_reencode overrides both needs_conversion AND skip rules;
             # cleanup_only (per-batch user choice) wins over force_reencode.
@@ -1941,7 +2140,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
             for kind, track_list in (("audio", tracks if has_audio else []),
                                      ("subtitles", stracks if has_subs else [])):
                 for t in track_list:
-                    if not t.get("keep", True) and not t.get("locked", False):
+                    if not t.get("keep", True):  # as track_work(): what the job removes
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
 

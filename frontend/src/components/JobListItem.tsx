@@ -9,6 +9,7 @@ import { copyText } from "../utils/clipboard";
 import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { pressable } from "../utils/a11y";
+import PendingJobPlan from "./PendingJobPlan";
 
 interface JobListItemProps {
   job: Job;
@@ -25,6 +26,8 @@ interface JobListItemProps {
   // still open when you scroll back. Omitted = local state, as before.
   expanded?: boolean;
   onToggleExpand?: (id: number) => void;
+  // A pending job's tracks were edited in its "what will happen" panel.
+  onPlanChanged?: () => void;
 }
 
 const iconBtnStyle: React.CSSProperties = {
@@ -32,7 +35,7 @@ const iconBtnStyle: React.CSSProperties = {
   fontSize: 18, lineHeight: 1, padding: "4px 6px", borderRadius: 4,
 };
 
-function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand }: JobListItemProps) {
+function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common"]);
   const [expandedLocal, setExpandedLocal] = useState(false);
   const expanded = expandedProp ?? expandedLocal;
@@ -55,7 +58,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
     // (e.g. apply a detected language to an AVI) — not a "cleanup".
     : t("queue:item.type.remux");
 
-  const canExpand = job.status === "failed" || job.status === "completed";
+  // A pending job opens what it will do (v0.10.0); a health check changes nothing.
+  const canExpand = job.status === "failed" || job.status === "completed"
+    || (job.status === "pending" && job.job_type !== "health_check");
 
   const handleExpand = () => {
     if (!canExpand) return;
@@ -140,6 +145,9 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       )}
       {job.status === "pending" && (
         <span style={{ cursor: "grab", opacity: 0.3, marginLeft: 8, marginRight: 10, fontSize: 14 }}>&#x2807;</span>
+      )}
+      {job.status === "pending" && (
+        <span style={{ fontSize: 10, color: "var(--text-muted)", opacity: canExpand ? 0.5 : 0, width: 14, flexShrink: 0 }}>{expanded ? "\u25BC" : "\u25B6"}</span>
       )}
       <span className="job-filename" style={{ flex: 1, minWidth: 0 }}>
         {fileName}
@@ -237,13 +245,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 2, marginLeft: 6 }}>
             {onIgnore && (
-              <button aria-label={t("queue:item.ignoreFile")} onClick={() => onIgnore(job.id, job.file_path)}
+              <button aria-label={t("queue:item.ignoreFile")} onClick={(e) => { e.stopPropagation(); onIgnore(job.id, job.file_path); }}
                 style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
                 title={t("queue:item.ignoreFile")}>
                 &#x2298;
               </button>
             )}
-            <button aria-label={t("queue:item.removeFromQueue")} onClick={() => onCancel(job.id)}
+            <button aria-label={t("queue:item.removeFromQueue")} onClick={(e) => { e.stopPropagation(); onCancel(job.id); }}
               style={{ ...iconBtnStyle, color: "var(--text-muted)", padding: "2px 4px", fontSize: 16, display: "inline-flex", alignItems: "center" }}
               title={t("queue:item.removeFromQueue")}>
               &times;
@@ -569,6 +577,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
           <div style={{ color: "var(--text-muted)" }}>{t("queue:item.noDetails")}</div>
         )}
       </div>
+    )}
+
+    {expanded && canExpand && job.status === "pending" && (
+      <PendingJobPlan job={job} encodingDefaults={encodingDefaults} onChanged={onPlanChanged} />
     )}
 
     {/* Expanded error details for failed jobs */}

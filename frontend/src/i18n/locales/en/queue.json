@@ -207,5 +207,35 @@
       "streaming": "streaming",
       "compact": "compact"
     }
+  },
+  "plan": {
+    "title": "What will happen",
+    "video": "Converts the video with {{encoder}} ({{settings}})",
+    "noVideo": "The video isn't re-encoded; only the tracks change",
+    "size": "{{before}} → about {{after}} (saves about {{saved}})",
+    "sizeSame": "Stays about {{size}}",
+    "originalKeep_one": "The original is kept for {{count}} day, so you can undo",
+    "originalKeep_other": "The original is kept for {{count}} days, so you can undo",
+    "originalTrash": "The original goes to the trash",
+    "originalDelete": "The original is deleted once the new file is in place",
+    "tickToRemove": "Ticked tracks are removed. A change is saved on the file as your choice, so the Scanner shows it too and new language settings leave it alone.",
+    "notScanned": "This file isn't in the scan results, so its tracks aren't known.",
+    "loading": "Loading…",
+    "loadFailed": "Couldn't load what this job will do.",
+    "saveFailed": "Couldn't save the change."
+  },
+  "summary": {
+    "title": "What the queue will do",
+    "jobs_one": "{{formatted}} job",
+    "jobs_other": "{{formatted}} jobs",
+    "size": "{{before}} → about {{after}} (saves about {{saved}})",
+    "conversions_one": "{{count}} conversion",
+    "conversions_other": "{{count}} conversions",
+    "trackOnly_one": "{{count}} track cleanup (no re-encode)",
+    "trackOnly_other": "{{count}} track cleanups (no re-encode)",
+    "healthChecks_one": "{{count}} health check",
+    "healthChecks_other": "{{count}} health checks",
+    "encoders": "Encodes with {{list}}",
+    "perJob": "Click a job to see its tracks and change which ones go."
   }
 }
