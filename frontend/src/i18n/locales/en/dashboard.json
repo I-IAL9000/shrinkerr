@@ -13,15 +13,6 @@
     "welcome": "Welcome to Shrinkerr",
     "intro": "A few choices and Shrinkerr is ready: where your media is, how to encode it, which languages to keep and what happens to the originals. You can change all of it later in Settings.",
     "skip": "Skip setup — I know what I'm doing",
-    "protect": {
-      "title": "Protect Shrinkerr with a password",
-      "description": "Anyone who can open Shrinkerr can change its settings and delete files. Set a username and password — or skip this if only you can reach it.",
-      "descriptionDone": "Password protection is on. You can change it in Settings → System → Authentication.",
-      "username": "Username",
-      "password": "Password",
-      "action": "Turn on",
-      "failed": "Couldn't turn on password protection: {{error}}"
-    },
     "stepOf": "Step {{n}} of {{total}}",
     "back": "Back",
     "next": "Next",
@@ -63,11 +54,6 @@
     "originals": {
       "title": "Originals",
       "description": "What happens to the original file once the converted one has taken its place."
-    },
-    "password": {
-      "title": "Password",
-      "description": "Anyone who can open Shrinkerr can change its settings and delete files. Set a username and password — or skip this if only you can reach it.",
-      "skip": "Not now"
     },
     "finish": {
       "title": "Scan",

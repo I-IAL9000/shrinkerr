@@ -114,7 +114,9 @@
     "invalidCompatCodec": "audio_compat_codec must be aac, eac3 or ac3",
     "mqttHostInvalid": "Enter the broker's host name or IP address, without mqtt://.",
     "mqttPortInvalid": "The MQTT port must be between 1 and 65535.",
-    "mqttTopicInvalid": "An MQTT topic can't be empty, contain + or #, or start or end with /."
+    "mqttTopicInvalid": "An MQTT topic can't be empty, contain + or #, or start or end with /.",
+    "authRequired": "Sign-in can't be turned off. If a reverse proxy signs people in, choose External.",
+    "invalidAuthRequired": "Choose who signs in."
   },
   "url": {
     "blockedAddress": "{{label}} resolves to a blocked address ({{address}}). Link-local / IMDS / IPv6 site-local ranges are rejected to prevent SSRF.",
@@ -141,5 +143,10 @@
     "invalidBudget": "A budget must be above zero.",
     "notFound": "No such policy.",
     "invalidTarget": "Choose how much space to free."
+  },
+  "auth": {
+    "invalidMethod": "Choose how people sign in.",
+    "usernameRequired": "Enter a username.",
+    "passwordTooShort": "Use a password of at least {{min}} characters."
   }
 }

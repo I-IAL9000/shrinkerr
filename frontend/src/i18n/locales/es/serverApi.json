@@ -114,7 +114,9 @@
     "invalidCompatCodec": "audio_compat_codec debe ser aac, eac3 o ac3",
     "mqttHostInvalid": "Escribe el nombre o la dirección IP del broker, sin mqtt://.",
     "mqttPortInvalid": "El puerto MQTT debe estar entre 1 y 65535.",
-    "mqttTopicInvalid": "Un tema MQTT no puede estar vacío, contener + o #, ni empezar o terminar con /."
+    "mqttTopicInvalid": "Un tema MQTT no puede estar vacío, contener + o #, ni empezar o terminar con /.",
+    "authRequired": "El inicio de sesión no se puede desactivar. Si un proxy inverso identifica a la gente, elige Externo.",
+    "invalidAuthRequired": "Elige quién inicia sesión."
   },
   "url": {
     "blockedAddress": "{{label}} se resuelve a una dirección bloqueada ({{address}}). Los rangos link-local, IMDS e IPv6 site-local se rechazan para evitar SSRF.",
@@ -141,5 +143,10 @@
     "invalidBudget": "Un límite debe ser mayor que cero.",
     "notFound": "No existe esa política.",
     "invalidTarget": "Elige cuánto espacio liberar."
+  },
+  "auth": {
+    "invalidMethod": "Elige cómo inicia sesión la gente.",
+    "usernameRequired": "Escribe un nombre de usuario.",
+    "passwordTooShort": "Usa una contraseña de al menos {{min}} caracteres."
   }
 }

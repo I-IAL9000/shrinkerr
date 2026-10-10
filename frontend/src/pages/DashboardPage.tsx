@@ -230,7 +230,7 @@ export default function DashboardPage() {
       await dismissSetup().catch(() => {});
       setWizardOpen(false);
       getDashboardData().then(setDash).catch(() => {});
-    }} onChanged={() => { getDashboardData().then(setDash).catch(() => {}); }} />;
+    }} />;
   }
 
   // Live status data — only the LiveConvertingCard actually uses this.

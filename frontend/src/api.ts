@@ -80,10 +80,18 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type AuthMethod = "forms" | "external";
+export type AuthRequired = "enabled" | "local_disabled";
 export const checkAuth = () =>
   fetch("/api/auth/check", {
     headers: getStoredApiKey() ? { "X-Api-Key": getStoredApiKey() } : {},
-  }).then(r => r.json()) as Promise<{ auth_required: boolean; authenticated: boolean; method: string | null }>;
+  }).then(r => r.json()) as Promise<{
+    auth_required: boolean; authenticated: boolean; method: string | null;
+    setup_required?: boolean; auth_method?: AuthMethod | "";  // v0.10.0: sign-in is required
+  }>;
+// Set up sign-in (v0.10.0): the sign-in page or a reverse proxy.
+export const setupAuth = (body: { method: AuthMethod; required: AuthRequired; username?: string; password?: string }) =>
+  apiFetch<{ success: boolean; method: AuthMethod }>("/auth/setup", { method: "POST", body: JSON.stringify(body) });
 
 export const login = (username: string, password: string) =>
   fetch("/api/auth/login", {

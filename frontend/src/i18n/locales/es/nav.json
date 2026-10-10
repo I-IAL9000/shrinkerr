@@ -50,5 +50,27 @@
     "vmafRemeasuring": "Volviendo a medir VMAF — {{done}} de {{total}}",
     "vmafStarting": "iniciando…",
     "tmdbMissing": "<b>No hay ninguna clave de API de TMDB configurada</b>: no se pueden asociar los títulos con sus metadatos (idioma original, pósteres). <link>Añade una clave gratuita en Ajustes → Conexiones → API de metadatos</link>."
+  },
+  "authSetup": {
+    "title": "Configurar el inicio de sesión",
+    "intro": "Shrinkerr ahora pide a todos que inicien sesión: quien pueda abrirlo puede cambiar sus ajustes y borrar archivos. Elige cómo.",
+    "forms": {
+      "title": "Página de inicio de sesión",
+      "help": "Un usuario y una contraseña, en la página de inicio de sesión de Shrinkerr."
+    },
+    "external": {
+      "title": "Externo (proxy inverso)",
+      "help": "Tu proxy inverso (Authelia, Authentik, …) identifica a la gente, así que Shrinkerr no pregunta a nadie. Solo si a Shrinkerr no se puede llegar más que a través del proxy."
+    },
+    "required": "Quién inicia sesión",
+    "requiredEnabled": "Todos",
+    "requiredLocalDisabled": "No desde direcciones locales",
+    "localHelp": "Direcciones locales: este equipo y tu red doméstica (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Las peticiones a través de un proxy inverso siempre inician sesión.",
+    "passwordPlaceholder": "Contraseña (8 caracteres o más)",
+    "confirm": "Repite la contraseña",
+    "mismatch": "Las contraseñas no coinciden.",
+    "apiKeys": "Los clientes de descarga, Sonarr, Radarr y los trabajadores remotos siguen usando la clave API.",
+    "save": "Guardar y continuar",
+    "saving": "Guardando…"
   }
 }

@@ -172,7 +172,7 @@ services:
 docker compose up -d
 ```
 
-Open <http://localhost:6680>. The setup wizard asks you to set a username and password — do that before exposing the port beyond localhost (you can also do it later in **Settings → System → Authentication**).
+Open <http://localhost:6680>. Shrinkerr first asks you to set up sign-in (a username and password, or your reverse proxy's), then the setup wizard walks you through the rest. Change sign-in later in **Settings → System → Authentication**.
 
 ### Option B — With NVENC (Linux + NVIDIA GPU)
 
@@ -510,17 +510,18 @@ Fixed in v0.3.0 (virtualized list + throttled WebSocket progress). If you're sti
 </details>
 
 <details>
-<summary><b>I locked myself out of the UI — wrong password / forgot username after enabling Authentication</b></summary>
+<summary><b>I locked myself out of the UI — wrong password / forgot username</b></summary>
 
-You don't need to nuke the database. The auth toggle, username, and password hash all live in the `settings` table — flip them directly via the container's Python (the `sqlite3` CLI isn't installed in the image, but Python's stdlib `sqlite3` module is):
+You don't need to nuke the database. The sign-in method, username, and password hash all live in the `settings` table — change them directly via the container's Python (the `sqlite3` CLI isn't installed in the image, but Python's stdlib `sqlite3` module is):
 
 ```bash
-# 1. Disable auth entirely (fastest unlock — log back in, fix the credentials, re-enable)
+# 1. Start sign-in over (fastest unlock — the next visit shows the setup screen again)
 docker exec shrinkerr python3 -c "
 import sqlite3
-sqlite3.connect('/app/data/shrinkerr.db').execute(
-    \"UPDATE settings SET value='false' WHERE key='auth_enabled'\"
-).connection.commit()"
+db = sqlite3.connect('/app/data/shrinkerr.db')
+db.execute(\"UPDATE settings SET value='' WHERE key='auth_method'\")
+db.execute(\"UPDATE settings SET value='false' WHERE key='auth_enabled'\")
+db.commit()"
 
 # 2. Or just clear the password hash (auth stays on, but blank password works)
 docker exec shrinkerr python3 -c "
@@ -535,7 +536,7 @@ docker compose restart
 
 Adjust `/app/data/shrinkerr.db` if you mounted the data volume elsewhere — match the path inside the container.
 
-After unlocking, set fresh credentials in **Settings → System → Authentication** and re-enable the toggle.
+After unlocking, set up sign-in again on the setup screen (or set fresh credentials in **Settings → System → Authentication**).
 
 </details>
 

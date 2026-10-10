@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   addMediaDir, getEncoderCaps, getEncodingSettings, getLanguagePreview, getMediaDirs,
-  getQualityPresets, login, removeMediaDir, startScan, updateEncodingSettings,
+  getQualityPresets, removeMediaDir, startScan, updateEncodingSettings,
   type EncoderCaps, type PreviewTrack, type QualityPreset,
 } from "../api";
 import FolderBrowser from "./FolderBrowser";
@@ -12,51 +12,19 @@ import LanguagePicker from "./LanguagePicker";
 import { useToast } from "../useToast";
 
 // Setup wizard v2 (v0.10.0): one step at a time — media folders, hardware,
-// quality, languages (with a preview on a few of your files), originals and
-// a password — then the scan starts and the Scanner opens. It used to be a
+// quality, languages (with a preview on a few of your files) and originals —
+// then the scan starts and the Scanner opens. (Sign-in is set up before it:
+// components/AuthSetup.tsx.) It used to be a
 // checklist of links into Settings that vanished once a scan existed. The
 // scan runs last so it already uses the languages chosen here.
 
-const STEPS = ["folders", "hardware", "quality", "languages", "originals", "password", "finish"] as const;
+const STEPS = ["folders", "hardware", "quality", "languages", "originals", "finish"] as const;
 type Step = (typeof STEPS)[number];
 type PresetChoice = QualityPreset["id"] | "custom";
 type Originals = "keep" | "trash" | "delete";
 
 // UI language → the ISO 639-2 code tracks use, for the "Add English" hint.
 const UI_TO_TRACK_LANG: Record<string, string> = { en: "eng", es: "spa" };
-
-function ProtectForm({ onDone }: { onDone: () => void }) {
-  const { t } = useTranslation(["dashboard"]);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await updateEncodingSettings({ auth_enabled: true, auth_username: username, auth_password: password });
-      await login(username, password);  // stay signed in now that a password is required
-      onDone();
-    } catch (err: any) {
-      setError(t("dashboard:setup.protect.failed", { error: err?.message || "" }));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="wizard-row" onSubmit={e => { e.preventDefault(); submit(); }}>
-      <input type="text" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}
-        aria-label={t("dashboard:setup.protect.username")} placeholder={t("dashboard:setup.protect.username")} />
-      <input type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)}
-        aria-label={t("dashboard:setup.protect.password")} placeholder={t("dashboard:setup.protect.password")} />
-      <button type="submit" className="btn btn-primary" disabled={busy || !username.trim() || !password}>
-        {t("dashboard:setup.protect.action")}
-      </button>
-      {error && <div className="wizard-error" role="alert">{error}</div>}
-    </form>
-  );
-}
 
 function Option({ checked, onChange, name, title, children }: {
   checked: boolean; onChange: () => void; name: string; title: ReactNode; children?: ReactNode;
@@ -89,11 +57,10 @@ function TrackChips({ tracks, kind, langName }: { tracks: PreviewTrack[]; kind: 
   );
 }
 
-export default function SetupWizard({ setup, onClose, onChanged }: {
+export default function SetupWizard({ setup, onClose }: {
   setup: any;
   /** Skip or finish: the Dashboard marks setup as done. */
   onClose: () => Promise<void> | void;
-  onChanged: () => void;
 }) {
   const { t, i18n } = useTranslation(["dashboard", "settingsMedia", "settingsSystem", "common"]);
   const navigate = useNavigate();
@@ -324,10 +291,6 @@ export default function SetupWizard({ setup, onClose, onChanged }: {
           title={t("settingsSystem:automation.originals.deleteOption")}>{t("settingsSystem:automation.originals.deleteHelp")}</Option>
       </>
     );
-  } else if (step === "password") {
-    body = setup.has_auth
-      ? <p className="wizard-done">{t("dashboard:setup.protect.descriptionDone")}</p>
-      : <ProtectForm onDone={() => { onChanged(); setStep("finish"); }} />;
   } else {
     body = <p>{t("dashboard:setup.finish.summary", { count: dirs.length })}</p>;
   }
@@ -364,7 +327,7 @@ export default function SetupWizard({ setup, onClose, onChanged }: {
           ) : (
             <button type="button" className="btn btn-primary" onClick={next}
               disabled={busy || (step === "folders" && dirs.length === 0)}>
-              {step === "password" && !setup.has_auth ? t("dashboard:setup.password.skip") : t("dashboard:setup.next")}
+              {t("dashboard:setup.next")}
             </button>
           )}
         </div>

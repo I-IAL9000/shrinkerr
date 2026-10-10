@@ -583,9 +583,10 @@ async def get_dashboard():
         ) as cur:
             dismissed_row = await cur.fetchone()
             setup_dismissed = bool(dismissed_row and dismissed_row["value"] == "true")
-        async with db.execute("SELECT value FROM settings WHERE key = 'auth_enabled'") as cur:
-            auth_row = await cur.fetchone()
-            has_auth = bool(auth_row and auth_row["value"] == "true")
+        async with db.execute("SELECT key, value FROM settings WHERE key IN ('auth_enabled', 'auth_method')") as cur:
+            auth = {r["key"]: r["value"] for r in await cur.fetchall()}
+        from backend import auth_policy
+        has_auth = auth_policy.method({**auth, "auth_enabled": auth.get("auth_enabled") == "true"}) != ""
 
         # Storage projection — estimate future savings
         projection = None

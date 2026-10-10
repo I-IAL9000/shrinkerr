@@ -388,8 +388,9 @@ On Unraid, map the webUI port in the template to `6680` and the two volumes
    encoder is set from what the host supports: NVENC if an NVIDIA GPU is
    detected, otherwise libx265 (VideoToolbox on a native Mac). See the
    [Encoding guide](encoding-guide.md) for preset tuning.
-6. **Set an auth password** — Settings → System → Authentication. Don't
-   expose the port to the internet without this.
+6. **Sign-in** — the first visit asks how people sign in: a username and
+   password, or External if a reverse proxy signs them in. Change it later
+   in Settings → System → Authentication. See [Security](security.md).
 
 ### Bundled vs. your own TMDB key
 

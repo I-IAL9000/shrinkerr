@@ -49,5 +49,27 @@
     "vmafRemeasuring": "Re-measuring VMAF — {{done}} of {{total}}",
     "vmafStarting": "starting…",
     "tmdbMissing": "<b>No TMDB API key configured</b> — titles can't be matched to metadata (native language, posters). <link>Add a free key in Settings → Connections → Metadata APIs</link>."
+  },
+  "authSetup": {
+    "title": "Set up sign-in",
+    "intro": "Shrinkerr now asks everyone to sign in: anyone who can open it can change its settings and delete files. Choose how.",
+    "forms": {
+      "title": "Sign-in page",
+      "help": "A username and password, on Shrinkerr's sign-in page."
+    },
+    "external": {
+      "title": "External (reverse proxy)",
+      "help": "Your reverse proxy (Authelia, Authentik, …) signs people in, so Shrinkerr asks nobody. Only if Shrinkerr can't be reached except through the proxy."
+    },
+    "required": "Who signs in",
+    "requiredEnabled": "Everyone",
+    "requiredLocalDisabled": "Not from local addresses",
+    "localHelp": "Local addresses: this computer and your home network (192.168.x.x, 10.x.x.x, 172.16–31.x.x). Requests through a reverse proxy always sign in.",
+    "passwordPlaceholder": "Password (8 characters or more)",
+    "confirm": "Password again",
+    "mismatch": "The passwords don't match.",
+    "apiKeys": "Download clients, Sonarr, Radarr and remote workers keep using the API key.",
+    "save": "Save and continue",
+    "saving": "Saving…"
   }
 }

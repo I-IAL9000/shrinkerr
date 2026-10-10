@@ -39,20 +39,27 @@ the user; there's no multi-tenant model.
 
 ### Authentication
 
-- **Fresh installs start with auth disabled** so the user lands on the
-  setup wizard rather than a login screen they have no key for. A loud
-  `[SECURITY]` warning banner prints on every startup until auth is
-  enabled, telling the operator to set a password before exposing the
-  port. This matches the *arr ecosystem convention (Sonarr / Radarr /
-  Prowlarr / Bazarr all ship auth-off and prompt during setup).
-  *Pre-v0.3.65 fresh installs auto-generated an api_key and enabled
-  auth, but most users never read container logs and got stuck on the
-  LoginScreen with no way to retrieve the key short of editing the
-  database.*
-- **Existing installs with no auth configured** see the same loud
-  `[SECURITY]` warning banner on every startup and continue to work
-  unauthenticated — the existing deployment isn't broken mid-upgrade,
-  but the operator is told to fix it.
+- **Sign-in is required** (v0.10.0, as in Sonarr v4). Until it's set
+  up — on a fresh install, and on an install upgraded from before 0.10
+  without password login — the web UI shows a setup screen before
+  anything else. Two ways to sign in:
+  - **Sign-in page**: a username and password (8 characters or more).
+    *Who signs in*: everyone, or **not from local addresses** (loopback,
+    192.168.x.x, 10.x.x.x, 172.16–31.x.x, link-local, IPv6 unique-local).
+    A request that carries `X-Forwarded-For`, `X-Real-IP` or `Forwarded`
+    came through a proxy and always signs in, so a reverse proxy on the
+    same host doesn't make internet traffic "local". Tailscale and other
+    CGNAT addresses (100.64.0.0/10) aren't local.
+  - **External**: your reverse proxy (Authelia, Authentik, …) signs
+    people in and Shrinkerr asks nobody. Use it only when Shrinkerr can't
+    be reached except through the proxy.
+
+  Sign-in can't be turned off afterwards; switch to External instead.
+  Until it's set up the API stays as open as before (so integrations keep
+  working), and a loud `[SECURITY]` banner prints at startup. If an API
+  key is set, setting up sign-in needs that key — nobody else can pick
+  the password.
+- **API keys keep working** everywhere, whatever the sign-in method.
 - **Passwords are stored as bcrypt hashes** (cost 12). Legacy SHA-256
   hashes from older installs are transparently upgraded on the next
   successful login.
@@ -163,17 +170,17 @@ For a production / internet-exposed deployment, on top of the defaults:
 - [ ] **Front with HTTPS.** Run Shrinkerr behind Traefik / Caddy / Nginx
       — see [installation.md § Reverse proxy](installation.md#reverse-proxy-setups).
       The app doesn't terminate TLS itself.
-- [ ] **Set a strong password** in Settings → System → Authentication
-      (if you prefer password auth over raw API keys).
+- [ ] **Use a strong password** (Settings → System → Authentication), and
+      "Not from local addresses" only on a network you trust.
 - [ ] **Rotate the auto-generated API key.** The one printed at first
       launch is cryptographically random, but if you suspect the log
       was copied somewhere untrusted, Settings → System → Authentication
       → API Key → Regenerate.
 - [ ] **Bind the container port to `127.0.0.1`** unless you actually
       want LAN access directly. Put the reverse proxy in front.
-- [ ] **Enable password auth** (`auth_enabled=true`) before configuring
-      `post_conversion_script` — the app refuses to save that setting
-      with password auth off, but configure it in the intended order.
+- [ ] **Set up sign-in** before configuring `post_conversion_script` or
+      custom ffmpeg flags — the app refuses to save them until it's set
+      up, and never with just the API key.
 - [ ] **Keep the `./data` volume private.** It's the single source of
       truth for every stored secret.
 - [ ] **Don't expose port 6680 to the public internet** without at

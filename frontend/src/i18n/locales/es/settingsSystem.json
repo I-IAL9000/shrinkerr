@@ -111,8 +111,6 @@
   },
   "auth": {
     "title": "Autenticación",
-    "enable": "Activar inicio de sesión con usuario y contraseña",
-    "loginRequired": "<b>Inicio de sesión obligatorio.</b> Los visitantes necesitarán el usuario y la contraseña de abajo o la clave de API (workers / scripts). Si te quedas sin acceso, consulta las instrucciones de recuperación en el README.",
     "username": "Usuario",
     "password": "Contraseña",
     "passwordPlaceholder": "Introduce una nueva contraseña...",

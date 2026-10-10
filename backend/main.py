@@ -154,13 +154,12 @@ async def _bootstrap_auth_defaults() -> None:
                 db.commit()
                 banner = "!" * 78
                 print(banner, flush=True)
-                print("[SECURITY] Fresh install detected — auth is OFF so you land on the", flush=True)
-                print("[SECURITY] setup wizard. Anyone with network access to this port can", flush=True)
-                print("[SECURITY] currently read your library, queue transcodes against any", flush=True)
-                print("[SECURITY] container-readable path, and change dangerous settings", flush=True)
-                print("[SECURITY] (post_conversion_script is an RCE vector).", flush=True)
-                print("[SECURITY] BEFORE you expose this to the internet:", flush=True)
-                print("[SECURITY]   Settings → System → Authentication → set a password.", flush=True)
+                print("[SECURITY] Fresh install detected — sign-in isn't set up yet: the first", flush=True)
+                print("[SECURITY] visit to the web UI asks for it. Until then anyone with network", flush=True)
+                print("[SECURITY] access to this port can read your library, queue transcodes", flush=True)
+                print("[SECURITY] against any container-readable path, and change dangerous", flush=True)
+                print("[SECURITY] settings (post_conversion_script is an RCE vector).", flush=True)
+                print("[SECURITY] Open the web UI and set up sign-in BEFORE exposing this port.", flush=True)
                 print(banner, flush=True)
                 return
 
@@ -183,10 +182,12 @@ async def _bootstrap_auth_defaults() -> None:
                 db.commit()
                 print("[SECURITY] Generated session_secret (was empty).", flush=True)
 
-            if not api_key and not auth_enabled:
+            auth_method = db.execute("SELECT value FROM settings WHERE key = 'auth_method'").fetchone()
+            if not api_key and not auth_enabled and not (auth_method and auth_method[0]):
                 banner = "!" * 78
                 print(banner, flush=True)
                 print("[SECURITY] WARNING: this instance is running WITHOUT authentication.", flush=True)
+                print("[SECURITY] Open the web UI: it asks you to set up sign-in (v0.10.0).", flush=True)
                 print("[SECURITY] Anyone with network access can read your library, queue", flush=True)
                 print("[SECURITY] transcodes against arbitrary paths, and change dangerous", flush=True)
                 print("[SECURITY] settings like `post_conversion_script` (RCE vector).", flush=True)
@@ -450,7 +451,8 @@ def _get_auth_settings_sync() -> dict | None:
         try:
             cur = db.execute(
                 "SELECT key, value FROM settings WHERE key IN "
-                "('auth_enabled','auth_username','auth_password_hash','api_key','session_secret')"
+                "('auth_enabled','auth_username','auth_password_hash','api_key','session_secret',"
+                "'auth_method','auth_required')"
             )
             settings = {r[0]: r[1] for r in cur.fetchall()}
         finally:
@@ -461,6 +463,8 @@ def _get_auth_settings_sync() -> dict | None:
             "auth_username": settings.get("auth_username", ""),
             "auth_password_hash": settings.get("auth_password_hash", ""),
             "session_secret": settings.get("session_secret", ""),
+            "auth_method": settings.get("auth_method", ""),  # v0.10.0: backend/auth_policy.py
+            "auth_required": settings.get("auth_required") or "enabled",
         }
         _auth_cache["checked_at"] = now
         return _auth_cache["settings"]
@@ -683,8 +687,9 @@ async def api_key_auth(request: Request, call_next):
     if auth_settings is None:
         return JSONResponse(status_code=503, content={"detail": "Auth subsystem unavailable"})
 
+    from backend import auth_policy
     configured_api_key = auth_settings.get("api_key") or ""
-    password_auth_on = bool(auth_settings.get("auth_enabled"))
+    password_auth_on = auth_policy.method(auth_settings) == "forms"
 
     # Integration endpoints always require the api_key even when password
     # auth is off — otherwise a LAN-exposed install hands out RCE-adjacent
@@ -693,6 +698,11 @@ async def api_key_auth(request: Request, call_next):
     needs_auth = False
     if any(path.startswith(p) for p in _AUTH_ALWAYS_REQUIRED_PREFIXES):
         needs_auth = True
+    elif bypass := auth_policy.bypass(auth_settings, request):
+        # v0.10.0: a reverse proxy signs people in ("external"), or the
+        # request comes from a local address and those don't sign in.
+        request.state.auth_method = bypass
+        return await call_next(request)
     elif configured_api_key or password_auth_on:
         # General case: gate the whole /api/ surface whenever ANY auth is
         # configured. The old fail-open behaviour (only gating when
@@ -754,26 +764,35 @@ async def auth_check(request: Request):
                      "error": "Auth subsystem unavailable"},
         )
 
+    from backend import auth_policy
     configured_api_key = (settings.get("api_key") or "").strip()
-    password_auth_on = bool(settings.get("auth_enabled"))
+    auth_method = auth_policy.method(settings)
+    password_auth_on = auth_method == "forms"
+    # v0.10.0: sign-in is required; until it's set up the UI shows the setup screen.
+    extra = {"setup_required": auth_method == "", "auth_method": auth_method}
+
+    # A reverse proxy signs people in, or a local address needn't.
+    bypass = auth_policy.bypass(settings, request)
+    if bypass:
+        return {"auth_required": True, "authenticated": True, "method": bypass, **extra}
 
     # No auth configured at all — treat as "nothing required".
     if not configured_api_key and not password_auth_on:
-        return {"auth_required": False, "authenticated": True, "method": None}
+        return {"auth_required": False, "authenticated": True, "method": None, **extra}
 
     # Check API key (constant-time; old `==` comparison was an online
     # timing oracle against this unauthenticated endpoint).
     supplied_key = request.headers.get("X-Api-Key") or ""
     if supplied_key and configured_api_key and hmac.compare_digest(supplied_key, configured_api_key):
-        return {"auth_required": True, "authenticated": True, "method": "api_key"}
+        return {"auth_required": True, "authenticated": True, "method": "api_key", **extra}
 
     # Check session cookie — only when password auth is enabled.
     if password_auth_on:
         session = request.cookies.get("shrinkerr_session")
         if session and _validate_session(session, settings):
-            return {"auth_required": True, "authenticated": True, "method": "session"}
+            return {"auth_required": True, "authenticated": True, "method": "session", **extra}
 
-    return {"auth_required": True, "authenticated": False, "method": None}
+    return {"auth_required": True, "authenticated": False, "method": None, **extra}
 
 
 @app.post("/api/auth/login")
@@ -800,14 +819,15 @@ async def auth_login(request: Request):
         settings = {}
         async with db.execute(
             "SELECT key, value FROM settings WHERE key IN "
-            "('auth_enabled','auth_username','auth_password_hash','session_secret')"
+            "('auth_enabled','auth_username','auth_password_hash','session_secret','auth_method')"
         ) as cur:
             for row in await cur.fetchall():
                 settings[row[0]] = row[1]
     finally:
         await db.close()
 
-    if settings.get("auth_enabled", "false") != "true":
+    from backend import auth_policy
+    if auth_policy.method({**settings, "auth_enabled": settings.get("auth_enabled") == "true"}) != "forms":
         return JSONResponse({"error": "Auth not enabled"}, status_code=400)
 
     stored_username = settings.get("auth_username", "")
@@ -837,14 +857,17 @@ async def auth_login(request: Request):
     import asyncio as _asyncio
     _asyncio.create_task(_maybe_upgrade_password_hash(stored_username, password, stored_hash))
 
-    # Create session token
+    response = JSONResponse({"success": True, "username": username})
+    _set_session_cookie(response, request, username, secret)
+    return response
+
+
+def _set_session_cookie(response, request: Request, username: str, secret: str) -> None:
+    """Sign the user in: a session cookie good for 30 days."""
     timestamp = str(int(time.time()))
     signature = hmac.new(
         secret.encode(), f"{username}:{timestamp}".encode(), hashlib.sha256
     ).hexdigest()
-    token = f"{username}:{timestamp}:{signature}"
-
-    response = JSONResponse({"success": True, "username": username})
     # Set Secure when the request came in over HTTPS — reverse-proxy users
     # on HTTPS get the stricter cookie, local HTTP dev stays functional.
     is_https = (
@@ -852,10 +875,53 @@ async def auth_login(request: Request):
         or request.headers.get("x-forwarded-proto", "").lower() == "https"
     )
     response.set_cookie(
-        "shrinkerr_session", token,
+        "shrinkerr_session", f"{username}:{timestamp}:{signature}",
         httponly=True, samesite="lax", max_age=86400 * 30,
         secure=is_https,
     )
+
+
+@app.post("/api/auth/setup")
+async def auth_setup(request: Request):
+    """Set up sign-in (v0.10.0): how (the sign-in page, or a reverse proxy
+    in front) and whether local addresses sign in. Before it's set up this
+    is open like the rest of the API — unless an API key is set, which it
+    then needs (api_key_auth): nobody else may pick the password."""
+    from backend import auth_policy
+    from backend.api_errors import ApiError
+    body = await request.json()
+    method = body.get("method")
+    required = body.get("required") or "enabled"
+    username = str(body.get("username") or "").strip()
+    password = str(body.get("password") or "")
+    if method not in auth_policy.METHODS or required not in auth_policy.REQUIRED:
+        raise ApiError(400, "Choose how people sign in.", code="auth.invalidMethod")
+    updates = {"auth_method": method, "auth_required": required,
+               "auth_enabled": "true" if method == "forms" else "false"}
+    if method == "forms":
+        if not username:
+            raise ApiError(400, "Enter a username.", code="auth.usernameRequired")
+        if len(password) < auth_policy.MIN_PASSWORD:
+            raise ApiError(400, f"Use a password of at least {auth_policy.MIN_PASSWORD} characters.",
+                           code="auth.passwordTooShort", params={"min": auth_policy.MIN_PASSWORD})
+        updates.update(auth_username=username, auth_password_hash=_hash_password(password))
+    import aiosqlite
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'session_secret'") as cur:
+            row = await cur.fetchone()
+        secret = (row[0] if row else "") or secrets.token_hex(32)
+        updates["session_secret"] = secret
+        await db.executemany("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", list(updates.items()))
+        await db.commit()
+    finally:
+        await db.close()
+    _auth_cache["checked_at"] = 0
+    print(f"[AUTH] Sign-in set up: {method}"
+          f"{', not for local addresses' if required == 'local_disabled' else ''}", flush=True)
+    response = JSONResponse({"success": True, "method": method})
+    if method == "forms":
+        _set_session_cookie(response, request, username, secret)
     return response
 
 
@@ -955,9 +1021,12 @@ async def _check_ws_auth(websocket: WebSocket) -> bool:
     auth_settings = _get_auth_settings_sync()
     if auth_settings is None:
         return False  # can't read the settings: fail closed, as the HTTP middleware does
+    from backend import auth_policy
     configured_api_key = (auth_settings.get("api_key") or "").strip()
-    password_auth_on = bool(auth_settings.get("auth_enabled"))
+    password_auth_on = auth_policy.method(auth_settings) == "forms"
     if not configured_api_key and not password_auth_on:
+        return True
+    if auth_policy.bypass(auth_settings, websocket):  # v0.10.0: proxy sign-in, or a local address
         return True
     ticket = websocket.query_params.get("ticket", "")
     if ticket and _ws_tickets.pop(ticket, 0) > time.monotonic():

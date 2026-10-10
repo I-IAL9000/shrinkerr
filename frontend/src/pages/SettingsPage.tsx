@@ -4992,62 +4992,50 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               <div style={sectionStyle}>
                 <h3 style={{ color: "white", margin: 0, marginBottom: 12 }}>{t("settingsSystem:auth.title")}</h3>
 
-                {/* Enable toggle — left-aligned, prominent. Pre-v0.5.6 the
-                    toggle sat in the section header on the right; users in
-                    dark mode reported missing it entirely and locking
-                    themselves out. */}
-                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 14, padding: "8px 10px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border)", borderRadius: 4, width: "fit-content" }}>
-                  <input type="checkbox" checked={encoding?.auth_enabled || false}
-                    onChange={() => setEncoding({ ...encoding, auth_enabled: !encoding?.auth_enabled })}
-                    style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                  <span style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
-                    {t("settingsSystem:auth.enable")}
-                  </span>
-                  <span style={{ fontSize: 12, color: encoding?.auth_enabled ? "var(--success)" : "var(--text-muted)", marginLeft: 6 }}>
-                    ({encoding?.auth_enabled ? t("settingsIntegrations:shared.enabled") : t("settingsIntegrations:shared.disabled")})
-                  </span>
-                </label>
-
-                {/* Active-auth banner. Pre-v0.5.6 there was no visible signal
-                    that auth was on except the toggle, which several users
-                    missed in dark mode. Make the state unambiguous. */}
-                {encoding?.auth_enabled && (
-                  <div style={{
-                    padding: "10px 12px",
-                    marginBottom: 14,
-                    backgroundColor: "rgba(74, 222, 128, 0.08)",
-                    border: "1px solid rgba(74, 222, 128, 0.35)",
-                    borderRadius: 4,
-                    fontSize: 13,
-                    color: "var(--text-primary)",
-                    lineHeight: 1.5,
-                  }}>
-                    <Trans i18nKey="settingsSystem:auth.loginRequired" components={{ b: <strong style={{ color: "var(--success)" }} /> }} />
-                  </div>
+                {/* How people sign in (v0.10.0): required — the sign-in page
+                    or a reverse proxy; for everyone or not for local
+                    addresses. backend/auth_policy.py */}
+                {(["forms", "external"] as const).map(m => (
+                  <label key={m} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 8, padding: "8px 10px",
+                    backgroundColor: "var(--bg-secondary)", borderRadius: 4, maxWidth: 560,
+                    border: `1px solid ${(encoding?.auth_method || "forms") === m ? "var(--accent)" : "var(--border)"}` }}>
+                    <input type="radio" name="auth-method" checked={(encoding?.auth_method || "forms") === m}
+                      onChange={() => setEncoding({ ...encoding, auth_method: m })} style={{ accentColor: "var(--accent)", marginTop: 3 }} />
+                    <span>
+                      <span style={{ display: "block", fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>{t(`nav:authSetup.${m}.title`)}</span>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t(`nav:authSetup.${m}.help`)}</span>
+                    </span>
+                  </label>
+                ))}
+                {(encoding?.auth_method || "forms") === "forms" && (
+                  <>
+                    <div style={{ marginBottom: 12, marginTop: 12 }}>
+                      <div style={labelStyle}>{t("nav:authSetup.required")}</div>
+                      <select style={{ ...inputStyle, maxWidth: 300 }} value={encoding?.auth_required || "enabled"}
+                        aria-label={t("nav:authSetup.required")}
+                        onChange={e => setEncoding({ ...encoding, auth_required: e.target.value })}>
+                        <option value="enabled">{t("nav:authSetup.requiredEnabled")}</option>
+                        <option value="local_disabled">{t("nav:authSetup.requiredLocalDisabled")}</option>
+                      </select>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, maxWidth: 560 }}>{t("nav:authSetup.localHelp")}</div>
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={labelStyle}>{t("settingsSystem:auth.username")}</div>
+                      <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
+                        value={encoding?.auth_username || ""}
+                        onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
+                        aria-label={t("settingsSystem:auth.username")} placeholder="admin" />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={labelStyle}>{t("settingsSystem:auth.password")}</div>
+                      <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
+                        value={encoding?.auth_password || ""}
+                        onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
+                        aria-label={t("settingsSystem:auth.passwordPlaceholder")} placeholder={t("settingsSystem:auth.passwordPlaceholder")} />
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("settingsSystem:auth.passwordHelp")}</div>
+                    </div>
+                  </>
                 )}
-
-                {/* Credentials — always rendered. Disabled when auth is off so
-                    users can see what fields exist (and pre-fill them) before
-                    flipping the toggle. v0.5.6: previously rendered
-                    conditionally, which surprised users who couldn't see the
-                    fields until after enabling. */}
-                <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
-                  <div style={labelStyle}>{t("settingsSystem:auth.username")}</div>
-                  <input type="text" style={{ ...inputStyle, maxWidth: 300 }}
-                    value={encoding?.auth_username || ""}
-                    disabled={!encoding?.auth_enabled}
-                    onChange={e => setEncoding({ ...encoding, auth_username: e.target.value })}
-                    aria-label={t("settingsSystem:auth.username")} placeholder="admin" />
-                </div>
-                <div style={{ marginBottom: 12, opacity: encoding?.auth_enabled ? 1 : 0.55 }}>
-                  <div style={labelStyle}>{t("settingsSystem:auth.password")}</div>
-                  <input type="password" style={{ ...inputStyle, maxWidth: 300 }}
-                    value={encoding?.auth_password || ""}
-                    disabled={!encoding?.auth_enabled}
-                    onChange={e => setEncoding({ ...encoding, auth_password: e.target.value })}
-                    aria-label={t("settingsSystem:auth.passwordPlaceholder")} placeholder={t("settingsSystem:auth.passwordPlaceholder")} />
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("settingsSystem:auth.passwordHelp")}</div>
-                </div>
 
                 {/* API Key section — masked by default, reveal or copy pulls
                      the real value via a dedicated endpoint so the bulk GET

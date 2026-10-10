@@ -3,6 +3,7 @@ import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
+import AuthSetup from "./components/AuthSetup";
 // Pages load on first visit (FE#30, v0.10.0): everything was one 1.5 MB
 // script, charts and all. The design-system page is for development only.
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
@@ -421,6 +422,7 @@ function AppContent() {
   const { t } = useTranslation(["nav", "common"]);
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);  // v0.10.0: sign-in isn't set up yet
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
@@ -544,13 +546,15 @@ function AppContent() {
 
   useWebSocket(handleWS);
 
-  // Check auth on mount
-  useEffect(() => {
+  // Check auth on mount (and after signing in or setting sign-in up)
+  const recheckAuth = useCallback(() => {
     checkAuth().then(r => {
       setAuthenticated(!r.auth_required || r.authenticated);
+      setSetupRequired(!!r.setup_required);
       setAuthChecked(true);
     }).catch(() => { setAuthenticated(true); setAuthChecked(true); });
   }, []);
+  useEffect(() => { recheckAuth(); }, [recheckAuth]);
 
   // v0.9.110: check whether a TMDB key is available (drives the banner below).
   useEffect(() => {
@@ -565,7 +569,10 @@ function AppContent() {
   }
 
   if (!authenticated) {
-    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+    return <LoginScreen onLogin={recheckAuth} />;
+  }
+  if (setupRequired) {
+    return <AuthSetup onDone={recheckAuth} />;
   }
 
   return (

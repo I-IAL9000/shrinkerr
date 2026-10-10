@@ -204,6 +204,8 @@ _ENCODING_DEFAULTS = {
     # Authentication
     "api_key": "",  # Empty = no auth required
     "auth_enabled": "false",
+    "auth_method": "",  # v0.10.0: "forms" | "external" (backend/auth_policy.py); "" = not set up
+    "auth_required": "enabled",  # | "local_disabled"
     "auth_username": "",
     "auth_password_hash": "",
     "session_secret": "",
@@ -787,6 +789,9 @@ async def get_encoding_settings():
     result["api_key"] = ("****" + api_key_val[-4:]) if api_key_val else ""
     result["api_key_configured"] = bool(api_key_val)
     result["auth_enabled"] = merged.get("auth_enabled", "false").lower() == "true"
+    from backend import auth_policy
+    result["auth_method"] = auth_policy.method({**merged, "auth_enabled": result["auth_enabled"]})
+    result["auth_required"] = merged.get("auth_required") or "enabled"
     result["auth_username"] = merged.get("auth_username", "")
     # Never expose password hash or session secret
 
@@ -977,14 +982,18 @@ async def _stored_setting(db, key: str) -> str:
 
 
 async def _password_auth_on(db) -> bool:
-    return await _stored_setting(db, "auth_enabled") == "true"
+    """Sign-in is set up (v0.10.0: the sign-in page, or a reverse proxy)."""
+    from backend import auth_policy
+    return auth_policy.method({"auth_method": await _stored_setting(db, "auth_method"),
+                               "auth_enabled": await _stored_setting(db, "auth_enabled") == "true"}) != ""
 
 
 def _signed_in_with_password(request) -> bool:
-    """True when the request authenticated with the UI password session, not
-    the API key (api_key_auth in main.py records which). Settings that can
-    run code require it: the API key is baked into download-client scripts."""
-    return getattr(getattr(request, "state", None), "auth_method", None) == "session"
+    """True when a person is using the UI — signed in with the password, or
+    let in by the reverse proxy or as a local address (v0.10.0) — not the
+    API key (api_key_auth in main.py records which). Settings that can run
+    code require it: the API key is baked into download-client scripts."""
+    return getattr(getattr(request, "state", None), "auth_method", None) in ("session", "external", "local")
 
 
 def _require_password_login(request) -> None:
@@ -1332,12 +1341,20 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             updates["content_type_cq"] = json.dumps(content_cq_table(update.content_type_cq))
         if update.api_key is not None and not update.api_key.startswith("****"):
             updates["api_key"] = update.api_key
-        # Auth settings
-        if update.auth_enabled is not None:
+        # Auth settings. v0.10.0: sign-in is required — the sign-in page
+        # ("forms") or a reverse proxy ("external"); it can't be turned off.
+        from backend import auth_policy
+        new_method = update.auth_method
+        if new_method is None and update.auth_enabled is not None:
+            new_method = "forms" if update.auth_enabled else ""  # older clients' switch
+        if new_method is not None:
+            if new_method not in auth_policy.METHODS:
+                raise ApiError(400, "Sign-in can't be turned off. If a reverse proxy signs people in, choose External.",
+                               code="settings.authRequired")
             # Every section's Save sends the whole page, so a ticked box with
             # no credentials used to switch auth on and lock everyone out
             # (v0.10.0).
-            if update.auth_enabled and not (
+            if new_method == "forms" and not (
                 (update.auth_username or await _stored_setting(db, "auth_username"))
                 and (update.auth_password or await _stored_setting(db, "auth_password_hash"))
             ):
@@ -1346,7 +1363,12 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                     detail="Set a username and password before turning on password authentication.",
                     code="settings.authNeedsPassword",
                 )
-            updates["auth_enabled"] = "true" if update.auth_enabled else "false"
+            updates["auth_method"] = new_method
+            updates["auth_enabled"] = "true" if new_method == "forms" else "false"
+        if update.auth_required is not None:
+            if update.auth_required not in auth_policy.REQUIRED:
+                raise ApiError(400, "Choose who signs in.", code="settings.invalidAuthRequired")
+            updates["auth_required"] = update.auth_required
         if update.auth_username is not None:
             updates["auth_username"] = update.auth_username
         if update.auth_password is not None and update.auth_password:
@@ -1597,7 +1619,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
             schedule_audio_flags_realign()
 
     # Invalidate auth cache if auth-related keys changed
-    auth_keys = {"auth_enabled", "auth_username", "auth_password_hash", "api_key", "session_secret"}
+    auth_keys = {"auth_enabled", "auth_username", "auth_password_hash", "api_key", "session_secret",
+                 "auth_method", "auth_required"}
     if auth_keys & set(updates.keys()):
         from backend.main import _auth_cache
         _auth_cache["checked_at"] = 0
@@ -1855,7 +1878,7 @@ class ImportSettingsRequest(BaseModel):
 
 # Never imported: credentials and auth state (exports leave them out too).
 _UNIMPORTABLE_KEYS = _SECRET_SETTINGS_KEYS | {
-    "auth_enabled", "auth_username", "auth_password", "auth_password_hash",
+    "auth_enabled", "auth_username", "auth_password", "auth_password_hash", "auth_method", "auth_required",
 }
 
 

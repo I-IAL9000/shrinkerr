@@ -109,8 +109,6 @@
   },
   "auth": {
     "title": "Authentication",
-    "enable": "Enable username / password login",
-    "loginRequired": "<b>Login required.</b> Visitors will need either the username + password below or the API key (workers / scripts). If you lock yourself out, see the recovery instructions in the README.",
     "username": "Username",
     "password": "Password",
     "passwordPlaceholder": "Enter new password...",
