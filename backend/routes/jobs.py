@@ -242,12 +242,15 @@ async def refresh_pending_jobs(paths: Optional[list[str]] = None) -> int:
         if not jobs:
             return 0
         rows = await _scan_rows_for(db, sorted({j["file_path"] for j in jobs}))
+        from backend.rule_actions import tracks_for_rule
+        from backend.rule_resolver import resolve_rules_for_batch
+        rules = await resolve_rules_for_batch(sorted(rows))  # a rule's languages (v0.10.0)
         updates = []
         for job in jobs:
             row = rows.get(job["file_path"])
             if row is None:
                 continue
-            audio_remove, sub_remove, has_audio_work = track_work(row)
+            audio_remove, sub_remove, has_audio_work = track_work(tracks_for_rule(row, rules.get(job["file_path"])))
             job_type = job["job_type"] if job["job_type"] == "audio" else ("combined" if has_audio_work else "convert")
             try:
                 before = (json.loads(job["audio_tracks_to_remove"] or "[]"), json.loads(job["subtitle_tracks_to_remove"] or "[]"))
@@ -472,7 +475,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
             async with db.execute(
                 f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                 f"subtitle_tracks_json, native_language, duration, COALESCE(video_height, 0) as video_height, "
-                f"COALESCE(video_width, 0) as video_width, disc_type, link_count "
+                f"COALESCE(video_width, 0) as video_width, disc_type, link_count, video_conv_savings_bytes "
                 f"FROM scan_results WHERE file_path IN ({placeholders})",
                 chunk,
             ) as cur:
@@ -531,7 +534,14 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 print(f"[QUEUE] Skipped {fp}: in a Maintainerr collection (leaving soon)", flush=True)
                 continue
 
+            from backend.rule_actions import below_savings, job_overrides, tracks_for_rule
+            row = tracks_for_rule(row, rule)  # the rule's languages (v0.10.0)
             audio_remove, sub_remove, has_audio_work = track_work(row)
+            # The rule's minimum savings (v0.10.0): too little to gain from
+            # converting — only the track cleanup, if any.
+            if below_savings(rule, row) and not payload.force_reencode and not payload.override_rules:
+                skip_conversion = True
+                ignored_by_rule += 1
 
             # force_reencode overrides both needs_conversion AND skip rules;
             # cleanup_only (per-batch user choice) wins over force_reencode.
@@ -612,6 +622,7 @@ async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanReque
                 "libx265_preset": libx265_preset,
                 "target_resolution": target_resolution,
                 "output_codec": output_codec,
+                **job_overrides(rule),
                 "audio_codec": audio_codec,
                 "audio_bitrate": audio_bitrate,
                 "priority": max(
@@ -2091,7 +2102,8 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                     f"SELECT file_path, file_size, needs_conversion, audio_tracks_json, "
                     f"subtitle_tracks_json, COALESCE(video_height, 0) as video_height, "
                     f"COALESCE(video_width, 0) as video_width, "
-                    f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count "
+                    f"COALESCE(duration, 0) as duration, native_language, disc_type, link_count, "
+                    f"video_conv_savings_bytes "
                     f"FROM scan_results WHERE file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -2121,8 +2133,14 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 continue
 
             # The decision add-from-scan makes (v0.10.0): removals by keep
-            # alone (v0.9.99), and the original language's audio moved first.
+            # alone (v0.9.99), and the original language's audio moved first
+            # — with a rule's languages and minimum savings.
+            from backend.rule_actions import below_savings, tracks_for_rule
+            row = tracks_for_rule(row, rule)
             audio_remove, sub_remove, has_work = track_work(row)
+            if below_savings(rule, row) and not payload.force_reencode and not payload.override_rules:
+                skip_conv = True
+                skipped += 1
 
             # force_reencode overrides both needs_conversion AND skip rules.
             # v0.9.120: a disc (disc_type set) always needs conversion — force it

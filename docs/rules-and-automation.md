@@ -57,7 +57,24 @@ Conditions in a rule combine with `match_mode` — `any` (OR) or `all`
   combination of `encoder`, `nvenc_preset`, `nvenc_cq`, `libx265_preset`,
   `libx265_crf`, `target_resolution`, output codec, `audio_codec`,
   `audio_bitrate`, `queue_priority`). **Output codec** HEVC (the default)
-  or **AV1** — see [AV1 output](encoding-guide.md#av1-output).
+  or **AV1** — see [AV1 output](encoding-guide.md#av1-output). With QSV,
+  VAAPI or VideoToolbox the rule's **CQ** (NVENC's scale) is translated to
+  the encoder's own quality setting.
+
+**Languages, originals and more** (in the rule form) — per-library
+policies:
+
+- **Audio languages to keep** and **Subtitles** (keep all / remove all /
+  keep these languages) replace the global languages for the rule's files
+  when they're queued. Tracks you kept or removed by hand stay as you set
+  them; the Scanner keeps showing the global choice.
+- **Originals** — keep for N days, move to trash or delete, instead of the
+  global setting (Encode rules).
+- **Minimum VMAF** — this rule's rejection threshold; 0 never rejects.
+- **Skip if savings below (%)** — leave the video alone when the estimated
+  saving is smaller; the track cleanup still runs.
+
+These travel with each job, to remote workers too.
 - **Skip** — file is tagged "skipped by rule" during scan/estimate and
   won't show up in conversion filters.
 - **Audio/sub only** — skip video encoding entirely; only do the

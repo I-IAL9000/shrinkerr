@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter
 from backend.api_errors import ApiError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.database import connect_db
 
@@ -31,6 +31,14 @@ class RuleCreate(BaseModel):
     libx265_crf: Optional[int] = None
     libx265_preset: Optional[str] = None
     output_codec: Optional[Literal["hevc", "av1"]] = None  # v0.10.0
+    # v0.10.0: per-rule actions (backend/rule_actions.py)
+    audio_keep_languages: Optional[str] = None
+    sub_policy: Optional[Literal["keep_all", "remove_all", "languages"]] = None
+    sub_keep_languages: Optional[str] = None
+    originals_policy: Optional[Literal["keep", "trash", "delete"]] = None
+    originals_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    vmaf_min_score: Optional[float] = Field(default=None, ge=0, le=100)
+    min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -49,6 +57,14 @@ class RuleUpdate(BaseModel):
     libx265_crf: Optional[int] = None
     libx265_preset: Optional[str] = None
     output_codec: Optional[Literal["hevc", "av1"]] = None  # v0.10.0
+    # v0.10.0: per-rule actions (backend/rule_actions.py)
+    audio_keep_languages: Optional[str] = None
+    sub_policy: Optional[Literal["keep_all", "remove_all", "languages"]] = None
+    sub_keep_languages: Optional[str] = None
+    originals_policy: Optional[Literal["keep", "trash", "delete"]] = None
+    originals_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    vmaf_min_score: Optional[float] = Field(default=None, ge=0, le=100)
+    min_savings_pct: Optional[float] = Field(default=None, ge=0, le=100)
     target_resolution: Optional[str] = None
     audio_codec: Optional[str] = None
     audio_bitrate: Optional[int] = None
@@ -163,12 +179,16 @@ async def create_rule(payload: RuleCreate):
             """INSERT INTO encoding_rules
                (name, match_type, match_value, match_conditions, priority, action, enabled,
                 encoder, nvenc_preset, nvenc_cq, libx265_crf, libx265_preset, target_resolution,
-                audio_codec, audio_bitrate, queue_priority, created_at, output_codec)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                audio_codec, audio_bitrate, queue_priority, created_at, output_codec,
+                audio_keep_languages, sub_policy, sub_keep_languages, originals_policy, originals_days,
+                vmaf_min_score, min_savings_pct)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (payload.name, first.type, first.value, conditions_json, next_priority,
              payload.action, int(payload.enabled), payload.encoder, payload.nvenc_preset,
              payload.nvenc_cq, payload.libx265_crf, payload.libx265_preset, payload.target_resolution,
-             payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now, payload.output_codec),
+             payload.audio_codec, payload.audio_bitrate, payload.queue_priority, now, payload.output_codec,
+             payload.audio_keep_languages, payload.sub_policy, payload.sub_keep_languages, payload.originals_policy,
+             payload.originals_days, payload.vmaf_min_score, payload.min_savings_pct),
         ) as cur:
             rule_id = cur.lastrowid
         await db.commit()

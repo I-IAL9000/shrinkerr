@@ -434,6 +434,19 @@ async def init_db():
                     await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT DEFAULT NULL")
                 except Exception:
                     pass
+        # v0.10.0: per-rule actions (backend/rule_actions.py); jobs carry the
+        # originals policy and VMAF minimum.
+        for table, cols in (("encoding_rules", (("audio_keep_languages", "TEXT"), ("sub_policy", "TEXT"),
+                                                ("sub_keep_languages", "TEXT"), ("min_savings_pct", "REAL"))),
+                            ("encoding_rules", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
+                                                ("vmaf_min_score", "REAL"))),
+                            ("jobs", (("originals_policy", "TEXT"), ("originals_days", "INTEGER"),
+                                      ("vmaf_min_score", "REAL")))):
+            for col, coltype in cols:
+                try:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype} DEFAULT NULL")
+                except Exception:
+                    pass
         # Migration: pre-computed flags on scan_results for performance
         for col, coltype in [
             ("has_removable_tracks_flag", "INTEGER DEFAULT 0"),

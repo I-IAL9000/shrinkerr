@@ -351,6 +351,9 @@ class JobQueue:
                     j.get("priority") or 0,
                     j.get("not_before"),
                     j.get("output_codec"),
+                    j.get("originals_policy"),
+                    j.get("originals_days"),
+                    j.get("vmaf_min_score"),
                 ))
                 inserted_mask.append(True)
 
@@ -359,8 +362,9 @@ class JobQueue:
                 "INSERT INTO jobs (file_path, job_type, status, encoder, "
                 "audio_tracks_to_remove, subtitle_tracks_to_remove, created_at, "
                 "queue_order, original_size, nvenc_preset, nvenc_cq, audio_codec, "
-                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec) "
-                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority, not_before, output_codec, "
+                "originals_policy, originals_days, vmaf_min_score) "
+                "VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             assigned_ids: list[int] = []
             if params_list:
@@ -2475,11 +2479,17 @@ class QueueWorker:
             # For combined jobs, pass audio/subtitle removal lists so they're applied
             # in the same ffmpeg pass — no second remux with mismatched stream indices.
             use_nice = await self._should_use_nice()
+            # A rule's originals policy and VMAF minimum (v0.10.0).
+            from backend.converter import get_live_encoding_settings
+            from backend.rule_actions import settings_overrides
+            _job_settings = settings_overrides(job)
+            job_settings = {**await get_live_encoding_settings(), **_job_settings} if _job_settings else None
             review = json.loads(job["review_json"]) if job.get("review_approved") and job.get("review_json") else None
             if review:  # approved in review mode (v0.10.0): put the held output in place
                 from backend.converter import finalize_review
                 result = await finalize_review(review["state"], review["result"],
-                                               on_output_placed=lambda: self._finalize(job_id))
+                                               on_output_placed=lambda: self._finalize(job_id),
+                                               pre_settings=job_settings)
                 await self._clear_review(job_id)  # placed, or failed: a retry converts it again
             else:
                 result = await convert_file(
@@ -2501,6 +2511,7 @@ class QueueWorker:
                     on_output_placed=lambda: self._finalize(job_id),
                     pre_probe=probe,
                     output_codec=job.get("output_codec"),
+                    pre_settings=job_settings,
                 )
             if not result["success"]:
                 if job_id in self._cancel_flags:

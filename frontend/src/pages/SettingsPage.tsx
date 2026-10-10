@@ -37,6 +37,7 @@ import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../
 import SettingsSearch from "../components/SettingsSearch";
 import RuleTester from "../components/RuleTester";
 import PoliciesSection from "../components/PoliciesSection";
+import LanguagePicker from "../components/LanguagePicker";
 import { useConfirm } from "../components/ConfirmModal";
 
 // Settings compare as text: the API returns "true" / "30" where the controls
@@ -332,6 +333,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     action: string; encoder: string; nvenc_preset: string; nvenc_cq: string;
     libx265_crf: string; libx265_preset: string; target_resolution: string; audio_codec: string; audio_bitrate: string;
     queue_priority: string; output_codec?: string;
+    // v0.10.0: per-rule actions
+    audio_keep_languages?: string[]; sub_policy?: string; sub_keep_languages?: string[];
+    originals_policy?: string; originals_days?: string; vmaf_min_score?: string; min_savings_pct?: string;
   }>({ name: "", match_mode: "any", conditions: [{ type: "directory", operator: "is", value: "" }], action: "encode", encoder: "", nvenc_preset: "", nvenc_cq: "", libx265_crf: "", libx265_preset: "", target_resolution: "", audio_codec: "", audio_bitrate: "", queue_priority: "" });
   const [condOpts, setCondOpts] = useState<any>({ sources: [], resolutions: [], video_codecs: [], audio_codecs: [], media_types: [], release_groups: [], arr_tags: [] });
   const [ruleSyncing, setRuleSyncing] = useState(false);
@@ -4074,6 +4078,11 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
                                 rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
                                 rule.action === "encode" && rule.output_codec === "av1" ? "AV1" : null,
+                                rule.audio_keep_languages ? t("settingsIntegrations:rules.form.more.badges.audio", { langs: rule.audio_keep_languages }) : null,
+                                rule.sub_policy ? t(`settingsIntegrations:rules.form.more.badges.subs_${rule.sub_policy}`, { langs: rule.sub_keep_languages || "" }) : null,
+                                rule.action === "encode" && rule.originals_policy ? t(`settingsIntegrations:rules.form.more.badges.originals_${rule.originals_policy}`, { count: rule.originals_days || 7 }) : null,
+                                rule.action === "encode" && rule.vmaf_min_score != null ? `VMAF ≥ ${rule.vmaf_min_score}` : null,
+                                rule.action === "encode" && rule.min_savings_pct ? t("settingsIntegrations:rules.form.more.badges.minSavings", { pct: rule.min_savings_pct }) : null,
                                 rule.audio_codec && rule.audio_codec !== "copy" ? `${rule.audio_codec.toUpperCase()}${rule.audio_bitrate ? ` ${rule.audio_bitrate}k` : ""}` : null,
                                 rule.queue_priority != null ? [t("settingsIntegrations:priorities.normal"), t("settingsIntegrations:priorities.high"), t("settingsIntegrations:priorities.highest")][rule.queue_priority] : null,
                               ].filter(Boolean).join(" ") || t("settingsIntegrations:rules.defaults")}
@@ -4098,6 +4107,13 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                   libx265_crf: rule.libx265_crf ? String(rule.libx265_crf) : "",
                                   libx265_preset: rule.libx265_preset || "",
                                   target_resolution: rule.target_resolution || "", output_codec: rule.output_codec || "",
+                                  audio_keep_languages: (rule.audio_keep_languages || "").split(",").filter(Boolean),
+                                  sub_policy: rule.sub_policy || "",
+                                  sub_keep_languages: (rule.sub_keep_languages || "").split(",").filter(Boolean),
+                                  originals_policy: rule.originals_policy || "",
+                                  originals_days: rule.originals_days != null ? String(rule.originals_days) : "",
+                                  vmaf_min_score: rule.vmaf_min_score != null ? String(rule.vmaf_min_score) : "",
+                                  min_savings_pct: rule.min_savings_pct != null ? String(rule.min_savings_pct) : "",
                                   audio_codec: rule.audio_codec || "", audio_bitrate: rule.audio_bitrate ? String(rule.audio_bitrate) : "",
                                   queue_priority: rule.queue_priority != null ? String(rule.queue_priority) : "",
                                 });
@@ -4420,12 +4436,19 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                               </div>
                             )}
                           </div>
-                          {/* Preset / quality controls don't apply to QSV / VAAPI in
-                              v0.3.69 — those encoders inherit their global QSV /
-                              VAAPI settings. NVENC and libx265 preset/CQ/CRF
-                              fields shown only when one of those is selected
-                              (or when no override is set, in which case the rule
-                              inherits whichever encoder Settings → Encoding picks). */}
+                          {/* QSV / VAAPI / VideoToolbox (v0.10.0): a quality on NVENC's
+                              CQ scale, translated to the encoder's own setting; their
+                              preset stays the global one. */}
+                          {(ruleForm.encoder === "qsv" || ruleForm.encoder === "vaapi" || ruleForm.encoder === "videotoolbox") && (
+                            <div>
+                              <label style={labelStyle}>CQ</label>
+                              <input type="number" style={{ ...inputStyle, width: "100%" }} value={ruleForm.nvenc_cq}
+                                aria-label="CQ" placeholder={t("settingsIntegrations:rules.form.default")} min={15} max={40}
+                                onChange={e => setRuleForm({ ...ruleForm, nvenc_cq: e.target.value })} />
+                            </div>
+                          )}
+                          {/* NVENC and libx265: preset and CQ / CRF (or the default
+                              encoder's, when none is chosen). */}
                           {(ruleForm.encoder === "" || ruleForm.encoder === "nvenc" || ruleForm.encoder === "libx265") && <>
                           <div>
                             <label style={labelStyle}>{t("settingsIntegrations:rules.form.preset")}</label>
@@ -4523,6 +4546,73 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           </div>
                         )}
                       </div>
+                      {/* v0.10.0: per-rule actions — languages, subtitles, originals,
+                          VMAF minimum, minimum savings (backend/rule_actions.py). */}
+                      {ruleForm.action !== "skip" && (
+                        <details open={!!((ruleForm.audio_keep_languages || []).length || ruleForm.sub_policy || ruleForm.originals_policy
+                                          || ruleForm.vmaf_min_score || ruleForm.min_savings_pct)}>
+                          <summary style={{ ...labelStyle, cursor: "pointer" }}>{t("settingsIntegrations:rules.form.more.title")}</summary>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginTop: 10 }}>
+                            <div style={{ gridColumn: "1 / -1" }}>
+                              <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.audioLanguages")}</label>
+                              <LanguagePicker value={ruleForm.audio_keep_languages || []} label={t("settingsIntegrations:rules.form.more.audioLanguages")}
+                                onChange={codes => setRuleForm({ ...ruleForm, audio_keep_languages: codes })} />
+                              <div style={helpStyle}>{t("settingsIntegrations:rules.form.more.audioLanguagesHelp")}</div>
+                            </div>
+                            <div>
+                              <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.subtitles")}</label>
+                              <select aria-label={t("settingsIntegrations:rules.form.more.subtitles")} style={{ ...inputStyle, width: "100%" }}
+                                value={ruleForm.sub_policy || ""} onChange={e => setRuleForm({ ...ruleForm, sub_policy: e.target.value })}>
+                                <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
+                                <option value="keep_all">{t("settingsIntegrations:rules.form.more.subPolicies.keep_all")}</option>
+                                <option value="remove_all">{t("settingsIntegrations:rules.form.more.subPolicies.remove_all")}</option>
+                                <option value="languages">{t("settingsIntegrations:rules.form.more.subPolicies.languages")}</option>
+                              </select>
+                            </div>
+                            {ruleForm.sub_policy === "languages" && (
+                              <div style={{ gridColumn: "1 / -1" }}>
+                                <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.subLanguages")}</label>
+                                <LanguagePicker value={ruleForm.sub_keep_languages || []} label={t("settingsIntegrations:rules.form.more.subLanguages")}
+                                  onChange={codes => setRuleForm({ ...ruleForm, sub_keep_languages: codes })} />
+                              </div>
+                            )}
+                            {ruleForm.action === "encode" && <>
+                              <div>
+                                <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.originals")}</label>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <select aria-label={t("settingsIntegrations:rules.form.more.originals")} style={{ ...inputStyle, width: "100%" }}
+                                    value={ruleForm.originals_policy || ""} onChange={e => setRuleForm({ ...ruleForm, originals_policy: e.target.value })}>
+                                    <option value="">{t("settingsIntegrations:rules.form.useDefault")}</option>
+                                    <option value="keep">{t("settingsIntegrations:rules.form.more.originalsPolicies.keep")}</option>
+                                    <option value="trash">{t("settingsIntegrations:rules.form.more.originalsPolicies.trash")}</option>
+                                    <option value="delete">{t("settingsIntegrations:rules.form.more.originalsPolicies.delete")}</option>
+                                  </select>
+                                  {ruleForm.originals_policy === "keep" && (
+                                    <input type="number" min={1} style={{ ...inputStyle, width: 70 }} placeholder="7"
+                                      aria-label={t("settingsIntegrations:rules.form.more.days")} value={ruleForm.originals_days || ""}
+                                      onChange={e => setRuleForm({ ...ruleForm, originals_days: e.target.value })} />
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.vmafMin")}</label>
+                                <input type="number" min={0} max={100} style={{ ...inputStyle, width: "100%" }}
+                                  placeholder={t("settingsIntegrations:rules.form.default")} aria-label={t("settingsIntegrations:rules.form.more.vmafMin")}
+                                  value={ruleForm.vmaf_min_score || ""} onChange={e => setRuleForm({ ...ruleForm, vmaf_min_score: e.target.value })} />
+                                <div style={helpStyle}>{t("settingsIntegrations:rules.form.more.vmafMinHelp")}</div>
+                              </div>
+                              <div>
+                                <label style={labelStyle}>{t("settingsIntegrations:rules.form.more.minSavings")}</label>
+                                <input type="number" min={0} max={100} style={{ ...inputStyle, width: "100%" }}
+                                  placeholder={t("settingsIntegrations:rules.form.more.off")} aria-label={t("settingsIntegrations:rules.form.more.minSavings")}
+                                  value={ruleForm.min_savings_pct || ""} onChange={e => setRuleForm({ ...ruleForm, min_savings_pct: e.target.value })} />
+                                <div style={helpStyle}>{t("settingsIntegrations:rules.form.more.minSavingsHelp")}</div>
+                              </div>
+                            </>}
+                          </div>
+                          <div style={{ ...helpStyle, marginTop: 8 }}>{t("settingsIntegrations:rules.form.more.note")}</div>
+                        </details>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }}
@@ -4548,6 +4638,15 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             action: ruleForm.action,
                           };
                           data.queue_priority = ruleForm.queue_priority ? parseInt(ruleForm.queue_priority) : null;
+                          const keepAudio = ruleForm.action !== "skip" ? (ruleForm.audio_keep_languages || []) : [];
+                          data.audio_keep_languages = keepAudio.length ? keepAudio.join(",") : null;
+                          data.sub_policy = ruleForm.action !== "skip" && ruleForm.sub_policy ? ruleForm.sub_policy : null;
+                          data.sub_keep_languages = data.sub_policy === "languages" && (ruleForm.sub_keep_languages || []).length
+                            ? (ruleForm.sub_keep_languages || []).join(",") : null;
+                          if (ruleForm.action !== "encode") {
+                            data.originals_policy = null; data.originals_days = null;
+                            data.vmaf_min_score = null; data.min_savings_pct = null;
+                          }
                           if (ruleForm.action === "encode") {
                             data.encoder = ruleForm.encoder || null;
                             data.nvenc_preset = ruleForm.nvenc_preset || null;
@@ -4556,6 +4655,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             data.libx265_crf = ruleForm.libx265_crf ? parseInt(ruleForm.libx265_crf) : null;
                             data.target_resolution = ruleForm.target_resolution || null;
                             data.output_codec = ruleForm.output_codec || null;
+                            data.originals_policy = ruleForm.originals_policy || null;
+                            data.originals_days = ruleForm.originals_policy === "keep" && ruleForm.originals_days ? parseInt(ruleForm.originals_days) : null;
+                            data.vmaf_min_score = ruleForm.vmaf_min_score ? parseFloat(ruleForm.vmaf_min_score) : null;
+                            data.min_savings_pct = ruleForm.min_savings_pct ? parseFloat(ruleForm.min_savings_pct) : null;
                             data.audio_codec = ruleForm.audio_codec || null;
                             data.audio_bitrate = ruleForm.audio_bitrate ? parseInt(ruleForm.audio_bitrate) : null;
                           } else if (ruleForm.action === "ignore") {

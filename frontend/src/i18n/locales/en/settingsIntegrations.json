@@ -229,7 +229,7 @@
       },
       "encoder": "Encoder",
       "useDefault": "Use default",
-      "qsvVaapiNote": "QSV/VAAPI/VideoToolbox rules use the global preset and quality from Settings → Video.",
+      "qsvVaapiNote": "Quality on NVENC's CQ scale (lower is better), translated to this encoder's own setting. The preset comes from Settings → Video.",
       "preset": "Preset",
       "default": "Default",
       "resolution": "Resolution",
@@ -247,7 +247,43 @@
       "add": "Add Rule",
       "outputCodec": "Output codec",
       "av1Unavailable": "This encoder can't write AV1 here, so these files are encoded HEVC. Choose libx265 (CPU) for AV1 with SVT-AV1 — or NVENC on an RTX 40 or later, QSV on Intel Arc.",
-      "av1None": "No AV1 encoder was found here, so these files are encoded HEVC."
+      "av1None": "No AV1 encoder was found here, so these files are encoded HEVC.",
+      "more": {
+        "title": "Languages, originals and more",
+        "audioLanguages": "Audio languages to keep",
+        "audioLanguagesHelp": "Blank: the languages in Settings → Audio & subtitles. The original language is kept too when that setting is on.",
+        "subtitles": "Subtitles",
+        "subPolicies": {
+          "keep_all": "Keep all",
+          "remove_all": "Remove all",
+          "languages": "Keep these languages"
+        },
+        "subLanguages": "Subtitle languages to keep",
+        "originals": "Originals",
+        "originalsPolicies": {
+          "keep": "Keep for… days",
+          "trash": "Move to trash",
+          "delete": "Delete"
+        },
+        "days": "Days",
+        "vmafMin": "Minimum VMAF",
+        "vmafMinHelp": "Blank: the global minimum. 0: never reject.",
+        "minSavings": "Skip if savings below (%)",
+        "minSavingsHelp": "Leave the video alone when the estimated saving is smaller; track cleanup still runs.",
+        "off": "Off",
+        "note": "Languages and subtitles apply when the files are queued (tracks you chose by hand stay); the Scanner keeps showing the global choice.",
+        "badges": {
+          "audio": "audio: {{langs}}",
+          "subs_keep_all": "all subtitles",
+          "subs_remove_all": "no subtitles",
+          "subs_languages": "subtitles: {{langs}}",
+          "originals_keep_one": "originals kept {{count}} day",
+          "originals_keep_other": "originals kept {{count}} days",
+          "originals_trash": "originals to trash",
+          "originals_delete": "originals deleted",
+          "minSavings": "≥ {{pct}}% savings"
+        }
+      }
     },
     "toasts": {
       "nameRequired": "Please enter a rule name",

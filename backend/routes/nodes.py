@@ -394,6 +394,8 @@ async def request_job(req: RequestJobBody, request: Request):
 
     # Assign this job to the node
     assigned = await nm.assign_job_to_node(req.node_id, job)
+    from backend.rule_actions import settings_overrides
+    job_settings = settings_overrides(dict(assigned)) if assigned else {}  # before the server's fill the same keys
     if assigned is None:
         return {"job": None}  # claimed elsewhere since the SELECT; the node polls again
     # Include the node's translate_encoder flag so the worker knows whether to
@@ -484,6 +486,8 @@ async def request_job(req: RequestJobBody, request: Request):
         assigned["vmaf_min_score"] = float(srv_settings.get("vmaf_min_score", "0") or 0)
     except (TypeError, ValueError):
         assigned["vmaf_min_score"] = 0.0
+    # A rule's originals policy and VMAF minimum win (v0.10.0).
+    assigned.update(job_settings)
     assigned["vmaf_target_enabled"] = (srv_settings.get("vmaf_target_enabled") or "false").lower() == "true"
     try:
         assigned["vmaf_target_score"] = float(srv_settings.get("vmaf_target_score") or 95)

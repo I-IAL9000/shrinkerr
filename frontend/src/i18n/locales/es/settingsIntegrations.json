@@ -237,7 +237,7 @@
       },
       "encoder": "Codificador",
       "useDefault": "Usar predeterminado",
-      "qsvVaapiNote": "Las reglas QSV/VAAPI/VideoToolbox usan el preajuste y la calidad globales de Ajustes → Vídeo.",
+      "qsvVaapiNote": "Calidad en la escala CQ de NVENC (más bajo es mejor), traducida al ajuste propio de este codificador. El ajuste predefinido viene de Ajustes → Vídeo.",
       "preset": "Preajuste",
       "default": "Predeterminado",
       "resolution": "Resolución",
@@ -255,7 +255,44 @@
       "add": "Añadir regla",
       "outputCodec": "Códec de salida",
       "av1Unavailable": "Este codificador no puede generar AV1 aquí, así que estos archivos se codifican en HEVC. Elige libx265 (CPU) para AV1 con SVT-AV1, o NVENC en una RTX 40 o posterior, o QSV en Intel Arc.",
-      "av1None": "No se encontró ningún codificador AV1 aquí, así que estos archivos se codifican en HEVC."
+      "av1None": "No se encontró ningún codificador AV1 aquí, así que estos archivos se codifican en HEVC.",
+      "more": {
+        "title": "Idiomas, originales y más",
+        "audioLanguages": "Idiomas de audio que conservar",
+        "audioLanguagesHelp": "En blanco: los idiomas de Ajustes → Audio y subtítulos. El idioma original también se conserva si ese ajuste está activado.",
+        "subtitles": "Subtítulos",
+        "subPolicies": {
+          "keep_all": "Conservar todos",
+          "remove_all": "Quitar todos",
+          "languages": "Conservar estos idiomas"
+        },
+        "subLanguages": "Idiomas de subtítulos que conservar",
+        "originals": "Originales",
+        "originalsPolicies": {
+          "keep": "Conservar… días",
+          "trash": "Mover a la papelera",
+          "delete": "Eliminar"
+        },
+        "days": "Días",
+        "vmafMin": "VMAF mínimo",
+        "vmafMinHelp": "En blanco: el mínimo global. 0: no rechazar nunca.",
+        "minSavings": "Omitir si el ahorro es menor de (%)",
+        "minSavingsHelp": "No toca el vídeo cuando el ahorro estimado es menor; la limpieza de pistas se hace igualmente.",
+        "off": "Desactivado",
+        "note": "Los idiomas y subtítulos se aplican al añadir los archivos a la cola (las pistas que elegiste a mano se mantienen); el Escáner sigue mostrando la elección global.",
+        "badges": {
+          "audio": "audio: {{langs}}",
+          "subs_keep_all": "todos los subtítulos",
+          "subs_remove_all": "sin subtítulos",
+          "subs_languages": "subtítulos: {{langs}}",
+          "originals_keep_one": "originales conservados {{count}} día",
+          "originals_keep_many": "originales conservados {{count}} días",
+          "originals_keep_other": "originales conservados {{count}} días",
+          "originals_trash": "originales a la papelera",
+          "originals_delete": "originales eliminados",
+          "minSavings": "≥ {{pct}} % de ahorro"
+        }
+      }
     },
     "toasts": {
       "nameRequired": "Introduce un nombre para la regla",
