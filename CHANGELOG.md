@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
 
 ### Fixed
+- **Remote workers' conversion details were never saved**: their encoding stats and ffmpeg command went nowhere, so those jobs' details had no numbers, and time estimates (and now savings estimates) didn't learn from them. They're kept now.
 - **Audio bitrates when two tracks are encoded**: a conversion that encoded two audio tracks at different bitrates — lossless audio converted to EAC3 next to a rule's audio codec, or the stereo compatibility track — gave every encoded track the last one's bitrate (EAC3 640k came out at 96k). Each track now gets its own.
 - **Remote workers' conversions never told Sonarr / Radarr**: only the server's own jobs triggered their rescan, so a worker's renamed output showed as missing until their next scan. They do now.
 - **DVD (VobSub) subtitles were never read on the standard image**: its OCR tool was only in the NVENC image, so their language stayed unknown (and now they couldn't become SRT). Both images have it.

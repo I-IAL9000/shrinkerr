@@ -110,6 +110,27 @@ async def test_remote_completion_updates_the_scan_row_and_job(node_api, test_db,
 
 
 @pytest.mark.asyncio
+async def test_a_remote_completion_keeps_its_stats_and_command(node_api, test_db):
+    """Remote conversions' stats went to a column that doesn't exist (the
+    error was swallowed): their job details had none, and time estimates and
+    the savings estimate never learned from them."""
+    nm, request = node_api
+    await _setup(test_db, {})
+    queue = JobQueue(test_db)
+    job_id = await queue.add_job("/media/b.mkv", "convert", encoder="libx265")
+    job = next(j for j in await queue.get_all_jobs() if j["id"] == job_id)
+    assert await nm.assign_job_to_node("node-1", job) is not None
+    stats = {"encoder": "libx265", "crf": 22, "input_size": 100, "output_size": 40, "encode_seconds": 12.5}
+    await nodes_route.report_complete(nodes_route.CompletionReport(
+        node_id="node-1", job_id=job_id, success=True, output_path="/media/b.mkv", space_saved=60,
+        encoding_stats=stats, ffmpeg_command="ffmpeg -i b.mkv out.mkv", replaced_source=False), request)
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT encoding_stats, ffmpeg_command FROM jobs WHERE id = ?", (job_id,)) as cur:
+            got, command = await cur.fetchone()
+    assert (json.loads(got), command) == (stats, "ffmpeg -i b.mkv out.mkv")
+
+
+@pytest.mark.asyncio
 async def test_workers_get_the_output_and_audio_settings_and_sidecar_subtitles(node_api, test_db, tmp_path, monkeypatch):
     """Workers hard-coded no filename suffix, no custom flags and no lossless
     conversion, and never merged sidecar subtitles (v0.10.0)."""

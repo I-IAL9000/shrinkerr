@@ -780,16 +780,14 @@ async def report_complete(req: CompletionReport, request: Request):
                 "WHERE id = ?",
                 (now, req.space_saved, req.job_id),
             )
-            # Store encoding stats if provided
-            if req.encoding_stats:
-                try:
-                    stats_json = json.dumps(req.encoding_stats)
-                    await db.execute(
-                        "UPDATE jobs SET conversion_log_stats = ? WHERE id = ?",
-                        (stats_json, req.job_id),
-                    )
-                except Exception:
-                    pass
+            # The encoding stats and command, as the local worker keeps them
+            # (v0.10.0: they went to a column that doesn't exist).
+            if req.encoding_stats or req.ffmpeg_command:
+                await db.execute(
+                    "UPDATE jobs SET encoding_stats = COALESCE(?, encoding_stats), "
+                    "ffmpeg_command = COALESCE(?, ffmpeg_command) WHERE id = ?",
+                    (json.dumps(req.encoding_stats) if req.encoding_stats else None, req.ffmpeg_command, req.job_id),
+                )
             # Store VMAF score
             if req.vmaf_score is not None:
                 await db.execute(
