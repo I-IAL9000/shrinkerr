@@ -3341,14 +3341,10 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
 
               {/* Download Client Integration */}
               <div style={sectionStyle}>
+                {/* v0.10.0: its Enabled switch was never read — the scripts ran
+                    either way — so it's gone. */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <h3 style={{ color: "white", margin: 0 }}>NZBGet / SABnzbd</h3>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                    <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{encoding?.nzbget_enabled ? t("settingsIntegrations:shared.enabled") : t("settingsIntegrations:shared.disabled")}</span>
-                    <input type="checkbox" checked={encoding?.nzbget_enabled || false}
-                      onChange={() => setEncoding({ ...encoding, nzbget_enabled: !encoding?.nzbget_enabled })}
-                      style={{ accentColor: "var(--accent)", width: 18, height: 18 }} />
-                  </label>
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
                   {t("settingsIntegrations:downloaders.intro")}

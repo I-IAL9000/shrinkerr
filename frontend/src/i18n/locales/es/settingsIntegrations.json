@@ -15,9 +15,7 @@
     "connectedLibraries_many": "Conectado a {{name}} ({{count}} bibliotecas)",
     "connectedLibraries_other": "Conectado a {{name}} ({{count}} bibliotecas)",
     "connectionFailed": "Error de conexión",
-    "refreshAfter": "Actualizar la biblioteca tras la conversión",
-    "enabled": "Activado",
-    "disabled": "Desactivado"
+    "refreshAfter": "Actualizar la biblioteca tras la conversión"
   },
   "priorities": {
     "normal": "Normal",

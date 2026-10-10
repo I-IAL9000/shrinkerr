@@ -268,7 +268,7 @@ _ENCODING_DEFAULTS = {
     # Language for outbound notification text (backend/locales/<code>/).
     "notification_language": "en",
     # NZBGet integration
-    "nzbget_enabled": "false",
+    "nzbget_enabled": "false",  # unused: the scripts run when installed (v0.10.0 removed its switch)
     "nzbget_tags": '[]',
     "nzbget_categories": '[]',
     "nzbget_path_mappings": '[]',

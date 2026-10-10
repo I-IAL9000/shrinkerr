@@ -14,9 +14,7 @@
     "connectedLibraries_one": "Connected to {{name}} ({{count}} library)",
     "connectedLibraries_other": "Connected to {{name}} ({{count}} libraries)",
     "connectionFailed": "Connection failed",
-    "refreshAfter": "Refresh library after conversion",
-    "enabled": "Enabled",
-    "disabled": "Disabled"
+    "refreshAfter": "Refresh library after conversion"
   },
   "priorities": {
     "normal": "Normal",
