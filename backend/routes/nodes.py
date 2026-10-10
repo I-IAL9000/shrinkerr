@@ -139,8 +139,8 @@ async def _require_node_token(request: Request, node_id: str, *, allow_bootstrap
         raise HTTPException(
             status_code=401,
             detail=(
-                "Invalid or missing X-Node-Token header. If you rotated the "
-                "node's token in Settings, restart the worker to re-bootstrap."
+                "Invalid or missing X-Node-Token header. After a token "
+                "rotation the worker gets a new token at its next heartbeat."
             ),
         )
 

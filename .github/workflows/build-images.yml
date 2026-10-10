@@ -223,6 +223,10 @@ jobs:
         if: github.ref_type != 'tag'
         run: echo "$(cat VERSION)-dev.${{ github.run_number }}+${GITHUB_SHA::7}" > VERSION
 
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -233,6 +237,18 @@ jobs:
           # the user explicitly checks the "push" box.
           push: ${{ github.event_name != 'workflow_dispatch' || inputs.push_images }}
           tags: ${{ steps.tags.outputs.tags }}
+          # OCI labels (v0.10.0): image.source lets update tools (Renovate,
+          # What's Up Docker, Diun) find the repo and its release notes;
+          # image.version overrides the base image's own (e.g. "24.04").
+          labels: |
+            org.opencontainers.image.title=Shrinkerr
+            org.opencontainers.image.description=Shrinks a video library: converts to HEVC or AV1 and removes unwanted tracks, with quality checks and undo.
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/tree/main/docs
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
             FFMPEG_BUILD=${{ matrix.variant.ffmpeg_build }}
             TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}

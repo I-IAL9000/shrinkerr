@@ -140,8 +140,8 @@ RUN set -eux; \
 #
 # FFMPEG_BUILD picks which BtbN release asset to install. The NVENC SDK baked
 # in determines the minimum NVIDIA driver required on the host:
-#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+  (DEFAULT — widest compat)
-#   n8.1    = NVENC SDK 13.0  → driver 570.00+
+#   n7.1    = NVENC SDK 12.2  → driver 525.60.13+
+#   n8.1    = NVENC SDK 13.0  → driver 570.00+     (DEFAULT, and the :nvenc image)
 #   master  = NVENC SDK 13.0  → driver 570.00+     (bleeding edge)
 #
 # All are assets of the same rolling `latest` BtbN release, but the filename
@@ -197,6 +197,13 @@ RUN set -eux; \
 ENV SHRINKERR_FFMPEG_BUILD=${FFMPEG_BUILD}
 ARG NVENC_MIN_DRIVER=570.00
 ENV SHRINKERR_NVENC_MIN_DRIVER=${NVENC_MIN_DRIVER}
+
+# The CUDA base image asks the NVIDIA runtime for compute,utility only, which
+# leaves out NVENC / NVDEC: `--gpus all` or a compose `capabilities: [gpu]`
+# then gave a container without hardware encoding. Ask for video too
+# (v0.10.0), as the Jellyfin and linuxserver.io images do. A value set at
+# `docker run` / in compose still wins.
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
 # Use python3.12 as default (Ubuntu 24.04's stock Python, v0.5.13+)
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1

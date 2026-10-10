@@ -49,7 +49,7 @@
   "banner": {
     "vmafRemeasuring": "Re-measuring VMAF — {{done}} of {{total}}",
     "vmafStarting": "starting…",
-    "tmdbMissing": "<b>No TMDB API key configured</b> — titles can't be matched to metadata (native language, posters). <link>Add a free key in Settings → Connections → Metadata APIs</link>.",
+    "tmdbMissing": "<b>No TMDB API key configured</b> — titles can't be matched to metadata (native language, posters). <link>Add a free key in Settings → Integrations → Metadata APIs</link>.",
     "demo": "<b>Demo</b> — a made-up library with a made-up history. Look around; changes are turned off."
   },
   "authSetup": {

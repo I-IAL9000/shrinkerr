@@ -84,7 +84,7 @@
       "10bit": "10 bits (main10 / p010le) — predeterminado",
       "8bit": "8 bits (main / nv12) — compatible con Maxwell",
       "auto": "Igual que el origen (10 bits de entrada → 10 bits de salida; si no, 8 bits)",
-      "help": "<b>10 bits</b> ofrece la mejor calidad (menos bandas, archivos algo más grandes en la mayoría de orígenes), pero requiere <b>NVIDIA Pascal o posterior</b> (GTX 10xx / Quadro serie P / RTX). <b>8 bits</b> es la única opción para chips Maxwell (GTX 9xx / 750 Ti / Quadro serie M), genera archivos más pequeños con la mayoría del material y codifica algo más rápido. <b>Igual que el origen</b> usa 10 bits solo si el origen ya es de 10 bits y, si no, 8 bits: evita el coste de la conversión cuando la entrada no se beneficia de ella."
+      "help": "<b>10 bits</b> ofrece la mejor calidad (menos bandas, archivos algo más grandes en la mayoría de orígenes), pero requiere <b>NVIDIA Pascal o posterior</b> (GTX 10xx / Quadro serie P / RTX). <b>8 bits</b> es la única opción para Maxwell de segunda generación (GTX 950 en adelante, la mayoría de Quadro serie M), genera archivos más pequeños con la mayoría del material y codifica algo más rápido. <b>Igual que el origen</b> usa 10 bits solo si el origen ya es de 10 bits y, si no, 8 bits: evita el coste de la conversión cuando la entrada no se beneficia de ella."
     },
     "nvencPreset": "Preajuste de NVENC",
     "nvencCq": "Calidad constante de NVENC (CQ)",
@@ -155,7 +155,7 @@
     "smart": {
       "title": "Codificación inteligente",
       "contentType": "Detección del tipo de contenido",
-      "contentTypeHelp": "Reconoce anime, animación, grano de película y remux por los nombres de archivos y carpetas y les da su propia calidad (CQ) en la tabla de abajo — por defecto algo más de calidad que el contenido habitual, porque los artefactos se notan más en la animación limpia y el grano es lo primero que un codificador suaviza. Se usa en los trabajos NVENC y libx265 cuando ni una regla de codificación ni el diálogo «Añadir a la cola» fijan la calidad (QSV, VAAPI y VideoToolbox mantienen su propio ajuste de calidad).",
+      "contentTypeHelp": "Reconoce anime, animación, grano de película y remux por los nombres de archivos y carpetas y les da su propia calidad (CQ) en la tabla de abajo — por defecto algo más de calidad que el contenido habitual, porque los artefactos se notan más en la animación limpia y el grano es lo primero que un codificador suaviza. Se usa cuando ni una regla de codificación ni el diálogo «Añadir a la cola» fijan la calidad; QSV, VAAPI y VideoToolbox la reciben traducida a su propia escala de calidad.",
       "vmaf": "Análisis de calidad VMAF",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) es una métrica de calidad de vídeo perceptual desarrollada por Netflix. Puntúa el vídeo codificado de 0 a 100 comparándolo con el origen y estimando cómo valoraría la calidad un espectador humano. Si está activado, Shrinkerr realiza tras la conversión una comparación VMAF precisa a nivel de fotograma entre el archivo original y el codificado. Shrinkerr solo analiza una muestra de 30 segundos (centrada en torno al 33 % del archivo), no toda la codificación, así que normalmente añade bastante menos de un minuto por trabajo en una GPU moderna y te da la seguridad de que tus ajustes de CQ producen una calidad aceptable.",
       "score": "Puntuación",
@@ -169,7 +169,7 @@
       "minScore": "Rechazar codificaciones por debajo de una puntuación VMAF mínima",
       "minScoreHelp": "Si está activado, se descarta cualquier codificación cuya puntuación VMAF medida quede por debajo del umbral: se elimina el archivo temporal codificado, se conserva el original y el trabajo se registra como <b>rechazado</b>, con la puntuación y el umbral visibles en los detalles del trabajo. Útil como red de seguridad frente a ajustes de CQ/CRF demasiado agresivos.",
       "resAware": "Calidad según la resolución",
-      "resAwareHelp": "Usa valores de CQ distintos para cada resolución. El 4K admite un CQ más alto porque el reescalado durante la reproducción oculta los artefactos. Se usa en los trabajos NVENC y libx265 cuando ni una regla, ni el diálogo «Añadir a la cola», ni la detección de contenido fijan la calidad.",
+      "resAwareHelp": "Usa valores de CQ distintos para cada resolución. El 4K admite un CQ más alto porque el reescalado durante la reproducción oculta los artefactos. Se usa cuando ni una regla, ni el diálogo «Añadir a la cola», ni la detección de contenido fijan la calidad (traducida para QSV, VAAPI y VideoToolbox).",
       "cqTable": "CQ por resolución",
       "cqTableHelp": "Más bajo = mejor calidad, archivos más grandes. libx265 usa un CRF 2 más alto. Un tipo desactivado se trata como el resto. «Regla…» añade una regla de codificación para ese tipo: su propio codificador, preset, resolución o audio.",
       "resetRecommended": "Restablecer lo recomendado",
@@ -263,11 +263,11 @@
       "tips": {
         "sources": "<b>Orígenes:</b> los rips de Blu-ray (15-40 GB) son los que más ahorran; los archivos WEB-DL (3-8 GB) ya están bien comprimidos: espera menos ahorro o sube el CQ/CRF 2-3 puntos.",
         "grain": "<b>El contenido con mucho grano</b> (cine, películas antiguas) necesita valores de CQ/CRF más bajos para conservar el detalle; si no, el codificador convierte el grano en bloques.",
-        "animation": "<b>La animación</b> se comprime muy bien: incluso con CQ 25+ se ve genial. Plantéate una regla específica para tu directorio de anime.",
-        "nvencVsX265": "<b>Calidad de NVENC frente a libx265:</b> CQ de NVENC ≈ CRF de libx265 + 0–2 para una calidad perceptual equivalente. libx265 sigue generando archivos ~25 % más pequeños a la misma calidad, a cambio de 5-50× más tiempo de codificación.",
+        "animation": "<b>La animación</b> ya ocupa poco, pero los colores planos muestran bandas y bloques con facilidad: la detección del tipo de contenido da al anime y a la animación algo <em>más</em> de calidad que al contenido habitual. Actívala, o usa una regla para tu carpeta de anime.",
+        "nvencVsX265": "<b>Calidad de NVENC frente a libx265:</b> CRF de libx265 ≈ CQ de NVENC + 2 para una calidad perceptual equivalente (los preajustes de calidad de Shrinkerr usan esa diferencia). libx265 sigue generando archivos ~25 % más pequeños a la misma calidad, a cambio de 5-50× más tiempo de codificación.",
         "x265Scaling": "<b>Escalado de preajustes de libx265:</b> cada paso más lento duplica aproximadamente el tiempo de codificación. Pasar de `fast` a `slow` es 4×; de `fast` a `veryslow`, más de 20×. Ten claro cuánta paciencia tienes antes de elegir.",
         "nvencScaling": "<b>Escalado de preajustes de NVENC:</b> mínimo; p7 es solo ~5× más lento que p1 en la misma tarjeta y la diferencia de calidad es pequeña. Usar p3-p5 suele ser lo correcto.",
-        "testEncode": "<b>Haz primero una codificación de prueba:</b> el botón <em>Codificación de prueba</em> de la ventana de estimación procesa un clip de 30 s con los ajustes elegidos e indica la puntuación VMAF. Sale más barato que empezar un trabajo de 20 minutos con un mal preajuste.",
+        "testEncode": "<b>Haz primero una codificación de prueba:</b> el botón <em>Codificación de prueba</em> de «Añadir a la cola» procesa un clip de 30 s con los ajustes elegidos e indica la puntuación VMAF. Sale más barato que empezar un trabajo de 20 minutos con un mal preajuste.",
         "mixedFleets": "<b>Flotas mixtas:</b> si un worker remoto solo tiene el otro codificador, la traducción NVENC↔libx265 convierte preajustes y calidad; consulta Nodos → Ajustes para ver la correspondencia exacta, o fija un preajuste/calidad alternativo en los campos de alternativa en CPU/GPU de arriba.",
         "vtVsX265": "<b>VideoToolbox frente a libx265:</b> con las mismas fuentes de prueba, libx265 CRF 22 (medium) ahorró ~63% con VMAF ~93; VideoToolbox necesita q:v ~65 para esa calidad y entonces solo ahorra ~20–25%. A cambio codifica ~8–10 veces más rápido. Por encima de q:v ~65 los archivos pueden salir más grandes que el original (Shrinkerr los descarta).",
         "vtGrain": "<b>El contenido con mucho grano</b> le cuesta mucho más a VideoToolbox: con el mismo q:v, las escenas de prueba de la película con grano puntuaron ~8 puntos VMAF menos que el programa de entrevistas (84,5 frente a 93 con q:v 55). Usa 60 o más para películas con grano, o libx265 si quieres calidad y archivos pequeños a la vez."
@@ -293,7 +293,7 @@
       },
       "qsv": {
         "title": "Intel Quick Sync (QSV)",
-        "desc": "Los preajustes van de veryfast a veryslow: los más lentos comprimen algo mejor a costa de velocidad. La calidad (global_quality) funciona como el CQ de NVENC: menor = más calidad y archivos más grandes; 20–22 suele ser transparente, 23–26 buena calidad con ahorro real. Aún no hay tablas medidas para QSV: haz una codificación de prueba desde el diálogo de estimación para calibrar con tus propios archivos."
+        "desc": "Los preajustes van de veryfast a veryslow: los más lentos comprimen algo mejor a costa de velocidad. La calidad (global_quality) funciona como el CQ de NVENC: menor = más calidad y archivos más grandes; 20–22 suele ser transparente, 23–26 buena calidad con ahorro real. Aún no hay tablas medidas para QSV: haz una codificación de prueba desde «Añadir a la cola» para calibrar con tus propios archivos."
       },
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",

@@ -87,7 +87,7 @@
   },
   "webhooks": {
     "title": "Endpoints de webhook",
-    "intro": "Las herramientas externas pueden llamar a estos endpoints para controlar Shrinkerr. Autentícate con <code>?api_key=YOUR_KEY</code> o con la cabecera <code>X-Api-Key</code>.",
+    "intro": "Las herramientas externas pueden llamar a estos endpoints para controlar Shrinkerr. Autentícate con la cabecera <code>X-Api-Key</code>, o usa la clave de API como contraseña de autenticación básica.",
     "endpoints": {
       "scan": "Iniciar el escaneo de la biblioteca",
       "queue": "Añadir archivos a la cola (cuerpo: {paths: [...]})",

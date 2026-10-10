@@ -72,7 +72,7 @@
     "saveFailed": "Error al guardar",
     "pause": {
       "title": "Pausa",
-      "hint": "Mientras esté en pausa, este nodo no aceptará trabajos nuevos. Los trabajos en curso continúan.",
+      "hint": "Mientras esté en pausa, este nodo no aceptará trabajos nuevos, y el trabajo que esté ejecutando se detiene y vuelve a la cola.",
       "checkbox": "Pausar este nodo"
     },
     "parallel": {

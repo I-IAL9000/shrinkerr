@@ -1136,7 +1136,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           onChange={(e) => setEncoding({ ...encoding, nvenc_cq: parseInt(e.target.value) })}
                           style={{ width: "100%", accentColor: "var(--accent)" }} />
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}>
-                          <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>20</span><span>24</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 30 })}</span>
+                          <span>{t("settingsMedia:video.scale.highestQuality", { value: 15 })}</span><span>23</span><span>32</span><span>{t("settingsMedia:video.scale.smallestFile", { value: 40 })}</span>
                         </div>
                         <div style={helpStyle}>
                           <Trans i18nKey="settingsMedia:video.nvencCqHelp" components={{ b: <strong /> }} />

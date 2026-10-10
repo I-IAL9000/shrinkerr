@@ -84,7 +84,7 @@
       "10bit": "10-bit (main10 / p010le) — default",
       "8bit": "8-bit (main / nv12) — Maxwell-compatible",
       "auto": "Match source (10-bit in → 10-bit out, else 8-bit)",
-      "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for Maxwell silicon (GTX 9xx / 750 Ti / Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it."
+      "help": "<b>10-bit</b> is best for quality (less banding, slightly larger files on most sources) but requires <b>Pascal-or-newer NVIDIA</b> (GTX 10xx / Quadro P-series / RTX). <b>8-bit</b> is the only option for second-generation Maxwell (GTX 950 and up, most Quadro M-series), produces smaller files on most material, and encodes a little faster. <b>Match source</b> uses 10-bit only when the source is already 10-bit, otherwise 8-bit — avoids the upconvert overhead when the input doesn't benefit from it."
     },
     "nvencPreset": "NVENC Preset",
     "nvencCq": "NVENC Constant Quality (CQ)",
@@ -155,7 +155,7 @@
     "smart": {
       "title": "Smart Encoding",
       "contentType": "Content type detection",
-      "contentTypeHelp": "Recognises anime, animation, film grain and remuxes from file and folder names and gives them their own quality (CQ) below — by default a little more quality than everyday content, because artifacts show most on clean animation and grain is the first thing an encoder smooths away. Used for NVENC and libx265 jobs when no encoding rule or the Add to Queue dialog sets the quality (QSV, VAAPI and VideoToolbox keep their own quality setting).",
+      "contentTypeHelp": "Recognises anime, animation, film grain and remuxes from file and folder names and gives them their own quality (CQ) below — by default a little more quality than everyday content, because artifacts show most on clean animation and grain is the first thing an encoder smooths away. Used when no encoding rule or the Add to Queue dialog sets the quality; QSV, VAAPI and VideoToolbox get it translated to their own quality scale.",
       "vmaf": "VMAF quality analysis",
       "vmafHelp": "<b>VMAF</b> (Video Multi-Method Assessment Fusion) is a perceptual video quality metric developed by Netflix. It scores encoded video from 0-100 by comparing it against the original source, predicting how a human viewer would rate the quality. When enabled, Shrinkerr runs a frame-accurate VMAF comparison between the original and encoded file after conversion. Shrinkerr only analyses a 30-second sample window (centred at ~33% into the file), not the whole encode — so this typically adds well under a minute per job on a modern GPU, and gives you confidence that your CQ settings produce acceptable quality.",
       "score": "Score",
@@ -169,7 +169,7 @@
       "minScore": "Reject encodes below a minimum VMAF score",
       "minScoreHelp": "When enabled, any encode whose measured VMAF score is below the threshold is discarded — the encoded temp file is deleted, the original is left in place, and the job is recorded as <b>rejected</b> with the score and threshold visible in the job details. Useful as a safety net against overly-aggressive CQ/CRF settings.",
       "resAware": "Resolution-aware quality",
-      "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Used for NVENC and libx265 jobs when no rule, the Add to Queue dialog or content detection sets the quality.",
+      "resAwareHelp": "Use different CQ values per resolution. 4K benefits from higher CQ since downsampling during playback hides artifacts. Used when no rule, the Add to Queue dialog or content detection sets the quality (translated for QSV, VAAPI and VideoToolbox).",
       "cqTable": "CQ by resolution",
       "cqTableHelp": "Lower = better quality, bigger files. libx265 uses CRF 2 higher. A type that's switched off is treated like everything else. \"Rule…\" adds an encoding rule for that type: its own encoder, preset, resolution or audio.",
       "resetRecommended": "Reset to recommended",
@@ -259,11 +259,11 @@
       "tips": {
         "sources": "<b>Sources:</b> Blu-ray rips (15-40 GB) see the biggest savings; WEB-DL files (3-8 GB) are already well-compressed — expect smaller gains, or bump CQ/CRF 2-3 points.",
         "grain": "<b>Grain-heavy content</b> (film, older movies) needs lower CQ/CRF values to preserve detail, or the encoder smears grain into blocks.",
-        "animation": "<b>Animation</b> compresses extremely well — even CQ 25+ looks great. Consider a dedicated rule targeting your anime directory.",
-        "nvencVsX265": "<b>NVENC vs libx265 quality:</b> NVENC CQ ≈ libx265 CRF + 0–2 for matched perceptual quality. libx265 still produces ~25% smaller files at the same quality, trading 5-50× encode time.",
+        "animation": "<b>Animation</b> files are small already, but flat colours show banding and blocking easily: content type detection gives anime and animation a little <em>more</em> quality than everyday content. Turn it on, or use a rule for your anime folder.",
+        "nvencVsX265": "<b>NVENC vs libx265 quality:</b> libx265 CRF ≈ NVENC CQ + 2 for matched perceptual quality (Shrinkerr's quality presets use that offset). libx265 still produces ~25% smaller files at the same quality, trading 5-50× encode time.",
         "x265Scaling": "<b>libx265 preset scaling:</b> each step slower roughly doubles encode time. Going from `fast` to `slow` is 4×, `fast` to `veryslow` is 20×+. Know your patience budget before picking.",
         "nvencScaling": "<b>NVENC preset scaling:</b> minimal — p7 is only ~5× slower than p1 on the same card, and the quality gap is small. Default p3-p5 is usually the right answer.",
-        "testEncode": "<b>Try a test encode first:</b> the Estimate modal's <em>Test encode</em> button runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.",
+        "testEncode": "<b>Try a test encode first:</b> the <em>Test Encode</em> button in Add to Queue runs a 30s clip through your chosen settings and reports the VMAF score. Cheaper than starting a 20-minute job on a bad preset.",
         "mixedFleets": "<b>Mixed fleets:</b> if a remote worker has only the other encoder, the NVENC↔libx265 translation maps presets/quality over — see Nodes → Settings for the exact mapping, or pin a fallback preset/quality in the CPU/GPU fallback fields above.",
         "vtVsX265": "<b>VideoToolbox vs libx265:</b> on the same test sources, libx265 CRF 22 (medium) saved ~63% at VMAF ~93; VideoToolbox needs q:v ~65 for that quality and then saves only ~20–25%. In exchange it encodes ~8–10× faster. Above q:v ~65, files can come out larger than the source (Shrinkerr discards those).",
         "vtGrain": "<b>Grain-heavy content</b> is much harder for VideoToolbox: at the same q:v, the grainy film test scenes scored ~8 VMAF points lower than the talk show (84.5 vs 93 at q:v 55). Use 60+ for grainy films, or libx265 if you want both quality and small files."
@@ -289,7 +289,7 @@
       },
       "qsv": {
         "title": "Intel Quick Sync (QSV)",
-        "desc": "Presets run veryfast → veryslow: slower presets compress a little better at the cost of speed. Quality (global_quality) works like NVENC's CQ: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 good quality with real savings. No measured tables for QSV yet: run a test encode from the Estimate dialog to calibrate on your own files."
+        "desc": "Presets run veryfast → veryslow: slower presets compress a little better at the cost of speed. Quality (global_quality) works like NVENC's CQ: lower = higher quality and larger files; 20–22 is typically transparent, 23–26 good quality with real savings. No measured tables for QSV yet: run a test encode from Add to Queue to calibrate on your own files."
       },
       "vaapi": {
         "title": "VAAPI (Intel / AMD)",

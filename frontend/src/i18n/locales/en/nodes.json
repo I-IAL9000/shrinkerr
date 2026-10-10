@@ -70,7 +70,7 @@
     "saveFailed": "Save failed",
     "pause": {
       "title": "Pause",
-      "hint": "When paused, this node won't pick up new jobs. Already-running jobs continue.",
+      "hint": "When paused, this node won't pick up new jobs, and a job it's running is stopped and goes back to the queue.",
       "checkbox": "Pause this node"
     },
     "parallel": {
