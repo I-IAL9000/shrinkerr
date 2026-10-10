@@ -22,6 +22,8 @@ ALLOWED = {
         "#6882ff", "#2cf4e8", "#7c5cff", "#54a8ff", "#5089f7",
         "#ff8fb0", "#ffc078", "#ffd8a8", "#ffe8cc",
     },
+    # the shareable savings image: one brand look whatever the theme (drawn on a canvas)
+    "components/SavingsCard.tsx": {"#14122b", "#33206e", "#b9a8ff", "#e6e2ff", "#a59ccc"},
     "pages/LogsPage.tsx": {  # the log viewer is a dark terminal in both themes
         "#00d4ff", "#4caf50", "#fdd835", "#ffa726", "#ce93d8", "#64b5f6",
         "#78909c", "#4dd0e1", "#aed581", "#ef5350",
