@@ -39,6 +39,7 @@ class Filter:
     params: Optional[Callable[[], tuple]] = None  # values for sql's "?", at query time
     py: Optional[Callable[[dict, dict], bool]] = None  # (row, ctx) when it needs the context
     pre_sql: Optional[str] = None  # py filters: a necessary condition, to narrow queries
+    titles: bool = False  # py filters that read title metadata (ctx["title_meta"], v0.10.0)
 
 
 # ── Context helpers (the ignore list, Plex watch state, folder labels) ─────
@@ -222,6 +223,53 @@ def hdr_kind(row: dict) -> Optional[str]:
     if _HDR10_NAME.search(fp):
         return "hdr10"
     return None
+
+
+_TITLE_ID_FOLDER = re.compile(r"\[(?:tvdb-\d+|tt\d+)\]")
+_SHOW_STATUS = {"returning series": "returning", "ended": "ended", "canceled": "canceled", "cancelled": "canceled",
+                "in production": "in_production", "planned": "planned", "pilot": "pilot"}
+
+
+def title_folder(fp: str) -> str:
+    """The folder a title's poster and metadata are kept under (the Poster
+    grid's): the first one named with a [tvdb-N] / [ttN] id, else the
+    file's own folder."""
+    parts = fp.split("/")
+    for i, part in enumerate(parts):
+        if _TITLE_ID_FOLDER.search(part):
+            return "/".join(parts[:i + 1])
+    return "/".join(parts[:-1])
+
+
+def row_title(row: dict, ctx: dict) -> dict:
+    """The file's title metadata (v0.10.0): year, rating (IMDb, else TMDB),
+    genres (TMDB and the media server's), network and show status — from
+    the Poster grid's cache, else the year in the folder name."""
+    v = row.get("_title")
+    if v is not None:
+        return v
+    folder = title_folder(row["file_path"])
+    year, rating, genres, network, status = (ctx.get("title_meta") or {}).get(folder) or (None,) * 5
+    if not year:
+        from backend.routes.posters import parse_folder_name
+        named = folder.rsplit("/", 1)[0] if folder.rsplit("/", 1)[-1].upper() in ("VIDEO_TS", "BDMV") else folder
+        year = parse_folder_name(named, walk_files=False).get("year")  # a disc: its own folder
+    found = {g.strip().lower() for g in (genres or "").split(",") if g.strip()}
+    server = ctx.get("server_genres") or {}
+    if server:
+        path = row["file_path"]
+        while "/" in path.rstrip("/"):
+            path = path.rstrip("/").rsplit("/", 1)[0] + "/"
+            found |= server.get(path, set())
+    try:
+        year = int(year) if year else None
+    except (TypeError, ValueError):
+        year = None
+    v = row["_title"] = {
+        "year": year, "rating": rating, "genres": found, "network": (network or "").strip().lower(),
+        "status": _SHOW_STATUS.get((status or "").strip().lower(), ""),
+    }
+    return v
 
 
 # ── The filters ───────────────────────────────────────────────────────────
@@ -507,6 +555,20 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
     "health_status": {"kind": "column", "col": "health_status", "type": "string", "ops": ["eq", "exists", "in"], "label": "Health status", "group": "State", "examples": ["healthy", "corrupt"]},
     "duplicate_count": {"kind": "column", "col": "COALESCE(dup_count, 0)", "type": "number", "ops": ["eq", "gt", "gte"], "label": "Duplicate count", "group": "State"},
 
+    # Title: the Poster grid's metadata (TMDB / IMDb, the media server's
+    # genres) and the year in the folder name (v0.10.0)
+    "year":          {"kind": "title_number", "field": "year", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte", "between", "exists"], "label": "Year", "group": "Title",
+                      "examples": [2010]},
+    "rating":        {"kind": "title_number", "field": "rating", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "exists"], "label": "Rating (IMDb / TMDB)", "group": "Title",
+                      "examples": [6.5]},
+    "genre":         {"kind": "title_genre", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Genre", "group": "Title",
+                      "examples": ["Documentary"]},
+    "network":       {"kind": "title_text", "field": "network", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "TV network", "group": "Title",
+                      "examples": ["HBO"]},
+    "show_status":   {"kind": "title_text", "field": "status", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Show status", "group": "Title",
+                      "options": ["returning", "ended", "canceled", "in_production"],
+                      "option_labels": {"returning": "Returning", "ended": "Ended", "canceled": "Canceled", "in_production": "In production"}},
+
     # Type: the pills' classification (path IDs, else the media folder's label)
     "media_type":    {"kind": "media_type", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Type", "group": "Type",
                       "options": ["movie", "tv", "other"],
@@ -645,6 +707,31 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
         negate = op == "ne"
         return Filter(fid, py=lambda r, c: (_parse_release_group(r["file_path"]).lower() in wanted) != negate)
 
+    if kind == "title_number":
+        key = prop["field"]
+        if op == "exists":
+            return Filter(fid, titles=True, py=lambda r, c: row_title(r, c)[key] is not None)
+        lo, hi = _num(value), _num(value2)
+        if lo is None or (op == "between" and hi is None):
+            return None
+        lo, hi = (min(lo, hi), max(lo, hi)) if op == "between" else (lo, hi)
+        test = {"eq": lambda x: x == lo, "gt": lambda x: x > lo, "gte": lambda x: x >= lo, "lt": lambda x: x < lo,
+                "lte": lambda x: x <= lo, "between": lambda x: lo <= x <= hi}[op]
+        return Filter(fid, titles=True, py=lambda r, c: (lambda x: x is not None and test(float(x)))(row_title(r, c)[key]))
+
+    if kind in ("title_genre", "title_text"):
+        wanted = [str(v).strip().lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]
+        if not wanted:
+            return None
+        def values(r, c) -> set:
+            t = row_title(r, c)
+            return t["genres"] if kind == "title_genre" else ({t[prop["field"]]} - {""})
+        if op == "contains":
+            return Filter(fid, titles=True, py=lambda r, c: any(wanted[0] in v for v in values(r, c)))
+        if op == "ne":
+            return Filter(fid, titles=True, py=lambda r, c: wanted[0] not in values(r, c))
+        return Filter(fid, titles=True, py=lambda r, c: bool(values(r, c) & set(wanted)))
+
     if kind == "media_type":
         wanted = {str(v).lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()}
         if not wanted:
@@ -706,6 +793,12 @@ class FilterExpr:
     @property
     def needs_ctx(self) -> bool:
         return bool(self._py_groups or self._py_excluded)
+
+    @property
+    def needs_titles(self) -> bool:
+        """The context must carry title metadata (Advanced Search's year,
+        rating, genre, network, show status)."""
+        return any(f.titles for g in self._py_groups for f in g) or any(f.titles for f in self._py_excluded)
 
     def post_filter(self, row: dict, ctx: Optional[dict]) -> bool:
         for group in self._py_groups:

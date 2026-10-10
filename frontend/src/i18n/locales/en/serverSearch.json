@@ -6,6 +6,7 @@
     "subtitles": "Subtitles",
     "filename": "Filename",
     "state": "State",
+    "title": "Title",
     "type": "Type",
     "other": "Other"
   },
@@ -93,6 +94,27 @@
     },
     "duplicate_count": {
       "label": "Duplicate count"
+    },
+    "year": {
+      "label": "Year"
+    },
+    "rating": {
+      "label": "Rating (IMDb / TMDB)"
+    },
+    "genre": {
+      "label": "Genre"
+    },
+    "network": {
+      "label": "TV network"
+    },
+    "show_status": {
+      "label": "Show status",
+      "options": {
+        "returning": "Returning",
+        "ended": "Ended",
+        "canceled": "Canceled",
+        "in_production": "In production"
+      }
     },
     "media_type": {
       "label": "Type",

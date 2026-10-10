@@ -134,3 +134,42 @@ async def test_unknown_properties_are_refused(lib):
     from backend.routes.search import SearchRequest, advanced_search
     with pytest.raises(ApiError):
         await advanced_search(SearchRequest(predicates=[{"property": "nope", "op": "eq", "value": 1}]))
+
+
+@pytest.mark.asyncio
+async def test_title_metadata(lib):
+    """Year, rating, genre, network and show status (v0.10.0): the Poster
+    grid's cache per title folder, the media server's genres, and the year
+    in the folder name when nothing's cached."""
+    async with aiosqlite.connect(lib) as db:
+        for folder, year, rating, genres, mtype, network, status in (
+            ("/media/Movies/Dune (2021) [tt1160419]", "2021", 8.0, "Sci-Fi, Adventure", "movie", None, None),
+            ("/media/Movies/Heat (1995)", "1995", 8.3, "Crime, Drama, Action", "movie", None, None),
+            ("/media/TV/Show [tvdb-1]", None, 6.1, "Drama", "tv", "HBO", "Ended"),
+        ):
+            await db.execute(
+                "INSERT INTO poster_cache (folder_path, year, rating, genres, media_type, network, status, source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'tmdb')", (folder, year, rating, genres, mtype, network, status))
+        await db.execute("INSERT INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) "
+                         "VALUES ('/media/Other/', 'genre', 'Documentary', '2026-10-10')")
+        await db.commit()
+    assert await names(adv(("rating", "lt", 7))) == {"ep1", "ep2"}
+    assert await names(adv(("rating", "gte", 8))) == {"dune", "heat_br", "heat_web"}
+    assert await names(adv(("genre", "eq", "drama"))) == {"heat_br", "heat_web", "ep1", "ep2"}
+    assert await names(adv(("genre", "eq", "Documentary"))) == {"clip", "wmv"}  # from Plex
+    assert await names(adv(("genre", "contains", "sci"))) == {"dune"}
+    assert await names(adv(("network", "eq", "hbo"))) == {"ep1", "ep2"}
+    assert await names(adv(("show_status", "eq", "ended"))) == {"ep1", "ep2"}
+    assert await names(adv(("show_status", "ne", "ended"))) == set(ROWS) - {"ep1", "ep2"}
+    # Old (1950) and Alien (1979): their folder names (nothing cached).
+    assert await names(adv(("year", "lt", 1990))) == {"old", "alien"}
+    assert await names(adv(("year", "between", 1990, 2000))) == {"heat_br", "heat_web"}
+    # "Low-rated ended shows": with the pills too.
+    assert await names(f"res_720p,{adv(('rating', 'lt', 7), ('show_status', 'eq', 'ended'))}") == {"ep1", "ep2"}
+
+
+def test_title_metadata_is_loaded_only_when_asked_for():
+    from backend.scan_filters import parse_filter
+    assert parse_filter(adv(("genre", "eq", "drama"))).needs_titles
+    assert not parse_filter(adv(("video_codec", "eq", "h264"), ("media_type", "eq", "tv"))).needs_titles
+    assert not parse_filter("needs_conversion,res_4k").needs_titles

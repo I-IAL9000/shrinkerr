@@ -24,6 +24,7 @@ const GROUP_SLUGS: Record<string, string> = {
   Subtitles: "subtitles",
   Filename: "filename",
   State: "state",
+  Title: "title",
   Type: "type",
   Other: "other",
 };

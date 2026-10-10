@@ -823,6 +823,7 @@ async def resolve_posters(req: ResolveRequest):
                 # always backend-download + base64-cache so cached reads
                 # are instant for the user. v0.3.128+.
                 image_data = await _download_image(poster_url, plex_url, plex_token)
+            tmdb_meta = await _with_tv_details(tmdb_meta, tmdb_key)
 
             return path, parsed, poster_url, source, image_data, tmdb_meta
 
@@ -857,11 +858,12 @@ async def resolve_posters(req: ResolveRequest):
 
             await db.execute(
                 """INSERT OR REPLACE INTO poster_cache
-                   (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
+                    network, status, resolved_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (path, parsed["title"], parsed.get("year"), poster_url, source, image_data,
-                 tmdb_meta.get("rating"), tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
-                 now_iso),
+                 entry["rating"], tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
+                 tmdb_meta.get("network"), tmdb_meta.get("status"), now_iso),
             )
 
         await db.commit()
@@ -903,6 +905,57 @@ async def prefetch_status():
 
 
 _prefetch_progress = {"status": "idle", "total": 0, "resolved": 0, "cached": 0}
+
+
+async def _backfill_tv_details(tmdb_key: str, media_type_hint_for) -> int:
+    """TV shows cached before their network and status were stored
+    (v0.10.0): find each on TMDB again (no image download) and store them.
+    A show TMDB gives none for is stored as "" and not asked again."""
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute("PRAGMA busy_timeout=10000")
+        async with db.execute(
+            "SELECT folder_path FROM poster_cache WHERE media_type = 'tv' AND source = 'tmdb' AND status IS NULL"
+        ) as cur:
+            paths = [r[0] for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    if not paths:
+        return 0
+    print(f"[POSTER] Fetching network and status for {len(paths)} TV show(s)", flush=True)
+    sem = asyncio.Semaphore(3)
+
+    async def one(path: str) -> tuple:
+        async with sem:
+            await asyncio.sleep(0.35)  # ~3 req/sec, as the prefetch
+            parsed = parse_folder_name(path)
+            meta: dict = {}
+            try:
+                if parsed.get("imdb_id"):
+                    _, _, meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
+                if not meta and parsed.get("tvdb_id"):
+                    _, _, meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
+                if not meta and parsed.get("title") and len(parsed["title"]) >= 3:
+                    _, _, meta = await _resolve_tmdb_search(
+                        parsed["title"], parsed.get("year"), tmdb_key,
+                        media_type_hint=_media_type_hint_from_parsed(parsed) or media_type_hint_for(path) or "tv")
+            except Exception:
+                meta = {}
+            meta = await _with_tv_details(meta, tmdb_key)
+            return (meta.get("network") or "", meta.get("status") or "", path)
+
+    updates = []
+    for i in range(0, len(paths), 20):
+        updates += [r for r in await asyncio.gather(*[one(p) for p in paths[i:i + 20]], return_exceptions=True)
+                    if isinstance(r, tuple)]
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        await db.execute("PRAGMA busy_timeout=30000")
+        await db.executemany("UPDATE poster_cache SET network = ?, status = ? WHERE folder_path = ?", updates)
+        await db.commit()
+    finally:
+        await db.close()
+    return len(updates)
 
 
 async def _run_prefetch():
@@ -963,17 +1016,8 @@ async def _run_prefetch():
             return None
 
         # Step 2: Extract unique title folders
-        title_folders = set()
-        for fp in all_paths:
-            parts = fp.split("/")
-            for i, part in enumerate(parts):
-                if re.search(r"\[(?:tvdb-\d+|tt\d+)\]", part):
-                    title_folders.add("/".join(parts[:i + 1]))
-                    break
-            else:
-                parent = "/".join(parts[:-1])
-                if parent:
-                    title_folders.add(parent)
+        from backend.scan_filters import title_folder
+        title_folders = {tf for tf in (title_folder(fp) for fp in all_paths) if tf}
 
         folder_list = sorted(title_folders)
         to_resolve = [p for p in folder_list if p not in already_cached]
@@ -993,8 +1037,9 @@ async def _run_prefetch():
         now_str = datetime.now(timezone.utc).isoformat()
         sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
-            (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+            (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
+             network, status, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
         async def _do_one(path: str) -> tuple | None:
             async with sem:
@@ -1038,13 +1083,14 @@ async def _run_prefetch():
                     # rationale (browser-side fetches were worse than
                     # backend caching). v0.3.128+.
                     image_data = await _download_image(poster_url, plex_url, plex_token)
+                tmdb_meta = await _with_tv_details(tmdb_meta, tmdb_key)
 
                 # Prefer IMDb rating over TMDB
                 rating = _get_imdb_rating(parsed) or tmdb_meta.get("rating")
 
                 return (path, parsed["title"], parsed.get("year"), poster_url, source, image_data,
                         rating, tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
-                        now_str)
+                        tmdb_meta.get("network"), tmdb_meta.get("status"), now_str)
 
         # Process in chunks of 20 (rate-limited HTTP, batch DB write)
         for ci in range(0, len(to_resolve), 20):
@@ -1071,6 +1117,9 @@ async def _run_prefetch():
             _prefetch_progress["resolved"] = _prefetch_progress["cached"] + ci + len(chunk)
             if (ci + len(chunk)) % 100 < 20:
                 print(f"[POSTER] Progress: {ci + len(chunk)}/{len(to_resolve)}", flush=True)
+
+        if tmdb_key:
+            await _backfill_tv_details(tmdb_key, _media_type_hint_for)
 
         _prefetch_progress["status"] = "done"
         print(f"[POSTER] Prefetch complete: {_prefetch_progress['resolved']}/{_prefetch_progress['total']}", flush=True)
@@ -1321,7 +1370,32 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
         "genres": ", ".join(genres[:3]) if genres else None,
         "country": ", ".join(_COUNTRY_NAMES.get(c, c) for c in item.get("origin_country", [])[:2]) if item.get("origin_country") else None,
         "media_type": media_type,
+        "tmdb_id": item.get("id"),
     }
+
+
+async def _tmdb_tv_details(tmdb_id, api_key) -> dict:
+    """A TV show's network and status ("Returning Series", "Ended",
+    "Canceled", ...) — not in TMDB's search results. For the Scanner's
+    filters (v0.10.0)."""
+    import httpx
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await _tmdb_get(client, f"https://api.themoviedb.org/3/tv/{tmdb_id}", {"api_key": api_key})
+        if resp.status_code != 200:
+            return {}
+        data = resp.json()
+    networks = data.get("networks") or []
+    return {"network": (networks[0].get("name") if networks else None) or "", "status": data.get("status") or ""}
+
+
+async def _with_tv_details(meta: dict, api_key) -> dict:
+    """`meta` plus the show's network and status when it's a TV show."""
+    if meta.get("media_type") == "tv" and meta.get("tmdb_id") and api_key:
+        try:
+            meta = {**meta, **await _tmdb_tv_details(meta["tmdb_id"], api_key)}
+        except Exception:
+            pass
+    return meta
 
 
 def _media_type_hint_from_parsed(parsed: dict | None) -> str | None:

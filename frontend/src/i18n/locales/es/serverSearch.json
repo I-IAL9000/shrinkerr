@@ -6,6 +6,7 @@
     "subtitles": "Subtítulos",
     "filename": "Nombre de archivo",
     "state": "Estado",
+    "title": "Título",
     "type": "Tipo",
     "other": "Otros"
   },
@@ -93,6 +94,27 @@
     },
     "duplicate_count": {
       "label": "Número de duplicados"
+    },
+    "year": {
+      "label": "Año"
+    },
+    "rating": {
+      "label": "Valoración (IMDb / TMDB)"
+    },
+    "genre": {
+      "label": "Género"
+    },
+    "network": {
+      "label": "Cadena de TV"
+    },
+    "show_status": {
+      "label": "Estado de la serie",
+      "options": {
+        "returning": "En emisión",
+        "ended": "Finalizada",
+        "canceled": "Cancelada",
+        "in_production": "En producción"
+      }
     },
     "media_type": {
       "label": "Tipo",

@@ -1953,8 +1953,30 @@ async def _converted_sets(db) -> tuple[set[str], set[str]]:
     return paths, folders
 
 
-async def _build_enrichment_context(db) -> dict:
-    """Build shared context for enriching scan results (used by results, tree, files endpoints)."""
+async def _title_metadata(db) -> tuple[dict, dict]:
+    """The Poster grid's per-title metadata (folder -> year, rating, genres,
+    network, status) and the media servers' genres (folder/ -> {genre}),
+    for Advanced Search's title conditions (v0.10.0)."""
+    meta: dict = {}
+    genres: dict[str, set] = {}
+    try:
+        async with db.execute("SELECT folder_path, year, rating, genres, network, status FROM poster_cache") as cur:
+            for r in await cur.fetchall():
+                meta[r["folder_path"]] = (r["year"], r["rating"], r["genres"], r["network"], r["status"])
+        async with db.execute(
+            "SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type = 'genre'"
+        ) as cur:
+            for r in await cur.fetchall():
+                folder = (r["folder_path"] or "").rstrip("/") + "/"
+                genres.setdefault(folder, set()).add((r["metadata_value"] or "").strip().lower())
+    except Exception as exc:
+        print(f"[SCAN] Title metadata unavailable: {exc}", flush=True)
+    return meta, genres
+
+
+async def _build_enrichment_context(db, titles: bool = False) -> dict:
+    """Build shared context for enriching scan results (used by results, tree, files endpoints).
+    `titles`: also the title metadata (FilterExpr.needs_titles)."""
     import bisect
     from datetime import datetime, timedelta, timezone
 
@@ -2029,7 +2051,7 @@ async def _build_enrichment_context(db) -> dict:
     except Exception:
         pass
 
-    return {
+    ctx = {
         "ignored_paths": ignored_paths,
         "ignored_folders_sorted": ignored_folders_sorted,
         "rule_exempt_paths": rule_exempt_paths,
@@ -2045,6 +2067,9 @@ async def _build_enrichment_context(db) -> dict:
         "LOW_BITRATE_THRESHOLD": LOW_BITRATE_THRESHOLD,
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
     }
+    if titles:
+        ctx["title_meta"], ctx["server_genres"] = await _title_metadata(db)
+    return ctx
 
 
 def _enrich_row_minimal(row: dict, ctx: dict) -> dict:
@@ -2269,7 +2294,7 @@ async def get_filter_counts(filter: str = "all"):
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
         if expr.is_all:
             counts, _ = await count_all(db, ctx)
             return {"counts": counts}
@@ -2289,7 +2314,7 @@ async def get_scan_tree(filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         expr = parse_filter(filter)
-        ctx = await _build_enrichment_context(db) if expr.needs_ctx else None
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx else None
         # The folder sums need path, size, mtime and the savings estimate;
         # the rest is what the Python filters read.
         async with db.execute(
@@ -2366,8 +2391,8 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db)
         expr = parse_filter(filter)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
         under_sql, under_params = prefix_clause([prefix.rstrip("/") + "/"])
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results
@@ -2392,8 +2417,8 @@ async def get_scan_files(folder: str, filter: str = "all"):
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db)
         expr = parse_filter(filter)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
 
         # Direct children of the folder OR an exact file match for stray-file
         # pseudo-folders that are keyed by the file path itself.
@@ -2625,7 +2650,7 @@ async def _paths_matching(filter: str, folders: list[str] | None = None) -> list
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db) if expr.needs_ctx else None
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx else None
         if folders is None:
             scopes: list = [(_SCAN_WHERE, [])]
         else:
