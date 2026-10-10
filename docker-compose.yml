@@ -10,8 +10,8 @@
 #   2. Run:  docker compose up -d --build
 #   3. Open: http://localhost:6680
 #
-# First-run account: there isn't one — Shrinkerr has no auth by default. If
-# you expose it beyond localhost, set an API key in Settings → System.
+# First run: Shrinkerr asks you to set up sign-in (a username and password,
+# or your reverse proxy's) before anything else.
 # ============================================================================
 
 services:

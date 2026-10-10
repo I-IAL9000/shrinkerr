@@ -88,6 +88,7 @@ export const checkAuth = () =>
   }).then(r => r.json()) as Promise<{
     auth_required: boolean; authenticated: boolean; method: string | null;
     setup_required?: boolean; auth_method?: AuthMethod | "";  // v0.10.0: sign-in is required
+    demo?: boolean;  // v0.10.0: demo mode (read-only, made-up library)
   }>;
 // Set up sign-in (v0.10.0): the sign-in page or a reverse proxy.
 export const setupAuth = (body: { method: AuthMethod; required: AuthRequired; username?: string; password?: string }) =>

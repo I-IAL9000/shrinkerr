@@ -148,5 +148,8 @@
     "invalidMethod": "Choose how people sign in.",
     "usernameRequired": "Enter a username.",
     "passwordTooShort": "Use a password of at least {{min}} characters."
+  },
+  "demo": {
+    "readOnly": "This is a demo: changes are turned off."
   }
 }

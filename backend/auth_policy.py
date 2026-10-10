@@ -31,6 +31,9 @@ _LOCAL_NETS = tuple(ipaddress.ip_network(n) for n in (
 
 
 def method(settings: dict) -> str:
+    from backend import demo
+    if demo.ENABLED:  # read-only and open to all (backend/demo.py)
+        return "external"
     m = (settings.get("auth_method") or "").strip()
     if m in METHODS:
         return m

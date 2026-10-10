@@ -423,6 +423,7 @@ function AppContent() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);  // v0.10.0: sign-in isn't set up yet
+  const [demo, setDemo] = useState(false);  // v0.10.0: demo mode
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [vmafRemeasure, setVmafRemeasure] = useState<VmafRemeasureState | null>(null);
   const [tmdbConfigured, setTmdbConfigured] = useState(true);  // default true → no banner flash before the check
@@ -551,6 +552,7 @@ function AppContent() {
     checkAuth().then(r => {
       setAuthenticated(!r.auth_required || r.authenticated);
       setSetupRequired(!!r.setup_required);
+      setDemo(!!r.demo);
       setAuthChecked(true);
     }).catch(() => { setAuthenticated(true); setAuthChecked(true); });
   }, []);
@@ -663,7 +665,16 @@ function AppContent() {
           )}
           {/* v0.9.110: surface a missing TMDB key so self-built images (which
               ship without the bundled key) make it obvious why nothing matches. */}
-          {!tmdbConfigured && (
+          {/* v0.10.0: demo mode (backend/demo.py) */}
+          {demo && (
+            <div role="status" style={{
+              background: "var(--bg-card)", border: "1px solid var(--accent)", borderRadius: 6,
+              padding: "10px 14px", marginBottom: 12, fontSize: 12, color: "var(--text-secondary)",
+            }}>
+              <Trans i18nKey="nav:banner.demo" components={{ b: <strong /> }} />
+            </div>
+          )}
+          {!tmdbConfigured && !demo && (
             <div style={{
               background: "var(--bg-card)",
               border: "1px solid var(--warning)",

@@ -35,6 +35,10 @@ deeper.
 - [**Best practices**](best-practices.md) — when to use which encoder,
   preset/CRF recommendations for common sources, how to size a worker
   fleet, backup strategy, what to set before your first batch.
+- [**Coming from Tdarr or Unmanic**](migrating.md) — where their libraries,
+  plugins, flows, nodes and schedules live in Shrinkerr, and how to switch.
+- [**Demo**](demo.md) — run a read-only demo with a made-up library
+  (`docker-compose.demo.yml`).
 - [**Monitoring and dashboards**](monitoring.md) — Prometheus metrics
   (`/api/metrics`), a JSON endpoint for Homepage / Homarr widgets, and
   Home Assistant over MQTT.

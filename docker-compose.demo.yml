@@ -1,0 +1,25 @@
+# ============================================================================
+# Shrinkerr — public demo (docs/demo.md)
+#
+# A read-only Shrinkerr with a made-up library and history: nobody signs in,
+# and nothing can be changed. It needs no media folders, GPU or API keys.
+# The data lives in memory (tmpfs), so every restart starts the demo afresh.
+#
+#   docker compose -f docker-compose.demo.yml up -d
+#   open http://localhost:6680
+#
+# Put it behind your reverse proxy (HTTPS) to share it.
+# ============================================================================
+
+services:
+  shrinkerr-demo:
+    image: ghcr.io/i-ial9000/shrinkerr:latest
+    container_name: shrinkerr-demo
+    environment:
+      - SHRINKERR_DEMO=1
+      - TZ=UTC
+    ports:
+      - "6680:6680"
+    tmpfs:
+      - /app/data
+    restart: unless-stopped

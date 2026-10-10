@@ -215,6 +215,10 @@ async def lifespan(app: FastAPI):
     init_logstream()
 
     await init_db()
+    # v0.10.0: demo mode (SHRINKERR_DEMO=1) — a made-up library, read-only.
+    from backend import demo
+    if demo.ENABLED:
+        print(f"[DEMO] Demo mode: read-only; {await demo.seed(DB_PATH)} demo files added", flush=True)
     # v0.10.0: safer defaults for new installs; existing ones keep theirs.
     try:
         from backend.routes.settings import seed_v010_defaults
@@ -365,8 +369,9 @@ async def lifespan(app: FastAPI):
     init_scheduler(worker.start)
     from backend.policies import schedule_policies
     await schedule_policies()
-    await worker.restore_run_state()
-    watcher.start()
+    if not demo.ENABLED:  # the demo's files don't exist, and nothing runs
+        await worker.restore_run_state()
+        watcher.start()
     # Weekly database backup task (keeps last 4)
     import asyncio
     from backend.routes.settings import scheduled_backup_loop
@@ -679,6 +684,13 @@ async def api_key_auth(request: Request, call_next):
     if path in ("/api/auth/check", "/api/auth/login", "/api/auth/logout"):
         return await call_next(request)
 
+    # v0.10.0: the demo refuses anything that would change something.
+    from backend import demo
+    if demo.ENABLED and demo.blocked(request.method, path):
+        from backend.api_errors import ApiError, api_error_handler
+        return await api_error_handler(request, ApiError(
+            403, "This is a demo: changes are turned off.", code="demo.readOnly"))
+
     # Fail closed on DB errors. The old code flipped to unauthenticated here
     # whenever the settings read raised — a transient SQLite lock was enough
     # to drop auth for the whole process. Now a read failure is a 503 and
@@ -769,7 +781,8 @@ async def auth_check(request: Request):
     auth_method = auth_policy.method(settings)
     password_auth_on = auth_method == "forms"
     # v0.10.0: sign-in is required; until it's set up the UI shows the setup screen.
-    extra = {"setup_required": auth_method == "", "auth_method": auth_method}
+    from backend import demo
+    extra = {"setup_required": auth_method == "", "auth_method": auth_method, "demo": demo.ENABLED}
 
     # A reverse proxy signs people in, or a local address needn't.
     bypass = auth_policy.bypass(settings, request)
