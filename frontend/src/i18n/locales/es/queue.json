@@ -7,7 +7,8 @@
     "pendingRemaining_many": "Pendientes ({{formatted}} restantes)",
     "pendingRemaining_other": "Pendientes ({{formatted}} restantes)",
     "completedSaved": "Completados ({{formatted}} · ahorrado {{saved}})",
-    "failedCount": "Fallidos ({{formatted}})"
+    "failedCount": "Fallidos ({{formatted}})",
+    "review": "Revisión ({{formatted}})"
   },
   "search": {
     "placeholder": "Buscar por nombre de archivo ({{tab}})…"
@@ -270,5 +271,22 @@
     "healthChecks_other": "{{count}} comprobaciones de estado",
     "encoders": "Codifica con {{list}}",
     "perJob": "Haz clic en un trabajo para ver sus pistas y cambiar cuáles se eliminan."
+  },
+  "review": {
+    "intro": "Convertidos, pendientes de tu revisión: los originales no se tocan hasta que los apruebes. Los aprobados se colocan antes que todo lo demás de la cola.",
+    "approve": "Aprobar",
+    "reject": "Rechazar",
+    "approveAll": "Aprobar todo",
+    "rejectAll": "Rechazar todo",
+    "sizes": "{{before}} → {{after}} (−{{pct}} %)",
+    "approved_one": "{{count}} aprobado: reemplaza al original cuando se ejecute la cola",
+    "approved_many": "{{count}} aprobados: reemplazan a los originales cuando se ejecute la cola",
+    "approved_other": "{{count}} aprobados: reemplazan a los originales cuando se ejecute la cola",
+    "rejected_one": "{{count}} rechazado; se conserva el original y no se volverá a encolar",
+    "rejected_many": "{{count}} rechazados; se conservan los originales y no se volverán a encolar",
+    "rejected_other": "{{count}} rechazados; se conservan los originales y no se volverán a encolar",
+    "rejectConfirm_one": "¿Borrar {{count}} archivo convertido y conservar el original? No se volverá a encolar (Escáner → Ignorados para deshacerlo).",
+    "rejectConfirm_many": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo).",
+    "rejectConfirm_other": "¿Borrar {{count}} archivos convertidos y conservar los originales? No se volverán a encolar (Escáner → Ignorados para deshacerlo)."
   }
 }

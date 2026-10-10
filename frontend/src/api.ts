@@ -299,6 +299,11 @@ export interface NodeMetricsEntry {
 // Nodes → "Add a remote worker" (v0.10.0): image tags matching this server.
 export interface WorkerSetupInfo { image: string; tags: { cpu: string; intel_amd: string; nvidia: string }; media_root: string }
 // Maintainerr (v0.10.0): read its collections now. folders: null = not set up.
+// Review mode (v0.10.0): approve (put in place) or reject held conversions.
+export const approveReviews = (jobIds: number[]) =>
+  apiFetch<{ approved: number }>("/jobs/review/approve", { method: "POST", body: JSON.stringify({ job_ids: jobIds }) });
+export const rejectReviews = (jobIds: number[], ignore = true) =>
+  apiFetch<{ rejected: number }>("/jobs/review/reject", { method: "POST", body: JSON.stringify({ job_ids: jobIds, ignore }) });
 export const syncMaintainerr = () => apiFetch<{ folders: number | null }>("/arr/maintainerr-sync", { method: "POST" });
 export const getWorkerSetup = () => apiFetch<WorkerSetupInfo>("/nodes/worker-setup");
 export const getNodeMetrics = () => apiFetch<{ nodes: NodeMetricsEntry[] }>("/nodes/metrics");

@@ -31,7 +31,8 @@
     "failed": "Fallido",
     "cancelled": "Cancelado",
     "none": "Ninguno",
-    "unknown": "Desconocido"
+    "unknown": "Desconocido",
+    "review": "Revisión"
   },
   "language": {
     "label": "Idioma",

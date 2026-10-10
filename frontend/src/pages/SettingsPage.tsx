@@ -3523,6 +3523,16 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {/* Originals & Backups */}
                 <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8, marginBottom: 12 }}>
                   <div style={{ ...labelStyle, fontWeight: 600, marginBottom: 10 }}>{t("settingsSystem:automation.originals.title")}</div>
+                  {/* v0.10.0: conversions wait in Queue → Review until approved */}
+                  <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <input type="checkbox" checked={encoding?.review_before_replace ?? false}
+                      onChange={e => setEncoding({ ...encoding, review_before_replace: e.target.checked })}
+                      style={{ flexShrink: 0 }} />
+                    <span style={labelStyle}>{t("settingsSystem:automation.originals.review")}</span>
+                  </label>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, paddingLeft: 26, lineHeight: 1.6 }}>
+                    {t("settingsSystem:automation.originals.reviewHelp")}
+                  </div>
                 </div>
                 {/* One choice instead of a trash toggle and a days field where the
                     backup silently won (v0.10.0). Same settings underneath:

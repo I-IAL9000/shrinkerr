@@ -55,7 +55,7 @@ _PROGRESS_DB_WRITE_INTERVAL = 3.0
 # pre-v0.3.108 SELECT * was returning ~50 MB and taking 10-15 s to
 # load. The Queue page fetches these on demand via /jobs/{id}/log
 # when a completed row is expanded. v0.3.108+.
-_LIST_FAT_COLS = ("ffmpeg_log", "ffmpeg_command", "encoding_stats")
+_LIST_FAT_COLS = ("ffmpeg_log", "ffmpeg_command", "encoding_stats", "review_json")
 _LIST_COLS_CACHE: Optional[str] = None
 
 
@@ -201,14 +201,14 @@ class JobQueue:
             if exclude_job_id is not None:
                 async with db.execute(
                     "SELECT id FROM jobs WHERE file_path = ? "
-                    "AND status IN ('pending', 'running') AND id != ? LIMIT 1",
+                    "AND status IN ('pending', 'running', 'review') AND id != ? LIMIT 1",
                     (file_path, exclude_job_id),
                 ) as cur:
                     existing = await cur.fetchone()
             else:
                 async with db.execute(
                     "SELECT id FROM jobs WHERE file_path = ? "
-                    "AND status IN ('pending', 'running') LIMIT 1",
+                    "AND status IN ('pending', 'running', 'review') LIMIT 1",
                     (file_path,),
                 ) as cur:
                     existing = await cur.fetchone()
@@ -291,7 +291,7 @@ class JobQueue:
                 chunk = file_paths[i:i + CHUNK]
                 placeholders = ",".join("?" * len(chunk))
                 async with db.execute(
-                    f"SELECT file_path FROM jobs WHERE status IN ('pending','running') "
+                    f"SELECT file_path FROM jobs WHERE status IN ('pending','running','review') "
                     f"AND file_path IN ({placeholders})",
                     chunk,
                 ) as cur:
@@ -508,6 +508,17 @@ class JobQueue:
                     + ",".join(f"'{e}'" for e in native) + "))"
                 )
 
+            # An approved review only puts its output in place (v0.10.0): no
+            # encoder needed, so no affinity — and never on a remote node.
+            excluded = exclude_ids or []
+            async with db.execute(
+                "SELECT * FROM jobs WHERE status = 'pending' AND review_approved = 1"
+                + (f" AND id NOT IN ({','.join('?' * len(excluded))})" if excluded else "")
+                + " ORDER BY queue_order ASC LIMIT 1", excluded,
+            ) as cur:
+                approved = await cur.fetchone()
+            if approved:
+                return dict(approved)
             # Not before its time: an import waiting for Bazarr (v0.10.0).
             affinity_sql += " AND (not_before IS NULL OR not_before <= ?)"
             if exclude_ids:
@@ -778,7 +789,10 @@ class JobQueue:
 
     async def remove_job(self, job_id: int) -> None:
         """Remove a job from the Queue. A completed one is only hidden (v0.10.0):
-        it still counts in the Dashboard's totals and can still be undone."""
+        it still counts in the Dashboard's totals and can still be undone. One
+        holding an output for review is rejected (the output deleted)."""
+        if await self.reject_reviews([job_id], ignore=False):
+            return
         db = await self._connect()
         try:
             await db.execute("UPDATE jobs SET cleared = 1 WHERE id = ? AND status = 'completed'", (job_id,))
@@ -828,7 +842,57 @@ class JobQueue:
         await self.delete_jobs_where("status IN ('failed', 'cancelled')")
 
     async def clear_pending(self) -> None:
-        await self.delete_jobs_where("status = 'pending'")
+        # Not an approved review: its output would be left behind (v0.10.0).
+        await self.delete_jobs_where("status = 'pending' AND review_approved = 0")
+
+    async def approve_reviews(self, job_ids: list[int]) -> int:
+        """Review mode (v0.10.0): approved outputs go back to the queue, at the
+        front, to be put in place (finalize_review) — no encoding."""
+        db = await self._connect()
+        try:
+            async with db.execute("SELECT COALESCE(MIN(queue_order), 1) FROM jobs WHERE status = 'pending'") as cur:
+                first = (await cur.fetchone())[0] or 1
+            approved = 0
+            for job_id in job_ids:
+                cur = await db.execute(
+                    "UPDATE jobs SET status = 'pending', review_approved = 1, progress = 0, queue_order = ?, "
+                    "error_log = NULL, error_key = NULL, error_params = NULL WHERE id = ? AND status = 'review'",
+                    (first - 1 - approved, job_id))
+                approved += cur.rowcount
+            await db.commit()
+            return approved
+        finally:
+            await db.close()
+
+    async def reject_reviews(self, job_ids: list[int], ignore: bool = True) -> int:
+        """Review mode (v0.10.0): delete the held outputs — the originals were
+        never touched — and, with `ignore`, keep the files from being queued
+        again."""
+        from backend.converter import discard_review_output
+        db = await self._connect()
+        try:
+            rejected = 0
+            for job_id in job_ids:
+                async with db.execute(
+                    "SELECT file_path, review_json FROM jobs WHERE id = ? AND review_json IS NOT NULL "
+                    "AND status IN ('review', 'pending')", (job_id,)) as cur:
+                    row = await cur.fetchone()
+                if not row:
+                    continue
+                state = (json.loads(row["review_json"]) or {}).get("state") or {}
+                if state.get("review_path"):
+                    await asyncio.to_thread(discard_review_output, state["review_path"])
+                await db.execute(
+                    "UPDATE jobs SET status = 'cancelled', review_json = NULL, review_approved = 0, space_saved = 0, "
+                    "error_log = 'Rejected in review', error_key = 'errors.reviewRejected' WHERE id = ?", (job_id,))
+                if ignore:
+                    await db.execute("INSERT OR IGNORE INTO ignored_files (file_path, reason, ignored_at) VALUES (?, ?, ?)",
+                                     (row["file_path"], "review_rejected", _utcnow()))
+                rejected += 1
+            await db.commit()
+            return rejected
+        finally:
+            await db.close()
 
     async def get_stats(self) -> dict:
         db = await self._connect()
@@ -838,6 +902,7 @@ class JobQueue:
                     COUNT(*) as total,
                     SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
                     SUM(CASE WHEN status='running' THEN 1 ELSE 0 END) as running,
+                    SUM(CASE WHEN status='review' THEN 1 ELSE 0 END) as review,
                     SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) as completed,
                     SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failed,
                     COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN space_saved ELSE 0 END), 0) as total_space_saved,
@@ -849,6 +914,7 @@ class JobQueue:
                 "total_jobs": row["total"],
                 "pending": row["pending"],
                 "running": row["running"],
+                "review": row["review"] or 0,
                 "completed": row["completed"],
                 "failed": row["failed"],
                 "total_space_saved": row["total_space_saved"],
@@ -2110,6 +2176,42 @@ class QueueWorker:
             total_saved=stats_final["total_space_saved"],
         )
 
+    async def _hold_for_review(self, job_id: int, file_path: str, result: dict) -> None:
+        """Review mode (v0.10.0): the converted output waits in .shrinkerr-review/
+        beside its destination; the original is untouched until it's approved
+        (approve_reviews → finalize_review) or rejected (reject_reviews)."""
+        from backend.websocket import ws_manager
+        stored = {k: v for k, v in result.items() if k not in ("review", "review_state")}
+        db = await self._db()
+        try:
+            await db.execute(
+                "UPDATE jobs SET status = 'review', progress = 100, fps = NULL, eta_seconds = NULL, completed_at = ?, "
+                "space_saved = ?, vmaf_score = ?, review_json = ?, review_approved = 0 WHERE id = ?",
+                (_utcnow(), result.get("space_saved", 0), result.get("vmaf_score"),
+                 json.dumps({"state": result["review_state"], "result": stored}), job_id))
+            await db.commit()
+        finally:
+            await db.close()
+        stats = result.get("encoding_stats")
+        await self.queue.update_conversion_log(job_id, result.get("ffmpeg_command"), result.get("ffmpeg_log"),
+                                               json.dumps(stats) if stats else None)
+        await ws_manager.send_job_complete(job_id, "review", result.get("space_saved", 0), None)
+        try:
+            from backend.file_events import log_event, EVENT_COMPLETED
+            await log_event(file_path, EVENT_COMPLETED, "Converted; waiting for review", {"job_id": job_id},
+                            summary_key="reviewWaiting")
+        except Exception:
+            pass
+        print(f"[WORKER] Job {job_id}: output held for review", flush=True)
+
+    async def _clear_review(self, job_id: int) -> None:
+        db = await self._db()
+        try:
+            await db.execute("UPDATE jobs SET review_json = NULL, review_approved = 0 WHERE id = ?", (job_id,))
+            await db.commit()
+        finally:
+            await db.close()
+
     async def _process_job(self, job: dict) -> None:
         from backend.scanner import probe_file
         from backend.converter import convert_file
@@ -2215,63 +2317,74 @@ class QueueWorker:
         # conversion. The old code reported both cases as a cryptic
         # "Failed to probe file"; the missing-source case now gets a clear,
         # actionable message instead.
-        if not await _async_exists(file_path):
-            print(f"[WORKER] Job {job_id}: source no longer exists: {file_path}", flush=True)
-            await self.queue.update_status(
-                job_id, "failed",
-                error_log=(
-                    "Source file no longer exists — it was most likely already "
-                    "converted (the original is replaced by the HEVC output). "
-                    "Rescan the library to refresh this entry."
-                ),
-                error_key="errors.sourceGoneLikelyConverted",
-            )
-            return
-        probe = await probe_file(file_path)
-        if probe is None:
-            print(f"[WORKER] Job {job_id}: FAILED to probe {file_path}", flush=True)
-            await self.queue.update_status(job_id, "failed", error_log="Failed to probe file",
-                                           error_key="errors.probeFailed")
-            return
-        print(f"[WORKER] Job {job_id}: probed OK, duration={probe.get('duration', 0):.1f}s, codec={probe.get('video_codec', '?')}", flush=True)
-
-        duration = probe.get("duration", 0.0)
-        file_size = probe.get("file_size", 0)
-        if file_size > 0:
-            await self.queue.update_original_size(job_id, file_size)
-
-        # v0.9.120: an audio-only cleanup can't run on a disc image — the remux
-        # feeds the raw path to `ffmpeg -i` and dies with exit 183 "Invalid data
-        # found" (a disc opens only via the bluray:/dvdvideo convert path). Discs
-        # now classify as needs_conversion=True so this shouldn't recur, but any
-        # legacy/queued audio job on a disc fails here with an actionable message
-        # instead of the cryptic ffmpeg error.
-        if job_type == "audio" and probe.get("disc_type"):
-            msg = (
-                "Audio/sub cleanup can't run on a disc image (ISO/VIDEO_TS/BDMV) — "
-                "a disc must be fully converted, not stream-copied. Rescan and "
-                "queue a conversion for this title to apply the cleanup."
-            )
-            print(f"[WORKER] Job {job_id}: {msg} ({file_path})", flush=True)
-            await self.queue.update_status(job_id, "failed", error_log=msg,
-                                           error_key="errors.audioCleanupOnDisc")
-            return
-
-        # M9 (v0.10.0): the indices to remove were chosen from the Scanner's
-        # track list. If the file changed since (an *arr upgrade, a re-mux),
-        # they point at other tracks — refuse instead of removing those.
-        if audio_tracks_to_remove or subtitle_tracks_to_remove:
-            changed = await self._tracks_changed_since_scan(
-                file_path, probe, audio_tracks_to_remove, subtitle_tracks_to_remove)
-            if changed:
-                msg = ("The file's tracks changed since it was scanned; rescan it and "
-                       "queue the cleanup again")
-                print(f"[WORKER] Job {job_id}: {msg} ({changed}): {file_path}", flush=True)
-                await self.queue.update_status(job_id, "failed", error_log=f"{msg} ({changed})",
-                                               error_key="errors.tracksChanged")
-                await ws_manager.send_job_complete(job_id, "failed", 0, msg,
-                                                   error_key="errors.tracksChanged")
+        approved_review = bool(job.get("review_approved") and job.get("review_json"))
+        if approved_review:
+            # Only the placement is left (v0.10.0): finalize_review checks that
+            # the original is as it was reviewed, and discards the held output
+            # if it changed or went away — here a missing or replaced source
+            # would fail the job and strand that output.
+            probe = {}
+            duration = float(((json.loads(job["review_json"]).get("result") or {})
+                              .get("encoding_stats") or {}).get("duration") or 0.0)
+            file_size = int(job.get("original_size") or 0)
+        else:
+            if not await _async_exists(file_path):
+                print(f"[WORKER] Job {job_id}: source no longer exists: {file_path}", flush=True)
+                await self.queue.update_status(
+                    job_id, "failed",
+                    error_log=(
+                        "Source file no longer exists — it was most likely already "
+                        "converted (the original is replaced by the HEVC output). "
+                        "Rescan the library to refresh this entry."
+                    ),
+                    error_key="errors.sourceGoneLikelyConverted",
+                )
                 return
+            probe = await probe_file(file_path)
+            if probe is None:
+                print(f"[WORKER] Job {job_id}: FAILED to probe {file_path}", flush=True)
+                await self.queue.update_status(job_id, "failed", error_log="Failed to probe file",
+                                               error_key="errors.probeFailed")
+                return
+            print(f"[WORKER] Job {job_id}: probed OK, duration={probe.get('duration', 0):.1f}s, codec={probe.get('video_codec', '?')}", flush=True)
+
+            duration = probe.get("duration", 0.0)
+            file_size = probe.get("file_size", 0)
+            if file_size > 0:
+                await self.queue.update_original_size(job_id, file_size)
+
+            # v0.9.120: an audio-only cleanup can't run on a disc image — the remux
+            # feeds the raw path to `ffmpeg -i` and dies with exit 183 "Invalid data
+            # found" (a disc opens only via the bluray:/dvdvideo convert path). Discs
+            # now classify as needs_conversion=True so this shouldn't recur, but any
+            # legacy/queued audio job on a disc fails here with an actionable message
+            # instead of the cryptic ffmpeg error.
+            if job_type == "audio" and probe.get("disc_type"):
+                msg = (
+                    "Audio/sub cleanup can't run on a disc image (ISO/VIDEO_TS/BDMV) — "
+                    "a disc must be fully converted, not stream-copied. Rescan and "
+                    "queue a conversion for this title to apply the cleanup."
+                )
+                print(f"[WORKER] Job {job_id}: {msg} ({file_path})", flush=True)
+                await self.queue.update_status(job_id, "failed", error_log=msg,
+                                               error_key="errors.audioCleanupOnDisc")
+                return
+
+            # M9 (v0.10.0): the indices to remove were chosen from the Scanner's
+            # track list. If the file changed since (an *arr upgrade, a re-mux),
+            # they point at other tracks — refuse instead of removing those.
+            if audio_tracks_to_remove or subtitle_tracks_to_remove:
+                changed = await self._tracks_changed_since_scan(
+                    file_path, probe, audio_tracks_to_remove, subtitle_tracks_to_remove)
+                if changed:
+                    msg = ("The file's tracks changed since it was scanned; rescan it and "
+                           "queue the cleanup again")
+                    print(f"[WORKER] Job {job_id}: {msg} ({changed}): {file_path}", flush=True)
+                    await self.queue.update_status(job_id, "failed", error_log=f"{msg} ({changed})",
+                                                   error_key="errors.tracksChanged")
+                    await ws_manager.send_job_complete(job_id, "failed", 0, msg,
+                                                       error_key="errors.tracksChanged")
+                    return
 
         jobs_total = stats["total_jobs"]
         jobs_completed = stats["completed"]
@@ -2361,25 +2474,32 @@ class QueueWorker:
             # For combined jobs, pass audio/subtitle removal lists so they're applied
             # in the same ffmpeg pass — no second remux with mismatched stream indices.
             use_nice = await self._should_use_nice()
-            result = await convert_file(
-                input_path=current_file_path,
-                encoder=encoder,
-                duration=duration,
-                progress_callback=progress_cb,
-                proc_callback=on_proc,
-                override_preset=job.get("nvenc_preset"),
-                override_cq=job.get("nvenc_cq"),
-                override_audio_codec=job.get("audio_codec"),
-                override_audio_bitrate=job.get("audio_bitrate"),
-                override_crf=libx265_crf,
-                override_libx265_preset=libx265_preset,
-                override_target_resolution=job.get("target_resolution"),
-                nice=use_nice,
-                audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,
-                subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
-                on_output_placed=lambda: self._finalize(job_id),
-                pre_probe=probe,
-            )
+            review = json.loads(job["review_json"]) if job.get("review_approved") and job.get("review_json") else None
+            if review:  # approved in review mode (v0.10.0): put the held output in place
+                from backend.converter import finalize_review
+                result = await finalize_review(review["state"], review["result"],
+                                               on_output_placed=lambda: self._finalize(job_id))
+                await self._clear_review(job_id)  # placed, or failed: a retry converts it again
+            else:
+                result = await convert_file(
+                    input_path=current_file_path,
+                    encoder=encoder,
+                    duration=duration,
+                    progress_callback=progress_cb,
+                    proc_callback=on_proc,
+                    override_preset=job.get("nvenc_preset"),
+                    override_cq=job.get("nvenc_cq"),
+                    override_audio_codec=job.get("audio_codec"),
+                    override_audio_bitrate=job.get("audio_bitrate"),
+                    override_crf=libx265_crf,
+                    override_libx265_preset=libx265_preset,
+                    override_target_resolution=job.get("target_resolution"),
+                    nice=use_nice,
+                    audio_tracks_to_remove=audio_tracks_to_remove if job_type == "combined" else None,
+                    subtitle_tracks_to_remove=subtitle_tracks_to_remove if job_type == "combined" else None,
+                    on_output_placed=lambda: self._finalize(job_id),
+                    pre_probe=probe,
+                )
             if not result["success"]:
                 if job_id in self._cancel_flags:
                     # Check if this cancel was triggered by a node pause — if so,
@@ -2446,6 +2566,9 @@ class QueueWorker:
                         await notify_job_failed(file_name, result["error"][:200])
                     except Exception:
                         pass
+                return
+            if result.get("review"):  # review mode (v0.10.0): held until it's approved
+                await self._hold_for_review(job_id, file_path, result)
                 return
             space_saved += result.get("space_saved", 0)
             current_file_path = result["output_path"]

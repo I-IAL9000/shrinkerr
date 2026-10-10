@@ -1423,6 +1423,31 @@ async def start_vmaf_remeasure():
 
 # --- Per-job operations (dynamic {job_id} routes must come AFTER static routes) ---
 
+class ReviewRequest(BaseModel):
+    job_ids: list[int]
+    ignore: bool = True  # reject: keep the file from being queued again
+
+
+@router.post("/review/approve")
+async def approve_reviews(req: ReviewRequest):
+    """Review mode (v0.10.0): put these outputs in place — back to the front
+    of the queue, where only the placement runs."""
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    approved = await _queue.approve_reviews(req.job_ids)
+    if approved and _worker is not None:
+        _worker.start_if_idle()  # never undoes a pause
+    return {"approved": approved}
+
+
+@router.post("/review/reject")
+async def reject_reviews(req: ReviewRequest):
+    """Review mode (v0.10.0): delete these outputs; the originals stay."""
+    if _queue is None:
+        raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
+    return {"rejected": await _queue.reject_reviews(req.job_ids, ignore=req.ignore)}
+
+
 @router.delete("/{job_id}")
 async def remove_job(job_id: int):
     if _queue is None:

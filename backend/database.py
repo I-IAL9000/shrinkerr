@@ -532,6 +532,13 @@ async def init_db():
             await db.execute("ALTER TABLE jobs ADD COLUMN not_before TEXT DEFAULT NULL")
         except Exception:
             pass
+        # v0.10.0 review mode: an output held until it's approved (status
+        # 'review'); review_json = where it is + the conversion's result.
+        for col, coltype in (("review_json", "TEXT DEFAULT NULL"), ("review_approved", "INTEGER NOT NULL DEFAULT 0")):
+            try:
+                await db.execute(f"ALTER TABLE jobs ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass
         # Migration: conversion log per file
         for col, coltype in [
             ("ffmpeg_command", "TEXT DEFAULT NULL"),

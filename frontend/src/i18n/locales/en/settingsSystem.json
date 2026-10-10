@@ -52,7 +52,9 @@
       "deleteAllConfirm_one": "Delete {{count}} backup file ({{size}})? This cannot be undone.",
       "deleteAllConfirm_other": "Delete all {{count}} backup files ({{size}})? This cannot be undone.",
       "deletedResult_one": "Deleted {{count}} file, freed {{size}}",
-      "deletedResult_other": "Deleted {{count}} files, freed {{size}}"
+      "deletedResult_other": "Deleted {{count}} files, freed {{size}}",
+      "review": "Review conversions before they replace the original",
+      "reviewHelp": "Converted files wait in Queue → Review — the original untouched, the new file in a hidden folder beside it — until you approve them (put in place) or reject them (deleted). Takes the room of both meanwhile."
     },
     "stability": {
       "title": "File Stability",

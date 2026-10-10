@@ -1,3 +1,4 @@
+import ReviewList from "../components/ReviewList";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { displayNameForPath } from "../utils/displayName";
 import { useTranslation } from "react-i18next";
@@ -26,7 +27,7 @@ export default function QueuePage() {
   const jobsRef = useRef(jobs);
   jobsRef.current = jobs;
   const [stats, setStats] = useState<any>(null);
-  const [tab, setTab] = useState<"pending" | "completed" | "failed">("pending");
+  const [tab, setTab] = useState<"pending" | "completed" | "failed" | "review">("pending");
   const toast = useToast();
   const confirm = useConfirm();
 
@@ -279,11 +280,13 @@ export default function QueuePage() {
   const pendingCount = stats?.pending ?? 0;
   const completedCount = stats?.completed ?? 0;
   const failedCount = stats?.failed ?? 0;
+  const reviewCount = (stats as any)?.review ?? 0;
 
   // Auto-switch to pending if failed tab becomes empty
   useEffect(() => {
     if (tab === "failed" && failedCount === 0) setTab("pending");
-  }, [tab, failedCount]);
+    if (tab === "review" && reviewCount === 0) setTab("pending");
+  }, [tab, failedCount, reviewCount]);
 
   // For pending tab: use tabJobs when on pending tab
   const pending = useMemo(
@@ -708,6 +711,21 @@ export default function QueuePage() {
         >
           {t("queue:tabs.completedSaved", { formatted: fmtNum(completedCount), saved: fmtBytes(Math.max(0, stats?.total_space_saved || 0)) })}
         </button>
+        {reviewCount > 0 && (
+          <button
+            role="tab"
+            aria-selected={tab === "review"}
+            onClick={() => setTab("review")}
+            style={{
+              padding: "10px 20px", fontSize: 13, cursor: "pointer",
+              background: "none", border: "none",
+              color: tab === "review" ? "var(--caution)" : "var(--text-muted)",
+              borderBottom: tab === "review" ? "2px solid var(--caution)" : "2px solid transparent",
+            }}
+          >
+            {t("queue:tabs.review", { formatted: fmtNum(reviewCount) })}
+          </button>
+        )}
         {failedCount > 0 && (
           <button
             role="tab"
@@ -819,6 +837,9 @@ export default function QueuePage() {
           </>)}
         </div>
       </div>
+
+      {/* Review tab (v0.10.0) */}
+      {tab === "review" && tabJobs.length > 0 && <ReviewList jobs={tabJobs} onChange={() => load(true)} />}
 
       {/* Pending tab */}
       {tab === "pending" && (

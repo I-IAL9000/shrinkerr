@@ -85,6 +85,7 @@ _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     ("lossless_target_codec",            _ABSENT,   str),
     ("lossless_target_bitrate",          _ABSENT,   int),
     ("lossless_keep_object_audio",       _ABSENT,   _str_to_bool),
+    ("review_before_replace",            _ABSENT,   _str_to_bool),
     # Output shaping
     ("target_resolution",                _ABSENT,   str),
     ("custom_ffmpeg_flags",              _ABSENT,   str),
@@ -2669,6 +2670,189 @@ async def _external_sub_is_readable(path: str) -> bool:
     return b"subtitle" in out
 
 
+async def _place_output(input_path: str, temp_path: str, final_path: str, disc_type: Optional[str],
+                        live_settings: dict, on_output_placed: Optional[Callable] = None) -> Optional[str]:
+    """Put the output at final_path, then dispose of the original. Order
+    matters: the output must be safely at final_path before the original is
+    trashed or deleted. The old order (dispose original → rename temp) meant
+    a failed placement — e.g. an EACCES rename on a CIFS/SMB mount — left the
+    original gone and the output stranded as *.converting.mkv. v0.9.126: put
+    the output in place first (moving the original aside when it occupies
+    the target name) and only then dispose the original; roll back on a
+    placement failure. Returns the backup path; raises OSError when the
+    output couldn't be placed. (Moved out of convert_file in v0.10.0 so
+    review mode can place an approved output later.)"""
+    p = Path(input_path)
+    temp = Path(temp_path)
+    backup_days = live_settings.get("backup_original_days", 0)
+    use_trash = live_settings.get("trash_original_after_conversion", False)
+    result_backup_path = None
+
+    # Refuse to follow a planted symlink at the final output path.
+    if Path(final_path).is_symlink():
+        raise OSError(
+            f"Refusing to overwrite symlink at final output path: {final_path}"
+        )
+
+    async def _dispose_original_file(src: Path, backup_name: str) -> None:
+        """Backup / trash / delete a regular-file original that the placed
+        output has already superseded. `src` is where the original now lives
+        (possibly a sidecar); `backup_name` is the name to preserve in the
+        backup folder. Mirrors the pre-v0.9.126 modes incl. trash→delete
+        fallback. Runs only after the output is safely in place."""
+        nonlocal result_backup_path
+        if backup_days and backup_days > 0:
+            custom_backup = live_settings.get("backup_folder", "")
+            if custom_backup:
+                backup_dir = Path(custom_backup) / p.parent.name
+                backup_dir.mkdir(parents=True, exist_ok=True)
+            else:
+                legacy = p.parent / ".squeezarr_backup"
+                backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
+                backup_dir.mkdir(exist_ok=True)
+            result_backup_path = await asyncio.to_thread(
+                _move_into_backup, str(src), str(backup_dir / backup_name))  # v0.9.32: off-loop
+            print(f"[CONVERT] Original backed up to: {result_backup_path}", flush=True)
+        elif use_trash:
+            try:
+                from send2trash import send2trash
+                await asyncio.to_thread(send2trash, str(src))  # v0.9.32: off-loop
+                print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
+            except Exception as trash_exc:
+                print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
+                src.unlink()
+        else:
+            src.unlink()
+
+    async def _after_placement(dispose):
+        """Dispose of the original once the output is in place. If that
+        fails, the original stays where it is (beside the output, or in
+        .shrinkerr-replacing/) and the job still succeeded: reporting a
+        failure got the output — by then the file in the library —
+        encoded again on retry. v0.10.0."""
+        if on_output_placed is not None:
+            try:
+                await on_output_placed()
+            except Exception as exc:
+                print(f"[CONVERT] on_output_placed failed: {exc}", flush=True)
+        try:
+            return await dispose
+        except OSError as exc:
+            print(f"[CONVERT] Output in place, but the original couldn't be removed and was kept: {exc}",
+                  flush=True)
+            return None
+
+    if disc_type and Path(input_path).is_file() and Path(input_path).suffix.lower() == ".iso":
+        # v0.7.0: ISO source — single file ops (unlink / trash / move).
+        # Same three modes (backup / trash / delete) as folder discs
+        # but operating on the .iso file directly. The .iso is never at
+        # final_path, so place the output first, then dispose it.
+        temp.rename(final_path)
+        await _after_placement(_dispose_original_file(p, p.name))
+    elif disc_type:
+        # v0.6.0: for disc inputs the "source" is the disc folder(s),
+        # not the marker file inside them (see _dispose_disc_source). The
+        # disc is never at final_path, so place the output first, then
+        # dispose it.
+        temp.rename(final_path)
+        result_backup_path = await _after_placement(_dispose_disc_source(
+            p, Path(final_path).parent, disc_type,
+            backup_days, use_trash, live_settings.get("backup_folder", ""),
+        ))
+    else:
+        # Regular file. final_path may equal input_path (unchanged codec
+        # tag), so the original occupies the target name. Move it aside
+        # first, place the output, then dispose the moved-aside original —
+        # rolling back if placement fails so the original is never lost.
+        # The backup-folder symlink guard lives inside _dispose_original_file.
+        if os.path.abspath(final_path) == os.path.abspath(input_path):
+            # Same name: the original is at the target. Move it into a hidden
+            # staging subdir KEEPING ITS REAL NAME (same filesystem → atomic
+            # rename), place the output, then dispose the staged original. On
+            # a placement failure, restore it. Staging in a subdir (not a
+            # same-dir ".replacing" sidecar) means trash/backup keep the real
+            # filename instead of the ugly suffix. v0.9.127.
+            stage_dir = p.parent / ".shrinkerr-replacing"
+            stage_dir.mkdir(exist_ok=True)
+            # Never delete or overwrite a same-named leftover here — it
+            # may be an original stranded by an earlier crash. v0.9.146.
+            staged = stage_dir / p.name
+            _n = 1
+            while staged.exists() or staged.is_symlink():
+                staged = stage_dir / f"{p.name}.{_n}"
+                _n += 1
+            p.rename(staged)
+            try:
+                temp.rename(final_path)
+            except OSError:
+                try:
+                    staged.rename(p)
+                except OSError:
+                    print(f"[CONVERT] CRITICAL: could not restore original from {staged}", flush=True)
+                raise
+            await _after_placement(_dispose_original_file(staged, p.name))
+            try:
+                stage_dir.rmdir()  # remove if now empty (ignore if a concurrent job shares it)
+            except OSError:
+                pass
+        else:
+            # Different target name — the original isn't in the way. Place
+            # the output first, then dispose the original.
+            temp.rename(final_path)
+            await _after_placement(_dispose_original_file(p, p.name))
+    return result_backup_path
+
+
+async def finalize_review(state: dict, result: dict, on_output_placed: Optional[Callable] = None,
+                          pre_settings: Optional[dict] = None) -> dict:
+    """Place an output held for review once it's approved (v0.10.0): what
+    convert_file does after its checks, with the result it returned then.
+    Refuses when the original changed or went away meanwhile (a Sonarr /
+    Radarr upgrade) — the held output is deleted then."""
+    live_settings = pre_settings if pre_settings is not None else await get_live_encoding_settings()
+    input_path, review_path, final_path = state["input_path"], state["review_path"], state["final_path"]
+
+    def problem() -> Optional[str]:
+        if not os.path.exists(review_path):
+            return "missing"
+        try:
+            st = os.stat(input_path)
+        except OSError:
+            return "changed"
+        if st.st_size != state["source_size"] or abs(st.st_mtime - state["source_mtime"]) > 2:
+            return "changed"
+        return None
+    found = await asyncio.to_thread(problem)
+    if found:
+        if found == "changed":
+            discard_review_output(review_path)
+        error = ("The original changed or went away since it was reviewed; the converted file was discarded"
+                 if found == "changed" else "The converted file waiting for review is gone")
+        return {"success": False, "output_path": None, "space_saved": 0, "error": error,
+                "error_key": "errors.reviewOriginalChanged" if found == "changed" else "errors.reviewOutputMissing"}
+    try:
+        backup_path = await _place_output(input_path, review_path, final_path, state.get("disc_type"),
+                                          live_settings, on_output_placed)
+    except OSError as exc:
+        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+    delete_merged_external_subs(state.get("external_sub_files"), state.get("delete_merged_subs"))
+    rename_external_subtitles(input_path, Path(final_path).stem)
+    try:
+        Path(review_path).parent.rmdir()  # the review folder, once it's empty
+    except OSError:
+        pass
+    return {**result, "success": True, "output_path": final_path, "backup_path": backup_path}
+
+
+def discard_review_output(review_path: str) -> None:
+    """Delete an output held for review (rejected, or its original changed)."""
+    try:
+        Path(review_path).unlink(missing_ok=True)
+        Path(review_path).parent.rmdir()
+    except OSError:
+        pass
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -4420,156 +4604,15 @@ async def convert_file(
             },
         }
 
-    # Place the converted output, THEN dispose of the original. Order matters:
-    # the output must be safely at final_path before the original is trashed or
-    # deleted. The old order (dispose original → rename temp) meant a failed
-    # placement — e.g. an EACCES rename on a CIFS/SMB mount — left the original
-    # gone and the output stranded as *.converting.mkv. v0.9.126: put the output
-    # in place first (moving the original aside when it occupies the target
-    # name) and only then dispose the original; roll back on a placement failure.
-    try:
-        backup_days = live_settings.get("backup_original_days", 0)
-        use_trash = live_settings.get("trash_original_after_conversion", False)
-        result_backup_path = None
-
-        # Refuse to follow a planted symlink at the final output path.
-        if Path(final_path).is_symlink():
-            raise OSError(
-                f"Refusing to overwrite symlink at final output path: {final_path}"
-            )
-
-        async def _dispose_original_file(src: Path, backup_name: str) -> None:
-            """Backup / trash / delete a regular-file original that the placed
-            output has already superseded. `src` is where the original now lives
-            (possibly a sidecar); `backup_name` is the name to preserve in the
-            backup folder. Mirrors the pre-v0.9.126 modes incl. trash→delete
-            fallback. Runs only after the output is safely in place."""
-            nonlocal result_backup_path
-            if backup_days and backup_days > 0:
-                custom_backup = live_settings.get("backup_folder", "")
-                if custom_backup:
-                    backup_dir = Path(custom_backup) / p.parent.name
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                else:
-                    legacy = p.parent / ".squeezarr_backup"
-                    backup_dir = legacy if legacy.exists() else (p.parent / ".shrinkerr_backup")
-                    backup_dir.mkdir(exist_ok=True)
-                result_backup_path = await asyncio.to_thread(
-                    _move_into_backup, str(src), str(backup_dir / backup_name))  # v0.9.32: off-loop
-                print(f"[CONVERT] Original backed up to: {result_backup_path}", flush=True)
-            elif use_trash:
-                try:
-                    from send2trash import send2trash
-                    await asyncio.to_thread(send2trash, str(src))  # v0.9.32: off-loop
-                    print(f"[CONVERT] Original moved to trash: {backup_name}", flush=True)
-                except Exception as trash_exc:
-                    print(f"[CONVERT] Trash failed ({trash_exc}), falling back to permanent delete", flush=True)
-                    src.unlink()
-            else:
-                src.unlink()
-
-        async def _after_placement(dispose):
-            """Dispose of the original once the output is in place. If that
-            fails, the original stays where it is (beside the output, or in
-            .shrinkerr-replacing/) and the job still succeeded: reporting a
-            failure got the output — by then the file in the library —
-            encoded again on retry. v0.10.0."""
-            if on_output_placed is not None:
-                try:
-                    await on_output_placed()
-                except Exception as exc:
-                    print(f"[CONVERT] on_output_placed failed: {exc}", flush=True)
-            try:
-                return await dispose
-            except OSError as exc:
-                print(f"[CONVERT] Output in place, but the original couldn't be removed and was kept: {exc}",
-                      flush=True)
-                return None
-
-        if disc_type and Path(input_path).is_file() and Path(input_path).suffix.lower() == ".iso":
-            # v0.7.0: ISO source — single file ops (unlink / trash / move).
-            # Same three modes (backup / trash / delete) as folder discs
-            # but operating on the .iso file directly. The .iso is never at
-            # final_path, so place the output first, then dispose it.
-            temp.rename(final_path)
-            await _after_placement(_dispose_original_file(p, p.name))
-        elif disc_type:
-            # v0.6.0: for disc inputs the "source" is the disc folder(s),
-            # not the marker file inside them (see _dispose_disc_source). The
-            # disc is never at final_path, so place the output first, then
-            # dispose it.
-            temp.rename(final_path)
-            result_backup_path = await _after_placement(_dispose_disc_source(
-                p, Path(final_path).parent, disc_type,
-                backup_days, use_trash, live_settings.get("backup_folder", ""),
-            ))
-        else:
-            # Regular file. final_path may equal input_path (unchanged codec
-            # tag), so the original occupies the target name. Move it aside
-            # first, place the output, then dispose the moved-aside original —
-            # rolling back if placement fails so the original is never lost.
-            # The backup-folder symlink guard lives inside _dispose_original_file.
-            if os.path.abspath(final_path) == os.path.abspath(input_path):
-                # Same name: the original is at the target. Move it into a hidden
-                # staging subdir KEEPING ITS REAL NAME (same filesystem → atomic
-                # rename), place the output, then dispose the staged original. On
-                # a placement failure, restore it. Staging in a subdir (not a
-                # same-dir ".replacing" sidecar) means trash/backup keep the real
-                # filename instead of the ugly suffix. v0.9.127.
-                stage_dir = p.parent / ".shrinkerr-replacing"
-                stage_dir.mkdir(exist_ok=True)
-                # Never delete or overwrite a same-named leftover here — it
-                # may be an original stranded by an earlier crash. v0.9.146.
-                staged = stage_dir / p.name
-                _n = 1
-                while staged.exists() or staged.is_symlink():
-                    staged = stage_dir / f"{p.name}.{_n}"
-                    _n += 1
-                p.rename(staged)
-                try:
-                    temp.rename(final_path)
-                except OSError:
-                    try:
-                        staged.rename(p)
-                    except OSError:
-                        print(f"[CONVERT] CRITICAL: could not restore original from {staged}", flush=True)
-                    raise
-                await _after_placement(_dispose_original_file(staged, p.name))
-                try:
-                    stage_dir.rmdir()  # remove if now empty (ignore if a concurrent job shares it)
-                except OSError:
-                    pass
-            else:
-                # Different target name — the original isn't in the way. Place
-                # the output first, then dispose the original.
-                temp.rename(final_path)
-                await _after_placement(_dispose_original_file(p, p.name))
-    except OSError as exc:
-        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
-
-    # Handle external subtitle files after successful conversion
-    delete_merged_external_subs(external_sub_files, delete_merged_subs)
-
-    # Rename remaining external subtitle files to match the new filename
-    final_stem = Path(final_path).stem
-    rename_external_subtitles(input_path, final_stem)
-
-    # Clean up the pre-strip temp file (if we did a two-pass run). The main
-    # encode now references temp_path → final_path; the stripped intermediate
-    # has served its purpose.
-    if prestrip_path:
-        try:
-            Path(prestrip_path).unlink(missing_ok=True)
-        except OSError as exc:
-            print(f"[CONVERT] Could not remove pre-strip temp {prestrip_path}: {exc}", flush=True)
-
+    # Place the converted output, THEN dispose of the original — _place_output
+    # (v0.9.126 order). Or, in review mode (v0.10.0), hold the output in a
+    # hidden .shrinkerr-review/ folder beside its destination until it's
+    # approved; finalize_review places it then.
     encode_time = time.monotonic() - encode_start_time
-    return {
+    success = {
         "success": True,
-        "output_path": final_path,
         "space_saved": space_saved,
         "error": None,
-        "backup_path": result_backup_path,
         "vmaf_score": vmaf_score,
         "vmaf_error": vmaf_error,
         "vmaf_uncertain": vmaf_uncertain,
@@ -4611,3 +4654,57 @@ async def convert_file(
             "output_bitrate": round(output_size * 8 / duration / 1_000_000, 2) if duration > 0 else None,
         },
     }
+
+    if live_settings.get("review_before_replace"):
+        review_dir = Path(final_path).parent / ".shrinkerr-review"
+        try:
+            review_dir.mkdir(exist_ok=True)
+            review_path = review_dir / Path(final_path).name
+            _n = 1
+            while review_path.exists() or review_path.is_symlink():
+                review_path = review_dir / f"{Path(final_path).stem}.{_n}{Path(final_path).suffix}"
+                _n += 1
+            temp.rename(review_path)
+            source_stat = p.stat()
+        except OSError as exc:
+            return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+        if prestrip_path:
+            try:
+                Path(prestrip_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+        print(f"[CONVERT] Holding the output for review: {review_path}", flush=True)
+        return {
+            **success,
+            "review": True,
+            "output_path": input_path,  # the original is untouched until it's approved
+            "review_state": {
+                "input_path": input_path, "review_path": str(review_path), "final_path": final_path,
+                "disc_type": disc_type, "source_size": source_stat.st_size, "source_mtime": source_stat.st_mtime,
+                "external_sub_files": external_sub_files, "delete_merged_subs": delete_merged_subs,
+            },
+        }
+
+    try:
+        result_backup_path = await _place_output(input_path, temp_path, final_path, disc_type, live_settings,
+                                                 on_output_placed)
+    except OSError as exc:
+        return {"success": False, "output_path": None, "space_saved": 0, "error": str(exc)}
+
+    # Handle external subtitle files after successful conversion
+    delete_merged_external_subs(external_sub_files, delete_merged_subs)
+
+    # Rename remaining external subtitle files to match the new filename
+    final_stem = Path(final_path).stem
+    rename_external_subtitles(input_path, final_stem)
+
+    # Clean up the pre-strip temp file (if we did a two-pass run). The main
+    # encode now references temp_path → final_path; the stripped intermediate
+    # has served its purpose.
+    if prestrip_path:
+        try:
+            Path(prestrip_path).unlink(missing_ok=True)
+        except OSError as exc:
+            print(f"[CONVERT] Could not remove pre-strip temp {prestrip_path}: {exc}", flush=True)
+
+    return {**success, "output_path": final_path, "backup_path": result_backup_path}

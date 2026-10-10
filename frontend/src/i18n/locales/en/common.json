@@ -31,7 +31,8 @@
     "failed": "Failed",
     "cancelled": "Cancelled",
     "none": "None",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "review": "Review"
   },
   "language": {
     "label": "Language",

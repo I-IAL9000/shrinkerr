@@ -202,6 +202,10 @@ class CompletionReport(BaseModel):
     vmaf_rejected: bool | None = None
     vmaf_reject_reason: str | None = None
     vmaf_reject_params: dict | None = None
+    # Review mode (v0.10.0): the output is held (worker paths) until approved;
+    # the server puts it in place then.
+    review: dict | None = None
+    review_result: dict | None = None
 
 
 class MetricsReport(BaseModel):
@@ -374,6 +378,7 @@ async def request_job(req: RequestJobBody, request: Request):
         async with db.execute(
             f"SELECT * FROM jobs WHERE status = 'pending' AND job_type != 'health_check' {affinity_filter} "
             f"AND (not_before IS NULL OR not_before <= ?) "  # an import waiting for Bazarr (v0.10.0)
+            f"AND review_approved = 0 "  # an approved review is placed by the server (v0.10.0)
             f"ORDER BY priority DESC, queue_order ASC LIMIT 1",
             [*affinity_params, datetime.now(timezone.utc).isoformat()],
         ) as cur:
@@ -413,6 +418,7 @@ async def request_job(req: RequestJobBody, request: Request):
             "              'backup_original_days', 'trash_original_after_conversion', 'backup_folder', "
             "              'filename_suffix', 'custom_ffmpeg_flags', 'auto_convert_lossless', "
             "              'lossless_target_codec', 'lossless_target_bitrate', 'lossless_keep_object_audio', "
+            "              'review_before_replace', "
             "              'delete_external_subs_after_merge')"
         ) as cur:
             srv_settings = {r["key"]: r["value"] for r in await cur.fetchall()}
@@ -451,6 +457,7 @@ async def request_job(req: RequestJobBody, request: Request):
     except (TypeError, ValueError):
         assigned["lossless_target_bitrate"] = 640
     assigned["lossless_keep_object_audio"] = (srv_settings.get("lossless_keep_object_audio") or "true").lower() == "true"
+    assigned["review_before_replace"] = (srv_settings.get("review_before_replace") or "false").lower() == "true"
     from backend.converter import external_subs_to_merge
     external = []
     for sub in await external_subs_to_merge(job["file_path"]) or []:  # the server's path, as scanned
@@ -685,6 +692,31 @@ async def report_progress(req: ProgressReport, request: Request):
     return {"ok": True, "cancelled": cancelled}
 
 
+async def _record_review(db, nm, req: "CompletionReport") -> dict:
+    """A remote conversion held for review (v0.10.0): store it as the local
+    worker's _hold_for_review does, with the paths as this server sees them."""
+    from datetime import datetime, timezone
+    state = dict(req.review or {})
+    for key in ("input_path", "review_path", "final_path"):
+        if state.get(key):
+            state[key] = await nm.translate_path(state[key], req.node_id, "to_server")
+    state["external_sub_files"] = [
+        {**f, "path": await nm.translate_path(f["path"], req.node_id, "to_server")}
+        for f in state.get("external_sub_files") or [] if isinstance(f, dict) and f.get("path")]
+    await db.execute(
+        "UPDATE jobs SET status = 'review', progress = 100, fps = NULL, eta_seconds = NULL, completed_at = ?, "
+        "space_saved = ?, vmaf_score = ?, review_json = ?, review_approved = 0, assigned_node_id = NULL, "
+        "assigned_at = NULL, ffmpeg_command = ?, encoding_stats = ? WHERE id = ?",
+        (datetime.now(timezone.utc).isoformat(), req.space_saved, req.vmaf_score,
+         json.dumps({"state": state, "result": req.review_result or {}}), req.ffmpeg_command,
+         json.dumps(req.encoding_stats) if req.encoding_stats else None, req.job_id))
+    await db.commit()
+    await nm.complete_job_on_node(req.node_id, req.job_id, success=True, space_saved=0)
+    await ws_manager.broadcast({"type": "job_complete", "job_id": req.job_id, "status": "review",
+                                "space_saved": req.space_saved, "error": None})
+    return {"ok": True}
+
+
 @router.post("/report-complete")
 async def report_complete(req: CompletionReport, request: Request):
     """Worker reports job completion or failure."""
@@ -705,6 +737,8 @@ async def report_complete(req: CompletionReport, request: Request):
             await _drop_stale_report(db, req.job_id, req.node_id, "a completion" if req.success else "a failure")
             return {"ok": True, "ignored": True}
         nm.clear_cancel(req.job_id)
+        if req.success and req.review:
+            return await _record_review(db, nm, req)
         if req.success:
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc).isoformat()

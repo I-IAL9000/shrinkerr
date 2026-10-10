@@ -64,5 +64,6 @@
       "upgrade": "mejorar",
       "missing": "buscar faltantes"
     }
-  }
+  },
+  "reviewWaiting": "Convertido; pendiente de revisión"
 }

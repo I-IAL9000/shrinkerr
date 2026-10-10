@@ -6,7 +6,8 @@
     "pendingRemaining_one": "Pending ({{formatted}} remaining)",
     "pendingRemaining_other": "Pending ({{formatted}} remaining)",
     "completedSaved": "Completed ({{formatted}} · saved {{saved}})",
-    "failedCount": "Failed ({{formatted}})"
+    "failedCount": "Failed ({{formatted}})",
+    "review": "Review ({{formatted}})"
   },
   "search": {
     "placeholder": "Search {{tab}} by filename…"
@@ -240,5 +241,19 @@
     "healthChecks_other": "{{count}} health checks",
     "encoders": "Encodes with {{list}}",
     "perJob": "Click a job to see its tracks and change which ones go."
+  },
+  "review": {
+    "intro": "Converted, waiting for you: the originals are untouched until you approve. Approved files are put in place ahead of everything else in the queue.",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approveAll": "Approve all",
+    "rejectAll": "Reject all",
+    "sizes": "{{before}} → {{after}} (−{{pct}}%)",
+    "approved_one": "{{count}} approved — it replaces the original when the queue runs",
+    "approved_other": "{{count}} approved — they replace the originals when the queue runs",
+    "rejected_one": "{{count}} rejected; the original is kept and won't be queued again",
+    "rejected_other": "{{count}} rejected; the originals are kept and won't be queued again",
+    "rejectConfirm_one": "Delete {{count}} converted file and keep the original? It won't be queued again (Scanner → Ignored to undo).",
+    "rejectConfirm_other": "Delete {{count}} converted files and keep the originals? They won't be queued again (Scanner → Ignored to undo)."
   }
 }

@@ -44,7 +44,10 @@
     "vmafRejected": "VMAF {{score}} is below the configured minimum of {{min}} — encode rejected, original kept.",
     "vmafBelowThreshold": "VMAF below threshold",
     "workerEncoderUnsupported": "Worker cannot run encoder '{{encoder}}' and translation is disabled",
-    "wouldRemoveAllAudio": "Refusing to remove every audio track — the file would have no sound. Check the file's audio tracks in the Scanner and queue it again."
+    "wouldRemoveAllAudio": "Refusing to remove every audio track — the file would have no sound. Check the file's audio tracks in the Scanner and queue it again.",
+    "reviewRejected": "Rejected in review",
+    "reviewOriginalChanged": "The original changed or went away since it was reviewed; the converted file was discarded",
+    "reviewOutputMissing": "The converted file waiting for review is gone"
   },
   "labels": {
     "healthMode": {

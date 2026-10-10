@@ -64,5 +64,6 @@
       "upgrade": "upgrade",
       "missing": "missing"
     }
-  }
+  },
+  "reviewWaiting": "Converted; waiting for review"
 }

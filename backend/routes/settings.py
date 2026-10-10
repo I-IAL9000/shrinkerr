@@ -181,6 +181,8 @@ _ENCODING_DEFAULTS = {
     "filename_suffix": "",  # e.g. "-Shrinkerr" — appended to filename after conversion
     # Post-conversion
     "trash_original_after_conversion": "false",
+    # v0.10.0: converted outputs wait for approval before replacing the original
+    "review_before_replace": "false",
     "backup_original_days": "7",  # keep originals in .shrinkerr_backup for X days; 0 = trash or delete (v0.10.0: was 0)
     "backup_folder": "",  # Empty = .shrinkerr_backup in same dir as file; set a path for centralized backups
     # Advanced
@@ -710,6 +712,7 @@ async def get_encoding_settings():
 
     # Post-conversion
     result["trash_original_after_conversion"] = merged.get("trash_original_after_conversion", "false").lower() == "true"
+    result["review_before_replace"] = merged.get("review_before_replace", "false").lower() == "true"
     result["backup_original_days"] = int(merged.get("backup_original_days", "0"))
     result["backup_folder"] = merged.get("backup_folder", "")
     result["filename_suffix"] = merged.get("filename_suffix", "")
@@ -1301,6 +1304,8 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         # Post-conversion
         if update.trash_original_after_conversion is not None:
             updates["trash_original_after_conversion"] = "true" if update.trash_original_after_conversion else "false"
+        if update.review_before_replace is not None:
+            updates["review_before_replace"] = "true" if update.review_before_replace else "false"
         # File age
         if update.skip_files_newer_enabled is not None:
             updates["skip_files_newer_enabled"] = "true" if update.skip_files_newer_enabled else "false"

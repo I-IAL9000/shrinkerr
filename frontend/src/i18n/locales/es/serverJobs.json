@@ -44,7 +44,10 @@
     "vmafRejected": "VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",
     "vmafBelowThreshold": "VMAF por debajo del umbral",
     "workerEncoderUnsupported": "El nodo no puede ejecutar el codificador '{{encoder}}' y la traducción de codificador está desactivada",
-    "wouldRemoveAllAudio": "Se ha evitado eliminar todas las pistas de audio: el archivo se quedaría sin sonido. Revisa las pistas de audio del archivo en el Escáner y vuelve a añadirlo a la cola."
+    "wouldRemoveAllAudio": "Se ha evitado eliminar todas las pistas de audio: el archivo se quedaría sin sonido. Revisa las pistas de audio del archivo en el Escáner y vuelve a añadirlo a la cola.",
+    "reviewRejected": "Rechazado en la revisión",
+    "reviewOriginalChanged": "El original cambió o desapareció desde la revisión; se descartó el archivo convertido",
+    "reviewOutputMissing": "El archivo convertido pendiente de revisión ya no existe"
   },
   "labels": {
     "healthMode": {

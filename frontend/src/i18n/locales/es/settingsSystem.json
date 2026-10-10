@@ -54,7 +54,9 @@
       "deleteAllConfirm_other": "¿Eliminar las {{count}} copias de seguridad ({{size}})? Esta acción no se puede deshacer.",
       "deletedResult_one": "Se eliminó {{count}} archivo; se liberaron {{size}}",
       "deletedResult_many": "Se eliminaron {{count}} archivos; se liberaron {{size}}",
-      "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}}"
+      "deletedResult_other": "Se eliminaron {{count}} archivos; se liberaron {{size}}",
+      "review": "Revisar las conversiones antes de que reemplacen al original",
+      "reviewHelp": "Los archivos convertidos esperan en Cola → Revisión —el original intacto y el nuevo en una carpeta oculta a su lado— hasta que los apruebes (se colocan) o los rechaces (se borran). Mientras tanto ocupan el espacio de ambos."
     },
     "stability": {
       "title": "Estabilidad de archivos",

@@ -299,7 +299,9 @@ class ServerClient:
                               replaced_source: bool | None = None,
                               vmaf_rejected: bool | None = None,
                               vmaf_reject_reason: str | None = None,
-                              vmaf_reject_params: dict | None = None) -> dict:
+                              vmaf_reject_params: dict | None = None,
+                              review: dict | None = None,
+                              review_result: dict | None = None) -> dict:
         resp = await self._post_node("/api/nodes/report-complete", {
             "node_id": node_id, "job_id": job_id,
             "success": success, "output_path": output_path,
@@ -310,6 +312,7 @@ class ServerClient:
             "replaced_source": replaced_source,
             "vmaf_rejected": vmaf_rejected, "vmaf_reject_reason": vmaf_reject_reason,
             "vmaf_reject_params": vmaf_reject_params,
+            "review": review, "review_result": review_result,
         })
         resp.raise_for_status()
         return resp.json()
@@ -496,6 +499,7 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 "lossless_target_codec": job.get("lossless_target_codec") or "eac3",
                 "lossless_target_bitrate": int(job.get("lossless_target_bitrate") or 640),
                 "lossless_keep_object_audio": bool(job.get("lossless_keep_object_audio", True)),
+                "review_before_replace": bool(job.get("review_before_replace", False)),
                 # VMAF settings come from the server-side payload so remote
                 # workers honour the server's configured policy. Falls back to
                 # disabled if the server didn't send the fields (older server
@@ -566,6 +570,15 @@ async def execute_job(client: ServerClient, node_id: str, job: dict, worker_capa
                 )
                 return
 
+            if result.get("review"):  # review mode (v0.10.0): the server places it once approved
+                await client.report_complete(
+                    node_id, job_id, True, space_saved=result.get("space_saved", 0),
+                    vmaf_score=result.get("vmaf_score"), ffmpeg_command=result.get("ffmpeg_command"),
+                    encoding_stats=result.get("encoding_stats"), replaced_source=False,
+                    review=result["review_state"],
+                    review_result={k: v for k, v in result.items() if k not in ("review", "review_state", "ffmpeg_log")},
+                )
+                return
             space_saved = result.get("space_saved", 0)
             current_file_path = result.get("output_path", file_path)
             replaced_source = not (result.get("vmaf_rejected") or result.get("skipped_larger"))
