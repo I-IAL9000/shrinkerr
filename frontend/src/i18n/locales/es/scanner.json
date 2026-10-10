@@ -319,7 +319,8 @@
   },
   "corruptBanner": {
     "text": "Algunos archivos pueden estar marcados como corruptos por advertencias inofensivas de ffmpeg (p. ej. «number of reference frames exceeds max»). Borra las marcas y deja que se vuelvan a comprobar.",
-    "clearAll": "Borrar todas las marcas de corrupto"
+    "clearAll": "Borrar todas las marcas de corrupto",
+    "replace": "Reemplazar con Sonarr/Radarr…"
   },
   "advBanner": {
     "summary": "<b>Búsqueda avanzada:</b> {{matches}} {{conditions}}",

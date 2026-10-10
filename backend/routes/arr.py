@@ -336,6 +336,41 @@ async def research_bulk(payload: BulkResearchRequest):
     }
 
 
+_REPLACE_PLAN_LIMIT = 500
+
+
+@router.get("/replace-plan")
+async def replace_plan():
+    """Dry run of replacing the files the health check found corrupt: for
+    each, the Sonarr episodes / Radarr movie, the release that would be
+    blocklisted (null: no download record) and whether the file is deleted
+    — or why it can't be replaced. Nothing changes; the approved ones go to
+    /action/bulk (replace). Files already gone are left out."""
+    import asyncio
+    import os
+    db = await connect_db()
+    try:
+        async with db.execute(
+            "SELECT file_path FROM scan_results WHERE health_status = 'corrupt' AND +removed_from_list = 0 "
+            "ORDER BY file_path LIMIT ?", (_REPLACE_PLAN_LIMIT + 1,),
+        ) as cur:
+            paths = [r["file_path"] for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    truncated = len(paths) > _REPLACE_PLAN_LIMIT
+    paths = await asyncio.to_thread(lambda: [p for p in paths[:_REPLACE_PLAN_LIMIT] if os.path.isfile(p)])
+    gate = asyncio.Semaphore(4)
+
+    async def plan(path: str) -> dict:
+        async with gate:
+            try:
+                result = await research_file(path, dry_run=True)
+            except Exception as exc:
+                result = {"success": False, "error": str(exc)}
+        return {**result, "file_path": path}
+    return {"files": await asyncio.gather(*(plan(p) for p in paths)), "truncated": truncated}
+
+
 @router.post("/maintainerr-sync")
 async def maintainerr_sync():
     """Read Maintainerr's collections now (also after every full scan): the

@@ -157,5 +157,24 @@
     "renameFiles_one": "Renombrar {{count}} archivo",
     "renameFiles_many": "Renombrar {{count}} archivos",
     "renameFiles_other": "Renombrar {{count}} archivos"
+  },
+  "replaceCorrupt": {
+    "title": "Reemplazar archivos corruptos",
+    "intro": "Simulación: todavía no ha cambiado nada. Para cada archivo que marques, Sonarr o Radarr bloquea su versión, elimina el archivo y busca una nueva descarga.",
+    "loading": "Consultando a Sonarr y Radarr…",
+    "none": "No hay archivos corruptos que reemplazar.",
+    "truncated": "Se muestran los primeros 500.",
+    "sonarr": "Sonarr · {{series}} · {{episodes}}",
+    "radarr": "Radarr · {{movie}}",
+    "release": "bloquea {{release}}",
+    "noRelease": "sin registro de descarga: no hay nada que bloquear",
+    "keepsFile": "Radarr no tiene este archivo, así que se conserva",
+    "cantReplace": "No se puede reemplazar: {{error}}",
+    "replace_one": "Reemplazar {{count}} archivo",
+    "replace_many": "Reemplazar {{count}} archivos",
+    "replace_other": "Reemplazar {{count}} archivos",
+    "replacing": "Reemplazando…",
+    "replaced": "Reemplazado: se está buscando una nueva descarga",
+    "failed": "Error: {{error}}"
   }
 }

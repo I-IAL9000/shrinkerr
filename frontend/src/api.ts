@@ -526,6 +526,23 @@ export const arrActionBulk = (filePaths: string[], action: ArrAction, deleteFile
     },
   );
 
+// Replacing corrupt files (v0.10.0): a dry run per file; the approved ones
+// go through arrActionBulk(paths, "replace").
+export interface ReplacePlanFile {
+  file_path: string;
+  success: boolean;
+  error?: string;
+  service?: "sonarr" | "radarr";
+  series?: string;
+  episodes?: string[];
+  movie?: string;
+  year?: number | null;
+  release?: string | null;  // null: no download record, nothing to blocklist
+  deletes?: boolean;
+}
+export const getReplacePlan = () =>
+  apiFetch<{ files: ReplacePlanFile[]; truncated: boolean }>("/arr/replace-plan");
+
 // Plex Connect (PIN-based OAuth)
 export interface PlexUser {
   email: string;

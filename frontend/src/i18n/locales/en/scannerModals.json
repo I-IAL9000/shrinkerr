@@ -148,5 +148,23 @@
     "done": "Done",
     "renameFiles_one": "Rename {{count}} file",
     "renameFiles_other": "Rename {{count}} files"
+  },
+  "replaceCorrupt": {
+    "title": "Replace corrupt files",
+    "intro": "A dry run — nothing has changed yet. For each file you tick, Sonarr or Radarr blocklists its release, deletes the file and searches for a new download.",
+    "loading": "Asking Sonarr and Radarr…",
+    "none": "No corrupt files to replace.",
+    "truncated": "Showing the first 500.",
+    "sonarr": "Sonarr · {{series}} · {{episodes}}",
+    "radarr": "Radarr · {{movie}}",
+    "release": "blocklists {{release}}",
+    "noRelease": "no download record: nothing to blocklist",
+    "keepsFile": "Radarr doesn't list this file, so it stays",
+    "cantReplace": "Can't replace: {{error}}",
+    "replace_one": "Replace {{count}} file",
+    "replace_other": "Replace {{count}} files",
+    "replacing": "Replacing…",
+    "replaced": "Replaced: a new download is being searched for",
+    "failed": "Failed: {{error}}"
   }
 }

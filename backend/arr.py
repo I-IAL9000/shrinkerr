@@ -407,8 +407,10 @@ async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_k
     return None
 
 
-async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict:
-    """Blocklist the current release and trigger Sonarr to grab a replacement."""
+async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:
+    """Blocklist the current release and trigger Sonarr to grab a replacement.
+    dry_run: only look it up — the episodes and the release it would
+    blocklist (None: no download record) — and change nothing."""
     settings = await _get_arr_settings()
     url = settings.get("sonarr_url", "").rstrip("/")
     api_key = settings.get("sonarr_api_key", "")
@@ -453,11 +455,13 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict
             )
             resp.raise_for_status()
             episodes = resp.json()
-            episode_ids = [e["id"] for e in episodes if e.get("episodeFileId") == episodefile_id]
+            file_episodes = [e for e in episodes if e.get("episodeFileId") == episodefile_id]
+            episode_ids = [e["id"] for e in file_episodes]
 
             # 4. Find the most recent import history record for these episodes
             blocklisted = False
             blocklist_error = None
+            release = None
             if episode_ids:
                 try:
                     # Look for the most recent grabbed/imported record and blocklist it.
@@ -473,6 +477,9 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict
                         records = resp.json().get("records", [])
                         # markAsFailed needs a history record id for a *grabbed* event
                         grab_rec = next((r for r in records if r.get("eventType") == "grabbed"), None)
+                        if grab_rec and dry_run:
+                            release = grab_rec.get("sourceTitle") or ""
+                            break
                         if grab_rec:
                             resp2 = await client.post(
                                 f"{url}/api/v3/history/failed/{grab_rec['id']}",
@@ -487,6 +494,18 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict
                 except Exception as exc:
                     blocklist_error = str(exc)
                     print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+
+            if dry_run:
+                return {
+                    "success": True,
+                    "dry_run": True,
+                    "service": "sonarr",
+                    "series": series.get("title"),
+                    "episodes": [f"S{e.get('seasonNumber', 0):02d}E{e.get('episodeNumber', 0):02d}"
+                                 for e in file_episodes],
+                    "release": release,
+                    "deletes": delete_file,
+                }
 
             # 5. Delete the episodefile (removes DB record + physical file if requested)
             # Sonarr's DELETE /api/v3/episodefile/{id} always deletes the physical file.
@@ -529,8 +548,9 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True) -> dict
         return {"success": False, "error": str(exc)}
 
 
-async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict:
-    """Blocklist the current release and trigger Radarr to grab a replacement."""
+async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:
+    """Blocklist the current release and trigger Radarr to grab a replacement.
+    dry_run: as for Sonarr."""
     settings = await _get_arr_settings()
     url = settings.get("radarr_url", "").rstrip("/")
     api_key = settings.get("radarr_api_key", "")
@@ -556,10 +576,16 @@ async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict
             movie_full = resp.json()
             movie_file = movie_full.get("movieFile") or {}
             movie_file_id = movie_file.get("id")
+            # Radarr's file must be this one: its DELETE removes Radarr's file,
+            # whatever else sits in the folder (Sonarr matches the file itself).
+            radarr_name = Path(movie_file.get("path") or movie_file.get("relativePath") or "").name
+            if movie_file_id and radarr_name and radarr_name != Path(arr_path).name:
+                return {"success": False, "error": f"Radarr's file for this movie is a different one: {radarr_name}"}
 
             # 3. Blocklist the most recent grabbed release
             blocklisted = False
             blocklist_error = None
+            release = None
             try:
                 resp = await client.get(
                     f"{url}/api/v3/history/movie",
@@ -570,7 +596,9 @@ async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict
                     records = resp.json()
                     # sort by date desc
                     records.sort(key=lambda r: r.get("date", ""), reverse=True)
-                    if records:
+                    if records and dry_run:
+                        release = records[0].get("sourceTitle") or ""
+                    elif records:
                         grab_rec = records[0]
                         resp2 = await client.post(
                             f"{url}/api/v3/history/failed/{grab_rec['id']}",
@@ -584,6 +612,17 @@ async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict
             except Exception as exc:
                 blocklist_error = str(exc)
                 print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
+
+            if dry_run:
+                return {
+                    "success": True,
+                    "dry_run": True,
+                    "service": "radarr",
+                    "movie": movie_full.get("title"),
+                    "year": movie_full.get("year"),
+                    "release": release,
+                    "deletes": bool(delete_file and movie_file_id),  # no file in Radarr: it stays
+                }
 
             # 4. Delete moviefile
             deleted = False
@@ -621,24 +660,34 @@ async def research_radarr_file(file_path: str, delete_file: bool = True) -> dict
         return {"success": False, "error": str(exc)}
 
 
-async def research_file(file_path: str, delete_file: bool = True) -> dict:
+async def research_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:
     """Request a fresh download of this file via the appropriate *arr.
 
     Routes based on folder conventions:
       * TV ([tvdb-*] / S##E## paths) → Sonarr
       * Movies ([tt*] / movies/films path) → Radarr
       * Unknown → try Sonarr first, then Radarr
+    dry_run: what it would do, changing nothing.
     """
     media_type = _detect_media_type(file_path)
     if media_type == "tv":
-        return await research_sonarr_file(file_path, delete_file=delete_file)
-    if media_type == "movie":
-        return await research_radarr_file(file_path, delete_file=delete_file)
-    # Unknown — try Sonarr first
-    result = await research_sonarr_file(file_path, delete_file=delete_file)
-    if result.get("success"):
-        return result
-    return await research_radarr_file(file_path, delete_file=delete_file)
+        result = await research_sonarr_file(file_path, delete_file=delete_file, dry_run=dry_run)
+    elif media_type == "movie":
+        result = await research_radarr_file(file_path, delete_file=delete_file, dry_run=dry_run)
+    else:  # Unknown — try Sonarr first
+        result = await research_sonarr_file(file_path, delete_file=delete_file, dry_run=dry_run)
+        if not result.get("success"):
+            result = await research_radarr_file(file_path, delete_file=delete_file, dry_run=dry_run)
+    if result.get("deleted"):
+        # The file is gone. Its row goes too, so a replacement saved under
+        # the same name isn't shown with the old one's health check (v0.10.0).
+        db = await connect_db()
+        try:
+            await db.execute("DELETE FROM scan_results WHERE file_path = ?", (file_path,))
+            await db.commit()
+        finally:
+            await db.close()
+    return result
 
 
 # ────────────────────────────────────────────────────────────────────────────

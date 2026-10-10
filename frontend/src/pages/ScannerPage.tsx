@@ -16,6 +16,7 @@ import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
 import RenameModal from "../components/RenameModal";
+import ReplaceCorruptModal from "../components/ReplaceCorruptModal";
 import type { ScannedFile, ScanProgress, AudioTrack, SubtitleTrack } from "../types";
 import { encoderSettingsLabel } from "../utils/encoderLabel";
 import { useVisibleInterval } from "../useVisibleInterval";
@@ -135,6 +136,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
   const arrMenuRef = useRef<HTMLDivElement | null>(null);
   const [healthMenuOpen, setHealthMenuOpen] = useState(false);
+  const [replaceCorruptOpen, setReplaceCorruptOpen] = useState(false);
   const healthMenuRef = useRef<HTMLDivElement | null>(null);
   // Fall back to the legacy squeezarr_viewMode key so users upgrading from
   // the old app name keep their view preference. New writes use the canonical
@@ -1585,6 +1587,13 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
+                onClick={() => setReplaceCorruptOpen(true)}
+              >
+                {t("scanner:corruptBanner.replace")}
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
                 onClick={handleResetCorruptFlags}
               >
                 {t("scanner:corruptBanner.clearAll")}
@@ -2031,6 +2040,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             toast(t("scanner:toasts.renameApplied"), "success");
           }}
         />
+      )}
+
+      {replaceCorruptOpen && (
+        <ReplaceCorruptModal onClose={() => setReplaceCorruptOpen(false)} onReplaced={() => loadTree(filter)} />
       )}
 
       {/* Advanced search modal */}
