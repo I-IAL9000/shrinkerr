@@ -2573,8 +2573,10 @@ async def realign_audio_flags() -> int:
 
 
 async def realign_audio_flags_once() -> int:
-    """realign_audio_flags() once per install (startup, settings sentinel)."""
-    sentinel = "audio_flags_realigned"
+    """realign_audio_flags() once per install (startup, settings sentinel).
+    _v2: the first pass (449af9e) read the stored track order, which lists
+    the original language first, so it never found a reorder."""
+    sentinel = "audio_flags_realigned_v2"
     db = await connect_db()
     try:
         async with db.execute("SELECT value FROM settings WHERE key = ?", (sentinel,)) as cur:

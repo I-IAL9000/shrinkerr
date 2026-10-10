@@ -399,20 +399,21 @@ async def job_plan(job_id: int):
 
 
 async def _jobs_from_scan(file_paths: list[str], payload: BulkQueueFromScanRequest,
-                          new_files: bool = False) -> tuple[list[dict], int]:
+                          new_files: bool = False, rule_context: Optional[dict] = None) -> tuple[list[dict], int]:
     """The jobs Add to Queue creates for scanned files, and how many a rule
     skipped or kept from converting: rules, the conversion filters, the track
     work, the job type and quality. Also the watcher's auto-queue (v0.10.0;
     it decided on its own, without subtitle removals or the reorder), with
     `new_files`: a file with nothing to do is left out there, where an
-    explicit Add to Queue still queues it (a remux)."""
+    explicit Add to Queue still queues it (a remux). `rule_context`: e.g. the
+    download's NZBGet category, for rules that match on it."""
     from backend.rule_resolver import resolve_rules_for_batch
 
     # Resolve encoding rules for all files in batch (unless overridden)
     if payload.override_rules:
         rule_results = {}
     else:
-        rule_results = await resolve_rules_for_batch(file_paths)
+        rule_results = await resolve_rules_for_batch(file_paths, extra_context=rule_context)
 
     db = await connect_db()
     try:
@@ -613,6 +614,61 @@ async def queue_new_files(file_paths: list[str], priority: int, queue: JobQueue)
     jobs, by_rule = await _jobs_from_scan(sorted(file_paths), payload, new_files=True)
     ids = await queue.add_jobs_bulk(jobs)
     return sum(1 for jid in ids if jid), by_rule
+
+
+async def queue_files_by_path(raw_paths: list[str], payload: BulkQueueFromScanRequest, *,
+                              insert_next: bool = False, rule_context: Optional[dict] = None,
+                              source: str = "API") -> tuple[int, list[str]]:
+    """Add-by-path (the NZBGet / SABnzbd scripts) and the queue webhook
+    (v0.10.0): each file is stored in the Scanner as the watcher would store
+    it, then queued as Add to Queue would queue it — less files with nothing
+    to do. They probed and typed jobs on their own: no "ignore" rule (add-by-
+    path) or no rules at all (webhook), locked tracks unticked by hand kept,
+    no reorder, the original language from the tracks only. Starts the queue
+    unless it was paused. Returns (jobs added, errors)."""
+    import asyncio
+    import backend.database as database
+    from backend.media_paths import load_media_dirs, is_in_any, _resolve
+    from backend.routes.scan import _write_batch
+    from backend.scanner import probe_file
+    from backend.watcher import scan_settings, scanned_from_probe
+
+    # Only paths inside the media directories: these endpoints are reachable
+    # from download-client scripts, and would otherwise run ffprobe on any
+    # file the container can read.
+    allowed_dirs = await load_media_dirs()
+    if not allowed_dirs:
+        raise ApiError(status_code=400, detail="No media directories configured", code="media.noMediaDirs")
+    errors: list[str] = []
+    scanned = []
+    source_codecs, global_cq = await scan_settings(database.DB_PATH)
+    for raw_fp in raw_paths:
+        fp = _resolve(raw_fp)
+        if not is_in_any(fp, allowed_dirs):
+            errors.append(f"Outside media dirs: {raw_fp}")
+            continue
+        if not await asyncio.to_thread(_os.path.exists, fp):
+            errors.append(f"File not found: {fp}")
+            continue
+        probe = await probe_file(fp)
+        if not probe:
+            errors.append(f"Probe failed: {fp}")
+            continue
+        scanned.append(await scanned_from_probe(fp, probe, source_codecs, global_cq))
+    if not scanned:
+        return 0, errors
+
+    await _write_batch(database.DB_PATH, scanned, datetime.now(timezone.utc).isoformat(), mark_new=True)
+    paths = sorted(s.file_path for s in scanned)
+    jobs, _ = await _jobs_from_scan(paths, payload, new_files=True, rule_context=rule_context)
+    for job in jobs:
+        job["insert_next"] = insert_next
+    added = sum(1 for jid in await _queue.add_jobs_bulk(jobs) if jid)
+    print(f"[{source}] Queued {added} of {len(paths)} file(s) by path "
+          f"(priority={payload.priority}, insert_next={insert_next})", flush=True)
+    if added > 0 and _worker is not None and _worker.start_if_idle():
+        print(f"[{source}] Auto-started queue for {added} new job(s)", flush=True)
+    return added, errors
 
 
 @router.post("/add-from-scan")
@@ -1072,152 +1128,16 @@ async def clear_pending_health_checks():
 
 @router.post("/add-by-path")
 async def add_jobs_by_path(payload: AddByPathRequest):
-    """Queue files by path — probes files directly without requiring scan_results."""
+    """Queue files by path (the NZBGet / SABnzbd scripts): stored in the
+    Scanner, then queued as Add to Queue would queue them (v0.10.0)."""
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
-
-    from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
-    from backend.rule_resolver import resolve_rules_for_batch
-    from backend.config import settings
-    from backend.media_paths import load_media_dirs, is_in_any, _resolve
-
-    # Load source codecs, default encoder and the per-file CQ settings.
-    # (v0.10.0: this used `async with connect_db()`, which always raised and
-    # was swallowed, so the saved source codecs and encoder were never read.)
-    from backend.scanner import DEFAULT_SOURCE_CODECS
-    from backend.content_detect import SMART_CQ_KEYS, smart_cq_settings, smart_quality
-    source_codecs = list(DEFAULT_SOURCE_CODECS)
-    default_encoder = "nvenc"
-    _values: dict = {}
-    try:
-        _db = await connect_db()
-        try:
-            async with _db.execute(
-                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', "
-                + ",".join(f"'{k}'" for k in SMART_CQ_KEYS) + ")"
-            ) as _cur:
-                _values = {r["key"]: r["value"] for r in await _cur.fetchall()}
-        finally:
-            await _db.close()
-        if _values.get("source_codecs"):
-            source_codecs = json.loads(_values["source_codecs"])
-        if _values.get("default_encoder"):
-            default_encoder = _values["default_encoder"]
-    except Exception:
-        pass
-    smart_settings = smart_cq_settings(_values)
-
-    # Containment check — stops callers from queuing `/etc/hostname` etc.
-    allowed_dirs = await load_media_dirs()
-    if not allowed_dirs:
-        raise ApiError(
-            status_code=400,
-            detail="No media directories configured",
-            code="media.noMediaDirs",
-        )
-    safe_file_paths: list[str] = []
-    early_errors: list[str] = []
-    for raw_fp in payload.file_paths:
-        resolved = _resolve(raw_fp)
-        if not is_in_any(resolved, allowed_dirs):
-            early_errors.append(f"Outside media dirs: {raw_fp}")
-            continue
-        safe_file_paths.append(resolved)
-
-    # Resolve encoding rules for allowlisted paths only (skip any that
-    # failed the containment check so rules aren't evaluated against
-    # attacker-supplied paths).
-    extra_context = {}
-    if payload.nzbget_category:
-        extra_context["nzbget_category"] = payload.nzbget_category
-    rule_results = await resolve_rules_for_batch(safe_file_paths, extra_context=extra_context)
-
-    added = 0
-    errors = list(early_errors)
-
-    for fp in safe_file_paths:
-        if not _os.path.exists(fp):
-            errors.append(f"File not found: {fp}")
-            continue
-
-        probe = await probe_file(fp)
-        if not probe:
-            errors.append(f"Probe failed: {fp}")
-            continue
-
-        video_codec = (probe.get("video_codec") or "").lower()
-        needs_conversion = codec_matches_source(video_codec, source_codecs)
-        # v0.9.122: discs always need conversion regardless of codec (see scanner).
-        if probe.get("disc_type"):
-            needs_conversion = True
-        if payload.force_reencode:
-            needs_conversion = True
-
-        print(f"[API] add-by-path: {_os.path.basename(fp)} codec={video_codec} source_codecs={source_codecs} needs_conversion={needs_conversion}", flush=True)
-
-        native_lang = detect_native_language(probe.get("audio_tracks", []))
-        audio_tracks = classify_audio_tracks(probe.get("audio_tracks", []), native_lang, probe.get("duration", 0))
-        sub_tracks = classify_subtitle_tracks(probe.get("subtitle_tracks", []), native_lang)
-
-        audio_remove = [t.stream_index for t in audio_tracks if not t.keep and not t.locked]
-        sub_remove = [t.stream_index for t in sub_tracks if not t.keep and not t.locked]
-        has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
-
-        if needs_conversion and has_audio_work:
-            job_type = "combined"
-        elif needs_conversion:
-            job_type = "convert"
-        elif has_audio_work:
-            job_type = "audio"
-        else:
-            print(f"[API] add-by-path: SKIPPED {_os.path.basename(fp)} — no conversion or audio work needed", flush=True)
-            continue
-
-        # Apply encoding rule overrides
-        rule = rule_results.get(fp)
-        if rule and rule["action"] == "skip":
-            print(f"[API] add-by-path: SKIPPED {_os.path.basename(fp)} — rule '{rule['rule_name']}' says skip", flush=True)
-            continue
-
-        encoder = (rule.get("encoder") if rule else None) or default_encoder
-        nvenc_preset = rule.get("nvenc_preset") if rule else None
-        nvenc_cq = rule.get("nvenc_cq") if rule else None
-        libx265_crf = rule.get("libx265_crf") if rule else None
-        libx265_preset = rule.get("libx265_preset") if rule else None
-        target_resolution = rule.get("target_resolution") if rule else None
-        audio_codec = rule.get("audio_codec") if rule else None
-        audio_bitrate = rule.get("audio_bitrate") if rule else None
-        # v0.10.0: content type detection / resolution-aware quality, unless
-        # a rule sets the quality.
-        if job_type in ("convert", "combined") and nvenc_cq is None and libx265_crf is None:
-            nvenc_cq, libx265_crf = smart_quality(
-                fp, probe.get("video_width"), probe.get("video_height"), smart_settings)
-
-        job_id = await _queue.add_job(
-            file_path=fp,
-            job_type=job_type,
-            encoder=encoder,
-            audio_tracks_to_remove=audio_remove,
-            subtitle_tracks_to_remove=sub_remove,
-            original_size=probe.get("file_size", 0),
-            nvenc_preset=nvenc_preset,
-            nvenc_cq=nvenc_cq,
-            libx265_crf=libx265_crf,
-            libx265_preset=libx265_preset,
-            target_resolution=target_resolution,
-            audio_codec=audio_codec,
-            audio_bitrate=audio_bitrate,
-            priority=max(payload.priority, rule.get("queue_priority") or 0 if rule else 0),
-            insert_next=payload.insert_next,
-        )
-        added += 1
-        print(f"[API] Queued by path: {_os.path.basename(fp)} ({job_type}, priority={payload.priority}, insert_next={payload.insert_next})", flush=True)
-
-    # Auto-start queue if items were added and worker is idle (never over a
-    # manual pause)
-    if added > 0 and _worker is not None and _worker.start_if_idle():
-        print(f"[API] Auto-started queue for {added} new job(s) from add-by-path", flush=True)
-
+    added, errors = await queue_files_by_path(
+        payload.file_paths,
+        BulkQueueFromScanRequest(priority=payload.priority, force_reencode=payload.force_reencode),
+        insert_next=payload.insert_next,
+        rule_context={"nzbget_category": payload.nzbget_category} if payload.nzbget_category else None,
+    )
     return {"added": added, "errors": errors}
 
 

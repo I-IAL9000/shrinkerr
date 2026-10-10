@@ -1412,8 +1412,10 @@ def needs_native_reorder(audio_tracks, native_language: Optional[str]) -> bool:
         return False
     def get(t, key, default=None):
         return t.get(key, default) if isinstance(t, dict) else getattr(t, key, default)
-    is_native = [languages_match((get(t, "language") or "").lower(), native)
-                 for t in audio_tracks if get(t, "keep", True)]
+    # In the file's stream order: classify_audio_tracks() lists the original
+    # language's tracks first, which would always look in order already.
+    kept = sorted((t for t in audio_tracks if get(t, "keep", True)), key=lambda t: get(t, "stream_index", 0) or 0)
+    is_native = [languages_match((get(t, "language") or "").lower(), native) for t in kept]
     return any(is_native) and not is_native[0]
 
 

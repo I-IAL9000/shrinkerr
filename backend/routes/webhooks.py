@@ -1,7 +1,6 @@
 """Webhook endpoints for external tool integration."""
 
 import asyncio
-import json
 from typing import Optional
 
 from fastapi import APIRouter
@@ -77,127 +76,17 @@ async def webhook_scan(request: WebhookScanRequest = WebhookScanRequest()):
 
 @router.post("/queue")
 async def webhook_queue(request: WebhookQueueRequest):
-    """Add files to the conversion queue by path."""
-    from backend.routes.jobs import _queue, _os
-    from backend.scanner import probe_file, classify_audio_tracks, classify_subtitle_tracks, detect_native_language, codec_matches_source
-    from backend.config import settings
-    from backend.media_paths import load_media_dirs, is_in_any, _resolve
+    """Add files to the conversion queue by path: stored in the Scanner, then
+    queued as Add to Queue would queue them — rules included (v0.10.0)."""
+    from backend.routes.jobs import BulkQueueFromScanRequest, _queue, queue_files_by_path
 
     if _queue is None:
         raise ApiError(status_code=503, detail="Queue not initialized", code="queue.notInitialized")
-
-    # Load source codecs and the per-file CQ settings. (v0.10.0: this used
-    # `async with connect_db()`, which always raised and was swallowed, so the
-    # saved source codecs were never read.)
-    from backend.scanner import DEFAULT_SOURCE_CODECS
-    from backend.content_detect import SMART_CQ_KEYS, smart_cq_settings, smart_quality
-    source_codecs = list(DEFAULT_SOURCE_CODECS)
-    values: dict = {}
-    try:
-        db = await connect_db()
-        try:
-            async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN ('source_codecs', 'default_encoder', "
-                + ",".join(f"'{k}'" for k in SMART_CQ_KEYS) + ")"
-            ) as cur:
-                values = {r["key"]: r["value"] for r in await cur.fetchall()}
-        finally:
-            await db.close()
-        if values.get("source_codecs"):
-            source_codecs = json.loads(values["source_codecs"])
-    except Exception:
-        pass
-    smart_settings = smart_cq_settings(values)
-
-    # Refuse to operate on paths outside the configured media directories.
-    # This endpoint is reachable via NZBGet/SABnzbd post-processing scripts;
-    # without this guard, anyone who can reach the webhook surface could
-    # coerce ffprobe/ffmpeg into running against arbitrary container-
-    # readable files (e.g. /proc/*, mounted secrets).
-    allowed_dirs = await load_media_dirs()
-    if not allowed_dirs:
-        raise ApiError(
-            status_code=400,
-            detail="No media directories configured",
-            code="media.noMediaDirs",
-        )
-
-    added = 0
-    errors = []
-
-    for raw_fp in request.paths:
-        import os
-        # Canonicalise before every downstream check — stops
-        # `/media/../etc/hostname` from slipping past the is_in_any guard
-        # only to be used in the pre-resolution form by probe_file / queue.
-        fp = _resolve(raw_fp)
-        if not is_in_any(fp, allowed_dirs):
-            errors.append(f"Outside media dirs: {raw_fp}")
-            continue
-        if not os.path.exists(fp):
-            errors.append(f"File not found: {fp}")
-            continue
-
-        probe = await probe_file(fp)
-        if not probe:
-            errors.append(f"Probe failed: {fp}")
-            continue
-
-        video_codec = (probe.get("video_codec") or "").lower()
-        needs_conversion = codec_matches_source(video_codec, source_codecs)
-        # v0.9.122: a disc image always needs conversion regardless of codec
-        # (an HEVC Blu-ray disc is still a 30-56GB raw disc to transcode; an
-        # audio-only remux can't even open it). Mirror the scanner rule.
-        if probe.get("disc_type"):
-            needs_conversion = True
-        if request.force_reencode:
-            needs_conversion = True
-
-        native_lang = detect_native_language(probe.get("audio_tracks", []))
-        audio_tracks = classify_audio_tracks(probe.get("audio_tracks", []), native_lang, probe.get("duration", 0))
-        sub_tracks = classify_subtitle_tracks(probe.get("subtitle_tracks", []), native_lang)
-
-        audio_remove = [t.stream_index for t in audio_tracks if not t.keep and not t.locked]
-        sub_remove = [t.stream_index for t in sub_tracks if not t.keep and not t.locked]
-        has_audio_work = len(audio_remove) > 0 or len(sub_remove) > 0
-
-        if needs_conversion and has_audio_work:
-            job_type = "combined"
-        elif needs_conversion:
-            job_type = "convert"
-        elif has_audio_work:
-            job_type = "audio"
-        else:
-            continue
-
-        # v0.10.0: content type detection / resolution-aware quality.
-        nvenc_cq = libx265_crf = None
-        if job_type in ("convert", "combined"):
-            nvenc_cq, libx265_crf = smart_quality(
-                fp, probe.get("video_width"), probe.get("video_height"), smart_settings)
-
-        await _queue.add_job(
-            file_path=fp,
-            job_type=job_type,
-            # v0.10.0: the configured default (was always "nvenc").
-            encoder=values.get("default_encoder") or "nvenc",
-            audio_tracks_to_remove=audio_remove,
-            subtitle_tracks_to_remove=sub_remove,
-            original_size=probe.get("file_size", 0),
-            nvenc_cq=nvenc_cq,
-            libx265_crf=libx265_crf,
-            priority=request.priority,
-            insert_next=request.insert_next,
-        )
-        added += 1
-
-    # Auto-start queue if items were added and worker is idle (never over a
-    # manual pause)
-    if added > 0:
-        from backend.routes.jobs import _worker
-        if _worker is not None and _worker.start_if_idle():
-            print(f"[WEBHOOK] Auto-started queue for {added} new job(s)", flush=True)
-
+    added, errors = await queue_files_by_path(
+        request.paths,
+        BulkQueueFromScanRequest(priority=request.priority, force_reencode=request.force_reencode),
+        insert_next=request.insert_next, source="WEBHOOK",
+    )
     return {"added": added, "errors": errors}
 
 

@@ -257,10 +257,7 @@ class FileWatcher:
         if not new_files:
             return 0
 
-        from backend.scanner import probe_file, detect_native_language, is_x264, is_x265, is_av1, codec_matches_source
-        from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, estimate_savings
-        from backend.encoding_estimates import video_conv_savings_bytes
-        from backend.models import ScannedFile
+        from backend.scanner import probe_file, is_x264, is_x265, is_av1
 
         # Check for ignored files
         db = await aiosqlite.connect(self.db_path)
@@ -291,36 +288,7 @@ class FileWatcher:
 
         import time as _time
 
-        # v0.5.22: load source_codecs once per poll so codec matching
-        # matches what the scanner + webhook do. Pre-v0.5.22 the watcher
-        # hardcoded `is_x264(video_codec)` — only H.264 was recognised as
-        # "needs conversion", so MPEG-2 / MPEG-4 / VC-1 / WMV files
-        # auto-discovered via filesystem watching never got a `convert`
-        # job even though they were in the user's source_codecs list.
-        # HEVC was unaffected (not in default source_codecs either way).
-        from backend.scanner import DEFAULT_SOURCE_CODECS
-        source_codecs = list(DEFAULT_SOURCE_CODECS)
-        # v0.6.7: load global NVENC CQ once per cycle to match the scanner
-        # / queue-estimate's CQ-calibrated savings curve. Pre-v0.6.7 this
-        # path used a flat 0.30 default that disagreed with the modal.
-        global_cq = 25
-        try:
-            import json as _json
-            db3 = await aiosqlite.connect(self.db_path)
-            try:
-                async with db3.execute(
-                    "SELECT value FROM settings WHERE key = 'source_codecs'"
-                ) as cur:
-                    row = await cur.fetchone()
-                    if row and row[0]:
-                        source_codecs = _json.loads(row[0])
-                # v0.10.0: the default encoder's quality, not always NVENC's.
-                from backend.encoding_estimates import load_effective_cq
-                global_cq = await load_effective_cq(db3)
-            finally:
-                await db3.close()
-        except Exception:
-            pass
+        source_codecs, global_cq = await scan_settings(self.db_path)
 
         # v0.6.0: disc-folder discovery. When the watcher discovers a path
         # inside VIDEO_TS/ or BDMV/, or the disc-root folder itself, map
@@ -423,133 +391,10 @@ class FileWatcher:
                 skipped_probe += 1
                 continue
 
-            video_codec = probe["video_codec"]
-            raw_tracks = probe["audio_tracks"]
-            duration = probe["duration"]
-            file_size = probe["file_size"]
-
-            if is_av1(video_codec):
+            if is_av1(probe["video_codec"]):
                 skipped_av1 += 1
                 continue
-
-            native_lang = detect_native_language(raw_tracks)
-            language_source = "heuristic"
-
-            # Try TMDB/TVDB lookup for accurate native language. Skip when
-            # the file is inside an "Other"-typed media dir — those hold
-            # non-cataloguable content and would just produce spurious matches.
-            try:
-                from backend.media_paths import is_other_typed_dir
-                if not await is_other_typed_dir(str(file_path)):
-                    from backend.metadata import lookup_original_language
-                    api_lang = await asyncio.wait_for(
-                        lookup_original_language(str(file_path)),
-                        timeout=10,
-                    )
-                    if api_lang:
-                        native_lang = api_lang
-                        language_source = "api"
-            except Exception:
-                pass
-
-            # v0.5.22: was `is_x264(video_codec)` — only matched h264 and
-            # silently classified MPEG-2 / MPEG-4 / VC-1 as "no
-            # conversion needed" regardless of source_codecs.
-            needs_conversion = codec_matches_source(video_codec, source_codecs)
-            # v0.9.122: a disc image always needs conversion regardless of codec
-            # (mirror the scanner) so a newly-discovered HEVC disc auto-queues as
-            # a convert, not a no-op audio cleanup.
-            if probe.get("disc_type"):
-                needs_conversion = True
-            from backend.scanner import is_dolby_vision
-            if is_dolby_vision(probe.get("hdr_format")):
-                needs_conversion = False  # v0.10.0: never re-encoded
-            audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
-            raw_subs = probe.get("subtitle_tracks", [])
-            subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
-
-            # Detect external subtitle files (.srt/.ass/.ssa/.sub/.vtt) alongside the video
-            try:
-                from backend.scanner import detect_external_subtitles
-                ext_subs_raw = detect_external_subtitles(file_path)
-                has_external_subs = len(ext_subs_raw) > 0
-                if ext_subs_raw:
-                    for i, es in enumerate(ext_subs_raw):
-                        es["stream_index"] = -(i + 1)
-                    ext_classified = classify_subtitle_tracks(ext_subs_raw, native_lang)
-                    for cls_track, raw in zip(ext_classified, ext_subs_raw):
-                        cls_track = cls_track.model_copy(update={
-                            "external": True,
-                            "external_path": raw["external_path"],
-                        })
-                        subtitle_tracks.append(cls_track)
-            except Exception as exc:
-                print(f"[WATCHER] External sub detection failed: {exc}", flush=True)
-                has_external_subs = False
-
-            tracks_to_remove = [t for t in audio_tracks if not t.keep]
-            has_removable = len(tracks_to_remove) > 0
-            has_removable_subs = any(not t.keep for t in subtitle_tracks)
-
-            # Include x265 files so converted content shows with "x265 ✓" badge
-
-            savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
-            video_conv_bytes = video_conv_savings_bytes(file_size, global_cq) if needs_conversion else 0
-
-            p = Path(file_path)
-            # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
-            # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
-            # disc-root folder (p.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
-            # v0.7.2: helper handles ISO inputs correctly (parent vs parent.parent).
-            from backend.scanner import _disc_display_name
-            disc_type_val = probe.get("disc_type")
-            display_name = _disc_display_name(p, disc_type_val)
-
-            # Get file modification time from disk. For discs, the marker file
-            # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring
-            # timestamp — often decades old — which makes "Newest" sort treat
-            # freshly-added discs as ancient. Use the disc-root folder's mtime
-            # instead, which reflects when the user actually copied the disc
-            # into their library. v0.6.3+.
-            try:
-                if disc_type_val:
-                    file_mtime = (await asyncio.to_thread(p.parent.parent.stat)).st_mtime
-                else:
-                    file_mtime = await asyncio.to_thread(os.path.getmtime, file_path)
-            except OSError:
-                file_mtime = None
-            # v0.9.102: clamp a bogus future mtime (ripped media dated 2036)
-            # so it doesn't pin the title to the top of the "Newest" sort.
-            file_mtime = clamp_future_mtime(file_mtime, _time.time())
-
-            scanned = ScannedFile(
-                file_path=file_path,
-                file_name=display_name,
-                folder_name=p.parent.name,
-                file_size=file_size,
-                file_size_gb=round(file_size / (1024 ** 3), 3),
-                video_codec=video_codec,
-                needs_conversion=needs_conversion,
-                audio_tracks=audio_tracks,
-                subtitle_tracks=subtitle_tracks,
-                native_language=native_lang,
-                language_source=language_source,
-                has_removable_tracks=has_removable,
-                has_removable_subs=has_removable_subs,
-                has_external_subs=has_external_subs,
-                estimated_savings_bytes=savings_bytes,
-                estimated_savings_gb=round(savings_bytes / (1024 ** 3), 3),
-                video_conv_savings_bytes=video_conv_bytes,
-                file_mtime=file_mtime,
-                duration=duration,
-                disc_type=disc_type_val,  # v0.6.0
-                # The watcher never set the height (SC-14): its rows read as
-                # SD to the 4K filter and rules until a full scan.
-                video_height=probe.get("video_height", 0),
-                video_width=probe.get("video_width", 0),  # v0.10.0
-                hdr_format=probe.get("hdr_format"),  # v0.10.0
-            )
-            results.append(scanned)
+            results.append(await scanned_from_probe(file_path, probe, source_codecs, global_cq))
             new_file_paths.append(file_path)
 
         if skipped_ignored or skipped_probe or skipped_av1:
@@ -1635,3 +1480,176 @@ class FileWatcher:
                 except Exception as exc:
                     print(f"[WATCHER] Error during check: {exc}", flush=True)
             await asyncio.sleep(self.interval)
+
+
+async def scan_settings(db_path: str) -> tuple[list, int]:
+    """(source codecs, the default encoder's quality on NVENC's CQ scale) for
+    scanned_from_probe()."""
+    import aiosqlite as _aiosqlite
+    # v0.5.22: load source_codecs once per poll so codec matching
+    # matches what the scanner + webhook do. Pre-v0.5.22 the watcher
+    # hardcoded `is_x264(video_codec)` — only H.264 was recognised as
+    # "needs conversion", so MPEG-2 / MPEG-4 / VC-1 / WMV files
+    # auto-discovered via filesystem watching never got a `convert`
+    # job even though they were in the user's source_codecs list.
+    # HEVC was unaffected (not in default source_codecs either way).
+    from backend.scanner import DEFAULT_SOURCE_CODECS
+    source_codecs = list(DEFAULT_SOURCE_CODECS)
+    # v0.6.7: load global NVENC CQ once per cycle to match the scanner
+    # / queue-estimate's CQ-calibrated savings curve. Pre-v0.6.7 this
+    # path used a flat 0.30 default that disagreed with the modal.
+    global_cq = 25
+    try:
+        import json as _json
+        db3 = await _aiosqlite.connect(db_path)
+        try:
+            async with db3.execute(
+                "SELECT value FROM settings WHERE key = 'source_codecs'"
+            ) as cur:
+                row = await cur.fetchone()
+                if row and row[0]:
+                    source_codecs = _json.loads(row[0])
+            # v0.10.0: the default encoder's quality, not always NVENC's.
+            from backend.encoding_estimates import load_effective_cq
+            global_cq = await load_effective_cq(db3)
+        finally:
+            await db3.close()
+    except Exception:
+        pass
+    return source_codecs, global_cq
+
+
+async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, global_cq: int):
+    """A new file's Scanner row from its probe, as the watcher stores it: the
+    original language (TMDB / TVDB, else from the tracks), the tracks sorted
+    by the keep settings, external subtitles, and the size estimates. Also
+    used by add-by-path and the queue webhook (v0.10.0), which queue from the
+    stored row like Add to Queue."""
+    from backend.scanner import detect_native_language, codec_matches_source
+    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, estimate_savings
+    from backend.encoding_estimates import video_conv_savings_bytes
+    from backend.models import ScannedFile
+    import time as _time
+
+    video_codec = probe["video_codec"]
+    raw_tracks = probe["audio_tracks"]
+    duration = probe["duration"]
+    file_size = probe["file_size"]
+
+    native_lang = detect_native_language(raw_tracks)
+    language_source = "heuristic"
+
+    # Try TMDB/TVDB lookup for accurate native language. Skip when
+    # the file is inside an "Other"-typed media dir — those hold
+    # non-cataloguable content and would just produce spurious matches.
+    try:
+        from backend.media_paths import is_other_typed_dir
+        if not await is_other_typed_dir(str(file_path)):
+            from backend.metadata import lookup_original_language
+            api_lang = await asyncio.wait_for(
+                lookup_original_language(str(file_path)),
+                timeout=10,
+            )
+            if api_lang:
+                native_lang = api_lang
+                language_source = "api"
+    except Exception:
+        pass
+
+    # v0.5.22: was `is_x264(video_codec)` — only matched h264 and
+    # silently classified MPEG-2 / MPEG-4 / VC-1 as "no
+    # conversion needed" regardless of source_codecs.
+    needs_conversion = codec_matches_source(video_codec, source_codecs)
+    # v0.9.122: a disc image always needs conversion regardless of codec
+    # (mirror the scanner) so a newly-discovered HEVC disc auto-queues as
+    # a convert, not a no-op audio cleanup.
+    if probe.get("disc_type"):
+        needs_conversion = True
+    from backend.scanner import is_dolby_vision
+    if is_dolby_vision(probe.get("hdr_format")):
+        needs_conversion = False  # v0.10.0: never re-encoded
+    audio_tracks = classify_audio_tracks(raw_tracks, native_lang)
+    raw_subs = probe.get("subtitle_tracks", [])
+    subtitle_tracks = classify_subtitle_tracks(raw_subs, native_lang)
+
+    # Detect external subtitle files (.srt/.ass/.ssa/.sub/.vtt) alongside the video
+    try:
+        from backend.scanner import detect_external_subtitles
+        ext_subs_raw = detect_external_subtitles(file_path)
+        has_external_subs = len(ext_subs_raw) > 0
+        if ext_subs_raw:
+            for i, es in enumerate(ext_subs_raw):
+                es["stream_index"] = -(i + 1)
+            ext_classified = classify_subtitle_tracks(ext_subs_raw, native_lang)
+            for cls_track, raw in zip(ext_classified, ext_subs_raw):
+                cls_track = cls_track.model_copy(update={
+                    "external": True,
+                    "external_path": raw["external_path"],
+                })
+                subtitle_tracks.append(cls_track)
+    except Exception as exc:
+        print(f"[WATCHER] External sub detection failed: {exc}", flush=True)
+        has_external_subs = False
+
+    tracks_to_remove = [t for t in audio_tracks if not t.keep]
+    has_removable = len(tracks_to_remove) > 0
+    has_removable_subs = any(not t.keep for t in subtitle_tracks)
+
+    # Include x265 files so converted content shows with "x265 ✓" badge
+
+    savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq)
+    video_conv_bytes = video_conv_savings_bytes(file_size, global_cq) if needs_conversion else 0
+
+    p = Path(file_path)
+    # For disc items the file_path is the marker (.../<Disc Root>/VIDEO_TS/VIDEO_TS.IFO
+    # or .../<Disc Root>/BDMV/index.bdmv). The user-facing name should be the
+    # disc-root folder (p.parent.parent.name), not "VIDEO_TS.IFO". v0.6.0+.
+    # v0.7.2: helper handles ISO inputs correctly (parent vs parent.parent).
+    from backend.scanner import _disc_display_name
+    disc_type_val = probe.get("disc_type")
+    display_name = _disc_display_name(p, disc_type_val)
+
+    # Get file modification time from disk. For discs, the marker file
+    # (VIDEO_TS.IFO / index.bdmv) keeps the original DVD/BDMV authoring
+    # timestamp — often decades old — which makes "Newest" sort treat
+    # freshly-added discs as ancient. Use the disc-root folder's mtime
+    # instead, which reflects when the user actually copied the disc
+    # into their library. v0.6.3+.
+    try:
+        if disc_type_val:
+            file_mtime = (await asyncio.to_thread(p.parent.parent.stat)).st_mtime
+        else:
+            file_mtime = await asyncio.to_thread(os.path.getmtime, file_path)
+    except OSError:
+        file_mtime = None
+    # v0.9.102: clamp a bogus future mtime (ripped media dated 2036)
+    # so it doesn't pin the title to the top of the "Newest" sort.
+    file_mtime = clamp_future_mtime(file_mtime, _time.time())
+
+    return ScannedFile(
+        file_path=file_path,
+        file_name=display_name,
+        folder_name=p.parent.name,
+        file_size=file_size,
+        file_size_gb=round(file_size / (1024 ** 3), 3),
+        video_codec=video_codec,
+        needs_conversion=needs_conversion,
+        audio_tracks=audio_tracks,
+        subtitle_tracks=subtitle_tracks,
+        native_language=native_lang,
+        language_source=language_source,
+        has_removable_tracks=has_removable,
+        has_removable_subs=has_removable_subs,
+        has_external_subs=has_external_subs,
+        estimated_savings_bytes=savings_bytes,
+        estimated_savings_gb=round(savings_bytes / (1024 ** 3), 3),
+        video_conv_savings_bytes=video_conv_bytes,
+        file_mtime=file_mtime,
+        duration=duration,
+        disc_type=disc_type_val,  # v0.6.0
+        # The watcher never set the height (SC-14): its rows read as
+        # SD to the 4K filter and rules until a full scan.
+        video_height=probe.get("video_height", 0),
+        video_width=probe.get("video_width", 0),  # v0.10.0
+        hdr_format=probe.get("hdr_format"),  # v0.10.0
+    )

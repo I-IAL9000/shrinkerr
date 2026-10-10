@@ -126,6 +126,17 @@ def test_the_flag_rule(cleanup_settings):
     models = [AudioTrack(stream_index=1, language="eng", codec="aac", channels=2, keep=True),
               AudioTrack(stream_index=2, language="jpn", codec="aac", channels=2, keep=True)]
     assert removable_audio_flag(models, "jpn") == 1
+    # Stored lists are classified, which puts the original language first:
+    # the file's own order (stream_index) decides.
+    import sqlite3
+    from backend.scanner import classify_audio_tracks, invalidate_sub_settings_cache, needs_native_reorder
+    with sqlite3.connect(cleanup_settings) as db:
+        db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('always_keep_languages', '[\"eng\"]')")
+    invalidate_sub_settings_cache()
+    classified = classify_audio_tracks([a(1, "eng"), a(2, "jpn")], "jpn")
+    assert [t.language for t in classified] == ["jpn", "eng"]
+    assert needs_native_reorder(classified, "jpn") is True
+    assert needs_native_reorder(classify_audio_tracks([a(1, "jpn"), a(2, "eng")], "jpn"), "jpn") is False
 
 
 async def _flags(db_path):
