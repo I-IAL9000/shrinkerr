@@ -6,6 +6,7 @@ import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
+import { decodeAdvanced } from "../advancedSearch";
 import FilterBar, { filterLabel } from "../components/FilterBar";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
@@ -109,8 +110,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");  // raw input, debounced into `search`
   const [advSearchOpen, setAdvSearchOpen] = useState(false);
-  const [advSearchPredicates, setAdvSearchPredicates] = useState<any[]>([]);
-  const [advSearchResults, setAdvSearchResults] = useState<Set<string> | null>(null);
+  // Advanced Search (v0.10.0): its conditions are one "adv:" token in the
+  // filter, so the server applies them like the pills — the tree, the lists,
+  // the counts and Add to Queue; it was a 5,000-path list matched here.
+  const advToken = filters.find(f => f.startsWith("adv:")) || null;
+  const adv = useMemo(() => (advToken ? decodeAdvanced(advToken) : null), [advToken]);
+  const setAdvToken = (token: string | null) => setFilters(prev => {
+    const rest = prev.filter(x => x !== "all" && !x.startsWith("adv:"));
+    const next = token ? [...rest, token] : rest;
+    return next.length ? next : ["all"];
+  });
   const [encodingSettings, setEncodingSettings] = useState<any>(null);
   const [bulkAction, setBulkAction] = useState<string | null>(null);
   // v0.9.24: server-driven bulk-detect progress (survives navigation).
@@ -396,12 +405,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       // wiped every unloaded item — looking like "deselect all". Instead start
       // from the complete known set and subtract just the one item. v0.9.118.
       setSelectAllActive(false);
-      const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
       const next = new Set<string>();
-      if (hasAdv) {
-        // Advanced search: the full matched set is known client-side — use it.
-        for (const fp of advSearchResults!) if (fp !== path) next.add(fp);
-      } else if (path.endsWith("/")) {
+      if (path.endsWith("/")) {
         // Deselecting a whole folder: keep every other folder prefix.
         for (const f of folders) {
           const pre = f.path + "/";
@@ -441,10 +446,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         // Check if selecting individual files (inside poster accordion)
         const isFileSelect = !path.endsWith("/") && !lastClickedPathRef.current.endsWith("/");
 
-        // When advanced search is active, the visible set is narrower than the full folder/file list.
-        // Shift-range should operate ONLY over what's currently visible, not the whole library.
-        const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
-
         if (isFileSelect) {
           // Range-select files. Two fixes vs the old global lexicographic sort
           // (v0.9.128):
@@ -465,7 +466,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           const allFiles: string[] = [];
           for (const files of loadedFiles.values()) {
             for (const f of files) {
-              if (hasAdv && !advSearchResults!.has(f.file_path)) continue;
               if (!f.file_path.startsWith(commonDir)) continue;
               allFiles.push(f.file_path);
             }
@@ -486,27 +486,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           const searchLower = search.trim().toLowerCase();
           const searchWords = searchLower ? searchLower.split(/\s+/) : [];
 
-          // If adv search active, the matched folders are the parents of matched files
-          let advFolderSet: Set<string> | null = null;
-          if (hasAdv) {
-            advFolderSet = new Set();
-            for (const fp of advSearchResults!) {
-              const slash = fp.lastIndexOf("/");
-              if (slash > 0) advFolderSet.add(fp.slice(0, slash));
-            }
-          }
-
           const pathSet = new Set<string>();
           for (const f of folders) {
             // Apply search filter
             if (searchWords.length > 0) {
               const hay = f.path.toLowerCase();
               if (!searchWords.every(w => hay.includes(w))) continue;
-            }
-            // Apply advanced search filter
-            if (advFolderSet) {
-              const inAdv = advFolderSet.has(f.path) || Array.from(advFolderSet).some(mf => mf.startsWith(f.path + "/"));
-              if (!inAdv) continue;
             }
 
             if (isFiltered) {
@@ -1176,51 +1161,34 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
 
   // Count selected items — for folder paths, use the folder's file count from tree data
   const selectedCount = useMemo(() => {
-    // When advanced search is active, only count files that actually match the search.
-    // Folder selections should contribute only their matched files, not f.file_count.
-    const hasAdv = !!(advSearchResults && advSearchResults.size > 0);
-
+    // The tree already reflects the whole filter (Advanced Search included).
     if (selectAllActive) {
-      if (hasAdv) return advSearchResults!.size;
       return folders.reduce((sum, f) => sum + f.file_count, 0);
     }
 
     let count = 0;
     // Individual file selections
     for (const p of selectedPaths) {
-      if (!p.endsWith("/")) {
-        if (!hasAdv || advSearchResults!.has(p)) count += 1;
-      }
+      if (!p.endsWith("/")) count += 1;
     }
 
     // Folder selections
     if (selectedFolderPrefixes.length > 0) {
-      if (hasAdv) {
-        // Count only matched files under any selected prefix
-        for (const fp of advSearchResults!) {
-          // Skip if we already counted this path as an individual selection
-          if (selectedPaths.has(fp)) continue;
-          for (const prefix of selectedFolderPrefixes) {
-            if (fp.startsWith(prefix)) { count += 1; break; }
-          }
+      for (const f of folders) {
+        const fp = f.path + "/";
+        let lo = 0, hi = selectedFolderPrefixes.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (selectedFolderPrefixes[mid] <= fp) lo = mid + 1;
+          else hi = mid;
         }
-      } else {
-        for (const f of folders) {
-          const fp = f.path + "/";
-          let lo = 0, hi = selectedFolderPrefixes.length;
-          while (lo < hi) {
-            const mid = (lo + hi) >> 1;
-            if (selectedFolderPrefixes[mid] <= fp) lo = mid + 1;
-            else hi = mid;
-          }
-          if (lo > 0 && fp.startsWith(selectedFolderPrefixes[lo - 1])) {
-            count += f.file_count;
-          }
+        if (lo > 0 && fp.startsWith(selectedFolderPrefixes[lo - 1])) {
+          count += f.file_count;
         }
       }
     }
     return count;
-  }, [selectAllActive, selectedPaths, selectedFolderPrefixes, folders, advSearchResults]);
+  }, [selectAllActive, selectedPaths, selectedFolderPrefixes, folders]);
 
   // Server-computed stats for StatsCards
   const ss = serverStats?.summary;
@@ -1236,23 +1204,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     estimatedSavingsGB: 0, totalScannedGB: 0,
   };
 
-  // Pre-compute the set of ancestor paths for advanced search results.
-  // A folder f should be shown if f.path is an ancestor of any matched file.
-  // Important: when advSearchResults is set but empty (0 matches), we must still
-  // return an empty Set — not null — so the filter runs and yields 0 folders,
-  // rather than showing all folders.
-  const advAncestorPaths = useMemo(() => {
-    if (!advSearchResults) return null;  // no advanced search active
-    const ancestors = new Set<string>();
-    for (const fp of advSearchResults) {
-      const parts = fp.split("/");
-      for (let i = 1; i < parts.length; i++) {
-        ancestors.add(parts.slice(0, i).join("/"));
-      }
-    }
-    return ancestors;  // may be empty if 0 matches
-  }, [advSearchResults]);
-
   // Memoize the filtered folder list so this doesn't rerun on every render.
   // Previous code ran O(N×M) + thousands of allocations on every render.
   const displayFolders = useMemo(() => {
@@ -1265,11 +1216,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         return words.every(w => haystack.includes(w));
       });
     }
-    if (advAncestorPaths) {
-      result = result.filter(f => advAncestorPaths.has(f.path));
-    }
     return result;
-  }, [folders, search, advAncestorPaths]);
+  }, [folders, search]);
 
   /**
    * Shared controls row: search + advanced + sort + view-toggle + refresh
@@ -1299,9 +1247,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         onClick={() => setAdvSearchOpen(true)}
         style={{
           display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap",
-          background: advSearchPredicates.length > 0 ? "var(--accent-bg)" : undefined,
-          color: advSearchPredicates.length > 0 ? "var(--accent-text)" : undefined,
-          borderColor: advSearchPredicates.length > 0 ? "var(--accent-text)" : undefined,
+          background: adv ? "var(--accent-bg)" : undefined,
+          color: adv ? "var(--accent-text)" : undefined,
+          borderColor: adv ? "var(--accent-text)" : undefined,
         }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1314,9 +1262,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           <path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/>
         </svg>
         {t("scanner:toolbar.advanced")}
-        {advSearchPredicates.length > 0 && (
+        {adv && (
           <span style={{ fontSize: 10, padding: "0 5px", borderRadius: 8, background: "var(--accent)", color: "#fff", marginLeft: 2 }}>
-            {advSearchPredicates.length}
+            {adv.p.length}
           </span>
         )}
       </button>
@@ -1914,7 +1862,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           )}
 
           {/* Advanced search active banner */}
-          {advSearchResults && (
+          {adv && (
             <div style={{
               display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
               padding: "8px 14px", marginBottom: 12,
@@ -1927,8 +1875,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <Trans
                   i18nKey="scanner:advBanner.summary"
                   values={{
-                    matches: t("scanner:advBanner.matches", { count: advSearchResults.size, num: advSearchResults.size.toLocaleString() }),
-                    conditions: t("scanner:advBanner.conditions", { count: advSearchPredicates.length }),
+                    matches: t("scanner:advBanner.matches", { count: treeTotalFiles, num: fmtNum(treeTotalFiles) }),
+                    conditions: t("scanner:advBanner.conditions", { count: adv.p.length }),
                   }}
                   components={{ b: <strong /> }}
                 />
@@ -1941,7 +1889,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               <button
                 className="btn btn-secondary"
                 style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => { setAdvSearchResults(null); setAdvSearchPredicates([]); }}
+                onClick={() => setAdvToken(null)}
               >{t("common:actions.clear")}</button>
             </div>
           )}
@@ -1982,14 +1930,12 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               mediaDirLabels={mediaDirLabels}
               sortBy={sortBy}
               sortDir={sortDir}
-              allowedPaths={advSearchResults || undefined}
             />
           ) : (
             <PosterGrid
               folders={displayFolders}
               filter={filter}
               search={search}
-              allowedPaths={advSearchResults || undefined}
               isSelected={isSelected}
               onToggleSelect={handleToggleSelect}
               onAudioTracksChange={handleAudioTracksChange}
@@ -2068,12 +2014,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       {/* Advanced search modal */}
       {advSearchOpen && (
         <AdvancedSearchModal
-          initial={advSearchPredicates}
-          onApply={(preds, paths) => {
-            setAdvSearchPredicates(preds);
-            setAdvSearchResults(new Set(paths));
+          initial={adv}
+          onApply={(token, total) => {
+            setAdvToken(token);
             setAdvSearchOpen(false);
-            toast(t("scanner:toasts.advSearchMatches", { count: paths.length }), "success");
+            toast(t("scanner:toasts.advSearchMatches", { count: total }), "success");
           }}
           onClose={() => setAdvSearchOpen(false)}
         />

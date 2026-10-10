@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Content type is a rule condition**, so anime, film grain, remuxes and so on can each have their own encoder, preset, resolution and audio ("Rule…" next to each type creates one).
 
 ### Fixed
+- **Advanced Search uses the Scanner's own filters**: no 5,000-file limit — its conditions now apply to the tree, the lists, the counts and Add to Queue — and it's part of the page address like the pills. "Matches regex" is a real regular expression, "Filename" searches the file name rather than the whole path, "Type" agrees with the Movies / TV pills, "audio codec is not X" means no track is X, and HDR uses the HDR format the scan found (the name only for files scanned before that was stored).
 - **A rescan undid the tracks you'd kept or removed by hand.** Also, editing a file's tracks didn't update the Audio / Subtitle cleanup filters.
 - **A job's own quality now reaches QSV, VAAPI and VideoToolbox**: queue presets, rules and content-type quality only ever changed NVENC and CPU encodes.
 - A changed list of audio languages to keep reached new scans only after a restart.

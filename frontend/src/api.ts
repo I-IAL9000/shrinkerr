@@ -115,12 +115,6 @@ export const getScanFiles = (folder: string, filter: string = "all", signal?: Ab
   apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`, { signal });
 export const getFilesByTitle = (prefix: string, filter: string = "all", signal?: AbortSignal) =>
   apiFetch<any[]>(`/scan/files-by-title?prefix=${encodeURIComponent(prefix)}&filter=${encodeURIComponent(filter)}`, { signal });
-export const getScanFilesByPaths = (filePaths: string[], filter: string = "all", signal?: AbortSignal) =>
-  apiFetch<any[]>("/scan/files-by-paths", {
-    method: "POST",
-    body: JSON.stringify({ file_paths: filePaths, filter }),
-    signal,
-  });
 export const removeScanResult = (id: number) =>
   apiFetch(`/scan/results/${id}`, { method: "DELETE" });
 export const updateAudioTracks = (id: number, audioTracksJson: string) =>
@@ -221,10 +215,11 @@ export interface SearchPredicate {
 }
 export const getSearchProperties = () =>
   apiFetch<Record<string, SearchProperty>>("/scan/search/properties");
-export const advancedSearch = (predicates: SearchPredicate[], matchMode: "all" | "any" = "all", limit = 5000) =>
-  apiFetch<{ total: number; file_paths: string[]; limit: number }>("/scan/search", {
+/** How many files match, and the filter token that applies the conditions. */
+export const advancedSearch = (predicates: SearchPredicate[], matchMode: "all" | "any" = "all") =>
+  apiFetch<{ total: number; filter: string | null }>("/scan/search", {
     method: "POST",
-    body: JSON.stringify({ predicates, match_mode: matchMode, limit }),
+    body: JSON.stringify({ predicates, match_mode: matchMode }),
   });
 
 export const queueHealthChecks = (filePaths: string[], mode: "quick" | "thorough" = "quick", filter?: string, selectAll?: boolean) =>

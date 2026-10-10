@@ -109,8 +109,6 @@
     "failed": "Search failed",
     "matches_one": "{{num}} match",
     "matches_other": "{{num}} matches",
-    "matchesCapped_one": "{{num}} match (showing first {{cap}})",
-    "matchesCapped_other": "{{num}} matches (showing first {{cap}})",
     "preview": "Preview",
     "apply": "Apply"
   },

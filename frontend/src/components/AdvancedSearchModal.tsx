@@ -3,6 +3,7 @@ import { useDialog } from "../useDialog";
 import { useTranslation } from "react-i18next";
 import { advancedSearch, getSearchProperties, type SearchProperty, type SearchPredicate } from "../api";
 import { serverText } from "../i18n/server";
+import type { AdvancedSpec } from "../advancedSearch";
 
 // Symbol operators render as-is; word operators are looked up under
 // scannerModals:operators.<op> at render time.
@@ -52,8 +53,9 @@ function persistSavedViews(views: SavedView[]) {
 }
 
 interface Props {
-  initial: SearchPredicate[];
-  onApply: (predicates: SearchPredicate[], filePaths: string[]) => void;
+  initial: AdvancedSpec | null;
+  /** The filter token for the conditions, and how many files match. */
+  onApply: (token: string | null, total: number) => void;
   onClose: () => void;
 }
 
@@ -63,12 +65,11 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
   const dialog = useDialog(panelRef, onClose, t("scannerModals:search.title"));
   const [props, setProps] = useState<Record<string, SearchProperty>>({});
   const [predicates, setPredicates] = useState<SearchPredicate[]>(
-    initial.length ? initial : [{ property: "video_codec", op: "eq", value: "" }],
+    initial?.p.length ? initial.p : [{ property: "video_codec", op: "eq", value: "" }],
   );
-  const [matchMode, setMatchMode] = useState<"all" | "any">("all");
+  const [matchMode, setMatchMode] = useState<"all" | "any">(initial?.m ?? "all");
   const [previewing, setPreviewing] = useState(false);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
-  const [previewCap, setPreviewCap] = useState<number>(0);
   const [savedViews, setSavedViews] = useState<SavedView[]>(loadSavedViews());
   const [newViewName, setNewViewName] = useState("");
 
@@ -116,7 +117,6 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
     try {
       const res = await advancedSearch(predicates, matchMode);
       setPreviewCount(res.total);
-      setPreviewCap(res.limit);
     } catch (e) {
       setPreviewCount(-1);
     } finally {
@@ -126,7 +126,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
 
   const applyAndClose = async () => {
     const res = await advancedSearch(predicates, matchMode);
-    onApply(predicates, res.file_paths);
+    onApply(res.filter, res.total);
   };
 
   const saveView = () => {
@@ -334,9 +334,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid var(--border)" }}>
           <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
             {previewing ? t("scannerModals:search.previewing") : previewCount === null ? "" : previewCount < 0 ? t("scannerModals:search.failed") : (
-              previewCap > 0 && previewCount > previewCap
-                ? t("scannerModals:search.matchesCapped", { count: previewCount, num: previewCount.toLocaleString(), cap: previewCap.toLocaleString() })
-                : t("scannerModals:search.matches", { count: previewCount, num: previewCount.toLocaleString() })
+              t("scannerModals:search.matches", { count: previewCount, num: previewCount.toLocaleString() })
             )}
           </div>
           <div style={{ display: "flex", gap: 6 }}>

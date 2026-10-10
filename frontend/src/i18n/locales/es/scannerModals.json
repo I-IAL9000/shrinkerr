@@ -112,9 +112,6 @@
     "matches_one": "{{num}} coincidencia",
     "matches_many": "{{num}} coincidencias",
     "matches_other": "{{num}} coincidencias",
-    "matchesCapped_one": "{{num}} coincidencia (se muestran las primeras {{cap}})",
-    "matchesCapped_many": "{{num}} coincidencias (se muestran las primeras {{cap}})",
-    "matchesCapped_other": "{{num}} coincidencias (se muestran las primeras {{cap}})",
     "preview": "Vista previa",
     "apply": "Aplicar"
   },

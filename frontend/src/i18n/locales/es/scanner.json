@@ -140,7 +140,10 @@
     "healthWarnings": "Advertencias",
     "failedBefore": "Falló antes",
     "vmafRejected": "Rechazado por VMAF",
-    "noSavings": "Sin ahorro"
+    "noSavings": "Sin ahorro",
+    "advancedLabel_one": "Avanzada: {{count}} condición",
+    "advancedLabel_many": "Avanzada: {{count}} condiciones",
+    "advancedLabel_other": "Avanzada: {{count}} condiciones"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",

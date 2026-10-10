@@ -109,7 +109,7 @@ async def activity_feed(
             args.extend(types)
     if search:
         # % and _ in the search are literal characters, not wildcards (v0.10.0).
-        from backend.routes.search import _escape_like
+        from backend.scan_filters import escape_like as _escape_like
         where.append("file_path LIKE ? ESCAPE '\\'")
         args.append(f"%{_escape_like(search)}%")
     if since:

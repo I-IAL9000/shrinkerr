@@ -2256,8 +2256,8 @@ async def get_scan_tree(filter: str = "all"):
         # The folder sums need path, size, mtime and the savings estimate;
         # the rest is what the Python filters read.
         async with db.execute(
-            "SELECT file_path, file_size, file_mtime, COALESCE(video_conv_savings_bytes, 0) AS est_savings, "
-            f"duration, needs_conversion, converted{expr.select_sql} "
+            "SELECT file_mtime, COALESCE(video_conv_savings_bytes, 0) AS est_savings, "
+            f"{PY_COLUMNS}{expr.select_sql} "
             f"FROM scan_results WHERE {_SCAN_WHERE}{expr.where_sql}",
             [*expr.select_params, *expr.where_params],
         ) as cur:
@@ -2341,46 +2341,6 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
         return [_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx)]
-    finally:
-        await db.close()
-
-
-class _FilesByPathsBody(BaseModel):
-    file_paths: list[str]
-    filter: str = "all"
-
-
-@router.post("/files-by-paths")
-async def get_scan_files_by_paths(body: _FilesByPathsBody):
-    """Return enriched files for a given list of exact file paths.
-
-    Designed for advanced search: one HTTP call + one enrichment-context build,
-    instead of N parallel /files requests per folder. Each file is returned only
-    if it passes the given filter.
-    """
-    if not body.file_paths:
-        return []
-
-    db = await aiosqlite.connect(DB_PATH)
-    db.row_factory = aiosqlite.Row
-    try:
-        ctx = await _build_enrichment_context(db)
-        expr = parse_filter(body.filter)
-
-        # Chunk paths into batches of 500 to stay within SQLite variable limits
-        results = []
-        paths = list(body.file_paths)
-        for i in range(0, len(paths), 500):
-            chunk = paths[i:i + 500]
-            placeholders = ",".join("?" * len(chunk))
-            async with db.execute(
-                f"SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results "
-                f"WHERE {_SCAN_WHERE} AND file_path IN ({placeholders}){expr.where_sql}",
-                (*expr.select_params, *chunk, *expr.where_params),
-            ) as cur:
-                rows = [dict(r) for r in await cur.fetchall()]
-            results.extend(_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx))
-        return results
     finally:
         await db.close()
 

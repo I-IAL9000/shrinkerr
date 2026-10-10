@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { decodeAdvanced } from "../advancedSearch";
 
 interface FilterBarProps {
   /** Filter ids; "!id" excludes. */
@@ -105,6 +106,9 @@ for (const f of FILTERS) {
 }
 
 export function filterLabel(key: string, t: (k: string, o?: any) => string): string | undefined {
+  if (key.startsWith("adv:")) {
+    return t("scanner:filters.advancedLabel", { count: decodeAdvanced(key)?.p.length ?? 0 });
+  }
   if (key.startsWith("!")) {
     const label = filterLabel(key.slice(1), t);
     return label && t("scanner:filters.notLabel", { label });

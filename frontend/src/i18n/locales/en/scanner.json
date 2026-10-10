@@ -135,7 +135,9 @@
     "healthWarnings": "Warnings",
     "failedBefore": "Failed before",
     "vmafRejected": "VMAF-rejected",
-    "noSavings": "No savings"
+    "noSavings": "No savings",
+    "advancedLabel_one": "Advanced: {{count}} condition",
+    "advancedLabel_other": "Advanced: {{count}} conditions"
   },
   "stats": {
     "filesToConvert": "Files to convert",

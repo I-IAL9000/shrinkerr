@@ -359,7 +359,219 @@ _FILTER_LIST = [
 FILTERS: dict[str, Filter] = {f.id: f for f in _FILTER_LIST}
 
 # Columns the Python predicates read.
-PY_COLUMNS = "file_path, file_size, duration, needs_conversion, converted"
+PY_COLUMNS = "file_path, file_size, duration, needs_conversion, converted, hdr_format"
+
+
+# ── Advanced Search conditions (v0.10.0) ─────────────────────────────────
+# Advanced Search had its own engine: a path list capped at 5,000 that the
+# Scanner intersected in the browser, "regex" that was a substring match,
+# "Filename" that searched the whole path, a Movie/TV guess that disagreed
+# with the pills, and "audio codec is not X" meaning "some track isn't X".
+# Its conditions now compile to filters like the pills and travel in the
+# filter string as one "adv:" token (base64url JSON {"m": "all"|"any",
+# "p": [{"property", "op", "value", "value2"}]}), so the tree, the lists,
+# the counts and every "selection + filter" action apply them.
+
+ADVANCED_PROPERTIES: dict[str, dict] = {
+    # Video
+    "video_codec":   {"kind": "column", "col": "LOWER(COALESCE(video_codec, ''))", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Video codec", "group": "Video",
+                      "options": ["h264", "hevc", "av1", "vp9", "mpeg4", "mpeg2video", "vc1", "wmv3"]},
+    "video_height":  {"kind": "column", "col": "COALESCE(video_height, 0)", "type": "enum", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Video height (px)", "group": "Video",
+                      "options": [480, 540, 576, 720, 1080, 1440, 2160, 4320]},
+    "duration_min":  {"kind": "column", "col": "(COALESCE(duration, 0) / 60.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "Duration (min)", "group": "Video"},
+    "needs_conversion": {"kind": "column", "col": "needs_conversion", "type": "bool", "ops": ["eq"], "label": "Needs conversion", "group": "Video"},
+    "vmaf_score":    {"kind": "column", "col": "vmaf_score", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "exists"], "label": "VMAF score", "group": "Video"},
+    "hdr":           {"kind": "hdr", "type": "bool", "ops": ["eq"], "label": "HDR / Dolby Vision", "group": "Video"},
+
+    # Size / bitrate
+    "file_size_mb":  {"kind": "column", "col": "(COALESCE(file_size, 0) / 1048576.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "File size (MB)", "group": "Size"},
+    "file_size_gb":  {"kind": "column", "col": "(COALESCE(file_size, 0) / 1073741824.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "File size (GB)", "group": "Size"},
+    "bitrate_mbps":  {"kind": "column", "col": "(CASE WHEN duration > 0 THEN (file_size * 8.0 / duration / 1000000.0) ELSE 0 END)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "Bitrate (Mbps)", "group": "Size"},
+
+    # Audio
+    "audio_codec":   {"kind": "tracks", "column": "audio_tracks_json", "field": "codec", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Audio codec (any track)", "group": "Audio",
+                      "options": ["aac", "ac3", "eac3", "dts", "truehd", "flac", "mp3", "opus", "vorbis", "pcm_s16le", "pcm_s24le"]},
+    "audio_lang":    {"kind": "tracks", "column": "audio_tracks_json", "field": "language", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Audio language (any track)", "group": "Audio",
+                      "options": ["eng", "fre", "fra", "spa", "ger", "deu", "ita", "jpn", "kor", "chi", "zho", "rus", "por", "pol", "nld", "swe", "nor", "dan", "fin", "tur", "ara", "hin", "tha", "ind", "vie", "und"]},
+    "audio_channels":{"kind": "max_channels", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Audio channels (max)", "group": "Audio", "examples": [2, 6, 8]},
+    "audio_track_count": {"kind": "count", "column": "audio_tracks_json", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Audio track count", "group": "Audio"},
+    "has_lossless_audio": {"kind": "column", "col": "COALESCE(has_lossless_audio_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has lossless audio", "group": "Audio"},
+    "has_removable_tracks": {"kind": "column", "col": "COALESCE(has_removable_tracks_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has removable audio tracks", "group": "Audio"},
+
+    # Subtitles
+    "subtitle_lang": {"kind": "tracks", "column": "subtitle_tracks_json", "field": "language", "type": "string", "ops": ["eq", "in", "contains"], "label": "Subtitle language (any)", "group": "Subtitles"},
+    "subtitle_count":{"kind": "count", "column": "subtitle_tracks_json", "type": "number", "ops": ["eq", "gt", "gte", "lt", "lte"], "label": "Subtitle track count", "group": "Subtitles"},
+    "has_removable_subs": {"kind": "column", "col": "COALESCE(has_removable_subs_flag, 0)", "type": "bool", "ops": ["eq"], "label": "Has removable subs", "group": "Subtitles"},
+
+    # Filename / path
+    "source":        {"kind": "source", "type": "enum", "ops": ["eq", "in"], "label": "Source", "group": "Filename",
+                      "options": ["remux", "bluray", "webdl", "hdtv", "dvd", "unknown"]},
+    "file_path":     {"kind": "path", "type": "string", "ops": ["contains", "regex"], "label": "File path", "group": "Filename"},
+    "file_name":     {"kind": "name", "type": "string", "ops": ["contains", "regex"], "label": "Filename", "group": "Filename"},
+
+    # State
+    "health_status": {"kind": "column", "col": "health_status", "type": "string", "ops": ["eq", "exists", "in"], "label": "Health status", "group": "State", "examples": ["healthy", "corrupt"]},
+    "duplicate_count": {"kind": "column", "col": "COALESCE(dup_count, 0)", "type": "number", "ops": ["eq", "gt", "gte"], "label": "Duplicate count", "group": "State"},
+
+    # Type: the pills' classification (path IDs, else the media folder's label)
+    "media_type":    {"kind": "media_type", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Type", "group": "Type",
+                      "options": ["movie", "tv", "other"],
+                      "option_labels": {"movie": "Movie", "tv": "TV Show", "other": "Other"}},
+}
+
+_SQL_OPS = {"eq": "=", "ne": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+_HDR_NAME = re.compile(r"\bhdr10\+?\b|\bhdr\b|dolby[\s.]*vision|\.dv\.|\bdv\b(?!d)", re.IGNORECASE)
+
+
+def _values(value) -> list:
+    if isinstance(value, (list, tuple)):
+        return [v for v in value if str(v).strip() != ""]
+    return [v.strip() for v in str(value or "").split(",") if v.strip()]
+
+
+def _num(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _truthy(value) -> bool:
+    return value is True or str(value).lower() in ("true", "1", "yes")
+
+
+def escape_like(text: str) -> str:
+    """`text` for a LIKE pattern with ESCAPE '\\': its % and _ match only themselves."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def compile_condition(index: int, pred: dict) -> Optional[Filter]:
+    """One Advanced Search condition as a Filter, or None if it isn't valid
+    (an unknown property or operator, or a missing value)."""
+    prop = ADVANCED_PROPERTIES.get(pred.get("property"))
+    op = pred.get("op")
+    if not prop or op not in prop["ops"]:
+        return None
+    fid, kind, value, value2 = f"adv{index}", prop["kind"], pred.get("value"), pred.get("value2")
+
+    def sql(text: str, *params) -> Filter:
+        return Filter(fid, sql=text, params=(lambda: tuple(params)) if params else None)
+
+    def number_cond(expr: str) -> Optional[Filter]:
+        if op == "exists":
+            return sql(f"{expr} IS NOT NULL")
+        if op == "between":
+            lo, hi = _num(value), _num(value2)
+            return sql(f"{expr} BETWEEN ? AND ?", *sorted((lo, hi))) if lo is not None and hi is not None else None
+        n = _num(value)
+        return sql(f"{expr} {_SQL_OPS[op]} ?", n) if n is not None and op in _SQL_OPS else None
+
+    if kind == "column":
+        col, typ = prop["col"], prop["type"]
+        if typ == "bool":
+            return sql(f"COALESCE({col}, 0) != 0") if _truthy(value) else sql(f"COALESCE({col}, 0) = 0")
+        if typ == "number" or (typ == "enum" and isinstance((prop.get("options") or [""])[0], int)):
+            return number_cond(col)
+        if op == "exists":
+            return sql(f"COALESCE({col}, '') <> ''")
+        text = f"LOWER(COALESCE({col}, ''))"
+        if op == "in":
+            vals = [str(v).lower() for v in _values(value)]
+            return sql(f"{text} IN ({','.join('?' * len(vals))})", *vals) if vals else None
+        if op in ("eq", "ne") and str(value or "").strip():
+            return sql(f"{text} {_SQL_OPS[op]} ?", str(value).strip().lower())
+        return None
+
+    if kind == "tracks":
+        column, field = prop["column"], prop["field"]
+        cell = f"lower(COALESCE(json_extract(t.value, '$.{field}'), ''))"
+        if op == "contains" and str(value or "").strip():
+            return sql(_tracks(column, f"{cell} LIKE ? ESCAPE '\\'"), f"%{escape_like(str(value).strip().lower())}%")
+        vals = [str(v).lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]
+        if not vals:
+            return None
+        cond = _tracks(column, f"{cell} IN ({','.join('?' * len(vals))})")
+        # "is not X": no track is X (it meant "some track isn't X").
+        return sql(f"NOT {cond}" if op == "ne" else cond, *vals)
+
+    if kind == "max_channels":
+        return number_cond("(SELECT COALESCE(MAX(json_extract(t.value, '$.channels')), 0) FROM json_each("
+                           "CASE WHEN json_valid(audio_tracks_json) THEN audio_tracks_json ELSE '[]' END) t)")
+    if kind == "count":
+        column = prop["column"]
+        return number_cond(f"json_array_length(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END)")
+
+    if kind == "source":
+        wanted = [str(v).lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]
+        wanted = ["webdl" if w == "webrip" else w for w in wanted]  # older saved searches
+        parts = [f"({FILTERS['src_' + w].sql})" for w in wanted if "src_" + w in FILTERS]
+        if "unknown" in wanted:
+            parts.append("NOT (" + " OR ".join(f"({FILTERS[k].sql})" for k in FILTERS if k.startswith("src_")) + ")")
+        return sql(" OR ".join(parts)) if parts else None
+
+    if kind == "hdr":
+        # The probe's HDR format; files scanned before it was stored: the name.
+        def is_hdr(row, ctx):
+            return bool(row.get("hdr_format")) or bool(_HDR_NAME.search(row["file_path"]))
+        want = _truthy(value)
+        return Filter(fid, py=lambda r, c: is_hdr(r, c) == want)
+
+    if kind == "path":
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if op == "regex":
+            try:
+                pattern = re.compile(text, re.IGNORECASE)
+            except re.error:
+                return None
+            return Filter(fid, py=lambda r, c: bool(pattern.search(r["file_path"])))
+        return sql("file_path LIKE ? ESCAPE '\\'", f"%{escape_like(text)}%")
+
+    if kind == "name":
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if op == "regex":
+            try:
+                pattern = re.compile(text, re.IGNORECASE)
+            except re.error:
+                return None
+            return Filter(fid, py=lambda r, c: bool(pattern.search(r["file_path"].rsplit("/", 1)[-1])))
+        needle = text.lower()
+        return Filter(fid, py=lambda r, c: needle in r["file_path"].rsplit("/", 1)[-1].lower())
+
+    if kind == "media_type":
+        wanted = {str(v).lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()}
+        if not wanted:
+            return None
+        negate = op == "ne"
+        return Filter(fid, py=lambda r, c: (row_type(r, c) in wanted) != negate)
+    return None
+
+
+def encode_advanced(predicates: list[dict], match: str = "all") -> str:
+    """The filter-string token for a set of conditions."""
+    import base64
+    import json
+    raw = json.dumps({"m": "any" if match == "any" else "all", "p": predicates}, separators=(",", ":"))
+    return "adv:" + base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def decode_advanced(token: str) -> Optional[dict]:
+    """{"m", "p"} from an "adv:" token, or None if it can't be read."""
+    import base64
+    import json
+    if not token.startswith("adv:"):
+        return None
+    data = token[4:]
+    try:
+        spec = json.loads(base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode())
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(spec, dict) or not isinstance(spec.get("p"), list):
+        return None
+    return {"m": "any" if spec.get("m") == "any" else "all", "p": [p for p in spec["p"] if isinstance(p, dict)]}
 
 
 # ── Filter expressions ────────────────────────────────────────────────────
@@ -411,6 +623,16 @@ def parse_filter(text: Optional[str]) -> FilterExpr:
     seen: set[str] = set()
     for token in (text or "").split(","):
         token = token.strip()
+        spec = decode_advanced(token) if token.startswith("adv:") else None
+        if spec is not None:
+            # Advanced Search: all conditions must hold (each its own group),
+            # or any of them (one group).
+            conds = [f for f in (compile_condition(i, p) for i, p in enumerate(spec["p"])) if f]
+            if spec["m"] == "any" and conds:
+                by_group["_adv"] = conds
+            for f in conds if spec["m"] == "all" else ():
+                by_group[f"_{f.id}"] = [f]
+            continue
         neg = token.startswith("!")
         f = FILTERS.get(token[1:] if neg else token)
         if f is None or token in seen:

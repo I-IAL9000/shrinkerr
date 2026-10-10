@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getScanFiles, getScanFilesByPaths } from "../api";
+import { getScanFiles } from "../api";
 import { getCodecLabel, hdrLabel } from "../codecLabels";
 import FileDetail from "./FileDetail";
 import { useConfirm } from "./ConfirmModal";
@@ -48,7 +48,6 @@ interface FileTreeProps {
   mediaDirLabels?: Record<string, string>;
   sortBy?: SortBy;
   sortDir?: SortDirection;
-  allowedPaths?: Set<string>;
 }
 
 // ─── Tree node built from flat folder list ───
@@ -357,7 +356,6 @@ function flattenTree(
   loadingFolders: Set<string>,
   sortBy: SortBy,
   sortDir: SortDirection,
-  allowedPaths?: Set<string>,
 ): FlatRow[] {
   const rows: FlatRow[] = [];
 
@@ -368,15 +366,12 @@ function flattenTree(
         // Recurse into subfolders first
         walk(child, depth + 1);
         // Then show files for this folder (if any were loaded)
-        let files = folderFiles.get(child.path);
-        if (files && allowedPaths) {
-          files = files.filter(f => allowedPaths.has(f.file_path));
-        }
+        const files = folderFiles.get(child.path);
         if (files && files.length > 0) {
           for (const f of sortFiles(files, sortBy, sortDir)) {
             rows.push({ type: "file", file: f, depth: depth + 1 });
           }
-        } else if (loadingFolders.has(child.path) && !allowedPaths) {
+        } else if (loadingFolders.has(child.path)) {
           rows.push({ type: "loading", folderPath: child.path, depth: depth + 1 });
         }
       }
@@ -661,7 +656,7 @@ export default function FileTree({
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
   onFolderFilesLoaded, externalFiles, mediaDirs, mediaDirLabels,
-  sortBy = "name", sortDir = "asc", search = "", allowedPaths,
+  sortBy = "name", sortDir = "asc", search = "",
 }: FileTreeProps) {
   const { t } = useTranslation(["library", "common"]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -674,7 +669,7 @@ export default function FileTree({
   const [scrollTop, setScrollTop] = useState(0);
 
   // When filter, search, or advanced-search is active, show a flat title-level tree
-  const isFiltered = (filter !== undefined && filter !== "all" && filter !== "") || search.trim() !== "" || (allowedPaths != null && allowedPaths.size > 0);
+  const isFiltered = (filter !== undefined && filter !== "all" && filter !== "") || search.trim() !== "";
 
   // Build tree from server-provided folder data — memoized so scroll doesn't rebuild it
   const tree = useMemo(
@@ -686,9 +681,6 @@ export default function FileTree({
         }))),
     [folders, isFiltered, mediaDirs, mediaDirLabels],
   );
-
-  // (advanced-search auto-expand effect lives below loadFolderFiles)
-  const prevAllowedSize = useRef(0);
 
   // FE#7 (v0.10.0): loads belong to a filter "generation". A filter switch
   // aborts the previous one's requests and ignores their answers (an older
@@ -725,8 +717,8 @@ export default function FileTree({
 
   // Flatten for virtual scrolling — memoized so scroll events don't re-flatten
   const flatRows = useMemo(
-    () => flattenTree(tree, expanded, folderFiles, loadingFolders, sortBy, sortDir, allowedPaths),
-    [tree, expanded, folderFiles, loadingFolders, sortBy, sortDir, allowedPaths],
+    () => flattenTree(tree, expanded, folderFiles, loadingFolders, sortBy, sortDir),
+    [tree, expanded, folderFiles, loadingFolders, sortBy, sortDir],
   );
 
   const overscan = 8;
@@ -814,84 +806,6 @@ export default function FileTree({
       });
     }
   }, [filter, onFolderFilesLoaded]);
-
-  // When advanced search is active, auto-expand parent folders of matched files
-  // AND fetch the matching files in ONE batch call (not N per-folder calls).
-  useEffect(() => {
-    if (!allowedPaths || allowedPaths.size === 0) {
-      // Search cleared: back to the default expansion. The search expanded
-      // every matching folder (up to thousands), and each later filter
-      // switch reloaded them all (FE#7).
-      if (prevAllowedSize.current > 0) setExpanded(defaultExpanded());
-      prevAllowedSize.current = 0;
-      return;
-    }
-    if (allowedPaths.size === prevAllowedSize.current) return;
-    prevAllowedSize.current = allowedPaths.size;
-
-    const toExpand = new Set<string>();
-    const leafFolders = new Set<string>();
-    for (const fp of allowedPaths) {
-      const parts = fp.split("/");
-      for (let i = 1; i < parts.length - 1; i++) {
-        toExpand.add(parts.slice(0, i + 1).join("/"));
-      }
-      const parent = parts.slice(0, parts.length - 1).join("/");
-      if (parent) leafFolders.add(parent);
-    }
-    setExpanded(toExpand);
-
-    // Skip leaf folders we already have files for
-    const foldersToFetch = new Set<string>();
-    for (const folder of leafFolders) {
-      if (!folderFiles.has(folder)) foldersToFetch.add(folder);
-    }
-    if (foldersToFetch.size === 0) return;
-
-    // Batch: fetch just the matched files in one request
-    // (much faster than N /files calls per folder)
-    (async () => {
-      // Mark all folders as loading
-      setLoadingFolders(prev => {
-        const next = new Set(prev);
-        for (const f of foldersToFetch) next.add(f);
-        return next;
-      });
-      try {
-        const data = await getScanFilesByPaths(Array.from(allowedPaths), filter);
-        // Group returned files by parent folder
-        const byFolder = new Map<string, ScannedFile[]>();
-        for (const row of data) {
-          const parts = row.file_path.split("/");
-          const folder = parts.slice(0, -1).join("/");
-          const parsed = toScannedFile(row);
-          if (!byFolder.has(folder)) byFolder.set(folder, []);
-          byFolder.get(folder)!.push(parsed);
-        }
-        // Merge into state in a single update
-        setInternalFiles(prev => {
-          const next = new Map(prev);
-          for (const [folder, files] of byFolder) next.set(folder, files);
-          // Ensure empty folders also get an entry so they show "no matching files" instead of a spinner
-          for (const folder of foldersToFetch) {
-            if (!byFolder.has(folder)) next.set(folder, []);
-          }
-          return next;
-        });
-        // Not inside the updater: React may run updaters twice (FE#7).
-        for (const [folder, files] of byFolder) onFolderFilesLoaded?.(folder, files);
-      } catch (err) {
-        console.error("Batch file load failed:", err);
-      } finally {
-        setLoadingFolders(prev => {
-          const next = new Set(prev);
-          for (const f of foldersToFetch) next.delete(f);
-          return next;
-        });
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowedPaths]);
 
   // Find all leaf folder paths under a tree node
   const getLeafPaths = useCallback((node: TreeNode): string[] => {
@@ -1154,7 +1068,7 @@ export default function FileTree({
       <div style={{ height: Math.max(0, totalHeight - (rowPositions[endIdx] || totalHeight)) }} />
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-          {search || allowedPaths || (filter && filter !== "all") ? (
+          {search || (filter && filter !== "all") ? (
             <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (
             <div style={{ fontSize: 13 }}>{t("library:tree.noFiles")}</div>

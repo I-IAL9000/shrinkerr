@@ -40,13 +40,12 @@ interface TitleGroup {
 interface PosterGridProps {
   folders: FolderInfo[];
   filter?: string;
-  // `search` and `allowedPaths` are passed in only so the empty-state
+  // `search` is passed in only so the empty-state
   // can distinguish "no files match the search/filter" from "database
   // is empty, run a scan first". The actual filtering happens upstream
   // in ScannerPage — PosterGrid receives the already-filtered folder
   // list. v0.3.96+.
   search?: string;
-  allowedPaths?: Set<string>;
   isSelected: (path: string) => boolean;
   onToggleSelect: (path: string, shiftKey?: boolean) => void;
   onAudioTracksChange: (file: ScannedFile, tracks: AudioTrack[], persist: boolean) => void;
@@ -137,7 +136,7 @@ const CARD_H = 330; // poster (240) + info (90)
 const OVERSCAN = 3; // extra rows above/below viewport
 
 export default function PosterGrid({
-  folders, filter = "all", search, allowedPaths,
+  folders, filter = "all", search,
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onDeleteFile,
   onFolderFilesLoaded,
@@ -567,7 +566,7 @@ export default function PosterGrid({
       {renderedRows}
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
-          {search || allowedPaths || (filter && filter !== "all") ? (
+          {search || (filter && filter !== "all") ? (
             <div style={{ fontSize: 13 }}>{t("library:tree.noMatches")}</div>
           ) : (
             <div style={{ fontSize: 13 }}>{t("library:tree.noFiles")}</div>
