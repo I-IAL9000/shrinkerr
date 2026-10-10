@@ -30,7 +30,8 @@
   },
   "version": {
     "updateAvailable": "Update available",
-    "updateTooltip": "A newer version is available: v{{latest}} (you're on v{{current}})"
+    "updateTooltip": "A newer version is available: v{{latest}} (you're on v{{current}})",
+    "updateTooltipDevelop": "A newer develop build is available: {{latest}} (you're on {{current}})"
   },
   "login": {
     "subtitle": "Sign in to continue",

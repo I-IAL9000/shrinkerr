@@ -188,7 +188,7 @@
   "updates": {
     "title": "Updates",
     "runningVersion": "Running version",
-    "availableUpstream": "<b>v{{version}}</b> is available upstream",
+    "availableUpstream": "<b>{{version}}</b> is available upstream",
     "latest": "You're on the latest release ✓",
     "checkFailed": "Couldn't check upstream — offline or rate-limited.",
     "check": "Check for updates",
@@ -197,7 +197,14 @@
     "recent": "Recent releases",
     "fullHistory": "Full history on GitHub ↗",
     "loadingChangelog": "Loading changelog…",
-    "noEntries": "No changelog entries available."
+    "noEntries": "No changelog entries available.",
+    "channel": {
+      "stable": "Channel: releases (the :latest / :nvenc images)",
+      "develop": "Channel: develop — test builds of what's coming next (the :develop images)"
+    },
+    "checkOff": "Update checks are off.",
+    "viewChanges": "View the changes on GitHub",
+    "checkSetting": "Check GitHub for new versions (every 30 minutes)"
   },
   "support": {
     "title": "Support",
@@ -237,7 +244,7 @@
     "restoreFailed": "Restore failed",
     "backupDeleted": "Backup deleted",
     "deleteFailed": "Delete failed",
-    "updateAvailable": "v{{version}} is available",
+    "updateAvailable": "{{version}} is available",
     "upToDate": "You're on the latest release",
     "updateCheckFailed": "Couldn't reach GitHub — try again in a moment"
   },

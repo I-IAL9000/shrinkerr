@@ -17,7 +17,7 @@ import {
   listBackups, createBackup, deleteBackup, downloadBackupUrl, restoreBackup,
   plexAuthStart, plexAuthCheck, plexAuthResources, plexAuthSave,
   plexAuthDisconnect, plexAuthStatus,
-  getVersion, getChangelog,
+  getVersion, getChangelog, shortVersion, type VersionInfo,
   getVmafRemeasureStatus, startVmafRemeasure,
   getEncoderCaps, regenerateApiKey, getQualityPresets, type QualityPreset,
   getBackups, deleteBackups, clearPendingHealthChecks,
@@ -315,7 +315,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   // parsed from CHANGELOG.md shipped with the image. "Check for updates"
   // hits /stats/version again (which is cached server-side for 6 hours,
   // so repeated clicks are cheap).
-  const [versionInfo, setVersionInfo] = useState<{ current: string; latest: string | null; update_available: boolean } | null>(null);
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[] | null>(null);
   const [updateCheckLoading, setUpdateCheckLoading] = useState(false);
   const [changelogModalOpen, setChangelogModalOpen] = useState(false);
@@ -324,6 +324,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     getVersion().then(setVersionInfo).catch(() => {});
     getChangelog(4).then((r) => setChangelogEntries(r.entries || [])).catch(() => setChangelogEntries([]));
   }, []);
+  // v0.10.0: after the GitHub check is turned on or off (saved), show what it says now.
+  const savedUpdateCheck = savedEncoding?.update_check;
+  useEffect(() => {
+    if (savedUpdateCheck === undefined) return;
+    getVersion().then(setVersionInfo).catch(() => {});
+  }, [savedUpdateCheck]);
 
   // Encoding rules state
   const [rules, setRules] = useState<any[]>([]);
@@ -5339,9 +5345,18 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", marginTop: 2 }}>
                       v{versionInfo?.current ?? "…"}
                     </div>
-                    {versionInfo?.update_available && versionInfo.latest ? (
+                    {versionInfo?.channel && (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                        {t(`settingsSystem:updates.channel.${versionInfo.channel}`)}
+                      </div>
+                    )}
+                    {versionInfo?.check_enabled === false ? (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                        {t("settingsSystem:updates.checkOff")}
+                      </div>
+                    ) : versionInfo?.update_available && versionInfo.latest ? (
                       <div style={{ fontSize: 12, color: "var(--accent-text)", marginTop: 4 }}>
-                        <Trans i18nKey="settingsSystem:updates.availableUpstream" values={{ version: versionInfo.latest }} components={{ b: <strong /> }} />
+                        <Trans i18nKey="settingsSystem:updates.availableUpstream" values={{ version: shortVersion(versionInfo.latest) }} components={{ b: <strong /> }} />
                       </div>
                     ) : versionInfo?.latest ? (
                       <div style={{ fontSize: 12, color: "var(--success)", marginTop: 4 }}>
@@ -5357,7 +5372,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
                     className="btn btn-secondary"
-                    style={{ fontSize: 12, padding: "7px 14px" }}
+                    style={{ fontSize: 12, padding: "7px 14px", display: versionInfo?.check_enabled === false ? "none" : undefined }}
                     disabled={updateCheckLoading}
                     onClick={async () => {
                       setUpdateCheckLoading(true);
@@ -5367,7 +5382,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         const v = await getVersion(true);
                         setVersionInfo(v);
                         if (v.update_available) {
-                          toast(t("settingsSystem:toasts.updateAvailable", { version: v.latest }), "success");
+                          toast(t("settingsSystem:toasts.updateAvailable", { version: shortVersion(v.latest) }), "success");
                         } else {
                           toast(t("settingsSystem:toasts.upToDate"), "success");
                         }
@@ -5384,13 +5399,23 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <button
                       className="btn btn-primary"
                       style={{ fontSize: 12, padding: "7px 14px" }}
-                      onClick={() => setChangelogModalOpen(true)}
+                      onClick={() => versionInfo.compare_url
+                        ? window.open(versionInfo.compare_url, "_blank", "noopener,noreferrer")
+                        : setChangelogModalOpen(true)}
                     >
-                      {t("settingsSystem:updates.viewNotes", { version: versionInfo.latest })}
+                      {versionInfo.compare_url ? t("settingsSystem:updates.viewChanges")
+                        : t("settingsSystem:updates.viewNotes", { version: versionInfo.latest })}
                     </button>
                   )}
                 </div>
               </div>
+              {/* v0.10.0: the GitHub check can be turned off */}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", margin: "10px 2px 0" }}>
+                <input type="checkbox" checked={encoding?.update_check ?? true}
+                  onChange={e => setEncoding({ ...encoding, update_check: e.target.checked })}
+                  style={{ accentColor: "var(--accent)" }} />
+                <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{t("settingsSystem:updates.checkSetting")}</span>
+              </label>
 
               {/* Recent releases — the 4 most recent changelog entries inline.
                   "View full history" link sits at the bottom to reach the

@@ -27,7 +27,8 @@
     "fixes_one": "{{count}} fix.",
     "fixes_other": "{{count}} fixes.",
     "fullNotes": "Full release notes",
-    "gotIt": "Got it"
+    "gotIt": "Got it",
+    "upgrade": "Upgrade notes"
   },
   "folderBrowser": {
     "title": "Select Folder",

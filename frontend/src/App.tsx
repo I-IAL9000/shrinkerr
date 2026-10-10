@@ -1,7 +1,7 @@
 import { createBrowserRouter, RouterProvider, Routes, Route, Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
+import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, shortVersion, type VersionInfo, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 import AuthSetup from "./components/AuthSetup";
 // Pages load on first visit (FE#30, v0.10.0): everything was one 1.5 MB
@@ -34,7 +34,7 @@ import "./theme.css";
 
 function VersionBadge() {
   const { t } = useTranslation(["nav", "common"]);
-  const [version, setVersion] = useState<{ current: string; latest: string | null; update_available: boolean } | null>(null);
+  const [version, setVersion] = useState<VersionInfo | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
@@ -51,8 +51,12 @@ function VersionBadge() {
       <>
         <div style={{ padding: "12px 12px 24px", marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }} className="version-badge">
           <button
-            onClick={() => setModalOpen(true)}
-            title={t("nav:version.updateTooltip", { latest: version.latest, current: version.current })}
+            onClick={() => version.compare_url
+              ? window.open(version.compare_url, "_blank", "noopener,noreferrer")  // a develop build: the commits since
+              : setModalOpen(true)}
+            title={version.compare_url
+              ? t("nav:version.updateTooltipDevelop", { latest: shortVersion(version.latest), current: shortVersion(version.current) })
+              : t("nav:version.updateTooltip", { latest: version.latest, current: version.current })}
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "7px 14px", borderRadius: 20,
@@ -67,7 +71,7 @@ function VersionBadge() {
             {t("nav:version.updateAvailable")}
           </button>
           <span style={{ fontSize: 10, color: "var(--text-muted)" }}>
-            v{version.current} → v{version.latest}
+            {shortVersion(version.current)} → {shortVersion(version.latest)}
           </span>
         </div>
         <ChangelogModal

@@ -190,7 +190,7 @@
   "updates": {
     "title": "Actualizaciones",
     "runningVersion": "Versión en ejecución",
-    "availableUpstream": "<b>v{{version}}</b> está disponible",
+    "availableUpstream": "<b>{{version}}</b> está disponible",
     "latest": "Tienes la última versión ✓",
     "checkFailed": "No se pudo comprobar: sin conexión o límite de solicitudes alcanzado.",
     "check": "Buscar actualizaciones",
@@ -199,7 +199,14 @@
     "recent": "Versiones recientes",
     "fullHistory": "Historial completo en GitHub ↗",
     "loadingChangelog": "Cargando el registro de cambios…",
-    "noEntries": "No hay entradas en el registro de cambios."
+    "noEntries": "No hay entradas en el registro de cambios.",
+    "channel": {
+      "stable": "Canal: versiones publicadas (las imágenes :latest / :nvenc)",
+      "develop": "Canal: develop — versiones de prueba de lo que viene (las imágenes :develop)"
+    },
+    "checkOff": "La comprobación de actualizaciones está desactivada.",
+    "viewChanges": "Ver los cambios en GitHub",
+    "checkSetting": "Buscar versiones nuevas en GitHub (cada 30 minutos)"
   },
   "support": {
     "title": "Soporte",
@@ -240,7 +247,7 @@
     "restoreFailed": "Error al restaurar",
     "backupDeleted": "Copia de seguridad eliminada",
     "deleteFailed": "Error al eliminar",
-    "updateAvailable": "v{{version}} está disponible",
+    "updateAvailable": "{{version}} está disponible",
     "upToDate": "Tienes la última versión",
     "updateCheckFailed": "No se pudo conectar con GitHub; inténtalo de nuevo en un momento"
   },

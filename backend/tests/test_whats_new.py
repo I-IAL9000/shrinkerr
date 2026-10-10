@@ -14,6 +14,9 @@ CHANGELOG = """# Changelog
 
 ## [0.10.0] — 2026-10-20
 
+### Upgrade notes
+- **Set up sign-in after updating.** See [Security](docs/security.md); the `X-Api-Key` header still works.
+
 ### Added
 - **Password step in the setup wizard.** It asks for a username and password.
 - Optional PUID / PGID for the Docker images. Files are then owned like your other apps'.
@@ -56,6 +59,7 @@ def test_notes_cover_every_release_since_the_last_one_seen(changelog):
     entries = stats._parse_changelog()
     notes = whats_new_since(entries, "0.9.150", "0.10.0")
     assert notes == {
+        "upgrade": ["Set up sign-in after updating. See Security; the X-Api-Key header still works."],
         "new": ["Password step in the setup wizard", "Optional PUID / PGID for the Docker images"],
         "fixed": ["Rules on Sonarr/Radarr tags now work", "Custom ffmpeg flags can't write files"],
         "more_fixes": 1,
@@ -104,3 +108,26 @@ async def test_preview_on_a_release_shows_its_notes_even_when_seen(changelog, te
     await stats.whats_new_seen()
     got = await stats.whats_new(preview=True)
     assert got["show"] and got["fixed"] == ["Rules on Sonarr/Radarr tags now work"]
+
+
+@pytest.mark.asyncio
+async def test_upgrade_notes_alone_show_the_dialog(changelog, test_db, tmp_path):
+    await _add_media_dir(test_db)
+    await stats.whats_new_seen()  # 0.10.0 seen; then a patch with only an upgrade note
+    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG.replace(
+        "## [0.10.0]", "## [0.10.1] — 2026-10-22\n\n### Upgrade notes\n- Restart the workers.\n\n## [0.10.0]"))
+    changelog.write_text("0.10.1\n")
+    stats._changelog_cache.clear()  # the fixture's own copy
+    got = await stats.whats_new()
+    assert got["show"] and (got["upgrade"], got["new"], got["fixed"], got["more_fixes"]) == (
+        ["Restart the workers."], [], [], 0)
+
+
+@pytest.mark.asyncio
+async def test_the_next_release_has_upgrade_notes(monkeypatch):
+    """The real CHANGELOG: what the 0.10.0 dialog will say first."""
+    monkeypatch.setattr(stats, "_get_current_version", lambda: "0.10.0-dev.1+abc")
+    monkeypatch.setattr(stats, "_changelog_cache", {})
+    notes = await stats.whats_new(preview=True)
+    assert notes["show"] and notes["upgrade"][0].startswith("Set up sign-in after updating.")
+    assert all("**" not in n and "`" not in n for n in notes["upgrade"])

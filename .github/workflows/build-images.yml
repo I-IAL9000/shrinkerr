@@ -11,9 +11,11 @@
 #   - push to develop      → :develop, :develop-nvenc, :develop-edge,
 #                            :develop-edge-nvenc — the testing channel. VERSION
 #                            is stamped X.Y.Z-dev.<run>+<sha> so the UI shows it.
-#   - push of a vX.Y.Z tag → versioned tags + the stable floating ones
-#                            (:latest, :nvenc, :edge, :edge-nvenc). Only a
-#                            release tag moves those — pushing main doesn't.
+#   - push of a vX.Y.Z tag → versioned tags (:vX.Y.Z[-<suffix>]), the minor
+#                            line (:X.Y[-<suffix>]; patches only) and the
+#                            stable floating ones (:latest, :nvenc, :edge,
+#                            :edge-nvenc). Only a release tag moves those —
+#                            pushing main doesn't.
 #   - push of a vX.Y.Z-rc.N (any "-" suffix) tag → versioned tags only; the
 #                            stable floating tags stay put.
 #   - manual run via the Actions tab ("Run workflow" button) → <branch> tags
@@ -22,7 +24,8 @@
 #
 #   Lineage 1 — portable, multi-arch (linux/amd64 + linux/arm64), CPU-only:
 #     :latest        Dockerfile,        ffmpeg n8.1    — safe default, runs everywhere
-#     :edge          Dockerfile,        ffmpeg master  — bleeding-edge ffmpeg
+#     :edge          Dockerfile,        ffmpeg master  — bleeding-edge ffmpeg (NOT a
+#                                                         pre-release channel: that's :develop)
 #
 #   Lineage 2 — CUDA + NVENC, amd64 only:
 #     :nvenc         Dockerfile.nvenc,  ffmpeg n8.1    — GPU users, driver 570+
@@ -181,9 +184,17 @@ jobs:
               else
                 TAGS+="${BASE}:${VERSION}-${SUFFIX}"$'\n'
               fi
-              # Only a real release moves the stable floating tags.
+              # Only a real release moves the stable floating tags — and
+              # the minor line (v0.10.2 → :0.10[-<suffix>]), for people who
+              # want a release's patches but not the next release.
               if [[ "$VERSION" != *-* ]]; then
                 TAGS+="${BASE}:${SUFFIX}"$'\n'
+                MINOR="$(echo "${VERSION#v}" | cut -d. -f1,2)"
+                if [[ "$SUFFIX" == "latest" ]]; then
+                  TAGS+="${BASE}:${MINOR}"$'\n'
+                else
+                  TAGS+="${BASE}:${MINOR}-${SUFFIX}"$'\n'
+                fi
               fi
             else
               BRANCH="$(echo '${{ github.ref_name }}' | tr '/' '-' | tr '[:upper:]' '[:lower:]')"

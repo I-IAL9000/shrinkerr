@@ -37,6 +37,11 @@ notice only for real releases, every few weeks — not for every fix.
   `X.Y.Z-dev.<run>+<sha>`). The maintainer's NUC runs `:develop-nvenc`.
 - **`main`** — released code only. The stable `:latest` / `:nvenc` images move
   only when a `vX.Y.Z` tag is pushed (pushing `main` alone builds nothing).
+  A release tag also moves the minor line (`:X.Y[-nvenc]`; patches only).
+
+The in-app update notice follows the channel: a release hears about newer
+releases (GitHub `releases/latest`), a `-dev` build about newer successful
+`develop` image builds. Users can turn the check off.
 
 `VERSION` on `develop` holds the **next** release number (e.g. `0.10.0`).
 
@@ -45,7 +50,9 @@ notice only for real releases, every few weeks — not for every fix.
 ```bash
 git checkout develop
 # change + tests (backend pytest; `npm run build` for frontend changes)
-# CHANGELOG.md: add a one-liner under `## [Unreleased]`
+# CHANGELOG.md: add a one-liner under `## [Unreleased]` — and under
+#   `### Upgrade notes` if users must do something after updating (a
+#   changed default, a removed or renamed setting, a new requirement)
 git add <touched-files>
 git commit -m "..."
 git push origin develop
@@ -59,7 +66,9 @@ Do **not** bump VERSION, tag, or push `main` for normal work.
 git checkout develop
 # CHANGELOG.md: rename `## [Unreleased]` → `## [X.Y.Z] — YYYY-MM-DD`
 #   (VERSION already says X.Y.Z); group lines under
-#   ### Added / Changed / Fixed / Security
+#   ### Upgrade notes / Added / Changed / Fixed / Security
+#   (Upgrade notes first, in full sentences: the What's new dialog shows them
+#   first, as written; the other sections by their bold leads)
 git commit -am "release: vX.Y.Z"
 git checkout main && git merge --ff-only develop
 git tag vX.Y.Z

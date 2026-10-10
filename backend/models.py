@@ -331,6 +331,7 @@ class SettingsUpdate(BaseModel):
     bazarr_url: Optional[str] = None  # v0.10.0
     bazarr_api_key: Optional[str] = None
     compare_frames: Optional[bool] = None  # v0.10.0, backend/frames.py
+    update_check: Optional[bool] = None  # v0.10.0: ask GitHub for new versions
     auth_method: Optional[str] = None  # v0.10.0: "forms" | "external" (backend/auth_policy.py)
     auth_required: Optional[str] = None  # "enabled" | "local_disabled"
     # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)

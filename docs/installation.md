@@ -36,11 +36,22 @@ pull from Docker Hub.
 |---|---|---|---|
 | `:latest` | amd64, arm64 | libx265 (CPU) | Default for any host. Mac, Raspberry Pi, ARM cloud, Windows without GPU. |
 | `:nvenc` | amd64 | NVENC + libx265 | NVIDIA GPU host, driver 570+. |
-| `:edge` | amd64, arm64 | libx265, ffmpeg master | You want bleeding-edge ffmpeg features. |
+| `:edge` | amd64, arm64 | libx265, ffmpeg master | You want bleeding-edge ffmpeg features. (Not a pre-release of Shrinkerr: that's `:develop`.) |
 | `:edge-nvenc` | amd64 | NVENC + libx265, ffmpeg master | GPU + latest ffmpeg + driver 570+. |
 
 All four share the same DB schema and settings format — moving between them
 is `image: …`-line edit + `docker compose pull && docker compose up -d`.
+
+Each comes in these flavours (shown for `:latest`; add `-nvenc`, `-edge` or
+`-edge-nvenc`):
+
+| Tag | Changes when | For |
+|---|---|---|
+| `:latest` | a new release, every few weeks | most people |
+| `:0.10` | a patch to 0.10 (security and data-loss fixes) | patches without new features |
+| `:v0.10.0` | never | pinning a version |
+| `:develop` | every change | testers (the version shows `-dev`) |
+| `:v0.11.0-rc.1` | never | trying a release before it's out |
 
 ## Docker Compose (recommended)
 
@@ -445,9 +456,40 @@ docker compose up -d
 
 Database migrations run automatically on startup. If you want to be cautious,
 back up `./data/shrinkerr.db` first — the DB is the only stateful thing.
+Read the release's **Upgrade notes** (on the
+[Releases](https://github.com/I-IAL9000/shrinkerr/releases) page; Shrinkerr
+also shows them once after an update) — they say what to do, if anything.
 
 Switching between `:latest` ↔ `:nvenc` ↔ `:edge` is safe — same schema,
 same settings format, capability detection re-runs on startup.
+
+### Knowing when there's an update
+
+The sidebar shows **Update available** when a new release is out — or, on a
+`:develop` image, a newer develop build (with a link to what changed).
+Shrinkerr asks GitHub every 30 minutes; turn that off in Settings → System →
+Updates. It never updates itself: the container is replaced with
+`docker compose pull && docker compose up -d`, by you or a tool:
+
+- **[Diun](https://crazymax.dev/diun/)** tells you (Discord, email, ntfy…)
+  when a new image is out, and changes nothing.
+- **[What's Up Docker](https://getwud.github.io/wud/)** does the same, with a
+  web page, and can update a container when you click.
+- **Watchtower** updates containers by itself. On `:latest` that means
+  releases arrive without you reading their upgrade notes; if you use it,
+  point it at a minor line (`:0.10`) so only patches arrive unattended.
+
+### Going back to an older version
+
+Migrations only ever add tables and columns, so an older version still starts
+on a database a newer one has used, and ignores what it doesn't know (new
+settings, new job states). Take a backup first (Settings → System →
+Backups), then change the `image:` line to the older tag. Moving from
+`:develop` back to `:latest` works the same way.
+
+One thing to know: versions before 0.10 don't know **External** sign-in, so
+going back to one of them from a 0.10 install that uses it turns sign-in off
+there (or asks for the API key, if one is set) until you set a password.
 
 ## Uninstall / reset
 

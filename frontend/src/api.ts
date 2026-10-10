@@ -637,10 +637,22 @@ export const getVersion = (force = false) =>
   // origin while the remote origin fetches fresh and shows the button.
   // The backend also sets Cache-Control: no-store; both honest is best.
   // v0.3.62.
-  apiFetch<{ current: string; latest: string | null; update_available: boolean }>(
+  apiFetch<VersionInfo>(
     `/stats/version${force ? "?force=1" : ""}`,
     { cache: "no-store" },
   );
+// v0.10.0: release channels — a develop build hears about newer develop
+// builds (compare_url: the commits since), a release about newer releases;
+// check_enabled false = Settings turned the GitHub check off.
+export interface VersionInfo {
+  current: string; latest: string | null; update_available: boolean;
+  channel?: "stable" | "develop"; check_enabled?: boolean; compare_url?: string | null;
+}
+/** "dev.912" for a development build's version, else "v0.10.0". */
+export const shortVersion = (v: string | null | undefined) => {
+  const dev = /-dev\.(\d+)/.exec(v || "");
+  return dev ? `dev.${dev[1]}` : `v${v ?? ""}`;
+};
 
 export interface ChangelogEntry {
   version: string;
@@ -648,7 +660,8 @@ export interface ChangelogEntry {
   intro: string;
   sections: Record<string, string[]>;
 }
-export type WhatsNew = { show: boolean; version: string; since: string | null; new: string[]; fixed: string[]; more_fixes: number };
+export type WhatsNew = { show: boolean; version: string; since: string | null; new: string[]; fixed: string[]; more_fixes: number;
+  upgrade?: string[] };  // v0.10.0: the release's "Upgrade notes", in full
 export const getWhatsNew = (preview = false) =>
   apiFetch<WhatsNew>(`/stats/whats-new${preview ? "?preview=true" : ""}`);
 export const markWhatsNewSeen = () => apiFetch("/stats/whats-new/seen", { method: "POST" });

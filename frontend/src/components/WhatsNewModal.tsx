@@ -66,6 +66,7 @@ export default function WhatsNewModal() {
           </div>
         </div>
         <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
+          {section(t("dialogs:whatsNew.upgrade"), notes.upgrade ?? [])}
           {section(t("dialogs:whatsNew.new"), notes.new)}
           {section(t("dialogs:whatsNew.fixed"), notes.fixed)}
           {notes.more_fixes > 0 && (

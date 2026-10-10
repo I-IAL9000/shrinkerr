@@ -31,7 +31,8 @@
   },
   "version": {
     "updateAvailable": "Actualización disponible",
-    "updateTooltip": "Hay una versión más reciente disponible: v{{latest}} (tienes la v{{current}})"
+    "updateTooltip": "Hay una versión más reciente disponible: v{{latest}} (tienes la v{{current}})",
+    "updateTooltipDevelop": "Hay una versión de desarrollo más nueva: {{latest}} (tienes {{current}})"
   },
   "login": {
     "subtitle": "Inicia sesión para continuar",

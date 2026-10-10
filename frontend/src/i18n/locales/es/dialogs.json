@@ -29,7 +29,8 @@
     "fixes_many": "{{count}} correcciones.",
     "fixes_other": "{{count}} correcciones.",
     "fullNotes": "Notas completas de la versión",
-    "gotIt": "Entendido"
+    "gotIt": "Entendido",
+    "upgrade": "Notas de actualización"
   },
   "folderBrowser": {
     "title": "Seleccionar carpeta",

@@ -92,6 +92,10 @@ jobs:
             echo '```'
             echo ""
             echo "Floating tags (\`:latest\`, \`:edge\`, \`:nvenc\`, \`:edge-nvenc\`) track the most recent release of each lineage."
+            if [[ "$VERSION" != *-* ]]; then
+              MINOR="$(echo "${VERSION#v}" | cut -d. -f1,2)"
+              echo "\`:${MINOR}\` (and \`:${MINOR}-nvenc\`, \`-edge\`, \`-edge-nvenc\`) follow this release's patches only. \`:edge\` means an ffmpeg master build, not a pre-release."
+            fi
             echo "EOF_IMAGES"
           } >> "$GITHUB_OUTPUT"
 

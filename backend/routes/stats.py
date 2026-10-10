@@ -976,13 +976,22 @@ def _one_liner(bullet: str) -> str:
     return text.strip().rstrip(".").strip()
 
 
+def _plain(bullet: str) -> str:
+    """A changelog bullet without its Markdown (bold, code, links)."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", bullet)
+    return text.replace("**", "").replace("`", "").strip()
+
+
 def _notes(entries: list[dict]) -> dict:
     new: list[str] = []
     fixed: list[str] = []
+    upgrade: list[str] = []  # v0.10.0: "Upgrade notes", in full — what to do after updating
     more_fixes = 0
     for entry in entries:
         for section, bullets in entry["sections"].items():
-            if section in ("Added", "Changed"):
+            if section == "Upgrade notes":
+                upgrade += [_plain(b) for b in bullets]
+            elif section in ("Added", "Changed"):
                 new += [_one_liner(b) for b in bullets]
             elif section in ("Fixed", "Security", "Removed"):
                 for b in bullets:
@@ -990,7 +999,7 @@ def _notes(entries: list[dict]) -> dict:
                         fixed.append(_one_liner(b))
                     else:
                         more_fixes += 1
-    return {"new": new, "fixed": fixed, "more_fixes": more_fixes}
+    return {"upgrade": upgrade, "new": new, "fixed": fixed, "more_fixes": more_fixes}
 
 
 def whats_new_since(entries: list[dict], seen: str | None, current: str) -> dict:
@@ -1025,7 +1034,7 @@ async def whats_new(preview: bool = False):
                   if (e["version"].lower() == "unreleased") == dev
                   and (dev or _version_key(e["version"]) == _version_key(current))]
         notes = _notes(chosen)
-        if not (notes["new"] or notes["fixed"] or notes["more_fixes"]):
+        if not (notes["upgrade"] or notes["new"] or notes["fixed"] or notes["more_fixes"]):
             return {"show": False}
         return {"show": True, "version": current.split("-")[0], "since": None, "preview": True, **notes}
     if "-" in current:
@@ -1050,7 +1059,7 @@ async def whats_new(preview: bool = False):
     if seen and _version_key(seen) >= _version_key(current):
         return {"show": False}
     notes = whats_new_since(_parse_changelog(), seen, current)
-    if not (notes["new"] or notes["fixed"] or notes["more_fixes"]):
+    if not (notes["upgrade"] or notes["new"] or notes["fixed"] or notes["more_fixes"]):
         return {"show": False}
     return {"show": True, "version": current, "since": seen, **notes}
 
@@ -1088,15 +1097,81 @@ async def _fetch_latest_release_tag() -> str | None:
 
 
 def _version_tuple(v: str) -> tuple:
-    """Split "0.3.64" → (0, 3, 64). Non-numeric components sort lexicographically
-    after numeric ones (so a hypothetical "0.4.0-rc1" trails "0.4.0")."""
-    parts: list = []
-    for part in (v or "").split("."):
-        try:
-            parts.append((0, int(part)))
-        except ValueError:
-            parts.append((1, part))
-    return tuple(parts)
+    """Semantic-version order (v0.10.0): numerically, and a release after
+    its own pre-releases ("0.10.0-rc.1" < "0.10.0"; it used to sort after
+    it, so an rc build never heard of the release). Build metadata ("+sha")
+    doesn't count."""
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?", (v or "").split("+")[0])
+    if not m:
+        return (0, 0, 0, 0, ())
+    pre = m[4]
+    pre_key = tuple((0, int(p), "") if p.isdigit() else (1, 0, p) for p in pre.split(".")) if pre else ()
+    return (int(m[1]), int(m[2]), int(m[3]), 0 if pre else 1, pre_key)
+
+
+# Release channels (v0.10.0): a development build's VERSION is stamped
+# "X.Y.Z-dev.<run>+<sha7>" by build-images.yml; it hears about newer
+# develop builds, a release only about newer releases.
+_DEV_VERSION = re.compile(r"^(?P<base>\d+\.\d+\.\d+)-dev\.(?P<run>\d+)\+(?P<sha>[0-9a-f]+)$")
+
+
+def _channel(version: str) -> str:
+    return "develop" if _DEV_VERSION.match(version or "") else "stable"
+
+
+def _newer(latest: str | None, current: str) -> bool:
+    if not latest:
+        return False
+    dev_latest, dev_current = _DEV_VERSION.match(latest), _DEV_VERSION.match(current)
+    if dev_latest and dev_current:
+        return int(dev_latest["run"]) > int(dev_current["run"])
+    return _version_tuple(latest) > _version_tuple(current)
+
+
+async def _fetch_latest_develop_build() -> str | None:
+    """The newest develop build whose images were published, as its VERSION
+    ("0.11.0-dev.902+1a2b3c4"), or None."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{_GITHUB_REPO}/actions/workflows/build-images.yml/runs",
+                params={"branch": "develop", "event": "push", "status": "success", "per_page": 1},
+                headers={"Accept": "application/vnd.github+json"})
+            runs = resp.json().get("workflow_runs") if resp.status_code == 200 else None
+            if not runs:
+                return None
+            sha, number = runs[0]["head_sha"], runs[0]["run_number"]
+            version = await client.get(f"https://raw.githubusercontent.com/{_GITHUB_REPO}/{sha}/VERSION")
+            base = version.text.strip() if version.status_code == 200 else ""
+        if not re.fullmatch(r"\d+\.\d+\.\d+", base):
+            return None
+        return f"{base}-dev.{number}+{sha[:7]}"
+    except Exception as exc:
+        print(f"[VERSION] GitHub develop check failed: {exc}", flush=True)
+        return None
+
+
+async def _update_check_enabled() -> bool:
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = 'update_check'") as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    return (row[0] if row else "true") != "false"
+
+
+def _version_result(current: str, enabled: bool = True) -> dict:
+    """/stats/version's answer from the cache."""
+    latest = _update_cache.get("version") if enabled else None
+    out = {"current": current, "channel": _channel(current), "latest": latest, "check_enabled": enabled,
+           "update_available": _newer(latest, current), "compare_url": None}
+    dev_latest, dev_current = _DEV_VERSION.match(latest or ""), _DEV_VERSION.match(current)
+    if out["update_available"] and dev_latest and dev_current:  # the commits since this build
+        out["compare_url"] = (f"https://github.com/{_GITHUB_REPO}/compare/"
+                              f"{dev_current['sha']}...{dev_latest['sha']}")
+    return out
 
 
 def _parse_release_body(version: str, date: str, body: str) -> dict:
@@ -1222,21 +1297,23 @@ async def get_upstream_changelog(response: Response, force: bool = False):
 async def refresh_update_check() -> dict:
     """Force a fresh GitHub check and update the cache. Returns the same shape
     `/stats/version` returns. Called by the startup task, the periodic
-    background refresher, and explicit `force=1` requests to the endpoint."""
+    background refresher, and explicit `force=1` requests to the endpoint.
+    v0.10.0: a development build checks for newer develop builds; and the
+    check can be turned off (Settings → System → Updates)."""
     import time
     current = _get_current_version()
-    tag = await _fetch_latest_release_tag()
+    if not await _update_check_enabled():
+        return _version_result(current, enabled=False)
+    if _channel(current) == "develop":
+        tag = await _fetch_latest_develop_build()
+    else:
+        tag = await _fetch_latest_release_tag()
     if tag is not None:
         _update_cache["version"] = tag
         _update_cache["checked_at"] = time.time()
     # Read from cache (fresh or stale) so we never return an outright null
     # latest just because this one check happened to fail.
-    latest = _update_cache.get("version")
-    return {
-        "current": current,
-        "latest": latest,
-        "update_available": bool(latest) and _version_tuple(latest) > _version_tuple(current),
-    }
+    return _version_result(current)
 
 
 @router.get("/version")
@@ -1270,12 +1347,7 @@ async def get_version(response: Response, force: bool = False):
     current = _get_current_version()
     now = time.time()
     if _update_cache.get("checked_at", 0) > now - _UPDATE_CHECK_TTL_SECONDS:
-        latest = _update_cache.get("version")
-        return {
-            "current": current,
-            "latest": latest,
-            "update_available": bool(latest) and _version_tuple(latest) > _version_tuple(current),
-        }
+        return _version_result(current, enabled=await _update_check_enabled())
     return await refresh_update_check()
 
 

@@ -40,7 +40,7 @@ export default function ChangelogEntryView({
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: entry.intro ? 8 : 12, flexWrap: "wrap" }}>
         <span style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
-          v{entry.version}
+          {/^\d/.test(entry.version) ? `v${entry.version}` : entry.version}
         </span>
         {entry.date && (
           <span style={{ fontSize: 12, color: "var(--text-muted)" }}>

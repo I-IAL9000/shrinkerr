@@ -224,6 +224,7 @@ _ENCODING_DEFAULTS = {
     "bazarr_url": "",  # v0.10.0: rescanned after Shrinkerr rewrites a file
     "bazarr_api_key": "",
     "compare_frames": "true",  # v0.10.0: before / after frames (backend/frames.py)
+    "update_check": "true",  # v0.10.0: ask GitHub for new versions (routes/stats.py); "false" = never
     # Home Assistant over MQTT (v0.10.0, backend/mqtt.py)
     "mqtt_enabled": "false",
     "mqtt_host": "",
@@ -826,6 +827,7 @@ async def get_encoding_settings():
     result["bazarr_url"] = merged.get("bazarr_url", "")
     result["bazarr_api_key"] = ("****" + bazarr_key[-4:]) if bazarr_key else ""
     result["compare_frames"] = merged.get("compare_frames", "true").lower() == "true"
+    result["update_check"] = merged.get("update_check", "true").lower() != "false"
     result["mqtt_enabled"] = merged.get("mqtt_enabled", "false").lower() == "true"
     result["mqtt_tls"] = merged.get("mqtt_tls", "false").lower() == "true"
     for key in ("mqtt_host", "mqtt_username", "mqtt_discovery_prefix", "mqtt_base_topic"):
@@ -1432,7 +1434,7 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         if update.bazarr_api_key is not None and not update.bazarr_api_key.startswith("****"):
             updates["bazarr_api_key"] = update.bazarr_api_key
         # Home Assistant over MQTT (v0.10.0); before / after frames
-        for key in ("mqtt_enabled", "mqtt_tls", "compare_frames"):
+        for key in ("mqtt_enabled", "mqtt_tls", "compare_frames", "update_check"):
             if getattr(update, key) is not None:
                 updates[key] = "true" if getattr(update, key) else "false"
         if update.mqtt_host is not None:
@@ -1624,6 +1626,10 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
     if auth_keys & set(updates.keys()):
         from backend.main import _auth_cache
         _auth_cache["checked_at"] = 0
+
+    if "update_check" in updates:  # answer with the new setting (and check afresh)
+        from backend.routes.stats import _update_cache
+        _update_cache["checked_at"] = 0
 
     if "notification_language" in updates:
         from backend.i18n import set_current_language

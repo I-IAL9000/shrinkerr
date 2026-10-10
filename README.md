@@ -133,11 +133,21 @@ Both registries publish the same tags simultaneously:
 | Tag | Platforms | Encoding | When to use |
 |---|---|---|---|
 | `:latest` | linux/amd64 + linux/arm64 | libx265 (CPU only) | **Default.** Works on Mac, Windows, Linux, Raspberry Pi, ARM cloud. Pick this unless you specifically want GPU. |
-| `:edge` | linux/amd64 + linux/arm64 | libx265 (CPU only) | Same as `:latest` but with bleeding-edge ffmpeg master build. |
+| `:edge` | linux/amd64 + linux/arm64 | libx265 (CPU only) | Same as `:latest` but with a bleeding-edge ffmpeg master build. Not a pre-release of Shrinkerr — that's `:develop`. |
 | `:nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host on Linux or Windows+WSL2. ffmpeg n8.1, needs driver 570+. |
 | `:edge-nvenc` | linux/amd64 | NVENC + libx265 | NVIDIA GPU host running a very recent driver. ffmpeg master, needs driver 570+. |
 
-**Release channels.** The tags above only change when a new version is released (every few weeks), so they're what most people should run. To help test what's coming next, use `:develop` / `:develop-nvenc` instead: they're rebuilt on every change and show a `-dev` version in the sidebar, so expect the occasional rough edge. Pin a version (e.g. `:v0.10.0-nvenc`) if you never want automatic changes.
+**Release channels and versions.** Every variant comes in these flavours (shown for `:latest`; add `-nvenc`, `-edge` or `-edge-nvenc`):
+
+| Tag | Changes when | For |
+|---|---|---|
+| `:latest` | a new release, every few weeks | most people |
+| `:0.10` | a patch to 0.10 (security and data-loss fixes) | patches without new features |
+| `:v0.10.0` | never | pinning a version |
+| `:develop` | every change | testers — shows a `-dev` version, hears about newer develop builds, expect the occasional rough edge |
+| `:v0.11.0-rc.1` | never | trying a release before it's out |
+
+Shrinkerr tells you in the sidebar when a new version is out (for a `:develop` image, a newer develop build); it never updates itself. See [Upgrading](docs/installation.md#upgrading) for update tools and moving back to an older version.
 
 **All variants share the same database schema and settings format** — you can switch between them with a single `image:` line change and a `docker compose pull && docker compose up -d`. The app's runtime capability detection handles the encoder difference transparently.
 
@@ -409,7 +419,7 @@ docker compose up -d
 
 The database migrates itself on startup — never overwrites user data, only adds new columns. If upgrading from the pre-rename era (when the app was called Squeezarr), the `squeezarr.db` file is auto-renamed to `shrinkerr.db` on first start along with its WAL sidecar files.
 
-For deterministic upgrades in production, pin to a release's version tag (e.g. `shrinkerr:v0.10.0-nvenc`; releases are tagged `vX.Y.Z` and listed on the [Releases](https://github.com/I-IAL9000/shrinkerr/releases) page) instead of a floating `:latest`.
+For deterministic upgrades in production, pin to a release's version tag (e.g. `shrinkerr:v0.10.0-nvenc`; releases are tagged `vX.Y.Z` and listed on the [Releases](https://github.com/I-IAL9000/shrinkerr/releases) page) instead of a floating `:latest` — or a minor line (`:0.10-nvenc`) to get its patches only. Read a release's **Upgrade notes** before updating; Shrinkerr also shows them once after an update.
 
 ---
 
