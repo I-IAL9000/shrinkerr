@@ -703,8 +703,14 @@ async def api_key_auth(request: Request, call_next):
         return await call_next(request)
     # Webhooks can also send it as the Basic-auth password (v0.10.0):
     # Sonarr / Radarr's Connect → Webhook has Username / Password fields.
-    basic = _basic_auth_password(request) if path.startswith("/api/webhooks/") else None
+    basic = _basic_auth_password(request) if path.startswith("/api/webhooks/") or path == "/api/metrics" else None
     if basic and configured_api_key and hmac.compare_digest(basic, configured_api_key):
+        request.state.auth_method = "api_key"
+        return await call_next(request)
+    # Prometheus sends it as a bearer token (its `authorization:` setting).
+    bearer = (request.headers.get("Authorization") or "")[7:].strip() if (
+        path == "/api/metrics" and (request.headers.get("Authorization") or "").lower().startswith("bearer ")) else ""
+    if bearer and configured_api_key and hmac.compare_digest(bearer, configured_api_key):
         request.state.auth_method = "api_key"
         return await call_next(request)
 
@@ -888,6 +894,9 @@ app.include_router(plex_router)
 
 from backend.routes.doctor import router as doctor_router
 app.include_router(doctor_router)
+
+from backend.routes.metrics import router as metrics_router
+app.include_router(metrics_router)
 
 
 @app.get("/api/health")

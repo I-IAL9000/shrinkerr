@@ -27,6 +27,8 @@ deeper.
 - [**Best practices**](best-practices.md) — when to use which encoder,
   preset/CRF recommendations for common sources, how to size a worker
   fleet, backup strategy, what to set before your first batch.
+- [**Monitoring and dashboards**](monitoring.md) — Prometheus metrics
+  (`/api/metrics`) and a JSON endpoint for Homepage / Homarr widgets.
 - [**Troubleshooting**](troubleshooting.md) — symptoms and fixes, covering
   the VMAF and worker-performance saga from v0.3.10 through v0.3.19 plus
   classic issues (spinner on first launch, NVENC unavailable, AFP / NFS

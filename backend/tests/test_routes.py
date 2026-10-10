@@ -223,3 +223,17 @@ async def test_webhooks_take_the_key_as_a_basic_auth_password(client, test_db):
     assert (await client.post("/api/webhooks/arr", json=test_event, headers=basic("wrong"))).status_code == 401
     assert (await client.post("/api/webhooks/arr", json=test_event)).status_code == 401
     assert (await client.get("/api/settings/dirs", headers=basic("k3y-for-tests"))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_metrics_take_a_bearer_token(client, test_db):
+    """Prometheus sends the key as `Authorization: Bearer` (v0.10.0) — only
+    to /api/metrics."""
+    await _set_api_key(test_db, "k3y-for-tests")
+    bearer = {"Authorization": "Bearer k3y-for-tests"}
+    resp = await client.get("/api/metrics", headers=bearer)
+    assert resp.status_code == 200 and resp.headers["content-type"].startswith("text/plain")
+    assert "shrinkerr_jobs" in resp.text
+    assert (await client.get("/api/metrics", headers={"Authorization": "Bearer nope"})).status_code == 401
+    assert (await client.get("/api/stats/widget", headers=bearer)).status_code == 401
+    assert (await client.get("/api/stats/widget", headers={"X-Api-Key": "k3y-for-tests"})).status_code == 200
