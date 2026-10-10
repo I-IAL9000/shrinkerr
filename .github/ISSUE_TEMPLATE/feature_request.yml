@@ -1,0 +1,20 @@
+name: Feature request
+description: An idea for something Shrinkerr could do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The problem or the goal — what's hard or impossible today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: How you picture it working. Screenshots or examples from other tools are welcome.
+  - type: input
+    id: version
+    attributes:
+      label: Shrinkerr version

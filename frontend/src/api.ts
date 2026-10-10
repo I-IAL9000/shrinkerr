@@ -943,6 +943,27 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   }, []);
 }
 
+// Doctor (v0.10.0): checks, and the diagnostics file for a bug report.
+export interface DoctorCheck { id: string; status: "ok" | "warn" | "error" | "info"; target: string | null; data: Record<string, any> }
+export interface DoctorReport { checked_at: string; version: string; checks: DoctorCheck[] }
+export const getDoctor = () => apiFetch<DoctorReport>("/doctor");
+export async function downloadDiagnostics(): Promise<void> {
+  const headers: Record<string, string> = {};
+  const apiKey = getStoredApiKey();
+  if (apiKey) headers["X-Api-Key"] = apiKey;
+  const resp = await fetch(`${API_BASE}/doctor/diagnostics`, { headers, credentials: "include" });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const name = /filename="([^"]+)"/.exec(resp.headers.get("Content-Disposition") || "")?.[1] || "shrinkerr-diagnostics.zip";
+  const url = URL.createObjectURL(await resp.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Backups
 export const listBackups = () => apiFetch<{ name: string; size: number; created_at: string }[]>("/settings/backup/list");
 export const createBackup = () => apiFetch<{ name: string; size: number; created_at: string }>("/settings/backup", { method: "POST" });

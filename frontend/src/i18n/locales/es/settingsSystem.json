@@ -202,7 +202,7 @@
     },
     "issue": {
       "title": "Informar de un problema",
-      "desc": "Incluye tu versión, la variante de la imagen y un extracto relevante del registro (consulta docs → Troubleshooting)."
+      "desc": "Adjunta el archivo de diagnóstico de la página Diagnóstico (Sistema → Diagnóstico): incluye tu versión, configuración y registro reciente, sin secretos."
     },
     "tmdb": "Este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica."
   },

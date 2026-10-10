@@ -17,7 +17,8 @@
     "newFiles_one": "{{count}} nuevo",
     "newFiles_many": "{{count}} nuevos",
     "newFiles_other": "{{count}} nuevos",
-    "menu": "Menú"
+    "menu": "Menú",
+    "doctor": "Diagnóstico"
   },
   "settingsSections": {
     "media": "Medios",

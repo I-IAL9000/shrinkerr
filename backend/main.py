@@ -864,6 +864,9 @@ app.include_router(arr_router)
 from backend.routes.plex import router as plex_router
 app.include_router(plex_router)
 
+from backend.routes.doctor import router as doctor_router
+app.include_router(doctor_router)
+
 
 @app.get("/api/health")
 async def health_check():

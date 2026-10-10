@@ -5052,7 +5052,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       ),
                     },
                     {
-                      href: "https://github.com/I-IAL9000/shrinkerr/issues/new",
+                      href: "https://github.com/I-IAL9000/shrinkerr/issues/new/choose",
                       title: t("settingsSystem:support.issue.title"),
                       desc: t("settingsSystem:support.issue.desc"),
                       icon: (

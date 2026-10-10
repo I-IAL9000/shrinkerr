@@ -1,0 +1,55 @@
+name: Bug report
+description: Something doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! The fastest way to a fix: open **System → Doctor** in Shrinkerr,
+        click **Download diagnostics** and attach the file below. It has your version, setup and
+        recent log; passwords, API keys and tokens are taken out (file paths are kept — look
+        through it first if that matters to you).
+  - type: input
+    id: version
+    attributes:
+      label: Shrinkerr version
+      description: Shown at the bottom of the sidebar, e.g. 0.10.0 or 0.10.0-dev.42+1a2b3c4.
+    validations:
+      required: true
+  - type: dropdown
+    id: image
+    attributes:
+      label: Image
+      options:
+        - ":latest (CPU)"
+        - ":nvenc (NVIDIA)"
+        - ":edge / :edge-nvenc"
+        - ":develop channel"
+        - Not Docker (native install)
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware and OS
+      description: CPU / GPU, host OS, where the media lives (local disk, NFS, SMB...).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Scanner → select ...
+        2. Add to queue ...
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics file and logs
+      description: Drag the diagnostics .zip here, or paste the relevant log lines (Logs page).
+      render: text

@@ -9,6 +9,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const ScannerPage = lazy(() => import("./pages/ScannerPage"));
 const QueuePage = lazy(() => import("./pages/QueuePage"));
 const LogsPage = lazy(() => import("./pages/LogsPage"));
+const DoctorPage = lazy(() => import("./pages/DoctorPage"));
 const ActivityPage = lazy(() => import("./pages/ActivityPage"));
 const NodesPage = lazy(() => import("./pages/NodesPage"));
 const SchedulePage = lazy(() => import("./pages/SchedulePage"));
@@ -172,6 +173,7 @@ const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
       { to: "/monitor", labelKey: "nav:sidebar.monitor", icon: "/icons/monitor.svg", section: "SYSTEM" },
       { to: "/activity", labelKey: "nav:sidebar.activity", icon: "/icons/activity.svg", section: "SYSTEM" },
       { to: "/logs", labelKey: "nav:sidebar.logs", icon: "/icons/terminal.svg", section: "SYSTEM" },
+      { to: "/doctor", labelKey: "nav:sidebar.doctor", icon: "/icons/doctor.svg", section: "SYSTEM" },
       { to: "/schedule", labelKey: "nav:sidebar.schedule", icon: "/icons/clock.svg", section: "SYSTEM" },
     ],
   },
@@ -653,6 +655,7 @@ function AppContent() {
             <Route path="/scanner" element={<ScannerPage scanProgress={scanProgress} onClearScanProgress={() => setScanProgress(null)} />} />
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/logs" element={<LogsPage />} />
+            <Route path="/doctor" element={<DoctorPage />} />
             <Route path="/nodes" element={<NodesPage />} />
             <Route path="/activity" element={<ActivityPage />} />
             <Route path="/schedule" element={<SchedulePage />} />

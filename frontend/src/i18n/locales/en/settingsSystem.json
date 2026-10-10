@@ -200,7 +200,7 @@
     },
     "issue": {
       "title": "Report an issue",
-      "desc": "Include your version, image variant, and a relevant log excerpt (see docs → Troubleshooting)."
+      "desc": "Attach the diagnostics file from the Doctor page (System → Doctor) — it has your version, setup and recent log, without secrets."
     },
     "tmdb": "This product uses the TMDB API but is not endorsed or certified by TMDB."
   },

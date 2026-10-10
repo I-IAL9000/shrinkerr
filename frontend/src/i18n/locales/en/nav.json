@@ -16,7 +16,8 @@
     "settings": "Settings",
     "newFiles_one": "{{count}} new",
     "newFiles_other": "{{count}} new",
-    "menu": "Menu"
+    "menu": "Menu",
+    "doctor": "Doctor"
   },
   "settingsSections": {
     "media": "Media",

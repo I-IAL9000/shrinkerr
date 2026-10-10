@@ -1,0 +1,85 @@
+{
+  "title": "Doctor",
+  "intro": "Checks what Shrinkerr depends on. Reporting a problem? Attach the diagnostics file — passwords, API keys and tokens are taken out.",
+  "run": "Check again",
+  "checking": "Checking…",
+  "download": "Download diagnostics",
+  "downloading": "Preparing…",
+  "report": "Report a problem",
+  "allGood": "Everything checks out.",
+  "problems_one": "{{count}} thing needs a look",
+  "problems_other": "{{count}} things need a look",
+  "never": "never",
+  "minutesAgo_one": "{{count}} minute ago",
+  "minutesAgo_other": "{{count}} minutes ago",
+  "hoursAgo_one": "{{count}} hour ago",
+  "hoursAgo_other": "{{count}} hours ago",
+  "daysAgo_one": "{{count}} day ago",
+  "daysAgo_other": "{{count}} days ago",
+  "status": {
+    "ok": "OK",
+    "warn": "Warning",
+    "error": "Problem",
+    "info": "Note"
+  },
+  "groups": {
+    "storage": "Storage",
+    "encoding": "Encoding",
+    "connections": "Connections",
+    "workers": "Remote workers",
+    "security": "Security"
+  },
+  "checks": {
+    "media_folder": {
+      "title": "Media folders",
+      "ok": "Readable and writable · {{free}} free of {{total}}",
+      "missing": "Not found — is the drive or share mounted?",
+      "unreadable": "Can't be read — check its permissions.",
+      "readonly": "Read-only — Shrinkerr can't replace files here. Check the mount and the container's user (PUID/PGID).",
+      "timeout": "Didn't answer within 15 seconds — the network share may be stalled.",
+      "low_space": "Only {{free}} free (below your {{threshold}} warning) — a conversion writes the new file next to the original.",
+      "none": "No media folders yet — add one in Settings → Media."
+    },
+    "data_folder": {
+      "title": "Data folder",
+      "ok": "Writable · {{free}} free",
+      "readonly": "Not writable — Shrinkerr can't save its database or settings.",
+      "low_space": "Only {{free}} free — the database and its backups need room."
+    },
+    "database": {
+      "title": "Database",
+      "ok": "Intact · {{size}}",
+      "error": "The integrity check failed ({{detail}}) — restore a backup from Settings → System."
+    },
+    "tool": {
+      "ok": "Version {{version}}",
+      "missing": "Not found — conversions can't run."
+    },
+    "vmaf": {
+      "title": "VMAF",
+      "ok": "Available — conversions can be quality-checked.",
+      "info": "Not in this ffmpeg build — VMAF checks are skipped."
+    },
+    "encoder": {
+      "title": "Encoder",
+      "ok": "{{encoder}}, your default, is available here.",
+      "missing": "{{encoder}}, your default, isn't available here. Available: {{available}} — pick one in Settings → Video."
+    },
+    "connection": {
+      "ok": "Connected",
+      "okVersion": "Connected · {{version}}",
+      "bundled": "Using the built-in key",
+      "noKey": "No API key — posters and original languages can't be looked up.",
+      "error": "Can't connect: {{detail}}"
+    },
+    "node": {
+      "ok": "Online",
+      "offline": "Offline — last seen {{ago}}"
+    },
+    "auth": {
+      "title": "Password",
+      "ok": "Needed to sign in.",
+      "info": "Not set — anyone on your network can use Shrinkerr. Set one in Settings → System."
+    }
+  }
+}
