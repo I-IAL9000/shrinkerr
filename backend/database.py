@@ -549,11 +549,17 @@ async def init_db():
             ("network", "TEXT"),
             ("country", "TEXT"),
             ("media_type", "TEXT"),
+            # The title's IMDb id, from TMDB when the folder name has none
+            # (v0.10.0); "" when TMDB has none.
+            ("imdb_id", "TEXT"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")
             except Exception:
                 pass
+        # The Scanner tree's IMDb links read the ids from this, not the rows
+        # (where they sit behind each poster's image data).
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_poster_cache_imdb ON poster_cache(folder_path, imdb_id)")
         # Migration: add language_source to scan_results (api/heuristic)
         try:
             await db.execute("ALTER TABLE scan_results ADD COLUMN language_source TEXT DEFAULT 'heuristic'")

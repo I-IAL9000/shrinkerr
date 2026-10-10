@@ -2408,7 +2408,14 @@ async def get_scan_tree(filter: str = "all"):
                     "is_file": True,
                 }
 
-        return {"folders": list(folders.values())}
+        # The titles' IMDb ids (v0.10.0): the tree's IMDb links, for folders
+        # named without one.
+        from backend.scan_filters import title_folder
+        titles = {title_folder(path + "/_") for path, fd in folders.items() if not fd.get("is_file")}
+        async with db.execute("SELECT folder_path, imdb_id FROM poster_cache WHERE imdb_id > ''") as cur:
+            imdb_ids = {r["folder_path"]: r["imdb_id"] for r in await cur.fetchall() if r["folder_path"] in titles}
+
+        return {"folders": list(folders.values()), "imdb_ids": imdb_ids}
     finally:
         await db.close()
 

@@ -110,7 +110,8 @@ export const getFailedJobCount = () => apiFetch<{ count: number }>("/jobs/failed
 export const clearNewFileCount = () => apiFetch("/scan/clear-new", { method: "POST" });
 export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
 export const getScanTree = (filter: string = "all", signal?: AbortSignal) =>
-  apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[] }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
+  apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[];
+             imdb_ids?: Record<string, string> }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
 /** Each pill's count under `filter`: what clicking it would give (v0.10.0). */
 export const getFilterCounts = (filter: string, signal?: AbortSignal) =>
   apiFetch<{ counts: Record<string, number> }>(`/scan/filter-counts?filter=${encodeURIComponent(filter)}`, { signal });

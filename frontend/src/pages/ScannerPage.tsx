@@ -22,6 +22,7 @@ import { useVisibleInterval } from "../useVisibleInterval";
 
 // Module-level cache for tree data
 let _cachedFolders: FolderInfo[] | null = null;
+let _cachedImdbIds: Record<string, string> = {};
 let _cachedFilter: string = "all";
 let _cacheTimestamp: number = 0;
 
@@ -55,6 +56,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const toast = useToast();
   const confirm = useConfirm();
   const [folders, setFolders] = useState<FolderInfo[]>([]);
+  // Title folder → its IMDb id, for the tree's IMDb links (v0.10.0).
+  const [imdbIds, setImdbIds] = useState<Record<string, string>>({});
   const [dirs, setDirs] = useState<any[]>([]);
   // A stable array, or the poster grid re-groups and re-sorts every title on
   // every render (FE#6).
@@ -210,9 +213,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       if (myGen !== treeRequestGen.current) return;
       const result = data.folders || [];
       _cachedFolders = result;
+      _cachedImdbIds = data.imdb_ids || {};
       _cachedFilter = f;
       _cacheTimestamp = Date.now();
       setFolders(result);
+      setImdbIds(_cachedImdbIds);
       setLoading(false);
       setUpdating(false);
     } catch (err: any) {
@@ -244,6 +249,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     const cacheAge = Date.now() - _cacheTimestamp;
     if (_cachedFolders && _cachedFilter === filter && cacheAge < 120_000) {
       setFolders(_cachedFolders);
+      setImdbIds(_cachedImdbIds);
       setLoading(false);
       // Still check for updates in background
       setUpdating(true);
@@ -1928,6 +1934,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           {viewMode === "tree" ? (
             <FileTree
               folders={displayFolders}
+              imdbIds={imdbIds}
               filter={filter}
               search={search}
               isSelected={isSelected}

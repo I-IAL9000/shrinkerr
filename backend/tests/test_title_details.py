@@ -20,14 +20,14 @@ def tmdb(test_db, monkeypatch):
         finds.append(tvdb_id)
         return f"https://img/{tvdb_id}.jpg", "tmdb", {"media_type": "tv", "tmdb_id": int(tvdb_id), "rating": 7.5}
 
-    async def tv_details(tmdb_id, key):
+    async def tv_details(tmdb_id, media_type, key):
         calls.append(tmdb_id)
-        return {k: v for k, v in details.get(tmdb_id, {}).items()}
+        return {"imdb_id": "", **details.get(tmdb_id, {})}
 
     async def no_image(*a, **kw):
         return None
     monkeypatch.setattr(posters, "_resolve_tmdb_tvdb", find_tvdb)
-    monkeypatch.setattr(posters, "_tmdb_tv_details", tv_details)
+    monkeypatch.setattr(posters, "_tmdb_details", tv_details)
     monkeypatch.setattr(posters, "_download_image", no_image)
     monkeypatch.setenv("SHRINKERR_TMDB_API_KEY", "test-key")
     return posters, calls, finds
@@ -60,17 +60,18 @@ async def test_shows_cached_before_get_them_once(test_db, tmdb):
             [("/media/TV/Old Show [tvdb-1]", "Old Show", "tv"), ("/media/TV/Gone [tvdb-2]", "Gone", "tv"),
              ("/media/Movies/Film [tt0000001]", "Film", "movie")])
         await db.commit()
-    assert await posters._backfill_tv_details("test-key", lambda p: None) == 2
+    assert await posters._backfill_details("test-key", lambda p: None) == 3
     # TMDB had nothing for show 2: stored as "", not asked again. Movies: no.
     assert await _cache(test_db) == [("/media/Movies/Film [tt0000001]", None, None),
                                      ("/media/TV/Gone [tvdb-2]", "", ""),
                                      ("/media/TV/Old Show [tvdb-1]", "HBO", "Ended")]
-    assert await posters._backfill_tv_details("test-key", lambda p: None) == 0
+    assert await posters._backfill_details("test-key", lambda p: None) == 0
     assert sorted(calls) == [1, 2]
 
 
 @pytest.mark.asyncio
-async def test_movies_need_no_details(tmdb):
+async def test_movies_named_with_their_imdb_id_need_no_details(tmdb):
     posters, calls, _ = tmdb
     meta = {"media_type": "movie", "tmdb_id": 9}
-    assert await posters._with_tv_details(meta, "test-key") == meta and calls == []
+    assert await posters._with_details(meta, "test-key", "tt0000009") == {**meta, "imdb_id": "tt0000009"}
+    assert calls == []

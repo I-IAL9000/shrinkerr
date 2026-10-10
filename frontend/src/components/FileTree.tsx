@@ -30,6 +30,8 @@ export interface FolderInfo {
 
 interface FileTreeProps {
   folders: FolderInfo[];
+  // Title folder → its IMDb id (from TMDB when the name has none), v0.10.0.
+  imdbIds?: Record<string, string>;
   filter?: string;
   search?: string;
   isSelected: (path: string) => boolean;
@@ -304,9 +306,10 @@ function parseMediaId(folderName: string): { type: "imdb"; id: string } | { type
   return null;
 }
 
-function MediaIdLink({ folderName }: { folderName: string }) {
+function MediaIdLink({ folderName, imdbId }: { folderName: string; imdbId?: string }) {
   const { t } = useTranslation(["library", "common"]);
-  const mediaId = parseMediaId(folderName);
+  const named = parseMediaId(folderName);
+  const mediaId = named?.type !== "imdb" && imdbId ? { type: "imdb" as const, id: imdbId } : named;
   if (!mediaId) return null;
 
   if (mediaId.type === "imdb") {
@@ -389,9 +392,10 @@ const FILE_EXPANDED_HEIGHT = 300; // approximate for file detail panel
 
 const FolderRow = memo(function FolderRow({
   node, depth, isExpanded, onToggle, allSelected, onSelectAll,
-  onIgnoreFolder, onRescanFolder,
+  onIgnoreFolder, onRescanFolder, imdbId,
 }: {
   node: TreeNode; depth: number; isExpanded: boolean;
+  imdbId?: string;
   onToggle: () => void; allSelected: boolean;
   onSelectAll: (selectAll: boolean, shiftKey?: boolean) => void;
   onIgnoreFolder?: (path: string) => void;
@@ -419,7 +423,7 @@ const FolderRow = memo(function FolderRow({
       <span className={`tree-name ${colorClass}`} title={node.name}>
         {node.name}/
       </span>
-      <MediaIdLink folderName={node.name} />
+      <MediaIdLink folderName={node.name} imdbId={imdbId} />
       <span className="tree-file-size">
         {t("library:tree.files", { count: node.agg_file_count })} &middot; {fmtBytes(node.agg_total_size)}
       </span>
@@ -652,7 +656,7 @@ function toScannedFile(row: any): ScannedFile {
 }
 
 export default function FileTree({
-  folders, filter = "all",
+  folders, imdbIds, filter = "all",
   isSelected, onToggleSelect, onAudioTracksChange, onSubTracksChange, onRemoveFile,
   onIgnoreFile, onUnignoreFile, onRescanFolder, onDeleteFile,
   onFolderFilesLoaded, externalFiles, mediaDirs, mediaDirLabels,
@@ -1022,6 +1026,7 @@ export default function FileTree({
                     onSelectAll={(sel, shift) => latest.current.handleFolderSelectAll(node, sel, shift)}
                     onIgnoreFolder={onIgnoreFile ? rowHandlers.ignoreFile : undefined}
                     onRescanFolder={onRescanFolder}
+                    imdbId={imdbIds?.[node.path]}
                   />
                 </div>
               );

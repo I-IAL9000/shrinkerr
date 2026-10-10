@@ -22,6 +22,8 @@ interface PosterMeta {
   country?: string | null;
   media_type?: string | null;
   rating_source?: string | null;
+  // From TMDB when the folder name has none (v0.10.0).
+  imdb_id?: string | null;
 }
 
 interface TitleGroup {
@@ -475,24 +477,34 @@ export default function PosterGrid({
 
               return (
               <div style={{ display: "flex", gap: 10, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
-                {meta?.rating != null && meta.rating > 0 && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    {/* v0.10.0: to the title on IMDb (its id in the folder name), else an IMDb search */}
-                    {(() => {
-                      const id = expGroup?.key.match(/\[(tt\d+)\]/)?.[1];
-                      const query = [meta.title || expGroup?.title, meta.year].filter(Boolean).join(" ");
-                      return (
-                        <a href={id ? `https://www.imdb.com/title/${id}/` : `https://www.imdb.com/find/?q=${encodeURIComponent(query)}`}
-                           target="_blank" rel="noopener noreferrer"
-                           title={id ? t("library:tree.openOnImdb", { id }) : t("library:tree.findOnImdb", { title: query })}
-                           style={{ color: "var(--imdb)", fontWeight: 700, textDecoration: "none" }}>IMDb</a>
-                      );
-                    })()}
-                    <span style={{ color: meta.rating >= 7 ? "var(--success)" : meta.rating >= 5 ? "var(--caution)" : "var(--danger)", fontWeight: 600 }}>
+                {(() => {
+                  // v0.10.0: to the title on IMDb (its id from the folder
+                  // name or TMDB), else an IMDb search. A TMDB rating is
+                  // labelled TMDB.
+                  if (!meta) return null;
+                  const id = meta.imdb_id || expGroup?.key.match(/\[(tt\d+)\]/)?.[1];
+                  const rated = meta.rating != null && meta.rating > 0;
+                  if (!rated && !id) return null;
+                  const query = [meta.title || expGroup?.title, meta.year].filter(Boolean).join(" ");
+                  const imdb = (
+                    <a href={id ? `https://www.imdb.com/title/${id}/` : `https://www.imdb.com/find/?q=${encodeURIComponent(query)}`}
+                       target="_blank" rel="noopener noreferrer"
+                       title={id ? t("library:tree.openOnImdb", { id }) : t("library:tree.findOnImdb", { title: query })}
+                       style={{ color: "var(--imdb)", fontWeight: 700, textDecoration: "none" }}>IMDb</a>
+                  );
+                  const stars = rated && (
+                    <span style={{ color: meta.rating! >= 7 ? "var(--success)" : meta.rating! >= 5 ? "var(--caution)" : "var(--danger)", fontWeight: 600 }}>
                       ★ {meta.rating}
                     </span>
-                  </span>
-                )}
+                  );
+                  return (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {rated && meta.rating_source === "tmdb"
+                        ? <><span style={{ fontWeight: 700, color: "var(--text-secondary)" }}>TMDB</span>{stars}<span style={{ marginLeft: 6 }}>{imdb}</span></>
+                        : <>{imdb}{stars}</>}
+                    </span>
+                  );
+                })()}
                 {meta?.media_type && (
                   <span style={{ background: "var(--bg-primary)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
                     {meta.media_type === "tv" ? t("library:badges.tv") : t("library:badges.movie")}
