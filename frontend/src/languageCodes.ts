@@ -1,0 +1,20 @@
+// Display names live in settingsMedia:languages.<code>.
+export const ALL_LANGUAGES = [
+  "eng", "isl", "ice", "aar", "afr", "aka", "amh", "ara", "arg", "asm",
+  "aze", "bak", "bam", "bel", "ben", "bos", "bre", "bul", "cat", "ces",
+  "cze", "chi", "zho", "cmn", "cor", "cos", "cre", "cym", "dan", "deu",
+  "ger", "div", "dut", "nld", "dzo", "ell", "gre", "epo", "est", "eus",
+  "ewe", "fao", "fas", "per", "fij", "fin", "fra", "fre", "fry", "ful",
+  "gla", "gle", "glg", "grn", "guj", "hat", "hau", "heb", "her", "hin",
+  "hrv", "hun", "hye", "arm", "ibo", "ido", "ind", "ita", "jav", "jpn",
+  "kal", "kan", "kas", "kat", "geo", "kaz", "khm", "kin", "kir", "kor",
+  "kur", "lao", "lat", "lav", "lit", "ltz", "mac", "mkd", "mal", "mar",
+  "may", "msa", "mlg", "mlt", "mon", "mri", "mya", "bur", "nep", "nob",
+  "nor", "nno", "oci", "ori", "orm", "pan", "pol", "por", "pus", "que",
+  "roh", "ron", "rum", "run", "rus", "sag", "san", "sin", "slk", "slo",
+  "slv", "sme", "smo", "sna", "snd", "som", "sot", "spa", "sqi", "alb",
+  "srp", "ssw", "sun", "swa", "swe", "tam", "tat", "tel", "tgk", "tgl",
+  "tha", "tib", "bod", "tir", "ton", "tsn", "tso", "tuk", "tur", "twi",
+  "uig", "ukr", "urd", "uzb", "vie", "vol", "wln", "wol", "xho", "yid",
+  "yor", "zul",
+];

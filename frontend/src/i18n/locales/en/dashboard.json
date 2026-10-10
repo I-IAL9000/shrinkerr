@@ -11,10 +11,7 @@
   },
   "setup": {
     "welcome": "Welcome to Shrinkerr",
-    "intro": "Convert your media library to x265 and reduce file size by 40-65% with no visible quality loss. Save space, bandwidth & money while retaining quality. Follow these steps to get started.",
-    "optional": "optional",
-    "recommended": "recommended",
-    "goToDashboard": "Go to Dashboard",
+    "intro": "A few choices and Shrinkerr is ready: where your media is, how to encode it, which languages to keep and what happens to the originals. You can change all of it later in Settings.",
     "skip": "Skip setup — I know what I'm doing",
     "protect": {
       "title": "Protect Shrinkerr with a password",
@@ -25,28 +22,74 @@
       "action": "Turn on",
       "failed": "Couldn't turn on password protection: {{error}}"
     },
-    "dirs": {
-      "title": "Add media directories",
-      "description": "Tell Shrinkerr where your media files are stored so it can scan them.",
-      "action": "Go to Settings"
+    "stepOf": "Step {{n}} of {{total}}",
+    "back": "Back",
+    "next": "Next",
+    "saveFailed": "Couldn't save: {{error}}",
+    "folders": {
+      "title": "Media folders",
+      "description": "Where your movies and shows are. Shrinkerr scans these folders; nothing changes until you convert something.",
+      "empty": "No folders yet — add at least one."
     },
-    "scan": {
-      "title": "Scan your library",
-      "descriptionDone_one": "{{num}} file scanned. Run another scan to find new files.",
-      "descriptionDone_other": "{{num}} files scanned. Run another scan to find new files.",
-      "description": "Scan your media directories to find files that can be optimized. Posters and metadata are auto-fetched using the bundled TMDB key.",
-      "actionOpen": "Open Scanner",
-      "actionStart": "Start Scanning"
+    "hardware": {
+      "title": "Hardware",
+      "description": "The encoders this server can use. Hardware encoders are much faster; the CPU encoder makes slightly smaller files but is slow."
     },
-    "customize": {
-      "title": "Customize your setup",
-      "description": "Optional polish: link Plex / Jellyfin / Sonarr / Radarr for label-based rules and library sync, fine-tune encoder presets, or add your own TMDB key for a dedicated rate-limit quota.",
-      "action": "Open Settings"
+    "quality": {
+      "title": "Quality",
+      "description": "How hard to compress. Savings are typical for H.264 sources; you can fine-tune this later in Settings → Video.",
+      "savings": "about {{pct}}% smaller",
+      "presets": {
+        "quality": {
+          "name": "Quality",
+          "desc": "Looks the same as the original."
+        },
+        "balanced": {
+          "name": "Balanced",
+          "desc": "Excellent quality, noticeably smaller files."
+        },
+        "max_savings": {
+          "name": "Max savings",
+          "desc": "Good quality and the smallest files; dark or grainy scenes can show it."
+        }
+      },
+      "custom": {
+        "name": "Keep my settings",
+        "desc": "Your current quality setting isn't one of these presets."
+      }
     },
-    "queue": {
-      "title": "Start converting",
-      "description": "Add files to the queue and start converting to save disk space.",
-      "action": "Open Queue"
+    "languages": {
+      "title": "Languages",
+      "description": "Audio and subtitle tracks in other languages are removed when a file is converted or cleaned up. The original language of each film or show stays.",
+      "audio": "Audio languages to keep",
+      "subs": "Subtitle languages to keep",
+      "subsHelp": "Leave this empty to keep every subtitle.",
+      "suggest": "Add {{language}}",
+      "preview": "What that means for a few of your files",
+      "previewLoading": "Reading a few of your files…",
+      "previewEmpty": "No files to show yet.",
+      "original": "original: {{language}}",
+      "audioShort": "Audio:",
+      "subsShort": "Subtitles:",
+      "kept": "kept",
+      "removed": "removed",
+      "forced": "forced"
+    },
+    "originals": {
+      "title": "Originals",
+      "description": "What happens to the original file once the converted one has taken its place."
+    },
+    "password": {
+      "title": "Password",
+      "description": "Anyone who can open Shrinkerr can change its settings and delete files. Set a username and password — or skip this if only you can reach it.",
+      "skip": "Not now"
+    },
+    "finish": {
+      "title": "Scan",
+      "description": "Shrinkerr scans your folders now. Watch the progress in the Scanner and pick what to convert there.",
+      "summary_one": "{{count}} folder will be scanned.",
+      "summary_other": "{{count}} folders will be scanned.",
+      "action": "Start scanning"
     }
   },
   "cards": {

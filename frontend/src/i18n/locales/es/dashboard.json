@@ -11,10 +11,7 @@
   },
   "setup": {
     "welcome": "Bienvenido a Shrinkerr",
-    "intro": "Convierte tu biblioteca multimedia a x265 y reduce el tamaño de los archivos entre un 40 y un 65 % sin pérdida de calidad visible. Ahorra espacio, ancho de banda y dinero sin sacrificar calidad. Sigue estos pasos para empezar.",
-    "optional": "opcional",
-    "recommended": "recomendado",
-    "goToDashboard": "Ir al panel",
+    "intro": "Unas pocas decisiones y Shrinkerr está listo: dónde están tus archivos, cómo codificarlos, qué idiomas conservar y qué pasa con los originales. Puedes cambiarlo todo después en Ajustes.",
     "skip": "Omitir configuración — sé lo que hago",
     "protect": {
       "title": "Protege Shrinkerr con una contraseña",
@@ -25,29 +22,75 @@
       "action": "Activar",
       "failed": "No se pudo activar la protección con contraseña: {{error}}"
     },
-    "dirs": {
-      "title": "Añadir directorios multimedia",
-      "description": "Indica a Shrinkerr dónde están tus archivos multimedia para que pueda escanearlos.",
-      "action": "Ir a Ajustes"
+    "stepOf": "Paso {{n}} de {{total}}",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "saveFailed": "No se pudo guardar: {{error}}",
+    "folders": {
+      "title": "Carpetas multimedia",
+      "description": "Dónde están tus películas y series. Shrinkerr escanea estas carpetas; nada cambia hasta que conviertas algo.",
+      "empty": "Aún no hay carpetas: añade al menos una."
     },
-    "scan": {
-      "title": "Escanear tu biblioteca",
-      "descriptionDone_one": "{{num}} archivo escaneado. Ejecuta otro escaneo para encontrar archivos nuevos.",
-      "descriptionDone_many": "{{num}} archivos escaneados. Ejecuta otro escaneo para encontrar archivos nuevos.",
-      "descriptionDone_other": "{{num}} archivos escaneados. Ejecuta otro escaneo para encontrar archivos nuevos.",
-      "description": "Escanea tus directorios multimedia para encontrar archivos que se pueden optimizar. Los pósteres y metadatos se obtienen automáticamente con la clave de TMDB incluida.",
-      "actionOpen": "Abrir escáner",
-      "actionStart": "Empezar a escanear"
+    "hardware": {
+      "title": "Hardware",
+      "description": "Los codificadores que puede usar este servidor. Los de hardware son mucho más rápidos; el de CPU genera archivos algo más pequeños, pero es lento."
     },
-    "customize": {
-      "title": "Personalizar la configuración",
-      "description": "Ajustes opcionales: conecta Plex / Jellyfin / Sonarr / Radarr para reglas basadas en etiquetas y sincronización de biblioteca, ajusta los preajustes del codificador o añade tu propia clave de TMDB para disponer de una cuota de peticiones dedicada.",
-      "action": "Abrir Ajustes"
+    "quality": {
+      "title": "Calidad",
+      "description": "Cuánto comprimir. El ahorro es el típico con fuentes H.264; puedes ajustarlo después en Ajustes → Vídeo.",
+      "savings": "aprox. un {{pct}} % más pequeño",
+      "presets": {
+        "quality": {
+          "name": "Calidad",
+          "desc": "Se ve igual que el original."
+        },
+        "balanced": {
+          "name": "Equilibrado",
+          "desc": "Calidad excelente, archivos notablemente más pequeños."
+        },
+        "max_savings": {
+          "name": "Máximo ahorro",
+          "desc": "Buena calidad y los archivos más pequeños; puede notarse en escenas oscuras o con grano."
+        }
+      },
+      "custom": {
+        "name": "Mantener mis ajustes",
+        "desc": "Tu ajuste de calidad actual no es ninguno de estos."
+      }
     },
-    "queue": {
-      "title": "Empezar a convertir",
-      "description": "Añade archivos a la cola y empieza a convertir para ahorrar espacio en disco.",
-      "action": "Abrir cola"
+    "languages": {
+      "title": "Idiomas",
+      "description": "Las pistas de audio y subtítulos en otros idiomas se eliminan al convertir o limpiar un archivo. El idioma original de cada película o serie se conserva.",
+      "audio": "Idiomas de audio que conservar",
+      "subs": "Idiomas de subtítulos que conservar",
+      "subsHelp": "Déjalo vacío para conservar todos los subtítulos.",
+      "suggest": "Añadir {{language}}",
+      "preview": "Qué significa para algunos de tus archivos",
+      "previewLoading": "Leyendo algunos de tus archivos…",
+      "previewEmpty": "Aún no hay archivos que mostrar.",
+      "original": "original: {{language}}",
+      "audioShort": "Audio:",
+      "subsShort": "Subtítulos:",
+      "kept": "se conserva",
+      "removed": "se elimina",
+      "forced": "forzado"
+    },
+    "originals": {
+      "title": "Originales",
+      "description": "Qué pasa con el archivo original cuando el convertido ocupa su lugar."
+    },
+    "password": {
+      "title": "Contraseña",
+      "description": "Cualquiera que pueda abrir Shrinkerr puede cambiar sus ajustes y borrar archivos. Define un usuario y una contraseña, u omite este paso si solo tú puedes acceder.",
+      "skip": "Ahora no"
+    },
+    "finish": {
+      "title": "Escanear",
+      "description": "Shrinkerr escanea tus carpetas ahora. Sigue el progreso en el Escáner y elige allí qué convertir.",
+      "summary_one": "Se escaneará {{count}} carpeta.",
+      "summary_many": "Se escanearán {{count}} carpetas.",
+      "summary_other": "Se escanearán {{count}} carpetas.",
+      "action": "Empezar a escanear"
     }
   },
   "cards": {

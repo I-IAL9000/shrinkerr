@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
-import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup, updateEncodingSettings, login } from "../api";
+import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
+import SetupWizard from "../components/SetupWizard";
 import { fmtNum, fmtBytes } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
@@ -159,231 +160,6 @@ const LiveConvertingCard = memo(function LiveConvertingCard({
   );
 });
 
-// --- Setup Wizard ---
-
-const protectInputStyle: React.CSSProperties = {
-  flex: "1 1 140px", backgroundColor: "var(--bg-primary)", color: "var(--text-secondary)",
-  border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12,
-  height: 32, boxSizing: "border-box",
-};
-
-// Inline username/password form for the wizard's first step (v0.10.0):
-// password protection was off by default and nothing ever asked about it.
-function ProtectForm({ onDone }: { onDone: () => void }) {
-  const { t } = useTranslation(["dashboard"]);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await updateEncodingSettings({ auth_enabled: true, auth_username: username, auth_password: password });
-      await login(username, password);  // stay signed in now that a password is required
-      onDone();
-    } catch (err: any) {
-      setError(t("dashboard:setup.protect.failed", { error: err?.message || "" }));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}
-      onSubmit={e => { e.preventDefault(); submit(); }}>
-      <input type="text" style={protectInputStyle} autoComplete="username"
-        aria-label={t("dashboard:setup.protect.username")} placeholder={t("dashboard:setup.protect.username")} value={username}
-        onChange={e => setUsername(e.target.value)} />
-      <input type="password" style={protectInputStyle} autoComplete="new-password"
-        aria-label={t("dashboard:setup.protect.password")} placeholder={t("dashboard:setup.protect.password")} value={password}
-        onChange={e => setPassword(e.target.value)} />
-      <button type="submit" className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}
-        disabled={busy || !username.trim() || !password}>
-        {t("dashboard:setup.protect.action")}
-      </button>
-      {error && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--danger, var(--danger))" }}>{error}</div>}
-    </form>
-  );
-}
-
-function SetupWizard({ setup, onDismiss, onChanged }: { setup: any; onDismiss: () => void; onChanged: () => void }) {
-  const navigate = useNavigate();
-  const { t } = useTranslation(["dashboard", "common"]);
-  const steps: any[] = [
-    {
-      key: "protect",
-      title: t("dashboard:setup.protect.title"),
-      description: setup.has_auth ? t("dashboard:setup.protect.descriptionDone") : t("dashboard:setup.protect.description"),
-      done: setup.has_auth,
-      recommended: true,
-      form: <ProtectForm onDone={onChanged} />,
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-        </svg>
-      ),
-    },
-    {
-      key: "dirs",
-      title: t("dashboard:setup.dirs.title"),
-      description: t("dashboard:setup.dirs.description"),
-      done: setup.has_dirs,
-      action: () => navigate("/settings/media"),
-      actionLabel: t("dashboard:setup.dirs.action"),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
-        </svg>
-      ),
-    },
-    {
-      key: "scan",
-      title: t("dashboard:setup.scan.title"),
-      description: setup.scan_count > 0
-        ? t("dashboard:setup.scan.descriptionDone", { count: setup.scan_count, num: setup.scan_count.toLocaleString() })
-        : t("dashboard:setup.scan.description"),
-      done: setup.scan_count > 0,
-      action: () => navigate("/scanner"),
-      actionLabel: setup.scan_count > 0 ? t("dashboard:setup.scan.actionOpen") : t("dashboard:setup.scan.actionStart"),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-        </svg>
-      ),
-    },
-    {
-      key: "customize",
-      title: t("dashboard:setup.customize.title"),
-      description: t("dashboard:setup.customize.description"),
-      done: setup.has_plex,
-      action: () => navigate("/settings/integrations"),
-      actionLabel: t("dashboard:setup.customize.action"),
-      optional: true,
-      icon: (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-          <path d="M21.7803 3.28033C22.0732 2.98744 22.0732 2.51256 21.7803 2.21967C21.4874 1.92678 21.0126 1.92678 20.7197 2.21967L18.7077 4.23161C17.0483 3.05263 14.7323 3.20693 13.2448 4.6945L12.1767 5.76252C11.4933 6.44594 11.4933 7.55398 12.1767 8.2374L15.7625 11.8232C16.446 12.5066 17.554 12.5066 18.2374 11.8232L19.3054 10.7552C20.793 9.26761 20.9473 6.9517 19.7684 5.29228L21.7803 3.28033ZM18.1945 5.75516L18.2173 5.77798L18.2197 5.78033L18.222 5.78267L18.2448 5.80542C19.3187 6.87936 19.3187 8.62056 18.2448 9.6945L17.1767 10.7625C17.0791 10.8602 16.9208 10.8602 16.8232 10.7625L13.2374 7.17674C13.1398 7.07911 13.1398 6.92082 13.2374 6.82318L14.3054 5.75516C15.3794 4.68122 17.1206 4.68122 18.1945 5.75516ZM10.7803 11.2803C11.0732 10.9874 11.0732 10.5126 10.7803 10.2197C10.4874 9.92678 10.0126 9.92678 9.71967 10.2197L8.00001 11.9393L7.53035 11.4697C7.23746 11.1768 6.76258 11.1768 6.46969 11.4697L4.69456 13.2448C3.20701 14.7324 3.0527 17.0483 4.23163 18.7077L2.21967 20.7197C1.92678 21.0126 1.92678 21.4874 2.21967 21.7803C2.51256 22.0732 2.98744 22.0732 3.28033 21.7803L5.29229 19.7684C6.95171 20.9473 9.26766 20.793 10.7552 19.3055L12.5303 17.5303C12.8232 17.2374 12.8232 16.7626 12.5303 16.4697L12.0607 16L13.7803 14.2803C14.0732 13.9874 14.0732 13.5126 13.7803 13.2197C13.4874 12.9268 13.0126 12.9268 12.7197 13.2197L11 14.9393L9.06067 13L10.7803 11.2803ZM7.46631 13.527L7.46967 13.5303L7.47305 13.5337L10.4664 16.527L10.4697 16.5303L10.473 16.5336L10.9394 17L9.69456 18.2448C8.62062 19.3187 6.87942 19.3187 5.80548 18.2448L5.75522 18.1945C4.68128 17.1206 4.68128 15.3794 5.75522 14.3055L7.00002 13.0607L7.46631 13.527Z"/>
-        </svg>
-      ),
-    },
-    {
-      key: "queue",
-      title: t("dashboard:setup.queue.title"),
-      description: t("dashboard:setup.queue.description"),
-      done: setup.has_jobs,
-      action: () => navigate("/queue"),
-      actionLabel: t("dashboard:setup.queue.action"),
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="5 3 19 12 5 21"/>
-        </svg>
-      ),
-    },
-  ];
-
-  const requiredDone = steps.filter(s => s.done && !s.optional && !s.recommended).length;
-  const requiredTotal = steps.filter(s => !s.optional && !s.recommended).length;
-
-  return (
-    <div>
-      <div style={{ textAlign: "center", padding: "40px 20px 20px" }}>
-        <img src="/favicon.svg" alt="" width="100" height="100" style={{ marginBottom: 16 }} />
-        <h1 style={{
-          fontSize: 28, fontWeight: "bold", margin: "0 0 8px",
-          background: "linear-gradient(90deg, var(--accent), #5089F7)",
-          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-        }}>
-          {t("dashboard:setup.welcome")}
-        </h1>
-        <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0, maxWidth: 500, marginInline: "auto" }}>
-          {t("dashboard:setup.intro")}
-        </p>
-      </div>
-
-      {/* Progress indicator */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 6, margin: "24px 0" }}>
-        {steps.map((step) => (
-          <div key={step.key} style={{
-            width: 40, height: 4, borderRadius: 2,
-            background: step.done ? "var(--accent-text)" : "var(--border)",
-            transition: "background 0.3s",
-          }} />
-        ))}
-      </div>
-
-      {/* Steps */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 600, margin: "0 auto", padding: "0 20px" }}>
-        {steps.map((step, i) => (
-          <div key={step.key} style={{
-            background: "var(--bg-card)", borderRadius: 8, padding: "16px 20px",
-            display: "flex", alignItems: "stretch", gap: 16,
-            border: step.done ? "1px solid rgba(104,96,254,0.2)" : "1px solid var(--border)",
-            opacity: step.done ? 0.6 : 1,
-          }}>
-            {/* Step number / checkmark */}
-            <div style={{
-              width: 58, height: 58, borderRadius: 4, flexShrink: 0, alignSelf: "flex-start",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              background: step.done ? "rgba(24,255,165,0.15)" : "rgba(104,96,254,0.15)",
-              color: step.done ? "var(--success)" : "var(--accent-text)",
-              fontSize: 14, fontWeight: "bold",
-            }}>
-              {step.done ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              ) : (
-                <span style={{ opacity: 0.7, display: "flex" }}>{step.icon}</span>
-              )}
-            </div>
-
-            {/* Content */}
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-                {step.title}
-                {step.optional && <span style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: "normal" }}>{t("dashboard:setup.optional")}</span>}
-                {step.recommended && <span style={{ fontSize: 10, color: "var(--accent-text)", fontWeight: "normal" }}>{t("dashboard:setup.recommended")}</span>}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{step.description}</div>
-              {!step.done && step.form}
-            </div>
-
-            {/* Action button */}
-            {!step.done && step.action && (
-              <button
-                className={i === steps.findIndex(s => !s.done && s.action) ? "btn btn-primary" : "btn btn-secondary"}
-                style={{ fontSize: 12, padding: "6px 14px", whiteSpace: "nowrap", flexShrink: 0, alignSelf: "center" }}
-                onClick={step.action}
-              >
-                {step.actionLabel}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Skip / dismiss */}
-      <div style={{ textAlign: "center", marginTop: 24, paddingBottom: 20 }}>
-        {requiredDone >= requiredTotal ? (
-          <button className="btn btn-primary" style={{ padding: "8px 24px" }}
-            onClick={onDismiss}
-          >
-            {t("dashboard:setup.goToDashboard")}
-          </button>
-        ) : (
-          <button style={{
-            background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer",
-            fontSize: 12, padding: "8px 16px",
-          }}
-            onClick={onDismiss}
-          >
-            {t("dashboard:setup.skip")}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // --- Dashboard (merged with Statistics) ---
 
 export default function DashboardPage() {
@@ -392,6 +168,15 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Decided once, when the data first arrives: the wizard's own steps add
+  // folders and start a scan, which mustn't close it halfway (v0.10.0).
+  const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!dash || wizardOpen !== null) return;
+    const setup = dash.setup;
+    const forced = new URLSearchParams(window.location.search).has("setup");
+    setWizardOpen(forced || !!(setup && !setup.dismissed && (!setup.has_dirs || setup.scan_count === 0)));
+  }, [dash, wizardOpen]);
 
   useEffect(() => {
     Promise.all([getDashboardData(), getStatsSummary(), getStatsTimeline(90)]).then(([d, s, t]) => {
@@ -437,15 +222,12 @@ export default function DashboardPage() {
     );
   }
 
-  // Show setup wizard for fresh installs
-  const setup = dash.setup;
-  const forceSetup = window.location.search.includes("setup");
-  const showWizard = forceSetup || (setup && !setup.dismissed && (!setup.has_dirs || setup.scan_count === 0));
-  if (showWizard) {
-    return <SetupWizard setup={setup} onDismiss={async () => {
-      await dismissSetup();
-      const d = await getDashboardData();
-      setDash(d);
+  // Setup wizard for fresh installs (and /?setup)
+  if (wizardOpen) {
+    return <SetupWizard setup={dash.setup || {}} onClose={async () => {
+      await dismissSetup().catch(() => {});
+      setWizardOpen(false);
+      getDashboardData().then(setDash).catch(() => {});
     }} onChanged={() => { getDashboardData().then(setDash).catch(() => {}); }} />;
   }
 

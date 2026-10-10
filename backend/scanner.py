@@ -1401,10 +1401,14 @@ def _is_cleanup_enabled(key: str, default: bool = True) -> bool:
 
 
 def classify_audio_tracks(
-    tracks: list[dict], native_language: str, duration: float = 0
+    tracks: list[dict], native_language: str, duration: float = 0,
+    keep_languages: Optional[set[str]] = None,
 ) -> list[AudioTrack]:
     """
     Classify audio tracks for keep/remove.
+
+    `keep_languages` replaces the saved always-keep list (the setup
+    wizard's preview of a list not saved yet).
 
     Rules:
     - Always keep (locked=True): languages in settings.always_keep_languages
@@ -1427,7 +1431,8 @@ def classify_audio_tracks(
             ) for t in tracks
         ]
 
-    always_keep = _load_audio_keep_languages()
+    always_keep = (_load_audio_keep_languages() if keep_languages is None
+                   else {lang.lower() for lang in keep_languages})
     native = native_language.lower() if native_language else "und"
     auto_keep_native = _is_cleanup_enabled("keep_native_language")  # defaults True
 
@@ -1644,18 +1649,23 @@ def invalidate_sub_settings_cache():
 
 
 def classify_subtitle_tracks(
-    tracks: list[dict], native_language: str
+    tracks: list[dict], native_language: str,
+    keep_languages: Optional[set[str]] = None,
 ) -> list["SubtitleTrack"]:
     """
     Classify subtitle tracks for keep/remove.
 
     Uses separate settings: sub_keep_languages and sub_keep_unknown.
-    Forced subtitles are always kept.
+    Forced subtitles stay when they're in a keep language, the native one
+    (if native subs are kept) or unknown. `keep_languages` replaces the saved
+    list for a preview, and turns cleanup on when it has any (choosing
+    subtitle languages is what turns it on).
     """
     from backend.models import SubtitleTrack
 
     # If subtitle cleanup is disabled, keep all tracks
-    if not _is_cleanup_enabled("sub_cleanup_enabled"):
+    enabled = bool(keep_languages) if keep_languages is not None else _is_cleanup_enabled("sub_cleanup_enabled")
+    if not enabled:
         return [
             SubtitleTrack(
                 stream_index=t.get("stream_index", 0),
@@ -1669,6 +1679,8 @@ def classify_subtitle_tracks(
         ]
 
     sub_keep_langs, sub_keep_unknown = _load_sub_settings()
+    if keep_languages is not None:
+        sub_keep_langs = {lang.lower() for lang in keep_languages}
     native = native_language.lower() if native_language else "und"
     # v0.5.20: subs use a SEPARATE native-language toggle from audio.
     # Pre-v0.5.20 they shared `keep_native_language`, which meant

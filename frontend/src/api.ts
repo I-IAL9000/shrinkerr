@@ -757,6 +757,16 @@ export const browseDirectory = (path: string = "/") =>
     `/settings/browse?path=${encodeURIComponent(path)}`
   );
 export const getEncodingSettings = () => apiFetch<any>("/settings/encoding");
+// Setup wizard (v0.10.0)
+export interface QualityPreset { id: "quality" | "balanced" | "max_savings"; settings: Record<string, number>; savings_pct: number }
+export const getQualityPresets = (encoder?: string) =>
+  apiFetch<{ encoder: string; presets: QualityPreset[]; current: string | null }>(
+    `/settings/quality-presets${encoder ? `?encoder=${encodeURIComponent(encoder)}` : ""}`);
+export interface PreviewTrack { language: string; codec: string; keep: boolean; channels?: number; title?: string; forced?: boolean }
+export const getLanguagePreview = (audioLanguages: string[], subLanguages: string[]) =>
+  apiFetch<{ files: { name: string; native: string; audio: PreviewTrack[]; subs: PreviewTrack[] }[] }>(
+    "/settings/language-preview",
+    { method: "POST", body: JSON.stringify({ audio_languages: audioLanguages, sub_languages: subLanguages }) });
 // Dedicated endpoint for the unmasked Shrinkerr API key. The bulk
 // /settings/encoding response masks it (`****xxxx`) to keep session-
 // hijack / XSS exfiltration from trivially grabbing the real value; UI

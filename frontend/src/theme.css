@@ -964,3 +964,84 @@ input[type="checkbox"] { cursor: pointer; }
   .estimate-summary-grid { grid-template-columns: 1fr !important; }
   .estimate-breakdown-grid { grid-template-columns: 1fr !important; }
 }
+
+/* Setup wizard v2 (v0.10.0) */
+.wizard { max-width: 720px; margin: 0 auto; padding: 24px 16px 32px; }
+.wizard-head { text-align: center; margin-bottom: 20px; }
+.wizard-head h1 { font-size: 26px; margin: 8px 0 6px; color: var(--text-primary); }
+.wizard-muted { color: var(--text-muted); font-size: 13px; }
+.wizard-steps { display: flex; gap: 4px; list-style: none; padding: 0; margin: 0 0 16px; overflow-x: auto; }
+.wizard-steps li { flex: 1 1 0; min-width: 72px; }
+.wizard-steps button {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 2px; background: none; border: none; border-top: 3px solid var(--border);
+  color: var(--text-muted); font-size: 12px; cursor: pointer;
+}
+.wizard-steps button:disabled { cursor: default; }
+.wizard-steps .done button { border-top-color: var(--accent); color: var(--text-secondary); }
+.wizard-steps .current button { border-top-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.wizard-step-num {
+  width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-secondary); font-size: 11px;
+}
+.wizard-steps .current .wizard-step-num { background: var(--accent-bg); color: var(--accent-text); }
+.wizard-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.wizard-card h2 { font-size: 18px; margin: 4px 0 6px; color: var(--text-primary); }
+.wizard-card > p.wizard-muted { margin: 0 0 16px; }
+.wizard-nav { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
+.wizard-skip { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 8px 16px; }
+.wizard-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.wizard-row input, .wizard-row select, .language-picker input {
+  height: 34px; padding: 0 10px; font-size: 13px; color: var(--text-primary);
+  background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; min-width: 0;
+}
+.wizard-error { flex-basis: 100%; font-size: 12px; color: var(--danger); }
+.wizard-done { color: var(--success); font-size: 13px; }
+.wizard-list { list-style: none; padding: 0; margin: 0; }
+.wizard-list li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.wizard-path { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
+.wizard-tag { font-size: 11px; color: var(--text-muted); background: var(--bg-secondary); padding: 2px 6px; border-radius: 3px; }
+.wizard-remove { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; }
+.wizard-option {
+  display: flex; gap: 10px; align-items: flex-start; padding: 12px; margin-bottom: 8px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.wizard-option.selected { border-color: var(--accent); background: var(--accent-bg); }
+.wizard-option input[type="radio"] { margin-top: 3px; accent-color: var(--accent); flex-shrink: 0; }
+.wizard-option-title { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.wizard-option-help { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.wizard-savings { font-weight: normal; font-size: 12px; color: var(--success); margin-left: 6px; }
+.wizard-days { width: 64px; height: 28px; padding: 0 6px; font-size: 13px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; }
+.wizard-field { margin-bottom: 18px; }
+.wizard-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.wizard-suggest { margin-top: 6px; font-size: 12px; padding: 4px 10px; }
+.wizard-preview { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+.wizard-preview-file { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.wizard-preview-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-track { display: inline-block; margin: 0 4px 2px 0; padding: 1px 7px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
+.preview-track.kept { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, transparent); }
+.preview-track.removed { color: var(--text-muted); text-decoration: line-through; }
+.language-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.language-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 14px; font-size: 12px;
+  background: var(--bg-secondary); color: var(--success);
+}
+.language-chip button { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+.language-picker input { width: 100%; max-width: 360px; }
+.language-picker-results {
+  position: absolute; top: calc(100% + 2px); left: 0; z-index: 30; width: 100%; max-width: 360px; padding: 4px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.language-picker-results button {
+  display: block; width: 100%; text-align: left; padding: 6px 10px; font-size: 13px; border: none; border-radius: 4px;
+  background: none; color: var(--text-secondary); cursor: pointer;
+}
+.language-picker-results button:hover, .language-picker-results button:focus-visible { background: var(--bg-secondary); }
+.language-picker-results button span { color: var(--text-muted); }
+@media (max-width: 768px) {
+  /* Seven steps fit: numbers only, plus the current step's name. */
+  .wizard-steps li { min-width: 0; }
+  .wizard-steps li.current { flex: 2.5 1 0; }
+  .wizard-step-name { display: none; }
+  .wizard-steps .current .wizard-step-name { display: inline; }
+}

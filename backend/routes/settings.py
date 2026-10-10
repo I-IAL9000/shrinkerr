@@ -1404,6 +1404,9 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
     # Pre-v0.5.15 these were missing from the set, which contributed
     # to issue #11 ("Reorder native language always re-enabled").
     cache_keys = {
+        # v0.10.0: always_keep_languages was missing, so a changed audio
+        # keep list reached scans only after a restart.
+        "always_keep_languages",
         "sub_keep_languages", "sub_keep_unknown",
         "sub_cleanup_enabled", "audio_cleanup_enabled",
         "keep_native_language", "reorder_native_audio",
@@ -1426,6 +1429,120 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         set_current_language(updates["notification_language"])
 
     return {"status": "updated", "keys": list(updates.keys())}
+
+
+@router.get("/quality-presets")
+async def get_quality_presets(encoder: Optional[str] = None):
+    """The setup wizard's quality presets for `encoder` (default: the saved
+    one): what each sets and saves, and which one the saved settings are
+    (None: something else)."""
+    from backend.encoding_estimates import QUALITY_PRESETS, cq_to_savings_pct, effective_cq, preset_settings
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        async with db.execute("SELECT key, value FROM settings") as cur:
+            saved = {**_ENCODING_DEFAULTS, **{k: v for k, v in await cur.fetchall()}}
+    finally:
+        await db.close()
+    enc = (encoder or saved.get("default_encoder") or "nvenc").lower()
+    presets, current = [], None
+    for pid in QUALITY_PRESETS:
+        values = preset_settings(enc, pid)
+        as_saved = {"default_encoder": enc, **{k: str(v) for k, v in values.items()}}
+        presets.append({"id": pid, "settings": values,
+                        "savings_pct": round(cq_to_savings_pct(effective_cq(as_saved)) * 100)})
+        if all(str(saved.get(k, "")) == str(v) for k, v in values.items()):
+            current = pid
+    return {"encoder": enc, "presets": presets, "current": current}
+
+
+# The setup wizard's language preview (v0.10.0) classifies the tracks of a
+# few files from the media folders against the languages being chosen. The
+# sample is probed once per set of folders and kept in memory.
+_LANG_SAMPLE: dict = {"key": None, "files": []}
+_LANG_SAMPLE_SIZE = 12
+_LANG_SAMPLE_LOCK = asyncio.Lock()
+
+
+def _pick_sample_paths(dirs: list[str], size: int = _LANG_SAMPLE_SIZE) -> list[str]:
+    """Up to `size` video files spread over different folders, from a
+    bounded walk (a big library over the network mustn't stall this)."""
+    import time as _time
+    from backend.config import settings as _cfg
+    from backend.scanner import walk_media_dir
+    exts = {e.lower() for e in _cfg.video_extensions} - {".iso"}
+    by_folder: dict[str, str] = {}
+    deadline = _time.monotonic() + 5
+    for d in dirs:
+        unreadable: list[str] = []
+        for root, _dirs, files in walk_media_dir(d, unreadable):
+            video = sorted(f for f in files if os.path.splitext(f)[1].lower() in exts)
+            if video:
+                by_folder[root] = os.path.join(root, video[0])
+            if len(by_folder) >= size * 8 or _time.monotonic() > deadline:
+                break
+    picks = [by_folder[k] for k in sorted(by_folder)]
+    if len(picks) > size:
+        step = len(picks) / size
+        picks = [picks[int(i * step)] for i in range(size)]
+    return picks
+
+
+async def _language_sample() -> list[dict]:
+    from backend.scanner import probe_file
+    db = await aiosqlite.connect(DB_PATH)
+    try:
+        async with db.execute("SELECT path FROM media_dirs WHERE enabled = 1 ORDER BY path") as cur:
+            dirs = [r[0] for r in await cur.fetchall()]
+    finally:
+        await db.close()
+    async with _LANG_SAMPLE_LOCK:
+        if _LANG_SAMPLE["key"] == dirs:
+            return _LANG_SAMPLE["files"]
+        paths = await asyncio.to_thread(_pick_sample_paths, dirs)
+        sem = asyncio.Semaphore(4)
+
+        async def one(path: str):
+            async with sem:
+                try:
+                    probe = await asyncio.wait_for(probe_file(path, detect_und_subs=False), 30)
+                except Exception:
+                    return None
+            if not probe or not probe.get("audio_tracks"):
+                return None
+            return {"path": path, "audio": probe["audio_tracks"],
+                    "subs": probe.get("subtitle_tracks") or [], "duration": probe.get("duration") or 0}
+
+        files = [f for f in await asyncio.gather(*(one(p) for p in paths)) if f]
+        _LANG_SAMPLE.update(key=dirs, files=files)
+        return files
+
+
+class _LanguagePreviewBody(BaseModel):
+    audio_languages: list[str] = []
+    sub_languages: list[str] = []
+
+
+@router.post("/language-preview")
+async def language_preview(body: _LanguagePreviewBody):
+    """Which tracks of a few sample files these keep languages would keep
+    and remove — nothing is saved."""
+    from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, detect_native_language
+    audio_keep = {lang.lower() for lang in body.audio_languages}
+    sub_keep = {lang.lower() for lang in body.sub_languages}
+    out = []
+    for f in await _language_sample():
+        native = detect_native_language(f["audio"])
+        audio = classify_audio_tracks(list(f["audio"]), native, f["duration"], keep_languages=audio_keep)
+        subs = classify_subtitle_tracks(list(f["subs"]), native, keep_languages=sub_keep)
+        out.append({
+            "name": os.path.basename(f["path"]),
+            "native": native,
+            "audio": [{"language": t.language, "codec": t.codec, "channels": t.channels,
+                       "title": t.title, "keep": t.keep} for t in audio],
+            "subs": [{"language": t.language, "codec": t.codec, "forced": t.forced, "keep": t.keep}
+                     for t in subs],
+        })
+    return {"files": out}
 
 
 @router.get("/browse")

@@ -40,6 +40,28 @@ _CRF_OFFSET = 2
 _VT_Q_AS_CQ = ((45, 28), (50, 26), (55, 23), (60, 21), (65, 15))
 QUALITY_KEYS = ("default_encoder", "nvenc_cq", "libx265_crf", "qsv_cq", "vaapi_qp", "videotoolbox_quality")
 
+# The setup wizard's quality presets, on NVENC's CQ scale (v0.10.0):
+# Quality = the default, transparent; Balanced = excellent; Max savings =
+# good (Settings → Video guide). VideoToolbox gets the -q:v measured to save
+# about the same (_VT_Q_AS_CQ).
+QUALITY_PRESETS = {"quality": 20, "balanced": 23, "max_savings": 26}
+_VT_Q_FOR_PRESET = {"quality": 60, "balanced": 55, "max_savings": 50}
+
+
+def preset_settings(encoder: str, preset: str) -> dict:
+    """The settings a quality preset sets for `encoder`."""
+    cq = QUALITY_PRESETS[preset]
+    encoder = (encoder or "nvenc").lower()
+    if encoder == "libx265":
+        return {"libx265_crf": cq + _CRF_OFFSET}
+    if encoder == "qsv":
+        return {"qsv_cq": cq}
+    if encoder == "vaapi":
+        return {"vaapi_qp": cq}
+    if encoder == "videotoolbox":
+        return {"videotoolbox_quality": _VT_Q_FOR_PRESET[preset]}
+    return {"nvenc_cq": cq}
+
 
 def effective_cq(values: dict) -> int:
     """The default encoder's quality setting on NVENC's CQ scale, for the

@@ -31,6 +31,7 @@ import { useTranslation, Trans } from "react-i18next";
 import { LANGUAGES, setLanguage, type LanguageCode } from "../i18n";
 import { fmtBytes } from "../fmt";
 import { pressable } from "../utils/a11y";
+import { ALL_LANGUAGES } from "../languageCodes";
 import { SETTINGS_SECTIONS, sectionForAnchor, type SettingsSectionId } from "../settingsSections";
 import SettingsSearch from "../components/SettingsSearch";
 import { useConfirm } from "../components/ConfirmModal";
@@ -68,26 +69,6 @@ const SOURCE_CODECS = [
   { value: "av1", always: false, defaultOn: false },
 ];
 
-// Display names live in settingsMedia:languages.<code>.
-const ALL_LANGUAGES = [
-  "eng", "isl", "ice", "aar", "afr", "aka", "amh", "ara", "arg", "asm",
-  "aze", "bak", "bam", "bel", "ben", "bos", "bre", "bul", "cat", "ces",
-  "cze", "chi", "zho", "cmn", "cor", "cos", "cre", "cym", "dan", "deu",
-  "ger", "div", "dut", "nld", "dzo", "ell", "gre", "epo", "est", "eus",
-  "ewe", "fao", "fas", "per", "fij", "fin", "fra", "fre", "fry", "ful",
-  "gla", "gle", "glg", "grn", "guj", "hat", "hau", "heb", "her", "hin",
-  "hrv", "hun", "hye", "arm", "ibo", "ido", "ind", "ita", "jav", "jpn",
-  "kal", "kan", "kas", "kat", "geo", "kaz", "khm", "kin", "kir", "kor",
-  "kur", "lao", "lat", "lav", "lit", "ltz", "mac", "mkd", "mal", "mar",
-  "may", "msa", "mlg", "mlt", "mon", "mri", "mya", "bur", "nep", "nob",
-  "nor", "nno", "oci", "ori", "orm", "pan", "pol", "por", "pus", "que",
-  "roh", "ron", "rum", "run", "rus", "sag", "san", "sin", "slk", "slo",
-  "slv", "sme", "smo", "sna", "snd", "som", "sot", "spa", "sqi", "alb",
-  "srp", "ssw", "sun", "swa", "swe", "tam", "tat", "tel", "tgk", "tgl",
-  "tha", "tib", "bod", "tir", "ton", "tsn", "tso", "tuk", "tur", "twi",
-  "uig", "ukr", "urd", "uzb", "vie", "vol", "wln", "wol", "xho", "yid",
-  "yor", "zul",
-];
 
 const AUDIO_CODECS = [
   { value: "copy" },
