@@ -129,13 +129,15 @@
       "subtitles": "Subtitles:",
       "health": "Health:",
       "outcome": "Outcome:",
-      "added": "Added:"
+      "added": "Added:",
+      "picture": "Picture:"
     },
     "notLabel": "not {{label}}",
     "excluded": "(excluded)",
     "excludeHint": "Alt-click to exclude",
     "hint": "Pills in the same group match any of them; different groups must all match. Alt-click a pill to exclude it.",
     "imageSubs": "Image subtitles",
+    "interlaced": "Interlaced",
     "commentary": "Commentary",
     "externalSubs": "External",
     "forcedSubs": "Forced",

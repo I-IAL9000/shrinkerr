@@ -385,6 +385,11 @@ _FILTER_LIST = [
         "subtitle_tracks_json",
         f"({_TRACK_TITLE} LIKE '%sdh%' OR {_TRACK_TITLE} LIKE '%hearing%' OR {_TRACK_TITLE} LIKE '%(cc)%')",
         hint=("sdh", "earing", "(cc)"))),  # LIKE ignores ASCII case
+    # Picture (v0.10.0; read by scans from this version on)
+    Filter("bit10", "picture", sql="COALESCE(video_bit_depth, 0) >= 10"),
+    Filter("hi10p", "picture", sql=f"COALESCE(video_bit_depth, 0) >= 10 AND {_H264}"),  # hardware decoders can't
+    Filter("interlaced", "picture", sql="video_interlaced = 1"),
+    Filter("vfr", "picture", sql="video_vfr = 1"),
     # HDR: the probe's format, else the name (scanned before it was stored)
     *(Filter(f"hdr_{k}", "hdr", pre_sql=_MAYBE_HDR, py=(lambda k: lambda r, c: hdr_kind(r) == k)(k))
       for k in ("dv", "hdr10", "hlg")),
@@ -454,6 +459,10 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
     "needs_conversion": {"kind": "column", "col": "needs_conversion", "type": "bool", "ops": ["eq"], "label": "Needs conversion", "group": "Video"},
     "vmaf_score":    {"kind": "column", "col": "vmaf_score", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "exists"], "label": "VMAF score", "group": "Video"},
     "hdr":           {"kind": "hdr", "type": "bool", "ops": ["eq"], "label": "HDR / Dolby Vision", "group": "Video"},
+    "frame_rate":    {"kind": "column", "col": "video_fps", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between", "eq"], "label": "Frame rate (fps)", "group": "Video",
+                      "examples": [23.976, 25, 50]},
+    "bit_depth":     {"kind": "column", "col": "video_bit_depth", "type": "enum", "ops": ["eq", "gte"], "label": "Bit depth", "group": "Video",
+                      "options": [8, 10, 12]},
 
     # Size / bitrate
     "file_size_mb":  {"kind": "column", "col": "(COALESCE(file_size, 0) / 1048576.0)", "type": "number", "ops": ["gt", "gte", "lt", "lte", "between"], "label": "File size (MB)", "group": "Size"},

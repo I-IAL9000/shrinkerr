@@ -54,6 +54,9 @@ def test_the_token_round_trips():
     (("duplicate_count", "gte", 2), EXPECTED["duplicates"]),
     (("vmaf_score", "exists", None), {"old", "corrupt", "big"}),
     (("has_lossless_audio", "eq", True), {"dune"}),
+    (("frame_rate", "gte", 50), {"heat_br"}),
+    (("frame_rate", "between", 23, 24), {"big"}),
+    (("bit_depth", "eq", 10), {"dune", "ep1"}),
 ])
 async def test_each_condition(lib, cond, expected):
     assert await names(adv(cond)) == expected

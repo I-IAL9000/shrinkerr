@@ -74,6 +74,11 @@ class ScannedFile(BaseModel):
     video_height: int = 0  # Video resolution height (e.g., 1080, 2160)
     video_width: int = 0  # v0.10.0 (SC-22): with the height, decides the resolution tier
     hdr_format: Optional[str] = None  # v0.10.0: "hdr10" / "hlg" / "dv<profile>" (scanner.hdr_format_of)
+    # v0.10.0 (scanner.video_facts): None = the probe didn't say
+    video_fps: float = 0.0
+    video_bit_depth: int = 0
+    video_interlaced: Optional[bool] = None
+    video_vfr: Optional[bool] = None
     # v0.6.0: 'dvd' / 'bdmv' / None — set when the scanner walks into a
     # VIDEO_TS/BDMV folder structure and registers the marker file as
     # a single scan item instead of recursing into the disc payload.

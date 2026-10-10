@@ -728,6 +728,14 @@ async def init_db():
             await db.execute("ALTER TABLE scan_results ADD COLUMN hdr_format TEXT DEFAULT NULL")
         except Exception:
             pass
+        # v0.10.0: frame rate, bit depth, interlaced, variable frame rate
+        # (scanner.video_facts; NULL: not read yet / the probe didn't say).
+        for col, coltype in (("video_fps", "REAL DEFAULT NULL"), ("video_bit_depth", "INTEGER DEFAULT NULL"),
+                             ("video_interlaced", "INTEGER DEFAULT NULL"), ("video_vfr", "INTEGER DEFAULT NULL")):
+            try:
+                await db.execute(f"ALTER TABLE scan_results ADD COLUMN {col} {coltype}")
+            except Exception:
+                pass
         # Migration: per-node configuration (pause, affinity, translation, schedule)
         for col, ctype in [
             ("paused", "INTEGER DEFAULT 0"),                    # 0/1 — per-node pause

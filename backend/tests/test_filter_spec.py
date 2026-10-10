@@ -42,13 +42,13 @@ def tracks(*specs):
 ROWS = {
     "dune": dict(file_path="/media/Movies/Dune (2021) [tt1160419]/Dune.2021.2160p.UHD.BluRay.REMUX.mkv",
                  file_size=60 * GB, duration=9000, video_codec="hevc", video_width=3840, video_height=1600,
-                 needs_conversion=0, has_lossless_audio_flag=1, language_source="api",
+                 needs_conversion=0, has_lossless_audio_flag=1, language_source="api", video_bit_depth=10,
                  audio_tracks_json=tracks(("eng", "truehd", 8, "TrueHD Atmos 7.1")),
                  subtitle_tracks_json=tracks(("eng", "hdmv_pgs_subtitle"))),
     "heat_br": dict(file_path="/media/Movies/Heat (1995)/Heat.1995.1080p.BluRay.x264.mkv",
                     file_size=12 * GB, duration=10000, video_codec="h264", video_width=1920, video_height=800,
                     needs_conversion=1, has_removable_tracks_flag=1, dup_count=2, language_source="api",
-                    health_status="healthy", health_checked_at=days_ago(120),
+                    health_status="healthy", health_checked_at=days_ago(120), video_fps=50.0,
                     audio_tracks_json=tracks(("eng", "dts", 6, "DTS-HD MA 5.1"), ("eng", "ac3", 2, "Director's Commentary")),
                     subtitle_tracks_json=tracks(("eng", "subrip", None, "English SDH"))),
     "heat_web": dict(file_path="/media/Movies/Heat (1995)/Heat.1995.1080p.WEB-DL.mkv",
@@ -57,7 +57,7 @@ ROWS = {
                      audio_tracks_json=tracks(("eng", "eac3", 6))),  # ~2.6 Mbps: low bitrate; failed before
     "ep1": dict(file_path="/media/TV/Show [tvdb-1]/S01/Show.S01E01.720p.HDTV.mkv",
                 file_size=1 * GB, duration=2600, video_codec="h264", video_width=1280, video_height=720,
-                needs_conversion=1, has_und_tracks_flag=1, hdr_format="hdr10", file_mtime=AGO(3),
+                needs_conversion=1, has_und_tracks_flag=1, hdr_format="hdr10", file_mtime=AGO(3), video_bit_depth=10,
                 audio_tracks_json=tracks(("und", "aac", 2))),  # ignored below
     "ep2": dict(file_path="/media/TV/Show [tvdb-1]/S01/Show.S01E02.720p.HDTV.mkv",
                 file_size=int(1.2 * GB), duration=2600, video_codec="h264", video_width=1280, video_height=720,
@@ -68,7 +68,7 @@ ROWS = {
                  has_removable_subs_flag=1, audio_tracks_json=tracks(("fra", "mp3", 2))),
     "alien": dict(file_path="/media/Movies/Alien (1979)/VIDEO_TS/VIDEO_TS.IFO", file_size=7 * GB, duration=7000,
                   video_codec="mpeg2video", video_width=720, video_height=576, needs_conversion=1,
-                  disc_type="dvd", new_detected_at=NOW, language_source="manual",
+                  disc_type="dvd", new_detected_at=NOW, language_source="manual", video_interlaced=1,
                   audio_tracks_json=tracks(("eng", "ac3", 6)), subtitle_tracks_json=tracks(("fra", "dvd_subtitle"))),
     "old": dict(file_path="/media/Movies/Old (1950)/Old.1950.DVDRip.mkv", file_size=int(1.5 * GB), duration=5400,
                 video_codec="hevc", video_width=720, video_height=540, needs_conversion=0, converted=1,
@@ -82,6 +82,7 @@ ROWS = {
                     audio_tracks_json=tracks(("eng", "opus", 2))),
     "big": dict(file_path="/media/Movies/Big/Big.1080p.mp4", file_size=30 * GB, duration=7200, video_codec="h264",
                 video_width=1920, video_height=1080, needs_conversion=1, vmaf_score=90.0, language_source="api",
+                video_vfr=1, video_fps=23.976,
                 audio_tracks_json=tracks(("spa", "aac", 2)),
                 subtitle_tracks_json=json.dumps([{"language": "eng", "codec": "subrip", "title": "", "forced": True}])),  # VMAF-rejected
     # Two source tokens: counted once, by the first match.
@@ -199,6 +200,10 @@ EXPECTED = {
     "sdh_subs": {"heat_br"},
     "commentary": {"heat_br"},
     # The probe's HDR format (the name for files scanned before it was stored)
+    "bit10": {"dune", "ep1"},
+    "hi10p": {"ep1"},  # H.264 10-bit
+    "interlaced": {"alien"},
+    "vfr": {"big"},
     "hdr_dv": {"web_in_br"},
     "hdr_hdr10": {"ep1"},
     "hdr_hlg": {"corrupt"},
@@ -361,7 +366,7 @@ def test_the_filter_bar_groups_are_the_server_groups():
     heading_group = {"_video": "codec", "_res": "resolution", "_size": "size", "_audio": "audio",
                      "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
                      "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
-                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added"}
+                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture"}
     group = None
     seen = 0
     for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):

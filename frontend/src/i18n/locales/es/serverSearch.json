@@ -70,6 +70,12 @@
     "hdr": {
       "label": "HDR / Dolby Vision"
     },
+    "frame_rate": {
+      "label": "Fotogramas por segundo"
+    },
+    "bit_depth": {
+      "label": "Profundidad de bits"
+    },
     "file_path": {
       "label": "Ruta del archivo"
     },

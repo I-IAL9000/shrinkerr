@@ -1525,7 +1525,7 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
     by the keep settings, external subtitles, and the size estimates. Also
     used by add-by-path and the queue webhook (v0.10.0), which queue from the
     stored row like Add to Queue."""
-    from backend.scanner import detect_native_language, codec_matches_source
+    from backend.scanner import detect_native_language, codec_matches_source, video_facts
     from backend.scanner import classify_audio_tracks, classify_subtitle_tracks, estimate_savings
     from backend.encoding_estimates import video_conv_savings_bytes
     from backend.models import ScannedFile
@@ -1652,4 +1652,5 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
         video_height=probe.get("video_height", 0),
         video_width=probe.get("video_width", 0),  # v0.10.0
         hdr_format=probe.get("hdr_format"),  # v0.10.0
+        **video_facts(probe),  # v0.10.0
     )

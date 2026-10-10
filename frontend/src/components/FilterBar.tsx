@@ -53,6 +53,12 @@ const FILTERS: { key: string; label?: string; labelKey?: string; group?: string 
   { key: "res_1080p", label: "1080p" },
   { key: "res_720p", label: "720p" },
   { key: "res_sd", label: "SD" },
+  // Picture group (v0.10.0)
+  { key: "_picture", labelKey: "scanner:filters.groups.picture", group: "divider" },
+  { key: "bit10", label: "10-bit" },
+  { key: "hi10p", label: "Hi10P" },
+  { key: "interlaced", labelKey: "scanner:filters.interlaced" },
+  { key: "vfr", label: "VFR" },
   // HDR group (v0.10.0): the probe's format, else the name
   { key: "_hdr", label: "HDR:", group: "divider" },
   { key: "hdr_dv", label: "Dolby Vision" },

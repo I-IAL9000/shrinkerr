@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -399,7 +400,38 @@ def is_picture_stream(stream: dict) -> bool:
 
 # Bump when probe_file's result changes (a new field, different detection):
 # full rescans then probe every file again instead of reusing stored probes.
-PROBE_CACHE_VERSION = 1
+# v2 (v0.10.0): field order, average frame rate, VFR, display aspect ratio
+# and the video stream's bitrate — read again once for unchanged files.
+PROBE_CACHE_VERSION = 2
+
+
+def _frame_rate(text) -> float:
+    """ffprobe's "24000/1001" (or "25") as frames per second; 0 if unknown."""
+    try:
+        if text and "/" in str(text):
+            num, den = str(text).split("/")
+            return float(num) / float(den) if float(den) else 0.0
+        return float(text) if text else 0.0
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def bit_depth_of(pix_fmt: str) -> int:
+    """Bits per sample from a pixel format ("yuv420p10le" → 10, "p010le" →
+    10, "yuv420p" → 8); 0 when there's none."""
+    m = re.search(r"(\d{2})(le|be)$", pix_fmt or "")
+    return int(m.group(1)) if m else (8 if pix_fmt else 0)
+
+
+def video_facts(probe: dict) -> dict:
+    """The scan_results video columns a probe gives (v0.10.0): frame rate,
+    bit depth, interlaced and variable frame rate (None: unknown)."""
+    return {
+        "video_fps": round(float(probe.get("video_fps") or 0), 3),
+        "video_bit_depth": bit_depth_of(probe.get("video_pix_fmt") or ""),
+        "video_interlaced": probe.get("video_interlaced"),
+        "video_vfr": probe.get("video_vfr"),
+    }
 
 
 async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[dict]:
@@ -485,6 +517,10 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
     video_width = 0
     video_height = 0
     video_fps: float = 0.0
+    video_interlaced: Optional[bool] = None
+    video_vfr: Optional[bool] = None
+    video_dar = ""
+    video_bitrate: Optional[int] = None
     hdr_format: Optional[str] = None
     audio_tracks = []
     subtitle_tracks = []
@@ -505,16 +541,25 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
             # Frame rate: prefer r_frame_rate ("24000/1001" → 23.976),
             # fall back to avg_frame_rate. Used by progress estimation
             # downstream when ffmpeg's `time=` field is N/A (v0.3.43+).
-            fr = stream.get("r_frame_rate") or stream.get("avg_frame_rate") or ""
+            r_fps = _frame_rate(stream.get("r_frame_rate"))
+            avg_fps = _frame_rate(stream.get("avg_frame_rate"))
+            video_fps = r_fps or avg_fps
+            # v0.10.0: variable frame rate when the average strays from the
+            # nominal rate — only where the container records an average
+            # (MP4 / MOV); matching rates prove nothing (MKV), so None.
+            # Interlaced from the field order (None when ffprobe doesn't say).
+            if r_fps and avg_fps and abs(r_fps - avg_fps) / avg_fps > 0.01:
+                video_vfr = True
+            field_order = (stream.get("field_order") or "").lower()
+            if field_order in ("tt", "bb", "tb", "bt"):
+                video_interlaced = True
+            elif field_order == "progressive":
+                video_interlaced = False
+            video_dar = stream.get("display_aspect_ratio") or ""
             try:
-                if "/" in fr:
-                    num, den = fr.split("/")
-                    den_v = float(den)
-                    video_fps = float(num) / den_v if den_v else 0.0
-                elif fr:
-                    video_fps = float(fr)
-            except (ValueError, ZeroDivisionError):
-                video_fps = 0.0
+                video_bitrate = int(stream["bit_rate"]) if stream.get("bit_rate") else None
+            except (ValueError, TypeError):
+                video_bitrate = None
         elif codec_type == "audio":
             tags = stream.get("tags", {}) or {}
             disposition = stream.get("disposition", {}) or {}
@@ -643,6 +688,10 @@ async def probe_file(file_path: str, detect_und_subs: bool = True) -> Optional[d
         "video_width": video_width,
         "video_height": video_height,
         "video_fps": video_fps,
+        "video_interlaced": video_interlaced,
+        "video_vfr": video_vfr,
+        "video_dar": video_dar,
+        "video_bitrate": video_bitrate,
         "audio_tracks": audio_tracks,
         "subtitle_tracks": subtitle_tracks,
         "duration": duration,
@@ -2397,6 +2446,7 @@ async def scan_directory(
             hdr_format=probe.get("hdr_format"),
             disc_type=disc_type_val,  # v0.6.0
             probe_cache=probe_caches.pop(str(file_path), None),  # v0.10.0 (SC-13)
+            **video_facts(probe),  # v0.10.0
         )
         if result_callback:
             await result_callback(scanned)
