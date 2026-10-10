@@ -1,7 +1,7 @@
-import { createBrowserRouter, RouterProvider, Routes, Route, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { createBrowserRouter, RouterProvider, Routes, Route, Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus } from "./api";
+import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 // Pages load on first visit (FE#30, v0.10.0): everything was one 1.5 MB
 // script, charts and all. The design-system page is for development only.
@@ -185,6 +185,31 @@ const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
   },
 ];
 
+/** Saved views under the Scanner (v0.10.0), each opening the Scanner on it.
+ *  The Views menu announces changes with a "shrinkerr:views-changed" event. */
+function SidebarViews() {
+  const location = useLocation();
+  const [views, setViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    const load = () => getViews().then(setViews).catch(() => setViews([]));
+    load();
+    window.addEventListener("shrinkerr:views-changed", load);
+    return () => window.removeEventListener("shrinkerr:views-changed", load);
+  }, []);
+  if (views.length === 0) return null;
+  const current = location.pathname === "/scanner" ? new URLSearchParams(location.search).get("filter") : null;
+  return (
+    <div className="settings-subnav">
+      {views.map(v => (
+        <Link key={v.id} to={`/scanner?filter=${encodeURIComponent(v.filter)}`}
+          className={`settings-subnav-link ${current === v.filter ? "active" : ""}`}>
+          {v.name}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function SidebarNavItems() {
   const { t } = useTranslation(["nav", "common"]);
   const location = useLocation();
@@ -201,6 +226,7 @@ function SidebarNavItems() {
                 {item.badge && <NewFileBadge />}
                 {item.failedBadge && <FailedJobBadge />}
               </NavLink>
+              {item.to === "/scanner" && <SidebarViews />}
               {item.to === "/settings" && location.pathname.startsWith("/settings") && (
                 <div className="settings-subnav">
                   {SETTINGS_SECTIONS.map(s => (

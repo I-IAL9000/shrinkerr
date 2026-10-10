@@ -516,7 +516,9 @@ async def get_dashboard():
                 COALESCE(SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END), 0) as completed,
                 COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END), 0) as failed,
                 COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN space_saved ELSE 0 END), 0) as total_saved,
-                COALESCE(SUM(CASE WHEN status='completed' AND original_size > 0 THEN original_size ELSE 0 END), 0) as total_original
+                COALESCE(SUM(CASE WHEN status='completed' AND original_size > 0 THEN original_size ELSE 0 END), 0) as total_original,
+                COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN 1 ELSE 0 END), 0) as shrunk,
+                COALESCE(SUM(CASE WHEN status='completed' AND space_saved > 0 THEN original_size ELSE 0 END), 0) as shrunk_original
             FROM jobs"""
         ) as cur:
             stats = dict(await cur.fetchone())
@@ -701,6 +703,8 @@ async def get_dashboard():
             "total_saved": stats["total_saved"],
             "total_original": stats["total_original"],
             "bandwidth_pct": bandwidth_pct,
+            # v0.10.0: the shareable savings card — the files made smaller.
+            "shrunk": {"files": stats["shrunk"], "before": stats["shrunk_original"]},
             "codecs": codecs,
             "today": today_stats,
             "disk": disk_info,

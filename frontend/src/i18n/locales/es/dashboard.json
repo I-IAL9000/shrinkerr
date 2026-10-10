@@ -201,5 +201,19 @@
     "files_other": "{{num}} archivos",
     "saved": "{{size}} ahorrados",
     "originalToEncoded": "{{original}} original → {{encoded}} codificado"
+  },
+  "share": {
+    "button": "Compartir",
+    "title": "Comparte tu ahorro",
+    "saved": "ahorrados",
+    "files_one": "{{num}} archivo reducido, un {{pct}} % más pequeño",
+    "files_many": "{{num}} archivos reducidos, un {{pct}} % más pequeños de media",
+    "files_other": "{{num}} archivos reducidos, un {{pct}} % más pequeños de media",
+    "beforeAfter": "{{before}} → {{after}}",
+    "note": "La imagen solo muestra estos totales: ni nombres de archivo ni rutas.",
+    "download": "Descargar PNG",
+    "copy": "Copiar imagen",
+    "copied": "Imagen copiada",
+    "share": "Compartir…"
   }
 }

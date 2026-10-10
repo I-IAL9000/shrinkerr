@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Trans, useTranslation } from "react-i18next";
 import { getDashboardData, getStatsTimeline, getStatsSummary, dismissSetup } from "../api";
 import SetupWizard from "../components/SetupWizard";
+import SavingsCard from "../components/SavingsCard";
 import { fmtNum, fmtBytes } from "../fmt";
 import { tierColor, vmafLabelWithRange } from "../utils/vmaf";
 import { useVisibleInterval } from "../useVisibleInterval";
@@ -171,6 +172,7 @@ export default function DashboardPage() {
   // Decided once, when the data first arrives: the wizard's own steps add
   // folders and start a scan, which mustn't close it halfway (v0.10.0).
   const [wizardOpen, setWizardOpen] = useState<boolean | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   useEffect(() => {
     if (!dash || wizardOpen !== null) return;
     const setup = dash.setup;
@@ -292,6 +294,15 @@ export default function DashboardPage() {
           <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{t("dashboard:cards.totalSpaceSaved")}</div>
           {dash.bandwidth_pct > 0 && (
             <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{t("dashboard:cards.smallerFiles", { pct: dash.bandwidth_pct })}</div>
+          )}
+          {(dash.total_saved || 0) > 0 && (
+            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 10px", marginTop: 8 }} onClick={() => setShareOpen(true)}>
+              {t("dashboard:share.button")}
+            </button>
+          )}
+          {shareOpen && (
+            <SavingsCard saved={dash.total_saved || 0} files={dash.shrunk?.files || 0} before={dash.shrunk?.before || 0}
+              onClose={() => setShareOpen(false)} />
           )}
         </div>
 

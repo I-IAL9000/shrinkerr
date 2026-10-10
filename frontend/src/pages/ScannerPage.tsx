@@ -103,6 +103,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     if (location.search !== search) navigate({ search }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
+  // v0.10.0: a link to another filter while the Scanner is open (a saved
+  // view in the sidebar) — the address was only read on arrival.
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(location.search).get("filter");
+    if (fromUrl === null) return;
+    const list = fromUrl.split(",").map(f => f.trim()).filter(Boolean);
+    const next = list.length > 0 ? list : ["all"];
+    if (next.join(",") !== filters.join(",")) setFilters(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [selectAllActive, setSelectAllActive] = useState(false);
   const [scanStarted, setScanStarted] = useState(false);

@@ -37,7 +37,10 @@ export default function ViewsMenu({ filter, onApply }: { filter: string; onApply
   const [name, setName] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
-  const load = () => getViews().then(setViews).catch(() => {});
+  const load = () => {
+    window.dispatchEvent(new Event("shrinkerr:views-changed"));  // the sidebar lists them too
+    return getViews().then(setViews).catch(() => {});
+  };
   useEffect(() => { moveBrowserViews().finally(load); }, []);
   useEffect(() => {
     if (!open) return;

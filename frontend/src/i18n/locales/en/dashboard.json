@@ -196,5 +196,18 @@
     "files_other": "{{num}} files",
     "saved": "{{size}} saved",
     "originalToEncoded": "{{original}} original → {{encoded}} encoded"
+  },
+  "share": {
+    "button": "Share",
+    "title": "Share your savings",
+    "saved": "saved",
+    "files_one": "{{num}} file shrunk, {{pct}}% smaller",
+    "files_other": "{{num}} files shrunk, {{pct}}% smaller on average",
+    "beforeAfter": "{{before}} → {{after}}",
+    "note": "Only these totals are in the image — no file names or paths.",
+    "download": "Download PNG",
+    "copy": "Copy image",
+    "copied": "Image copied",
+    "share": "Share…"
   }
 }
