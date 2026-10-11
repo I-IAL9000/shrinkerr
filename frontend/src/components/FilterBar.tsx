@@ -1,215 +1,127 @@
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { decodeAdvanced } from "../advancedSearch";
+import FilterPanel from "./FilterPanel";
+import { CATEGORIES, QUICK_FILTERS, chipLabel, optionLabel, selectedIn, type FilterCategory } from "../filterCatalog";
 
 interface FilterBarProps {
-  /** Filter ids; "!id" excludes. */
   activeFilters: string[];
-  onFilterToggle: (filter: string, exclude: boolean) => void;
-  newCount?: number;
   counts?: Record<string, number>;
+  matching: number;  // files the whole filter matches
+  onToggle: (key: string, exclude: boolean) => void;
+  onRemove: (token: string) => void;
+  onClear: () => void;
 }
 
-// `labelKey` is a translation key resolved at render time; `label` is a
-// literal kept for pure tech tokens (codecs, resolutions, source tags).
-const FILTERS: { key: string; label?: string; labelKey?: string; hintKey?: string; group?: string }[] = [
-  { key: "all", labelKey: "scanner:filters.all" },
-  { key: "new", labelKey: "scanner:filters.new" },
-  { key: "needs_conversion", labelKey: "scanner:filters.needsConversion" },
-  { key: "disc_iso", labelKey: "scanner:filters.discIso" },
-  { key: "high_bitrate", labelKey: "scanner:filters.highBitrate" },
-  { key: "low_bitrate", labelKey: "scanner:filters.lowBitrate" },
-  { key: "bloated", labelKey: "scanner:filters.bloated" },
-  { key: "sub_cleanup", labelKey: "scanner:filters.subCleanup" },
-  { key: "unknown_language", labelKey: "scanner:filters.unknownLanguage" },
-  { key: "ignored", labelKey: "scanner:filters.ignored" },
-  { key: "duplicates", labelKey: "scanner:filters.duplicates" },
-  { key: "corrupt", labelKey: "scanner:filters.corrupt" },
-  { key: "converted", labelKey: "scanner:filters.converted" },
-  { key: "queued", labelKey: "scanner:filters.queued" },
-  { key: "extras", labelKey: "scanner:filters.extras" },
-  { key: "hardlinked", labelKey: "scanner:filters.hardlinked" },
-  // Added group (v0.10.0)
-  { key: "_added", labelKey: "scanner:filters.groups.added", group: "divider" },
-  { key: "added_7d", labelKey: "scanner:filters.added7d" },
-  { key: "added_30d", labelKey: "scanner:filters.added30d" },
-  { key: "added_90d", labelKey: "scanner:filters.added90d" },
-  // Video group
-  { key: "_video", labelKey: "scanner:filters.groups.video", group: "divider" },
-  { key: "x264", label: "x264" },
-  { key: "x265", label: "x265" },
-  { key: "av1", label: "AV1" },
-  { key: "codec_mpeg2", label: "MPEG-2" },
-  { key: "codec_vc1", label: "VC-1 / WMV" },
-  { key: "codec_mpeg4", label: "MPEG-4 / Xvid" },
-  { key: "codec_vp9", label: "VP9" },
-  { key: "misc_codec", labelKey: "scanner:filters.otherCodecs" },
-  // Container group (v0.10.0)
-  { key: "_container", labelKey: "scanner:filters.groups.container", group: "divider" },
-  { key: "container_mkv", label: "MKV" },
-  { key: "container_mp4", label: "MP4" },
-  { key: "container_avi", label: "AVI" },
-  { key: "container_other", labelKey: "scanner:filters.other" },
-  // Resolution group
-  { key: "_res", labelKey: "scanner:filters.groups.resolution", group: "divider" },
-  { key: "res_4k", label: "4K" },
-  { key: "res_1080p", label: "1080p" },
-  { key: "res_720p", label: "720p" },
-  { key: "res_sd", label: "SD" },
-  // Picture group (v0.10.0)
-  { key: "_picture", labelKey: "scanner:filters.groups.picture", group: "divider" },
-  { key: "bit10", label: "10-bit" },
-  { key: "hi10p", label: "Hi10P" },
-  { key: "interlaced", labelKey: "scanner:filters.interlaced" },
-  { key: "vfr", label: "VFR" },
-  // Direct play group (v0.10.0): what makes Plex / Jellyfin / Emby transcode
-  { key: "_direct_play", labelKey: "scanner:filters.groups.directPlay", hintKey: "scanner:filters.directPlayHint", group: "divider" },
-  { key: "dp_video", label: "Hi10P" },
-  { key: "dp_subs", labelKey: "scanner:filters.dpSubs" },
-  { key: "dp_audio", labelKey: "scanner:filters.dpAudio" },
-  { key: "dp_container", labelKey: "scanner:filters.dpContainer" },
-  // HDR group (v0.10.0): the probe's format, else the name
-  { key: "_hdr", label: "HDR:", group: "divider" },
-  { key: "hdr_dv", label: "Dolby Vision" },
-  { key: "hdr_hdr10", label: "HDR10" },
-  { key: "hdr_hlg", label: "HLG" },
-  // Size group
-  { key: "_size", labelKey: "scanner:filters.groups.size", group: "divider" },
-  { key: "size_small", labelKey: "scanner:filters.sizeSmall" },
-  { key: "size_medium", labelKey: "scanner:filters.sizeMedium" },
-  { key: "size_large", labelKey: "scanner:filters.sizeLarge" },
-  // Audio group
-  { key: "_audio", labelKey: "scanner:filters.groups.audio", group: "divider" },
-  { key: "audio_cleanup", labelKey: "scanner:filters.audioCleanup" },
-  { key: "lossless_audio", labelKey: "scanner:filters.losslessAudio" },
-  { key: "lossy_audio", labelKey: "scanner:filters.lossyAudio" },
-  { key: "object_audio", label: "Atmos / DTS:X" },
-  { key: "audio_71", label: "7.1" },
-  { key: "commentary", labelKey: "scanner:filters.commentary" },
-  // Subtitles group (v0.10.0)
-  { key: "_subs", labelKey: "scanner:filters.groups.subtitles", group: "divider" },
-  { key: "image_subs", labelKey: "scanner:filters.imageSubs" },
-  { key: "external_subs", labelKey: "scanner:filters.externalSubs" },
-  { key: "forced_subs", labelKey: "scanner:filters.forcedSubs" },
-  { key: "sdh_subs", label: "SDH" },
-  // Language group
-  { key: "_lang", labelKey: "scanner:filters.groups.language", group: "divider" },
-  { key: "dubbed", labelKey: "scanner:filters.dubbed" },
-  { key: "not_api_matched", labelKey: "scanner:filters.notApiMatched" },
-  { key: "missing_language", labelKey: "scanner:filters.missingLanguage" },
-  // Sonarr / Radarr group (v0.10.0)
-  { key: "_arr", label: "Sonarr/Radarr:", group: "divider" },
-  { key: "arr_cutoff_unmet", labelKey: "scanner:filters.arrCutoffUnmet" },
-  { key: "arr_unmonitored", labelKey: "scanner:filters.arrUnmonitored" },
-  // Maintainerr (v0.10.0): titles in its collections, about to be removed
-  { key: "_maintainerr", label: "Maintainerr:", group: "divider" },
-  { key: "leaving_soon", labelKey: "scanner:filters.leavingSoon" },
-  // Plex group
-  { key: "_plex", label: "Plex:", group: "divider" },
-  { key: "plex_watched", labelKey: "scanner:filters.watched" },
-  { key: "plex_unwatched", labelKey: "scanner:filters.unwatched" },
-  // Not watched on Plex / Jellyfin / Emby in N months (v0.10.0)
-  { key: "_not_watched", labelKey: "scanner:filters.groups.notWatched", hintKey: "scanner:filters.notWatchedHint", group: "divider" },
-  { key: "not_watched_6m", labelKey: "scanner:filters.notWatched6m" },
-  { key: "not_watched_12m", labelKey: "scanner:filters.notWatched12m" },
-  { key: "not_watched_24m", labelKey: "scanner:filters.notWatched24m" },
-  // Type group
-  { key: "_type", labelKey: "scanner:filters.groups.type", group: "divider" },
-  { key: "type_movie", labelKey: "scanner:filters.movies" },
-  { key: "type_tv", labelKey: "scanner:filters.tvShows" },
-  { key: "type_other", labelKey: "scanner:filters.other" },
-  // Source group
-  { key: "_source", labelKey: "scanner:filters.groups.source", group: "divider" },
-  { key: "src_remux", label: "Remux" },
-  { key: "src_bluray", label: "Blu-ray" },
-  { key: "src_webdl", label: "WEB-DL" },
-  { key: "src_hdtv", label: "HDTV" },
-  { key: "src_dvd", label: "DVD" },
-  // VMAF group
-  { key: "_vmaf", label: "VMAF:", group: "divider" },
-  { key: "vmaf_excellent", labelKey: "scanner:filters.vmafExcellent" },
-  { key: "vmaf_good", labelKey: "scanner:filters.vmafGood" },
-  { key: "vmaf_poor", labelKey: "scanner:filters.vmafPoor" },
-  { key: "vmaf_uncertain", labelKey: "scanner:filters.vmafUncertain" },
-  // Health and outcome groups (v0.10.0)
-  { key: "_health", labelKey: "scanner:filters.groups.health", group: "divider" },
-  { key: "health_never", labelKey: "scanner:filters.healthNever" },
-  { key: "health_warnings", labelKey: "scanner:filters.healthWarnings" },
-  { key: "health_stale", labelKey: "scanner:filters.healthStale" },
-  { key: "_outcome", labelKey: "scanner:filters.groups.outcome", group: "divider" },
-  { key: "failed_before", labelKey: "scanner:filters.failedBefore" },
-  { key: "vmaf_rejected", labelKey: "scanner:filters.vmafRejected" },
-  { key: "undo_possible", labelKey: "scanner:filters.undoPossible" },
-  { key: "no_savings", labelKey: "scanner:filters.noSavings" },
-];
-
-// Maps filter key → translation key (or literal tech-token label). Resolve
-// with `filterLabel(key, t)` at render time.
-const FILTER_LABELS: Record<string, { label?: string; labelKey?: string }> = {};
-for (const f of FILTERS) {
-  if (!f.group) FILTER_LABELS[f.key] = f;
+function shortCount(n: number): string {
+  return n > 99999 ? `${(n / 1000).toFixed(0)}k` : n.toLocaleString();
 }
 
-export function filterLabel(key: string, t: (k: string, o?: any) => string): string | undefined {
-  if (key.startsWith("adv:")) {
-    return t("scanner:filters.advancedLabel", { count: decodeAdvanced(key)?.p.length ?? 0 });
-  }
-  if (key.startsWith("!")) {
-    const label = filterLabel(key.slice(1), t);
-    return label && t("scanner:filters.notLabel", { label });
-  }
-  const f = FILTER_LABELS[key];
-  if (!f) return undefined;
-  return f.labelKey ? t(f.labelKey) : f.label;
-}
-
-export default function FilterBar({ activeFilters, onFilterToggle, newCount, counts }: FilterBarProps) {
+/**
+ * The Scanner's filter bar (v0.10.0): quick pills, a menu per category (see
+ * FilterPanel) and the active filters as chips. Within a section, ticking
+ * more shows more; across sections, files must match all (the server's
+ * scan_filters.py decides; filterCatalog.json lays it out).
+ */
+export default function FilterBar({ activeFilters, counts, matching, onToggle, onRemove, onClear }: FilterBarProps) {
   const { t } = useTranslation(["scanner", "common"]);
-  const isAll = activeFilters.length === 0 || (activeFilters.length === 1 && activeFilters[0] === "all");
+  const [open, setOpen] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const active = activeFilters.filter(f => f !== "all");
 
-  // v0.10.0: pills in a group match any of them, groups must all match, and
-  // Alt-click excludes (the server's scan_filters.py decides; see there).
+  const close = () => {
+    const key = open;
+    setOpen(null);
+    if (key) buttons.current.get(key)?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(e.target as Node)) setOpen(null);
+    };
+    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const categoryButton = (category: FilterCategory) => {
+    const selected = selectedIn(category, active);
+    const hasFiles = category.sections.some(s => s.options.some(o => (counts?.[o.key] ?? 1) > 0));
+    const dimmed = !hasFiles && selected.length === 0;
+    const names = selected.map(s =>
+      s.excluded ? t("scanner:filters.notLabel", { label: optionLabel(s.key, t) }) : optionLabel(s.key, t));
+    const shown = names.slice(0, 2).join(", ")
+      + (names.length > 2 ? " " + t("scanner:filterBar.more", { count: names.length - 2 }) : "");
+    const title = t(category.labelKey);
+    const isOpen = open === category.key;
+    return (
+      <div key={category.key} className="filter-category">
+        <button
+          ref={el => { if (el) buttons.current.set(category.key, el); }}
+          className={`filter-pill filter-category-button${selected.length ? " active" : ""}${dimmed ? " dimmed" : ""}`}
+          aria-haspopup="dialog" aria-expanded={isOpen}
+          onClick={() => setOpen(isOpen ? null : category.key)}>
+          <span>{selected.length ? t("scanner:filterBar.summary", { category: title, selected: shown }) : title}</span>
+          <span aria-hidden="true" className="filter-category-caret">▾</span>
+        </button>
+        {isOpen && (
+          <FilterPanel category={category} active={active} counts={counts} onToggle={onToggle} onClose={close} />
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 24, alignItems: "center" }}>
-      {FILTERS.map((f) => {
-        if (f.key === "new" && (!newCount || newCount <= 0)) return null;
-        if (f.group === "divider") {
+    <div ref={barRef} className="filter-bar">
+      <div className="filter-bar-row">
+        {QUICK_FILTERS.map(key => {
+          const included = active.includes(key);
+          const excluded = active.includes("!" + key);
+          const count = counts?.[key];
+          const empty = count === 0 && !included && !excluded;
           return (
-            <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
-              <span style={{ width: 1, height: 16, background: "var(--border)" }} />
-              <span style={{ color: "var(--text-muted)", fontSize: 12, cursor: f.hintKey ? "help" : undefined }}
-                title={f.hintKey ? t(f.hintKey) : undefined}>{f.labelKey ? t(f.labelKey) : f.label}</span>
-            </span>
+            <button key={key}
+              className={`filter-pill${included ? " active" : ""}${excluded ? " excluded" : ""}${empty ? " dimmed" : ""}`}
+              aria-pressed={included || excluded} disabled={empty}
+              title={t("scanner:filters.excludeHint")}
+              onClick={e => onToggle(key, e.altKey)}>
+              <span className="filter-pill-label">{optionLabel(key, t)}</span>
+              {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
+              {count != null && <span className="filter-pill-count">{shortCount(count)}</span>}
+            </button>
           );
-        }
-        const isActive = f.key === "all" ? isAll : activeFilters.includes(f.key);
-        const isExcluded = f.key !== "all" && activeFilters.includes("!" + f.key);
-        const count = f.key === "new" ? newCount : counts?.[f.key];
-        return (
-          <button
-            key={f.key}
-            className={`filter-pill ${isActive ? "active" : ""} ${isExcluded ? "excluded" : ""}`}
-            aria-pressed={isActive || isExcluded}
-            title={f.key === "all" ? undefined : t("scanner:filters.excludeHint")}
-            onClick={(e) => onFilterToggle(f.key, e.altKey && f.key !== "all")}
-            style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 5 }}
-          >
-            <span className="filter-pill-label">{f.labelKey ? t(f.labelKey) : f.label}</span>
-            {isExcluded && <span className="sr-only">{t("scanner:filters.excluded")}</span>}
-            {count != null && (f.key !== "new" || count > 0) && (
-              <span style={{
-                background: f.key === "new" ? "var(--accent)" : "rgba(104,96,254,0.3)",
-                color: f.key === "new" ? "white" : "var(--text-secondary)",
-                fontSize: 10, fontWeight: "bold",
-                padding: "1px 6px", borderRadius: 8,
-                display: "inline-flex", alignItems: "center", lineHeight: 1.4,
-              }}>
-                {count > 99999 ? `${(count / 1000).toFixed(0)}k` : count.toLocaleString()}
+        })}
+        <span className="filter-bar-divider" aria-hidden="true" />
+        {CATEGORIES.map(categoryButton)}
+      </div>
+      {active.length > 0 && (
+        <div className="filter-chips">
+          {active.map(token => {
+            const label = chipLabel(token, t);
+            return (
+              <span key={token} className={`filter-chip${token.startsWith("!") ? " excluded" : ""}`}>
+                {label}
+                <button type="button" className="filter-chip-remove"
+                  aria-label={t("scanner:filterBar.remove", { label })} onClick={() => onRemove(token)}>
+                  ×
+                </button>
               </span>
-            )}
+            );
+          })}
+          <span className="filter-chips-matching">
+            {t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) })}
+          </span>
+          <button type="button" className="filter-chips-clear" onClick={onClear}>
+            {t("scanner:filterBar.clearAll")}
           </button>
-        );
-      })}
-      <span className="filter-bar-hint">{t("scanner:filters.hint")}</span>
+        </div>
+      )}
     </div>
   );
 }

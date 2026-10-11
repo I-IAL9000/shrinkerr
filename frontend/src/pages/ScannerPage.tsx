@@ -8,7 +8,8 @@ import StatsCards from "../components/StatsCards";
 import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import ViewsMenu from "../components/ViewsMenu";
 import { decodeAdvanced } from "../advancedSearch";
-import FilterBar, { filterLabel } from "../components/FilterBar";
+import FilterBar from "../components/FilterBar";
+import { toggleFilter } from "../filterCatalog";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
@@ -142,7 +143,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const detectPollRef = useRef(false);  // mirrors detectPolling for start's guard
   const [detectPolling, setDetectPolling] = useState(false);
   const detectWasActiveRef = useRef(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [arrMenuOpen, setArrMenuOpen] = useState(false);
   const arrMenuRef = useRef<HTMLDivElement | null>(null);
   const [healthMenuOpen, setHealthMenuOpen] = useState(false);
@@ -1205,7 +1205,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     pendingLoadedFiles.current.set(folderPath, files);
   }, []);
 
-  const newCount = serverStats?.counts?.new || 0;
   // Use tree-derived "all" count during scanning so pill stays in sync with tree
   const treeTotalFiles = folders.reduce((sum, f) => sum + f.file_count, 0);
   const libraryCounts: Record<string, number> = serverStats?.counts
@@ -1275,11 +1274,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   }, [folders, search]);
 
   /**
-   * Shared controls row: search + advanced + sort + view-toggle + refresh
-   * posters. Rendered inline with the filter toggle when the filter panel
-   * is collapsed, or on its own row below the FilterBar when expanded —
-   * two positions, one JSX source of truth. Adding a new control here
-   * automatically shows up in both states.
+   * Search + advanced + sort + view-toggle + refresh posters, on their own
+   * row below the filter bar.
    */
   const scannerControls = (
     <>
@@ -1540,48 +1536,21 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             ? encoderSettingsLabel(encodingSettings.default_encoder, encodingSettings)
             : undefined
           } />
-          {/* Filter toggle + active filter indicator */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-            <button
-              className="filter-pill"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
-                background: filtersOpen ? "var(--accent-btn)" : "var(--bg-card)",
-                color: filtersOpen ? "white" : "var(--text-muted)",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/>
-              </svg>
-              {filter !== "all" ? t("scanner:toolbar.filterActive", { filters: filters.filter(f => f !== "all").map(f => filterLabel(f, t) || f.replace(/_/g, " ")).join(" | ") }) : t("scanner:toolbar.filter")}
-              {filter !== "all" && (
-                <span style={{
-                  background: "rgba(255,255,255,0.2)",
-                  color: "white",
-                  fontSize: 10, fontWeight: "bold",
-                  padding: "1px 6px", borderRadius: 8,
-                  marginLeft: 4,
-                  display: "inline-flex", alignItems: "center", lineHeight: 1.4,
-                }}>
-                  {treeTotalFiles > 99999 ? `${(treeTotalFiles / 1000).toFixed(0)}k` : fmtNum(treeTotalFiles)}
-                </span>
-              )}
-            </button>
-            {filter !== "all" && (
-              <button
-                className="filter-pill"
-                onClick={() => { setFilters(["all"]); }}
-                style={{ background: "var(--bg-card)", color: "var(--text-muted)", gap: 4 }}
-              >
-                {t("common:actions.clear")}
-              </button>
-            )}
-            {/* Collapsed: the controls live here, inline with the filter
-                toggle, so the whole thing fits on one row when filters
-                aren't active. Expanded: rendered below the FilterBar
-                instead — see the `{filtersOpen && …}` block lower down. */}
-            {!filtersOpen && scannerControls}
+          {/* The filter bar (v0.10.0): quick pills, a menu per category, the
+              active filters as chips. Then the search / sort / view controls. */}
+          <FilterBar
+            activeFilters={filters}
+            counts={filterCounts}
+            matching={facetCounts?.matching ?? treeTotalFiles}
+            onToggle={(key, exclude) => setFilters(prev => toggleFilter(prev, key, exclude))}
+            onRemove={token => setFilters(prev => {
+              const next = prev.filter(x => x !== token && x !== "all");
+              return next.length ? next : ["all"];
+            })}
+            onClear={() => setFilters(["all"])}
+          />
+          <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+            {scannerControls}
           </div>
 
           {/* Poster prefetch progress bar */}
@@ -1632,38 +1601,6 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {t("scanner:corruptBanner.clearAll")}
               </button>
             </div>
-          )}
-
-          {/* Expanded-filter layout: FilterBar pill grid first, then the
-              shared scannerControls on their own row beneath it. Keeping
-              the controls on their own row here means the pill grid can
-              consume all the width without forcing search/sort to wrap. */}
-          {filtersOpen && (
-            <>
-              <FilterBar
-                activeFilters={filters}
-                onFilterToggle={(f, exclude) => {
-                  if (f === "all") {
-                    setFilters(["all"]);
-                  } else {
-                    // Click: include, or clear an included / excluded pill.
-                    // Alt-click: exclude, or clear an excluded one.
-                    const token = exclude ? "!" + f : f;
-                    setFilters(prev => {
-                      const off = exclude ? prev.includes(token) : prev.includes(f) || prev.includes("!" + f);
-                      const rest = prev.filter(x => x !== "all" && x !== f && x !== "!" + f);
-                      const next = off ? rest : [...rest, token];
-                      return next.length === 0 ? ["all"] : next;
-                    });
-                  }
-                }}
-                newCount={newCount}
-                counts={filterCounts}
-              />
-              <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-                {scannerControls}
-              </div>
-            </>
           )}
 
           {/* Selection control panel */}

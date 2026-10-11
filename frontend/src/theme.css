@@ -434,7 +434,6 @@ body {
 .filter-pill.excluded,
 .filter-pill.excluded:hover { color: var(--danger); border-color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .filter-pill.excluded .filter-pill-label { text-decoration: line-through; }
-.filter-bar-hint { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -495,6 +494,28 @@ body {
   .filter-category { position: static; }
   .filter-panel { left: 0; right: 0; width: auto; }
 }
+
+/* Filter bar (v0.10.0) */
+.filter-bar { position: relative; margin-bottom: 12px; }
+.filter-bar-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.filter-bar-divider { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+.filter-pill.dimmed { opacity: 0.45; }
+.filter-pill:disabled { cursor: default; }
+.filter-pill-count {
+  padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: bold; line-height: 1.4;
+  background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-secondary);
+}
+.filter-category-caret { font-size: 9px; opacity: 0.6; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px 3px 10px;
+  font-size: 12px; border-radius: 14px;
+  background: var(--accent-bg); color: var(--accent-text); border: 1px solid var(--accent);
+}
+.filter-chip.excluded { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border-color: var(--danger); }
+.filter-chip-remove { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; }
+.filter-chips-matching { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+.filter-chips-clear { background: none; border: none; color: var(--accent-text); cursor: pointer; font-size: 12px; padding: 2px 4px; }
 
 /* Range sliders */
 input[type="range"] {
