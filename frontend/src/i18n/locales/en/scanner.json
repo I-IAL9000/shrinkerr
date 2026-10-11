@@ -223,7 +223,7 @@
     "exclude": "Exclude {{label}}",
     "unexclude": "Stop excluding {{label}}",
     "excluded": "excluded",
-    "rule": "Within a section, ticking more shows more; across sections, files must match all. ⊘ or Alt-click excludes."
+    "rule": "Ticking several options in a section shows files matching any of them; across sections, files must match all. ⊘ or Alt-click excludes."
   },
   "stats": {
     "filesToConvert": "Files to convert",

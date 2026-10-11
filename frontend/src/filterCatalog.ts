@@ -32,7 +32,8 @@ export function optionLabel(key: string, t: T): string {
   return option.labelKey ? t(option.labelKey) : option.label ?? key;
 }
 
-/** A filter-string token as a chip: "Codec: x264", "Codec: not x264", "Advanced: 2 conditions". */
+/** A filter-string token as a chip: "Codec: x264", "Codec: not x264", "Advanced: 2 conditions".
+ *  No section prefix when the label already names it ("Audio cleanup", not "Audio: Audio cleanup"). */
 export function chipLabel(token: string, t: T): string {
   if (token.startsWith("adv:")) {
     return t("scanner:filters.advancedLabel", { count: decodeAdvanced(token)?.p.length ?? 0 });
@@ -41,8 +42,11 @@ export function chipLabel(token: string, t: T): string {
   const key = excluded ? token.slice(1) : token;
   const label = optionLabel(key, t);
   const section = PLACES.get(key)?.section;
-  if (!section) return excluded ? t("scanner:filters.notLabel", { label }) : label;
-  return t(excluded ? "scanner:filterBar.chipNot" : "scanner:filterBar.chip", { section: t(section.labelKey), label });
+  const sectionLabel = section ? t(section.labelKey) : "";
+  if (!section || label.toLowerCase().includes(sectionLabel.toLowerCase())) {
+    return excluded ? t("scanner:filters.notLabel", { label }) : label;
+  }
+  return t(excluded ? "scanner:filterBar.chipNot" : "scanner:filterBar.chip", { section: sectionLabel, label });
 }
 
 /** A category's options that are on, in its order: ticked or excluded. */

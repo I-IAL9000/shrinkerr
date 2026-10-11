@@ -1,7 +1,8 @@
 """The Scanner's filter bar layout (frontend/src/filterCatalog.json) against
 the server's filters: every section is one server group, so ticking more in
 a section shows more and different sections narrow; every filter is shown
-once or listed as hidden; every label exists in English and Spanish."""
+once or listed as hidden; every label exists in English and Spanish, and
+every filter bar string the frontend code asks for exists."""
 import json
 import re
 from pathlib import Path
@@ -31,6 +32,12 @@ def _lookup(lang: str, key: str):
     return node
 
 
+def test_section_keys_are_unique():
+    # two sections with one key would be one server group: they'd widen together
+    keys = [section["key"] for category in CATALOG["categories"] for section in category["sections"]]
+    assert len(keys) == len(set(keys))
+
+
 def test_each_section_is_one_server_group():
     for _, section, option in _options():
         f = FILTERS[option["key"]]
@@ -49,11 +56,11 @@ def test_every_label_exists_in_english_and_spanish():
     keys = set()
     for category, section, option in _options():
         keys |= {category["labelKey"], section["labelKey"], section.get("hintKey"), option.get("labelKey")}
-        assert option.get("label") or option.get("labelKey"), option["key"]
+        assert (option.get("label") or "").strip() or option.get("labelKey"), option["key"]
     keys |= {h["labelKey"] for h in CATALOG["hidden"]}
     keys.discard(None)
     for lang in ("en", "es"):
-        missing = [k for k in sorted(keys) if not isinstance(_lookup(lang, k), str)]
+        missing = [k for k in sorted(keys) if not (isinstance(_lookup(lang, k), str) and _lookup(lang, k).strip())]
         assert not missing, (lang, missing)
 
 
@@ -70,3 +77,26 @@ def test_the_bar_strings_match_in_english_and_spanish():
     assert set(es) == expected
     for key, text in en.items():
         assert set(_PLACEHOLDER.findall(text)) == set(_PLACEHOLDER.findall(es[key])), key
+        if key.endswith("_other"):
+            many = key[: -len("_other")] + "_many"
+            assert set(_PLACEHOLDER.findall(text)) == set(_PLACEHOLDER.findall(es[many])), many
+
+
+def test_every_bar_string_the_code_uses_exists_in_both_languages():
+    src = ROOT / "frontend/src"
+    refs = {}  # key -> a file that uses it; "…$" or "….": built at run time, or a sentence's full stop
+    for path in [*src.rglob("*.ts"), *src.rglob("*.tsx")]:
+        for m in re.finditer(r"scanner:filterBar\.([\w.]*\$?)", path.read_text()):
+            refs.setdefault(m.group(1), path.name)
+    assert refs, "no scanner:filterBar.* reference found: is the pattern or the path wrong?"
+    plurals = {"en": ("_one", "_other"), "es": ("_one", "_many", "_other")}
+    for ref, where in sorted(refs.items()):
+        for lang, suffixes in plurals.items():
+            key = "scanner:filterBar." + ref.rstrip("$").rstrip(".")
+            if ref.endswith(("$", ".")):
+                assert isinstance(_lookup(lang, key), (dict, str)), (lang, ref, where)
+            else:
+                found = isinstance(_lookup(lang, key), str) or all(
+                    isinstance(_lookup(lang, key + s), str) for s in suffixes
+                )
+                assert found, (lang, ref, where)
