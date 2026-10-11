@@ -1926,8 +1926,13 @@ async def get_scan_stats():
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db)
-        counts, (_, estimated_savings) = await count_all(db, ctx)
+        from backend.filter_index import service as filter_index
+        fast = await filter_index.stats()
+        if fast is not None:
+            counts, estimated_savings = fast
+        else:  # the index's first build is still running
+            ctx = await _build_enrichment_context(db)
+            counts, (_, estimated_savings) = await count_all(db, ctx)
         async with db.execute(
             f"""SELECT SUM(file_size) AS total_size,
                 SUM(CASE WHEN (language_source IS NULL OR language_source NOT IN ('api','manual','tmdb-manual'))
@@ -2360,6 +2365,11 @@ async def get_filter_counts(filter: str = "all"):
     """The pills' counts under the active filter: what clicking each would
     give (v0.10.0). With no filter, the library-wide counts."""
     expr = parse_filter(filter)
+    from backend.filter_index import service as filter_index
+    fast = await filter_index.counts(expr)
+    if fast is not None:
+        return {"counts": fast}
+    # The index's first build is still running: the SQL engine (~12 s at 166K files).
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:

@@ -412,6 +412,9 @@ async def lifespan(app: FastAPI):
     # Home Assistant over MQTT (v0.10.0): idle until it's set up.
     from backend.mqtt import mqtt_loop
     mqtt_task = asyncio.create_task(mqtt_loop())
+    # The Scanner's filter index: loaded or built, then kept up to date (v0.10.0).
+    from backend.filter_index.service import filter_index_loop
+    filter_index_task = asyncio.create_task(filter_index_loop())
     # Width, frame rate etc. for files scanned before 0.10.0, in the background.
     from backend.video_details import video_details_loop
     details_task = None if demo.ENABLED else asyncio.create_task(video_details_loop())
@@ -426,6 +429,16 @@ async def lifespan(app: FastAPI):
     estimates_task.cancel()
     mqtt_task.cancel()
     digest_task.cancel()
+    filter_index_task.cancel()
+    try:
+        await filter_index_task  # let a save in progress finish
+    except asyncio.CancelledError:
+        pass
+    try:
+        from backend.filter_index.service import save as save_filter_index
+        await save_filter_index(force=True)
+    except Exception as exc:
+        print(f"[FILTERS] Saving the filter index failed: {exc}", flush=True)
     if details_task:
         details_task.cancel()
 
