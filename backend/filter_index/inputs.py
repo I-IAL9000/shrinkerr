@@ -23,3 +23,33 @@ TABLES: dict[str, list[tuple[str, "str | None", "str | None"]]] = {
                   "{row}.key IN ('always_keep_languages', 'sub_keep_languages', 'backup_original_days')")],
 }
 INPUTS = frozenset(TABLES) | {"time"}
+
+
+# Every changed scan_results row, by id: the index re-evaluates those rows.
+# AUTOINCREMENT keeps seq rising after rows are deleted (sqlite_sequence),
+# so a restored backup shows up as a lower seq than the index has seen.
+CHANGES_SQL = [
+    "CREATE TABLE IF NOT EXISTS filter_index_changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, row_id INTEGER NOT NULL)",
+    "CREATE TRIGGER IF NOT EXISTS trg_fi_scan_insert AFTER INSERT ON scan_results "
+    "BEGIN INSERT INTO filter_index_changes (row_id) VALUES (NEW.id); END",
+    "CREATE TRIGGER IF NOT EXISTS trg_fi_scan_delete AFTER DELETE ON scan_results "
+    "BEGIN INSERT INTO filter_index_changes (row_id) VALUES (OLD.id); END",
+    "CREATE TRIGGER IF NOT EXISTS trg_fi_scan_update AFTER UPDATE ON scan_results "
+    "BEGIN INSERT INTO filter_index_changes (row_id) SELECT OLD.id UNION SELECT NEW.id; END",
+]
+
+
+def trigger_sql() -> list[str]:
+    """The change log, the counters and their triggers (database.init_db).
+    Rename a trigger when changing it: they're created IF NOT EXISTS."""
+    out = list(CHANGES_SQL)
+    for name, tables in TABLES.items():
+        out.append(f"INSERT OR IGNORE INTO change_counters (name, n) VALUES ('fi:{name}', 0)")
+        bump = f"BEGIN UPDATE change_counters SET n = n + 1 WHERE name = 'fi:{name}'; END"
+        for table, columns, when in tables:
+            for event, rows in (("INSERT", ("NEW",)), ("UPDATE", ("NEW", "OLD")), ("DELETE", ("OLD",))):
+                of = f" OF {columns}" if event == "UPDATE" and columns else ""
+                cond = f" WHEN {' OR '.join(when.format(row=r) for r in rows)}" if when else ""
+                out.append(f"CREATE TRIGGER IF NOT EXISTS trg_fi_{name}_{event.lower()} "
+                           f"AFTER {event}{of} ON {table}{cond} {bump}")
+    return out

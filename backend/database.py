@@ -1207,6 +1207,13 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.9.85 backfill skipped: {exc}", flush=True)
 
+        # The Scanner's filter index (backend/filter_index): a log of changed
+        # scan_results rows, and counters for the other tables filters read.
+        # Last, after every table it watches exists.
+        from backend.filter_index.inputs import trigger_sql
+        for statement in trigger_sql():
+            await db.execute(statement)
+
         await db.commit()
     finally:
         await db.close()
