@@ -41,6 +41,13 @@ async def _assert_counts_match(db_path):
     assert savings == await library_data.sql_savings(db_path)
 
 
+async def _recovered(db_path):
+    """Rebuilt: the SQL engine's counts, and nothing more to rebuild."""
+    await _assert_counts_match(db_path)
+    await service.counts(parse_filter("x264"))
+    assert not service._state.stale and not service._rebuilding()
+
+
 def _copy(src: str, dst: str) -> None:
     """The whole database, as a backup or a restore copies it."""
     with closing(sqlite3.connect(src)) as a, closing(sqlite3.connect(dst)) as b:
@@ -105,7 +112,7 @@ async def test_a_big_change_rebuilds_in_the_background(library, monkeypatch):
     await service.save(force=True)
     assert not os.path.exists(service.index_path())  # not saved while it's being replaced
     await service.wait_rebuilt()
-    assert await service.counts(parse_filter("x264")) == await library_data.sql_counts(library, "x264")
+    await _recovered(library)
 
 
 @pytest.mark.asyncio
@@ -114,9 +121,10 @@ async def test_another_database_rebuilds(library):
     async with aiosqlite.connect(library) as db:  # another install's database (a backup of this one keeps the id)
         await db.execute("UPDATE settings SET value = 'another' WHERE key = 'filter_index_db_id'")
         await db.commit()
-    await service.refresh()
+    assert await service.counts(parse_filter("x264")) is None  # the old index describes other rows
     await service.wait_rebuilt()
     assert service._state.index.db_id == "another"
+    await _recovered(library)
 
 
 @pytest.mark.asyncio
@@ -129,9 +137,25 @@ async def test_restoring_a_backup_rebuilds(library):
         await db.commit()
     await service.refresh()
     _copy(library + ".backup", library)  # the backup put back in place
-    await service.refresh()
+    assert await service.counts(parse_filter("x264")) is None  # the old index describes other rows
     await service.wait_rebuilt()
-    await _assert_counts_match(library)
+    await _recovered(library)
+
+
+@pytest.mark.asyncio
+async def test_restoring_a_backup_from_before_an_input_changed_rebuilds(library):
+    await _built()
+    _copy(library, library + ".backup")
+    async with aiosqlite.connect(library) as db:  # an input only: the change log stays as it was
+        await db.execute("INSERT INTO ignored_files (file_path, reason, ignored_at) SELECT file_path, 'manual', '' "
+                         "FROM scan_results WHERE removed_from_list = 0 "
+                         "AND file_path NOT IN (SELECT file_path FROM ignored_files) LIMIT 1")
+        await db.commit()
+    await service.refresh()
+    _copy(library + ".backup", library)  # the backup put back in place
+    assert await service.counts(parse_filter("x264")) is None  # the old index describes other rows
+    await service.wait_rebuilt()
+    await _recovered(library)
 
 
 @pytest.mark.asyncio
@@ -193,7 +217,7 @@ async def test_a_failing_build_is_tried_again_after_a_pause(library, monkeypatch
     monkeypatch.setattr(service, "build", build)
     service._state.failed_at -= service._state.backoff
     await _built()
-    await _assert_counts_match(library)
+    await _recovered(library)
 
 
 @pytest.mark.asyncio
@@ -212,7 +236,7 @@ async def test_after_a_failed_rebuild_the_sql_engine_answers(library, monkeypatc
     service._state.failed_at -= service._state.backoff
     assert await service.counts(parse_filter("x264")) is None  # tried again, still not the old index's
     await service.wait_rebuilt()
-    await _assert_counts_match(library)
+    await _recovered(library)
 
 
 @pytest.mark.asyncio
@@ -224,7 +248,34 @@ async def test_an_error_falls_back_to_the_sql_engine(library, capsys):
     capsys.readouterr()
     assert await service.counts(parse_filter("x264")) is None
     assert await service.stats() is None
-    assert capsys.readouterr().out.count("[FILTERS]") == 1  # logged at most once a minute
+    out = capsys.readouterr().out
+    assert out.count("Traceback") == 1  # the first failure in a row
+    assert out.count("Counting with the filter index failed") == 1  # at most once a minute
+
+
+@pytest.mark.asyncio
+async def test_refreshes_failing_in_a_row_rebuild(library, monkeypatch, capsys):
+    await _built()
+    snapshot = service._snapshot
+
+    async def failing(db):
+        raise sqlite3.OperationalError("database disk image is malformed")
+
+    async def fail(times):
+        monkeypatch.setattr(service, "_snapshot", failing)
+        for _ in range(times):
+            with pytest.raises(sqlite3.OperationalError):
+                await service.refresh()
+        monkeypatch.setattr(service, "_snapshot", snapshot)
+    await fail(service.REFRESH_FAILURES - 1)
+    await service.refresh()  # one that works ends the run
+    await fail(service.REFRESH_FAILURES - 1)
+    assert not service._rebuilding()
+    await fail(1)
+    assert service._rebuilding()
+    assert capsys.readouterr().out.count("Traceback") == 2  # once per run of failures
+    await service.wait_rebuilt()
+    await _recovered(library)
 
 
 @pytest.mark.asyncio

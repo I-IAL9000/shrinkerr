@@ -37,6 +37,7 @@ BIG_CHANGE = 5000    # more changed rows than this (and a fifth of the library):
 BACKOFF_FIRST = 60   # seconds before trying a failed build again; doubles each time
 BACKOFF_MAX = 600
 ERROR_LOG_EVERY = 60  # an error is logged at most this often
+REFRESH_FAILURES = 3  # refreshes failing this many times in a row: rebuild instead
 
 
 class _State:
@@ -50,6 +51,8 @@ class _State:
         self.ctx: Optional[dict] = None
         self.adhoc: dict = {}  # Advanced Search conditions' rows, until the index changes
         self.stale = False    # a rebuild must replace it (refresh decided so)
+        self.foreign = False  # and it describes other rows (a restored backup, another database)
+        self.refresh_failures = 0  # in a row
         self.loading = False  # the saved index is being read (start-up)
         self.failed_at = 0.0  # when the last build failed (time.monotonic)
         self.backoff = 0.0    # the pause after it; 0 after a build succeeds
@@ -145,8 +148,8 @@ def _start_rebuild() -> None:
                   flush=True)
             return
         async with _state.lock:
-            _state.index, _state.dirty, _state.stale, _state.backoff = index, True, False, 0.0
-            _state.adhoc = {}
+            _state.index, _state.dirty, _state.stale, _state.foreign = index, True, False, False
+            _state.backoff, _state.refresh_failures, _state.adhoc = 0.0, 0, {}
         print(f"[FILTERS] Filter index built in {time.perf_counter() - started:.1f}s", flush=True)
         try:  # the Scanner fetches its counts again
             from backend.websocket import ws_manager
@@ -163,7 +166,8 @@ async def wait_rebuilt() -> None:
 
 
 async def refresh() -> None:
-    """Apply what changed since the index last looked (see the module doc)."""
+    """Apply what changed since the index last looked (see the module doc).
+    Failing REFRESH_FAILURES times in a row, it's rebuilt instead."""
     async with _state.lock:
         index = _state.index
         if index is None or _rebuilding():
@@ -171,45 +175,61 @@ async def refresh() -> None:
         if _state.stale:
             _start_rebuild()  # the last one failed: again once the backoff is over
             return
-        db = await database.connect_db()
         try:
-            seq, counters = await _snapshot(db)
-            if (seq < index.seq or any(counters.get(k, 0) < n for k, n in index.counters.items())
-                    or await _db_id(db) != index.db_id):
-                # A restored backup (the change log or a counter went back) or another database.
-                _state.stale = True
+            await _apply_changes(index)
+        except Exception:
+            _state.refresh_failures += 1
+            if _state.refresh_failures == 1:  # the first failure in a row: the traceback, once
+                print(f"[FILTERS] Updating the filter index failed:\n{traceback.format_exc()}", end="", flush=True)
+            if _state.refresh_failures >= REFRESH_FAILURES:
+                _state.stale = True  # a rebuild may get past it
                 _start_rebuild()
-                return
-            moved = {k for k, n in counters.items() if index.counters.get(k) != n}
-            now = time.time()
-            if now - index.time_at >= TIME_REFRESH or now < index.time_at:  # or the clock went back
-                moved.add("time")
-            changed: list[int] = []
-            if seq > index.seq:
-                async with db.execute("SELECT DISTINCT row_id FROM filter_index_changes WHERE seq > ? AND seq <= ?",
-                                      (index.seq, seq)) as cur:
-                    changed = [r[0] for r in await cur.fetchall()]
-            if not changed and not moved:
-                return
-            if len(changed) > max(BIG_CHANGE, index.alive.bit_count() // 5):
-                _state.stale = True
-                _start_rebuild()
-                return
-            dirty = [f for f in _FILTER_LIST if set(f.inputs) & moved]
-            ctx = await _context(db, counters) if changed or any(f.py for f in dirty) else None
-            if changed:
-                alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed)
-                index.patch(changed, alive, members, savings)
-            if dirty:
-                _, members, _ = await evaluate(db, dirty, ctx)
-                index.replace(dirty, members)
-            index.seq, index.counters = seq, counters
-            if "time" in moved:
-                index.time_at = now
-            _state.adhoc = {}
-            _state.dirty = True
-        finally:
-            await db.close()
+            raise
+        _state.refresh_failures = 0
+
+
+async def _apply_changes(index: FilterIndex) -> None:
+    """refresh(), under the lock."""
+    db = await database.connect_db()
+    try:
+        seq, counters = await _snapshot(db)
+        if (seq < index.seq or any(counters.get(k, 0) < n for k, n in index.counters.items())
+                or await _db_id(db) != index.db_id):
+            # A restored backup (the change log or a counter went back) or
+            # another database: the index describes other rows.
+            _state.stale = _state.foreign = True
+            _start_rebuild()
+            return
+        moved = {k for k, n in counters.items() if index.counters.get(k) != n}
+        now = time.time()
+        if now - index.time_at >= TIME_REFRESH or now < index.time_at:  # or the clock went back
+            moved.add("time")
+        changed: list[int] = []
+        if seq > index.seq:
+            async with db.execute("SELECT DISTINCT row_id FROM filter_index_changes WHERE seq > ? AND seq <= ?",
+                                  (index.seq, seq)) as cur:
+                changed = [r[0] for r in await cur.fetchall()]
+        if not changed and not moved:
+            return
+        if len(changed) > max(BIG_CHANGE, index.alive.bit_count() // 5):
+            _state.stale = True  # only behind: it answers while the rebuild runs
+            _start_rebuild()
+            return
+        dirty = [f for f in _FILTER_LIST if set(f.inputs) & moved]
+        ctx = await _context(db, counters) if changed or any(f.py for f in dirty) else None
+        if changed:
+            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed)
+            index.patch(changed, alive, members, savings)
+        if dirty:
+            _, members, _ = await evaluate(db, dirty, ctx)
+            index.replace(dirty, members)
+        index.seq, index.counters = seq, counters
+        if "time" in moved:
+            index.time_at = now
+        _state.adhoc = {}
+        _state.dirty = True
+    finally:
+        await db.close()
 
 
 def _log_error(what: str, exc: Exception) -> None:
@@ -223,15 +243,16 @@ def _log_error(what: str, exc: Exception) -> None:
 async def current() -> Optional[FilterIndex]:
     """The index, up to date. None (the SQL engine answers) while the saved
     one loads, until it's first built (which this starts), and when a
-    rebuild must replace it and the last try failed."""
+    rebuild must replace it and either it describes other rows or the last
+    try failed."""
     if _state.loading:
         return None
     if _state.index is None:
         _start_rebuild()
         return None
     await refresh()
-    if _state.stale and (_state.backoff or not _rebuilding()):
-        return None  # the old index answers only while its first rebuild runs
+    if _state.stale and (_state.foreign or _state.backoff or not _rebuilding()):
+        return None  # one only behind answers while its first rebuild runs
     return _state.index
 
 
