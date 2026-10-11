@@ -41,6 +41,10 @@ class Filter:
     py: Optional[Callable[[dict, dict], bool]] = None  # (row, ctx) when it needs the context
     pre_sql: Optional[str] = None  # py filters: a necessary condition, to narrow queries
     titles: bool = False  # py filters that read title metadata (ctx["title_meta"], v0.10.0)
+    # What it reads besides its own row: other tables, settings, the time
+    # (backend/filter_index/inputs.py). The filter index re-evaluates it when
+    # one of them changes (v0.10.0).
+    inputs: tuple[str, ...] = ()
 
 
 # ── Context helpers (the ignore list, Plex watch state, folder labels) ─────
@@ -401,15 +405,19 @@ _EXTRAS = "(" + " OR ".join(
 _NEEDS = "needs_conversion != 0"
 _NEEDS_TIMED = "needs_conversion != 0 AND duration > 0"
 
+# Bump when a Python predicate's logic changes: a saved filter index made
+# with the old one is rebuilt (SQL changes are noticed on their own).
+FILTERS_VERSION = 1
+
 _FILTER_LIST = [
     # Status: each its own group, so combining them narrows.
-    Filter("new", sql="new_detected_at > ?", params=_new_cutoff),
-    Filter("recent", sql="file_mtime > ?", params=_recent_cutoff),
-    Filter("needs_conversion", pre_sql=_NEEDS,
+    Filter("new", sql="new_detected_at > ?", params=_new_cutoff, inputs=("time",)),
+    Filter("recent", sql="file_mtime > ?", params=_recent_cutoff, inputs=("time",)),
+    Filter("needs_conversion", pre_sql=_NEEDS, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_low_bitrate(r) and not row_ignored(r, c)),
-    Filter("low_bitrate", pre_sql=_NEEDS_TIMED,
+    Filter("low_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: row_low_bitrate(r) and not row_ignored(r, c)),
-    Filter("high_bitrate", pre_sql=_NEEDS_TIMED,
+    Filter("high_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_ignored(r, c) and row_bitrate(r) > HIGH_BITRATE),
     Filter("bloated", sql=f"{_HAS_BPP} AND {_BPP} > (CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 0.15 ELSE 0.25 END)"),
     # Ignore means "don't convert", not "don't tidy tracks / don't say the
@@ -417,16 +425,17 @@ _FILTER_LIST = [
     Filter("sub_cleanup", sql="COALESCE(has_removable_subs_flag, 0) = 1"),
     Filter("unknown_language", sql="COALESCE(has_und_tracks_flag, 0) = 1"),
     Filter("disc_iso", sql="disc_type IS NOT NULL"),
-    Filter("ignored", py=lambda r, c: row_ignored(r, c)),
+    Filter("ignored", py=lambda r, c: row_ignored(r, c), inputs=("ignored", "rules", "plex")),
     Filter("duplicates", sql="COALESCE(dup_count, 0) > 1"),
     Filter("corrupt", sql="(COALESCE(probe_status, 'ok') != 'ok' OR COALESCE(health_status, '') = 'corrupt')"),
-    Filter("converted", py=row_converted),
-    Filter("queued", py=lambda r, c: r["file_path"] in c["queued_paths"]),
+    Filter("converted", py=row_converted, inputs=("jobs",)),
+    Filter("queued", py=lambda r, c: r["file_path"] in c["queued_paths"], inputs=("jobs",)),
     Filter("extras", sql=_EXTRAS),
     # Still hardlinked elsewhere (seeding): converting frees nothing (v0.10.0)
     Filter("hardlinked", sql="COALESCE(link_count, 1) > 1"),
     # Added: found by the watcher or written in the last 7 / 30 / 90 days
-    *(Filter(f"added_{n}d", "added", sql="(new_detected_at > ? OR file_mtime > ?)", params=_added_within(n))
+    *(Filter(f"added_{n}d", "added", sql="(new_detected_at > ? OR file_mtime > ?)", params=_added_within(n),
+             inputs=("time",))
       for n in (7, 30, 90)),
     # Video codec
     Filter("x264", "codec", sql=_H264),
@@ -488,39 +497,39 @@ _FILTER_LIST = [
     Filter("dubbed", "language", sql="COALESCE(is_dubbed_flag, 0) = 1"),
     Filter("not_api_matched", "language", sql=_UNMATCHED),
     # No audio or subtitle track in your languages (none set: nothing matches).
-    Filter("missing_language", "language", sql=(
+    Filter("missing_language", "language", inputs=("settings",), sql=(
         f"EXISTS {_MY_LANGS} "
         f"AND NOT {_tracks('audio_tracks_json', f'{_TRACK_LANG} IN {_MY_LANGS}')} "
         f"AND NOT {_tracks('subtitle_tracks_json', f'{_TRACK_LANG} IN {_MY_LANGS}')}")),
     # Health checks (Corrupt is a status pill: a failed probe counts too)
     Filter("health_never", "health", sql="health_status IS NULL"),
     Filter("health_warnings", "health", sql="health_status = 'warnings'"),
-    Filter("health_stale", "health", sql="julianday(health_checked_at) < julianday('now') - 90"),
+    Filter("health_stale", "health", sql="julianday(health_checked_at) < julianday('now') - 90", inputs=("time",)),
     # What happened when Shrinkerr tried
-    Filter("failed_before", "outcome", sql=_job_exists("j.status = 'failed'")),
-    Filter("vmaf_rejected", "outcome",
+    Filter("failed_before", "outcome", sql=_job_exists("j.status = 'failed'"), inputs=("jobs",)),
+    Filter("vmaf_rejected", "outcome", inputs=("jobs",),
            sql=_job_exists("j.error_key IN ('errors.vmafRejected', 'errors.vmafBelowThreshold')")),
-    Filter("undo_possible", "outcome", sql=_UNDO_POSSIBLE),
-    Filter("no_savings", "outcome", sql=(
+    Filter("undo_possible", "outcome", sql=_UNDO_POSSIBLE, inputs=("jobs", "settings", "time")),
+    Filter("no_savings", "outcome", inputs=("ignored",), sql=(
         "EXISTS (SELECT 1 FROM ignored_files i WHERE i.file_path = scan_results.file_path "
         "AND i.reason = 'conversion_larger')")),
     # What Sonarr / Radarr say (v0.10.0): below the cutoff they'll replace it
-    Filter("arr_cutoff_unmet", "arr", sql=(
+    Filter("arr_cutoff_unmet", "arr", inputs=("arr",), sql=(
         "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.cutoff_unmet = 1)")),
-    Filter("arr_unmonitored", "arr", sql=(
+    Filter("arr_unmonitored", "arr", inputs=("arr",), sql=(
         "EXISTS (SELECT 1 FROM arr_file_status a WHERE a.file_path = scan_results.file_path AND a.monitored = 0)")),
     # In a Maintainerr collection: about to be removed (v0.10.0)
-    Filter("leaving_soon", "maintainerr", sql=(
+    Filter("leaving_soon", "maintainerr", inputs=("maintainerr",), sql=(
         "EXISTS (SELECT 1 FROM maintainerr_media m "
         "WHERE substr(scan_results.file_path, 1, length(m.folder_path)) = m.folder_path)")),
     # Plex
-    *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s))
+    *(Filter(f"plex_{s}", "plex", py=(lambda s: lambda r, c: row_watch_status(r, c) == s)(s), inputs=("plex",))
       for s in ("watched", "unwatched", "watchlist")),
     # Nothing played on Plex / Jellyfin / Emby in 6 / 12 / 24 months, and in
     # the library that long (v0.10.0)
-    *(Filter(f"not_watched_{n}m", "not_watched", py=_not_watched(n)) for n in (6, 12, 24)),
+    *(Filter(f"not_watched_{n}m", "not_watched", py=_not_watched(n), inputs=("watch", "time")) for n in (6, 12, 24)),
     # Type (path IDs, else the media folder's label)
-    *(Filter(f"type_{k}", "type", py=(lambda k: lambda r, c: row_type(r, c) == k)(k))
+    *(Filter(f"type_{k}", "type", py=(lambda k: lambda r, c: row_type(r, c) == k)(k), inputs=("media_dirs",))
       for k in ("movie", "tv", "other")),
     # Source, from the path. One each, first match wins: a Blu-ray remux
     # is a remux, not also a Blu-ray.
