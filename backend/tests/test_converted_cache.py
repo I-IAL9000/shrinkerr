@@ -76,10 +76,13 @@ async def test_another_database_is_not_served_from_the_cache(test_db, tmp_path):
 
 @pytest.mark.asyncio
 async def test_a_database_without_the_counter_is_read_every_time(test_db):
-    # A backup restored from before the counter existed.
-    for trigger in ("insert", "update", "delete"):
-        await _sql(test_db, f"DROP TRIGGER trg_completed_jobs_{trigger}")
-        await _sql(test_db, f"DROP TRIGGER trg_fi_jobs_{trigger}")
+    # A backup restored from before the counter existed: no triggers on jobs.
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'jobs'") as cur:
+            triggers = [r[0] for r in await cur.fetchall()]
+    assert triggers
+    for trigger in triggers:
+        await _sql(test_db, f"DROP TRIGGER {trigger}")
     await _sql(test_db, "DROP TABLE change_counters")
     await _add_job(test_db, "/m/A/a.mkv")
     assert (await _sets(test_db))[0] == {"/m/A/a.mkv"}
