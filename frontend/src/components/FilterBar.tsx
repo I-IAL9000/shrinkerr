@@ -2,18 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import FilterPanel from "./FilterPanel";
 import { CATEGORIES, QUICK_FILTERS, chipLabel, optionLabel, selectedIn, type FilterCategory } from "../filterCatalog";
+import { fmtNum } from "../fmt";
 
 interface FilterBarProps {
   activeFilters: string[];
   counts?: Record<string, number>;
-  matching: number;  // files the whole filter matches
+  matching: number | null;  // files the whole filter matches; null while counting
   onToggle: (key: string, exclude: boolean) => void;
   onRemove: (token: string) => void;
   onClear: () => void;
 }
 
 function shortCount(n: number): string {
-  return n > 99999 ? `${(n / 1000).toFixed(0)}k` : n.toLocaleString();
+  return n > 99999 ? `${(n / 1000).toFixed(0)}k` : fmtNum(n);
 }
 
 /**
@@ -23,16 +24,37 @@ function shortCount(n: number): string {
  * scan_filters.py decides; filterCatalog.json lays it out).
  */
 export default function FilterBar({ activeFilters, counts, matching, onToggle, onRemove, onClear }: FilterBarProps) {
-  const { t } = useTranslation(["scanner", "common"]);
+  const { t } = useTranslation(["scanner"]);
   const [open, setOpen] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
-  const active = activeFilters.filter(f => f !== "all");
+  const chipButtons = useRef(new Map<string, HTMLButtonElement>());
+  const clearRef = useRef<HTMLButtonElement>(null);
+  const active = [...new Set(activeFilters.filter(f => f !== "all"))];
 
   const close = () => {
     const key = open;
     setOpen(null);
     if (key) buttons.current.get(key)?.focus();
+  };
+
+  const firstPill = () => barRef.current?.querySelector<HTMLButtonElement>(".filter-bar-row button:not(:disabled)");
+
+  // The removed chip's × had the focus: on to the next chip's (or the
+  // previous one's, or Clear all), once the page has re-rendered.
+  const removeChip = (index: number) => {
+    const near = [active[index + 1], active[index - 1]];
+    onRemove(active[index]);
+    requestAnimationFrame(() => {
+      const chip = near.map(token => (token ? chipButtons.current.get(token) : undefined)).find(el => el?.isConnected);
+      (chip ?? (clearRef.current?.isConnected ? clearRef.current : firstPill()))?.focus();
+    });
+  };
+
+  // Clear all goes with the chips: on to the first quick pill.
+  const clearAll = () => {
+    onClear();
+    requestAnimationFrame(() => firstPill()?.focus());
   };
 
   useEffect(() => {
@@ -66,8 +88,10 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
           ref={el => { if (el) buttons.current.set(category.key, el); }}
           className={`filter-pill filter-category-button${selected.length ? " active" : ""}${dimmed ? " dimmed" : ""}`}
           aria-haspopup="dialog" aria-expanded={isOpen}
+          title={dimmed ? t("scanner:filterBar.noFiles") : undefined}
           onClick={() => setOpen(isOpen ? null : category.key)}>
           <span>{selected.length ? t("scanner:filterBar.summary", { category: title, selected: shown }) : title}</span>
+          {dimmed && <span className="sr-only">{` — ${t("scanner:filterBar.noFiles")}`}</span>}
           <span aria-hidden="true" className="filter-category-caret">▾</span>
         </button>
         {isOpen && (
@@ -102,22 +126,25 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
       </div>
       {active.length > 0 && (
         <div className="filter-chips">
-          {active.map(token => {
+          {active.map((token, index) => {
             const label = chipLabel(token, t);
             return (
               <span key={token} className={`filter-chip${token.startsWith("!") ? " excluded" : ""}`}>
                 {label}
                 <button type="button" className="filter-chip-remove"
-                  aria-label={t("scanner:filterBar.remove", { label })} onClick={() => onRemove(token)}>
+                  ref={el => { if (el) chipButtons.current.set(token, el); else chipButtons.current.delete(token); }}
+                  aria-label={t("scanner:filterBar.remove", { label })} onClick={() => removeChip(index)}>
                   ×
                 </button>
               </span>
             );
           })}
-          <span className="filter-chips-matching">
-            {t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) })}
+          <span className="filter-chips-matching" aria-live="polite">
+            {matching == null
+              ? t("scanner:filterBar.counting")
+              : t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) })}
           </span>
-          <button type="button" className="filter-chips-clear" onClick={onClear}>
+          <button type="button" ref={clearRef} className="filter-chips-clear" onClick={clearAll}>
             {t("scanner:filterBar.clearAll")}
           </button>
         </div>

@@ -464,19 +464,21 @@ body {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
+.filter-panel:focus { outline: none; } /* focused itself only when no option can take the focus */
 .filter-panel-sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; }
 .filter-section { border: 0; margin: 0; padding: 0; min-width: 0; }
 .filter-section-title {
   padding: 0; margin-bottom: 4px; font-size: 11px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted);
 }
+.filter-section-hint { margin: 0 0 6px; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
 .filter-option { display: flex; align-items: center; gap: 2px; border-radius: 4px; }
 .filter-option:hover { background: var(--bg-tertiary); }
 .filter-option-main {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 6px;
   font-size: 12px; color: var(--text-secondary); cursor: pointer;
 }
-.filter-option-main input { accent-color: var(--accent); margin: 0; }
+.filter-option-main input { margin: 0; }
 .filter-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-option-count { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .filter-option.empty .filter-option-main { opacity: 0.45; cursor: default; }
@@ -489,10 +491,12 @@ body {
 .filter-option-exclude[aria-pressed="true"] { color: var(--danger); }
 .filter-option-exclude:disabled { opacity: 0.3; cursor: default; }
 .filter-panel-rule { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
-/* Phones: a panel spans the bar (.filter-bar is the positioned parent). */
+/* Phones: a panel spans the bar (.filter-bar is the positioned parent), and
+   the small × and ⊘ buttons get a finger-sized target. */
 @media (max-width: 600px) {
   .filter-category { position: static; }
   .filter-panel { left: 0; right: 0; width: auto; }
+  .filter-option-exclude, .filter-chip-remove { min-width: 28px; min-height: 28px; }
 }
 
 /* Filter bar (v0.10.0) */
@@ -500,7 +504,8 @@ body {
 .filter-bar-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .filter-bar-divider { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
 .filter-pill.dimmed { opacity: 0.45; }
-.filter-pill:disabled { cursor: default; }
+.filter-category-button.dimmed { opacity: 0.6; } /* no files, but it still opens */
+.filter-pill:disabled { cursor: default; pointer-events: none; }
 .filter-pill-count {
   padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: bold; line-height: 1.4;
   background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-secondary);

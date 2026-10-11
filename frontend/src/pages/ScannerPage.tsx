@@ -9,7 +9,7 @@ import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import ViewsMenu from "../components/ViewsMenu";
 import { decodeAdvanced } from "../advancedSearch";
 import FilterBar from "../components/FilterBar";
-import { toggleFilter } from "../filterCatalog";
+import { CATEGORIES, selectedIn, toggleFilter } from "../filterCatalog";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
@@ -161,12 +161,13 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [serverStats, setServerStats] = useState<any>(null);
   // With a filter active the pills count what clicking each would give —
   // the other active groups still apply (v0.10.0). Refreshed with the stats.
-  const [facetCounts, setFacetCounts] = useState<Record<string, number> | null>(null);
+  // Kept with the filter they're for: another filter's counts aren't shown.
+  const [facetCounts, setFacetCounts] = useState<{ filter: string; counts: Record<string, number> } | null>(null);
   useEffect(() => {
     if (filter === "all") { setFacetCounts(null); return; }
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
-      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts(r.counts)).catch(() => {});
+      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts({ filter, counts: r.counts })).catch(() => {});
     }, 200);
     return () => { clearTimeout(timer); ctrl.abort(); };
   }, [filter, serverStats]);
@@ -1210,8 +1211,14 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const libraryCounts: Record<string, number> = serverStats?.counts
     ? { ...serverStats.counts, all: Math.max(serverStats.counts.all || 0, treeTotalFiles) }
     : { all: treeTotalFiles };
-  // "All" (clear the filter) keeps the library's total.
-  const filterCounts = facetCounts && filter !== "all" ? { ...facetCounts, all: libraryCounts.all } : libraryCounts;
+  // "All" (clear the filter) keeps the library's total. Until this filter's
+  // counts are in, the options show "…" and the chips "Counting…".
+  const facets = facetCounts?.filter === filter ? facetCounts.counts : null;
+  const filterCounts = filter === "all" ? libraryCounts : { ...facets, all: libraryCounts.all };
+  // "Detect all unknown" only for Unknown language on its own: another
+  // language option ticked with it adds files whose language is known.
+  const languageTicked = selectedIn(CATEGORIES.find(c => c.key === "language")!, filters).filter(s => !s.excluded);
+  const onlyUnknownLanguage = languageTicked.length === 1 && languageTicked[0].key === "unknown_language";
 
   // Count selected items — for folder paths, use the folder's file count from tree data
   const selectedCount = useMemo(() => {
@@ -1541,7 +1548,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           <FilterBar
             activeFilters={filters}
             counts={filterCounts}
-            matching={facetCounts?.matching ?? treeTotalFiles}
+            matching={facets ? facets.matching ?? treeTotalFiles : null}
             onToggle={(key, exclude) => setFilters(prev => toggleFilter(prev, key, exclude))}
             onRemove={token => setFilters(prev => {
               const next = prev.filter(x => x !== token && x !== "all");
@@ -1618,7 +1625,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             {/* v0.9.20: one detect button that follows the selection — becomes
                 "Detect selected (N)" when items are picked, else "Detect all
                 unknown" for the whole Unknown-language filter. */}
-            {(selectedCount > 0 || (filters.includes("unknown_language") && folders.length > 0)) && (
+            {(selectedCount > 0 || (onlyUnknownLanguage && folders.length > 0)) && (
               <button
                 className="btn btn-secondary"
                 title={selectedCount > 0

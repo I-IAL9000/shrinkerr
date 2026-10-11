@@ -311,8 +311,9 @@ function KeyboardShortcuts({ onToggleQueue }: { onToggleQueue: () => void }) {
         case " ": { // Space = toggle queue start/pause
           // Not while a button, link or other control has focus: Space
           // presses that control (v0.10.0 — it toggled the queue instead).
+          // Nor inside a dialog, such as a filter bar panel.
           const el = e.target as HTMLElement;
-          if (el?.closest?.("button, a, summary, [role=button], [role=checkbox], [role=switch], [role=tab], [role=menuitem], [role=option], [role=radio]")) return;
+          if (el?.closest?.("button, a, summary, [role=button], [role=checkbox], [role=switch], [role=tab], [role=menuitem], [role=option], [role=radio], [role=dialog]")) return;
           e.preventDefault();
           onToggleQueue();
           break;

@@ -226,10 +226,12 @@
     "matching_one": "{{n}} archivo coincide",
     "matching_many": "{{n}} de archivos coinciden",
     "matching_other": "{{n}} archivos coinciden",
+    "counting": "Contando…",
     "panel": "Filtros: {{category}}",
     "exclude": "Excluir {{label}}",
     "unexclude": "Dejar de excluir {{label}}",
     "excluded": "excluido",
+    "noFiles": "sin archivos",
     "rule": "Si marcas varias opciones de una sección, se muestran los archivos que coinciden con cualquiera de ellas; entre secciones, los archivos deben coincidir con todas. ⊘ o Alt+clic excluye."
   },
   "stats": {
