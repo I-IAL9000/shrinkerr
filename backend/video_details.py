@@ -17,11 +17,15 @@ from backend.resolution import resolution_tier
 COLUMNS = ("video_width", "video_height", "hdr_format", "video_fps", "video_bit_depth",
            "video_interlaced", "video_vfr", "video_dar", "video_bitrate")
 # Not read yet: no width (a scan before 0.10.0; a conversion since then stored
-# the frame rate but not the width). Not discs (probing one reads the disc over
-# the network, up to 3 minutes) or files whose probe failed.
+# the frame rate but not the width), or the width alone (0.10 test builds of
+# 9-10 Oct 2026; a scan since then stores the bit depth even when the file
+# doesn't say its frame rate). Not discs (probing one reads the disc over the
+# network, up to 3 minutes) or files whose probe failed.
 TO_READ = ("removed_from_list = 0 AND disc_type IS NULL AND COALESCE(probe_status, 'ok') = 'ok' "
-           "AND COALESCE(video_width, 0) = 0")
-CURSOR_KEY = "video_details_fill_cursor"  # the last scan_results id the fill tried
+           "AND (COALESCE(video_width, 0) = 0 OR (video_fps IS NULL AND video_bit_depth IS NULL))")
+# The last scan_results id the fill tried. A new key when what's read grows,
+# so a test build that already went through the list goes through it again.
+CURSOR_KEY = "video_details_fill_cursor_2"
 
 
 def detail_columns(probe: dict) -> dict:

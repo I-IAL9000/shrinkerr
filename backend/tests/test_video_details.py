@@ -73,7 +73,8 @@ async def test_opening_a_file_reads_what_its_scan_didnt(test_db, monkeypatch):
 async def test_a_file_that_has_them_isnt_probed(test_db, monkeypatch):
     calls = _fake_probe(monkeypatch)
     await _row(test_db, "/m/a.mkv", video_width=1280, video_height=720, video_fps=25.0)
-    await _row(test_db, "/m/no-rate.mkv", video_width=1920, video_height=800)  # the file doesn't say
+    # The file doesn't say its frame rate (a scan stored the rest).
+    await _row(test_db, "/m/no-rate.mkv", video_width=1920, video_height=800, video_bit_depth=8)
     await _row(test_db, "/m/BDMV/index.bdmv", disc_type="bdmv")  # a disc: minutes over the network
     await _row(test_db, "/m/bad.mkv", probe_status="corrupt")
     got = await video_details.read_details("/m/a.mkv")
@@ -105,11 +106,13 @@ async def test_the_background_fill_reads_each_old_file_once(test_db, monkeypatch
     # Converted on 0.10: the conversion stored the frame rate, not the width.
     await _row(test_db, "/m/old2.mkv", video_fps=25.0, video_bit_depth=8)
     # Scanned on 0.10, the file just doesn't say its frame rate: not again.
-    await _row(test_db, "/m/no-rate.mkv", video_width=1920, video_height=800)
-    assert await video_details.fill_missing(batch=2) == 2
-    assert sorted(p for p, _ in calls) == ["/m/missing.mkv", "/m/old1.mkv", "/m/old2.mkv"]
-    assert await _details(test_db, "/m/old1.mkv") == (1920, 23.976, "12:5", 10, "hdr10")
-    assert await _details(test_db, "/m/old2.mkv") == (1920, 23.976, "12:5", 10, "hdr10")
+    await _row(test_db, "/m/no-rate.mkv", video_width=1920, video_height=800, video_bit_depth=8)
+    # Scanned by a 0.10 test build of 9-10 Oct 2026: the width, nothing else.
+    await _row(test_db, "/m/width-only.mkv", video_width=1920, video_height=800)
+    assert await video_details.fill_missing(batch=2) == 3
+    assert sorted(p for p, _ in calls) == ["/m/missing.mkv", "/m/old1.mkv", "/m/old2.mkv", "/m/width-only.mkv"]
+    for path in ("/m/old1.mkv", "/m/old2.mkv", "/m/width-only.mkv"):
+        assert await _details(test_db, path) == (1920, 23.976, "12:5", 10, "hdr10")
 
     # A restart: nothing left, nothing probed again, and a file added since is read.
     calls.clear()
@@ -118,6 +121,27 @@ async def test_the_background_fill_reads_each_old_file_once(test_db, monkeypatch
     await _row(test_db, "/m/old3.mkv")
     assert await video_details.fill_missing() == 1
     assert [p for p, _ in calls] == ["/m/old3.mkv"]
+
+
+@pytest.mark.asyncio
+async def test_a_test_build_that_already_filled_reads_the_width_only_rows(test_db, monkeypatch):
+    """A 0.10 test build ran the first fill (its saved position is past every
+    row) but didn't read the rows with just a width: they're read once more."""
+    calls = _fake_probe(monkeypatch)
+    row_id = await _row(test_db, "/m/width-only.mkv", video_width=1920, video_height=800)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO settings (key, value) VALUES ('video_details_fill_cursor', ?)",
+                         (str(row_id + 100),))
+        await db.commit()
+    got = await video_details.read_details("/m/width-only.mkv")  # its panel opens
+    assert (got["video_fps"], got["video_dar"]) == (23.976, "12:5")
+    calls.clear()
+    await _row(test_db, "/m/width-only-2.mkv", video_width=1920, video_height=800)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE scan_results SET id = ? WHERE file_path = '/m/width-only-2.mkv'", (row_id + 50,))
+        await db.commit()
+    assert await video_details.fill_missing() == 1
+    assert [p for p, _ in calls] == ["/m/width-only-2.mkv"]
 
 
 @pytest.mark.asyncio
