@@ -2529,6 +2529,16 @@ async def restore_backup(request: Request, file: UploadFile = File(...)):
         # Replace the database
         shutil.move(str(tmp_db), DB_PATH)
 
+        # The filter index describes the old database: forgotten, it's built
+        # again from this one (from a backup older than it: after the restart).
+        try:
+            from backend.filter_index import service as filter_index
+            filter_index.reset()
+            if os.path.exists(filter_index.index_path()):
+                os.remove(filter_index.index_path())
+        except Exception as exc:
+            print(f"[RESTORE] Forgetting the filter index failed: {exc}", flush=True)
+
         return {"status": "restored", "message": "Database restored. Restart the container for changes to take full effect."}
     finally:
         if tmp_zip.exists():

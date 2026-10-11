@@ -3,6 +3,7 @@ SQL engine's after any change, rebuilt for big changes, restored backups and
 other databases, saved and loaded; a failing build tried again after a
 pause, the SQL engine answering meanwhile and on errors."""
 import asyncio
+import contextlib
 import os
 import sqlite3
 from contextlib import closing
@@ -52,6 +53,28 @@ def _copy(src: str, dst: str) -> None:
     """The whole database, as a backup or a restore copies it."""
     with closing(sqlite3.connect(src)) as a, closing(sqlite3.connect(dst)) as b:
         a.backup(b)
+
+
+def _from_before_the_change_log(path: str) -> None:
+    """The database as a backup from before the filter index has it: no
+    change log, triggers, input counters or id."""
+    with closing(sqlite3.connect(path)) as db:
+        for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' "
+                                  "AND name LIKE 'trg_fi_%'").fetchall():
+            db.execute(f"DROP TRIGGER {name}")
+        db.execute("DROP TABLE filter_index_changes")
+        db.execute("DELETE FROM sqlite_sequence WHERE name = 'filter_index_changes'")
+        db.execute("DELETE FROM change_counters WHERE name LIKE 'fi:%'")
+        db.execute("DELETE FROM settings WHERE key = 'filter_index_db_id'")
+        db.commit()
+
+
+async def _x264_to_hevc(db_path: str, n: int) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("UPDATE scan_results SET video_codec = 'hevc', needs_conversion = 0 WHERE id IN "
+                         "(SELECT id FROM scan_results WHERE video_codec = 'h264' AND removed_from_list = 0 "
+                         f"LIMIT {n})")
+        await db.commit()
 
 
 async def _failing_build():
@@ -156,6 +179,81 @@ async def test_restoring_a_backup_from_before_an_input_changed_rebuilds(library)
     assert await service.counts(parse_filter("x264")) is None  # the old index describes other rows
     await service.wait_rebuilt()
     await _recovered(library)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refused", [True, False])
+async def test_restoring_a_backup_from_before_the_change_log_rebuilds_after_the_restart(library, monkeypatch,
+                                                                                       refused):
+    """The restored database has no change log until the restart, so what
+    changes it meanwhile (the app running on) and at the restart (init_db's
+    migrations run before its triggers) isn't logged. `refused`: the service
+    builds nothing from it; else (as it did) it builds and saves one that
+    looks current, and the restart must still not trust it."""
+    from backend import database
+    await _built()
+    await service.save(force=True)
+    _copy(library, library + ".backup")
+    _from_before_the_change_log(library + ".backup")
+    await _x264_to_hevc(library + ".backup", 3)  # rows the index hasn't seen
+    if not refused:
+        async def has_one(db):
+            return True
+        monkeypatch.setattr(service, "_has_change_log", has_one)
+    _copy(library + ".backup", library)  # the backup put back in place
+    assert await service.counts(parse_filter("x264")) is None
+    await service.wait_rebuilt()
+    await _x264_to_hevc(library, 5)  # not logged
+    await service.refresh()
+    with contextlib.suppress(sqlite3.OperationalError):  # dropping the saved changes: no such table
+        await service.save(force=True)
+    # The restart.
+    await database.init_db()
+    service.reset()
+    monkeypatch.undo()
+    await service.load()
+    await service.counts(parse_filter("x264"))
+    await service.wait_rebuilt()
+    await _recovered(library)
+
+
+@pytest.mark.asyncio
+async def test_a_database_without_the_change_log_isnt_indexed(library):
+    """Restored from before the filter index, until the restart creates its
+    change log: nothing is built from it or saved for it."""
+    await _built()
+    _from_before_the_change_log(library)
+    with pytest.raises(RuntimeError, match="change log"):
+        await service.build()
+    async with aiosqlite.connect(library) as db:
+        async with db.execute("SELECT COUNT(*) FROM settings WHERE key = 'filter_index_db_id'") as cur:
+            assert (await cur.fetchone())[0] == 0  # no id given to it
+    await service.save(force=True)  # nothing to drop from a log, no error
+    assert not os.path.exists(service.index_path())
+
+
+@pytest.mark.asyncio
+async def test_a_restore_forgets_the_index(library, tmp_path, monkeypatch):
+    """Until the restart the SQL engine counts; the restart builds it again."""
+    import io
+    import zipfile
+    from types import SimpleNamespace
+    pytest.importorskip("apscheduler")
+    from fastapi import UploadFile
+    from backend.routes import settings as settings_route
+    monkeypatch.setattr(settings_route, "DB_PATH", library)
+    monkeypatch.setattr(settings_route, "BACKUP_DIR", tmp_path / "backups")
+    await _built()
+    await service.save(force=True)
+    _copy(library, str(tmp_path / "backup.db"))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.write(tmp_path / "backup.db", "shrinkerr.db")
+    signed_in = SimpleNamespace(state=SimpleNamespace(auth_method="session"))
+    await settings_route.restore_backup(signed_in, UploadFile(file=io.BytesIO(buf.getvalue()),
+                                                              filename="backup.zip"))
+    assert service._state.index is None
+    assert not os.path.exists(service.index_path())
 
 
 @pytest.mark.asyncio

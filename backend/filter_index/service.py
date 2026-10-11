@@ -13,6 +13,8 @@
   rarely waits.
 - A build that fails is tried again after a pause (1 min, doubling to 10).
   Meanwhile, and on any error, the SQL engine answers.
+- A database without the change log (a backup from before the index,
+  restored, until the restart creates it) isn't indexed: the SQL engine answers.
 """
 from __future__ import annotations
 
@@ -92,6 +94,14 @@ async def _db_id(db) -> str:
     return await _db_id(db)
 
 
+async def _has_change_log(db) -> bool:
+    """False for a backup from before the filter index, restored: its changes
+    aren't logged until the restart creates the log (database.init_db)."""
+    async with db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                          "AND name = 'filter_index_changes'") as cur:
+        return await cur.fetchone() is not None
+
+
 async def _snapshot(db) -> tuple[int, dict[str, int]]:
     """The last logged scan_results change, and the input counters."""
     async with db.execute("SELECT seq FROM sqlite_sequence WHERE name = 'filter_index_changes'") as cur:
@@ -115,6 +125,9 @@ async def build() -> FilterIndex:
     """A new index over the whole library."""
     db = await database.connect_db()
     try:
+        if not await _has_change_log(db):
+            raise RuntimeError("the database has no change log yet (restored from an older version): "
+                               "the index is built after a restart")
         db_id = await _db_id(db)
         seq, counters = await _snapshot(db)  # before evaluating: later changes are applied after
         started = time.time()
@@ -338,6 +351,12 @@ async def save(force: bool = False) -> None:
             # Its position can be past the rows a rebuild still needs (a
             # restored backup), and saved it would no longer look stale.
             return
+        db = await database.connect_db()
+        try:
+            if not await _has_change_log(db):
+                return  # a restored older database: rows changed meanwhile go unseen
+        finally:
+            await db.close()
         # Cancelled mid-write (the app stopping): finish the write before
         # letting go of the lock, or the shutdown save would write over it.
         write = asyncio.ensure_future(asyncio.to_thread(index.save, index_path()))

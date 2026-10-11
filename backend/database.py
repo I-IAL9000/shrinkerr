@@ -1211,6 +1211,15 @@ async def init_db():
         # scan_results rows, and counters for the other tables filters read.
         # Last, after every table it watches exists.
         from backend.filter_index.inputs import trigger_sql
+        async with db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                              "AND name = 'filter_index_changes'") as cur:
+            logged = await cur.fetchone() is not None
+        if not logged:
+            # Never had the log (new, or a backup from before it restored):
+            # its changes so far, the migrations above among them, weren't
+            # logged. A new id makes any index saved for it another
+            # database's, so it's rebuilt.
+            await db.execute("DELETE FROM settings WHERE key = 'filter_index_db_id'")
         for statement in trigger_sql():
             await db.execute(statement)
 
