@@ -39,7 +39,7 @@ async def test_every_listed_row_against_every_filter(library):
 
 @pytest.mark.asyncio
 async def test_some_rows_give_their_part_of_the_whole(library):
-    alive, members, _ = await _evaluate(library)
+    alive, members, savings = await _evaluate(library)
     async with aiosqlite.connect(library) as db:
         async with db.execute("SELECT id FROM scan_results WHERE removed_from_list = 1") as cur:
             hidden = [r[0] for r in await cur.fetchall()]
@@ -49,7 +49,7 @@ async def test_some_rows_give_their_part_of_the_whole(library):
     assert sorted(part_alive) == sorted(i for i in alive if i in wanted)
     for fid, rows in members.items():
         assert sorted(part_members[fid]) == [i for i in sorted(rows) if i in wanted], fid
-    assert set(part_savings) <= wanted
+    assert part_savings == {i: s for i, s in savings.items() if i in wanted}
 
 
 @pytest.mark.asyncio
@@ -58,3 +58,34 @@ async def test_only_sql_filters_skip_the_python_pass(library):
     _, members, savings = await _evaluate(library, filters=sql_only)
     assert set(members) == {f.id for f in sql_only}
     assert savings is None
+
+
+@pytest.mark.asyncio
+async def test_scopes_on_one_connection_leave_no_transaction_open(library):
+    from backend.routes.scan import _build_enrichment_context
+    alive, members, _ = await _evaluate(library)
+    first, second = alive[:5], alive[3:9] + alive[3:9]  # the second repeats its ids
+    async with aiosqlite.connect(library) as db:
+        db.row_factory = aiosqlite.Row
+        ctx = await _build_enrichment_context(db)
+        assert not db.in_transaction
+        got = []
+        for scope in (first, second):
+            got.append(await evaluate(db, _FILTER_LIST, ctx, ids=scope))
+            assert not db.in_transaction
+    for scope, (part_alive, part_members, _) in zip((first, second), got):
+        wanted = set(scope)
+        assert sorted(part_alive) == sorted(wanted)
+        for fid, rows in members.items():
+            assert sorted(part_members[fid]) == [i for i in sorted(rows) if i in wanted], fid
+
+
+@pytest.mark.asyncio
+async def test_mutate_changes_what_the_counts_show(library):
+    before = await library_data.sql_counts(library)
+    await library_data.mutate(library)
+    after = await library_data.sql_counts(library)
+    changed = {fid for fid in before if before[fid] != after[fid]}
+    wanted = {"all", "x264", "x265", "needs_conversion", "queued", "ignored", "missing_language", "plex_watched",
+              "new"}
+    assert wanted - changed == set()

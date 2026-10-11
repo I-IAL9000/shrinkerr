@@ -8,20 +8,20 @@ context."""
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Optional
 
 from backend.scan_filters import LISTED, PY_COLUMNS, Filter
 
-_PER_COLUMN = 62
+_PER_COLUMN = 62  # bit 63 is the sign; 62 leaves one spare
 
 
-async def _where(db, ids: Optional[list[int]]) -> str:
+def _where(ids: Optional[list[int]]) -> tuple[str, list]:
+    """The WHERE clause and its parameters: the listed rows, or the listed
+    ones among `ids` (passed as JSON, so nothing is written)."""
     if ids is None:
-        return LISTED
-    await db.execute("CREATE TEMP TABLE IF NOT EXISTS _fi_scope (id INTEGER PRIMARY KEY)")
-    await db.execute("DELETE FROM _fi_scope")
-    await db.executemany("INSERT OR IGNORE INTO _fi_scope (id) VALUES (?)", [(i,) for i in ids])
-    return f"{LISTED} AND id IN (SELECT id FROM _fi_scope)"
+        return LISTED, []
+    return f"{LISTED} AND id IN (SELECT value FROM json_each(?))", [json.dumps(list(ids))]
 
 
 async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional[list[int]] = None
@@ -29,8 +29,11 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
     """(alive, members, savings) for `filters` over the listed rows, or over
     `ids` only: the listed ids among them; {filter id: the ids it matches};
     and when a Python filter ran, {id: estimated savings} for rows with any
-    (else None). `ctx`: the enrichment context, for Python filters."""
-    where = await _where(db, ids)
+    (else None). `ctx`: the enrichment context, for Python filters.
+
+    With ids=None the SQL and Python passes read separately; a row written
+    in between is re-evaluated by the next refresh (it's in the change log)."""
+    where, where_params = _where(ids)
     members: dict[str, list[int]] = {f.id: [] for f in filters}
     alive: list[int] = []
 
@@ -46,7 +49,7 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
             parts.append(f"(CASE WHEN ({f.sql}) THEN {1 << bit} ELSE 0 END)")
         columns.append(" | ".join(parts))
     async with db.execute(f"SELECT id{''.join(f', {c}' for c in columns)} FROM scan_results WHERE {where}",
-                          params) as cur:
+                          [*params, *where_params]) as cur:
         rows = await cur.fetchall()
 
     def spread() -> None:
@@ -63,7 +66,7 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
     py_filters = [f for f in filters if f.py]
     if not py_filters:
         return alive, members, None
-    async with db.execute(f"SELECT id, {PY_COLUMNS} FROM scan_results WHERE {where}") as cur:
+    async with db.execute(f"SELECT id, {PY_COLUMNS} FROM scan_results WHERE {where}", where_params) as cur:
         names = [d[0] for d in cur.description]
         py_rows = [dict(zip(names, values)) for values in await cur.fetchall()]
     savings: dict[int, int] = {}

@@ -16,14 +16,17 @@ _ADV_ALL = encode_advanced([{"property": "file_name", "op": "contains", "value":
 _ADV_ANY = encode_advanced([{"property": "release_group", "op": "contains", "value": "a"},
                             {"property": "audio_lang", "op": "eq", "value": "fre"}], "any")
 
+_ADV_TITLE = encode_advanced([{"property": "year", "op": "gte", "value": 2000}])
+
 # Filter strings to compare the index with the SQL engine on: groups, OR
 # within a group, exclusions, Python filters, Advanced Search (SQL and
-# Python conditions, all and any).
+# Python conditions, all and any, title metadata).
 EXPRESSIONS = [
     "x264", "x264,x265", "x264,res_1080p", "needs_conversion,!ignored", "!x264", "queued",
     "plex_watched,type_tv", "hdr_dv,hdr_hdr10,!res_sd", "audio_cleanup,sub_cleanup",
     "not_watched_6m,leaving_soon", "converted,!vmaf_poor", "failed_before", "missing_language,dubbed",
     "!ignored,!corrupt", _ADV_ALL, f"{_ADV_ALL},x265", f"{_ADV_ANY},!x264",
+    _ADV_TITLE,
 ]
 
 
@@ -153,26 +156,42 @@ async def seed(db_path: str) -> None:
 
 async def mutate(db_path: str) -> None:
     """Changes like a day of use: rows edited, hidden, deleted and added; a
-    file ignored, one queued, the keep languages changed, a show watched."""
+    file ignored, one queued, the keep languages changed, a show watched.
+    Each step picks its own rows, by what they need to change."""
     now = datetime.now(timezone.utc).isoformat()
     async with aiosqlite.connect(db_path) as db:
-        async with db.execute("SELECT id, file_path FROM scan_results WHERE removed_from_list = 0 ORDER BY id") as cur:
-            rows = await cur.fetchall()
-        ids = [r[0] for r in rows]
-        await db.execute("UPDATE scan_results SET video_codec = 'hevc', needs_conversion = 0 WHERE id IN (?, ?)",
-                         (ids[60], ids[61]))
-        await db.execute("UPDATE scan_results SET removed_from_list = 1 WHERE id = ?", (ids[62],))
-        await db.execute("DELETE FROM scan_results WHERE id = ?", (ids[63],))
+        used: list[int] = [-1]
+
+        async def pick(where: str, n: int = 1) -> list[tuple[int, str]]:
+            async with db.execute(
+                    f"SELECT id, file_path FROM scan_results WHERE removed_from_list = 0 AND ({where}) "
+                    f"AND id NOT IN ({','.join('?' * len(used))}) ORDER BY id LIMIT ?", (*used, n)) as cur:
+                found = await cur.fetchall()
+            used.extend(r[0] for r in found)
+            return found
+
+        not_ignored = ("file_path NOT IN (SELECT file_path FROM ignored_files) "
+                       "AND file_path NOT LIKE '/demo/TV/Static/%' AND file_path NOT LIKE '/demo/TV/The Glass House/%'")
+        edited = await pick(f"needs_conversion = 1 AND video_codec LIKE '%264%' AND {not_ignored}", 2)
+        hidden = await pick("1")
+        deleted = await pick("1")
+        copied = await pick("1")
+        ignored = await pick(not_ignored)
+        queued = await pick("file_path NOT IN (SELECT file_path FROM jobs WHERE status IN ('pending', 'running'))")
+        await db.execute(f"UPDATE scan_results SET video_codec = 'hevc', needs_conversion = 0 "
+                         f"WHERE id IN ({','.join('?' * len(edited))})", [r[0] for r in edited])
+        await db.execute("UPDATE scan_results SET removed_from_list = 1 WHERE id = ?", (hidden[0][0],))
+        await db.execute("DELETE FROM scan_results WHERE id = ?", (deleted[0][0],))
         await db.execute(
             "INSERT INTO scan_results (file_path, file_size, video_codec, needs_conversion, duration, video_height, "
             "video_width, audio_tracks_json, subtitle_tracks_json, scan_timestamp, new_detected_at, "
             "video_conv_savings_bytes) SELECT file_path || '.new.mkv', file_size, video_codec, needs_conversion, "
             "duration, video_height, video_width, audio_tracks_json, subtitle_tracks_json, scan_timestamp, ?, "
-            "video_conv_savings_bytes FROM scan_results WHERE id = ?", (now, ids[64]))
+            "video_conv_savings_bytes FROM scan_results WHERE id = ?", (now, copied[0][0]))
         await db.execute("INSERT INTO ignored_files (file_path, reason, ignored_at) VALUES (?, 'manual', ?)",
-                         (rows[65][1], now))
+                         (ignored[0][1], now))
         await db.execute("INSERT INTO jobs (file_path, job_type, status, created_at, audio_tracks_to_remove) "
-                         "VALUES (?, 'convert', 'pending', ?, '[]')", (rows[66][1], now))
+                         "VALUES (?, 'convert', 'pending', ?, '[]')", (queued[0][1], now))
         await db.execute("UPDATE settings SET value = '[\"fre\"]' WHERE key = 'always_keep_languages'")
         await db.execute("INSERT INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) "
                          "VALUES ('/demo/TV/Northbound/', 'watch_status', 'watched', ?)", (now,))
