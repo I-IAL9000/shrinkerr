@@ -107,6 +107,7 @@ class FilterIndex:
         return counts
 
     def save(self, path: str) -> None:
+        """Written in place: see _MAGIC."""
         blobs = [("alive", _to_bytes(self.alive))] + [(fid, _to_bytes(bits)) for fid, bits in self.bits.items()]
         pairs = array("q")
         for row_id, saving in self.savings.items():
@@ -138,6 +139,8 @@ class FilterIndex:
                         counters=header["counters"], time_at=header["time_at"])
             at = 0
             for name, size in header["sizes"]:
+                if not isinstance(size, int) or size < 0:
+                    return None
                 value = int.from_bytes(payload[at:at + size], "little")
                 at += size
                 if name == "alive":
@@ -145,8 +148,10 @@ class FilterIndex:
                 else:
                     index.bits[name] = value
             pairs = array("q")
-            pairs.frombytes(payload[at:at + header["savings"] * pairs.itemsize])
+            if at + header["savings"] * pairs.itemsize != len(payload):
+                return None
+            pairs.frombytes(payload[at:])
             index.savings = dict(zip(pairs[0::2], pairs[1::2]))
             return index
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError, RecursionError):
             return None
