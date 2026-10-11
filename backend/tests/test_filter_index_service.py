@@ -108,6 +108,16 @@ async def test_advanced_search_counts_follow_changes(library):
 
 
 @pytest.mark.asyncio
+async def test_advanced_search_conditions_kept_are_capped(library, monkeypatch):
+    await _built()
+    monkeypatch.setattr(service, "ADHOC_MAX", 2)
+    for height in (480, 720, 1080):
+        text = encode_advanced([{"property": "video_height", "op": "gte", "value": height}])
+        assert await service.counts(parse_filter(text)) == await library_data.sql_counts(library, text)
+    assert len(service._state.adhoc) == 1  # cleared when full, then the third added
+
+
+@pytest.mark.asyncio
 async def test_time_based_filters_are_evaluated_again_every_few_minutes(library):
     await _built()
     right = service._state.index.bits["new"]

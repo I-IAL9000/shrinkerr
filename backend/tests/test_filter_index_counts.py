@@ -131,3 +131,9 @@ def test_the_definitions_version_follows_the_filters(monkeypatch):
     monkeypatch.setattr(index_module, "_FILTER_LIST", _FILTER_LIST)
     monkeypatch.setattr(index_module, "FILTERS_VERSION", index_module.FILTERS_VERSION + 1)
     assert definitions_version() != before
+    monkeypatch.undo()
+    monkeypatch.setattr(index_module, "LISTED", index_module.LISTED + " AND 1")
+    assert definitions_version() != before
+    monkeypatch.undo()
+    monkeypatch.setattr(index_module, "PY_COLUMNS", index_module.PY_COLUMNS + ", video_codec")
+    assert definitions_version() != before

@@ -40,6 +40,7 @@ BACKOFF_FIRST = 60   # seconds before trying a failed build again; doubles each 
 BACKOFF_MAX = 600
 ERROR_LOG_EVERY = 60  # an error is logged at most this often
 REFRESH_FAILURES = 3  # refreshes failing this many times in a row: rebuild instead
+ADHOC_MAX = 64       # Advanced Search conditions kept; more, and they're forgotten
 
 
 class _State:
@@ -288,6 +289,8 @@ async def _adhoc_bits(f: Filter) -> int:
         await db.close()
     bits = from_ids(members[f.id])
     if key is not None:
+        if len(cache) >= ADHOC_MAX:
+            cache.clear()
         cache[key] = bits
     return bits
 

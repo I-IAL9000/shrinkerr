@@ -1,7 +1,9 @@
 """The filter index's change signals: triggers log every changed scan_results
 row id (filter_index_changes) and count changes to the other tables filters
 read (change_counters "fi:<input>")."""
+import ast
 import re
+from pathlib import Path
 
 import aiosqlite
 import pytest
@@ -157,3 +159,25 @@ async def test_start_recreates_the_triggers(test_db):
     async with aiosqlite.connect(test_db) as db:
         await _counted(db, "jobs", 1,
                        "INSERT INTO jobs (file_path, job_type, created_at) VALUES ('/m/a.mkv', 'convert', 'x')")
+
+
+_REPLACE = re.compile(r"\b(?:REPLACE\s+INTO|UPDATE\s+OR\s+REPLACE)\s+scan_results\b", re.IGNORECASE)
+
+
+def _strings(path: Path):
+    """The string literals in a module (adjacent ones joined, as Python does)."""
+    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            yield node.value
+        elif isinstance(node, ast.JoinedStr):
+            yield "".join(v.value if isinstance(v, ast.Constant) else "{}" for v in node.values)
+
+
+def test_nothing_replaces_scan_results_rows():
+    """REPLACE's implicit delete fires no trigger: the change log would miss
+    the replaced row's id."""
+    backend = Path(__file__).resolve().parents[1]
+    found = [f"{path.relative_to(backend)}: {text.strip()[:80]}"
+             for path in sorted(backend.rglob("*.py")) if "tests" not in path.relative_to(backend).parts
+             for text in _strings(path) if _REPLACE.search(text)]
+    assert found == []

@@ -11,13 +11,14 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from backend.filter_index.bits import from_ids, ids_of
-from backend.scan_filters import FILTERS_VERSION, _FILTER_LIST, Filter, _group_key
+from backend.scan_filters import FILTERS_VERSION, LISTED, PY_COLUMNS, _FILTER_LIST, Filter, _group_key
 
 
 def definitions_version() -> str:
-    """Changes when a filter does: a saved index for other definitions is rebuilt."""
-    text = repr([FILTERS_VERSION] + [(f.id, f.group, f.sql, f.pre_sql, f.py is not None, f.inputs)
-                                     for f in _FILTER_LIST])
+    """Changes when a filter does, or the rows they run over (LISTED) or the
+    columns the Python ones read: a saved index for other definitions is rebuilt."""
+    text = repr([FILTERS_VERSION, LISTED, PY_COLUMNS] + [(f.id, f.group, f.sql, f.pre_sql, f.py is not None, f.inputs)
+                                                         for f in _FILTER_LIST])
     return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 

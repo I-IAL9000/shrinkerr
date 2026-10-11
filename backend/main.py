@@ -434,6 +434,8 @@ async def lifespan(app: FastAPI):
         await filter_index_task  # let a save in progress finish
     except asyncio.CancelledError:
         pass
+    except Exception as exc:
+        print(f"[FILTERS] The filter index loop failed: {exc}", flush=True)
     try:
         from backend.filter_index.service import save as save_filter_index
         await save_filter_index(force=True)
