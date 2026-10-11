@@ -4,8 +4,11 @@ filter are then a few ANDs and popcounts instead of a pass over the library."""
 from __future__ import annotations
 
 import hashlib
+import json
+import zlib
+from array import array
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, Optional
 
 from backend.filter_index.bits import from_ids, ids_of
 from backend.scan_filters import FILTERS_VERSION, _FILTER_LIST, Filter, _group_key
@@ -16,6 +19,17 @@ def definitions_version() -> str:
     text = repr([FILTERS_VERSION] + [(f.id, f.group, f.sql, f.pre_sql, f.py is not None, f.inputs)
                                      for f in _FILTER_LIST])
     return hashlib.sha1(text.encode()).hexdigest()[:16]
+
+
+# The file: this line, a JSON header line, then the bitsets and the savings.
+# Written in place, not renamed into place (renaming over a file on a NAS
+# share can send the old one to its recycle bin): a torn write fails the
+# checksum and the index is rebuilt.
+_MAGIC = b"SHRINKERR FILTER INDEX 1\n"
+
+
+def _to_bytes(bits: int) -> bytes:
+    return bits.to_bytes((bits.bit_length() + 7) // 8, "little")
 
 
 @dataclass
@@ -91,3 +105,48 @@ class FilterIndex:
             counts[f.id] = (base(skip) & self.bits[f.id]).bit_count()
         counts["matching"] = base(frozenset()).bit_count()
         return counts
+
+    def save(self, path: str) -> None:
+        blobs = [("alive", _to_bytes(self.alive))] + [(fid, _to_bytes(bits)) for fid, bits in self.bits.items()]
+        pairs = array("q")
+        for row_id, saving in self.savings.items():
+            pairs.extend((row_id, saving))
+        payload = b"".join(blob for _, blob in blobs) + pairs.tobytes()
+        header = {"version": self.version, "db_id": self.db_id, "seq": self.seq, "counters": self.counters,
+                  "time_at": self.time_at, "sizes": [[name, len(blob)] for name, blob in blobs],
+                  "savings": len(pairs), "length": len(payload), "crc": zlib.crc32(payload)}
+        with open(path, "wb") as fh:
+            fh.write(_MAGIC + json.dumps(header).encode() + b"\n" + payload)
+
+    @classmethod
+    def load(cls, path: str) -> Optional[FilterIndex]:
+        """The saved index, or None (none saved, damaged, not one)."""
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            return None
+        if not data.startswith(_MAGIC):
+            return None
+        try:
+            end = data.index(b"\n", len(_MAGIC))
+            header = json.loads(data[len(_MAGIC):end])
+            payload = data[end + 1:]
+            if len(payload) != header["length"] or zlib.crc32(payload) != header["crc"]:
+                return None
+            index = cls(version=header["version"], db_id=header["db_id"], seq=header["seq"],
+                        counters=header["counters"], time_at=header["time_at"])
+            at = 0
+            for name, size in header["sizes"]:
+                value = int.from_bytes(payload[at:at + size], "little")
+                at += size
+                if name == "alive":
+                    index.alive = value
+                else:
+                    index.bits[name] = value
+            pairs = array("q")
+            pairs.frombytes(payload[at:at + header["savings"] * pairs.itemsize])
+            index.savings = dict(zip(pairs[0::2], pairs[1::2]))
+            return index
+        except (ValueError, KeyError, TypeError):
+            return None
