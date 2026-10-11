@@ -266,7 +266,7 @@ class FileWatcher:
         if not new_files:
             return 0
 
-        from backend.scanner import probe_file, is_x264, is_x265, is_av1
+        from backend.scanner import probe_file, is_x264, is_x265
 
         # Check for ignored files
         db = await aiosqlite.connect(self.db_path)
@@ -362,7 +362,6 @@ class FileWatcher:
         new_file_paths = []
         skipped_ignored = 0
         skipped_probe = 0
-        skipped_av1 = 0
         skipped_age = 0
         _active_failures = self._active_probe_failures()
         for file_path in new_files:
@@ -400,14 +399,13 @@ class FileWatcher:
                 skipped_probe += 1
                 continue
 
-            if is_av1(probe["video_codec"]):
-                skipped_av1 += 1
-                continue
+            # AV1 files are listed like any other, as a full scan lists them;
+            # skipping them meant probing each again every cycle (v0.10.0).
             results.append(await scanned_from_probe(file_path, probe, source_codecs, global_cq))
             new_file_paths.append(file_path)
 
-        if skipped_ignored or skipped_probe or skipped_av1:
-            print(f"[WATCHER] Skipped: {skipped_ignored} ignored, {skipped_probe} probe failed, {skipped_av1} AV1", flush=True)
+        if skipped_ignored or skipped_probe:
+            print(f"[WATCHER] Skipped: {skipped_ignored} ignored, {skipped_probe} probe failed", flush=True)
 
         if results:
             # Final defensive filter: re-query scan_results right before writing.

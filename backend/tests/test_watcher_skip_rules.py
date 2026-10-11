@@ -93,3 +93,38 @@ async def test_a_moved_file_keeps_its_row(test_db, tmp_path):
         async with db.execute("SELECT file_path, native_language, language_source, converted FROM scan_results") as cur:
             rows = await cur.fetchall()
     assert rows == [(str(new), "ice", "manual", 1)]
+
+
+@pytest.mark.asyncio
+async def test_the_watcher_lists_av1_files_like_a_scan(test_db, tmp_path):
+    """The watcher skipped AV1 files without listing them, so it probed each
+    one again every 5 minutes and they never showed up; a full scan lists
+    them, as files that don't need converting unless AV1 is a source codec."""
+    import os
+    import time
+    from backend.watcher import FileWatcher
+    media = tmp_path / "Movies"
+    known = media / "Film A (2020)" / "Film A (2020).mkv"  # the watcher only watches scanned folders
+    av1 = media / "Film B (2024)" / "Film B (2024) 2160p WEB AV1.mkv"
+    for p in (known, av1):
+        p.parent.mkdir(parents=True)
+        p.write_bytes(b"x")
+    stamp = time.time() - 3600  # past the "still being copied" delay
+    os.utime(av1, (stamp, stamp))
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)", (str(media),))
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) "
+                         "VALUES (?, 1, '2026-10-11T00:00:00')", (str(known),))
+        await db.commit()
+    probe = {"video_codec": "av1", "video_width": 3840, "video_height": 2160, "audio_tracks": [],
+             "subtitle_tracks": [], "duration": 60, "file_size": 1}
+
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock, return_value=probe) as probed:
+        await FileWatcher(test_db, interval_minutes=5).check_once()
+        await FileWatcher(test_db, interval_minutes=5).check_once()
+
+    assert probed.await_count == 1  # listed the first time, so not probed again
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT video_codec, needs_conversion FROM scan_results WHERE file_path = ?",
+                              (str(av1),)) as cur:
+            assert await cur.fetchall() == [("av1", 0)]
