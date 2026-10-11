@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker images can run as your own user** (`PUID` / `PGID` / `UMASK`) and carry OCI labels; each release also gets minor-line tags (`:0.10`, `:0.10-nvenc`) for patches only.
 
 ### Changed
+- **Scanner counts are instant**: which files each filter matches is kept in an index that follows your files, the queue and your settings as they change, so a click updates every count at once instead of re-reading the library (12 seconds on a big one). It's built once in the background after the update, and saved with your data.
 - **Sign-in is required**, as in Sonarr v4: a username and password on Shrinkerr's page (for everyone, or not from local addresses), or **External** when a reverse proxy signs people in. API keys keep working.
 - **Safer defaults for new installs**: originals kept 7 days, encodes below VMAF 88 rejected, subtitles left alone until you choose languages, hardlinked files skipped, content type detection on — and one clear choice for originals: kept N days, trashed or deleted.
 - **Settings has a page per topic**, a search box, and one Save bar that sends only your changes and warns before you leave unsaved; the theme can follow your system.
