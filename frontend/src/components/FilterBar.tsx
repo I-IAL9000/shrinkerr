@@ -40,21 +40,29 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
 
   const firstPill = () => barRef.current?.querySelector<HTMLButtonElement>(".filter-bar-row button:not(:disabled)");
 
-  // The removed chip's × had the focus: on to the next chip's (or the
-  // previous one's, or Clear all), once the page has re-rendered.
+  // Where the focus goes once the chips have re-rendered: the removed chip's
+  // × (or Clear all) had it. In an effect, not a frame callback, which a
+  // hidden or throttled page never runs.
+  const pendingFocus = useRef<(() => HTMLElement | null | undefined) | null>(null);
+  useEffect(() => {
+    const target = pendingFocus.current;
+    pendingFocus.current = null;
+    target?.()?.focus();
+  });
+
+  // On to the next chip's × (or the previous one's, or Clear all).
   const removeChip = (index: number) => {
     const near = [active[index + 1], active[index - 1]];
+    pendingFocus.current = () =>
+      near.map(token => (token ? chipButtons.current.get(token) : undefined)).find(el => el?.isConnected)
+      ?? (clearRef.current?.isConnected ? clearRef.current : firstPill());
     onRemove(active[index]);
-    requestAnimationFrame(() => {
-      const chip = near.map(token => (token ? chipButtons.current.get(token) : undefined)).find(el => el?.isConnected);
-      (chip ?? (clearRef.current?.isConnected ? clearRef.current : firstPill()))?.focus();
-    });
   };
 
   // Clear all goes with the chips: on to the first quick pill.
   const clearAll = () => {
+    pendingFocus.current = firstPill;
     onClear();
-    requestAnimationFrame(() => firstPill()?.focus());
   };
 
   useEffect(() => {
