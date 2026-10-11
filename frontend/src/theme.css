@@ -456,6 +456,46 @@ body {
 .sort-pill.active { background: var(--accent-btn) !important; color: white !important; border-color: var(--accent-btn) !important; }
 .sort-pill.active:hover { background: var(--accent) !important; border-color: var(--accent) !important; }
 
+/* Filter bar panels (v0.10.0) */
+.filter-category { position: relative; display: inline-flex; }
+.filter-panel {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 100; /* above the sticky selection bar (50) */
+  width: min(var(--panel-width, 240px), calc(100vw - 32px)); max-height: 70vh; overflow-y: auto;
+  padding: 12px; box-sizing: border-box;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.filter-panel-sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; }
+.filter-section { border: 0; margin: 0; padding: 0; min-width: 0; }
+.filter-section-title {
+  padding: 0; margin-bottom: 4px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted);
+}
+.filter-option { display: flex; align-items: center; gap: 2px; border-radius: 4px; }
+.filter-option:hover { background: var(--bg-tertiary); }
+.filter-option-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+}
+.filter-option-main input { accent-color: var(--accent); margin: 0; }
+.filter-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-option-count { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.filter-option.empty .filter-option-main { opacity: 0.45; cursor: default; }
+.filter-option.excluded .filter-option-label { text-decoration: line-through; color: var(--danger); }
+.filter-option-exclude {
+  background: none; border: none; border-radius: 4px; padding: 2px 6px;
+  font-size: 13px; color: var(--text-muted); cursor: pointer;
+}
+.filter-option-exclude:hover:not(:disabled),
+.filter-option-exclude[aria-pressed="true"] { color: var(--danger); }
+.filter-option-exclude:disabled { opacity: 0.3; cursor: default; }
+.filter-panel-rule { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+/* Phones: a panel spans the bar (.filter-bar is the positioned parent). */
+@media (max-width: 600px) {
+  .filter-category { position: static; }
+  .filter-panel { left: 0; right: 0; width: auto; }
+}
+
 /* Range sliders */
 input[type="range"] {
   -webkit-appearance: none;
