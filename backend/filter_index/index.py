@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from typing import Iterable
 
 from backend.filter_index.bits import from_ids, ids_of
 from backend.scan_filters import FILTERS_VERSION, _FILTER_LIST, Filter, _group_key
@@ -38,16 +38,14 @@ class FilterIndex:
         index.savings = dict(savings)
         return index
 
-    def replace(self, filters: Iterable[Filter], members: dict[str, list[int]],
-                savings: Optional[dict[int, int]] = None) -> None:
-        """Take these filters' rows over the whole library (and the savings, when given)."""
+    def replace(self, filters: Iterable[Filter], members: dict[str, list[int]]) -> None:
+        """Take these filters' rows over the whole library. (Savings belong to
+        the row, not to an input, so only patch() touches them.)"""
         for f in filters:
             self.bits[f.id] = from_ids(members[f.id])
-        if savings is not None:
-            self.savings = dict(savings)
 
     def patch(self, ids: list[int], alive: list[int], members: dict[str, list[int]],
-              savings: Optional[dict[int, int]]) -> None:
+              savings: dict[int, int]) -> None:
         """Take these rows' answers for every filter: `ids` were evaluated,
         `alive` are the ones still listed, `members` and `savings` theirs."""
         keep = ~from_ids(ids)
@@ -56,7 +54,7 @@ class FilterIndex:
             self.bits[fid] = (bits & keep) | from_ids(members.get(fid, ()))
         for i in ids:
             self.savings.pop(i, None)
-        self.savings.update(savings or {})
+        self.savings.update(savings)
 
     def count_all(self) -> dict[str, int]:
         """scan_filters.count_all's counts."""
