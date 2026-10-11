@@ -77,6 +77,7 @@
     "invalidFilePath": "Invalid file path: {{error}}",
     "languageRequired": "A language must be provided",
     "metadataRefreshRunning": "Metadata refresh already in progress",
+    "notInList": "That file isn't in the Scanner list.",
     "noPaths": "No paths to scan",
     "probeFailed": "Could not probe file",
     "trackNotFound": "Track not found",

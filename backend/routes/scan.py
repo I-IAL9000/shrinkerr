@@ -1132,6 +1132,21 @@ class DetectLanguagesRequest(BaseModel):
     file_path: str
 
 
+class VideoDetailsRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/video-details")
+async def read_video_details(req: VideoDetailsRequest):
+    """A file's width, frame rate, aspect ratio etc. for its panel, read from
+    the file now if its scan (before 0.10.0) didn't (backend/video_details.py)."""
+    from backend.video_details import read_details
+    details = await read_details(req.file_path)
+    if details is None:
+        raise ApiError(404, "That file isn't in the Scanner list.", code="scan.notInList")
+    return details
+
+
 async def _maybe_notify_plex_lang_change(file_path: str) -> bool:
     """Refresh the Plex folder for a file whose track languages changed.
 

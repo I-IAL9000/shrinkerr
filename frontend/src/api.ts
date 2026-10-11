@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { AudioTrack, SubtitleTrack, WSMessage } from "./types";
+import type { AudioTrack, ScannedFile, SubtitleTrack, WSMessage } from "./types";
 import i18n from "./i18n";
 
 const API_BASE = "/api";
@@ -138,6 +138,9 @@ export const getTracksByPath = (filePath: string) =>
   apiFetch<{ audio_tracks: any[]; subtitle_tracks: any[]; has_lossless_audio?: boolean }>(`/scan/tracks-by-path?file_path=${encodeURIComponent(filePath)}`);
 export const rescanFolder = (paths: string[]) =>
   apiFetch("/scan/rescan-folder", { method: "POST", body: JSON.stringify({ paths }) });
+// A file's width, frame rate, aspect ratio etc., read from it now if its scan (before 0.10.0) didn't.
+export const readVideoDetails = (filePath: string) =>
+  apiFetch<Partial<ScannedFile>>("/scan/video-details", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export const detectLanguages = (filePath: string) =>
   apiFetch<{ status: string; changed: boolean; native_language?: string; audio_tracks?: any[]; subtitle_tracks?: any[] }>("/scan/detect-languages", { method: "POST", body: JSON.stringify({ file_path: filePath }) });
 export interface DetectBatchProgress { active: boolean; total: number; done: number; current: string; changed: number; failed: number; cancelled: boolean; pending?: number; pending_paths?: string[]; }

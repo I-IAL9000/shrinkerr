@@ -77,6 +77,7 @@
     "invalidFilePath": "Ruta de archivo no válida: {{error}}",
     "languageRequired": "Se debe indicar un idioma",
     "metadataRefreshRunning": "Ya hay una actualización de metadatos en curso",
+    "notInList": "Ese archivo no está en la lista del Escáner.",
     "noPaths": "No hay rutas que escanear",
     "probeFailed": "No se pudo analizar el archivo",
     "trackNotFound": "Pista no encontrada",

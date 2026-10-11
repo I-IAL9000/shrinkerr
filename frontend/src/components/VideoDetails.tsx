@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { readVideoDetails } from "../api";
 import type { ScannedFile } from "../types";
 import { hdrLabel } from "../codecLabels";
 import { fmtBitrate, fmtBytes, fmtDuration } from "../fmt";
@@ -33,10 +35,25 @@ function container(file: ScannedFile): string | null {
 /**
  * A file's video details for the Scanner's file panel (v0.10.0): duration,
  * codec, size, bitrate, width, height, aspect ratio, resolution, frame rate
- * and container. "—" where the scan didn't read it.
+ * and container. "—" where the scan didn't read it. A file scanned before
+ * 0.10.0 has no width yet: the server reads it now ("…" meanwhile).
  */
-export default function VideoDetails({ file }: { file: ScannedFile }) {
+export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
   const { t } = useTranslation(["fileDetail"]);
+  const unread = !listed.video_width && !listed.disc_type && (listed.probe_status ?? "ok") === "ok";
+  const [read, setRead] = useState<Partial<ScannedFile> | null>(null);
+  const [reading, setReading] = useState(false);
+  useEffect(() => {
+    if (!unread) return;
+    let live = true;
+    setReading(true);
+    readVideoDetails(listed.file_path)
+      .then(details => { if (live) setRead(details); })
+      .catch(() => {})
+      .finally(() => { if (live) setReading(false); });
+    return () => { live = false; };
+  }, [listed.file_path, unread]);
+  const file: ScannedFile = read ? { ...listed, ...read } : listed;
   const codec = (file.video_codec || "").toLowerCase();
   const overall = file.duration > 0 ? (file.file_size * 8) / file.duration : 0;
   const fps = file.video_fps ? Number(file.video_fps.toFixed(3)) : 0;
@@ -63,7 +80,7 @@ export default function VideoDetails({ file }: { file: ScannedFile }) {
         <div key={label} style={{ minWidth: 0 }}>
           <dt style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</dt>
           <dd style={{ margin: 0, color: value ? "var(--text-secondary)" : "var(--text-muted)", overflowWrap: "anywhere" }}>
-            {value ?? "—"}
+            {value ?? (reading ? "…" : "—")}
           </dd>
         </div>
       ))}

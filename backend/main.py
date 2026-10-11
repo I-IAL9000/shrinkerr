@@ -412,6 +412,9 @@ async def lifespan(app: FastAPI):
     # Home Assistant over MQTT (v0.10.0): idle until it's set up.
     from backend.mqtt import mqtt_loop
     mqtt_task = asyncio.create_task(mqtt_loop())
+    # Width, frame rate etc. for files scanned before 0.10.0, in the background.
+    from backend.video_details import video_details_loop
+    details_task = None if demo.ENABLED else asyncio.create_task(video_details_loop())
 
     yield
     worker.stop()
@@ -423,6 +426,8 @@ async def lifespan(app: FastAPI):
     estimates_task.cancel()
     mqtt_task.cancel()
     digest_task.cancel()
+    if details_task:
+        details_task.cancel()
 
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)
