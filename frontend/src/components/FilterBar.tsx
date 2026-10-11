@@ -52,10 +52,14 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   // × (or Clear all) had it. In an effect, not a frame callback, which a
   // hidden or throttled page never runs.
   const pendingFocus = useRef<(() => HTMLElement | null | undefined) | null>(null);
+  const counting = active.length > 0 && matching == null;
   useEffect(() => {
     const target = pendingFocus.current;
-    pendingFocus.current = null;
-    target?.()?.focus();
+    if (!target) return;
+    const el = target();
+    // A quick pill greys out only when its new count arrives: wait for it.
+    if (el || !counting) pendingFocus.current = null;
+    el?.focus();
   });
 
   // On to the next chip's × (or the previous one's, or Clear all).
@@ -119,7 +123,7 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   };
 
   return (
-    <div ref={barRef} className="filter-bar" aria-busy={active.length > 0 && matching == null}>
+    <div ref={barRef} className="filter-bar">
       <div className="filter-bar-row">
         {QUICK_FILTERS.map(key => {
           const included = active.includes(key);
@@ -149,8 +153,9 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
         <span className="filter-bar-divider" aria-hidden="true" />
         {CATEGORIES.map(categoryButton)}
       </div>
-      {/* Mounted before the chips appear, so the first total is announced too. */}
-      <span className="sr-only" aria-live="polite">{active.length > 0 ? matchingText : ""}</span>
+      {/* Mounted before the chips appear, so the first total is announced too;
+          empty while counting, so each click is announced once. */}
+      <span className="sr-only" aria-live="polite">{active.length > 0 && !counting ? matchingText : ""}</span>
       {active.length > 0 && (
         <div className="filter-chips">
           {active.map((token, index) => {

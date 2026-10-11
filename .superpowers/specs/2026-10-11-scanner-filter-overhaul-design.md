@@ -234,9 +234,10 @@ Each phase gets its own implementation plan and ships on `develop` on its own:
 1. The index and the counts endpoints, behind today's pills. The speed-up
    comes first.
 2. The new bar: quick pills, category buttons, panels, chips, greyed zeros;
-   the regrouping.
+   the regrouping; the bitrate group (moved here from step 3). Eight menus:
+   Title comes with the lists in step 3.
 3. The list facets from existing data (languages, codecs, channels, genre,
    year, rating, country, network, show status, library, folder) and the
-   bitrate group.
+   Title menu; Channels replaces the 7.1 option (`audio_71`, then hidden).
 4. Title credits (actor, director, studio) and all Plex labels.
 5. Tree, lists and Add to Queue through the index.
