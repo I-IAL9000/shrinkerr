@@ -564,7 +564,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                                WHERE {under_sql}
                                  AND file_path NOT IN (SELECT file_path FROM _seen_paths)
                                  AND file_path NOT IN (
-                                     SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
+                                     SELECT file_path FROM jobs WHERE status = 'running'
                                  )""",
                             under_params,
                         ).fetchall()
@@ -635,7 +635,7 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                                     flush=True,
                                 )
 
-                    deleted_total = 0
+                    deleted_total = dropped_jobs = 0
                     for path in completed_paths:
                         path_norm = path.rstrip("/")
                         if path_norm in preserved_paths:
@@ -656,17 +656,32 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                             keep_sql, keep_params = prefix_clause([s + "/"])
                             not_likes += f" AND NOT {keep_sql}"
                             params += keep_params
+                        # Only a running job keeps a vanished file's row (its
+                        # conversion is replacing the file); a pending job goes
+                        # with it — a queued show moved to another share stayed
+                        # listed and queued (v0.10.0).
+                        cur = db.execute(
+                            f"""DELETE FROM jobs WHERE status = 'pending' AND file_path IN (
+                                   SELECT file_path FROM scan_results
+                                   WHERE {under_sql}{not_likes}
+                                     AND file_path NOT IN (SELECT file_path FROM _seen_paths))""",
+                            params,
+                        )
+                        dropped_jobs += cur.rowcount
                         cur = db.execute(
                             f"""DELETE FROM scan_results
                                WHERE {under_sql}{not_likes}
                                  AND file_path NOT IN (SELECT file_path FROM _seen_paths)
                                  AND file_path NOT IN (
-                                     SELECT file_path FROM jobs WHERE status IN ('pending', 'running')
+                                     SELECT file_path FROM jobs WHERE status = 'running'
                                  )""",
                             params,
                         )
                         deleted_total += cur.rowcount
                     db.commit()
+                    if dropped_jobs:
+                        print(f"[SCANNER] Orphan cleanup: dropped {dropped_jobs} pending job(s) "
+                              "for files no longer on disk", flush=True)
                     if deleted_total:
                         print(
                             f"[SCANNER] Orphan cleanup: dropped {deleted_total} stale row(s) "

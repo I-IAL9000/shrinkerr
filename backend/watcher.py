@@ -160,7 +160,7 @@ class FileWatcher:
                 chunk = stale[i:i + 900]
                 async with db.execute(
                     f"SELECT file_path, file_size FROM scan_results WHERE file_path IN ({','.join('?' * len(chunk))}) "
-                    "AND file_path NOT IN (SELECT file_path FROM jobs WHERE status IN ('pending', 'running'))",
+                    "AND file_path NOT IN (SELECT file_path FROM jobs WHERE status = 'running')",
                     chunk,
                 ) as cur:
                     stale_sizes.update({r[0]: r[1] for r in await cur.fetchall() if r[1]})
@@ -222,6 +222,11 @@ class FileWatcher:
         which surfaced as "newly converted files counting as new files" on
         the Scanner page. Mirrors scan.py's full-rescan orphan cleanup,
         which already filters out active jobs. v0.3.132+.
+
+        Only a running job keeps its file's row: a pending one hasn't touched
+        the file, so a queued file moved or deleted (a show moved to another
+        share) stayed listed, and queued, until the queue reached the job and
+        failed it. Its pending jobs go with the row (v0.10.0).
         """
         if not stale_paths:
             return 0
@@ -231,23 +236,27 @@ class FileWatcher:
         # at 999 variables, and modern builds still benefit from smaller
         # per-statement plans.
         CHUNK = 900
-        deleted = 0
+        deleted = dropped_jobs = 0
         db = await aiosqlite.connect(self.db_path)
         try:
             for i in range(0, len(stale_paths), CHUNK):
                 chunk = stale_paths[i:i + CHUNK]
                 placeholders = ",".join("?" * len(chunk))
+                jobs = await db.execute(
+                    f"DELETE FROM jobs WHERE status = 'pending' AND file_path IN ({placeholders})", chunk)
+                dropped_jobs += jobs.rowcount or 0
                 result = await db.execute(
                     f"""DELETE FROM scan_results
                         WHERE file_path IN ({placeholders})
                           AND file_path NOT IN (
-                              SELECT file_path FROM jobs
-                              WHERE status IN ('pending', 'running')
+                              SELECT file_path FROM jobs WHERE status = 'running'
                           )""",
                     chunk,
                 )
                 deleted += result.rowcount or 0
             await db.commit()
+            if dropped_jobs:
+                print(f"[WATCHER] Dropped {dropped_jobs} pending job(s) for files no longer on disk", flush=True)
             return deleted
         finally:
             await db.close()
