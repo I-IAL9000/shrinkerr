@@ -1608,7 +1608,14 @@ async def save(force: bool = False) -> None:
         index = _state.index
         if index is None or not _state.dirty or (not force and time.time() - _state.last_save < SAVE_EVERY):
             return
-        await asyncio.to_thread(index.save, index_path())
+        # Cancelled mid-write (the app stopping): finish the write before
+        # letting go of the lock, or the shutdown save would write over it.
+        write = asyncio.ensure_future(asyncio.to_thread(index.save, index_path()))
+        try:
+            await asyncio.shield(write)
+        except asyncio.CancelledError:
+            await write
+            raise
         _state.dirty, _state.last_save = False, time.time()
         seq = index.seq
     db = await database.connect_db()
@@ -1794,6 +1801,10 @@ In the teardown after `yield`, after `digest_task.cancel()`:
 
 ```python
     filter_index_task.cancel()
+    try:
+        await filter_index_task  # let a save in progress finish
+    except asyncio.CancelledError:
+        pass
     try:
         from backend.filter_index.service import save as save_filter_index
         await save_filter_index(force=True)
