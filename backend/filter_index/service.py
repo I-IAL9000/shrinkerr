@@ -34,7 +34,7 @@ from backend.scan_filters import _FILTER_LIST, Filter, FilterExpr, _group_key
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
 REFRESH_EVERY = 10   # the background loop's pace
-SAVE_EVERY = 60      # written to disk at most this often
+SAVE_EVERY = 300     # written to disk at most this often
 BIG_CHANGE = 5000    # more changed rows than this (and a fifth of the library): rebuild instead
 BACKOFF_FIRST = 60   # seconds before trying a failed build again; doubles each time
 BACKOFF_MAX = 600

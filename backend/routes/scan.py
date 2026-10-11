@@ -749,10 +749,12 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                 db.execute("PRAGMA busy_timeout=10000")
                 try:
                     _scope, _scope_params = prefix_clause([p.rstrip("/") + "/" for p in completed_paths])
-                    # Reset dup counts within the walked paths
+                    # Reset dup counts within the walked paths. Only the rows it
+                    # changes: each row written is logged for the filter index.
                     db.execute(
                         f"UPDATE scan_results SET dup_count = 0, dup_group = NULL "
-                        f"WHERE +removed_from_list = 0 AND ({_scope})",
+                        f"WHERE +removed_from_list = 0 AND (dup_count != 0 OR dup_group IS NOT NULL) "
+                        f"AND ({_scope})",
                         _scope_params,
                     )
 

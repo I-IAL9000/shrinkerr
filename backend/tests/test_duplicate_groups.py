@@ -56,3 +56,29 @@ def test_a_resolved_duplicate_is_cleared(test_db, tmp_path):
     asyncio.run(seed())
     _scan_worker_process([str(folder)], test_db, str(tmp_path / "p.json"), str(tmp_path / "c"))
     assert asyncio.run(dup_count()) == 0
+
+
+def test_the_reset_writes_only_the_rows_it_changes(test_db, tmp_path):
+    """Each row written is logged for the filter index: every full scan wrote
+    every listed row."""
+    import shutil
+    import sqlite3
+    from contextlib import closing
+    import pytest
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    from backend.routes.scan import _scan_worker_process
+    from backend.tests.test_same_name_conversion import _mkv
+    folder = tmp_path / "Movies" / "Film (2009)"
+    folder.mkdir(parents=True)
+    _mkv(folder / "Film (2009) 2160p.mkv", ["eng"])
+    with closing(sqlite3.connect(test_db)) as db:
+        db.execute("INSERT INTO media_dirs (path) VALUES (?)", (str(tmp_path / "Movies"),))
+        db.execute("CREATE TABLE dup_writes (row_id INTEGER)")
+        db.execute("CREATE TRIGGER dup_written AFTER UPDATE OF dup_count, dup_group ON scan_results "
+                   "BEGIN INSERT INTO dup_writes VALUES (NEW.id); END")
+        db.commit()
+    _scan_worker_process([str(folder)], test_db, str(tmp_path / "p.json"), str(tmp_path / "c"))
+    with closing(sqlite3.connect(test_db)) as db:
+        assert db.execute("SELECT COUNT(*) FROM scan_results").fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM dup_writes").fetchone()[0] == 0

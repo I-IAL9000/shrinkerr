@@ -68,11 +68,12 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
         return alive, members, None
     async with db.execute(f"SELECT id, {PY_COLUMNS} FROM scan_results WHERE {where}", where_params) as cur:
         names = [d[0] for d in cur.description]
-        py_rows = [dict(zip(names, values)) for values in await cur.fetchall()]
+        py_rows = await cur.fetchall()
     savings: dict[int, int] = {}
 
     def judge() -> None:
-        for r in py_rows:
+        for values in py_rows:
+            r = dict(zip(names, values))
             if r["video_conv_savings_bytes"]:
                 savings[r["id"]] = r["video_conv_savings_bytes"]
             for f in py_filters:
