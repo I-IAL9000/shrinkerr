@@ -42,8 +42,8 @@ class Filter:
     pre_sql: Optional[str] = None  # py filters: a necessary condition, to narrow queries
     titles: bool = False  # py filters that read title metadata (ctx["title_meta"], v0.10.0)
     # What it reads besides its own row: other tables, settings, the time
-    # (backend/filter_index/inputs.py). The filter index re-evaluates it when
-    # one of them changes (v0.10.0).
+    # (backend/filter_index/inputs.py); () means only its own row. The filter
+    # index re-evaluates it when one of them changes (v0.10.0).
     inputs: tuple[str, ...] = ()
 
 
@@ -405,8 +405,9 @@ _EXTRAS = "(" + " OR ".join(
 _NEEDS = "needs_conversion != 0"
 _NEEDS_TIMED = "needs_conversion != 0 AND duration > 0"
 
-# Bump when a Python predicate's logic changes: a saved filter index made
-# with the old one is rebuilt (SQL changes are noticed on their own).
+# Bump when a Python predicate or a helper / constant it relies on changes
+# (is_ignored_path, classify_type, hdr_kind, row_last_watched, LOW_BITRATE...):
+# a saved filter index is rebuilt. A change to a filter's SQL is noticed on its own.
 FILTERS_VERSION = 1
 
 _FILTER_LIST = [

@@ -1,6 +1,7 @@
 """What the Scanner's filters read besides their own scan_results row
-(scan_filters.Filter.inputs). Triggers count every change to each input's
-table in change_counters as "fi:<input>"; the filter index re-evaluates a
+(scan_filters.Filter.inputs). Triggers count every change that matters to
+each input's table in change_counters as "fi:<input>" (the jobs, media_dirs
+and settings triggers are narrowed on purpose); the filter index re-evaluates a
 filter when one of its inputs' counters moves. "time" has no table: those
 filters are re-evaluated every few minutes."""
 
