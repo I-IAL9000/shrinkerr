@@ -6,6 +6,7 @@ _BITS_OF_BYTE = tuple(tuple(j for j in range(8) if byte >> j & 1) for byte in ra
 
 
 def from_ids(ids: Iterable[int]) -> int:
+    """The set of these (non-negative) ids. Any iterable: it is read twice, so it is listed first."""
     ids = list(ids)
     if not ids:
         return 0

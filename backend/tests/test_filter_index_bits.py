@@ -21,3 +21,17 @@ def test_set_algebra_is_int_algebra():
     assert ids_of(a & b) == [2, 3]
     assert ids_of(a | b) == [1, 2, 3, 4, 500]
     assert ids_of(a & ~b) == [1, 500]  # what an exclusion does
+
+
+def test_bit_n_is_row_id_n():
+    assert from_ids([0]) == 1
+    assert from_ids([3]) == 8
+    assert from_ids([0, 3, 9]) == 0b10_0000_1001
+    assert from_ids([5, 5, 6, 6]) == 0b110_0000
+
+
+def test_byte_boundaries():
+    for top in (0, 7, 8, 9, 15, 16, 64, 1000):
+        ids = sorted({0, top, max(top - 1, 0)})
+        assert ids_of(from_ids(ids)) == ids
+        assert from_ids(ids) == sum(1 << i for i in ids)
