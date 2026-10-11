@@ -944,8 +944,8 @@ async def test_patching_rows_and_inputs_equals_rebuilding(library):
         ctx = await _context(db)
         alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed)
         index.patch(changed, alive, members, savings)
-        _, members, savings = await evaluate(db, dirty, ctx)
-        index.replace(dirty, members, savings)
+        _, members, _ = await evaluate(db, dirty, ctx)
+        index.replace(dirty, members)
     assert moved == {"ignored", "jobs", "settings", "plex"}
     fresh = await index_of(library)
     assert index.alive == fresh.alive
@@ -1016,16 +1016,14 @@ class FilterIndex:
         index.savings = dict(savings)
         return index
 
-    def replace(self, filters: Iterable[Filter], members: dict[str, list[int]],
-                savings: Optional[dict[int, int]] = None) -> None:
-        """Take these filters' rows over the whole library (and the savings, when given)."""
+    def replace(self, filters: Iterable[Filter], members: dict[str, list[int]]) -> None:
+        """Take these filters' rows over the whole library. (Savings depend only
+        on the row: the change log and patch() keep them right.)"""
         for f in filters:
             self.bits[f.id] = from_ids(members[f.id])
-        if savings is not None:
-            self.savings = dict(savings)
 
     def patch(self, ids: list[int], alive: list[int], members: dict[str, list[int]],
-              savings: Optional[dict[int, int]]) -> None:
+              savings: dict[int, int]) -> None:
         """Take these rows' answers for every filter: `ids` were evaluated,
         `alive` are the ones still listed, `members` and `savings` theirs."""
         keep = ~from_ids(ids)
@@ -1034,7 +1032,7 @@ class FilterIndex:
             self.bits[fid] = (bits & keep) | from_ids(members.get(fid, ()))
         for i in ids:
             self.savings.pop(i, None)
-        self.savings.update(savings or {})
+        self.savings.update(savings)
 
     def count_all(self) -> dict[str, int]:
         """scan_filters.count_all's counts."""
@@ -1531,8 +1529,8 @@ async def refresh() -> None:
                 alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed)
                 index.patch(changed, alive, members, savings)
             if dirty:
-                _, members, savings = await evaluate(db, dirty, ctx)
-                index.replace(dirty, members, savings)
+                _, members, _ = await evaluate(db, dirty, ctx)
+                index.replace(dirty, members)
             index.seq, index.counters = seq, counters
             if "time" in moved:
                 index.time_at = now
