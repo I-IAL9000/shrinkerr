@@ -167,7 +167,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     if (filter === "all") { setFacetCounts(null); return; }
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
-      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts({ filter, counts: r.counts })).catch(() => {});
+      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts({ filter, counts: r.counts }))
+        // Failed: stop "Counting…" (the total falls back to the tree's).
+        .catch(() => { if (!ctrl.signal.aborted) setFacetCounts({ filter, counts: {} }); });
     }, 200);
     return () => { clearTimeout(timer); ctrl.abort(); };
   }, [filter, serverStats]);

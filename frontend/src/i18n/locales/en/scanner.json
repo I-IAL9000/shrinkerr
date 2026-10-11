@@ -200,7 +200,6 @@
     "counting": "Counting…",
     "panel": "{{category}} filters",
     "exclude": "Exclude {{label}}",
-    "unexclude": "Stop excluding {{label}}",
     "excluded": "excluded",
     "noFiles": "no files",
     "rule": "Ticking several options in a section shows files matching any of them; across sections, files must match all. ⊘ or Alt-click excludes."

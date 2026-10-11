@@ -7,6 +7,7 @@ interface FilterPanelProps {
   category: FilterCategory;
   active: string[];
   counts?: Record<string, number>;
+  lastCounts?: Record<string, number>;  // the last counts shown, while a new filter's load
   onToggle: (key: string, exclude: boolean) => void;
   onClose: () => void;
 }
@@ -18,7 +19,7 @@ const FOCUSABLE = "input:not(:disabled), button:not(:disabled)";
  * of files clicking it would give, and ⊘ to exclude. Options with no files
  * are greyed out unless they're on. Tab stays inside; Escape closes.
  */
-export default function FilterPanel({ category, active, counts, onToggle, onClose }: FilterPanelProps) {
+export default function FilterPanel({ category, active, counts, lastCounts, onToggle, onClose }: FilterPanelProps) {
   const { t } = useTranslation(["scanner"]);
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -46,8 +47,16 @@ export default function FilterPanel({ category, active, counts, onToggle, onClos
     // Into the panel: its first option, or the panel itself when every option
     // is greyed out (a screen reader still announces it).
     (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus({ preventScroll: true });
+    // Again when the bar's layout changes under it (it re-wraps as counts
+    // change), not only when the window does.
     window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    const row = panel.closest(".filter-bar")?.querySelector(".filter-bar-row");
+    const watch = row && typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    if (row) watch?.observe(row);
+    return () => {
+      window.removeEventListener("resize", fit);
+      watch?.disconnect();
+    };
   }, []);
 
   // Untick an option whose count then drops to 0 and it's disabled under the
@@ -97,6 +106,7 @@ export default function FilterPanel({ category, active, counts, onToggle, onClos
                 const included = active.includes(option.key);
                 const excluded = active.includes("!" + option.key);
                 const count = counts?.[option.key];
+                const shown = count ?? lastCounts?.[option.key];  // dimmed while the new count loads
                 const empty = count === 0 && !included && !excluded;
                 return (
                   <div key={option.key}
@@ -106,11 +116,13 @@ export default function FilterPanel({ category, active, counts, onToggle, onClos
                         onChange={e => onToggle(option.key, (e.nativeEvent as MouseEvent).altKey === true)} />
                       <span className="filter-option-label">{label}</span>
                       {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
-                      <span className="filter-option-count">{count == null ? "…" : fmtNum(count)}</span>
+                      <span className={`filter-option-count${count == null ? " stale" : ""}`}>
+                      {shown == null ? "…" : fmtNum(shown)}
+                    </span>
                     </label>
                     <button type="button" className="filter-option-exclude" aria-pressed={excluded} disabled={empty}
                       aria-label={t("scanner:filterBar.exclude", { label })}
-                      title={t(excluded ? "scanner:filterBar.unexclude" : "scanner:filterBar.exclude", { label })}
+                      title={t("scanner:filterBar.exclude", { label })}
                       onClick={() => onToggle(option.key, true)}>
                       ⊘
                     </button>

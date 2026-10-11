@@ -480,6 +480,8 @@ body {
 }
 .filter-option-main input { margin: 0; }
 .filter-option-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Last counts kept on screen while a new filter's load. */
+.filter-option-count.stale, .filter-pill-count.stale { opacity: 0.5; }
 .filter-option-count { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .filter-option.empty .filter-option-main { opacity: 0.45; cursor: default; }
 .filter-option.excluded .filter-option-label { text-decoration: line-through; color: var(--danger); }

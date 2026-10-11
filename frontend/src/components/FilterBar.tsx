@@ -31,12 +31,20 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   const chipButtons = useRef(new Map<string, HTMLButtonElement>());
   const clearRef = useRef<HTMLButtonElement>(null);
   const active = [...new Set(activeFilters.filter(f => f !== "all"))];
+  // The last count shown for each option, kept on screen (dimmed) while a new
+  // filter's counts load: the badges vanishing re-wrapped the whole bar.
+  const lastCounts = useRef<Record<string, number>>({});
+  for (const [key, n] of Object.entries(counts ?? {})) lastCounts.current[key] = n;
 
   const close = () => {
     const key = open;
     setOpen(null);
     if (key) buttons.current.get(key)?.focus();
   };
+
+  const matchingText = matching == null
+    ? t("scanner:filterBar.counting")
+    : t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) });
 
   const firstPill = () => barRef.current?.querySelector<HTMLButtonElement>(".filter-bar-row button:not(:disabled)");
 
@@ -103,35 +111,46 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
           <span aria-hidden="true" className="filter-category-caret">▾</span>
         </button>
         {isOpen && (
-          <FilterPanel category={category} active={active} counts={counts} onToggle={onToggle} onClose={close} />
+          <FilterPanel category={category} active={active} counts={counts} lastCounts={lastCounts.current}
+            onToggle={onToggle} onClose={close} />
         )}
       </div>
     );
   };
 
   return (
-    <div ref={barRef} className="filter-bar">
+    <div ref={barRef} className="filter-bar" aria-busy={active.length > 0 && matching == null}>
       <div className="filter-bar-row">
         {QUICK_FILTERS.map(key => {
           const included = active.includes(key);
           const excluded = active.includes("!" + key);
           const count = counts?.[key];
+          const shown = count ?? lastCounts.current[key];
           const empty = count === 0 && !included && !excluded;
           return (
             <button key={key}
               className={`filter-pill${included ? " active" : ""}${excluded ? " excluded" : ""}${empty ? " dimmed" : ""}`}
               aria-pressed={included || excluded} disabled={empty}
               title={t("scanner:filters.excludeHint")}
-              onClick={e => onToggle(key, e.altKey)}>
+              onClick={e => {
+                // Turned off, it may grey out (no files) under the focus.
+                const pill = e.currentTarget;
+                pendingFocus.current = () => (pill.disabled ? firstPill() : null);
+                onToggle(key, e.altKey);
+              }}>
               <span className="filter-pill-label">{optionLabel(key, t)}</span>
               {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
-              {count != null && <span className="filter-pill-count">{shortCount(count)}</span>}
+              {shown != null && (
+                <span className={`filter-pill-count${count == null ? " stale" : ""}`}>{shortCount(shown)}</span>
+              )}
             </button>
           );
         })}
         <span className="filter-bar-divider" aria-hidden="true" />
         {CATEGORIES.map(categoryButton)}
       </div>
+      {/* Mounted before the chips appear, so the first total is announced too. */}
+      <span className="sr-only" aria-live="polite">{active.length > 0 ? matchingText : ""}</span>
       {active.length > 0 && (
         <div className="filter-chips">
           {active.map((token, index) => {
@@ -147,11 +166,7 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
               </span>
             );
           })}
-          <span className="filter-chips-matching" aria-live="polite">
-            {matching == null
-              ? t("scanner:filterBar.counting")
-              : t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) })}
-          </span>
+          <span className="filter-chips-matching" aria-hidden="true">{matchingText}</span>
           <button type="button" ref={clearRef} className="filter-chips-clear" onClick={clearAll}>
             {t("scanner:filterBar.clearAll")}
           </button>
