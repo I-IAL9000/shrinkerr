@@ -1,0 +1,141 @@
+{
+  "quick": ["needs_conversion", "audio_cleanup", "sub_cleanup", "new"],
+  "categories": [
+    {"key": "status", "labelKey": "scanner:filterBar.categories.status", "sections": [
+      {"key": "queue", "labelKey": "scanner:filterBar.sections.queue", "options": [
+        {"key": "needs_conversion", "labelKey": "scanner:filters.needsConversion"},
+        {"key": "queued", "labelKey": "scanner:filters.queued"},
+        {"key": "converted", "labelKey": "scanner:filters.converted"},
+        {"key": "ignored", "labelKey": "scanner:filters.ignored"}]},
+      {"key": "outcome", "labelKey": "scanner:filterBar.sections.outcome", "options": [
+        {"key": "failed_before", "labelKey": "scanner:filters.failedBefore"},
+        {"key": "vmaf_rejected", "labelKey": "scanner:filters.vmafRejected"},
+        {"key": "no_savings", "labelKey": "scanner:filters.noSavings"},
+        {"key": "undo_possible", "labelKey": "scanner:filters.undoPossible"}]},
+      {"key": "health", "labelKey": "scanner:filterBar.sections.health", "options": [
+        {"key": "corrupt", "labelKey": "scanner:filters.corrupt"},
+        {"key": "health_warnings", "labelKey": "scanner:filters.healthWarnings"},
+        {"key": "health_never", "labelKey": "scanner:filters.healthNever"},
+        {"key": "health_stale", "labelKey": "scanner:filters.healthStale"}]},
+      {"key": "vmaf", "labelKey": "scanner:filterBar.sections.vmaf", "options": [
+        {"key": "vmaf_excellent", "labelKey": "scanner:filters.vmafExcellent"},
+        {"key": "vmaf_good", "labelKey": "scanner:filters.vmafGood"},
+        {"key": "vmaf_poor", "labelKey": "scanner:filters.vmafPoor"},
+        {"key": "vmaf_uncertain", "labelKey": "scanner:filters.vmafUncertain"}]}
+    ]},
+    {"key": "video", "labelKey": "scanner:filterBar.categories.video", "sections": [
+      {"key": "codec", "labelKey": "scanner:filterBar.sections.codec", "options": [
+        {"key": "x264", "label": "x264"},
+        {"key": "x265", "label": "x265"},
+        {"key": "av1", "label": "AV1"},
+        {"key": "codec_mpeg2", "label": "MPEG-2"},
+        {"key": "codec_vc1", "label": "VC-1 / WMV"},
+        {"key": "codec_mpeg4", "label": "MPEG-4 / Xvid"},
+        {"key": "codec_vp9", "label": "VP9"},
+        {"key": "misc_codec", "labelKey": "scanner:filters.otherCodecs"}]},
+      {"key": "resolution", "labelKey": "scanner:filterBar.sections.resolution", "options": [
+        {"key": "res_4k", "label": "4K"},
+        {"key": "res_1080p", "label": "1080p"},
+        {"key": "res_720p", "label": "720p"},
+        {"key": "res_sd", "label": "SD"}]},
+      {"key": "bitrate", "labelKey": "scanner:filterBar.sections.bitrate", "options": [
+        {"key": "bitrate_low", "labelKey": "scanner:filters.bitrateLow"},
+        {"key": "bitrate_medium", "labelKey": "scanner:filters.bitrateMedium"},
+        {"key": "bitrate_high", "labelKey": "scanner:filters.bitrateHigh"},
+        {"key": "bloated", "labelKey": "scanner:filters.bloated"}]},
+      {"key": "hdr", "labelKey": "scanner:filterBar.sections.hdr", "options": [
+        {"key": "hdr_dv", "label": "Dolby Vision"},
+        {"key": "hdr_hdr10", "label": "HDR10"},
+        {"key": "hdr_hlg", "label": "HLG"}]},
+      {"key": "picture", "labelKey": "scanner:filterBar.sections.picture", "options": [
+        {"key": "bit10", "label": "10-bit"},
+        {"key": "hi10p", "label": "Hi10P"},
+        {"key": "interlaced", "labelKey": "scanner:filters.interlaced"},
+        {"key": "vfr", "label": "VFR"}]}
+    ]},
+    {"key": "audio", "labelKey": "scanner:filterBar.categories.audio", "sections": [
+      {"key": "audio", "labelKey": "scanner:filterBar.sections.audio", "options": [
+        {"key": "audio_cleanup", "labelKey": "scanner:filters.audioCleanup"},
+        {"key": "lossless_audio", "labelKey": "scanner:filters.losslessAudio"},
+        {"key": "lossy_audio", "labelKey": "scanner:filters.lossyAudio"},
+        {"key": "object_audio", "label": "Atmos / DTS:X"},
+        {"key": "audio_71", "label": "7.1"},
+        {"key": "commentary", "labelKey": "scanner:filters.commentary"}]}
+    ]},
+    {"key": "subtitles", "labelKey": "scanner:filterBar.categories.subtitles", "sections": [
+      {"key": "subtitles", "labelKey": "scanner:filterBar.sections.kind", "options": [
+        {"key": "image_subs", "labelKey": "scanner:filters.imageSubs"},
+        {"key": "external_subs", "labelKey": "scanner:filters.externalSubs"},
+        {"key": "forced_subs", "labelKey": "scanner:filters.forcedSubs"},
+        {"key": "sdh_subs", "label": "SDH"}]},
+      {"key": "_sub_cleanup", "labelKey": "scanner:filterBar.sections.subCleanup", "options": [
+        {"key": "sub_cleanup", "labelKey": "scanner:filters.subCleanup"}]}
+    ]},
+    {"key": "language", "labelKey": "scanner:filterBar.categories.language", "sections": [
+      {"key": "language", "labelKey": "scanner:filterBar.sections.language", "options": [
+        {"key": "unknown_language", "labelKey": "scanner:filters.unknownLanguage"},
+        {"key": "missing_language", "labelKey": "scanner:filters.missingLanguage"},
+        {"key": "dubbed", "labelKey": "scanner:filters.dubbed"},
+        {"key": "not_api_matched", "labelKey": "scanner:filters.notApiMatched"}]}
+    ]},
+    {"key": "library", "labelKey": "scanner:filterBar.categories.library", "sections": [
+      {"key": "type", "labelKey": "scanner:filterBar.sections.type", "options": [
+        {"key": "type_movie", "labelKey": "scanner:filters.movies"},
+        {"key": "type_tv", "labelKey": "scanner:filters.tvShows"},
+        {"key": "type_other", "labelKey": "scanner:filters.other"}]},
+      {"key": "source", "labelKey": "scanner:filterBar.sections.source", "options": [
+        {"key": "src_remux", "label": "Remux"},
+        {"key": "src_bluray", "label": "Blu-ray"},
+        {"key": "src_webdl", "label": "WEB-DL"},
+        {"key": "src_hdtv", "label": "HDTV"},
+        {"key": "src_dvd", "label": "DVD"}]},
+      {"key": "added", "labelKey": "scanner:filterBar.sections.added", "options": [
+        {"key": "new", "labelKey": "scanner:filters.new"},
+        {"key": "added_7d", "labelKey": "scanner:filters.added7d"},
+        {"key": "added_30d", "labelKey": "scanner:filters.added30d"},
+        {"key": "added_90d", "labelKey": "scanner:filters.added90d"}]},
+      {"key": "file", "labelKey": "scanner:filterBar.sections.file", "options": [
+        {"key": "disc_iso", "labelKey": "scanner:filters.discIso"},
+        {"key": "extras", "labelKey": "scanner:filters.extras"},
+        {"key": "duplicates", "labelKey": "scanner:filters.duplicates"},
+        {"key": "hardlinked", "labelKey": "scanner:filters.hardlinked"}]},
+      {"key": "container", "labelKey": "scanner:filterBar.sections.container", "options": [
+        {"key": "container_mkv", "label": "MKV"},
+        {"key": "container_mp4", "label": "MP4"},
+        {"key": "container_avi", "label": "AVI"},
+        {"key": "container_other", "labelKey": "scanner:filters.other"}]},
+      {"key": "size", "labelKey": "scanner:filterBar.sections.size", "options": [
+        {"key": "size_small", "labelKey": "scanner:filters.sizeSmall"},
+        {"key": "size_medium", "labelKey": "scanner:filters.sizeMedium"},
+        {"key": "size_large", "labelKey": "scanner:filters.sizeLarge"}]}
+    ]},
+    {"key": "watched", "labelKey": "scanner:filterBar.categories.watched", "sections": [
+      {"key": "plex", "labelKey": "scanner:filterBar.sections.plex", "options": [
+        {"key": "plex_watched", "labelKey": "scanner:filters.watched"},
+        {"key": "plex_unwatched", "labelKey": "scanner:filters.unwatched"},
+        {"key": "plex_watchlist", "labelKey": "scanner:filters.watchlist"}]},
+      {"key": "not_watched", "labelKey": "scanner:filterBar.sections.notWatched", "hintKey": "scanner:filters.notWatchedHint", "options": [
+        {"key": "not_watched_6m", "labelKey": "scanner:filters.notWatched6m"},
+        {"key": "not_watched_12m", "labelKey": "scanner:filters.notWatched12m"},
+        {"key": "not_watched_24m", "labelKey": "scanner:filters.notWatched24m"}]},
+      {"key": "arr", "labelKey": "scanner:filterBar.sections.arr", "options": [
+        {"key": "arr_cutoff_unmet", "labelKey": "scanner:filters.arrCutoffUnmet"},
+        {"key": "arr_unmonitored", "labelKey": "scanner:filters.arrUnmonitored"}]},
+      {"key": "maintainerr", "labelKey": "scanner:filterBar.sections.maintainerr", "options": [
+        {"key": "leaving_soon", "labelKey": "scanner:filters.leavingSoon"}]}
+    ]},
+    {"key": "direct_play", "labelKey": "scanner:filterBar.categories.directPlay", "sections": [
+      {"key": "direct_play", "labelKey": "scanner:filterBar.sections.directPlay", "hintKey": "scanner:filters.directPlayHint", "options": [
+        {"key": "dp_video", "label": "Hi10P"},
+        {"key": "dp_subs", "labelKey": "scanner:filters.dpSubs"},
+        {"key": "dp_audio", "labelKey": "scanner:filters.dpAudio"},
+        {"key": "dp_container", "labelKey": "scanner:filters.dpContainer"}]}
+    ]}
+  ],
+  "hidden": [
+    {"key": "recent", "labelKey": "scanner:filters.recent"},
+    {"key": "large_files", "labelKey": "scanner:filters.sizeLarge"},
+    {"key": "low_bitrate", "labelKey": "scanner:filters.lowBitrate"},
+    {"key": "high_bitrate", "labelKey": "scanner:filters.highBitrate"}
+  ]
+}
