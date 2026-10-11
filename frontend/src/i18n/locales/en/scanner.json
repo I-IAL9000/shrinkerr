@@ -23,9 +23,7 @@
     "tree": "Tree",
     "refreshPosters": "Refresh Posters",
     "fetchingPosters": "Fetching {{resolved}}/{{total}}...",
-    "fetchingPostersProgress": "Fetching posters: {{resolved}} / {{total}}",
-    "filter": "Filter",
-    "filterActive": "Filter: {{filters}}"
+    "fetchingPostersProgress": "Fetching posters: {{resolved}} / {{total}}"
   },
   "sort": {
     "label": "Sort:",
@@ -84,7 +82,6 @@
     "detectCancelling": " (cancelling…)"
   },
   "filters": {
-    "all": "All",
     "new": "New",
     "recent": "Changed today",
     "needsConversion": "Needs conversion",
@@ -128,27 +125,8 @@
     "vmafGood": "Good (87-93)",
     "vmafPoor": "Poor (<87)",
     "vmafUncertain": "Uncertain",
-    "groups": {
-      "video": "Video:",
-      "resolution": "Res:",
-      "size": "Size:",
-      "audio": "Audio:",
-      "language": "Language:",
-      "type": "Type:",
-      "source": "Source:",
-      "container": "Container:",
-      "subtitles": "Subtitles:",
-      "health": "Health:",
-      "outcome": "Outcome:",
-      "added": "Added:",
-      "picture": "Picture:",
-      "notWatched": "Not watched in:",
-      "directPlay": "Direct play:"
-    },
     "notLabel": "not {{label}}",
-    "excluded": "(excluded)",
     "excludeHint": "Alt-click to exclude",
-    "hint": "Pills in the same group match any of them; different groups must all match. Alt-click a pill to exclude it.",
     "imageSubs": "Image subtitles",
     "interlaced": "Interlaced",
     "commentary": "Commentary",

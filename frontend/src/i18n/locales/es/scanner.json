@@ -23,9 +23,7 @@
     "tree": "Árbol",
     "refreshPosters": "Actualizar pósteres",
     "fetchingPosters": "Obteniendo {{resolved}}/{{total}}...",
-    "fetchingPostersProgress": "Obteniendo pósteres: {{resolved}} / {{total}}",
-    "filter": "Filtro",
-    "filterActive": "Filtro: {{filters}}"
+    "fetchingPostersProgress": "Obteniendo pósteres: {{resolved}} / {{total}}"
   },
   "sort": {
     "label": "Ordenar:",
@@ -89,7 +87,6 @@
     "detectCancelling": " (cancelando…)"
   },
   "filters": {
-    "all": "Todos",
     "new": "Nuevos",
     "recent": "Cambiado hoy",
     "needsConversion": "Necesita conversión",
@@ -133,27 +130,8 @@
     "vmafGood": "Bueno (87-93)",
     "vmafPoor": "Deficiente (<87)",
     "vmafUncertain": "Dudoso",
-    "groups": {
-      "video": "Vídeo:",
-      "resolution": "Res.:",
-      "size": "Tamaño:",
-      "audio": "Audio:",
-      "language": "Idioma:",
-      "type": "Tipo:",
-      "source": "Origen:",
-      "container": "Contenedor:",
-      "subtitles": "Subtítulos:",
-      "health": "Integridad:",
-      "outcome": "Resultado:",
-      "added": "Añadido:",
-      "picture": "Imagen:",
-      "notWatched": "Sin ver en:",
-      "directPlay": "Reproducción directa:"
-    },
     "notLabel": "sin {{label}}",
-    "excluded": "(excluido)",
     "excludeHint": "Alt+clic para excluir",
-    "hint": "Los filtros de un mismo grupo coinciden con cualquiera; los de grupos distintos deben cumplirse todos. Alt+clic en un filtro para excluirlo.",
     "imageSubs": "Subtítulos de imagen",
     "interlaced": "Entrelazado",
     "commentary": "Comentarios",

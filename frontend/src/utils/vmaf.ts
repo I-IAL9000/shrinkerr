@@ -1,13 +1,13 @@
 /**
  * Canonical VMAF tier table for the whole app.
  *
- * One place to edit — every component (FilterBar chips, JobListItem inline
- * score, EstimateModal test result, FileDetail history tab, DashboardPage
- * donut, EventTimeline activity entries) goes through these helpers so the
- * cuts and colours can never drift apart again.
+ * One place to edit — every component (JobListItem inline score,
+ * EstimateModal test result, FileDetail history tab, DashboardPage donut,
+ * EventTimeline activity entries) goes through these helpers so the cuts and
+ * colours can never drift apart again.
  *
- * Tiers (matches FilterBar's labels, which were the user-visible ground
- * truth before v0.3.32):
+ * Tiers (match the Scanner's VMAF filter labels, which were the user-visible
+ * ground truth before v0.3.32):
  *   - Excellent (93+)   → green  (var(--success))
  *   - Good      (87–93) → amber  (var(--warning))
  *   - Poor      (<87)   → red    (var(--danger))
