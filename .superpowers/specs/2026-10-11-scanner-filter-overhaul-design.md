@@ -152,19 +152,18 @@ New ids:
 ## Filter index
 
 - **What it is:** a materialised membership of every option.
-  - Rows (`scan_results` listed rows) are numbered 0…N-1, with a map from
-    id to position.
-  - Each fixed option and each list value is a bitset over those positions
-    (a Python `int`; `int.bit_count()` counts it).
-  - Values with very few files (most actors, folders) are kept as position
-    lists, and turned into bitsets only when selected or counted.
+  - Each fixed option and each list value is a bitset over `scan_results`
+    row ids: bit n is row n (a Python `int`; `int.bit_count()` counts it).
+    Using the ids directly needs no position map; the cost is bitsets as
+    long as the largest id rather than the row count.
+  - Values with very few files (most actors, folders) are kept as id lists,
+    and turned into bitsets only when selected or counted.
 - **Build** (background, after start-up, first time only): the same
   `scan_filters` definitions, run as one SQL pass over all rows for the
   fixed options, one pass per list facet for its values, and the existing
   Python predicates for the context filters.
 - **Persistence:** `<data>/filter-index.bin` holds the bitsets, the
-  id↔position map, the definitions version and the change sequence it
-  reflects.
+  definitions version and the change sequence it reflects.
   - At start-up it's loaded in milliseconds, then brought up to date.
   - A newer definitions version means a full rebuild.
 - **Row changes:**
@@ -172,8 +171,7 @@ New ids:
     an update that changes a filter-relevant column), and records deletes.
   - The refresher re-evaluates only changed rows — the same SQL, `WHERE id
     IN (…)` — and patches their bits.
-  - Deleted or unlisted rows have their bits cleared. New rows take new
-    positions, and positions are compacted only on a rebuild.
+  - Deleted or unlisted rows have their bits cleared.
   - A batch larger than about 20% of the library rebuilds in the
     background instead, and the previous index answers meanwhile.
 - **Context changes:**
@@ -204,8 +202,8 @@ New ids:
   then list as fast as the simple ones.
 - **Not ready yet:** counts show "counting…" and the file list still works
   through SQL.
-- **Memory:** about 20 KB per bitset at 166K rows. A few hundred bitsets
-  plus position lists come to roughly 15–30 MB.
+- **Memory:** about 20 KB per bitset per 166K row ids. A few hundred
+  bitsets plus id lists come to roughly 15–30 MB.
 
 **Performance targets** (server side, on the synthetic 166K-file library;
 then checked on a real server):
