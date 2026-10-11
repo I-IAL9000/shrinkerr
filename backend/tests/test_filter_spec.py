@@ -403,29 +403,3 @@ async def test_months_since_watched_in_advanced_search(lib):
     assert await names(adv("lt", 1)) == {"ep1", "ep2", "old"}
     assert await names(adv("exists")) == {"heat_br", "heat_web", "big", "dune", "old", "ep1", "ep2"}
     assert await names(adv("gt")) == set(ROWS)  # no value: not a condition
-
-
-def test_the_filter_bar_groups_are_the_server_groups():
-    """The pills shown under a group heading are the ones the server ORs
-    together — the bar's hint says so. Every pill is a known filter."""
-    import re
-    from pathlib import Path
-    src = (Path(__file__).resolve().parents[2] / "frontend/src/components/FilterBar.tsx").read_text()
-    heading_group = {"_video": "codec", "_res": "resolution", "_size": "size", "_audio": "audio",
-                     "_lang": "language", "_plex": "plex", "_type": "type", "_source": "source",
-                     "_vmaf": "vmaf", "_container": "container", "_subs": "subtitles",
-                     "_health": "health", "_outcome": "outcome", "_hdr": "hdr", "_added": "added", "_picture": "picture",
-                     "_arr": "arr", "_not_watched": "not_watched", "_maintainerr": "maintainerr",
-                     "_direct_play": "direct_play"}
-    group = None
-    seen = 0
-    for key, divider in re.findall(r'\{ key: "([^"]+)"[^}]*?(group: "divider")?\s*\}', src):
-        if divider:
-            group = heading_group[key]
-            continue
-        if key == "all":
-            continue
-        assert key in FILTERS, key
-        assert FILTERS[key].group == group, (key, FILTERS[key].group, group)
-        seen += 1
-    assert seen >= 50

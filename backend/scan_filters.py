@@ -411,29 +411,35 @@ _NEEDS_TIMED = "needs_conversion != 0 AND duration > 0"
 FILTERS_VERSION = 1
 
 _FILTER_LIST = [
-    # Status: each its own group, so combining them narrows.
-    Filter("new", sql="new_detected_at > ?", params=_new_cutoff, inputs=("time",)),
+    # Status. Each section of the filter bar is one group (v0.10.0): ticking
+    # more in a section shows more; different sections narrow.
+    Filter("new", "added", sql="new_detected_at > ?", params=_new_cutoff, inputs=("time",)),
     Filter("recent", sql="file_mtime > ?", params=_recent_cutoff, inputs=("time",)),
-    Filter("needs_conversion", pre_sql=_NEEDS, inputs=("ignored", "rules", "plex"),
+    Filter("needs_conversion", "queue", pre_sql=_NEEDS, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_low_bitrate(r) and not row_ignored(r, c)),
     Filter("low_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: row_low_bitrate(r) and not row_ignored(r, c)),
     Filter("high_bitrate", pre_sql=_NEEDS_TIMED, inputs=("ignored", "rules", "plex"),
            py=lambda r, c: bool(r.get("needs_conversion")) and not row_ignored(r, c) and row_bitrate(r) > HIGH_BITRATE),
-    Filter("bloated", sql=f"{_HAS_BPP} AND {_BPP} > (CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 0.15 ELSE 0.25 END)"),
+    Filter("bloated", "bitrate", sql=f"{_HAS_BPP} AND {_BPP} > (CASE WHEN {_HEVC} OR {_AV1} OR {_VP9} THEN 0.15 ELSE 0.25 END)"),
+    # Bitrate tiers (v0.10.0): the file's overall bitrate, whatever its codec.
+    Filter("bitrate_low", "bitrate", sql=f"duration > 0 AND file_size * 8.0 / duration < {LOW_BITRATE}"),
+    Filter("bitrate_medium", "bitrate",
+           sql=f"duration > 0 AND file_size * 8.0 / duration BETWEEN {LOW_BITRATE} AND {HIGH_BITRATE}"),
+    Filter("bitrate_high", "bitrate", sql=f"duration > 0 AND file_size * 8.0 / duration > {HIGH_BITRATE}"),
     # Ignore means "don't convert", not "don't tidy tracks / don't say the
     # audio is untagged" (v0.9.26, v0.9.31): these include ignored titles.
     Filter("sub_cleanup", sql="COALESCE(has_removable_subs_flag, 0) = 1"),
-    Filter("unknown_language", sql="COALESCE(has_und_tracks_flag, 0) = 1"),
-    Filter("disc_iso", sql="disc_type IS NOT NULL"),
-    Filter("ignored", py=lambda r, c: row_ignored(r, c), inputs=("ignored", "rules", "plex")),
-    Filter("duplicates", sql="COALESCE(dup_count, 0) > 1"),
-    Filter("corrupt", sql="(COALESCE(probe_status, 'ok') != 'ok' OR COALESCE(health_status, '') = 'corrupt')"),
-    Filter("converted", py=row_converted, inputs=("jobs",)),
-    Filter("queued", py=lambda r, c: r["file_path"] in c["queued_paths"], inputs=("jobs",)),
-    Filter("extras", sql=_EXTRAS),
+    Filter("unknown_language", "language", sql="COALESCE(has_und_tracks_flag, 0) = 1"),
+    Filter("disc_iso", "file", sql="disc_type IS NOT NULL"),
+    Filter("ignored", "queue", py=lambda r, c: row_ignored(r, c), inputs=("ignored", "rules", "plex")),
+    Filter("duplicates", "file", sql="COALESCE(dup_count, 0) > 1"),
+    Filter("corrupt", "health", sql="(COALESCE(probe_status, 'ok') != 'ok' OR COALESCE(health_status, '') = 'corrupt')"),
+    Filter("converted", "queue", py=row_converted, inputs=("jobs",)),
+    Filter("queued", "queue", py=lambda r, c: r["file_path"] in c["queued_paths"], inputs=("jobs",)),
+    Filter("extras", "file", sql=_EXTRAS),
     # Still hardlinked elsewhere (seeding): converting frees nothing (v0.10.0)
-    Filter("hardlinked", sql="COALESCE(link_count, 1) > 1"),
+    Filter("hardlinked", "file", sql="COALESCE(link_count, 1) > 1"),
     # Added: found by the watcher or written in the last 7 / 30 / 90 days
     *(Filter(f"added_{n}d", "added", sql="(new_detected_at > ? OR file_mtime > ?)", params=_added_within(n),
              inputs=("time",))
