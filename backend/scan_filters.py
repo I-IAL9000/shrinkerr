@@ -412,7 +412,9 @@ FILTERS_VERSION = 1
 
 _FILTER_LIST = [
     # Status. Each section of the filter bar is one group (v0.10.0): ticking
-    # more in a section shows more; different sections narrow.
+    # more in a section shows more; different sections narrow. `recent`,
+    # `low_bitrate` and `high_bitrate` are older ids, no longer shown, that
+    # keep their own groups.
     Filter("new", "added", sql="new_detected_at > ?", params=_new_cutoff, inputs=("time",)),
     Filter("recent", sql="file_mtime > ?", params=_recent_cutoff, inputs=("time",)),
     Filter("needs_conversion", "queue", pre_sql=_NEEDS, inputs=("ignored", "rules", "plex"),

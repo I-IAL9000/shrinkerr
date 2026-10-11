@@ -1,7 +1,7 @@
 """Phase 2 of the filter overhaul: each section of the new filter bar is one
 server group, so ticking more in a section shows more (Queue, Health,
-Bitrate, Language, Added and File options used to narrow each other); and
-the bitrate tiers."""
+Language, Added and File options used to narrow each other), while different
+sections still narrow; and the new bitrate tiers."""
 import aiosqlite
 import pytest
 import pytest_asyncio
@@ -47,12 +47,27 @@ async def test_ticking_more_in_a_section_shows_more(library):
 
 
 @pytest.mark.asyncio
+async def test_different_sections_still_narrow(library):
+    narrowed = 0
+    for text in ("needs_conversion,corrupt", "bitrate_low,res_sd", "queued,new", "needs_conversion,res_1080p"):
+        first, second = text.split(",")
+        both = await paths(text)
+        assert both == await paths(first) & await paths(second), text
+        assert both < await paths(first) | await paths(second), text  # not "either"
+        narrowed += bool(both)
+    assert narrowed >= 2  # the library has files in both of some pairs
+
+
+@pytest.mark.asyncio
 async def test_the_bitrate_tiers(library):
     async with aiosqlite.connect(library) as db:
         # Files exactly on the two boundaries (bitrate = size in bytes at 8 s): Medium includes both.
         for name, bits in (("at_low", LOW_BITRATE), ("at_high", HIGH_BITRATE)):
             await db.execute("INSERT INTO scan_results (file_path, file_size, duration, scan_timestamp) "
                              "VALUES (?, ?, 8, '2026-01-01T00:00:00+00:00')", (f"/demo/{name}.mkv", bits))
+        # No duration, no bitrate: in no tier.
+        await db.execute("INSERT INTO scan_results (file_path, file_size, duration, scan_timestamp) "
+                         "VALUES ('/demo/no_duration.mkv', 9000000, 0, '2026-01-01T00:00:00+00:00')")
         await db.commit()
         async with db.execute("SELECT file_path, file_size * 8.0 / duration FROM scan_results "
                               "WHERE removed_from_list = 0 AND duration > 0") as cur:
@@ -63,5 +78,6 @@ async def test_the_bitrate_tiers(library):
     assert high == {p for p, r in rates.items() if r > HIGH_BITRATE}
     assert low and medium and high  # the test library has each
     assert {"/demo/at_low.mkv", "/demo/at_high.mkv"} <= medium
+    assert "/demo/no_duration.mkv" not in low | medium | high
     # Needs conversion + High is what the older High bitrate pill showed.
     assert await paths("needs_conversion,bitrate_high") == await paths("high_bitrate")

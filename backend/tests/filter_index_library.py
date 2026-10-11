@@ -25,7 +25,8 @@ EXPRESSIONS = [
     "x264", "x264,x265", "x264,res_1080p", "needs_conversion,!ignored", "!x264", "queued",
     "plex_watched,type_tv", "hdr_dv,hdr_hdr10,!res_sd", "audio_cleanup,sub_cleanup",
     "not_watched_6m,leaving_soon", "converted,!vmaf_poor", "failed_before", "missing_language,dubbed",
-    "!ignored,!corrupt", _ADV_ALL, f"{_ADV_ALL},x265", f"{_ADV_ANY},!x264",
+    "!ignored,!corrupt", "needs_conversion,queued", "corrupt,health_never", "bitrate_low,!bloated",
+    "new,added_7d,res_1080p", _ADV_ALL, f"{_ADV_ALL},x265", f"{_ADV_ANY},!x264",
     _ADV_TITLE,
 ]
 
