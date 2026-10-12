@@ -9,7 +9,7 @@ import AdvancedSearchModal from "../components/AdvancedSearchModal";
 import ViewsMenu from "../components/ViewsMenu";
 import { decodeAdvanced } from "../advancedSearch";
 import FilterBar from "../components/FilterBar";
-import { CATEGORIES, selectedIn, toggleFilter } from "../filterCatalog";
+import { CATEGORIES, normalizeFilters, selectedIn, toggleFilter } from "../filterCatalog";
 import FileTree from "../components/FileTree";
 import PosterGrid, { groupFolders, sortGroups } from "../components/PosterGrid";
 import type { FolderInfo } from "../components/FileTree";
@@ -80,7 +80,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   const [filters, setFilters] = useState<string[]>(() => {
     const fromUrl = new URLSearchParams(location.search).get("filter");
     if (fromUrl !== null) {
-      const list = fromUrl.split(",").map(f => f.trim()).filter(Boolean);
+      const list = normalizeFilters(fromUrl.split(",").map(f => f.trim()).filter(Boolean));
       return list.length > 0 ? list : ["all"];
     }
     try {
@@ -88,7 +88,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.every((f: unknown) => typeof f === "string")) {
-          return parsed.length > 0 ? (parsed as string[]) : ["all"];
+          return parsed.length > 0 ? normalizeFilters(parsed as string[]) : ["all"];
         }
       }
     } catch { /* localStorage may throw (Safari private mode) — fall through */ }
@@ -109,7 +109,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   useEffect(() => {
     const fromUrl = new URLSearchParams(location.search).get("filter");
     if (fromUrl === null) return;
-    const list = fromUrl.split(",").map(f => f.trim()).filter(Boolean);
+    const list = normalizeFilters(fromUrl.split(",").map(f => f.trim()).filter(Boolean));
     const next = list.length > 0 ? list : ["all"];
     if (next.join(",") !== filters.join(",")) setFilters(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -168,8 +168,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts({ filter, counts: r.counts }))
-        // Failed: stop "Counting…" (the total falls back to the tree's).
-        .catch(() => { if (!ctrl.signal.aborted) setFacetCounts({ filter, counts: {} }); });
+        // Failed: stop "Counting…" (the total falls back to the tree's), but
+        // keep this filter's counts from before (a refresh during a scan).
+        .catch(() => {
+          if (!ctrl.signal.aborted) setFacetCounts(prev => (prev?.filter === filter ? prev : { filter, counts: {} }));
+        });
     }, 200);
     return () => { clearTimeout(timer); ctrl.abort(); };
   }, [filter, serverStats]);
@@ -1328,7 +1331,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
           </span>
         )}
       </button>
-      <ViewsMenu filter={filter} onApply={(f) => setFilters(f.split(",").map(x => x.trim()).filter(Boolean))} />
+      <ViewsMenu filter={filter} onApply={(f) => setFilters(normalizeFilters(f.split(",").map(x => x.trim()).filter(Boolean)))} />
       <span style={{ width: 1, height: 16, background: "var(--border)" }} />
       {/* U7 (v0.10.0): below 1100 px the sort pills become a dropdown —
           they wrapped the toolbar onto extra lines. */}

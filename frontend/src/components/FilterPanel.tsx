@@ -22,6 +22,7 @@ const FOCUSABLE = "input:not(:disabled), button:not(:disabled)";
 export default function FilterPanel({ category, active, counts, lastCounts, onToggle, onClose }: FilterPanelProps) {
   const { t } = useTranslation(["scanner"]);
   const ref = useRef<HTMLDivElement>(null);
+  const fitRef = useRef<() => void>(() => {});
   const id = useId();
 
   useLayoutEffect(() => {
@@ -30,9 +31,10 @@ export default function FilterPanel({ category, active, counts, lastCounts, onTo
     // Keep it inside the bar: a category near the end of the bar would open
     // past its right edge, so shift it left, but never past the bar's left
     // edge; and no wider than the bar (a three-column panel is, beside the
-    // sidebar in a small window). On phones it spans the bar: nothing is set.
+    // sidebar in a small window). On phones it spans the row of buttons.
+    let opened: number | null = null;  // phones: where it opened, below the row's top
     const fit = () => {
-      panel.style.left = panel.style.maxWidth = "";
+      panel.style.left = panel.style.maxWidth = panel.style.top = "";
       const bar = panel.closest(".filter-bar")?.getBoundingClientRect();
       if (!bar) return;
       if (panel.getBoundingClientRect().width > bar.width + 0.5) panel.style.maxWidth = `${bar.width}px`;
@@ -40,7 +42,16 @@ export default function FilterPanel({ category, active, counts, lastCounts, onTo
       const over = rect.right - bar.right;
       const room = rect.left - bar.left;
       if (over > 0.5 && room > 0.5) panel.style.left = `${-Math.min(over, room)}px`;
+      // Phones: the row re-wraps as a ticked category's summary and the
+      // counts change, and moved the panel under the finger. It stays where
+      // it opened, over the row's last line if the row grew.
+      // (The offset in the row, not the screen: the page scrolls inside.)
+      if (panel.parentElement && getComputedStyle(panel.parentElement).position === "static") {
+        if (opened === null) opened = panel.offsetTop;
+        else if (Math.abs(panel.offsetTop - opened) > 0.5) panel.style.top = `${opened}px`;
+      }
     };
+    fitRef.current = fit;
     fit();
     // On a phone the bar is tall and the panel opens below the fold.
     panel.scrollIntoView({ block: "nearest" });
@@ -49,15 +60,21 @@ export default function FilterPanel({ category, active, counts, lastCounts, onTo
     (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus({ preventScroll: true });
     // Again when the bar's layout changes under it (it re-wraps as counts
     // change), not only when the window does.
-    window.addEventListener("resize", fit);
+    const resized = () => { opened = null; fit(); };  // a turned phone: open it afresh
+    window.addEventListener("resize", resized);
     const row = panel.closest(".filter-bar")?.querySelector(".filter-bar-row");
     const watch = row && typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
     if (row) watch?.observe(row);
     return () => {
-      window.removeEventListener("resize", fit);
+      window.removeEventListener("resize", resized);
       watch?.disconnect();
     };
   }, []);
+
+  // After each render too: a tick changes its category's summary and the
+  // counts, which re-wrap the row (before the paint; the observer above
+  // waits for a frame, which a hidden page never draws).
+  useLayoutEffect(() => fitRef.current());
 
   // Untick an option whose count then drops to 0 and it's disabled under the
   // focus, which falls to the page: keep it in the panel.

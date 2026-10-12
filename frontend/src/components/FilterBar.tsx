@@ -45,6 +45,12 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   const matchingText = matching == null
     ? t("scanner:filterBar.counting")
     : t("scanner:filterBar.matching", { count: matching, n: shortCount(matching) });
+  const counting = active.length > 0 && matching == null;
+  // Said once per filter: during a scan the total changes every few seconds.
+  const filterKey = active.join(",");
+  const announced = useRef({ key: "", text: "" });
+  if (!active.length) announced.current = { key: "", text: "" };
+  else if (!counting && announced.current.key !== filterKey) announced.current = { key: filterKey, text: matchingText };
 
   const firstPill = () => barRef.current?.querySelector<HTMLButtonElement>(".filter-bar-row button:not(:disabled)");
 
@@ -52,7 +58,6 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   // × (or Clear all) had it. In an effect, not a frame callback, which a
   // hidden or throttled page never runs.
   const pendingFocus = useRef<(() => HTMLElement | null | undefined) | null>(null);
-  const counting = active.length > 0 && matching == null;
   useEffect(() => {
     const target = pendingFocus.current;
     if (!target) return;
@@ -137,10 +142,16 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
               aria-pressed={included || excluded} disabled={empty}
               title={t("scanner:filters.excludeHint")}
               onClick={e => {
-                // Turned off, it may grey out (no files) under the focus.
+                // Turned off, it may grey out (no files) under the focus —
+                // unless the focus has moved on meanwhile (typing a search).
                 const pill = e.currentTarget;
-                pendingFocus.current = () => (pill.disabled ? firstPill() : null);
-                onToggle(key, e.altKey);
+                pendingFocus.current = () => {
+                  const here = document.activeElement;
+                  return pill.disabled && (here === pill || here === document.body || !here) ? firstPill() : null;
+                };
+                // Pressed, excluded or not: a click turns it off.
+                if (excluded && !e.altKey) onRemove("!" + key);
+                else onToggle(key, e.altKey);
               }}>
               <span className="filter-pill-label">{optionLabel(key, t)}</span>
               {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
@@ -155,7 +166,7 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
       </div>
       {/* Mounted before the chips appear, so the first total is announced too;
           empty while counting, so each click is announced once. */}
-      <span className="sr-only" aria-live="polite">{active.length > 0 && !counting ? matchingText : ""}</span>
+      <span className="sr-only" aria-live="polite">{announced.current.key === filterKey ? announced.current.text : ""}</span>
       {active.length > 0 && (
         <div className="filter-chips">
           {active.map((token, index) => {

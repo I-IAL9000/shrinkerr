@@ -493,10 +493,13 @@ body {
 .filter-option-exclude[aria-pressed="true"] { color: var(--danger); }
 .filter-option-exclude:disabled { opacity: 0.3; cursor: default; }
 .filter-panel-rule { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
-/* Phones: a panel spans the bar (.filter-bar is the positioned parent), and
-   the small × and ⊘ buttons get a finger-sized target. */
+/* Phones: a panel spans the row of buttons (its positioned parent; not the
+   whole bar, where the chips appearing below the row pushed an open panel
+   down under the finger), and the small × and ⊘ buttons get a finger-sized
+   target. */
 @media (max-width: 600px) {
   .filter-category { position: static; }
+  .filter-bar-row { position: relative; }
   .filter-panel { left: 0; right: 0; width: auto; }
   .filter-option-exclude, .filter-chip-remove { min-width: 28px; min-height: 28px; }
 }

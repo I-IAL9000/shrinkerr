@@ -25,6 +25,20 @@ for (const category of CATEGORIES) {
 }
 for (const option of catalog.hidden as FilterOption[]) PLACES.set(option.key, { option });
 
+// Older names of the same filter (identical on the server): read as the new
+// one, so it widens with its section and its chip says where it is.
+const ALIASES: Record<string, string> = { large_files: "size_large" };
+
+/** Filter tokens from an address, a saved view or an older version. */
+export function normalizeFilters(tokens: string[]): string[] {
+  const out = tokens.map(token => {
+    const excluded = token.startsWith("!");
+    const key = excluded ? token.slice(1) : token;
+    return key in ALIASES ? (excluded ? "!" : "") + ALIASES[key] : token;
+  });
+  return [...new Set(out)];
+}
+
 /** An option's label; an unknown id (an old bookmark) as itself. */
 export function optionLabel(key: string, t: T): string {
   const option = PLACES.get(key)?.option;

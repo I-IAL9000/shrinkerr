@@ -44,6 +44,14 @@ def test_each_section_is_one_server_group():
         assert (f.group or f"_{f.id}") == section["key"], (section["key"], option["key"])
 
 
+def test_no_hidden_filter_shares_a_sections_group():
+    # it would widen with that section, while its chip doesn't say where it is
+    sections = {section["key"] for category in CATALOG["categories"] for section in category["sections"]}
+    for hidden in CATALOG["hidden"]:
+        f = FILTERS[hidden["key"]]
+        assert (f.group or f"_{f.id}") not in sections, hidden["key"]
+
+
 def test_every_filter_is_shown_once_or_hidden():
     shown = [option["key"] for _, _, option in _options()]
     hidden = [h["key"] for h in CATALOG["hidden"]]
