@@ -80,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DVD (VobSub) subtitles are read on the standard image too, and non-Latin Blu-ray subtitles (Chinese, Japanese, Korean, Russian, Arabic) are recognised.
 - Request replacement refuses when Radarr would delete a different file than the one you picked.
 - Advanced Search: "Matches regex" is a real regular expression, "Filename" searches the name only, and "audio codec is not X" means no track is X.
+- Advanced Search: a yes / no condition saved without a value (the form showed "Yes") means "Yes". An "HDR" view saved that way listed every file without HDR.
 - A changed list of audio languages reaches new scans without a restart.
 - Moving the original-language audio first counts as queued work, so a discarded larger encode no longer loses it.
 - Filter counts match their lists everywhere: the tree, the lists, Add to Queue, estimates and health checks.

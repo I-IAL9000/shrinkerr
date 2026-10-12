@@ -898,7 +898,10 @@ def _num(value):
 
 
 def _truthy(value) -> bool:
-    return value is True or str(value).lower() in ("true", "1", "yes")
+    """A yes / no condition's value. No value (None, "") is "Yes", as the
+    form shows it: a view saved in the browser without one listed the "No"
+    files."""
+    return value is None or value is True or str(value).strip().lower() in ("", "true", "1", "yes")
 
 
 def escape_like(text: str) -> str:

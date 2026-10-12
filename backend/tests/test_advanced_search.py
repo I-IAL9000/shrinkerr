@@ -86,6 +86,18 @@ async def test_hdr_from_the_probe_or_the_name(lib):
 
 
 @pytest.mark.asyncio
+async def test_a_yes_no_condition_without_a_value_is_yes(lib):
+    """The form shows "Yes" for a yes / no condition without a value; it
+    meant "No", so a view named HDR, moved from the browser with no value,
+    listed every file without HDR (160K of 162K)."""
+    hdr = {"ep1", "corrupt", "web_in_br"}
+    for blank in ("", None):
+        assert await names(adv(("hdr", "eq", blank))) == hdr
+        assert await names(adv(("has_lossless_audio", "eq", blank))) == {"dune"}
+    assert await names(adv(("hdr", "eq", "false"))) == set(ROWS) - hdr
+
+
+@pytest.mark.asyncio
 async def test_all_any_and_with_the_pills(lib):
     any_ = adv(("video_codec", "eq", "av1"), ("media_type", "eq", "tv"), match="any")  # SQL + Python in one group
     assert await names(any_) == {"corrupt", "ep1", "ep2"}

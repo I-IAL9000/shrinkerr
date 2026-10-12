@@ -122,7 +122,9 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
     if (prop.type === "bool") {
       return (
         <select aria-label={t("common:labels.value")}
-          value={String(pred.value ?? "true")}
+          // As the server reads it (_truthy): no value is "Yes".
+          value={pred.value == null || pred.value === true
+            || ["", "true", "1", "yes"].includes(String(pred.value).trim().toLowerCase()) ? "true" : "false"}
           onChange={e => updatePred(i, { value: e.target.value === "true" })}
           style={selectStyle}
         >
