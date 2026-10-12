@@ -36,10 +36,10 @@ def test_channel_and_rating_bands():
 def test_tokens_quote_their_value():
     assert facet_token("network", "Paramount+, HD") == "network:" + quote("Paramount+, HD", safe="")
     assert set(FACETS) == {"alang", "slang", "acodec", "achan", "genre", "year", "rating", "country",
-                           "network", "showstatus", "library", "folder"}
+                           "network", "showstatus", "library"}
     # Exactly as the browser's encodeURIComponent, so both build the same token.
-    assert facet_token("folder", "/m/Films/Heat (1995) [tt0113277]") == \
-        "folder:%2Fm%2FFilms%2FHeat%20(1995)%20%5Btt0113277%5D"
+    assert facet_token("network", "/m/Films/Heat (1995) [tt0113277]") == \
+        "network:%2Fm%2FFilms%2FHeat%20(1995)%20%5Btt0113277%5D"
     assert facet_token("network", "!~*()'-_. é") == "network:!~*()'-_.%20%C3%A9"
 
 
@@ -159,12 +159,10 @@ async def test_title_lists(library):
 
 
 @pytest.mark.asyncio
-async def test_library_and_folder(library):
+async def test_media_folders(library):
     db, dirs = library
     assert await matching(db, f"library:{dirs['/m/TV']}") == ["The Wire S01E01.mkv"]
     assert await matching(db, f"library:{dirs['/m']}") == ["Home Video.mkv"]  # the most specific folder wins
-    assert await matching(db, facet_token("folder", "/m/Other, Stuff")) == ["Home Video.mkv"]  # a comma in it
-    assert await matching(db, facet_token("folder", "/m/Films/Heat (1995) [tt0113277]")) == ["Heat.mkv"]
 
 
 @pytest.mark.asyncio
@@ -179,11 +177,11 @@ async def test_sql_counts_take_list_values(library):
     """The SQL engine's counts (/api/scan/filter-counts while the filter index
     builds) with list values in the filter: their ids aren't SQL names."""
     from backend.routes.scan import _build_enrichment_context
-    db_path, _ = library
+    db_path, dirs = library
     adv_any = encode_advanced([{"property": "audio_codec", "op": "eq", "value": "ac3"},
                                {"property": "genre", "op": "eq", "value": "comedy"}], "any")  # SQL or Python
     for text, n in (("alang:fre", 2), ("achan:6", 1), ("!acodec:ac3", 3),
-                    (facet_token("folder", "/m/Other, Stuff"), 1), ("!genre:drama", 3),
+                    (f"library:{dirs['/m']}", 1), ("!genre:drama", 3),
                     (f"alang:fre,!genre:comedy,{adv_any}", 1)):
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row

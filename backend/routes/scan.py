@@ -2349,13 +2349,14 @@ async def _get_converted_folders(db) -> set[str]:
 
 
 async def _library_labels() -> dict[str, str]:
-    """Media folder id -> its label (else its path), for the Library list;
-    none on an error (the list shows the ids rather than no answer)."""
+    """Media folder id -> its path, for the Media folder list (several can
+    share a label: "TV Shows"); none on an error (the list shows the ids
+    rather than no answer)."""
     try:
         db = await connect_db()
         try:
-            async with db.execute("SELECT id, path, label FROM media_dirs") as cur:
-                return {str(i): (label or path) for i, path, label in await cur.fetchall()}
+            async with db.execute("SELECT id, path FROM media_dirs") as cur:
+                return {str(i): path for i, path in await cur.fetchall()}
         finally:
             await db.close()
     except Exception as exc:
@@ -2402,19 +2403,14 @@ async def get_filter_counts(filter: str = "all", facets_only: bool = False):
 
 
 @router.get("/facet-values")
-async def get_facet_values(facet: str, filter: str = "all", q: str = ""):
-    """One list's values under the active filter, the most first: every
-    value of an indexed list ("Show all", the search box), or the title
-    folders whose name contains `q`. "values": None until the filter index
-    is ready."""
+async def get_facet_values(facet: str, filter: str = "all"):
+    """One list's values under the active filter, the most first ("Show
+    all", the search box). "values": None until the filter index is ready."""
     from backend.filter_index import service as filter_index
     from backend.scan_filters import FACETS
     if facet not in FACETS:
         raise ApiError(404, "No such list.", code="scan.noSuchList")
     expr = parse_filter(filter)
-    if facet == "folder":
-        hits = await filter_index.folder_values(expr, q)
-        return {"values": None if hits is None else [{"value": f, "count": n} for f, n in hits]}
     result = await filter_index.answer(expr, facet=facet, top=None)
     if result is None:
         return {"values": None}

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from backend.filter_index.bits import from_ids, ids_of
-from backend.scan_filters import (FACETS_VERSION, FILTERS_VERSION, INDEXED_FACETS, LISTED, PY_COLUMNS, _FILTER_LIST,
+from backend.scan_filters import (FACETS_VERSION, FILTERS_VERSION, _FACET_LIST, LISTED, PY_COLUMNS, _FILTER_LIST,
                                   Filter, _group_key)
 
 TOP_VALUES = 50  # a list's values in the counts response
@@ -24,7 +24,7 @@ def definitions_version() -> str:
     other definitions is rebuilt."""
     text = repr([FILTERS_VERSION, FACETS_VERSION, LISTED, PY_COLUMNS]
                 + [(f.id, f.group, f.sql, f.pre_sql, f.py is not None, f.inputs) for f in _FILTER_LIST]
-                + [(f.key, f.pairs_sql, f.values is not None, f.inputs) for f in INDEXED_FACETS])
+                + [(f.key, f.pairs_sql, f.values is not None, f.inputs) for f in _FACET_LIST])
     return hashlib.sha1(text.encode()).hexdigest()[:16]
 
 
@@ -146,7 +146,7 @@ class FilterIndex:
                 skip = frozenset(n for n in (group_at.get(key), excluded_at.get(fid)) if n is not None)
                 by_facet[key].append((value, (base(skip) & bits).bit_count()))
         out = {}
-        for key in [f.key for f in INDEXED_FACETS if facet is None or f.key == facet]:
+        for key in [f.key for f in _FACET_LIST if facet is None or f.key == facet]:
             rows = sorted(by_facet.get(key, []), key=lambda vc: (-vc[1], vc[0]))
             kept = [vc for vc in (rows if top is None else rows[:top]) if vc[1] > 0]
             have = {v for v, _ in kept}

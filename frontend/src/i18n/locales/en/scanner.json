@@ -189,8 +189,7 @@
       "country": "Country",
       "network": "Network",
       "showStatus": "Show status",
-      "library": "Library",
-      "folder": "Folder",
+      "library": "Media folder",
       "type": "Type",
       "source": "Source",
       "added": "Added",
@@ -243,11 +242,9 @@
       "pilot": "Pilot"
     },
     "searchIn": "Search {{section}}…",
-    "searchFolders": "Search folders…",
     "showAll": "Show all",
     "showFewer": "Show fewer",
     "noMatches": "No matches",
-    "searching": "Searching…",
     "none": "None"
   },
   "stats": {

@@ -683,7 +683,6 @@ class Facet:
     values: Optional[Callable[[dict, dict], Iterable[str]]] = None
     inputs: tuple[str, ...] = ()
     titles: bool = False  # values() reads title metadata (ctx["title_meta"])
-    indexed: bool = True  # False: searched, not kept in the filter index (folders)
     # The filter index reads lists of one track column in one pass (it reads
     # every row's tracks once, not once per list): (column, "text", field) is
     # pairs_sql's per-track _track_text(field); (column, "max", field) its
@@ -734,11 +733,6 @@ def _achan_cond(value: str) -> tuple[str, tuple]:
     return f"COALESCE({_MAX_CHANNELS}, 0) BETWEEN ? AND ?", (lo, hi)
 
 
-def _folder_cond(value: str) -> tuple[str, tuple]:
-    prefix = value.rstrip("/") + "/"
-    return "substr(file_path, 1, ?) = ?", (len(prefix), prefix)
-
-
 def _year_values(row: dict, ctx: dict) -> list[str]:
     year = row_title(row, ctx)["year"]
     return [f"{year // 10 * 10}s", str(year)] if year else []
@@ -771,10 +765,8 @@ _FACET_LIST = [
     Facet("showstatus", values=lambda r, c: [s for s in [row_title(r, c)["status"]] if s],
           inputs=_TITLE_INPUTS, titles=True),
     Facet("library", values=_library_values, inputs=("media_dirs",)),
-    Facet("folder", cond=_folder_cond, indexed=False),
 ]
 FACETS: dict[str, Facet] = {f.key: f for f in _FACET_LIST}
-INDEXED_FACETS: list[Facet] = [f for f in _FACET_LIST if f.indexed]
 
 
 _URI_SAFE = "!'()*"  # what encodeURIComponent keeps besides letters, digits and "-_.~" (quote's own)

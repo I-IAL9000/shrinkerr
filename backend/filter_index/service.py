@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import asyncio
-import bisect
 import contextlib
 import os
 import time
@@ -28,10 +27,10 @@ import uuid
 from typing import Optional
 
 from backend import database
-from backend.filter_index.bits import from_ids, ids_of
+from backend.filter_index.bits import from_ids
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import TOP_VALUES, FilterIndex, definitions_version
-from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, LISTED, Filter, FilterExpr, _group_key, title_folder
+from backend.scan_filters import _FILTER_LIST, _FACET_LIST, Filter, FilterExpr, _group_key
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
 REFRESH_EVERY = 10   # the background loop's pace
@@ -46,8 +45,7 @@ ADHOC_MAX = 64       # Advanced Search conditions kept; more, and they're forgot
 # writes it several times a second, and each change evaluates the six
 # Title lists over the whole library again (~2 s at 180K files).
 TITLES_REFRESH = 60
-FOLDERS_REFRESH = 60  # the folder search reads the paths again at most this often (a scan changes rows all the time)
-_LISTS = frozenset(f.key for f in INDEXED_FACETS)  # the indexed lists: a value of one is a filter's group
+_LISTS = frozenset(f.key for f in _FACET_LIST)  # the indexed lists: a value of one is a filter's group
 
 
 class _State:
@@ -61,9 +59,6 @@ class _State:
         self.ctx: Optional[dict] = None
         self.adhoc: dict = {}  # Advanced Search conditions' rows, until the index changes
         self.titles_at = 0.0  # when a change of title metadata was last applied (time.time)
-        # The folder search's (when read, the index's seq then, title folder -> its listed ids, the folders sorted).
-        self.folders: Optional[tuple[float, int, dict[str, list[int]], list[str]]] = None
-        self.folders_lock = asyncio.Lock()  # one search reads them at a time
         self.stale = False    # a rebuild must replace it (refresh decided so)
         self.foreign = False  # and it describes other rows (a restored backup, another database)
         self.refresh_failures = 0  # in a row
@@ -148,7 +143,7 @@ async def build() -> FilterIndex:
         seq, counters = await _snapshot(db)  # before evaluating: later changes are applied after
         started = time.time()
         ctx = await _context(db, counters, fresh=True)
-        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, facets=INDEXED_FACETS)
+        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, facets=_FACET_LIST)
     finally:
         await db.close()
     # ~0.5 s for 166K files: off the event loop.
@@ -179,7 +174,6 @@ def _start_rebuild() -> None:
         async with _state.lock:
             _state.index, _state.dirty, _state.stale, _state.foreign = index, True, False, False
             _state.backoff, _state.refresh_failures, _state.adhoc = 0.0, 0, {}
-            _state.folders = None  # its seq can be the old one's (another database)
         print(f"[FILTERS] Filter index built in {time.perf_counter() - started:.1f}s", flush=True)
         try:  # the Scanner fetches its counts again
             from backend.websocket import ws_manager
@@ -250,11 +244,11 @@ async def _apply_changes(index: FilterIndex) -> None:
             _start_rebuild()
             return
         dirty = [f for f in _FILTER_LIST if set(f.inputs) & moved]
-        dirty_facets = [f for f in INDEXED_FACETS if set(f.inputs) & moved]
+        dirty_facets = [f for f in _FACET_LIST if set(f.inputs) & moved]
         need_ctx = changed or any(f.py for f in dirty) or any(f.values for f in dirty_facets)
         ctx = await _context(db, counters) if need_ctx else None
         if changed:
-            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed, facets=INDEXED_FACETS)
+            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed, facets=_FACET_LIST)
             index.patch(changed, alive, members, savings)
         if dirty or dirty_facets:
             _, members, _ = await evaluate(db, dirty, ctx, facets=dirty_facets)
@@ -324,7 +318,7 @@ async def _adhoc_bits(f: Filter) -> int:
 
 async def _adhoc_for(expr: FilterExpr, index: FilterIndex) -> dict[str, int]:
     """The rows of `expr`'s filters the index doesn't keep (Advanced Search
-    conditions, folders), evaluated now — outside the lock: a refresh
+    conditions), evaluated now — outside the lock: a refresh
     shouldn't wait on a Python condition. Never an indexed list's value:
     one the index hasn't has no rows (_constraints)."""
     adhoc: dict[str, int] = {}
@@ -377,80 +371,6 @@ async def counts(expr: FilterExpr) -> Optional[dict[str, int]]:
     """The pills' counts under `expr` (answer()'s first half)."""
     result = await answer(expr)
     return result[0] if result else None
-
-
-async def _folder_rows(index: FilterIndex) -> tuple[dict[str, list[int]], list[str]]:
-    """Title folder -> its listed ids, and the folders sorted. Read again
-    once rows changed, at most every FOLDERS_REFRESH seconds (a file a scan
-    adds is found a minute later at most), by one search at a time."""
-    async with _state.folders_lock:
-        now = time.time()
-        cached = _state.folders
-        if cached is not None and (cached[1] == index.seq or 0 <= now - cached[0] < FOLDERS_REFRESH):
-            return cached[2], cached[3]
-        db = await database.connect_db()
-        try:
-            async with db.execute(f"SELECT id, file_path FROM scan_results WHERE {LISTED}") as cur:
-                pairs = await cur.fetchall()
-        finally:
-            await db.close()
-
-        def by_folder() -> tuple[dict[str, list[int]], list[str]]:
-            rows: dict[str, list[int]] = {}
-            for row_id, fp in pairs:
-                rows.setdefault(title_folder(fp), []).append(row_id)
-            return rows, sorted(rows)
-        rows, folders = await asyncio.to_thread(by_folder)
-        _state.folders = (now, index.seq, rows, folders)
-        return rows, folders
-
-
-async def folder_values(expr: FilterExpr, q: str, limit: int = 50) -> Optional[list[tuple[str, int]]]:
-    """Title folders whose path contains `q` (any case), with how many files
-    each would list under `expr` if clicked: its subfolders' too (a folder
-    token matches by path), with the Folder choices and its own exclusion
-    set aside. The most first, `limit` of them; None as for answer().
-    Folders aren't indexed (tens of thousands of values): they're searched."""
-    try:
-        index = await current()
-        if index is None:
-            return None
-        rows, folders = await _folder_rows(index)
-        adhoc = await _adhoc_for(expr, index)
-        async with _state.lock:
-            idx = _state.index
-            group_at, excluded_at, base = idx._bases(*_constraints(idx, expr, adhoc))
-            common = frozenset(n for n in [group_at.get("folder")] if n is not None)
-            skips: dict[Optional[str], frozenset] = {None: common}
-            for f in expr.excluded:
-                if f.group == "folder":  # its own exclusion, set aside for it
-                    value = f.id.partition(":")[2].rstrip("/")
-                    skips[value] = skips.get(value, common) | {excluded_at[f.id]}
-            bases = {value: base(skip) for value, skip in skips.items()}
-        needle = q.strip().casefold()
-
-        def search() -> list[tuple[str, int]]:
-            matching: dict[Optional[str], set[int]] = {}
-            hits = []
-            for at, folder in enumerate(folders):
-                if not folder or needle not in folder.casefold():
-                    continue
-                which = folder if folder in bases else None
-                if which not in matching:
-                    matching[which] = set(ids_of(bases[which]))
-                matches = matching[which]
-                # Its subfolders: from folder + "/" to folder + "0" ("0" follows "/").
-                lo = bisect.bisect_left(folders, folder + "/", at + 1)
-                hi = bisect.bisect_left(folders, folder + "0", lo)
-                n = sum(1 for sub in [folder, *folders[lo:hi]] for i in rows[sub] if i in matches)
-                if n:
-                    hits.append((folder, n))
-            hits.sort(key=lambda fc: (-fc[1], fc[0]))
-            return hits[:limit]
-        return await asyncio.to_thread(search)
-    except Exception as exc:
-        _log_error("Searching folders", exc)
-        return None
 
 
 async def stats() -> Optional[tuple[dict[str, int], int]]:

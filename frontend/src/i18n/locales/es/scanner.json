@@ -195,8 +195,7 @@
       "country": "País",
       "network": "Cadena",
       "showStatus": "Estado de la serie",
-      "library": "Biblioteca",
-      "folder": "Carpeta",
+      "library": "Carpeta de medios",
       "type": "Tipo",
       "source": "Origen",
       "added": "Añadido",
@@ -250,11 +249,9 @@
       "pilot": "Piloto"
     },
     "searchIn": "Buscar en {{section}}…",
-    "searchFolders": "Buscar carpetas…",
     "showAll": "Mostrar todo",
     "showFewer": "Mostrar menos",
     "noMatches": "Sin resultados",
-    "searching": "Buscando…",
     "none": "Ninguno"
   },
   "stats": {

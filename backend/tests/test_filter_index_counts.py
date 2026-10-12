@@ -8,7 +8,7 @@ import pytest_asyncio
 from backend.filter_index import service
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import FilterIndex, definitions_version
-from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, parse_filter
+from backend.scan_filters import _FILTER_LIST, _FACET_LIST, parse_filter
 from backend.tests import filter_index_library as library_data
 
 
@@ -28,7 +28,7 @@ async def _context(db):
 async def index_of(db_path) -> FilterIndex:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
-        alive, members, savings = await evaluate(db, _FILTER_LIST, await _context(db), facets=INDEXED_FACETS)
+        alive, members, savings = await evaluate(db, _FILTER_LIST, await _context(db), facets=_FACET_LIST)
     return FilterIndex.of(alive, members, savings, version=definitions_version(), db_id="test")
 
 
@@ -117,7 +117,7 @@ async def test_patching_rows_keeps_their_savings(library):
             added = (await cur.fetchone())[0]
         assert changed == sorted([hidden, edited, added])
         alive, members, savings = await evaluate(db, _FILTER_LIST, await _context(db), ids=changed,
-                                                 facets=INDEXED_FACETS)
+                                                 facets=_FACET_LIST)
         index.patch(changed, alive, members, savings)
     assert hidden not in index.savings
     assert index.savings[edited] == 123456789

@@ -7,7 +7,7 @@ import pytest
 from backend.filter_index.bits import ids_of
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import FilterIndex
-from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, PY_COLUMNS, _group_key, facet_token, parse_filter
+from backend.scan_filters import _FILTER_LIST, _FACET_LIST, PY_COLUMNS, _group_key, facet_token, parse_filter
 from backend.tests.filter_index_library import EXPRESSIONS, mutate, seed
 
 # The list expressions (Advanced Search ones are the service's: test_filter_index_service.py).
@@ -19,7 +19,7 @@ async def _index(db_path) -> FilterIndex:
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         ctx = await _build_enrichment_context(db, titles=True)
-        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, facets=INDEXED_FACETS)
+        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, facets=_FACET_LIST)
     return FilterIndex.of(alive, members, savings or {}, version="v", db_id="d")
 
 
@@ -39,7 +39,8 @@ async def _rows(db_path, text) -> set[int]:
 
 async def _constraints(index: FilterIndex, expr) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
     """facet_counts' / facet_values' groups and exclusions for `expr`; a
-    filter the index hasn't (a folder) evaluated as the service does."""
+    filter the index hasn't (an Advanced Search condition) evaluated as the
+    service does."""
     from backend.filter_index import service
 
     async def bits_of(f) -> int:
@@ -58,7 +59,7 @@ async def test_every_value_is_the_rows_its_token_lists(test_db):
     await seed(test_db)
     index = await _index(test_db)
     values = [k for k in index.bits if ":" in k]
-    assert {k.split(":")[0] for k in values} == {f.key for f in INDEXED_FACETS}
+    assert {k.split(":")[0] for k in values} == {f.key for f in _FACET_LIST}
     for key in values:
         from backend.scan_filters import facet_token
         facet, _, value = key.partition(":")
@@ -71,7 +72,7 @@ async def test_lists_read_in_one_pass_are_their_own_definitions(test_db):
     each through its pairs_sql: the same values, the same rows."""
     import dataclasses
     await seed(test_db)
-    combined = [f for f in INDEXED_FACETS if f.combine]
+    combined = [f for f in _FACET_LIST if f.combine]
     assert {f.key for f in combined} == {"alang", "slang", "acodec", "achan"}
     async with aiosqlite.connect(test_db) as db:
         db.row_factory = aiosqlite.Row
@@ -118,7 +119,7 @@ async def test_patching_rows_adds_and_drops_values(test_db):
                              (f'[{{"language": "{language}", "codec": "aac", "channels": 2}}]', row_id))
             await db.commit()
             ctx = await _build_enrichment_context(db, titles=True)
-            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=[row_id], facets=INDEXED_FACETS)
+            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=[row_id], facets=_FACET_LIST)
         index.patch([row_id], alive, members, savings or {})
 
     await patch("isl")
@@ -137,7 +138,7 @@ async def test_replacing_lists_takes_their_values_over(test_db):
     async with aiosqlite.connect(test_db) as db:
         await db.execute("UPDATE poster_cache SET network = 'Netflix' WHERE network = 'HBO'")
         await db.commit()
-    titles = [f for f in INDEXED_FACETS if f.titles]
+    titles = [f for f in _FACET_LIST if f.titles]
     from backend.routes.scan import _build_enrichment_context
     async with aiosqlite.connect(test_db) as db:
         db.row_factory = aiosqlite.Row
@@ -202,7 +203,7 @@ async def test_each_value_counts_without_its_own_list_and_exclusion(test_db):
             groups, excluded = await _constraints(index, expr)
             selected = frozenset(f.id for f in [*(f for g in expr.groups for f in g), *expr.excluded] if ":" in f.id)
             lists = index.facet_values(groups, excluded, selected=selected, top=None)
-            for facet in INDEXED_FACETS:
+            for facet in _FACET_LIST:
                 listed = dict(lists[facet.key])
                 for fid in [k for k in index.bits if k.startswith(f"{facet.key}:")]:
                     value = fid.partition(":")[2]
@@ -249,14 +250,13 @@ async def test_the_counts_endpoint_returns_the_lists(service_env, test_db):
     langs = {v["value"]: v["count"] for v in body["facets"]["alang"]}
     assert langs["fre"] == len(await _rows(test_db, "alang:fre"))  # its own list set aside
     assert len(body["facets"]["alang"]) <= 50
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT id, path FROM media_dirs") as cur:
+            paths = {str(i): p for i, p in await cur.fetchall()}
     library = body["facets"]["library"]
-    assert all(v.get("label") for v in library)  # media folders carry their label
-    every = (await get_facet_values("genre", "all", ""))["values"]
+    assert library and all(v["label"] == paths[v["value"]] for v in library)  # by path: labels repeat ("TV Shows")
+    every = (await get_facet_values("genre", "all"))["values"]
     assert every and [v["count"] for v in every] == sorted((v["count"] for v in every), reverse=True)
-    folders = (await get_facet_values("folder", "all", "night"))["values"]
-    assert folders and all("night" in v["value"].lower() for v in folders)
-    narrowed = (await get_facet_values("folder", "res_4k", "night"))["values"]
-    assert sum(v["count"] for v in narrowed) <= sum(v["count"] for v in folders)
 
 
 @pytest.mark.asyncio
@@ -283,7 +283,7 @@ async def test_lists_wait_for_the_index(service_env, test_db, monkeypatch):
 @pytest.mark.asyncio
 async def test_list_values_come_from_the_index_only(service_env, test_db, monkeypatch):
     """A list value the index hasn't has no rows (patch drops a value no row
-    has): 0, not evaluated now. Only folders and Advanced Search conditions are."""
+    has): 0, not evaluated now. Only Advanced Search conditions are."""
     await seed(test_db)
     service_env._state.index = await service_env.build()
     evaluated = []
@@ -294,8 +294,8 @@ async def test_list_values_come_from_the_index_only(service_env, test_db, monkey
         return await real(f)
     monkeypatch.setattr(service_env, "_adhoc_bits", adhoc_bits)
     counts, lists = await service_env.answer(
-        parse_filter("alang:xxx,genre:western,folder:%2Fdemo%2FTV,!network:Nowhere"))
-    assert evaluated == ["folder:/demo/TV"]
+        parse_filter("alang:xxx,genre:western,!network:Nowhere"))
+    assert evaluated == []
     assert counts["matching"] == 0
     assert lists["alang"] == [("xxx", 0)] and ("Nowhere", 0) in lists["network"]
 
@@ -343,72 +343,6 @@ async def _write(db_path, sql, *params) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(sql, params)
         await db.commit()
-
-
-_RESTLESS = "/demo/Movies/Restless Archive (2007)"  # a title folder with a subfolder (Extras) in the seed
-
-
-async def _clicked_folder(db_path, text: str, folder: str) -> int:
-    """What clicking a folder found by the search gives under `text`: it
-    replaces the Folder choices and its own exclusion."""
-    token = facet_token("folder", folder)
-    keep = [t for t in text.split(",") if t != "all" and not t.startswith("folder:") and t != f"!{token}"]
-    return len(await _rows(db_path, ",".join(keep + [token])))
-
-
-@pytest.mark.asyncio
-async def test_a_folder_found_counts_what_clicking_it_gives(service_env, test_db):
-    """Its subfolders' files too (a folder token matches by path), with the
-    Folder choices and its own exclusion set aside."""
-    await seed(test_db)
-    service_env._state.index = await service_env.build()
-    extras = f"{_RESTLESS}/Extras"
-    tv = facet_token("folder", "/demo/TV")
-    for text in ["all", "res_1080p", tv, f"{tv},x264", f"!{facet_token('folder', _RESTLESS)}",
-                 f"!{facet_token('folder', extras)}"]:
-        hits = dict(await service_env.folder_values(parse_filter(text), "restless"))
-        for folder in (_RESTLESS, extras):
-            want = await _clicked_folder(test_db, text, folder)
-            assert hits.get(folder, 0) == want and (folder in hits) == (want > 0), (text, folder)
-    every = dict(await service_env.folder_values(parse_filter("all"), "restless"))
-    assert every[_RESTLESS] > every[extras] > 0
-
-
-@pytest.mark.asyncio
-async def test_the_folder_search_reads_the_paths_again_at_most_every_minute(service_env, test_db, clock):
-    """A scan changes rows all the time: a file added is found once the
-    paths are read again, at most every FOLDERS_REFRESH seconds."""
-    await seed(test_db)
-    service_env._state.index = await service_env.build()
-
-    async def restless() -> int:
-        return dict(await service_env.folder_values(parse_filter("all"), "restless"))[_RESTLESS]
-    before = await restless()
-    await _write(test_db, "INSERT INTO scan_results (file_path, file_size, video_codec, needs_conversion, duration, "
-                          "video_height, video_width, audio_tracks_json, subtitle_tracks_json, scan_timestamp) "
-                          "SELECT ?, file_size, video_codec, needs_conversion, duration, video_height, video_width, "
-                          "audio_tracks_json, subtitle_tracks_json, scan_timestamp FROM scan_results "
-                          "WHERE removed_from_list = 0 LIMIT 1", f"{_RESTLESS}/Part 2.mkv")
-    clock[0] += service_env.FOLDERS_REFRESH - 1
-    assert await restless() == before  # read a moment ago
-    clock[0] += 1
-    assert await restless() == before + 1
-
-
-@pytest.mark.asyncio
-async def test_searches_at_once_read_the_paths_once(service_env, test_db, monkeypatch):
-    import asyncio
-    await seed(test_db)
-    service_env._state.index = await service_env.build()
-    read = []
-    real = service_env.title_folder
-    monkeypatch.setattr(service_env, "title_folder", lambda fp: read.append(fp) or real(fp))
-    index = service_env._state.index
-    first, second = await asyncio.gather(service_env._folder_rows(index), service_env._folder_rows(index))
-    assert first == second and first[0]
-    assert read and len(read) == len(set(read))  # each path once
-    assert await service_env.folder_values(parse_filter("all"), "restless")
-    assert len(read) == len(set(read))
 
 
 @pytest.mark.asyncio

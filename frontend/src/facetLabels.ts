@@ -1,6 +1,6 @@
 // A list value's label in the filter bar (v0.10.0): a language's name, a
 // codec's usual spelling, a band's words; years, countries and networks as
-// they are; a media folder's label from the server; a folder's last part.
+// they are; a media folder's path from the server.
 type T = (key: string, options?: Record<string, unknown>) => string;
 
 const CODECS: Record<string, string> = {
@@ -48,12 +48,6 @@ export function facetValueLabel(facet: string, value: string, t: T, label?: stri
       return t(`scanner:facets.status.${value}`, { defaultValue: value });
     case "library":
       return label ?? value;
-    case "folder": {
-      const parts = value.split("/").filter(Boolean);
-      const last = parts.pop() ?? value;
-      // "Season 2" says little alone: with its show.
-      return /^(season|specials)\b/i.test(last) && parts.length ? `${parts.pop()} · ${last}` : last;
-    }
     default:
       return value;
   }

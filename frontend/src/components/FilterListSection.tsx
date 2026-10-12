@@ -38,8 +38,7 @@ function arrange(facet: string, values: FacetValue[], full: boolean): FacetValue
  * A list in a filter menu (v0.10.0): the values ticked or excluded, then
  * the most common values under the current filter, each a checkbox
  * (Alt-click excludes), its count and ⊘; a search box over a long list.
- * "Show all" and the search read every value from the server; folders are
- * searched, not listed.
+ * "Show all" and the search read every value from the server.
  */
 export default function FilterListSection({ section, values, lastValues, version, active, filter, onToggle }: {
   section: FilterSection;
@@ -52,13 +51,10 @@ export default function FilterListSection({ section, values, lastValues, version
 }) {
   const { t } = useTranslation(["scanner", "settingsMedia"]);
   const facet = section.facet as string;
-  const isFolder = facet === "folder";
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
-  // The server's answers, with what they answer: another filter's (or an
-  // earlier search's) aren't this one's.
+  // The server's answer, with the filter it answers: another filter's isn't this one's.
   const [all, setAll] = useState<{ filter: string; values: FacetValue[] | null } | null>(null);
-  const [found, setFound] = useState<{ filter: string; q: string; values: FacetValue[] | null } | null>(null);
   const q = query.trim();
   const searching = q !== "";
 
@@ -72,59 +68,38 @@ export default function FilterListSection({ section, values, lastValues, version
   // focus with it.
   const [kept, setKept] = useState(() => selected.map(s => s.value));
 
-  // Every value, for "Show all" and the search box (not folders).
+  // Every value, for "Show all" and the search box.
   useEffect(() => {
-    if (isFolder || (!expanded && !searching)) return;
+    if (!expanded && !searching) return;
     const ctrl = new AbortController();
-    getFacetValues(facet, filter, "", ctrl.signal).then(r => setAll({ filter, values: r.values })).catch(() => {});
+    getFacetValues(facet, filter, ctrl.signal).then(r => setAll({ filter, values: r.values })).catch(() => {});
     return () => ctrl.abort();
-  }, [facet, filter, isFolder, expanded, searching, version]);
-
-  // Folders: the server searches, once the typing pauses.
-  useEffect(() => {
-    if (!isFolder || !q) return;
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => {
-      getFacetValues(facet, filter, q, ctrl.signal).then(r => setFound({ filter, q, values: r.values })).catch(() => {});
-    }, 250);
-    return () => { window.clearTimeout(timer); ctrl.abort(); };
-  }, [facet, filter, isFolder, q, version]);
+  }, [facet, filter, expanded, searching, version]);
 
   const top = values ?? lastValues;
   const allNow = all?.filter === filter ? all.values : null;
-  const hits = found?.filter === filter && found.q === q ? found : null;  // this search's answer
   const needle = q.toLocaleLowerCase();
   const full = expanded || searching;
-  let pool: FacetValue[];
-  let fresh: boolean;  // the rows answer this filter (and this search): not dimmed
-  if (isFolder) {
-    // While a search runs, the last one's folders that still match, dimmed.
-    pool = hits ? hits.values ?? [] : searching
-      ? (found?.values ?? []).filter(v => v.value.toLocaleLowerCase().includes(needle)) : [];
-    fresh = !searching || hits !== null;
-  } else {
-    pool = (full ? allNow : null) ?? top ?? [];
-    fresh = full ? allNow !== null : values != null;
-  }
+  const pool = (full ? allNow : null) ?? top ?? [];
+  const fresh = full ? allNow !== null : values != null;  // the rows answer this filter: not dimmed
 
   const group = [...kept, ...selected.map(s => s.value).filter(v => !kept.includes(v))];
   let rest = pool.filter(v => !group.includes(v.value));
   const label = (v: FacetValue) => facetValueLabel(facet, v.value, t, v.label);
-  if (needle && !isFolder) rest = rest.filter(v => label(v).toLocaleLowerCase().includes(needle));
+  if (needle) rest = rest.filter(v => label(v).toLocaleLowerCase().includes(needle));
   const arranged = arrange(facet, rest, full);
   const shown = full ? arranged : arranged.slice(0, SHOWN);
-  const more = !isFolder && !searching && (expanded || arrange(facet, rest, true).length > shown.length);
+  const more = !searching && (expanded || arrange(facet, rest, true).length > shown.length);
 
   // A search box over a long list (once shown, it stays while the menu's open).
   const [searchable, setSearchable] = useState(false);
-  if (!searchable && (isFolder || searching || (allNow ?? top ?? []).length > SHOWN)) setSearchable(true);
-  const sectionName = t(section.chipLabelKey ?? section.labelKey);
-  const searchLabel = isFolder ? t("scanner:facets.searchFolders") : t("scanner:facets.searchIn", { section: sectionName });
+  if (!searchable && (searching || (allNow ?? top ?? []).length > SHOWN)) setSearchable(true);
+  const searchLabel = t("scanner:facets.searchIn", { section: t(section.chipLabelKey ?? section.labelKey) });
 
   // A ticked value's count and label: the top values always carry it (at 0
-  // when no file has it); a folder's only if a search found it.
+  // when no file has it).
   const known = (value: string) =>
-    [allNow, values, hits?.values, pool, lastValues].flatMap(list => list ?? []).find(v => v.value === value);
+    [allNow, values, pool, lastValues].flatMap(list => list ?? []).find(v => v.value === value);
   const toggle = (value: string, exclude: boolean) => {
     setKept(k => (k.includes(value) ? k : [...k, value]));
     onToggle(listToken(facet, value), exclude);
@@ -139,8 +114,8 @@ export default function FilterListSection({ section, values, lastValues, version
         <label className="filter-option-main">
           <input type="checkbox" checked={included} disabled={empty}
             onChange={e => toggle(value, (e.nativeEvent as MouseEvent).altKey === true)} />
-          {/* The whole name when it's cut short ("United States of A…"); a folder's path. */}
-          <span className="filter-option-label" title={isFolder ? value : display}>{display}</span>
+          {/* The whole name when it's cut short ("United States of A…"). */}
+          <span className="filter-option-label" title={display}>{display}</span>
           {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
           <span className={`filter-option-count${fresh ? "" : " stale"}`}>
             {count == null ? (top == null ? "…" : "") : fmtNum(count)}
@@ -156,7 +131,7 @@ export default function FilterListSection({ section, values, lastValues, version
     );
   };
 
-  const counting = isFolder ? hits !== null && hits.values === null : top == null;
+  const counting = top == null;
   return (
     <div className="filter-list">
       {searchable && (
@@ -177,13 +152,10 @@ export default function FilterListSection({ section, values, lastValues, version
         ]}
       </div>
       {counting && <p className="filter-section-hint">{t("scanner:filterBar.counting")}</p>}
-      {isFolder && searching && !hits && pool.length === 0 && (
-        <p className="filter-section-hint">{t("scanner:facets.searching")}</p>
-      )}
-      {searching && shown.length === 0 && (isFolder ? hits?.values : allNow) && (
+      {searching && shown.length === 0 && allNow && (
         <p className="filter-section-hint">{t("scanner:facets.noMatches")}</p>
       )}
-      {!isFolder && top?.length === 0 && group.length === 0 && !searching && (
+      {top?.length === 0 && group.length === 0 && !searching && (
         <p className="filter-section-hint">{t("scanner:facets.none")}</p>
       )}
       {more && (
