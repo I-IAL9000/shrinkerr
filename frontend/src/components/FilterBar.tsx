@@ -101,11 +101,19 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
     const selected = selectedIn(category, active);
     const hasFiles = category.sections.some(s => s.options.some(o => (counts?.[o.key] ?? 1) > 0));
     const dimmed = !hasFiles && selected.length === 0;
-    const names = selected.map(s =>
-      s.excluded ? t("scanner:filters.notLabel", { label: optionLabel(s.key, t) }) : optionLabel(s.key, t));
+    const title = t(category.labelKey);
+    const names = selected.map(s => {
+      const label = optionLabel(s.key, t);
+      // "Watched · Watched" or "Watched · 1 year" says nothing (or the
+      // opposite): with its section, as its chip ("Plex: Watched").
+      const section = category.sections.find(x => x.options.some(o => o.key === s.key));
+      if (section?.prefix || label.toLowerCase() === title.toLowerCase()) {
+        return chipLabel((s.excluded ? "!" : "") + s.key, t);
+      }
+      return s.excluded ? t("scanner:filters.notLabel", { label }) : label;
+    });
     const shown = names.slice(0, 2).join(", ")
       + (names.length > 2 ? " " + t("scanner:filterBar.more", { count: names.length - 2 }) : "");
-    const title = t(category.labelKey);
     const isOpen = open === category.key;
     return (
       <div key={category.key} className="filter-category">

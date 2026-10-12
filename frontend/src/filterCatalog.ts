@@ -10,7 +10,9 @@ import { decodeAdvanced } from "./advancedSearch";
 type T = (key: string, options?: Record<string, unknown>) => string;
 
 export interface FilterOption { key: string; label?: string; labelKey?: string }
-export interface FilterSection { key: string; labelKey: string; hintKey?: string; options: FilterOption[] }
+// prefix: its options don't read alone ("7 days", "Other"): a category's
+// button names them with the section, as their chips do.
+export interface FilterSection { key: string; labelKey: string; hintKey?: string; prefix?: boolean; options: FilterOption[] }
 export interface FilterCategory { key: string; labelKey: string; sections: FilterSection[] }
 
 export const QUICK_FILTERS: string[] = catalog.quick;
