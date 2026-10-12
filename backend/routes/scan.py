@@ -2098,9 +2098,13 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
     }
     # The media folders, most specific first, for the Library list (v0.10.0).
-    async with db.execute("SELECT id, path FROM media_dirs") as cur:
-        ctx["media_dir_ids"] = sorted(((path.rstrip("/") + "/", str(dir_id)) for dir_id, path in await cur.fetchall()),
-                                      key=lambda pair: -len(pair[0]))
+    try:
+        async with db.execute("SELECT id, path FROM media_dirs") as cur:
+            ctx["media_dir_ids"] = sorted(
+                ((path.rstrip("/") + "/", str(dir_id)) for dir_id, path in await cur.fetchall()),
+                key=lambda pair: -len(pair[0]))
+    except Exception:
+        ctx["media_dir_ids"] = []
     # When each title was last watched, for "Not watched in N months" (v0.10.0)
     from backend.watch_activity import load as load_watch_activity
     ctx["watch_activity"] = await load_watch_activity(db)

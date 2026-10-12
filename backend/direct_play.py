@@ -26,11 +26,14 @@ _IMAGE_SUBS = "('hdmv_pgs_subtitle', 'pgssub', 'dvd_subtitle', 'vobsub', 'dvb_su
 
 
 def _each(column: str, alias: str) -> str:
-    return f"json_each(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END) {alias}"
+    # A list only: an object or a list of strings has no tracks.
+    return (f"json_each(CASE WHEN json_valid({column}) AND json_type({column}) = 'array' "
+            f"THEN {column} ELSE '[]' END) {alias}")
 
 
 def _kept(alias: str) -> str:
-    return f"COALESCE(json_extract({alias}.value, '$.keep'), 1) != 0"
+    # First in every WHERE: json_extract only ever sees a track (an object).
+    return f"{alias}.type = 'object' AND COALESCE(json_extract({alias}.value, '$.keep'), 1) != 0"
 
 
 def _field(alias: str, key: str, default: str = "") -> str:

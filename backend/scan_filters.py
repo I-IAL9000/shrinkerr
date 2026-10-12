@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import bisect
 import re
+import string
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -344,12 +345,18 @@ _MP4 = "(file_path LIKE '%.mp4' OR file_path LIKE '%.m4v' OR file_path LIKE '%.m
 _AVI = "file_path LIKE '%.avi'"
 
 
+def _track_array(column: str) -> str:
+    """A JSON track-list column for json_each: a list, else none — an object
+    or a list of strings would put non-objects before json_extract (v0.10.0)."""
+    return f"CASE WHEN json_valid({column}) AND json_type({column}) = 'array' THEN {column} ELSE '[]' END"
+
+
 def _tracks(column: str, condition: str, hint: tuple[str, ...] = ()) -> str:
     """Any track in a JSON track-list column meets `condition` (on t.value).
     `hint`: substrings one of which the raw JSON must contain — a cheap test
     that spares the per-track check on almost every row."""
-    exists = (f"EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END) t "
-              f"WHERE {condition})")
+    exists = (f"EXISTS (SELECT 1 FROM json_each({_track_array(column)}) t "
+              f"WHERE t.type = 'object' AND ({condition}))")
     if not hint:
         return exists
     return "(" + " OR ".join(f"{column} LIKE '%{h}%'" for h in hint) + f") AND {exists}"
@@ -570,32 +577,50 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # network or a folder can hold a comma). parse_filter makes it a Filter whose
 # group is the facet: values of one list widen, lists narrow. The filter
 # index keeps every value of an indexed facet as a bitset "<facet>:<value>".
+# A track's field is read once, in SQL (_track_text), by the index and the
+# lists alike; Python only folds that text, so the two can't disagree.
 
 FACETS_VERSION = 1  # bump when a facet's normalize / values changes
 
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+
+
+def _track_text(field: str) -> str:
+    """A track's field as the lists read it: text, trimmed of spaces, ASCII
+    letters lower case; "" for none."""
+    return f"lower(trim(COALESCE(json_extract(t.value, '$.{field}'), '')))"
+
+
+def _sql_text(raw: Any) -> str:
+    """What _track_text() makes of a value: SQLite's trim() strips spaces
+    only and its lower() changes ASCII letters only."""
+    return ("" if raw is None else str(raw)).strip(" ").translate(_ASCII_LOWER)
+
+
+def fold_lang(code: Optional[str]) -> str:
+    """A track's language, as _track_text() reads it, as one key: ISO 639-2
+    B form ("fre", not "fra" or "fr"); none, empty or "und": "und". Folds
+    codes only: no Unicode lower case, which SQLite's lower() wouldn't do."""
+    from backend.disc_metadata import _ISO639_1_TO_2, _ISO639_2_T_TO_B
+    if not code or code == "und":
+        return "und"
+    if len(code) == 2:
+        return _ISO639_1_TO_2.get(code) or code
+    if len(code) == 3:
+        return _ISO639_2_T_TO_B.get(code, code)
+    return code
+
 
 def lang_key(code: Any) -> str:
-    """A track's language as one key: ISO 639-2 B form ("fre", not "fra" or
-    "fr"); none, empty or "und": "und"."""
-    from backend.disc_metadata import _ISO639_1_TO_2, _normalize_iso639_2
-    c = str(code or "").strip().lower()
-    if not c or c == "und":
-        return "und"
-    if len(c) == 2:
-        return _ISO639_1_TO_2.get(c) or c
-    if len(c) == 3:
-        return _normalize_iso639_2(c)
-    return c
+    """Any language code as its key, read the way the lists read a track's."""
+    return fold_lang(_sql_text(code))
 
 
 def lang_aliases(key: str) -> list[str]:
-    """Every code lang_key() folds into `key`: what a track can say for it."""
+    """Every text fold_lang() folds into `key`: what a track can say for it.
+    ("yue" maps to "chi" in _ISO639_1_TO_2 but, three letters, keys as itself.)"""
     from backend.disc_metadata import _ISO639_1_TO_2, _ISO639_2_T_TO_B
-    if key == "und":
-        return ["", "und"]
-    # From lang_key itself, so the two agree ("yue" maps to "chi" in
-    # _ISO639_1_TO_2 but, three letters, keys as itself).
-    return sorted({key} | {c for c in (*_ISO639_2_T_TO_B, *_ISO639_1_TO_2) if lang_key(c) == key})
+    return sorted(c for c in {key, "", "und", *_ISO639_2_T_TO_B, *_ISO639_1_TO_2} if fold_lang(c) == key)
 
 
 _CHANNEL_BANDS = {"1": (1, 1), "2": (2, 2), "6": (3, 7), "8": (8, 1_000)}
@@ -622,19 +647,22 @@ def rating_band(rating: Any) -> str:
     return "8" if r >= 8 else "7" if r >= 7 else "6" if r >= 6 else "5" if r >= 5 else "lt5"
 
 
-def _lower_or_none(raw: Any) -> Optional[str]:
-    text = str(raw or "").strip().lower()
+def _text_or_none(text: str) -> Optional[str]:
     return text or None
 
 
 @dataclass(frozen=True)
 class Facet:
     key: str
-    # SQL facets: "SELECT <row id>, <raw value>" rows, one per row and value;
-    # {where} selects the rows (scan_results columns, unqualified).
+    # SQL facets: "SELECT <row id>, <value as SQL reads it>" rows, one per row
+    # and value (a track's field through _track_text, as the conditions read
+    # it); {where} selects the rows (scan_results columns, unqualified).
     pairs_sql: Optional[str] = None
-    normalize: Callable[[Any], Optional[str]] = _lower_or_none  # raw value -> value (None: none)
+    normalize: Callable[[Any], Optional[str]] = _text_or_none  # what SQL read -> value (None: none)
     cond: Optional[Callable[[str], tuple[str, tuple]]] = None  # value -> (SQL over scan_results, params)
+    # A token's value -> the value (None: not one). Default: a SQL facet's
+    # as the index would keep it ("FRA" -> "fre"), a Python facet's as is.
+    canonical: Optional[Callable[[str], Optional[str]]] = None
     # Python facets: (row, ctx) -> the row's values (rows have PY_COLUMNS).
     values: Optional[Callable[[dict, dict], Iterable[str]]] = None
     inputs: tuple[str, ...] = ()
@@ -643,29 +671,41 @@ class Facet:
 
 
 def _track_pairs(column: str, field: str) -> str:
-    return (f"SELECT s.id, json_extract(t.value, '$.{field}') FROM "
+    return (f"SELECT s.id, {_track_text(field)} FROM "
             f"(SELECT id, {column} FROM scan_results WHERE {{where}}) s, "
-            f"json_each(CASE WHEN json_valid(s.{column}) THEN s.{column} ELSE '[]' END) t")
+            f"json_each({_track_array(f's.{column}')}) t WHERE t.type = 'object'")
 
 
-_MAX_CHANNELS = ("(SELECT MAX(CAST(json_extract(t.value, '$.channels') AS INTEGER)) FROM json_each("
-                 "CASE WHEN json_valid(audio_tracks_json) THEN audio_tracks_json ELSE '[]' END) t)")
-_ACHAN_PAIRS = ("SELECT s.id, MAX(CAST(json_extract(t.value, '$.channels') AS INTEGER)) FROM "
+_CHANNELS = "MAX(CAST(json_extract(t.value, '$.channels') AS INTEGER))"  # the widest track
+_MAX_CHANNELS = (f"(SELECT {_CHANNELS} FROM json_each({_track_array('audio_tracks_json')}) t "
+                 "WHERE t.type = 'object')")
+_ACHAN_PAIRS = (f"SELECT s.id, {_CHANNELS} FROM "
                 "(SELECT id, audio_tracks_json FROM scan_results WHERE {where}) s, "
-                "json_each(CASE WHEN json_valid(s.audio_tracks_json) THEN s.audio_tracks_json ELSE '[]' END) t "
-                "GROUP BY s.id")
+                f"json_each({_track_array('s.audio_tracks_json')}) t WHERE t.type = 'object' GROUP BY s.id")
+
+# Text the raw JSON holds as it is: led by a letter (not a number or a
+# boolean read as text), nothing JSON escapes or SQL quotes.
+_HINTABLE = re.compile(r"[a-z][a-z0-9_.+-]*")
+
+
+def _hints(texts: Iterable[str]) -> tuple[str, ...]:
+    """_tracks hints for a track field that must read as one of `texts`:
+    them, when the raw JSON must hold each as it is (LIKE ignores ASCII
+    case); else none."""
+    texts = tuple(texts)
+    return texts if texts and all(_HINTABLE.fullmatch(t) for t in texts) else ()
 
 
 def _lang_cond(column: str) -> Callable[[str], tuple[str, tuple]]:
     def cond(value: str) -> tuple[str, tuple]:
         codes = lang_aliases(value)
-        return (_tracks(column, "lower(trim(COALESCE(json_extract(t.value, '$.language'), ''))) "
-                                f"IN ({','.join('?' * len(codes))})"), tuple(codes))
+        return (_tracks(column, f"{_track_text('language')} IN ({','.join('?' * len(codes))})",
+                        hint=_hints(codes)), tuple(codes))
     return cond
 
 
 def _codec_cond(value: str) -> tuple[str, tuple]:
-    return _tracks("audio_tracks_json", "lower(trim(COALESCE(json_extract(t.value, '$.codec'), ''))) = ?"), (value,)
+    return _tracks("audio_tracks_json", f"{_track_text('codec')} = ?", hint=_hints([value])), (value,)
 
 
 def _achan_cond(value: str) -> tuple[str, tuple]:
@@ -690,13 +730,16 @@ def _library_values(row: dict, ctx: dict) -> list[str]:
 
 _TITLE_INPUTS = ("titles",)
 _FACET_LIST = [
-    Facet("alang", pairs_sql=_track_pairs("audio_tracks_json", "language"), normalize=lang_key,
+    Facet("alang", pairs_sql=_track_pairs("audio_tracks_json", "language"), normalize=fold_lang,
           cond=_lang_cond("audio_tracks_json")),
-    Facet("slang", pairs_sql=_track_pairs("subtitle_tracks_json", "language"), normalize=lang_key,
+    Facet("slang", pairs_sql=_track_pairs("subtitle_tracks_json", "language"), normalize=fold_lang,
           cond=_lang_cond("subtitle_tracks_json")),
     Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond),
-    Facet("achan", pairs_sql=_ACHAN_PAIRS, normalize=channel_band, cond=_achan_cond),
-    Facet("genre", values=lambda r, c: row_title(r, c)["genres"], inputs=("titles", "plex"), titles=True),
+    Facet("achan", pairs_sql=_ACHAN_PAIRS, normalize=channel_band, cond=_achan_cond,
+          canonical=lambda v: v if v in _CHANNEL_BANDS else None),
+    # A media server's genre can be "" (_title_metadata).
+    Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=("titles", "plex"),
+          titles=True),
     Facet("year", values=_year_values, inputs=_TITLE_INPUTS, titles=True),
     Facet("rating", values=lambda r, c: [rating_band(row_title(r, c)["rating"])], inputs=_TITLE_INPUTS, titles=True),
     Facet("country", values=lambda r, c: row_title(r, c)["countries"], inputs=_TITLE_INPUTS, titles=True),
@@ -711,16 +754,27 @@ FACETS: dict[str, Facet] = {f.key: f for f in _FACET_LIST}
 INDEXED_FACETS: list[Facet] = [f for f in _FACET_LIST if f.indexed]
 
 
+_URI_SAFE = "!'()*"  # what encodeURIComponent keeps besides letters, digits and "-_.~" (quote's own)
+
+
 def facet_token(key: str, value: str) -> str:
-    """The filter token for a list's value."""
-    return f"{key}:{quote(value, safe='')}"
+    """The filter token for a list's value, encoded as the browser's
+    encodeURIComponent does it, so both build the same token."""
+    return f"{key}:{quote(value, safe=_URI_SAFE)}"
 
 
 def facet_filter(key: str, value: str) -> Optional[Filter]:
     """The filter a list's value is (its group: the list); None for an
-    unknown list or an empty value."""
+    unknown list or a value it can't have. The value (and the filter's id)
+    is the one the index keeps: "alang:FRA" is "alang:fre"."""
     facet = FACETS.get(key)
     if facet is None or not value:
+        return None
+    if facet.canonical:
+        value = facet.canonical(value)
+    elif facet.pairs_sql:
+        value = facet.normalize(_sql_text(value))
+    if not value:
         return None
     fid = f"{key}:{value}"
     if facet.cond:
@@ -888,7 +942,7 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
 
     if kind == "max_channels":
         return number_cond("(SELECT COALESCE(MAX(json_extract(t.value, '$.channels')), 0) FROM json_each("
-                           "CASE WHEN json_valid(audio_tracks_json) THEN audio_tracks_json ELSE '[]' END) t)")
+                           f"{_track_array('audio_tracks_json')}) t WHERE t.type = 'object')")
     if kind == "count":
         column = prop["column"]
         return number_cond(f"json_array_length(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END)")
@@ -1060,17 +1114,23 @@ class FilterExpr:
         return not any(_value(f, row, ctx) for f in self._py_excluded)
 
 
+def _alias(f: Filter) -> str:
+    """The column a query selects a SQL filter's value as, "_f_<id>", quoted:
+    a list value's id holds ":" and more (v0.10.0). _value() reads it."""
+    return '"_f_' + f.id.replace('"', '""') + '"'
+
+
 def _value(f: Filter, row: dict, ctx: Optional[dict]) -> bool:
     if f.py:
         return bool(f.py(row, ctx))
-    return bool(row[f"_f_{f.id}"])  # selected by select_sql
+    return bool(row[f"_f_{f.id}"])  # selected by select_sql, as _alias(f)
 
 
 def parse_filter(text: Optional[str]) -> FilterExpr:
     """Parse "a,b,!c". Unknown ids are ignored (an old bookmark keeps working)."""
     expr = FilterExpr()
     by_group: dict[str, list[Filter]] = {}
-    seen: set[str] = set()
+    seen: set[tuple[bool, str]] = set()  # (excluded, id): "alang:FRA" and "alang:fre" are one
     for token in (text or "").split(","):
         token = token.strip()
         spec = decode_advanced(token) if token.startswith("adv:") else None
@@ -1089,9 +1149,9 @@ def parse_filter(text: Optional[str]) -> FilterExpr:
         if f is None and ":" in name:  # a list's value (v0.10.0)
             key, _, raw = name.partition(":")
             f = facet_filter(key, unquote(raw))
-        if f is None or token in seen:
+        if f is None or (neg, f.id) in seen:
             continue
-        seen.add(token)
+        seen.add((neg, f.id))
         if neg:
             expr.excluded.append(f)
         else:
@@ -1111,7 +1171,7 @@ def parse_filter(text: Optional[str]) -> FilterExpr:
         expr._py_groups.append(group)
         for f in group:
             if f.sql:
-                select.append(f"{sql_of(f, expr.select_params)} AS _f_{f.id}")
+                select.append(f"{sql_of(f, expr.select_params)} AS {_alias(f)}")
         # Narrow with the filters' necessary conditions, when all have one.
         if all(f.sql or f.pre_sql for f in group):
             where.append("(" + " OR ".join(
@@ -1207,7 +1267,7 @@ async def facet_counts(db, ctx: dict, expr: FilterExpr) -> dict[str, int]:
                 members.append(f)
                 if f.params:
                     params.extend(f.params())
-    cols = "".join(f", ({f.sql}) AS _f_{f.id}" for f in members)
+    cols = "".join(f", ({f.sql}) AS {_alias(f)}" for f in members)
     async with db.execute(f"SELECT id, {PY_COLUMNS}{cols} FROM scan_results WHERE {LISTED}", params) as cur:
         names = [d[0] for d in cur.description]
         rows = [dict(zip(names, values)) for values in await cur.fetchall()]

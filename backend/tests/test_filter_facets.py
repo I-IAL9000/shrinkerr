@@ -9,8 +9,9 @@ import aiosqlite
 import pytest
 import pytest_asyncio
 
-from backend.scan_filters import (FACETS, PY_COLUMNS, channel_band, facet_token, lang_aliases, lang_key,
-                                  parse_filter, rating_band)
+from backend.scan_filters import (FACETS, FILTERS, PY_COLUMNS, channel_band, count_all, encode_advanced,
+                                  facet_counts, facet_filter, facet_token, lang_aliases, lang_key, parse_filter,
+                                  rating_band)
 
 
 def test_language_keys_fold_codes():
@@ -35,6 +36,44 @@ def test_tokens_quote_their_value():
     assert facet_token("network", "Paramount+, HD") == "network:" + quote("Paramount+, HD", safe="")
     assert set(FACETS) == {"alang", "slang", "acodec", "achan", "genre", "year", "rating", "country",
                            "network", "showstatus", "library", "folder"}
+    # Exactly as the browser's encodeURIComponent, so both build the same token.
+    assert facet_token("folder", "/m/Films/Heat (1995) [tt0113277]") == \
+        "folder:%2Fm%2FFilms%2FHeat%20(1995)%20%5Btt0113277%5D"
+    assert facet_token("network", "!~*()'-_. é") == "network:!~*()'-_.%20%C3%A9"
+
+
+def test_hand_written_values_read_as_the_index_keeps_them():
+    def ids(text):
+        expr = parse_filter(text)
+        return [f.id for g in expr.groups for f in g] + ["!" + f.id for f in expr.excluded]
+    assert ids("alang:FRA") == ["alang:fre"]
+    assert ids("slang:%20EN%20") == ["slang:eng"]
+    assert ids("acodec:TrueHD") == ["acodec:truehd"]
+    assert ids("achan:6,achan:12,achan:5,achan:7.1,achan:") == ["achan:6"]  # its bands only
+    assert ids("acodec:%20,alang:") == []
+    assert ids("genre:Drama") == ["genre:Drama"]  # Python lists: as given
+    # One filter per value, however it was written.
+    assert ids("alang:fre,alang:%66re,alang:FRA,!alang:fre,!alang:fra") == ["alang:fre", "!alang:fre"]
+
+
+def test_track_lists_hint_the_raw_json():
+    """A LIKE on the raw JSON spares the per-track check, when it can't miss."""
+    assert "LIKE '%fre%'" in facet_filter("alang", "fre").sql
+    assert "LIKE '%truehd%'" in facet_filter("acodec", "truehd").sql
+    assert "LIKE" not in facet_filter("alang", "und").sql             # "" has no text to look for
+    assert "LIKE" not in facet_filter("acodec", "Äc3").sql            # JSON may write it Ä
+    assert "LIKE" not in facet_filter("acodec", "it's").sql           # never into the SQL text
+    assert "LIKE" not in facet_filter("acodec", "aac\n").sql
+
+
+def test_python_lists_have_no_empty_values():
+    # folder -> (year, rating, genres, network, status, country); a media server's genre can be "".
+    ctx = {"title_meta": {"/m/x": ("", None, "Drama, ,", " ", "", " , ")}, "server_genres": {"/m/": {"", "drama"}},
+           "media_dir_ids": []}
+    for key, facet in FACETS.items():
+        if facet.values:
+            assert all(facet.values({"file_path": "/m/x/a.mkv"}, ctx)), key
+    assert set(FACETS["genre"].values({"file_path": "/m/x/a.mkv"}, ctx)) == {"drama"}
 
 
 def tr(lang, codec="aac", channels=2):
@@ -132,3 +171,104 @@ async def test_unknown_lists_and_empty_values_are_ignored(library):
     db, _ = library
     assert len(await matching(db, "nosuchlist:x")) == len(ROWS)
     assert len(await matching(db, "alang:")) == len(ROWS)
+
+
+@pytest.mark.asyncio
+async def test_sql_counts_take_list_values(library):
+    """The SQL engine's counts (/api/scan/filter-counts while the filter index
+    builds) with list values in the filter: their ids aren't SQL names."""
+    from backend.routes.scan import _build_enrichment_context
+    db_path, _ = library
+    adv_any = encode_advanced([{"property": "audio_codec", "op": "eq", "value": "ac3"},
+                               {"property": "genre", "op": "eq", "value": "comedy"}], "any")  # SQL or Python
+    for text, n in (("alang:fre", 2), ("achan:6", 1), ("!acodec:ac3", 3),
+                    (facet_token("folder", "/m/Other, Stuff"), 1), ("!genre:drama", 3),
+                    (f"alang:fre,!genre:comedy,{adv_any}", 1)):
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            ctx = await _build_enrichment_context(db, titles=True)
+            counts = await facet_counts(db, ctx, parse_filter(text))
+        assert counts["matching"] == len(await matching(db_path, text)) == n, text
+
+
+def _stored(tracks):
+    return tracks if tracks is None or isinstance(tracks, str) else json.dumps(tracks)
+
+
+AWKWARD = {
+    # name: (audio tracks, subtitle tracks): lists are stored as JSON, text as is
+    "tab.mkv": ([{"language": "\tfre", "codec": "AAC", "channels": "6"}], [{"language": " fre "}]),
+    "spaces.mkv": ([{"language": " fre ", "codec": "aac\n", "channels": 6.0}], [{"language": "FRA"}]),
+    "upper.mkv": ([{"language": "FRA", "codec": "ÄC3", "channels": None}], [{"language": 0}]),
+    "zero.mkv": ([{"language": 0, "codec": " ac3 ", "channels": 2}], [{"language": None}]),
+    "null.mkv": ([{"language": None, "codec": None}], [{}]),
+    "missing.mkv": ([{"codec": "dts"}], [{"language": "ÉNG"}]),
+    "accent.mkv": ([{"language": "ÉNG", "channels": 8}, {"language": "en", "channels": 1}], [{"language": "\tfre"}]),
+    "list.mkv": ('["eng"]', '["eng"]'),
+    "object.mkv": ('{"language": "eng", "channels": 8}', '{"language": "eng"}'),
+    "broken.mkv": ("not json", None),
+    "scalar.mkv": ('"eng"', '[["x"], 3, null]'),
+}
+
+
+@pytest_asyncio.fixture
+async def awkward(test_db):
+    async with aiosqlite.connect(test_db) as db:
+        for name, (audio, subs) in AWKWARD.items():
+            await db.execute(
+                "INSERT INTO scan_results (file_path, file_size, scan_timestamp, audio_tracks_json, "
+                "subtitle_tracks_json) VALUES (?, 1, '2026-10-12', ?, ?)", (f"/m/x/{name}", _stored(audio), _stored(subs)))
+        await db.commit()
+    return test_db
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key, more", [("alang", ["und", "eng", "fre", "chi"]), ("slang", ["und", "eng", "fre"]),
+                                       ("acodec", ["aac", "ac3", "truehd"]), ("achan", ["1", "2", "6", "8"])])
+async def test_index_values_and_tokens_agree(awkward, key, more):
+    """Every value the index would keep for a row lists exactly the rows
+    that have it, however oddly the tracks are written."""
+    facet = FACETS[key]
+    async with aiosqlite.connect(awkward) as db:
+        async with db.execute("SELECT id, file_path FROM scan_results") as cur:
+            names = {i: fp.rsplit("/", 1)[-1] for i, fp in await cur.fetchall()}
+        async with db.execute(facet.pairs_sql.format(where="removed_from_list = 0")) as cur:
+            pairs = await cur.fetchall()
+    kept: dict[str, set] = {}
+    for row_id, raw in pairs:
+        value = facet.normalize(raw)
+        if value is not None:
+            kept.setdefault(value, set()).add(names[row_id])
+    assert len(kept) >= 3, kept
+    for value in {*kept, *more}:
+        assert set(await matching(awkward, facet_token(key, value))) == kept.get(value, set()), (key, value)
+
+
+@pytest.mark.asyncio
+async def test_odd_track_json_breaks_no_filter(awkward):
+    """A track list that's an object, a list of strings or not JSON: no
+    tracks, for the lists and for the pills that read tracks."""
+    from backend.routes.scan import _build_enrichment_context
+    async with aiosqlite.connect(awkward) as db:
+        db.row_factory = aiosqlite.Row
+        ctx = await _build_enrichment_context(db)
+        await count_all(db, ctx)  # every pill
+    odd = {"list.mkv", "object.mkv", "broken.mkv", "scalar.mkv"}
+    assert await matching(awkward, "alang:eng") == ["accent.mkv"]
+    assert "accent.mkv" in await matching(awkward, "audio_71")
+    for fid, f in FILTERS.items():
+        if f.sql and "json_each" in f.sql:
+            assert not odd & set(await matching(awkward, fid)), fid
+    channels = encode_advanced([{"property": "audio_channels", "op": "gte", "value": 8}])
+    assert "accent.mkv" in await matching(awkward, channels)
+    assert not odd & set(await matching(awkward, channels))
+
+
+@pytest.mark.asyncio
+async def test_context_without_media_folders(test_db):
+    from backend.routes.scan import _build_enrichment_context
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("DROP TABLE media_dirs")
+        ctx = await _build_enrichment_context(db)
+    assert ctx["media_dir_ids"] == []
