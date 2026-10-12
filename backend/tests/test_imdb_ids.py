@@ -42,17 +42,21 @@ async def test_tmdb_gives_movies_and_shows_their_imdb_id(posters, monkeypatch):
         if url.endswith("/tv/2"):
             return httpx.Response(200, json={"networks": [{"name": "HBO"}], "status": "Ended",
                                              "external_ids": {"imdb_id": "tt0000002"}})
-        if url.endswith("/movie/3/external_ids"):
-            return httpx.Response(200, json={"imdb_id": None})
-        if url.endswith("/movie/1/external_ids"):
+        if url.endswith("/movie/3"):
+            return httpx.Response(200, json={"imdb_id": None, "external_ids": {"imdb_id": None}})
+        if url.endswith("/movie/1"):
             return httpx.Response(200, json={"imdb_id": "tt0000001"})
         return httpx.Response(404, json={})
     monkeypatch.setattr(posters, "_tmdb_get", get)
-    assert await posters._tmdb_details(1, "movie", "k") == {"imdb_id": "tt0000001"}
-    assert await posters._tmdb_details(2, "tv", "k") == {"network": "HBO", "status": "Ended", "imdb_id": "tt0000002"}
-    assert await posters._tmdb_details(3, "movie", "k") == {"imdb_id": ""}  # TMDB has none
+
+    async def ids(tmdb_id, media_type):
+        got = await posters._tmdb_details(tmdb_id, media_type, "k")
+        return {k: got[k] for k in ("imdb_id", "network", "status") if k in got}
+    assert await ids(1, "movie") == {"imdb_id": "tt0000001"}
+    assert await ids(2, "tv") == {"network": "HBO", "status": "Ended", "imdb_id": "tt0000002"}
+    assert await ids(3, "movie") == {"imdb_id": ""}  # TMDB has none
     assert await posters._tmdb_details(4, "movie", "k") == {}  # failed: not "none"
-    assert asked[:2] == [("movie/1/external_ids", None), ("tv/2", "external_ids")]  # one request each
+    assert asked[:2] == [("movie/1", "external_ids"), ("tv/2", "external_ids")]  # one request each
 
 
 @pytest.mark.asyncio
@@ -115,13 +119,16 @@ async def test_titles_cached_before_are_looked_up_once(posters, test_db, monkeyp
         if tmdb_id == 9 and flaky["fail"]:
             return {}  # rate-limited
         return {"imdb_id": {5: "tt0000005", 7: "tt0000007"}.get(tmdb_id, "")}
+    async def find(imdb_id, key):
+        return "u", "tmdb", {"media_type": "movie", "tmdb_id": 1}
     monkeypatch.setattr(posters, "_resolve_tmdb_search", search)
+    monkeypatch.setattr(posters, "_resolve_tmdb", find)
     monkeypatch.setattr(posters, "_tmdb_details", details)
     assert await posters._backfill_details("test-key", lambda p: None) == 4
     assert await _rows(test_db) == [
         ("/m/movies/Film (2001)", "tt0000005", 7.9),     # IMDb's rating replaces TMDB's
         ("/m/movies/Flaky (2011)", None, 5.0),           # failed: tried again next time
-        ("/m/movies/Named [tt0000001]", "tt0000001", 8.2),  # the folder's id, TMDB not asked
+        ("/m/movies/Named [tt0000001]", "tt0000001", 8.2),  # the folder's id wins over TMDB's
         ("/m/movies/Nothing", None, 5.0),                # no match, nothing to look up
         ("/m/movies/Picked", "tt0000007", 5.0),          # the user's pick, by its own title
         ("/m/movies/Unknown (2010)", "", 5.0),           # TMDB has none: not asked again

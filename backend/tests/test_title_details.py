@@ -24,9 +24,13 @@ def tmdb(test_db, monkeypatch):
         calls.append(tmdb_id)
         return {"imdb_id": "", **details.get(tmdb_id, {})}
 
+    async def find_imdb(imdb_id, key):  # [ttN] folders are film 3
+        return "https://img/3.jpg", "tmdb", {"media_type": "movie", "tmdb_id": 3}
+
     async def no_image(*a, **kw):
         return None
     monkeypatch.setattr(posters, "_resolve_tmdb_tvdb", find_tvdb)
+    monkeypatch.setattr(posters, "_resolve_tmdb", find_imdb)
     monkeypatch.setattr(posters, "_tmdb_details", tv_details)
     monkeypatch.setattr(posters, "_download_image", no_image)
     monkeypatch.setenv("SHRINKERR_TMDB_API_KEY", "test-key")
@@ -61,17 +65,19 @@ async def test_shows_cached_before_get_them_once(test_db, tmdb):
              ("/media/Movies/Film [tt0000001]", "Film", "movie")])
         await db.commit()
     assert await posters._backfill_details("test-key", lambda p: None) == 3
-    # TMDB had nothing for show 2: stored as "", not asked again. Movies: no.
+    # TMDB had nothing for show 2: stored as "", not asked again. Films have neither.
     assert await _cache(test_db) == [("/media/Movies/Film [tt0000001]", None, None),
                                      ("/media/TV/Gone [tvdb-2]", "", ""),
                                      ("/media/TV/Old Show [tvdb-1]", "HBO", "Ended")]
     assert await posters._backfill_details("test-key", lambda p: None) == 0
-    assert sorted(calls) == [1, 2]
+    assert sorted(calls) == [1, 2, 3]
 
 
 @pytest.mark.asyncio
-async def test_movies_named_with_their_imdb_id_need_no_details(tmdb):
+async def test_movies_named_with_their_imdb_id_get_their_details_too(tmdb):
+    """For their country, genres and year (v0.10.0); the folder's id wins."""
     posters, calls, _ = tmdb
     meta = {"media_type": "movie", "tmdb_id": 9}
-    assert await posters._with_details(meta, "test-key", "tt0000009") == {**meta, "imdb_id": "tt0000009"}
-    assert calls == []
+    assert await posters._with_details(meta, "test-key", "tt0000009") == {
+        **meta, "imdb_id": "tt0000009", "details_v": posters.DETAILS_VERSION}
+    assert calls == [9]

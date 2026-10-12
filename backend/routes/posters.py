@@ -17,6 +17,9 @@ from backend.metadata import resolve_tmdb_key_sync
 router = APIRouter(prefix="/api/posters")
 
 CACHE_TTL_HOURS = 168  # 7 days
+# A title no match was found for is looked up again after this many days:
+# by the Poster grid (Plex first) when it's shown, and by the prefetch.
+PLACEHOLDER_TTL_DAYS = 7
 
 
 # Pre-compiled regexes for media-ID extraction. We accept three families
@@ -409,9 +412,8 @@ async def resolve_posters(req: ResolveRequest):
         # row older than 7 days re-resolves automatically on next read,
         # which removes the need for the button entirely. Manual overrides
         # and `other-skipped` rows are excluded from the TTL.
-        _PLACEHOLDER_TTL_DAYS = 7
         from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-        _stale_cutoff = (_dt.now(_tz.utc) - _td(days=_PLACEHOLDER_TTL_DAYS)).isoformat()
+        _stale_cutoff = (_dt.now(_tz.utc) - _td(days=PLACEHOLDER_TTL_DAYS)).isoformat()
 
         # Media folder labels for every requested path, from one cached
         # index matched by string prefix (v0.10.0, SC-25: this opened a
@@ -837,11 +839,12 @@ async def resolve_posters(req: ResolveRequest):
             imdb_id = tmdb_meta.get("imdb_id")
             entry = {
                 "title": parsed["title"],
-                "year": parsed.get("year"),
+                # The folder name's, else TMDB's (v0.10.0).
+                "year": parsed.get("year") or tmdb_meta.get("year") or None,
                 "poster_url": f"data:image/jpeg;base64,{image_data}" if image_data else poster_url,
                 "source": source,
-                "genres": tmdb_meta.get("genres"),
-                "country": tmdb_meta.get("country"),
+                "genres": tmdb_meta.get("genres") or None,
+                "country": tmdb_meta.get("country") or None,
                 "media_type": tmdb_meta.get("media_type"),
                 "imdb_id": imdb_id or None,
                 **_rating(imdb_id, tmdb_meta.get("rating")),
@@ -851,11 +854,11 @@ async def resolve_posters(req: ResolveRequest):
             await db.execute(
                 """INSERT OR REPLACE INTO poster_cache
                    (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                    network, status, imdb_id, resolved_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (path, parsed["title"], parsed.get("year"), poster_url, source, image_data,
-                 entry["rating"], tmdb_meta.get("genres"), tmdb_meta.get("country"), tmdb_meta.get("media_type"),
-                 tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, now_iso),
+                    network, status, imdb_id, details_v, resolved_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (path, parsed["title"], entry["year"], poster_url, source, image_data,
+                 entry["rating"], entry["genres"], entry["country"], tmdb_meta.get("media_type"),
+                 tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0), now_iso),
             )
 
         await db.commit()
@@ -900,79 +903,100 @@ _prefetch_progress = {"status": "idle", "total": 0, "resolved": 0, "cached": 0}
 
 
 async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
-    """Titles cached before their IMDb id (and TV shows before their network
-    and status) were stored (v0.10.0): find each on TMDB again — no image
-    download — and store them. What TMDB has none of is stored as "" and not
-    asked again; a lookup that fails is tried again next time."""
+    """Matched titles without the details of DETAILS_VERSION — cached before
+    their IMDb id, a show's network and status (v0.10.0) or their country,
+    genres and year (DETAILS_VERSION 2) were fetched, or matched through
+    Plex: find each on TMDB again — no image download — and store its
+    details. A show's season folders are looked up once. What TMDB has none
+    of doesn't replace what's stored, and a title TMDB doesn't find is marked
+    done: neither is asked again. A lookup that fails is tried again next
+    time. Returns the rows updated."""
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
         await db.execute("PRAGMA busy_timeout=10000")
         async with db.execute(
-            "SELECT folder_path, title, year, source, media_type, status FROM poster_cache "
-            "WHERE source IN ('tmdb', 'tmdb-manual', 'plex') "
-            "AND (imdb_id IS NULL OR (media_type = 'tv' AND status IS NULL))"
+            "SELECT folder_path, title, year, source, media_type FROM poster_cache "
+            "WHERE source IN ('tmdb', 'tmdb-manual', 'plex') AND COALESCE(details_v, 0) < ? "
+            "ORDER BY folder_path", (DETAILS_VERSION,)
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     finally:
         await db.close()
     if not rows:
         return 0
-    print(f"[POSTER] Fetching IMDb ids, networks and statuses for {len(rows)} title(s)", flush=True)
+    print(f"[POSTER] Fetching details (IMDb id, country, genres, network, show status) for {len(rows)} title(s)",
+          flush=True)
     sem = asyncio.Semaphore(3)
+    lookups: dict[tuple, asyncio.Future] = {}  # one per title: a show's season folders share theirs
+
+    async def lookup(manual: bool, title, year, hint, imdb_id, tvdb_id) -> dict:
+        """The title's TMDB match with its details; {} when TMDB doesn't
+        find it. Raises when a request failed."""
+        async with sem:
+            await asyncio.sleep(0.35)  # ~3 req/sec, as the prefetch
+            meta: dict = {}
+            if manual:  # the user's pick: its own title
+                _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint)
+            else:
+                if imdb_id:
+                    _, _, meta = await _resolve_tmdb(imdb_id, tmdb_key)
+                if not meta and tvdb_id:
+                    _, _, meta = await _resolve_tmdb_tvdb(tvdb_id, tmdb_key)
+                if not meta and title and len(title) >= 3:
+                    _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint)
+            if not meta.get("tmdb_id"):
+                return {}
+            details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), tmdb_key)
+        if not details:
+            raise RuntimeError("TMDB details unavailable")  # rate-limited or down: next time
+        return {**meta, **details}
 
     async def one(row: dict) -> tuple | None:
         path = row["folder_path"]
         parsed = await asyncio.to_thread(parse_folder_name, path)
-        tv = row["media_type"] == "tv" and row["status"] is None
-        if parsed.get("imdb_id") and not tv:  # the folder's id, nothing to ask TMDB
-            return (parsed["imdb_id"], None, None, _rating(parsed["imdb_id"], None)["rating"], path)
-        async with sem:
-            await asyncio.sleep(0.35)  # ~3 req/sec, as the prefetch
-            try:
-                meta: dict = {}
-                if row["source"] == "tmdb-manual":  # the user's pick: its own title
-                    _, _, meta = await _resolve_tmdb_search(row["title"], row["year"], tmdb_key,
-                                                            media_type_hint=row["media_type"])
-                else:
-                    if parsed.get("imdb_id"):
-                        _, _, meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
-                    if not meta and parsed.get("tvdb_id"):
-                        _, _, meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
-                    if not meta and parsed.get("title") and len(parsed["title"]) >= 3:
-                        _, _, meta = await _resolve_tmdb_search(
-                            parsed["title"], parsed.get("year"), tmdb_key,
-                            media_type_hint=row["media_type"] or _media_type_hint_from_parsed(parsed)
-                            or media_type_hint_for(path))
-                if meta.get("tmdb_id"):
-                    details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), tmdb_key)
-                    if not details:  # rate-limited or down: next time
-                        return None
-                    meta = {**meta, **details}
-            except Exception:
-                return None
+        if row["source"] == "tmdb-manual":
+            key = (True, row["title"], row["year"], row["media_type"], None, None)
+        else:
+            hint = row["media_type"] or _media_type_hint_from_parsed(parsed) or media_type_hint_for(path)
+            key = (False, parsed.get("title"), parsed.get("year"), hint, parsed.get("imdb_id"), parsed.get("tvdb_id"))
+        if key not in lookups:
+            lookups[key] = asyncio.ensure_future(lookup(*key))
+        try:
+            meta = await lookups[key]
+        except Exception:
+            return None
         imdb_id = parsed.get("imdb_id") or meta.get("imdb_id") or ""
-        return (imdb_id, (meta.get("network") or "") if tv else None, (meta.get("status") or "") if tv else None,
-                _rating(imdb_id, None)["rating"], path)
+        tv = meta.get("media_type") == "tv"  # a show's network and status; a film has none
+        network, status = ((meta.get("network") or ""), (meta.get("status") or "")) if tv else (None, None)
+        return (imdb_id, network, network, status, status,
+                _rating(imdb_id, None)["rating"], meta.get("rating"), meta.get("country") or "",
+                meta.get("genres") or "", meta.get("year") or "", DETAILS_VERSION, path)
 
     done = 0
     for i in range(0, len(rows), 20):
         updates = [r for r in await asyncio.gather(*[one(r) for r in rows[i:i + 20]], return_exceptions=True)
                    if isinstance(r, tuple)]
-        if not updates:
-            continue
-        db = await aiosqlite.connect(DB_PATH)
-        try:
-            await db.execute("PRAGMA busy_timeout=30000")
-            # The IMDb rating replaces TMDB's; a show's network and status
-            # only where missing.
-            await db.executemany(
-                "UPDATE poster_cache SET imdb_id = ?, network = COALESCE(network, ?), "
-                "status = COALESCE(status, ?), rating = COALESCE(?, rating) WHERE folder_path = ?", updates)
-            await db.commit()
-        finally:
-            await db.close()
-        done += len(updates)
+        if updates:
+            db = await aiosqlite.connect(DB_PATH)
+            try:
+                await db.execute("PRAGMA busy_timeout=30000")
+                # Never replaced by none. The IMDb rating replaces TMDB's, which
+                # only fills in a missing one; the year in the folder name stays.
+                await db.executemany(
+                    "UPDATE poster_cache SET imdb_id = COALESCE(NULLIF(?, ''), imdb_id, ''), "
+                    "network = COALESCE(NULLIF(?, ''), network, ?), status = COALESCE(NULLIF(?, ''), status, ?), "
+                    "rating = COALESCE(?, rating, ?), country = COALESCE(NULLIF(?, ''), country), "
+                    "genres = COALESCE(NULLIF(?, ''), genres), year = COALESCE(NULLIF(year, ''), NULLIF(?, '')), "
+                    "details_v = ? WHERE folder_path = ?", updates)
+                await db.commit()
+            finally:
+                await db.close()
+            done += len(updates)
+        if (i + 20) % 500 < 20 and i + 20 < len(rows):
+            print(f"[POSTER] Details: {i + 20}/{len(rows)}", flush=True)
+    print(f"[POSTER] Details stored for {done}/{len(rows)} title(s)"
+          + (f"; {len(rows) - done} tried again next time" if done < len(rows) else ""), flush=True)
     return done
 
 
@@ -1001,10 +1025,17 @@ async def _run_prefetch():
                 for row in await cur.fetchall():
                     settings[row["key"]] = row["value"]
 
-            # Check which already have cached images
-            already_cached = set()
+            # Titles not resolved again: those with an image, and (v0.10.0,
+            # now that this runs every few hours) what it can't improve on —
+            # the user's Fix match, an Other folder's row, a Plex match (it
+            # doesn't ask Plex) and a title not found in the last week (the
+            # Poster grid tries those again after a week, Plex first; finding
+            # them here every few hours would put that off forever).
+            stale_cutoff = (datetime.now(timezone.utc) - timedelta(days=PLACEHOLDER_TTL_DAYS)).isoformat()
             async with db.execute(
-                "SELECT folder_path FROM poster_cache WHERE image_data IS NOT NULL"
+                "SELECT folder_path FROM poster_cache WHERE image_data IS NOT NULL "
+                "OR source IN ('tmdb-manual', 'other-skipped', 'plex') "
+                "OR (source = 'placeholder' AND resolved_at >= ?)", (stale_cutoff,)
             ) as cur:
                 already_cached = {r["folder_path"] for r in await cur.fetchall()}
 
@@ -1037,18 +1068,21 @@ async def _run_prefetch():
         from backend.scan_filters import title_folder
         title_folders = {tf for tf in (title_folder(fp) for fp in all_paths) if tf}
 
-        folder_list = sorted(title_folders)
-        to_resolve = [p for p in folder_list if p not in already_cached]
-        _prefetch_progress["total"] = len(folder_list)
-        _prefetch_progress["cached"] = len(already_cached & title_folders)
-        _prefetch_progress["resolved"] = _prefetch_progress["cached"]
-
-        print(f"[POSTER] {len(folder_list)} titles total, {len(already_cached & title_folders)} cached, {len(to_resolve)} to fetch", flush=True)
-
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")
         tmdb_key = resolve_tmdb_key_sync(settings.get("tmdb_api_key"))
         path_mapping = settings.get("plex_path_mapping", "")
+
+        folder_list = sorted(title_folders)
+        # Without a TMDB key nothing can be found here (Plex isn't asked):
+        # placeholders would only keep the Poster grid from asking Plex.
+        to_resolve = [p for p in folder_list if p not in already_cached] if tmdb_key else []
+        _prefetch_progress["total"] = len(folder_list)
+        _prefetch_progress["cached"] = len(already_cached & title_folders)
+        _prefetch_progress["resolved"] = _prefetch_progress["cached"]
+
+        print(f"[POSTER] {len(folder_list)} titles total, {len(already_cached & title_folders)} cached, {len(to_resolve)} to fetch"
+              + ("" if tmdb_key else " (no TMDB key)"), flush=True)
 
         # Step 3: Sequential resolution with rate limiting + batch DB writes
         # TMDB rate limit: 40 requests/10 seconds. We pace at ~3 req/sec to stay under.
@@ -1056,13 +1090,13 @@ async def _run_prefetch():
         sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
             (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-             network, status, imdb_id, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+             network, status, imdb_id, details_v, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
         async def _do_one(path: str) -> tuple | None:
             async with sem:
                 await asyncio.sleep(0.35)  # ~3 req/sec to respect TMDB rate limits
-                parsed = parse_folder_name(path)
+                parsed = await asyncio.to_thread(parse_folder_name, path)  # lists the folder: on the NAS
                 poster_url = None
                 source = "placeholder"
                 tmdb_meta = {}
@@ -1104,10 +1138,11 @@ async def _run_prefetch():
                 tmdb_meta = await _with_details(tmdb_meta, tmdb_key, parsed.get("imdb_id"))
                 imdb_id = tmdb_meta.get("imdb_id")
 
-                return (path, parsed["title"], parsed.get("year"), poster_url, source, image_data,
-                        _rating(imdb_id, tmdb_meta.get("rating"))["rating"], tmdb_meta.get("genres"),
-                        tmdb_meta.get("country"), tmdb_meta.get("media_type"),
-                        tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, now_str)
+                return (path, parsed["title"], parsed.get("year") or tmdb_meta.get("year") or None, poster_url,
+                        source, image_data, _rating(imdb_id, tmdb_meta.get("rating"))["rating"],
+                        tmdb_meta.get("genres") or None, tmdb_meta.get("country") or None, tmdb_meta.get("media_type"),
+                        tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0),
+                        now_str)
 
         # Process in chunks of 20 (rate-limited HTTP, batch DB write)
         for ci in range(0, len(to_resolve), 20):
@@ -1230,6 +1265,15 @@ async def _tmdb_get(client, url: str, params: dict, *, retries: int = 2):
     return resp
 
 
+def _check_tmdb(resp) -> None:
+    """A lookup TMDB didn't answer (still rate-limited after _tmdb_get's
+    retries, down, a bad key) raises instead of reading as "no match"
+    (v0.10.0): the details backfill marks a title TMDB doesn't find as done.
+    The resolvers' callers catch it and try the next way, as for no match."""
+    if resp.status_code != 200:
+        raise RuntimeError(f"TMDB returned {resp.status_code}")
+
+
 async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping):
     import httpx
     from backend.plex import _translate_path, get_plex_libraries
@@ -1306,17 +1350,17 @@ async def _resolve_tmdb(imdb_id, api_key):
             f"https://api.themoviedb.org/3/find/{imdb_id}",
             {"api_key": api_key, "external_source": "imdb_id"},
         )
-        if resp.status_code == 200:
-            for key in ["movie_results", "tv_results"]:
-                items = resp.json().get(key, [])
-                if not items:
-                    continue
-                item = items[0]  # /find returns at most one for a given external ID
-                media_type = "movie" if key == "movie_results" else "tv"
-                meta = _extract_tmdb_meta(item, media_type, api_key)
-                poster = item.get("poster_path")
-                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
-                return poster_url, "tmdb", meta
+        _check_tmdb(resp)
+        for key in ["movie_results", "tv_results"]:
+            items = resp.json().get(key, [])
+            if not items:
+                continue
+            item = items[0]  # /find returns at most one for a given external ID
+            media_type = "movie" if key == "movie_results" else "tv"
+            meta = _extract_tmdb_meta(item, media_type, api_key)
+            poster = item.get("poster_path")
+            poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+            return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
@@ -1339,14 +1383,14 @@ async def _resolve_tmdb_tvdb(tvdb_id, api_key):
             f"https://api.themoviedb.org/3/find/{tvdb_id}",
             {"api_key": api_key, "external_source": "tvdb_id"},
         )
-        if resp.status_code == 200:
-            items = resp.json().get("tv_results", [])
-            if items:
-                item = items[0]
-                meta = _extract_tmdb_meta(item, "tv", api_key)
-                poster = item.get("poster_path")
-                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
-                return poster_url, "tmdb", meta
+        _check_tmdb(resp)
+        items = resp.json().get("tv_results", [])
+        if items:
+            item = items[0]
+            meta = _extract_tmdb_meta(item, "tv", api_key)
+            poster = item.get("poster_path")
+            poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+            return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
@@ -1374,54 +1418,100 @@ _TMDB_GENRES = {
     10759: "Action & Adventure", 10762: "Kids", 10763: "News", 10764: "Reality",
     10765: "Sci-Fi & Fantasy", 10766: "Soap", 10767: "Talk", 10768: "War & Politics",
 }
+# TMDB's TV genres that are two (v0.10.0): stored as their parts, as the
+# films' genres name them, so the Genre list has Action, not also "Action &
+# Adventure". scan_filters.row_title splits them in rows stored before.
+_COMBINED_GENRES = {"Action & Adventure": ("Action", "Adventure"), "Sci-Fi & Fantasy": ("Sci-Fi", "Fantasy"),
+                    "War & Politics": ("War", "Politics")}
+
+
+def _genre_names(genres: list | None) -> str:
+    """A title's genres as stored: its first three TMDB genres — ids (search
+    results) or {id, name} (its record) — named by _TMDB_GENRES, else as TMDB
+    names them, the combined TV genres split, without repeats:
+    "Action, Adventure, Drama"; "" for none."""
+    pairs = ((g.get("id"), g.get("name")) if isinstance(g, dict) else (g, None) for g in genres or [])
+    named = [n for n in (_TMDB_GENRES.get(gid) or name for gid, name in pairs) if n]
+    out: list[str] = []
+    for name in named[:3]:
+        out += [part for part in _COMBINED_GENRES.get(name, (name,)) if part not in out]
+    return ", ".join(out)
+
+
+def _country_names(item: dict) -> str:
+    """A title's countries as stored: its first two origin countries (else
+    production countries), named by _COUNTRY_NAMES, else as TMDB's
+    production_countries name them, else the code: "Great Britain, United
+    States"; "" for none."""
+    produced = {c.get("iso_3166_1"): c.get("name") for c in item.get("production_countries") or []
+                if c.get("iso_3166_1")}
+    codes = item.get("origin_country") or list(produced)
+    return ", ".join(_COUNTRY_NAMES.get(c) or produced.get(c) or c for c in codes[:2])
 
 
 def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
     """Extract metadata from a TMDB result item."""
-    genre_ids = item.get("genre_ids", [])
-    genres = [_TMDB_GENRES.get(g, "") for g in genre_ids]
-    genres = [g for g in genres if g]
-
     return {
         "rating": round(item.get("vote_average", 0), 1) if item.get("vote_average") else None,
-        "genres": ", ".join(genres[:3]) if genres else None,
-        "country": ", ".join(_COUNTRY_NAMES.get(c, c) for c in item.get("origin_country", [])[:2]) if item.get("origin_country") else None,
+        "genres": _genre_names(item.get("genre_ids")) or None,
+        "country": _country_names(item) or None,
         "media_type": media_type,
         "tmdb_id": item.get("id"),
     }
 
 
+# The details a title's TMDB record gives (_tmdb_details). Bump when they
+# change: rows with an older version are fetched again (_backfill_details).
+#   1: IMDb id, a TV show's network and status (v0.10.0)
+#   2: country, genres and year, for films too
+DETAILS_VERSION = 2
+
+
+def _details_of(data: dict, tv: bool) -> dict:
+    """The details in a title's TMDB record (/movie/{id} or /tv/{id} with
+    its external_ids): IMDb id, country, genres, year and a TV show's
+    network and status. What TMDB has none of is ""."""
+    date = data.get("first_air_date") if tv else data.get("release_date")
+    out = {"imdb_id": data.get("imdb_id") or (data.get("external_ids") or {}).get("imdb_id") or "",
+           "country": _country_names(data), "genres": _genre_names(data.get("genres")), "year": (date or "")[:4]}
+    if tv:
+        networks = data.get("networks") or []
+        out["network"] = (networks[0].get("name") if networks else None) or ""
+        out["status"] = data.get("status") or ""
+    return out
+
+
 async def _tmdb_details(tmdb_id, media_type: str, api_key) -> dict:
-    """What TMDB's search results leave out (v0.10.0): the title's IMDb id
-    ("" when TMDB has none) — the IMDb link and rating for folders named
-    without one — and a TV show's network and status ("Returning Series",
-    "Ended", "Canceled", ...) for the Scanner's filters."""
+    """What TMDB's search results leave out, from the title's own record —
+    one request (v0.10.0): its IMDb id — the IMDb link and rating for
+    folders named without one — a film's country (search results only give
+    a show's), genres and year, and a TV show's network and status
+    ("Returning Series", "Ended", "Canceled", ...) for the Scanner's filters.
+    {} when the request failed."""
     import httpx
     tv = media_type == "tv"
-    url = (f"https://api.themoviedb.org/3/tv/{tmdb_id}" if tv
-           else f"https://api.themoviedb.org/3/movie/{tmdb_id}/external_ids")
-    params = {"api_key": api_key, **({"append_to_response": "external_ids"} if tv else {})}
+    url = f"https://api.themoviedb.org/3/{'tv' if tv else 'movie'}/{tmdb_id}"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await _tmdb_get(client, url, params)
+        resp = await _tmdb_get(client, url, {"api_key": api_key, "append_to_response": "external_ids"})
         if resp.status_code != 200:
             return {}
         data = resp.json()
-    if not tv:
-        return {"imdb_id": data.get("imdb_id") or ""}
-    networks = data.get("networks") or []
-    return {"network": (networks[0].get("name") if networks else None) or "", "status": data.get("status") or "",
-            "imdb_id": (data.get("external_ids") or {}).get("imdb_id") or ""}
+    return _details_of(data, tv)
 
 
 async def _with_details(meta: dict, api_key, imdb_id: str | None = None) -> dict:
-    """`meta` plus the title's IMDb id — `imdb_id` (the folder's) when given,
-    else TMDB's — and a TV show's network and status."""
-    tv = meta.get("media_type") == "tv"
-    if meta.get("tmdb_id") and api_key and (tv or not imdb_id):
+    """`meta` plus the title's details (_tmdb_details), with `imdb_id` (the
+    folder's), when given, as its IMDb id. `details_v` is DETAILS_VERSION
+    when they were fetched. A search result's country or genres aren't
+    replaced by none."""
+    if meta.get("tmdb_id") and api_key:
         try:
-            meta = {**meta, **await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), api_key)}
+            details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), api_key)
         except Exception:
-            pass
+            details = {}
+        if details:
+            meta = {**meta, **{k: v for k, v in details.items() if v or not meta.get(k)},
+                    "details_v": DETAILS_VERSION}
     return {**meta, "imdb_id": imdb_id} if imdb_id else meta
 
 
@@ -1565,25 +1655,25 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
             if year:
                 params["year"] = year
         resp = await _tmdb_get(client, endpoint, params)
-        if resp.status_code == 200:
-            results = resp.json().get("results", [])
-            # Typed endpoints don't include media_type on each item;
-            # stamp it so the downstream _extract_tmdb_meta sees the right
-            # value. /search/multi returns mixed types — no post-filter here
-            # since hint is None. Caller wanted "anything".
-            if media_type_hint in ("movie", "tv"):
-                for r in results:
-                    r["media_type"] = media_type_hint
-            item = pick_tmdb_match(results, title, year)
-            if item is not None:
-                mt = item.get("media_type", "movie")
-                meta = _extract_tmdb_meta(item, mt, api_key)
-                # Poster is optional — a title with no TMDB poster is still a
-                # better match than falling through to a wrong-year/wrong-show
-                # fuzzy guess. Render placeholder, keep the meta. v0.3.56+.
-                poster = item.get("poster_path")
-                poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
-                return poster_url, "tmdb", meta
+        _check_tmdb(resp)
+        results = resp.json().get("results", [])
+        # Typed endpoints don't include media_type on each item;
+        # stamp it so the downstream _extract_tmdb_meta sees the right
+        # value. /search/multi returns mixed types — no post-filter here
+        # since hint is None. Caller wanted "anything".
+        if media_type_hint in ("movie", "tv"):
+            for r in results:
+                r["media_type"] = media_type_hint
+        item = pick_tmdb_match(results, title, year)
+        if item is not None:
+            mt = item.get("media_type", "movie")
+            meta = _extract_tmdb_meta(item, mt, api_key)
+            # Poster is optional — a title with no TMDB poster is still a
+            # better match than falling through to a wrong-year/wrong-show
+            # fuzzy guess. Render placeholder, keep the meta. v0.3.56+.
+            poster = item.get("poster_path")
+            poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+            return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
@@ -1878,19 +1968,14 @@ async def override_poster(req: OverrideRequest):
     poster_path = data.get("poster_path")
     poster_url = f"https://image.tmdb.org/t/p/w300{poster_path}" if poster_path else None
 
-    genres = data.get("genres") or []
-    genre_names = ", ".join(g.get("name", "") for g in genres[:3] if g.get("name"))
-    countries = data.get("origin_country") or []
-    country_names = ", ".join(_COUNTRY_NAMES.get(c, c) for c in countries[:2])
-    # v0.10.0: its IMDb id — the IMDb link and rating — and a show's network
-    # and status, as the automatic match stores them.
-    imdb_id = data.get("imdb_id") or (data.get("external_ids") or {}).get("imdb_id") or ""
+    # v0.10.0: its details — IMDb id (the IMDb link and rating), country,
+    # genres and a show's network and status — as the automatic match stores
+    # them (the record is the one _tmdb_details reads).
+    details = _details_of(data, req.media_type == "tv")
+    genre_names, country_names, imdb_id = details["genres"], details["country"], details["imdb_id"]
     rated = _rating(imdb_id, round(data.get("vote_average", 0), 1) if data.get("vote_average") else None)
     rating = rated["rating"]
-    tv = req.media_type == "tv"
-    networks = data.get("networks") or []
-    network = ((networks[0].get("name") if networks else None) or "") if tv else None
-    status = (data.get("status") or "") if tv else None
+    network, status = details.get("network"), details.get("status")
 
     # Backend-download + base64-cache so subsequent reads of this
     # folder render instantly from poster_cache without a browser
@@ -1921,11 +2006,11 @@ async def override_poster(req: OverrideRequest):
         await db.execute(
             """INSERT OR REPLACE INTO poster_cache
                (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                network, status, imdb_id, resolved_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                network, status, imdb_id, details_v, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (req.folder_path, title, year, poster_url, "tmdb-manual", image_data,
              rating, genre_names or None, country_names or None, req.media_type,
-             network, status, imdb_id, datetime.now(timezone.utc).isoformat()),
+             network, status, imdb_id, DETAILS_VERSION, datetime.now(timezone.utc).isoformat()),
         )
         # v0.9.95: a manual match is authoritative — ALWAYS mark the row(s)
         # 'tmdb-manual', even if TMDB has no original_language for the pick

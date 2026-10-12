@@ -14,6 +14,7 @@ def _fakes(monkeypatch, calls, fail=()):
     import backend.jellyfin as jellyfin
     import backend.maintainerr as maintainerr
     import backend.plex as plex
+    import backend.routes.posters as posters
 
     def fake(name, result=None):
         async def run():
@@ -27,6 +28,7 @@ def _fakes(monkeypatch, calls, fail=()):
     monkeypatch.setattr(emby, "sync_emby_metadata_cache", fake("emby"))
     monkeypatch.setattr(arr, "sync_arr_file_status", fake("arr"))
     monkeypatch.setattr(maintainerr, "sync_maintainerr", fake("maintainerr"))
+    monkeypatch.setattr(posters, "start_prefetch", fake("prefetch"))
 
 
 @pytest.mark.asyncio
@@ -54,6 +56,26 @@ async def test_the_loop_reads_after_start_up_and_every_few_hours_but_not_during_
         await library_sync.library_sync_loop()
     assert sleeps == [library_sync.STARTUP_DELAY, library_sync.INTERVAL, library_sync.INTERVAL, library_sync.INTERVAL]
     assert calls.count("arr") == 2  # the second round was skipped: a scan was running
+    # Then the poster prefetch (v0.10.0): posters for new titles, and every
+    # title's country, genres, network and show status.
+    assert calls == ["plex", "jellyfin", "emby", "arr", "maintainerr", "prefetch"] * 2
+
+
+@pytest.mark.asyncio
+async def test_a_failing_prefetch_leaves_the_loop_running(monkeypatch):
+    import backend.routes.scan as scan_routes
+    calls, sleeps = [], []
+    _fakes(monkeypatch, calls, fail=("prefetch",))
+    monkeypatch.setattr(scan_routes, "scan_is_actively_running", lambda: False)
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) > 2:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(library_sync.asyncio, "sleep", sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await library_sync.library_sync_loop()
+    assert calls.count("prefetch") == 2
 
 
 @pytest.mark.asyncio

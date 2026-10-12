@@ -604,6 +604,9 @@ async def init_db():
             # The title's IMDb id, from TMDB when the folder name has none
             # (v0.10.0); "" when TMDB has none.
             ("imdb_id", "TEXT"),
+            # The posters.DETAILS_VERSION of the details (country, genres,
+            # network...) fetched from the title's TMDB record; 0: not yet.
+            ("details_v", "INTEGER DEFAULT 0"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")

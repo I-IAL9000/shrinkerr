@@ -265,6 +265,11 @@ def hdr_kind(row: dict) -> Optional[str]:
 _TITLE_ID_FOLDER = re.compile(r"\[(?:tvdb-\d+|tt\d+)\]")
 _SHOW_STATUS = {"returning series": "returning", "ended": "ended", "canceled": "canceled", "cancelled": "canceled",
                 "in production": "in_production", "planned": "planned", "pilot": "pilot"}
+# One genre each (v0.10.0): TMDB's combined TV genres and the long name of
+# its film genre, as the poster cache (before) and the media servers store
+# them, read as the films' single genres.
+_GENRE_PARTS = {"action & adventure": ("action", "adventure"), "sci-fi & fantasy": ("sci-fi", "fantasy"),
+                "war & politics": ("war", "politics"), "science fiction": ("sci-fi",)}
 
 
 def title_folder(fp: str) -> str:
@@ -306,6 +311,7 @@ def row_title(row: dict, ctx: dict) -> dict:
         while "/" in path.rstrip("/"):
             path = path.rstrip("/").rsplit("/", 1)[0] + "/"
             found |= server.get(path, set())
+    found = {part for g in found for part in _GENRE_PARTS.get(g, (g,))}
     try:
         year = int(year) if year else None
     except (TypeError, ValueError):
@@ -601,7 +607,7 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # A track's field is read once, in SQL (_track_text), by the index and the
 # lists alike; Python only folds that text, so the two can't disagree.
 
-FACETS_VERSION = 4  # bump when a facet's normalize / values changes
+FACETS_VERSION = 5  # bump when a facet's normalize / values changes
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 

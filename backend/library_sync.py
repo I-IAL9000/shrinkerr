@@ -5,7 +5,8 @@ Radarr (cutoff, monitoring) and Maintainerr (leaving soon).
 Read after each full scan, and on its own (v0.10.0): a few minutes after
 start-up and every few hours. A full scan of a big library takes hours, and
 the filters that read these (Not watched in, Sonarr / Radarr, Plex, Leaving
-soon) showed 0 until one had run.
+soon) showed 0 until one had run. The loop then starts the poster prefetch,
+which fills in the Title lists (country, genres, network, show status).
 """
 import asyncio
 
@@ -52,8 +53,8 @@ async def sync_all() -> None:
 
 
 async def library_sync_loop() -> None:
-    """sync_all() after start-up and every INTERVAL, skipped while a scan
-    runs (it reads them itself when it's done)."""
+    """sync_all() after start-up and every INTERVAL, then the poster
+    prefetch; skipped while a scan runs (it does both when it's done)."""
     await asyncio.sleep(STARTUP_DELAY)
     from backend.routes.scan import scan_is_actively_running
     while True:
@@ -64,4 +65,12 @@ async def library_sync_loop() -> None:
                 raise
             except Exception as exc:
                 print(f"[SYNC] Reading the media servers and Sonarr / Radarr failed: {exc}", flush=True)
+            # Posters for titles without one, and every title's country,
+            # genres, network and show status (v0.10.0: only after a full
+            # scan before). It runs on its own, one at a time.
+            try:
+                from backend.routes.posters import start_prefetch
+                await start_prefetch()
+            except Exception as exc:
+                print(f"[SYNC] Poster prefetch skipped: {exc}", flush=True)
         await asyncio.sleep(INTERVAL)
