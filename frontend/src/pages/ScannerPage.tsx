@@ -1552,6 +1552,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             activeFilters={filters}
             counts={filterCounts}
             matching={facets ? facets.matching ?? treeTotalFiles : null}
+            total={serverStats?.counts?.all}
             onToggle={(key, exclude) => setFilters(prev => toggleFilter(prev, key, exclude))}
             onRemove={token => setFilters(prev => {
               const next = prev.filter(x => x !== token && x !== "all");

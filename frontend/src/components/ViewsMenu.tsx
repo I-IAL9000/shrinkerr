@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { deleteView, getViews, saveView, type SavedView } from "../api";
+import Chevron from "./Chevron";
 import { encodeAdvanced } from "../advancedSearch";
 import type { SearchPredicate } from "../api";
 import { useToast } from "../useToast";
@@ -83,7 +84,7 @@ export default function ViewsMenu({ filter, onApply }: { filter: string; onApply
           color: active ? "var(--accent-text)" : undefined,
           borderColor: active ? "var(--accent-text)" : undefined,
         }}>
-        {active ? active.name : t("scanner:views.button")} ▾
+        {active ? active.name : t("scanner:views.button")} <Chevron />
       </button>
       {open && (
         <div role="dialog" aria-label={t("scanner:views.title")}

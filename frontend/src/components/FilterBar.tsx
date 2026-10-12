@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Chevron from "./Chevron";
 import FilterPanel from "./FilterPanel";
 import { CATEGORIES, QUICK_FILTERS, chipLabel, optionLabel, selectedIn, type FilterCategory } from "../filterCatalog";
 import { fmtNum } from "../fmt";
@@ -8,6 +9,7 @@ interface FilterBarProps {
   activeFilters: string[];
   counts?: Record<string, number>;
   matching: number | null;  // files the whole filter matches; null while counting
+  total?: number;  // files in the Scanner, for the All pill
   onToggle: (key: string, exclude: boolean) => void;
   onRemove: (token: string) => void;
   onClear: () => void;
@@ -23,7 +25,7 @@ function shortCount(n: number): string {
  * more shows more; across sections, files must match all (the server's
  * scan_filters.py decides; filterCatalog.json lays it out).
  */
-export default function FilterBar({ activeFilters, counts, matching, onToggle, onRemove, onClear }: FilterBarProps) {
+export default function FilterBar({ activeFilters, counts, matching, total, onToggle, onRemove, onClear }: FilterBarProps) {
   const { t } = useTranslation(["scanner"]);
   const [open, setOpen] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -84,8 +86,13 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
 
   useEffect(() => {
     if (!open) return;
+    // Anywhere but the open menu and its button closes it: the bar is as
+    // wide as the page, and a click beside the pills stayed "inside" it.
     const away = (e: MouseEvent) => {
-      if (barRef.current && !barRef.current.contains(e.target as Node)) setOpen(null);
+      const target = e.target as Node;
+      const panel = barRef.current?.querySelector(".filter-panel");
+      if (panel?.contains(target) || buttons.current.get(open)?.contains(target)) return;
+      setOpen(null);
     };
     const esc = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") close(); };
     document.addEventListener("mousedown", away);
@@ -125,7 +132,7 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
           onClick={() => setOpen(isOpen ? null : category.key)}>
           <span>{selected.length ? t("scanner:filterBar.summary", { category: title, selected: shown }) : title}</span>
           {dimmed && <span className="sr-only">{` — ${t("scanner:filterBar.noFiles")}`}</span>}
-          <span aria-hidden="true" className="filter-category-caret">▾</span>
+          <Chevron />
         </button>
         {isOpen && (
           <FilterPanel category={category} active={active} counts={counts} lastCounts={lastCounts.current}
@@ -138,6 +145,12 @@ export default function FilterBar({ activeFilters, counts, matching, onToggle, o
   return (
     <div ref={barRef} className="filter-bar">
       <div className="filter-bar-row">
+        {/* Every file, and how many there are: pressed with no filter on. */}
+        <button className={`filter-pill${active.length === 0 ? " active" : ""}`} aria-pressed={active.length === 0}
+          onClick={() => { if (active.length) clearAll(); }}>
+          <span className="filter-pill-label">{t("scanner:filterBar.all")}</span>
+          {total != null && <span className="filter-pill-count">{shortCount(total)}</span>}
+        </button>
         {QUICK_FILTERS.map(key => {
           const included = active.includes(key);
           const excluded = active.includes("!" + key);

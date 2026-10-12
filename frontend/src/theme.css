@@ -422,7 +422,10 @@ body {
 .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .btn-sm { padding: 5px 11px; font-size: 12px; }
 .btn-xs { padding: 3px 9px; font-size: 11px; }
-.btn-pill { border-radius: 16px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.btn-pill {  /* the filter pills' box too */
+  padding: 6px 12px; border-radius: 25px; font-size: 12px; font-weight: 500; line-height: 1.4;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
 .btn-primary { background: var(--accent-btn); color: var(--text-primary); }
 .btn-primary:hover:not(:disabled) { background: var(--accent); }
 .btn-secondary { background: var(--bg-tertiary); color: var(--text-muted); border-color: var(--border); }
@@ -468,9 +471,12 @@ body {
 
 /* Sort / view pills */
 .sort-pill {
+  /* The filter pills' box: one height for both rows (v0.10.0). */
   padding: 6px 12px;
-  border-radius: 16px;
+  border-radius: 25px;
   font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
   border: 1px solid var(--border);
   background: var(--bg-card);
@@ -542,7 +548,8 @@ body {
   padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: bold; line-height: 1.4;
   background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text-secondary);
 }
-.filter-category-caret { font-size: 9px; opacity: 0.6; }
+.chevron { flex-shrink: 0; opacity: 0.75; }
+.btn svg.chevron, .sort-pill svg.chevron { margin: 0; vertical-align: middle; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .filter-chip {
   display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px 3px 10px;
