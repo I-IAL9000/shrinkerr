@@ -11,7 +11,7 @@ import asyncio
 import json
 from typing import Optional
 
-from backend.scan_filters import LISTED, PY_COLUMNS, Facet, Filter
+from backend.scan_filters import LISTED, PY_COLUMNS, _track_array, _track_text, Facet, Filter
 
 _PER_COLUMN = 62  # bit 63 is the sign; 62 leaves one spare
 
@@ -65,7 +65,43 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
                     mask ^= low
     await asyncio.to_thread(spread)
 
-    for facet in [f for f in facets if f.pairs_sql]:
+    # Lists of one track column, in one pass over it (Facet.combine).
+    by_column: dict[str, list] = {}
+    for facet in facets:
+        if facet.combine:
+            by_column.setdefault(facet.combine[0], []).append(facet)
+    for column, group in by_column.items():
+        exprs = [f"CAST(json_extract(t.value, '$.{field}') AS INTEGER)" if kind == "max" else _track_text(field)
+                 for _, kind, field in (f.combine for f in group)]
+        sql = (f"SELECT s.id, {', '.join(exprs)} FROM (SELECT id, {column} FROM scan_results WHERE {where}) s, "
+               f"json_each({_track_array(f's.{column}')}) t WHERE t.type = 'object'")
+        async with db.execute(sql, where_params) as cur:
+            rows = await cur.fetchall()
+
+        def spread_tracks(rows=rows, group=group) -> None:
+            seen = set()
+            widest: list[dict] = [{} for _ in group]  # "max" lists: row id -> its widest track
+            for row in rows:
+                row_id = row[0]
+                for n, facet in enumerate(group):
+                    raw = row[n + 1]
+                    if facet.combine[1] == "max":
+                        if row_id not in widest[n] or (raw is not None and (widest[n][row_id] is None
+                                                                            or raw > widest[n][row_id])):
+                            widest[n][row_id] = raw
+                        continue
+                    value = facet.normalize(raw)
+                    if value and (n, row_id, value) not in seen:
+                        seen.add((n, row_id, value))
+                        members.setdefault(f"{facet.key}:{value}", []).append(row_id)
+            for n, facet in enumerate(group):
+                for row_id, raw in widest[n].items():
+                    value = facet.normalize(raw)
+                    if value:
+                        members.setdefault(f"{facet.key}:{value}", []).append(row_id)
+        await asyncio.to_thread(spread_tracks)
+
+    for facet in [f for f in facets if f.pairs_sql and not f.combine]:
         async with db.execute(facet.pairs_sql.format(where=where), where_params) as cur:
             pairs = await cur.fetchall()
 

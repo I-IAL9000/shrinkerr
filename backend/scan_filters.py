@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import bisect
+import functools
 import re
 import string
 import time
@@ -277,6 +278,14 @@ def title_folder(fp: str) -> str:
     return "/".join(parts[:-1])
 
 
+@functools.lru_cache(maxsize=1 << 16)
+def _folder_year(folder: str) -> Optional[str]:
+    """The year in a folder's name. Kept per folder: the filter index asks
+    for every file, ~25K folders for 180K files."""
+    from backend.routes.posters import parse_folder_name
+    return parse_folder_name(folder, walk_files=False).get("year")
+
+
 def row_title(row: dict, ctx: dict) -> dict:
     """The file's title metadata (v0.10.0): year, rating (IMDb, else TMDB),
     genres (TMDB and the media server's), network, show status and
@@ -288,9 +297,8 @@ def row_title(row: dict, ctx: dict) -> dict:
     folder = title_folder(row["file_path"])
     year, rating, genres, network, status, country = (ctx.get("title_meta") or {}).get(folder) or (None,) * 6
     if not year:
-        from backend.routes.posters import parse_folder_name
         named = folder.rsplit("/", 1)[0] if folder.rsplit("/", 1)[-1].upper() in ("VIDEO_TS", "BDMV") else folder
-        year = parse_folder_name(named, walk_files=False).get("year")  # a disc: its own folder
+        year = _folder_year(named)  # a disc: its own folder
     found = {g.strip().lower() for g in (genres or "").split(",") if g.strip()}
     server = ctx.get("server_genres") or {}
     if server:
@@ -580,7 +588,7 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # A track's field is read once, in SQL (_track_text), by the index and the
 # lists alike; Python only folds that text, so the two can't disagree.
 
-FACETS_VERSION = 3  # bump when a facet's normalize / values changes
+FACETS_VERSION = 4  # bump when a facet's normalize / values changes
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
@@ -668,6 +676,11 @@ class Facet:
     inputs: tuple[str, ...] = ()
     titles: bool = False  # values() reads title metadata (ctx["title_meta"])
     indexed: bool = True  # False: searched, not kept in the filter index (folders)
+    # The filter index reads lists of one track column in one pass (it reads
+    # every row's tracks once, not once per list): (column, "text", field) is
+    # pairs_sql's per-track _track_text(field); (column, "max", field) its
+    # per-file MAX(CAST(field AS INTEGER)). pairs_sql stays the definition.
+    combine: Optional[tuple[str, str, str]] = None
 
 
 def _track_pairs(column: str, field: str) -> str:
@@ -731,11 +744,13 @@ def _library_values(row: dict, ctx: dict) -> list[str]:
 _TITLE_INPUTS = ("titles",)
 _FACET_LIST = [
     Facet("alang", pairs_sql=_track_pairs("audio_tracks_json", "language"), normalize=fold_lang,
-          cond=_lang_cond("audio_tracks_json")),
+          cond=_lang_cond("audio_tracks_json"), combine=("audio_tracks_json", "text", "language")),
     Facet("slang", pairs_sql=_track_pairs("subtitle_tracks_json", "language"), normalize=fold_lang,
-          cond=_lang_cond("subtitle_tracks_json")),
-    Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond),
+          cond=_lang_cond("subtitle_tracks_json"), combine=("subtitle_tracks_json", "text", "language")),
+    Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond,
+          combine=("audio_tracks_json", "text", "codec")),
     Facet("achan", pairs_sql=_ACHAN_PAIRS, normalize=channel_band, cond=_achan_cond,
+          combine=("audio_tracks_json", "max", "channels"),
           canonical=lambda v: v if v in _CHANNEL_BANDS else None),
     # A media server's genre can be "" (_title_metadata).
     Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=("titles", "plex"),

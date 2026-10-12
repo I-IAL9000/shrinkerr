@@ -66,6 +66,22 @@ async def test_every_value_is_the_rows_its_token_lists(test_db):
 
 
 @pytest.mark.asyncio
+async def test_lists_read_in_one_pass_are_their_own_definitions(test_db):
+    """The track lists are read one column at a time (Facet.combine), not
+    each through its pairs_sql: the same values, the same rows."""
+    import dataclasses
+    await seed(test_db)
+    combined = [f for f in INDEXED_FACETS if f.combine]
+    assert {f.key for f in combined} == {"alang", "slang", "acodec", "achan"}
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        _, together, _ = await evaluate(db, [], None, facets=combined)
+        _, apart, _ = await evaluate(db, [], None, facets=[dataclasses.replace(f, combine=None) for f in combined])
+    assert {k: sorted(v) for k, v in together.items()} == {k: sorted(v) for k, v in apart.items()}
+    assert {k.split(":")[0] for k in together} == {f.key for f in combined}
+
+
+@pytest.mark.asyncio
 async def test_a_lists_values_and_counts_under_a_filter(test_db):
     await seed(test_db)
     index = await _index(test_db)
