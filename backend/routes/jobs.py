@@ -288,10 +288,12 @@ async def _originals_setting(db) -> dict:
     return {"action": "delete"}
 
 
-def _job_savings(job: dict, row: dict, audio: list[dict], global_cq: int) -> int:
+def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
     """About what a pending job saves: the removed tracks, and the video
-    conversion at the job's quality (else the default encoder's)."""
-    from backend.encoding_estimates import _CRF_OFFSET
+    conversion at the quality it encodes with: its own, else its encoder's
+    setting (`quality`: the settings rows). The default encoder's was used,
+    so an NVENC job beside a libx265 default was estimated at the CRF."""
+    from backend.encoding_estimates import _CRF_OFFSET, effective_cq
     from backend.savings_model import current
     size = row.get("file_size") or job.get("original_size") or 0
     remove = set(json.loads(job.get("audio_tracks_to_remove") or "[]"))
@@ -303,7 +305,7 @@ def _job_savings(job: dict, row: dict, audio: list[dict], global_cq: int) -> int
         elif job.get("nvenc_cq") is not None:
             cq = job["nvenc_cq"]
         else:
-            cq = global_cq
+            cq = effective_cq({**quality, "default_encoder": job.get("encoder") or quality.get("default_encoder")})
         saved += int((size - saved) * current().video_pct(
             cq, file_size=size, duration=row.get("duration") or 0, width=row.get("video_width") or 0,
             height=row.get("video_height") or 0, codec=row.get("video_codec")))
@@ -319,13 +321,13 @@ async def pending_summary():
     """What the pending queue will do (v0.10.0): jobs by type and encoder,
     the tracks it removes by language, the size and about what it saves, and
     what becomes of the originals."""
-    from backend.encoding_estimates import load_effective_cq
+    from backend.encoding_estimates import load_quality_settings
     db = await connect_db()
     try:
         async with db.execute(f"SELECT {_JOB_PLAN_COLS} FROM jobs WHERE status = 'pending'") as cur:
             jobs = [dict(r) for r in await cur.fetchall()]
         rows = await _scan_rows_for(db, sorted({j["file_path"] for j in jobs}))
-        global_cq = await load_effective_cq(db)
+        quality = await load_quality_settings(db)
         originals = await _originals_setting(db)
         async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
             r = await cur.fetchone()
@@ -359,7 +361,7 @@ async def pending_summary():
                     if t.get("stream_index") in remove:
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
-            saved += _job_savings(job, row, audio, global_cq) if row else 0
+            saved += _job_savings(job, row, audio, quality) if row else 0
         return {"jobs": len(jobs), "by_type": by_type, "by_encoder": by_encoder, "removals": removals,
                 "total_size": total_size, "estimated_savings": saved}
 
@@ -375,7 +377,7 @@ async def job_plan(job_id: int):
     removes, about what it saves, and what becomes of the original. The
     tracks are edited on the file (PUT /api/scan/results/{scan_id}/tracks),
     which updates the job."""
-    from backend.encoding_estimates import load_effective_cq
+    from backend.encoding_estimates import load_quality_settings
     db = await connect_db()
     try:
         async with db.execute(f"SELECT {_JOB_PLAN_COLS} FROM jobs WHERE id = ?", (job_id,)) as cur:
@@ -384,7 +386,7 @@ async def job_plan(job_id: int):
             raise ApiError(status_code=404, detail="Job not found", code="jobs.notFound")
         job = dict(job)
         row = (await _scan_rows_for(db, [job["file_path"]])).get(job["file_path"])
-        global_cq = await load_effective_cq(db)
+        quality = await load_quality_settings(db)
         originals = await _originals_setting(db)
     finally:
         await db.close()
@@ -403,7 +405,7 @@ async def job_plan(job_id: int):
     return {
         "scan_id": row["id"], "job_type": job["job_type"], "audio": audio, "subtitles": subs,
         "native_first": reorder,  # the original language's audio moved first
-        "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, global_cq),
+        "file_size": row["file_size"] or 0, "estimated_savings": _job_savings(job, row, audio, quality),
         "originals": originals,
     }
 
@@ -2050,9 +2052,6 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 est_settings[row["key"]] = row["value"]
 
         global_cq = int(est_settings.get("nvenc_cq", "20"))
-        # Savings at the global setting use the default encoder's quality on
-        # the CQ scale (v0.10.0: it was always the NVENC CQ).
-        global_savings_cq = effective_cq(est_settings)
 
         # Read default encoder for per-file time estimate
         async with db.execute("SELECT value FROM settings WHERE key = 'default_encoder'") as cur:
@@ -2201,15 +2200,16 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                         lang = (t.get("language") or "und").lower()
                         removals[kind][lang] = removals[kind].get(lang, 0) + 1
 
+            # The encoder the job gets: the dialog's, a rule's, the default.
+            file_encoder = payload.encoder or (rule.get("encoder") if rule else None) or default_encoder
+
             # Per-file time estimate — pick speed factor based on target encoder
             file_dur = float(row.get("duration") or 0)
             if jt == "audio":
                 # Remux only — fast, ~30 seconds regardless of content length
                 per_file_seconds = 30
             elif file_dur > 0:
-                # Determine which encoder this file will use
-                target_enc = (rule.get("encoder") if rule else None) or default_encoder
-                is_cpu = (target_enc or "").lower() in ("libx265", "x265", "cpu")
+                is_cpu = (file_encoder or "").lower() in ("libx265", "x265", "cpu")
                 sf = libx265_speed if is_cpu else nvenc_speed
                 per_file_seconds = file_dur * sf
             else:
@@ -2247,7 +2247,9 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                         smart, ctype = smart_cq(fp, row["video_width"], row["video_height"], smart_settings)
                         file_cq = smart if smart is not None else global_cq
                         if smart is None:
-                            savings_cq = global_savings_cq
+                            # That encoder's own setting, as the encode uses
+                            # (the default encoder's was taken for every job).
+                            savings_cq = effective_cq({**est_settings, "default_encoder": file_encoder})
                         if ctype:
                             # Track content profiles
                             if ctype not in content_profiles:

@@ -100,13 +100,18 @@ def effective_cq(values: dict) -> int:
     return num("nvenc_cq", 20)
 
 
-async def load_effective_cq(db) -> int:
-    """effective_cq() from an open database connection."""
+async def load_quality_settings(db) -> dict:
+    """The QUALITY_KEYS settings rows, for effective_cq()."""
     placeholders = ",".join("?" * len(QUALITY_KEYS))
     async with db.execute(
         f"SELECT key, value FROM settings WHERE key IN ({placeholders})", QUALITY_KEYS
     ) as cur:
-        return effective_cq({r[0]: r[1] for r in await cur.fetchall()})
+        return {r[0]: r[1] for r in await cur.fetchall()}
+
+
+async def load_effective_cq(db) -> int:
+    """effective_cq() from an open database connection."""
+    return effective_cq(await load_quality_settings(db))
 
 
 def video_conv_savings_bytes(file_size: int, cq: int, **features) -> int:

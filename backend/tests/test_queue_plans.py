@@ -133,3 +133,47 @@ async def test_the_pending_summary(routes, test_db):
     # a: two removed tracks (200 MB), then CQ 26 (70%) on the rest; b: one track.
     mb = 1024 ** 2
     assert s["estimated_savings"] == 200 * mb + int((4 * GB - 200 * mb) * 0.70) + 100 * mb
+
+
+@pytest.mark.asyncio
+async def test_a_jobs_estimate_uses_the_quality_it_will_encode_with(routes, test_db, monkeypatch):
+    """A job without a quality of its own encodes at its encoder's setting
+    (NVENC's CQ for an NVENC job) and its row says so ("P6 / CQ 36"), but the
+    estimate took the default encoder's: here libx265's CRF 25, about CQ 23,
+    so 3.0 GB "→ about 1.3 GB" where CQ 36 makes it about 0.6 GB."""
+    from backend import savings_model
+    from backend.encoding_estimates import cq_to_savings_pct
+    jobs_route, _ = routes
+    monkeypatch.setattr(savings_model, "_model", savings_model.SavingsModel())  # the curve alone
+    await _file(test_db, "/m/a.mkv", [tr(1, "jpn", True)])
+    await _file(test_db, "/m/b.mkv", [tr(1, "jpn", True)])
+    nvenc = await _job(test_db, "/m/a.mkv", "convert", encoder="nvenc")
+    default = await _job(test_db, "/m/b.mkv", "convert")  # no encoder: the default one's quality
+    async with aiosqlite.connect(test_db) as db:
+        for key, value in (("default_encoder", "libx265"), ("libx265_crf", "25"), ("nvenc_cq", "36")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        await db.commit()
+    assert (await jobs_route.job_plan(nvenc))["estimated_savings"] == int(4 * GB * cq_to_savings_pct(36))
+    assert (await jobs_route.job_plan(default))["estimated_savings"] == int(4 * GB * cq_to_savings_pct(23))
+    assert (await jobs_route.pending_summary())["estimated_savings"] == \
+        int(4 * GB * cq_to_savings_pct(36)) + int(4 * GB * cq_to_savings_pct(23))
+
+
+@pytest.mark.asyncio
+async def test_add_to_queue_estimates_at_the_encoder_chosen(routes, test_db, monkeypatch):
+    """Add to Queue's encoder (or a rule's) decides the quality an encode
+    uses; the preview's savings took the default encoder's."""
+    from backend import savings_model
+    from backend.encoding_estimates import cq_to_savings_pct
+    jobs_route, _ = routes
+    monkeypatch.setattr(savings_model, "_model", savings_model.SavingsModel())
+    await _file(test_db, "/m/a.mkv", [tr(1, "jpn", True)])
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE scan_results SET video_codec = 'h264', video_height = 1080, video_width = 1920")
+        for key, value in (("default_encoder", "libx265"), ("libx265_crf", "25"), ("nvenc_cq", "36")):
+            await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        await db.commit()
+    est = await jobs_route.estimate_jobs(jobs_route.EstimateRequest(file_paths=["/m/a.mkv"], encoder="nvenc"))
+    assert est["estimated_savings"] == int(4 * GB * cq_to_savings_pct(36))
+    est = await jobs_route.estimate_jobs(jobs_route.EstimateRequest(file_paths=["/m/a.mkv"]))
+    assert est["estimated_savings"] == int(4 * GB * cq_to_savings_pct(23))  # the default: libx265 CRF 25
