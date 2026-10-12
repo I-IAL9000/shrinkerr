@@ -901,36 +901,13 @@ async def _run_scan(paths: list[str], is_folder_rescan: bool = False) -> None:
         # pin the UI at "Scanning… 100%" with no feedback long after the files
         # were actually probed. v0.9.66.
         async def _post_scan_enrichment():
+            # The media servers, Sonarr / Radarr and Maintainerr (also every
+            # few hours on its own since v0.10.0: backend/library_sync.py).
             try:
-                from backend.plex import sync_plex_metadata_cache
-                result = await sync_plex_metadata_cache()
-                if result.get("watched") or result.get("unwatched"):
-                    print(f"[SCANNER] Plex watch status synced: {result.get('watched', 0)} watched, {result.get('unwatched', 0)} unwatched", flush=True)
+                from backend.library_sync import sync_all
+                await sync_all()
             except Exception as exc:
-                print(f"[SCANNER] Plex watch status sync skipped: {exc}", flush=True)
-            # The Plex sync replaces the genre / library / watch rows Jellyfin
-            # and Emby share with it; theirs were only restored by a manual
-            # sync (v0.10.0). Both return at once when not configured.
-            try:
-                from backend.jellyfin import sync_jellyfin_metadata_cache
-                await sync_jellyfin_metadata_cache()
-            except Exception as exc:
-                print(f"[SCANNER] Jellyfin metadata sync skipped: {exc}", flush=True)
-            try:
-                from backend.emby import sync_emby_metadata_cache
-                await sync_emby_metadata_cache()
-            except Exception as exc:
-                print(f"[SCANNER] Emby metadata sync skipped: {exc}", flush=True)
-            try:
-                from backend.arr import sync_arr_file_status
-                await sync_arr_file_status()  # cutoff / monitoring (v0.10.0)
-            except Exception as exc:
-                print(f"[SCANNER] Sonarr/Radarr status sync skipped: {exc}", flush=True)
-            try:
-                from backend.maintainerr import sync_maintainerr
-                await sync_maintainerr()  # its "leaving soon" collections (v0.10.0)
-            except Exception as exc:
-                print(f"[SCANNER] Maintainerr sync skipped: {exc}", flush=True)
+                print(f"[SCANNER] Library sync skipped: {exc}", flush=True)
             try:
                 from backend.routes.posters import start_prefetch
                 await start_prefetch()

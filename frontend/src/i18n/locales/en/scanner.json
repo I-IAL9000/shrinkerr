@@ -145,7 +145,7 @@
     "notWatched6m": "6 months",
     "notWatched12m": "1 year",
     "notWatched24m": "2 years",
-    "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read after each full scan; the plays are those of the account Shrinkerr connects with.",
+    "notWatchedHint": "Nothing played on Plex, Jellyfin or Emby in that time, and in the library at least that long. Read every few hours; the plays are those of the account Shrinkerr connects with.",
     "leavingSoon": "Leaving soon",
     "directPlayHint": "What makes Plex, Jellyfin and Emby transcode on many TVs and streamers: Hi10P video, image subtitles with no text subtitle in their language, no AAC / AC3 / E-AC3 / MP3 audio in the main language, and old containers. Select files and use Fix for direct play.",
     "dpSubs": "Image subtitles only",
@@ -153,6 +153,7 @@
     "dpContainer": "Old container"
   },
   "filterBar": {
+    "all": "All",
     "categories": {
       "status": "Status",
       "video": "Video",

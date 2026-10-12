@@ -418,6 +418,10 @@ async def lifespan(app: FastAPI):
     # Width, frame rate etc. for files scanned before 0.10.0, in the background.
     from backend.video_details import video_details_loop
     details_task = None if demo.ENABLED else asyncio.create_task(video_details_loop())
+    # The media servers' and Sonarr / Radarr's data, every few hours (v0.10.0;
+    # it was read only after a full scan).
+    from backend.library_sync import library_sync_loop
+    library_sync_task = None if demo.ENABLED else asyncio.create_task(library_sync_loop())
 
     yield
     worker.stop()
@@ -443,6 +447,8 @@ async def lifespan(app: FastAPI):
         print(f"[FILTERS] Saving the filter index failed: {exc}", flush=True)
     if details_task:
         details_task.cancel()
+    if library_sync_task:
+        library_sync_task.cancel()
 
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)
