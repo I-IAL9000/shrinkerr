@@ -326,11 +326,19 @@ def _like_any(*patterns: str) -> str:
     return "(" + " OR ".join(f"file_path LIKE '%{p}%'" for p in patterns) + ")"
 
 
-_REMUX = _like_any("remux")
-_BLURAY = _like_any("bluray", "blu-ray", "blu ray", "blu.ray", "blu_ray", "bdrip", "bdmv")
-_WEBDL = _like_any("web-dl", "webdl", "webrip")
-_HDTV = _like_any("hdtv")
-_DVD = _like_any("dvd")
+# A release's source from its path: the first of these it contains.
+SOURCE_NAMES = (("remux", ("remux",)),
+                ("bluray", ("bluray", "blu-ray", "blu ray", "blu.ray", "blu_ray", "bdrip", "bdmv")),
+                ("webdl", ("web-dl", "webdl", "webrip")),
+                ("hdtv", ("hdtv",)),
+                ("dvd", ("dvd",)))
+_REMUX, _BLURAY, _WEBDL, _HDTV, _DVD = (_like_any(*names) for _, names in SOURCE_NAMES)
+
+
+def release_source(path: Optional[str]) -> Optional[str]:
+    """The Source filters' answer in Python (the savings estimate's)."""
+    lower = (path or "").lower()
+    return next((source for source, names in SOURCE_NAMES if any(n in lower for n in names)), None)
 _CODEC = "COALESCE(video_codec, '')"  # LIKE ignores ASCII case
 _H264 = f"({_CODEC} LIKE '%264%' OR {_CODEC} LIKE '%avc%')"
 _HEVC = f"({_CODEC} LIKE '%265%' OR {_CODEC} LIKE '%hevc%')"

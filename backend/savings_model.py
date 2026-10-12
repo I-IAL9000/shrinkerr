@@ -1,17 +1,27 @@
 """The savings estimate, learned from your own conversions (v0.10.0).
 
 The estimate starts from a CQ → savings curve measured on NVENC conversions
-(encoding_estimates.cq_to_savings_pct): one percentage for every file. But
-a file's bitrate decides much of what an encode saves: a 30 Mb/s remux
-shrinks far more than a 4 Mb/s WEB-DL. So finished conversions teach a
-factor on that curve for each bits-per-pixel band, and for each source codec
-within a band. Each factor is pulled toward its broader group until it has
-enough samples of its own (empirical Bayes shrinkage). With no history, the
-estimate is the curve.
+(encoding_estimates.cq_to_savings_pct): one percentage for every file. Your
+finished conversions teach factors on it:
+
+- per CQ: the curve's shape isn't every library's (one saved 46 % at CQ 27,
+  where the curve says 75 %, and 70 % at CQ 36, where it says 80 %);
+- per file: its bitrate (bits per pixel), then its source (remux, Blu-ray,
+  WEB-DL, HDTV, DVD, from the name), then its codec. A 30 Mb/s remux shrinks
+  far more than a 4 Mb/s WEB-DL.
+
+Each group's factor is pulled toward its broader group's until it has enough
+samples of its own (empirical Bayes shrinkage); the CQ and file factors are
+fitted in turn. With no history, the estimate is the curve. On one library
+(84K conversions) this cut the typical error from 12 % to 10 %, and remuxes'
+from 26 % to 6 %.
 
 Samples are completed jobs that encoded HEVC at a fixed quality (not a VMAF
-target), and didn't convert or remove audio, so the size change is the
-video's. A discarded larger output counts as no savings.
+target) and removed no tracks (removed tracks are estimated on their own). A
+job that re-encoded audio counts at its whole saving: a remux's lossless
+tracks are part of what converting it saves. A discarded larger output counts
+as no savings. A file's resolution: the job's, else (not resized) its
+output's scan row, else the tag in its name.
 
 Stored per-file estimates (scan_results.video_conv_savings_bytes) are
 recomputed when the model learns or the default quality changes.
@@ -19,6 +29,7 @@ recomputed when the model learns or the default quality changes.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import json
 import re
 import time
@@ -27,12 +38,15 @@ from dataclasses import dataclass, field
 
 from backend.database import connect_db
 from backend.encoding_estimates import cq_to_savings_pct, effective_cq, load_effective_cq
+from backend.resolution import tag_height
+from backend.scan_filters import release_source
 
 K = 10                                  # pseudo-samples pulling a group toward its parent
 BPP_BANDS = (0.05, 0.1, 0.2, 0.4)       # bits per pixel (at 24 fps): 5 bands
-MAX_SAMPLES = 20_000                    # the most recent conversions
+MAX_SAMPLES = 200_000                   # the most recent conversions
 REBUILD_SECONDS = 600
 MAX_PCT = 0.95
+ROUNDS = 3                              # fitting the CQ and the file factors in turn
 
 _FAMILIES = (("h264", ("h264", "avc")), ("hevc", ("hevc", "h265")), ("mpeg2", ("mpeg2",)),
              ("vc1", ("vc1", "wmv3")), ("mpeg4", ("mpeg4", "msmpeg4", "xvid", "divx")))
@@ -62,44 +76,88 @@ def band(bpp: float | None) -> int | None:
     return next((i for i, edge in enumerate(BPP_BANDS) if bpp < edge), len(BPP_BANDS))
 
 
+def file_groups(file_size: int | None, duration: float | None, width: int | None, height: int | None,
+                codec: str | None, path: str | None) -> tuple:
+    """A file's groups, broadest first: its bitrate band ("?" not known), its
+    source ("other"), and its codec family when known. Without a height, the
+    one its name's resolution tag names."""
+    if not height:
+        width, height = None, tag_height(path or "")
+    b = band(bits_per_pixel(file_size, duration, width, height))
+    family = codec_family(codec)
+    return ("?" if b is None else b, release_source(path) or "other") + ((family,) if family else ())
+
+
 @dataclass(frozen=True)
 class SavingsModel:
-    # () → the global factor; (band,) and (band, codec family) → theirs.
+    # Factors on the curve: () → every file; then (band,), (band, source),
+    # (band, source, codec family).
     factors: dict = field(default_factory=dict)
     samples: int = 0
+    # CQ → its own factor, at each CQ with enough conversions.
+    by_cq: dict = field(default_factory=dict)
 
-    def factor(self, band_: int | None, family: str | None) -> float:
+    def factor(self, groups: tuple = ()) -> float:
+        """The factor of the narrowest of `groups` the model learned."""
         f = self.factors.get((), 1.0)
-        if band_ is None:
-            return f
-        f = self.factors.get((band_,), f)
-        return f if family is None else self.factors.get((band_, family), f)
+        for depth in range(1, len(groups) + 1):
+            if groups[:depth] not in self.factors:
+                break
+            f = self.factors[groups[:depth]]
+        return f
+
+    def cq_factor(self, cq: int) -> float:
+        """Between two learned CQs a straight line; past them the nearest
+        one's; none learned: 1."""
+        if not self.by_cq:
+            return 1.0
+        known = sorted(self.by_cq)
+        if cq <= known[0]:
+            return self.by_cq[known[0]]
+        if cq >= known[-1]:
+            return self.by_cq[known[-1]]
+        i = bisect.bisect_left(known, cq)
+        if known[i] == cq:
+            return self.by_cq[cq]
+        lo, hi = known[i - 1], known[i]
+        return self.by_cq[lo] + (self.by_cq[hi] - self.by_cq[lo]) * (cq - lo) / (hi - lo)
 
     def video_pct(self, cq: int, *, file_size: int = 0, duration: float = 0, width: int = 0, height: int = 0,
-                  codec: str | None = None) -> float:
-        """The share of the file a video conversion at `cq` (NVENC's scale) saves."""
-        b = band(bits_per_pixel(file_size, duration, width, height))
-        return max(0.0, min(MAX_PCT, cq_to_savings_pct(cq) * self.factor(b, codec_family(codec))))
+                  codec: str | None = None, path: str | None = None) -> float:
+        """The share of the file a video conversion at `cq` (NVENC's scale)
+        saves; with no file (no size or path), any file's."""
+        groups = file_groups(file_size, duration, width, height, codec, path) if file_size or path else ()
+        return max(0.0, min(MAX_PCT, cq_to_savings_pct(cq) * self.cq_factor(cq) * self.factor(groups)))
 
 
-def fit(samples: list[tuple[float, int | None, str | None]]) -> SavingsModel:
-    """samples: (achieved savings / the curve's, band, codec family)."""
-    def shrink(values: list[float], parent: float) -> float:
-        return (sum(values) + K * parent) / (len(values) + K)
-    factors: dict = {(): shrink([r for r, _, _ in samples], 1.0)}
-    by_band: dict = defaultdict(list)
-    by_family: dict = defaultdict(list)
-    for r, b, fam in samples:
-        if b is None:
-            continue
-        by_band[b].append(r)
-        if fam:
-            by_family[(b, fam)].append(r)
-    for b, values in by_band.items():
-        factors[(b,)] = shrink(values, factors[()])
-    for (b, fam), values in by_family.items():
-        factors[(b, fam)] = shrink(values, factors[(b,)])
-    return SavingsModel(factors, len(samples))
+def _shrink(values: list[float], parent: float) -> float:
+    return (sum(values) + K * parent) / (len(values) + K)
+
+
+def _tree(samples: list[tuple[float, tuple]]) -> dict:
+    """Each group's factor (every prefix of the samples' groups), shrunk
+    toward its parent's."""
+    members: dict = defaultdict(list)
+    for ratio, groups in samples:
+        for depth in range(len(groups) + 1):
+            members[groups[:depth]].append(ratio)
+    factors: dict = {}
+    for key in sorted(members, key=len):  # parents first
+        factors[key] = _shrink(members[key], factors[key[:-1]] if key else 1.0)
+    return factors
+
+
+def fit(samples: list[tuple[float, int, tuple]]) -> SavingsModel:
+    """samples: (achieved savings ÷ the curve's, CQ, the file's groups)."""
+    model = SavingsModel(_tree([(r, g) for r, _, g in samples]), len(samples))
+    for _ in range(ROUNDS):
+        residuals: dict = defaultdict(list)
+        for ratio, cq, groups in samples:
+            residuals[cq].append(ratio / model.factor(groups))
+        by_cq = {cq: _shrink(v, 1.0) for cq, v in residuals.items() if len(v) >= K}
+        model = SavingsModel(model.factors, len(samples), by_cq)
+        model = SavingsModel(_tree([(r / model.cq_factor(cq), g) for r, cq, g in samples]), len(samples), by_cq)
+    return model
 
 
 _SAMPLE_SQL = f"""
@@ -116,8 +174,6 @@ SELECT j.file_path, j.original_file_path, j.audio_tracks_to_remove,
        json_extract(j.encoding_stats, '$.output_codec') AS output_codec,
        json_extract(j.encoding_stats, '$.vmaf_target') AS vmaf_target,
        json_extract(j.encoding_stats, '$.target_resolution') AS target_resolution,
-       json_array_length(json_extract(j.encoding_stats, '$.audio_converted_from')) AS audio_converted,
-       json_extract(j.encoding_stats, '$.lossless_target_codec') AS lossless,
        json_extract(j.encoding_stats, '$.source_codec') AS source_codec,
        json_extract(j.encoding_stats, '$.source_width') AS source_width,
        json_extract(j.encoding_stats, '$.source_height') AS source_height,
@@ -128,14 +184,12 @@ WHERE j.status = 'completed' AND j.job_type IN ('convert', 'combined')
 ORDER BY j.id DESC LIMIT {MAX_SAMPLES}"""
 
 
-def sample(row: dict) -> tuple[float, int | None, str | None] | None:
-    """A finished job as a sample, or None when it doesn't tell the video's savings."""
+def sample(row: dict) -> tuple[float, int, tuple] | None:
+    """A finished job as a sample, or None when it doesn't tell the savings."""
     in_size, out_size = row.get("in_size") or 0, row.get("out_size")
     if in_size <= 0 or out_size is None or out_size < 0:
         return None
     if (row.get("output_codec") or "hevc") != "hevc" or row.get("vmaf_target"):
-        return None
-    if row.get("audio_converted") or row.get("lossless"):
         return None
     try:
         if json.loads(row.get("audio_tracks_to_remove") or "[]"):
@@ -147,13 +201,14 @@ def sample(row: dict) -> tuple[float, int | None, str | None] | None:
                        "vaapi_qp": row.get("vaapi_qp"), "videotoolbox_quality": row.get("vt_quality")})
     ratio = min(2.5, max(0.0, 1 - out_size / in_size) / cq_to_savings_pct(cq))
     width, height = row.get("source_width"), row.get("source_height")
-    if not height and not row.get("target_resolution"):
-        width, height = row.get("video_width"), row.get("video_height")  # the output's: the same size
+    if not height and (row.get("target_resolution") or "copy") == "copy":
+        width, height = row.get("video_width"), row.get("video_height")  # not resized: the output's size
+    original = row.get("original_file_path") or row.get("file_path")
     codec = row.get("source_codec")
     if not codec:
-        name = (row.get("original_file_path") or "").rsplit("/", 1)[-1]
+        name = (original or "").rsplit("/", 1)[-1]
         codec = next((c for rx, c in _NAME_CODECS if rx.search(name)), None)
-    return ratio, band(bits_per_pixel(in_size, row.get("duration"), width, height)), codec_family(codec)
+    return ratio, cq, file_groups(in_size, row.get("duration"), width, height, codec, original)
 
 
 _model = SavingsModel()
@@ -170,12 +225,13 @@ async def rebuild() -> SavingsModel:
     db = await connect_db()
     try:
         async with db.execute(_SAMPLE_SQL) as cur:
-            rows = [dict(r) for r in await cur.fetchall()]
+            rows = await cur.fetchall()
         async with db.execute("SELECT n FROM change_counters WHERE name = 'completed_jobs'") as cur:
             r = await cur.fetchone()
     finally:
         await db.close()
-    _model = fit([s for s in map(sample, rows) if s is not None])
+    # ~90K conversions: a second or two, off the event loop
+    _model = await asyncio.to_thread(lambda: fit([s for s in (sample(dict(r)) for r in rows) if s is not None]))
     _state.update(counter=r[0] if r else None, built=time.monotonic())
     return _model
 
@@ -195,13 +251,17 @@ async def reestimate_scan_rows() -> int:
             rows = [dict(r) for r in await cur.fetchall()]
     finally:
         await db.close()
-    changes = []
-    for r in rows:
-        size = r["file_size"] or 0
-        new = int(size * model.video_pct(cq, file_size=size, duration=r["duration"] or 0, width=r["video_width"] or 0,
-                                         height=r["video_height"] or 0, codec=r["video_codec"]))
-        if abs(new - r["old"]) > max(1, r["old"] // 100):
-            changes.append((new, r["file_path"]))
+    def changed() -> list[tuple[int, str]]:
+        out = []
+        for r in rows:
+            size = r["file_size"] or 0
+            new = int(size * model.video_pct(cq, file_size=size, duration=r["duration"] or 0,
+                                             width=r["video_width"] or 0, height=r["video_height"] or 0,
+                                             codec=r["video_codec"], path=r["file_path"]))
+            if abs(new - r["old"]) > max(1, r["old"] // 100):
+                out.append((new, r["file_path"]))
+        return out
+    changes = await asyncio.to_thread(changed)  # 160K files: off the event loop
     for i in range(0, len(changes), 500):  # short write transactions
         db = await connect_db()
         try:
@@ -231,7 +291,7 @@ async def tick(force: bool = False) -> None:
     if force or (counter != _state["counter"] and time.monotonic() - _state["built"] >= REBUILD_SECONDS):
         before = _model
         await rebuild()
-        learned = force or _model.factors != before.factors
+        learned = force or (_model.factors, _model.by_cq) != (before.factors, before.by_cq)
     if learned or cq != _state["cq"]:
         changed = await reestimate_scan_rows()
         if changed:

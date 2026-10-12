@@ -43,6 +43,17 @@ def _tag_rank(file_path: str) -> int:
     return 0
 
 
+_TAG_HEIGHTS = {"1080p": 1080, "1080i": 1080, "720p": 720, "576p": 576, "480p": 480,
+                "2160p": 2160, "uhd": 2160, "4k": 2160}
+
+
+def tag_height(file_path: str) -> int | None:
+    """The height the path's resolution tag names (tried in _PATH_TAGS'
+    order), for a file whose size isn't known; None without a tag."""
+    p = (file_path or "").lower()
+    return next((_TAG_HEIGHTS[t] for _, tags in _PATH_TAGS for t in tags if t in p), None)
+
+
 def resolution_tier(width, height, file_path: str = "") -> str | None:
     """"4k", "1080p", "720p" or "sd" — None when neither the size nor the path
     tells. With a known width the size decides alone; path tags only help

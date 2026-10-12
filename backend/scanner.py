@@ -2432,7 +2432,8 @@ async def scan_directory(
         has_removable = len(tracks_to_remove) > 0
         has_removable_subs = any(not t.keep for t in subtitle_tracks)
 
-        features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec}
+        features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec,
+                    "path": str(file_path)}
         savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq,
                                          **features)
         savings_gb = round(savings_bytes / (1024 ** 3), 3)

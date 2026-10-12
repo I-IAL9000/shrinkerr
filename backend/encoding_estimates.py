@@ -119,7 +119,7 @@ def video_conv_savings_bytes(file_size: int, cq: int, **features) -> int:
     include audio/sub track-removal savings (those are tracked
     separately). v0.10.0: refined by what your conversions saved on files
     like this one (savings_model; `features`: duration, width, height,
-    codec)."""
+    codec, path)."""
     from backend.savings_model import current
     return int(file_size * current().video_pct(cq, file_size=file_size, **features))
 

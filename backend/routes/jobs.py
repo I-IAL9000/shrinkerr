@@ -308,7 +308,7 @@ def _job_savings(job: dict, row: dict, audio: list[dict], quality: dict) -> int:
             cq = effective_cq({**quality, "default_encoder": job.get("encoder") or quality.get("default_encoder")})
         saved += int((size - saved) * current().video_pct(
             cq, file_size=size, duration=row.get("duration") or 0, width=row.get("video_width") or 0,
-            height=row.get("video_height") or 0, codec=row.get("video_codec")))
+            height=row.get("video_height") or 0, codec=row.get("video_codec"), path=row.get("file_path")))
     return saved
 
 
@@ -2259,7 +2259,7 @@ async def _estimate_jobs_impl(payload: EstimateRequest):
                 pct = savings_model.current().video_pct(
                     savings_cq if savings_cq is not None else file_cq, file_size=row["file_size"] or 0,
                     duration=row["duration"], width=row["video_width"], height=row["video_height"],
-                    codec=row.get("video_codec"))
+                    codec=row.get("video_codec"), path=fp)
                 estimated_savings += int(row["file_size"] * pct)
                 file_cqs.append(file_cq)
 

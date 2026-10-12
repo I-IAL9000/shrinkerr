@@ -1,6 +1,7 @@
 """The savings estimate learns from finished conversions (v0.10.0): a factor
-on the CQ curve per bits-per-pixel band and source codec, shrunk toward the
-broader group; stored per-file estimates follow it and the default quality."""
+on the CQ curve per CQ, and per bits-per-pixel band, source and codec, shrunk
+toward the broader group; stored per-file estimates follow it and the default
+quality."""
 import json
 import shutil
 import subprocess
@@ -32,22 +33,58 @@ def test_bands_and_codecs():
         "h264", "h264", "hevc", "mpeg2", "vc1", "mpeg4", None, None]
 
 
+def test_a_files_groups():
+    # bitrate band, source (from the name), codec family
+    assert sm.file_groups(8 * GB, HOUR, 1920, 1080, "h264", "/m/Film.2020.1080p.BluRay.x264.mkv") == (3, "bluray", "h264")
+    assert sm.file_groups(30 * GB, HOUR, 1920, 1080, "h264", "/m/Film.2020.1080p.BluRay.REMUX.mkv")[:2] == (4, "remux")
+    # no height: the name's resolution tag; no tag: an unknown band
+    assert sm.file_groups(8 * GB, HOUR, 0, 0, None, "/m/Show.S01E01.1080p.WEB-DL.mkv") == (3, "webdl")
+    assert sm.file_groups(8 * GB, HOUR, 0, 0, "av1", "/m/Home video.mkv") == ("?", "other")
+
+
+def test_the_source_and_resolution_tag_are_the_scanners():
+    import sqlite3
+    from backend.resolution import tag_height
+    from backend.scan_filters import FILTERS, release_source
+    paths = ["/m/A.2020.1080p.BluRay.REMUX.mkv", "/m/A.2020.1080p.Blu-ray.x264.mkv", "/m/S01E01.WEB-DL.mkv",
+             "/m/S01E01.HDTV.mkv", "/m/A.DVDRip.mkv", "/m/Blu ray/A.WEBRip.mkv", "/m/Home.mkv"]
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE scan_results (file_path TEXT)")
+    db.executemany("INSERT INTO scan_results VALUES (?)", [(p,) for p in paths])
+    for p in paths:
+        matched = [k[4:] for k in FILTERS if k.startswith("src_") and db.execute(
+            f"SELECT 1 FROM scan_results WHERE file_path = ? AND {FILTERS[k].sql}", (p,)).fetchone()]
+        assert matched == ([release_source(p)] if release_source(p) else []), p
+    assert [tag_height(p) for p in ("/m/4K/Film.1080p.mkv", "/m/Film.2160p.mkv", "/m/Film.576p.mkv", "/m/Film.mkv")] == [
+        1080, 2160, 576, None]  # an explicit HD tag over a stray 4K one
+
+
 def test_the_curve_until_it_learns_then_shrunk_groups():
-    assert sm.SavingsModel().video_pct(20, file_size=8 * GB, duration=HOUR, width=1920, height=1080,
-                                       codec="h264") == cq_to_savings_pct(20)
-    model = sm.fit([(1.5, 3, "h264")] * 30 + [(0.5, 0, "h264")] * 10 + [(1.0, None, None)] * 10)
+    film = dict(file_size=8 * GB, duration=HOUR, width=1920, height=1080, codec="h264",
+                path="/m/Film.1080p.BluRay.x264.mkv")
+    assert sm.SavingsModel().video_pct(20, **film) == cq_to_savings_pct(20)
+    br, web = (3, "bluray", "h264"), (0, "webdl", "h264")
+    model = sm.fit([(1.5, 20, br)] * 30 + [(0.5, 20, web)] * 10 + [(1.0, 20, ("?", "other"))] * 10)
     assert model.samples == 50
-    glob = (30 * 1.5 + 10 * 0.5 + 10 * 1.0 + 10) / 60
-    band3 = (30 * 1.5 + 10 * glob) / 40
-    assert model.factor(None, None) == pytest.approx(glob)
-    assert model.factor(3, None) == pytest.approx(band3)
-    assert model.factor(3, "h264") == pytest.approx((30 * 1.5 + 10 * band3) / 40)
-    assert model.factor(3, "mpeg2") == model.factor(3, None)  # no MPEG-2 seen: the band's
-    assert model.factor(1, "h264") == model.factor(None, None)  # no band 1 seen: everything's
-    big = model.video_pct(20, file_size=8 * GB, duration=HOUR, width=1920, height=1080, codec="h264")
-    small = model.video_pct(20, file_size=GB, duration=HOUR, width=1920, height=1080, codec="h264")
+    assert model.factor(br) > model.factor((3, "bluray")) > model.factor((3,)) > model.factor(()) > model.factor(web)
+    assert model.factor((3, "bluray", "mpeg2")) == model.factor((3, "bluray"))  # no MPEG-2 seen: the source's
+    assert model.factor((1, "webdl", "h264")) == model.factor(())  # no band 1 seen: everything's
+    big = model.video_pct(20, **film)
+    small = model.video_pct(20, **{**film, "file_size": GB, "path": "/m/Film.1080p.WEB-DL.x264.mkv"})
     assert big > cq_to_savings_pct(20) > small
-    assert sm.fit([(2.5, 3, "h264")] * 1000).video_pct(26, file_size=8 * GB, duration=HOUR, height=1080) == 0.95
+    assert sm.fit([(2.5, 26, br)] * 1000).video_pct(26, **film) == 0.95
+
+
+def test_each_cq_learns_its_own_factor():
+    """The curve's shape isn't every library's: here CQ 27 saved half of what
+    it says, CQ 36 all of it. One factor for both was wrong at both."""
+    film = (3, "bluray", "h264")
+    model = sm.fit([(0.5, 27, film)] * 200 + [(1.0, 36, film)] * 200)
+    pct = {cq: model.video_pct(cq, file_size=8 * GB, duration=HOUR, height=1080, codec="h264",
+                               path="/m/Film.1080p.BluRay.x264.mkv") / cq_to_savings_pct(cq) for cq in (27, 30, 36, 40)}
+    assert pct[27] == pytest.approx(0.5, abs=0.03) and pct[36] == pytest.approx(1.0, abs=0.03)
+    assert pct[27] < pct[30] < pct[36] and pct[40] == pytest.approx(pct[36])  # between: a line; past: the nearest
+    assert sm.fit([(0.5, 27, film)] * 5).by_cq == {}  # too few at a CQ: the curve's shape
 
 
 def _row(**kw):
@@ -59,18 +96,25 @@ def _row(**kw):
 
 def test_which_jobs_teach_it():
     ratio = 0.75 / cq_to_savings_pct(20)
-    assert sm.sample(_row()) == (pytest.approx(ratio), 3, "h264")
-    assert sm.sample(_row(encoder="libx265", cq=None, crf=24))[0] == pytest.approx(0.75 / cq_to_savings_pct(22))
+    assert sm.sample(_row()) == (pytest.approx(ratio), 20, (3, "bluray", "h264"))
+    assert sm.sample(_row(encoder="libx265", cq=None, crf=24))[:2] == (pytest.approx(0.75 / cq_to_savings_pct(22)), 22)
     assert sm.sample(_row(out_size=9 * GB))[0] == 0  # a discarded larger output: no savings
-    for skipped in (dict(output_codec="av1"), dict(vmaf_target='{"cq": 22}'), dict(audio_converted=1),
-                    dict(lossless="eac3"), dict(audio_tracks_to_remove="[2]"), dict(in_size=0),
-                    dict(out_size=None)):
+    for skipped in (dict(output_codec="av1"), dict(vmaf_target='{"cq": 22}'), dict(audio_tracks_to_remove="[2]"),
+                    dict(in_size=0), dict(out_size=None)):
         assert sm.sample(_row(**skipped)) is None, skipped
-    # Older jobs: the codec from the original name, the size from the output's scan row
-    older = _row(source_codec=None, source_width=None, source_height=None, video_width=1920, video_height=1080)
-    assert sm.sample(older)[1:] == (3, "h264")
-    assert sm.sample({**older, "target_resolution": "720p"})[1] is None  # resized: the output's size isn't the source's
-    assert sm.sample({**older, "original_file_path": None})[2] is None
+    # A remux's lossless audio re-encoded: its whole saving teaches remuxes
+    remux = _row(audio_converted=1, lossless="eac3", original_file_path="/m/Film.2020.1080p.BluRay.REMUX.mkv")
+    assert sm.sample(remux)[2][1] == "remux"
+    # Older jobs: the codec from the original name, the size from the output's
+    # scan row; "copy" (not resized) was read as resized, so none had a band
+    older = _row(source_codec=None, source_width=None, source_height=None, video_width=1920, video_height=1080,
+                 target_resolution="copy")
+    assert sm.sample(older)[2] == (3, "bluray", "h264")
+    assert sm.sample({**older, "video_height": None})[2] == (3, "bluray", "h264")  # the name's 1080p
+    # resized: the output's size isn't the source's; the original's name is
+    resized = {**older, "target_resolution": "720p", "original_file_path": "/m/Film.2020.BluRay.x264.mkv"}
+    assert sm.sample(resized)[2] == ("?", "bluray", "h264")
+    assert sm.sample({**older, "original_file_path": None})[2] == (3, "other")  # no name: no codec, no source
 
 
 async def _add_job(db, i, in_gb, out_gb, codec="h264", status="completed", job_type="convert", **stats):
@@ -96,11 +140,11 @@ async def _stored(db_path):
 @pytest.mark.asyncio
 async def test_it_learns_and_the_stored_estimates_follow(test_db, monkeypatch):
     async with aiosqlite.connect(test_db) as db:
-        await _scan(db, "/m/remux.mkv", 8)
+        await _scan(db, "/m/big.mkv", 8)
         await _scan(db, "/m/web.mkv", 1)
         await db.commit()
     await sm.tick()
-    assert await _stored(test_db) == {"/m/remux.mkv": int(8 * GB * cq_to_savings_pct(20)),
+    assert await _stored(test_db) == {"/m/big.mkv": int(8 * GB * cq_to_savings_pct(20)),
                                       "/m/web.mkv": int(GB * cq_to_savings_pct(20))}
     async with aiosqlite.connect(test_db) as db:  # big files shrank by 80 %, small ones by 10 %
         for i in range(20):
@@ -116,7 +160,7 @@ async def test_it_learns_and_the_stored_estimates_follow(test_db, monkeypatch):
     await sm.tick()
     assert sm.current().samples == 40
     stored = await _stored(test_db)
-    assert stored["/m/remux.mkv"] > 0.7 * 8 * GB and stored["/m/web.mkv"] < 0.2 * GB
+    assert stored["/m/big.mkv"] > 0.7 * 8 * GB and stored["/m/web.mkv"] < 0.2 * GB
     async with aiosqlite.connect(test_db) as db:  # the default quality changed
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('nvenc_cq', '26')")
         await db.commit()
@@ -152,7 +196,8 @@ async def test_scans_estimate_with_it(test_db, tmp_path, monkeypatch):
     probe = await probe_file(str(film))
     size = film.stat().st_size
     b = sm.band(sm.bits_per_pixel(size, probe["duration"], 320, 240))
-    monkeypatch.setattr(sm, "_model", sm.SavingsModel({(): 1.0, (b,): 1.0, (b, "mpeg4"): 0.5}, samples=40))
+    monkeypatch.setattr(sm, "_model", sm.SavingsModel(
+        {(): 1.0, (b,): 1.0, (b, "other"): 1.0, (b, "other", "mpeg4"): 0.5}, samples=40))
     expected = int(size * cq_to_savings_pct(23) * 0.5)
     watched = await scanned_from_probe(str(film), probe, ["mpeg4"], 23)
     assert watched.video_conv_savings_bytes == expected and watched.estimated_savings_bytes == expected
@@ -202,6 +247,5 @@ async def test_a_conversion_records_what_it_learns_from(test_db, tmp_path, monke
     assert status == "completed"
     assert (stats["source_codec"], stats["source_width"], stats["source_height"]) == ("mpeg4", 320, 240)
     model = await sm.rebuild()
-    assert model.samples == 1 and set(model.factors) == {(), (sm.band(sm.bits_per_pixel(
-        stats["input_size"], stats["duration"], 320, 240)),), (sm.band(sm.bits_per_pixel(
-            stats["input_size"], stats["duration"], 320, 240)), "mpeg4")}
+    b = sm.band(sm.bits_per_pixel(stats["input_size"], stats["duration"], 320, 240))
+    assert model.samples == 1 and set(model.factors) == {(), (b,), (b, "other"), (b, "other", "mpeg4")}

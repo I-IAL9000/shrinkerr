@@ -175,7 +175,7 @@ async def seed(db_path: str) -> int:
             int(any(t["codec"] in ("truehd",) or "DTS-HD" in (t.get("profile") or "") for t in audio)),
             f["height"], f["width"], f["hdr"], int(converted),
             video_conv_savings_bytes(size, cq, duration=f["duration"], width=f["width"], height=f["height"],
-                                     codec=codec) if convert else 0))
+                                     codec=codec, path=path) if convert else 0))
     pending = [r for r in rows if r[3]][:24]
     for r in pending:
         jobs.append({"file_path": r[0], "job_type": "convert", "status": "pending", "encoder": "nvenc",

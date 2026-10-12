@@ -808,7 +808,8 @@ class FileWatcher:
         try:
             for r in candidates:
                 file_size = r["file_size"] or 0
-                new_video = video_conv_savings_bytes(file_size, global_cq)
+                new_video = video_conv_savings_bytes(file_size, global_cq, duration=r["duration"],
+                                                     path=r["file_path"])
                 await db2.execute(
                     "UPDATE scan_results SET video_conv_savings_bytes = ? "
                     "WHERE file_path = ?",
@@ -1673,7 +1674,8 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
 
     # Include x265 files so converted content shows with "x265 ✓" badge
 
-    features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec}
+    features = {"width": probe.get("video_width", 0), "height": probe.get("video_height", 0), "codec": video_codec,
+                "path": file_path}
     savings_bytes = estimate_savings(file_size, needs_conversion, tracks_to_remove, duration, cq=global_cq, **features)
     video_conv_bytes = (video_conv_savings_bytes(file_size, global_cq, duration=duration, **features)
                         if needs_conversion else 0)
