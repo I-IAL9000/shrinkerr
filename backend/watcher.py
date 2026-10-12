@@ -105,6 +105,7 @@ class FileWatcher:
         # "Pre-filtered" line. Used to deduplicate identical states cycle to
         # cycle so a stable backlog doesn't spam the log every 5 minutes.
         self._last_pre_filtered_log: Optional[tuple[int, int, int]] = None
+        self._last_empty_dirs_log: Optional[tuple] = None  # media folders found empty, logged once
 
     def _active_probe_failures(self) -> set[str]:
         """Paths whose last probe failure is still within the retry cooldown.
@@ -242,8 +243,11 @@ class FileWatcher:
             for i in range(0, len(stale_paths), CHUNK):
                 chunk = stale_paths[i:i + CHUNK]
                 placeholders = ",".join("?" * len(chunk))
+                # Not an approved review: the job puts its output in place,
+                # or deletes it when the original is gone (as Clear pending).
                 jobs = await db.execute(
-                    f"DELETE FROM jobs WHERE status = 'pending' AND file_path IN ({placeholders})", chunk)
+                    f"DELETE FROM jobs WHERE status = 'pending' AND review_approved = 0 "
+                    f"AND file_path IN ({placeholders})", chunk)
                 dropped_jobs += jobs.rowcount or 0
                 result = await db.execute(
                     f"""DELETE FROM scan_results
@@ -1208,6 +1212,7 @@ class FileWatcher:
                 dir_p = Path(dir_path)
                 if not dir_p.exists():
                     continue
+                found_before = len(result)
                 for root, dirs, files in walk_media_dir(dir_path, unreadable_dirs):
                     root_path = Path(root)
                     # The Scanner's own rules (SC-11): disc markers, and
@@ -1217,12 +1222,14 @@ class FileWatcher:
                                and ".converting." not in n and ".remuxing." not in n]
                     if any(Path(n).suffix.lower() in SUBTITLE_EXTENSIONS for n in visible):
                         sub_folder_files[root] = [root_path / n for n in visible]
+                found_in[dir_path] = len(result) - found_before
             # Skip what a full scan skips — sources whose converted version
             # is already there — or the watcher re-adds and re-queues them.
             result -= already_converted(result, log=False)
             return result, sub_folder_files
 
         unreadable_dirs: list[str] = []
+        found_in: dict[str, int] = {}  # media folder -> files the walk found in it
         disk_files, sub_folder_files = await asyncio.get_event_loop().run_in_executor(None, _walk_dirs)
         if unreadable_dirs:
             print(f"[WATCHER] Couldn't list {len(unreadable_dirs)} folder(s) this cycle; "
@@ -1262,6 +1269,32 @@ class FileWatcher:
         # Paired with new paths below before the safety belts: a moved file
         # still exists, so moving its row is safe whatever else vanished.
         possibly_moved = set(stale_path_set)
+
+        # Sanity belt #0 (v0.10.0) — a media folder that walks to no files
+        # at all while files are listed under it is a share that isn't
+        # mounted: an empty mountpoint (Docker started before the network
+        # mount) exists and walks clean. A share smaller than half the
+        # library got past the belts below (a movie library never has 1000
+        # files in one folder), and its rows went — and, since a pending
+        # job no longer keeps its row, its whole queue. Keep both. A share
+        # emptied on purpose is removed from the media folders instead.
+        empty_dirs = [d.rstrip("/") + "/" for d in walked_dirs if not found_in.get(d)]
+        kept_by_dir: dict[str, int] = {}
+        for p in stale_path_set:
+            d = next((d for d in empty_dirs if p.startswith(d)), None)
+            if d:
+                kept_by_dir[d] = kept_by_dir.get(d, 0) + 1
+        if kept_by_dir:
+            stale_path_set = {p for p in stale_path_set if not any(p.startswith(d) for d in kept_by_dir)}
+            state = tuple(sorted(kept_by_dir.items()))
+            if state != self._last_empty_dirs_log:
+                for d, n in kept_by_dir.items():
+                    print(f"[WATCHER] {d.rstrip('/')!r} has no files this cycle but {n} are listed "
+                          f"under it; keeping them and their queue (not mounted?). If you emptied it "
+                          f"on purpose, remove it from the media folders.", flush=True)
+            self._last_empty_dirs_log = state
+        else:
+            self._last_empty_dirs_log = None
 
         # Sanity belt #1 — global: if a single cycle would flag more than
         # half of the walked-dir rows as stale, something is wrong

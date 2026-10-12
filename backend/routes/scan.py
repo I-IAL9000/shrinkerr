@@ -659,9 +659,10 @@ def _scan_worker_process(paths: list[str], db_path: str, progress_file: str, can
                         # Only a running job keeps a vanished file's row (its
                         # conversion is replacing the file); a pending job goes
                         # with it — a queued show moved to another share stayed
-                        # listed and queued (v0.10.0).
+                        # listed and queued (v0.10.0). Not an approved review:
+                        # its job puts the output in place, or deletes it.
                         cur = db.execute(
-                            f"""DELETE FROM jobs WHERE status = 'pending' AND file_path IN (
+                            f"""DELETE FROM jobs WHERE status = 'pending' AND review_approved = 0 AND file_path IN (
                                    SELECT file_path FROM scan_results
                                    WHERE {under_sql}{not_likes}
                                      AND file_path NOT IN (SELECT file_path FROM _seen_paths))""",

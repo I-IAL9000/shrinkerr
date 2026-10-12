@@ -105,3 +105,78 @@ def test_a_rescan_drops_a_queued_file_that_was_moved_away(test_db, tmp_path):
     _scan_worker_process([str(season)], test_db, str(tmp_path / "progress.json"), str(tmp_path / "cancel"))
 
     assert asyncio.run(_state(test_db)) == ([str(converting)], [(str(converting), "running")])
+
+
+async def _approve(db_path, path):
+    """An approved review: a pending job whose output waits in .shrinkerr-review/."""
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute("UPDATE jobs SET review_approved = 1 WHERE file_path = ?", (str(path),))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_an_empty_mountpoint_keeps_its_rows_and_queue(test_db, tmp_path):
+    """A share that isn't mounted yet (Docker started first) leaves an empty
+    folder that walks clean: its rows and queued jobs stay. A smaller share
+    than half the library slipped past the watcher's other checks, and with
+    pending jobs no longer keeping rows, the whole share's queue went."""
+    from backend.watcher import FileWatcher
+    tv = tmp_path / "TV"
+    show = tv / "Show (2001)"
+    show.mkdir(parents=True)
+    episodes = [show / f"Show - S01E{i:02}.mkv" for i in range(1, 11)]
+    for p in episodes:
+        p.write_bytes(b"x")
+    movies = tmp_path / "Movies"
+    movies.mkdir()  # the mountpoint, without the share
+    films = [movies / f"Film {i} (2010)" / f"Film {i} (2010).mkv" for i in range(1, 4)]
+    await _seed(test_db, tv, episodes)
+    await _seed(test_db, movies, films)
+    await _queue(test_db, films[:2])
+
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await FileWatcher(test_db, interval_minutes=5).check_once()
+
+    rows, jobs = await _state(test_db)
+    assert rows == sorted(map(str, [*episodes, *films]))
+    assert jobs == [(str(f), "pending") for f in films[:2]]
+
+
+@pytest.mark.asyncio
+async def test_the_watcher_keeps_an_approved_review(test_db, tmp_path):
+    """Its encoded output waits in .shrinkerr-review/: the job puts it in
+    place, or deletes it when the original is gone. Dropped, the output
+    stayed in the hidden folder (Clear pending keeps these too)."""
+    from backend.watcher import FileWatcher
+    media = tmp_path / "TV1"
+    other = media / "Other Show (2001)"
+    other.mkdir(parents=True)
+    kept = [other / f"Other Show - S01E0{i}.mkv" for i in range(1, 6)]
+    for p in kept:
+        p.write_bytes(b"x")
+    gone = media / "Top Chef (2006)" / "Season 5"
+    queued, approved = gone / "Top Chef - S05E01.mkv", gone / "Top Chef - S05E02.mkv"
+    await _seed(test_db, media, [*kept, queued, approved])
+    await _queue(test_db, [queued, approved])
+    await _approve(test_db, approved)
+
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock):
+        await FileWatcher(test_db, interval_minutes=5).check_once()
+
+    assert (await _state(test_db))[1] == [(str(approved), "pending")]
+
+
+def test_a_rescan_keeps_an_approved_review(test_db, tmp_path):
+    import asyncio
+    from backend.routes.scan import _scan_worker_process
+    media = tmp_path / "TV1"
+    season = media / "Top Chef (2006)" / "Season 5"
+    season.mkdir(parents=True)
+    queued, approved = season / "Top Chef - S05E01.mkv", season / "Top Chef - S05E02.mkv"
+    asyncio.run(_seed(test_db, media, [queued, approved]))
+    asyncio.run(_queue(test_db, [queued, approved]))
+    asyncio.run(_approve(test_db, approved))
+
+    _scan_worker_process([str(season)], test_db, str(tmp_path / "progress.json"), str(tmp_path / "cancel"))
+
+    assert asyncio.run(_state(test_db))[1] == [(str(approved), "pending")]
