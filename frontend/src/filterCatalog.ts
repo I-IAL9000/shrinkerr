@@ -64,10 +64,12 @@ export function normalizeFilters(tokens: string[]): string[] {
 
 // A list's value as the server reads it (scan_filters.facet_filter): a
 // track's field trimmed of spaces with its ASCII letters lower case, a
-// language by its B code, a channel band; null for one it can't have.
+// language by its B code, a channel band, Science Fiction as Sci-Fi
+// (scan_filters.genre_parts); null for one it can't have.
 function listValue(facet: string, value: string): string | null {
   if (!value) return null;
   if (facet === "achan") return ["1", "2", "6", "8"].includes(value) ? value : null;
+  if (facet === "genre") return value.trim().toLowerCase() === "science fiction" ? "sci-fi" : value;
   if (facet !== "alang" && facet !== "slang" && facet !== "acodec") return value;
   const text = value.replace(/^ +| +$/g, "").replace(/[A-Z]/g, c => c.toLowerCase());
   return facet === "acodec" ? text || null : languageKey(text);
