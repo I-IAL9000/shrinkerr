@@ -1999,6 +1999,50 @@ def folder_candidates(root_path: Path, dirs: list[str], files: list[str], extens
     return out
 
 
+
+def unprobed_entry(file_path: Path) -> ScannedFile:
+    """The Scanner row for a file ffprobe couldn't read: corrupt, so it shows
+    in the Corrupt filter (and can be replaced). External subtitles beside it
+    are still listed. A full scan and the watcher list one the same way."""
+    try:
+        file_size = os.path.getsize(str(file_path))
+        file_mtime = os.path.getmtime(str(file_path))
+    except OSError:
+        file_size = 0
+        file_mtime = None
+    subs: list = []
+    has_ext = False
+    try:
+        ext_subs_raw = detect_external_subtitles(str(file_path))
+        has_ext = len(ext_subs_raw) > 0
+        if ext_subs_raw:
+            for i, es in enumerate(ext_subs_raw):
+                es["stream_index"] = -(i + 1)
+            for cls_track, raw in zip(classify_subtitle_tracks(ext_subs_raw, "und"), ext_subs_raw):
+                subs.append(cls_track.model_copy(update={"external": True, "external_path": raw["external_path"]}))
+    except Exception as exc:
+        print(f"[SCANNER] Ext sub detection failed for unprobed {file_path.name}: {exc}", flush=True)
+    return ScannedFile(
+        file_path=str(file_path),
+        file_name=file_path.name,
+        folder_name=file_path.parent.name,
+        file_size=file_size,
+        file_size_gb=round(file_size / (1024 ** 3), 3),
+        video_codec="unknown",
+        needs_conversion=False,
+        audio_tracks=[],
+        subtitle_tracks=subs,
+        native_language="und",
+        has_removable_tracks=False,
+        has_removable_subs=False,
+        has_external_subs=has_ext,
+        estimated_savings_bytes=0,
+        estimated_savings_gb=0,
+        file_mtime=file_mtime,
+        duration=0,
+        probe_status="corrupt",
+    )
+
 def already_converted(all_files, log: bool = True) -> set[str]:
     """Candidates skipped because their converted version is already there:
     a source whose HEVC sibling is among `all_files`, or a disc whose output
@@ -2307,54 +2351,8 @@ async def scan_directory(
                 except Exception as te:
                     print(f"[SCANNER] ffprobe debug failed: {te}", flush=True)
         if probe is None:
-            # Store corrupt file entry so it appears in the Corrupt filter.
-            # Even for unprobed files, still detect external subtitles so they
-            # show up in the UI (independent of ffprobe success).
-            try:
-                file_size_corrupt = os.path.getsize(str(file_path))
-                file_mtime_corrupt = os.path.getmtime(str(file_path))
-            except OSError:
-                file_size_corrupt = 0
-                file_mtime_corrupt = None
-
-            # Detect external subs even for corrupt files
-            corrupt_subs: list = []
-            corrupt_has_ext = False
-            try:
-                ext_subs_raw_c = detect_external_subtitles(str(file_path))
-                corrupt_has_ext = len(ext_subs_raw_c) > 0
-                if ext_subs_raw_c:
-                    for i, es in enumerate(ext_subs_raw_c):
-                        es["stream_index"] = -(i + 1)
-                    for cls_track, raw in zip(classify_subtitle_tracks(ext_subs_raw_c, "und"), ext_subs_raw_c):
-                        cls_track = cls_track.model_copy(update={
-                            "external": True,
-                            "external_path": raw["external_path"],
-                        })
-                        corrupt_subs.append(cls_track)
-            except Exception as exc:
-                print(f"[SCANNER] Ext sub detection failed for unprobed {file_path.name}: {exc}", flush=True)
-
-            corrupt_entry = ScannedFile(
-                file_path=str(file_path),
-                file_name=file_path.name,
-                folder_name=file_path.parent.name,
-                file_size=file_size_corrupt,
-                file_size_gb=round(file_size_corrupt / (1024 ** 3), 3),
-                video_codec="unknown",
-                needs_conversion=False,
-                audio_tracks=[],
-                subtitle_tracks=corrupt_subs,
-                native_language="und",
-                has_removable_tracks=False,
-                has_removable_subs=False,
-                has_external_subs=corrupt_has_ext,
-                estimated_savings_bytes=0,
-                estimated_savings_gb=0,
-                file_mtime=file_mtime_corrupt,
-                duration=0,
-                probe_status="corrupt",
-            )
+            # Listed as corrupt, so it appears in the Corrupt filter.
+            corrupt_entry = await asyncio.to_thread(unprobed_entry, Path(file_path))
             # v0.9.153: a disc image that no reader can open isn't corrupt —
             # flag it "unreadable" with the reader's own error.
             if Path(file_path).suffix.lower() == ".iso":

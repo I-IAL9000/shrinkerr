@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,9 @@ from backend.scanner import _classify_disc, _disc_marker_path, already_converted
 # disc stayed invisible until an app restart — which is how the whole library
 # accumulated 0 DVDs.)
 _PROBE_RETRY_COOLDOWN_S = 1800
+# A file that still can't be read on a second try and hasn't changed for this
+# long is broken, not arriving: listed as corrupt, as a full scan lists it.
+_BROKEN_AFTER_S = 3600
 
 
 def _file_too_recent(mtime: float, now: float, skip_age_minutes: int) -> bool:
@@ -65,6 +69,15 @@ def _belt_stale_trigger() -> int:
         return 1000
 
 
+def _unchanged_for(file_path: str, seconds: float) -> bool:
+    """Not modified for `seconds` (a timestamp in the future counts as old)."""
+    try:
+        age = time.time() - os.path.getmtime(file_path)
+    except OSError:
+        return False
+    return age >= seconds or age < 0
+
+
 async def _unreadable_iso_entry(file_path: str):
     """Scanner row for a disc image no reader could open (v0.9.153)."""
     import time
@@ -100,6 +113,7 @@ class FileWatcher:
         # _PROBE_RETRY_COOLDOWN_S (was a permanent set that hid a title until
         # the process restarted). See _active_probe_failures().
         self._probe_failures: dict[str, float] = {}
+        self._probe_failure_counts: dict[str, int] = {}  # path → failed probes in a row
         self._last_disk_alert: float = 0  # Cooldown for disk space alerts
         # Last (ignored, probe_failures, to_process) tuple we logged for the
         # "Pre-filtered" line. Used to deduplicate identical states cycle to
@@ -397,12 +411,29 @@ class FileWatcher:
                 continue
             if probe is None:
                 # v0.6.2: disc probes can fail silently. Surface them.
-                if "/VIDEO_TS/VIDEO_TS.IFO" in file_path or "/BDMV/index.bdmv" in file_path.lower():
+                is_disc = "/VIDEO_TS/VIDEO_TS.IFO" in file_path or "/BDMV/index.bdmv" in file_path.lower()
+                if is_disc:
                     print(f"[WATCHER] !!! Disc probe FAILED: {file_path}", flush=True)
+                failures = self._probe_failure_counts.get(file_path, 0) + 1
+                # Tried every 30 minutes forever, it never showed up anywhere,
+                # where a full scan lists it as corrupt (v0.10.0). Not discs:
+                # they read slowly over the network and fail now and then.
+                if not is_disc and failures >= 2 and await asyncio.to_thread(
+                        _unchanged_for, file_path, _BROKEN_AFTER_S):
+                    from backend.scanner import unprobed_entry
+                    print(f"[WATCHER] Can't read {file_path} (tried {failures} times): listed as corrupt",
+                          flush=True)
+                    results.append(await asyncio.to_thread(unprobed_entry, Path(file_path)))
+                    new_file_paths.append(file_path)
+                    self._probe_failures.pop(file_path, None)
+                    self._probe_failure_counts.pop(file_path, None)
+                    continue
+                self._probe_failure_counts[file_path] = failures
                 self._probe_failures[file_path] = _time.monotonic()
                 skipped_probe += 1
                 continue
 
+            self._probe_failure_counts.pop(file_path, None)
             # AV1 files are listed like any other, as a full scan lists them;
             # skipping them meant probing each again every cycle (v0.10.0).
             results.append(await scanned_from_probe(file_path, probe, source_codecs, global_cq))
