@@ -29,7 +29,7 @@ EXPRESSIONS = [
     "new,added_7d,res_1080p", _ADV_ALL, f"{_ADV_ALL},x265", f"{_ADV_ANY},!x264",
     _ADV_TITLE,
     "alang:fre", "alang:eng,alang:fre", "acodec:truehd,!x264", "achan:8,res_1080p", "genre:drama,year:1990s",
-    "rating:8,type_tv", "network:HBO", "!slang:eng", "library:1", "folder:%2Fdemo%2FTV",
+    "rating:8,type_tv", "network:HBO", "!slang:eng", "library:1", "folder:%2Fdemo%2FTV", "alang:fre,!alang:eng",
 ]
 
 

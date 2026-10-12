@@ -7,8 +7,11 @@ import pytest
 from backend.filter_index.bits import ids_of
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import FilterIndex
-from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, PY_COLUMNS, parse_filter
+from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, PY_COLUMNS, _group_key, facet_token, parse_filter
 from backend.tests.filter_index_library import EXPRESSIONS, mutate, seed
+
+# The list expressions (Advanced Search ones are the service's: test_filter_index_service.py).
+LIST_EXPRESSIONS = [e for e in EXPRESSIONS if ":" in e and not e.startswith("adv:")]
 
 
 async def _index(db_path) -> FilterIndex:
@@ -32,6 +35,22 @@ async def _rows(db_path, text) -> set[int]:
                               [*expr.select_params, *expr.where_params]) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     return {r["id"] for r in rows if expr.post_filter(r, ctx)}
+
+
+async def _constraints(index: FilterIndex, expr) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """facet_counts' / facet_values' groups and exclusions for `expr`; a
+    filter the index hasn't (a folder) evaluated as the service does."""
+    from backend.filter_index import service
+
+    async def bits_of(f) -> int:
+        return index.bits[f.id] if f.id in index.bits else await service._adhoc_bits(f)
+    groups = []
+    for group in expr.groups:
+        bits = 0
+        for f in group:
+            bits |= await bits_of(f)
+        groups.append((_group_key(group[0]), bits))
+    return groups, [(f.id, await bits_of(f)) for f in expr.excluded]
 
 
 @pytest.mark.asyncio
@@ -129,15 +148,67 @@ async def test_facet_expressions_count_like_the_sql_engine(test_db):
     index = await _index(test_db)
     from backend.filter_index import service
     service.reset()  # _adhoc_bits keeps rows: none from another test's database
-    for text in [e for e in EXPRESSIONS if ":" in e and not e.startswith("adv:")]:
-        expr = parse_filter(text)
-        groups = []
-        for group in expr.groups:
-            bits = 0
-            for f in group:
-                bits |= index.bits.get(f.id) if f.id in index.bits else await service._adhoc_bits(f)
-            groups.append((group[0].group or f"_{group[0].id}", bits))
-        excluded = [(f.id, index.bits[f.id] if f.id in index.bits else await service._adhoc_bits(f))
-                    for f in expr.excluded]
+    for text in LIST_EXPRESSIONS:
+        groups, excluded = await _constraints(index, parse_filter(text))
         assert index.facet_counts(groups, excluded) == await sql_counts(test_db, text), text
     service.reset()
+
+
+@pytest.mark.asyncio
+async def test_each_value_counts_without_its_own_list_and_exclusion(test_db):
+    """Under each list expression, a value's count is what the SQL engine
+    lists for the expression without the value's list and its exclusion,
+    plus the value; it's listed when that isn't 0, or when it's selected."""
+    from backend.filter_index import service
+    from backend.routes.scan import _build_enrichment_context
+    await seed(test_db)
+    index = await _index(test_db)
+    service.reset()  # _adhoc_bits keeps rows: none from another test's database
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        ctx = await _build_enrichment_context(db, titles=True)
+
+        async def count(tokens: list[str]) -> int:
+            expr = parse_filter(",".join(tokens))
+            async with db.execute(f"SELECT id, {PY_COLUMNS}{expr.select_sql} FROM scan_results "
+                                  f"WHERE removed_from_list = 0{expr.where_sql}",
+                                  [*expr.select_params, *expr.where_params]) as cur:
+                rows = [dict(r) for r in await cur.fetchall()]
+            return sum(1 for r in rows if expr.post_filter(r, ctx))
+
+        def own(token: str, key: str, fid: str) -> bool:
+            """The token is the value's list or its exclusion."""
+            e = parse_filter(token)
+            return any(_group_key(g[0]) == key for g in e.groups) or any(f.id == fid for f in e.excluded)
+
+        for text in LIST_EXPRESSIONS:
+            expr = parse_filter(text)
+            groups, excluded = await _constraints(index, expr)
+            selected = frozenset(f.id for f in [*(f for g in expr.groups for f in g), *expr.excluded] if ":" in f.id)
+            lists = index.facet_values(groups, excluded, selected=selected, top=None)
+            for facet in INDEXED_FACETS:
+                listed = dict(lists[facet.key])
+                for fid in [k for k in index.bits if k.startswith(f"{facet.key}:")]:
+                    value = fid.partition(":")[2]
+                    want = await count([t for t in text.split(",") if not own(t, facet.key, fid)]
+                                       + [facet_token(facet.key, value)])
+                    assert listed.get(value, 0) == want, (text, fid)
+                    assert (value in listed) == (want > 0 or fid in selected), (text, fid)
+    service.reset()
+
+
+@pytest.mark.asyncio
+async def test_one_list_and_the_top_values(test_db):
+    await seed(test_db)
+    index = await _index(test_db)
+    assert list(index.facet_values([], [], facet="alang")) == ["alang"]
+    every = index.facet_values([], [], top=None)
+    for key, values in every.items():  # no filter: every value a file has, the most first
+        rows = {k.partition(":")[2]: bits.bit_count() for k, bits in index.bits.items() if k.startswith(f"{key}:")}
+        assert dict(values) == rows and [n for _, n in values] == sorted(rows.values(), reverse=True), key
+    assert any(len(values) > 2 for values in every.values())
+    top = index.facet_values([], [], selected=frozenset({"alang:xxx"}), top=2)
+    for key, values in top.items():
+        assert values[:2] == every[key][:2], key
+        assert len(values) == min(2, len(every[key])) + (key == "alang"), key
+    assert top["alang"][-1] == ("xxx", 0)
