@@ -131,7 +131,9 @@ export default function FilterListSection({ section, values, lastValues, version
   };
   const row = (value: string, count: number | undefined, excluded: boolean, included: boolean, display: string) => {
     const key = listToken(facet, value);
-    const empty = count === 0 && !included && !excluded;
+    // A row kept on screen after unticking stays usable, though it has no
+    // files now: disabled under the focus, the keyboard lost its place.
+    const empty = count === 0 && !included && !excluded && !kept.includes(value);
     return (
       <div key={key} className={`filter-option${excluded ? " excluded" : ""}${empty ? " empty" : ""}`}>
         <label className="filter-option-main">

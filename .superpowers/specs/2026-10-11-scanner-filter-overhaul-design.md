@@ -239,5 +239,7 @@ Each phase gets its own implementation plan and ships on `develop` on its own:
 3. The list facets from existing data (languages, codecs, channels, genre,
    year, rating, country, network, show status, library, folder) and the
    Title menu; Channels replaces the 7.1 option (`audio_71`, then hidden).
+   Done (plan `.superpowers/plans/2026-10-12-filter-lists-phase-3.md`): folders
+   are searched, not indexed; Rating, Channels and Year keep their own order.
 4. Title credits (actor, director, studio) and all Plex labels.
 5. Tree, lists and Add to Queue through the index.
