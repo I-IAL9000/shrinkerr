@@ -2000,13 +2000,35 @@ def folder_candidates(root_path: Path, dirs: list[str], files: list[str], extens
 
 
 
-def unprobed_entry(file_path: Path) -> ScannedFile:
+async def api_original_language(file_path: str) -> Optional[str]:
+    """The original language TMDB / TVDB give for the file's title, or None.
+    Not looked up in a media folder typed "Other": home videos, lectures and
+    the like match spuriously (v0.3.33). A full scan and the watcher look up
+    every file this way, read or not (v0.10.0)."""
+    try:
+        from backend.media_paths import is_other_typed_dir
+        if await is_other_typed_dir(file_path):
+            return None
+        from backend.metadata import lookup_original_language
+        return await asyncio.wait_for(lookup_original_language(file_path), timeout=10)
+    except asyncio.TimeoutError:
+        print(f"[SCANNER] Metadata lookup timed out for {Path(file_path).name}", flush=True)
+    except Exception as exc:
+        print(f"[SCANNER] Metadata lookup failed for {Path(file_path).name}: {exc}", flush=True)
+    return None
+
+
+def unprobed_entry(file_path: Path, api_language: Optional[str] = None) -> ScannedFile:
     """The Scanner row for a file ffprobe couldn't read: corrupt, so it shows
     in the Corrupt filter (and can be replaced). External subtitles beside it
-    are still listed. A full scan and the watcher list one the same way."""
+    are still listed. A full scan and the watcher list one the same way, with
+    the original language api_original_language() found (v0.10.0: none was
+    looked up, so it was "Not API matched")."""
+    native = api_language or "und"
     try:
         file_size = os.path.getsize(str(file_path))
-        file_mtime = os.path.getmtime(str(file_path))
+        # A rip dated years ahead would pin the title to the top of Newest.
+        file_mtime = clamp_future_mtime(os.path.getmtime(str(file_path)), time.time())
     except OSError:
         file_size = 0
         file_mtime = None
@@ -2018,7 +2040,7 @@ def unprobed_entry(file_path: Path) -> ScannedFile:
         if ext_subs_raw:
             for i, es in enumerate(ext_subs_raw):
                 es["stream_index"] = -(i + 1)
-            for cls_track, raw in zip(classify_subtitle_tracks(ext_subs_raw, "und"), ext_subs_raw):
+            for cls_track, raw in zip(classify_subtitle_tracks(ext_subs_raw, native), ext_subs_raw):
                 subs.append(cls_track.model_copy(update={"external": True, "external_path": raw["external_path"]}))
     except Exception as exc:
         print(f"[SCANNER] Ext sub detection failed for unprobed {file_path.name}: {exc}", flush=True)
@@ -2032,7 +2054,8 @@ def unprobed_entry(file_path: Path) -> ScannedFile:
         needs_conversion=False,
         audio_tracks=[],
         subtitle_tracks=subs,
-        native_language="und",
+        native_language=native,
+        language_source="api" if api_language else "heuristic",
         has_removable_tracks=False,
         has_removable_subs=False,
         has_external_subs=has_ext,
@@ -2351,8 +2374,12 @@ async def scan_directory(
                 except Exception as te:
                     print(f"[SCANNER] ffprobe debug failed: {te}", flush=True)
         if probe is None:
-            # Listed as corrupt, so it appears in the Corrupt filter.
-            corrupt_entry = await asyncio.to_thread(unprobed_entry, Path(file_path))
+            # Listed as corrupt, so it appears in the Corrupt filter, with its
+            # original language looked up as a readable file's is.
+            api_lang = None
+            if not (cancel_check and cancel_check()):
+                api_lang = await api_original_language(str(file_path))
+            corrupt_entry = await asyncio.to_thread(unprobed_entry, Path(file_path), api_lang)
             # v0.9.153: a disc image that no reader can open isn't corrupt —
             # flag it "unreadable" with the reader's own error.
             if Path(file_path).suffix.lower() == ".iso":
@@ -2377,20 +2404,7 @@ async def scan_directory(
         # them produce spurious results. v0.3.33+.
         api_lang = None
         if not (cancel_check and cancel_check()):
-            try:
-                from backend.media_paths import is_other_typed_dir
-                if await is_other_typed_dir(str(file_path)):
-                    pass  # Skip TMDB lookup — directory is non-cataloguable
-                else:
-                    from backend.metadata import lookup_original_language
-                    api_lang = await asyncio.wait_for(
-                        lookup_original_language(str(file_path)),
-                        timeout=10,
-                    )
-            except asyncio.TimeoutError:
-                print(f"[SCANNER] Metadata lookup timed out for {file_path.name}", flush=True)
-            except Exception as exc:
-                print(f"[SCANNER] Metadata lookup failed for {file_path.name}: {exc}", flush=True)
+            api_lang = await api_original_language(str(file_path))
 
         native_lang = api_lang if api_lang else detect_native_language(raw_tracks)
         language_source = "api" if api_lang else "heuristic"

@@ -10,7 +10,8 @@ import aiosqlite
 
 from backend.config import settings
 from backend.database import DB_PATH
-from backend.scanner import _classify_disc, _disc_marker_path, already_converted, clamp_future_mtime, folder_candidates, removable_audio_flag, SUBTITLE_EXTENSIONS, walk_media_dir
+from backend.scan_filters import NEW_WINDOW_S
+from backend.scanner import _classify_disc, _disc_marker_path, already_converted, api_original_language, clamp_future_mtime, folder_candidates, removable_audio_flag, SUBTITLE_EXTENSIONS, walk_media_dir
 
 # v0.9.100: a probe failure is retried after this many seconds instead of
 # blocklisting the file until the process restarts. A transient timeout / lock
@@ -91,11 +92,13 @@ async def _unreadable_iso_entry(file_path: str):
         size, mtime = 0, None
     reason = await asyncio.to_thread(diagnose_unreadable_iso, p)
     print(f"[WATCHER] Unreadable disc image: {file_path} — {reason}", flush=True)
+    api_lang = await api_original_language(file_path)  # as a full scan's row has (v0.10.0)
     return ScannedFile(
         file_path=file_path, file_name=p.name, folder_name=p.parent.name,
         file_size=size, file_size_gb=round(size / (1024 ** 3), 3),
         video_codec="unknown", needs_conversion=False, audio_tracks=[],
-        native_language="und", has_removable_tracks=False,
+        native_language=api_lang or "und", language_source="api" if api_lang else "heuristic",
+        has_removable_tracks=False,
         estimated_savings_bytes=0, estimated_savings_gb=0,
         file_mtime=mtime, duration=0,
         probe_status="unreadable", probe_error=reason,
@@ -279,10 +282,11 @@ class FileWatcher:
         finally:
             await db.close()
 
-    async def _scan_new_files(self, new_files: list[str], ignored_folders: list[str] | None = None) -> int:
-        """Probe and add new files to scan_results."""
+    async def _scan_new_files(self, new_files: list[str], ignored_folders: list[str] | None = None) -> list[str]:
+        """Probe and add new files to scan_results. Returns the paths added
+        (not the auto-ignored ones)."""
         if not new_files:
-            return 0
+            return []
 
         from backend.scanner import probe_file, is_x264, is_x265
 
@@ -378,6 +382,17 @@ class FileWatcher:
 
         results = []
         new_file_paths = []
+        # Listed without a probe and not changed within Added: New's window:
+        # broken for years ("Mag Wheels (1978)"), so not new to the library
+        # (v0.10.0). A date in the future counts as old, as it does below.
+        unread_old: set[str] = set()
+
+        async def _list_unread(entry):
+            results.append(entry)
+            new_file_paths.append(entry.file_path)
+            if await asyncio.to_thread(_unchanged_for, entry.file_path, NEW_WINDOW_S):
+                unread_old.add(entry.file_path)
+
         skipped_ignored = 0
         skipped_probe = 0
         skipped_age = 0
@@ -406,8 +421,7 @@ class FileWatcher:
                 # v0.9.153: an unreadable disc image used to be skipped here
                 # and never appeared anywhere. Record it as "unreadable" with
                 # the reader's error so it shows up in the Scanner.
-                results.append(await _unreadable_iso_entry(file_path))
-                new_file_paths.append(file_path)
+                await _list_unread(await _unreadable_iso_entry(file_path))
                 continue
             if probe is None:
                 # v0.6.2: disc probes can fail silently. Surface them.
@@ -423,8 +437,8 @@ class FileWatcher:
                     from backend.scanner import unprobed_entry
                     print(f"[WATCHER] Can't read {file_path} (tried {failures} times): listed as corrupt",
                           flush=True)
-                    results.append(await asyncio.to_thread(unprobed_entry, Path(file_path)))
-                    new_file_paths.append(file_path)
+                    await _list_unread(await asyncio.to_thread(
+                        unprobed_entry, Path(file_path), await api_original_language(file_path)))
                     self._probe_failures.pop(file_path, None)
                     self._probe_failure_counts.pop(file_path, None)
                     continue
@@ -474,7 +488,11 @@ class FileWatcher:
             from backend.routes.scan import _write_batch
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc).isoformat()
-            await _write_batch(self.db_path, results, now, mark_new=True)
+            fresh = [s for s in results if s.file_path not in unread_old]
+            if fresh:
+                await _write_batch(self.db_path, fresh, now, mark_new=True)
+            if len(fresh) < len(results):
+                await _write_batch(self.db_path, [s for s in results if s.file_path in unread_old], now)
 
             # v0.7.2: clear any stale health_status='corrupt' on disc rows
             # that just got re-discovered. A previous health-check during a
@@ -516,7 +534,7 @@ class FileWatcher:
             # Auto-queue if enabled
             await self._auto_queue_new_files(results)
 
-        return len(results)
+        return [s.file_path for s in results]
 
     async def _auto_queue_new_files(self, results: list) -> int:
         """Auto-enqueue new files that need work, if the setting is enabled.
@@ -1446,7 +1464,8 @@ class FileWatcher:
             stale_path_set = stale_path_set - set(moved)
             new_files = [f for f in new_files if f not in set(moved.values())]
         removed = await self._remove_stale_entries(list(stale_path_set))
-        added = await self._scan_new_files(new_files[:200], ignored_folders)
+        added_paths = await self._scan_new_files(new_files[:200], ignored_folders)
+        added = len(added_paths)
 
         # Track new files for the badge
         if added > 0:
@@ -1467,10 +1486,11 @@ class FileWatcher:
             except Exception as exc:
                 print(f"[WATCHER] WS broadcast failed (non-fatal): {exc}", flush=True)
 
-        # Lazy metadata lookup for newly added files
+        # Lazy metadata lookup for the files just added (v0.10.0: it got the
+        # first `added` of new_files, not those when some didn't read or were
+        # skipped).
         if added > 0:
-            new_paths = new_files[:added]  # The files we just added
-            await self._refresh_metadata_for_files(new_paths)
+            await self._refresh_metadata_for_files(added_paths)
 
         # v0.9.107: auto-detect sidecar subs added next to already-known videos
         # (no manual folder rescan needed). Scoped to folders that gained subs —
@@ -1616,22 +1636,11 @@ async def scanned_from_probe(file_path: str, probe: dict, source_codecs: list, g
     native_lang = detect_native_language(raw_tracks)
     language_source = "heuristic"
 
-    # Try TMDB/TVDB lookup for accurate native language. Skip when
-    # the file is inside an "Other"-typed media dir — those hold
-    # non-cataloguable content and would just produce spurious matches.
-    try:
-        from backend.media_paths import is_other_typed_dir
-        if not await is_other_typed_dir(str(file_path)):
-            from backend.metadata import lookup_original_language
-            api_lang = await asyncio.wait_for(
-                lookup_original_language(str(file_path)),
-                timeout=10,
-            )
-            if api_lang:
-                native_lang = api_lang
-                language_source = "api"
-    except Exception:
-        pass
+    # Try TMDB/TVDB lookup for accurate native language.
+    api_lang = await api_original_language(str(file_path))
+    if api_lang:
+        native_lang = api_lang
+        language_source = "api"
 
     # v0.5.22: was `is_x264(video_codec)` — only matched h264 and
     # silently classified MPEG-2 / MPEG-4 / VC-1 as "no

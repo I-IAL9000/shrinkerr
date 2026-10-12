@@ -402,8 +402,13 @@ _UNDO_POSSIBLE = _job_exists(
     f"AND (COALESCE({_BACKUP_DAYS}, 0) <= 0 OR julianday(j.completed_at) > julianday('now') - {_BACKUP_DAYS})")
 
 
+# Added: New lists what the watcher found this recently. The watcher marks a
+# file it can't read as new only if it changed this recently too (v0.10.0).
+NEW_WINDOW_S = 24 * 3600
+
+
 def _new_cutoff() -> tuple:
-    return ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)
+    return ((datetime.now(timezone.utc) - timedelta(seconds=NEW_WINDOW_S)).isoformat(),)
 
 
 def _recent_cutoff() -> tuple:

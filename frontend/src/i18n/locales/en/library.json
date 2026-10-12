@@ -20,7 +20,8 @@
   },
   "poster": {
     "fixMatchTitle": "Fix TMDB match",
-    "noFilesFound": "No files found"
+    "noFilesFound": "No files found",
+    "filesLoadFailed": "The files couldn't be loaded ({{error}})."
   },
   "fix": {
     "title": "Fix match",

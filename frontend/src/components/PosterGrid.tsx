@@ -156,6 +156,8 @@ export default function PosterGrid({
   const [fixModalGroup, setFixModalGroup] = useState<{ key: string; title: string; year: string | null } | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<ScannedFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  // Why the open title's files didn't load (it said "No files found").
+  const [filesError, setFilesError] = useState<string | null>(null);
   const [expandedFileDetails, setExpandedFileDetails] = useState<Set<string>>(new Set());
   const [accordionHeight, setAccordionHeight] = useState(0);
   const accordionRef = useRef<HTMLDivElement>(null);
@@ -373,25 +375,18 @@ export default function PosterGrid({
     })();
   }, [startRow, endRow, groups, posterMeta.size]);
 
-  const handleExpand = useCallback(async (group: TitleGroup) => {
-    if (expandedKey === group.key) {
-      setExpandedKey(null);
-      setExpandedFiles([]);
-      if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
-      return;
-    }
+  const loadTitleFiles = useCallback(async (key: string) => {
     // Cancel any in-flight expand so a prior click's result can't land on top
     if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
     const ctrl = new AbortController();
     expandAbortCtrl.current = ctrl;
     const myGen = ++expandRequestGen.current;
 
-    setExpandedKey(group.key);
     setExpandedFiles([]);
+    setFilesError(null);
     setLoadingFiles(true);
-    setExpandedFileDetails(new Set());
     try {
-      const result = await getFilesByTitle(group.key, filter, ctrl.signal);
+      const result = await getFilesByTitle(key, filter, ctrl.signal);
       if (myGen !== expandRequestGen.current) return;
       const allFiles = (Array.isArray(result) ? result : []).map(parseFile);
 
@@ -408,11 +403,24 @@ export default function PosterGrid({
       setExpandedFiles(allFiles);
     } catch (err: any) {
       if (err?.name === "AbortError") return;
+      if (myGen === expandRequestGen.current) setFilesError(err?.message || String(err));
     }
     if (myGen === expandRequestGen.current) {
       setLoadingFiles(false);
     }
-  }, [expandedKey, filter, onFolderFilesLoaded]);
+  }, [filter, onFolderFilesLoaded]);
+
+  const handleExpand = useCallback(async (group: TitleGroup) => {
+    if (expandedKey === group.key) {
+      setExpandedKey(null);
+      setExpandedFiles([]);
+      if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
+      return;
+    }
+    setExpandedKey(group.key);
+    setExpandedFileDetails(new Set());
+    await loadTitleFiles(group.key);
+  }, [expandedKey, loadTitleFiles]);
 
   // Render only visible rows
   const renderedRows: React.ReactNode[] = [];
@@ -541,6 +549,11 @@ export default function PosterGrid({
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 16 }}>
                 <div className="spinner" style={{ width: 16, height: 16 }} />
                 <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{t("library:tree.loadingFiles")}</span>
+              </div>
+            ) : filesError !== null ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: 16 }}>
+                <span role="alert" style={{ fontSize: 12, color: "var(--warning)" }}>{t("library:poster.filesLoadFailed", { error: filesError })}</span>
+                <button className="btn btn-xs btn-secondary" onClick={() => expandedKey && loadTitleFiles(expandedKey)}>{t("common:actions.retry")}</button>
               </div>
             ) : expandedFiles.length > 0 ? (
               <div style={{ padding: "4px 12px 8px" }}>

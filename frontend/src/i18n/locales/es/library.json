@@ -22,7 +22,8 @@
   },
   "poster": {
     "fixMatchTitle": "Corregir coincidencia de TMDB",
-    "noFilesFound": "No se encontraron archivos"
+    "noFilesFound": "No se encontraron archivos",
+    "filesLoadFailed": "No se pudieron cargar los archivos ({{error}})."
   },
   "fix": {
     "title": "Corregir coincidencia",
