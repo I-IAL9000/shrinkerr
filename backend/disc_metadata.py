@@ -84,6 +84,8 @@ _ISO639_2_T_TO_B: dict[str, str] = {
     "fas": "per",  # Persian
     "mya": "bur",  # Burmese
     "msa": "may",  # Malay (alt T form)
+    "ell": "gre",  # Greek
+    "mri": "mao",  # Maori
 }
 
 

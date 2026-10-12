@@ -16,6 +16,19 @@ const NAMED_AS: Record<string, string> = {
   gre: "ell", ice: "isl", mac: "mkd", mao: "mri", may: "msa", per: "fas", rum: "ron", slo: "slk", tib: "bod", wel: "cym",
 };
 
+// The other way, as the server keys a language (scan_filters.fold_lang): a
+// T code by its B code ("fra" -> "fre"; Chinese's "zho" -> "chi").
+const B_CODES: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(NAMED_AS).map(([b, tCode]) => [tCode, b])),
+  zho: "chi",
+};
+
+/** A language code as the lists key it: "fra" -> "fre", none -> "und". The
+ *  server also folds two-letter codes ("fr"); those stay as they are here. */
+export function languageKey(code: string): string {
+  return code ? B_CODES[code] ?? code : "und";
+}
+
 export function facetValueLabel(facet: string, value: string, t: T, label?: string): string {
   switch (facet) {
     case "alang":

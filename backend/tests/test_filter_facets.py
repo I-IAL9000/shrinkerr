@@ -18,6 +18,7 @@ def test_language_keys_fold_codes():
     assert [lang_key(c) for c in ("fra", "fr", "FRE", " fre ", "deu", "en", "zho")] == \
         ["fre", "fre", "fre", "fre", "ger", "eng", "chi"]
     assert [lang_key(c) for c in ("", None, "und", "UND")] == ["und"] * 4
+    assert lang_key("ell") == "gre" and lang_key("mri") == "mao"  # Greek, Maori: T codes too
     assert {"fre", "fra", "fr"} <= set(lang_aliases("fre"))
     assert set(lang_aliases("und")) == {"", "und"}
     # The list (lang_aliases, in SQL) and the index (lang_key) agree: "yue"

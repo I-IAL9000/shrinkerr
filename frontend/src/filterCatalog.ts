@@ -6,7 +6,7 @@
  */
 import catalog from "./filterCatalog.json";
 import { decodeAdvanced } from "./advancedSearch";
-import { facetValueLabel } from "./facetLabels";
+import { facetValueLabel, languageKey } from "./facetLabels";
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
@@ -42,14 +42,31 @@ const ALIASES: Record<string, string> = Object.fromEntries(
   (catalog.hidden as (FilterOption & { alias?: string })[]).filter(h => h.alias).map(h => [h.key, h.alias as string]),
 );
 
-/** Filter tokens from an address, a saved view or an older version. */
+/** Filter tokens from an address, a saved view or an older version. A list
+ *  value as the server reads it ("alang:FRA" is "alang:fre"), so its list's
+ *  row is the one ticked, not a second chip beside it. */
 export function normalizeFilters(tokens: string[]): string[] {
-  const out = tokens.map(token => {
+  const out = tokens.flatMap(token => {
     const excluded = token.startsWith("!");
     const key = excluded ? token.slice(1) : token;
-    return key in ALIASES ? (excluded ? "!" : "") + ALIASES[key] : token;
+    if (key in ALIASES) return [(excluded ? "!" : "") + ALIASES[key]];
+    const list = parseListToken(key);
+    if (!list) return [token];
+    const value = listValue(list.facet, list.value);
+    return value ? [(excluded ? "!" : "") + listToken(list.facet, value)] : [];
   });
   return [...new Set(out)];
+}
+
+// A list's value as the server reads it (scan_filters.facet_filter): a
+// track's field trimmed of spaces with its ASCII letters lower case, a
+// language by its B code, a channel band; null for one it can't have.
+function listValue(facet: string, value: string): string | null {
+  if (!value) return null;
+  if (facet === "achan") return ["1", "2", "6", "8"].includes(value) ? value : null;
+  if (facet !== "alang" && facet !== "slang" && facet !== "acodec") return value;
+  const text = value.replace(/^ +| +$/g, "").replace(/[A-Z]/g, c => c.toLowerCase());
+  return facet === "acodec" ? text || null : languageKey(text);
 }
 
 /** A list value's token parts, or null: "alang:fre" -> { facet: "alang", value: "fre" }. */
