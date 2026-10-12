@@ -21,7 +21,8 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Any, Callable, Iterable, Optional
+from urllib.parse import quote, unquote
 
 from backend.direct_play import PROBLEMS as _DP_PROBLEMS, SQL as _DP_SQL
 from backend.resolution import RANKS, sql_resolution_rank
@@ -277,13 +278,14 @@ def title_folder(fp: str) -> str:
 
 def row_title(row: dict, ctx: dict) -> dict:
     """The file's title metadata (v0.10.0): year, rating (IMDb, else TMDB),
-    genres (TMDB and the media server's), network and show status — from
-    the Poster grid's cache, else the year in the folder name."""
+    genres (TMDB and the media server's), network, show status and
+    countries — from the Poster grid's cache, else the year in the folder
+    name."""
     v = row.get("_title")
     if v is not None:
         return v
     folder = title_folder(row["file_path"])
-    year, rating, genres, network, status = (ctx.get("title_meta") or {}).get(folder) or (None,) * 5
+    year, rating, genres, network, status, country = (ctx.get("title_meta") or {}).get(folder) or (None,) * 6
     if not year:
         from backend.routes.posters import parse_folder_name
         named = folder.rsplit("/", 1)[0] if folder.rsplit("/", 1)[-1].upper() in ("VIDEO_TS", "BDMV") else folder
@@ -302,6 +304,8 @@ def row_title(row: dict, ctx: dict) -> dict:
     v = row["_title"] = {
         "year": year, "rating": rating, "genres": found, "network": (network or "").strip().lower(),
         "status": _SHOW_STATUS.get((status or "").strip().lower(), ""),
+        "network_name": (network or "").strip(),
+        "countries": [c.strip() for c in (country or "").split(",") if c.strip()],
     }
     return v
 
@@ -559,6 +563,172 @@ FILTERS: dict[str, Filter] = {f.id: f for f in _FILTER_LIST}
 # Columns the Python predicates read.
 PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_format, "
               "COALESCE(video_conv_savings_bytes, 0) AS video_conv_savings_bytes")
+
+
+# ── List facets (v0.10.0, filter overhaul phase 3) ───────────────────────
+# A list's value is the token "<facet>:<value>" (the value URL-encoded: a
+# network or a folder can hold a comma). parse_filter makes it a Filter whose
+# group is the facet: values of one list widen, lists narrow. The filter
+# index keeps every value of an indexed facet as a bitset "<facet>:<value>".
+
+FACETS_VERSION = 1  # bump when a facet's normalize / values changes
+
+
+def lang_key(code: Any) -> str:
+    """A track's language as one key: ISO 639-2 B form ("fre", not "fra" or
+    "fr"); none, empty or "und": "und"."""
+    from backend.disc_metadata import _ISO639_1_TO_2, _normalize_iso639_2
+    c = str(code or "").strip().lower()
+    if not c or c == "und":
+        return "und"
+    if len(c) == 2:
+        return _ISO639_1_TO_2.get(c) or c
+    if len(c) == 3:
+        return _normalize_iso639_2(c)
+    return c
+
+
+def lang_aliases(key: str) -> list[str]:
+    """Every code lang_key() folds into `key`: what a track can say for it."""
+    from backend.disc_metadata import _ISO639_1_TO_2, _ISO639_2_T_TO_B
+    if key == "und":
+        return ["", "und"]
+    # From lang_key itself, so the two agree ("yue" maps to "chi" in
+    # _ISO639_1_TO_2 but, three letters, keys as itself).
+    return sorted({key} | {c for c in (*_ISO639_2_T_TO_B, *_ISO639_1_TO_2) if lang_key(c) == key})
+
+
+_CHANNEL_BANDS = {"1": (1, 1), "2": (2, 2), "6": (3, 7), "8": (8, 1_000)}
+
+
+def channel_band(n: Any) -> Optional[str]:
+    """A file's widest audio track as mono "1", stereo "2", 5.1 "6" (3-7
+    channels) or 7.1+ "8"; None without channels."""
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return None
+    return next((band for band, (lo, hi) in _CHANNEL_BANDS.items() if lo <= n <= hi), None)
+
+
+def rating_band(rating: Any) -> str:
+    """"8" (8 and up), "7", "6", "5" (from that to the next), "lt5", "none"."""
+    try:
+        r = float(rating)
+    except (TypeError, ValueError):
+        return "none"
+    if r <= 0:
+        return "none"
+    return "8" if r >= 8 else "7" if r >= 7 else "6" if r >= 6 else "5" if r >= 5 else "lt5"
+
+
+def _lower_or_none(raw: Any) -> Optional[str]:
+    text = str(raw or "").strip().lower()
+    return text or None
+
+
+@dataclass(frozen=True)
+class Facet:
+    key: str
+    # SQL facets: "SELECT <row id>, <raw value>" rows, one per row and value;
+    # {where} selects the rows (scan_results columns, unqualified).
+    pairs_sql: Optional[str] = None
+    normalize: Callable[[Any], Optional[str]] = _lower_or_none  # raw value -> value (None: none)
+    cond: Optional[Callable[[str], tuple[str, tuple]]] = None  # value -> (SQL over scan_results, params)
+    # Python facets: (row, ctx) -> the row's values (rows have PY_COLUMNS).
+    values: Optional[Callable[[dict, dict], Iterable[str]]] = None
+    inputs: tuple[str, ...] = ()
+    titles: bool = False  # values() reads title metadata (ctx["title_meta"])
+    indexed: bool = True  # False: searched, not kept in the filter index (folders)
+
+
+def _track_pairs(column: str, field: str) -> str:
+    return (f"SELECT s.id, json_extract(t.value, '$.{field}') FROM "
+            f"(SELECT id, {column} FROM scan_results WHERE {{where}}) s, "
+            f"json_each(CASE WHEN json_valid(s.{column}) THEN s.{column} ELSE '[]' END) t")
+
+
+_MAX_CHANNELS = ("(SELECT MAX(CAST(json_extract(t.value, '$.channels') AS INTEGER)) FROM json_each("
+                 "CASE WHEN json_valid(audio_tracks_json) THEN audio_tracks_json ELSE '[]' END) t)")
+_ACHAN_PAIRS = ("SELECT s.id, MAX(CAST(json_extract(t.value, '$.channels') AS INTEGER)) FROM "
+                "(SELECT id, audio_tracks_json FROM scan_results WHERE {where}) s, "
+                "json_each(CASE WHEN json_valid(s.audio_tracks_json) THEN s.audio_tracks_json ELSE '[]' END) t "
+                "GROUP BY s.id")
+
+
+def _lang_cond(column: str) -> Callable[[str], tuple[str, tuple]]:
+    def cond(value: str) -> tuple[str, tuple]:
+        codes = lang_aliases(value)
+        return (_tracks(column, "lower(trim(COALESCE(json_extract(t.value, '$.language'), ''))) "
+                                f"IN ({','.join('?' * len(codes))})"), tuple(codes))
+    return cond
+
+
+def _codec_cond(value: str) -> tuple[str, tuple]:
+    return _tracks("audio_tracks_json", "lower(trim(COALESCE(json_extract(t.value, '$.codec'), ''))) = ?"), (value,)
+
+
+def _achan_cond(value: str) -> tuple[str, tuple]:
+    lo, hi = _CHANNEL_BANDS.get(value, (-1, -1))
+    return f"COALESCE({_MAX_CHANNELS}, 0) BETWEEN ? AND ?", (lo, hi)
+
+
+def _folder_cond(value: str) -> tuple[str, tuple]:
+    prefix = value.rstrip("/") + "/"
+    return "substr(file_path, 1, ?) = ?", (len(prefix), prefix)
+
+
+def _year_values(row: dict, ctx: dict) -> list[str]:
+    year = row_title(row, ctx)["year"]
+    return [f"{year // 10 * 10}s", str(year)] if year else []
+
+
+def _library_values(row: dict, ctx: dict) -> list[str]:
+    fp = row["file_path"]
+    return next(([dir_id] for prefix, dir_id in ctx.get("media_dir_ids") or () if fp.startswith(prefix)), [])
+
+
+_TITLE_INPUTS = ("titles",)
+_FACET_LIST = [
+    Facet("alang", pairs_sql=_track_pairs("audio_tracks_json", "language"), normalize=lang_key,
+          cond=_lang_cond("audio_tracks_json")),
+    Facet("slang", pairs_sql=_track_pairs("subtitle_tracks_json", "language"), normalize=lang_key,
+          cond=_lang_cond("subtitle_tracks_json")),
+    Facet("acodec", pairs_sql=_track_pairs("audio_tracks_json", "codec"), cond=_codec_cond),
+    Facet("achan", pairs_sql=_ACHAN_PAIRS, normalize=channel_band, cond=_achan_cond),
+    Facet("genre", values=lambda r, c: row_title(r, c)["genres"], inputs=("titles", "plex"), titles=True),
+    Facet("year", values=_year_values, inputs=_TITLE_INPUTS, titles=True),
+    Facet("rating", values=lambda r, c: [rating_band(row_title(r, c)["rating"])], inputs=_TITLE_INPUTS, titles=True),
+    Facet("country", values=lambda r, c: row_title(r, c)["countries"], inputs=_TITLE_INPUTS, titles=True),
+    Facet("network", values=lambda r, c: [n for n in [row_title(r, c)["network_name"]] if n],
+          inputs=_TITLE_INPUTS, titles=True),
+    Facet("showstatus", values=lambda r, c: [s for s in [row_title(r, c)["status"]] if s],
+          inputs=_TITLE_INPUTS, titles=True),
+    Facet("library", values=_library_values, inputs=("media_dirs",)),
+    Facet("folder", cond=_folder_cond, indexed=False),
+]
+FACETS: dict[str, Facet] = {f.key: f for f in _FACET_LIST}
+INDEXED_FACETS: list[Facet] = [f for f in _FACET_LIST if f.indexed]
+
+
+def facet_token(key: str, value: str) -> str:
+    """The filter token for a list's value."""
+    return f"{key}:{quote(value, safe='')}"
+
+
+def facet_filter(key: str, value: str) -> Optional[Filter]:
+    """The filter a list's value is (its group: the list); None for an
+    unknown list or an empty value."""
+    facet = FACETS.get(key)
+    if facet is None or not value:
+        return None
+    fid = f"{key}:{value}"
+    if facet.cond:
+        sql, params = facet.cond(value)
+        return Filter(fid, key, sql=sql, params=(lambda p=params: p), inputs=facet.inputs)
+    values = facet.values
+    return Filter(fid, key, py=lambda r, c, v=value: v in set(values(r, c)), titles=facet.titles,
+                  inputs=facet.inputs)
 
 
 # ── Advanced Search conditions (v0.10.0) ─────────────────────────────────
@@ -914,7 +1084,11 @@ def parse_filter(text: Optional[str]) -> FilterExpr:
                 by_group[f"_{f.id}"] = [f]
             continue
         neg = token.startswith("!")
-        f = FILTERS.get(token[1:] if neg else token)
+        name = token[1:] if neg else token
+        f = FILTERS.get(name)
+        if f is None and ":" in name:  # a list's value (v0.10.0)
+            key, _, raw = name.partition(":")
+            f = facet_filter(key, unquote(raw))
         if f is None or token in seen:
             continue
         seen.add(token)

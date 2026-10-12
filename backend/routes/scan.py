@@ -1985,14 +1985,14 @@ async def _converted_sets(db) -> tuple[set[str], set[str]]:
 
 async def _title_metadata(db) -> tuple[dict, dict]:
     """The Poster grid's per-title metadata (folder -> year, rating, genres,
-    network, status) and the media servers' genres (folder/ -> {genre}),
+    network, status, country) and the media servers' genres (folder/ -> {genre}),
     for Advanced Search's title conditions (v0.10.0)."""
     meta: dict = {}
     genres: dict[str, set] = {}
     try:
-        async with db.execute("SELECT folder_path, year, rating, genres, network, status FROM poster_cache") as cur:
+        async with db.execute("SELECT folder_path, year, rating, genres, network, status, country FROM poster_cache") as cur:
             for r in await cur.fetchall():
-                meta[r["folder_path"]] = (r["year"], r["rating"], r["genres"], r["network"], r["status"])
+                meta[r["folder_path"]] = (r["year"], r["rating"], r["genres"], r["network"], r["status"], r["country"])
         async with db.execute(
             "SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type = 'genre'"
         ) as cur:
@@ -2097,6 +2097,10 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
         "LOW_BITRATE_THRESHOLD": LOW_BITRATE_THRESHOLD,
         "HIGH_BITRATE_THRESHOLD": HIGH_BITRATE_THRESHOLD,
     }
+    # The media folders, most specific first, for the Library list (v0.10.0).
+    async with db.execute("SELECT id, path FROM media_dirs") as cur:
+        ctx["media_dir_ids"] = sorted(((path.rstrip("/") + "/", str(dir_id)) for dir_id, path in await cur.fetchall()),
+                                      key=lambda pair: -len(pair[0]))
     # When each title was last watched, for "Not watched in N months" (v0.10.0)
     from backend.watch_activity import load as load_watch_activity
     ctx["watch_activity"] = await load_watch_activity(db)
