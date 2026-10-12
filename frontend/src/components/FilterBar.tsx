@@ -44,7 +44,11 @@ export default function FilterBar({ activeFilters, counts, matching, total, list
   for (const [key, n] of Object.entries(counts ?? {})) lastCounts.current[key] = n;
   // The lists' too: they emptied to "Counting…" on each tick in them.
   const lastLists = useRef<FacetLists | null>(null);
-  if (lists) lastLists.current = lists;
+  const listsVersion = useRef(0);  // bumped with each new lists, for "Show all"
+  if (lists && lists !== lastLists.current) {
+    lastLists.current = lists;
+    listsVersion.current += 1;
+  }
   // A media folder by its label ("Movies"), as the server names it.
   const libraryLabel = (token: string) => {
     const list = parseListToken(token.replace(/^!/, ""));
@@ -155,7 +159,8 @@ export default function FilterBar({ activeFilters, counts, matching, total, list
         </button>
         {isOpen && (
           <FilterPanel category={category} active={active} counts={counts} lastCounts={lastCounts.current}
-            lists={lists} lastLists={lastLists.current} filter={filter} onToggle={onToggle} onClose={close} />
+            lists={lists} lastLists={lastLists.current} listsVersion={listsVersion.current} filter={filter}
+            onToggle={onToggle} onClose={close} />
         )}
       </div>
     );

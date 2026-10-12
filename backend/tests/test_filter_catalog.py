@@ -110,8 +110,9 @@ def test_list_value_labels_exist_in_english_and_spanish():
     keys = [f"scanner:facets.channels.{v}" for v in ("1", "2", "6", "8")]
     keys += [f"scanner:facets.rating.{v}" for v in ("8", "7", "6", "5", "lt5", "none")]
     keys += [f"scanner:facets.status.{v}" for v in ("returning", "ended", "canceled", "in_production", "planned", "pilot")]
-    keys += ["scanner:facets.unknownLanguage", "scanner:facets.search", "scanner:facets.searchFolders",
-             "scanner:facets.showAll", "scanner:facets.showFewer", "scanner:facets.noMatches"]
+    keys += ["scanner:facets.unknownLanguage", "scanner:facets.searchIn", "scanner:facets.searchFolders",
+             "scanner:facets.showAll", "scanner:facets.showFewer", "scanner:facets.noMatches",
+             "scanner:facets.searching", "scanner:facets.none"]
     for lang in ("en", "es"):
         for key in keys:
             assert _lookup(lang, key), (lang, key)

@@ -249,11 +249,13 @@
       "planned": "Planeada",
       "pilot": "Piloto"
     },
-    "search": "Buscar…",
+    "searchIn": "Buscar en {{section}}…",
     "searchFolders": "Buscar carpetas…",
     "showAll": "Mostrar todo",
     "showFewer": "Mostrar menos",
-    "noMatches": "Sin resultados"
+    "noMatches": "Sin resultados",
+    "searching": "Buscando…",
+    "none": "Ninguno"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",

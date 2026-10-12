@@ -55,7 +55,11 @@ export function normalizeFilters(tokens: string[]): string[] {
     const value = listValue(list.facet, list.value);
     return value ? [(excluded ? "!" : "") + listToken(list.facet, value)] : [];
   });
-  return [...new Set(out)];
+  // A filter and its exclusion both ("alang:fre,!alang:fre", from a link):
+  // the last one, where the first stood — one row, one chip.
+  const last = new Map<string, string>();
+  for (const token of out) last.set(token.replace(/^!/, ""), token);
+  return [...last.values()];
 }
 
 // A list's value as the server reads it (scan_filters.facet_filter): a

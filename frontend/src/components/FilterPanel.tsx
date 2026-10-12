@@ -12,6 +12,7 @@ interface FilterPanelProps {
   lastCounts?: Record<string, number>;  // the last counts shown, while a new filter's load
   lists?: FacetLists | null;  // the lists' top values (null: counting)
   lastLists?: FacetLists | null;  // the last ones shown, while a new filter's load
+  listsVersion: number;  // new lists (a refresh during a scan too): "Show all" reads them again
   filter: string;  // what the lists' "Show all" and search ask under
   onToggle: (key: string, exclude: boolean) => void;
   onClose: () => void;
@@ -25,7 +26,9 @@ const FOCUSABLE = "input:not(:disabled), button:not(:disabled)";
  * are greyed out unless they're on. A list's values come from the server
  * (FilterListSection). Tab stays inside; Escape closes.
  */
-export default function FilterPanel({ category, active, counts, lastCounts, lists, lastLists, filter, onToggle, onClose }: FilterPanelProps) {
+export default function FilterPanel({
+  category, active, counts, lastCounts, lists, lastLists, listsVersion, filter, onToggle, onClose,
+}: FilterPanelProps) {
   const { t } = useTranslation(["scanner"]);
   const ref = useRef<HTMLDivElement>(null);
   const fitRef = useRef<() => void>(() => {});
@@ -62,8 +65,11 @@ export default function FilterPanel({ category, active, counts, lastCounts, list
     // On a phone the bar is tall and the panel opens below the fold.
     panel.scrollIntoView({ block: "nearest" });
     // Into the panel: its first option, or the panel itself when every option
-    // is greyed out (a screen reader still announces it).
-    (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus({ preventScroll: true });
+    // is greyed out (a screen reader still announces it). Not a list's search
+    // box unless there's nothing else: on a phone it opened the keyboard
+    // over the panel.
+    const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    (items.find(el => !el.classList.contains("filter-list-search")) ?? items[0] ?? panel).focus({ preventScroll: true });
     // Again when the bar's layout changes under it (it re-wraps as counts
     // change), not only when the window does.
     const resized = () => { opened = null; fit(); };  // a turned phone: open it afresh
@@ -126,7 +132,8 @@ export default function FilterPanel({ category, active, counts, lastCounts, list
               {section.hintKey && <p id={hintId} className="filter-section-hint">{t(section.hintKey)}</p>}
               {section.facet && (
                 <FilterListSection section={section} values={lists ? lists[section.facet] ?? [] : null}
-                  lastValues={lastLists?.[section.facet]} active={active} filter={filter} onToggle={onToggle} />
+                  lastValues={lastLists?.[section.facet]} version={listsVersion} active={active} filter={filter}
+                  onToggle={onToggle} />
               )}
               {(section.options ?? []).map(option => {
                 const label = optionLabel(option.key, t);

@@ -242,11 +242,13 @@
       "planned": "Planned",
       "pilot": "Pilot"
     },
-    "search": "Search…",
+    "searchIn": "Search {{section}}…",
     "searchFolders": "Search folders…",
     "showAll": "Show all",
     "showFewer": "Show fewer",
-    "noMatches": "No matches"
+    "noMatches": "No matches",
+    "searching": "Searching…",
+    "none": "None"
   },
   "stats": {
     "filesToConvert": "Files to convert",
