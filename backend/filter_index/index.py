@@ -132,15 +132,18 @@ class FilterIndex:
 
     def facet_values(self, groups: list[tuple[str, int]], excluded: list[tuple[str, int]],
                      selected: frozenset = frozenset(), facet: Optional[str] = None,
-                     top: Optional[int] = TOP_VALUES) -> dict[str, list[tuple[str, int]]]:
+                     top: Optional[int] = TOP_VALUES, unkept: Optional[dict[str, int]] = None
+                     ) -> dict[str, list[tuple[str, int]]]:
         """Each indexed list's values (or only `facet`'s) with what adding
         each would give: the files meeting every constraint but its own
         list's and its own exclusion, that have it. The most first (then by
         value), `top` of them (None: all), without zeros; values in
-        `selected` ("<facet>:<value>") always, at 0 when no file has them."""
+        `selected` ("<facet>:<value>") always, at 0 when no file has them.
+        `unkept`: selected values the index doesn't keep, with their rows (a
+        genre saved combined)."""
         group_at, excluded_at, base = self._bases(groups, excluded)
         by_facet: dict[str, list[tuple[str, int]]] = defaultdict(list)
-        for fid, bits in self.bits.items():
+        for fid, bits in [*self.bits.items(), *(unkept or {}).items()]:
             key, sep, value = fid.partition(":")
             if sep and (facet is None or key == facet):
                 skip = frozenset(n for n in (group_at.get(key), excluded_at.get(fid)) if n is not None)

@@ -272,6 +272,13 @@ _GENRE_PARTS = {"action & adventure": ("action", "adventure"), "sci-fi & fantasy
                 "war & politics": ("war", "politics"), "science fiction": ("sci-fi",)}
 
 
+def genre_parts(genre: str) -> tuple[str, ...]:
+    """The genres a genre is as the Genre list keeps them: a combined TV
+    genre its parts (a title has it when it has all of them), "science
+    fiction" "sci-fi"; any other as given."""
+    return _GENRE_PARTS.get(genre.strip().lower(), (genre,))
+
+
 def title_folder(fp: str) -> str:
     """The folder a title's poster and metadata are kept under (the Poster
     grid's): the first one named with a [tvdb-N] / [ttN] id, else the
@@ -311,7 +318,7 @@ def row_title(row: dict, ctx: dict) -> dict:
         while "/" in path.rstrip("/"):
             path = path.rstrip("/").rsplit("/", 1)[0] + "/"
             found |= server.get(path, set())
-    found = {part for g in found for part in _GENRE_PARTS.get(g, (g,))}
+    found = {part for g in found for part in genre_parts(g)}
     try:
         year = int(year) if year else None
     except (TypeError, ValueError):
@@ -690,6 +697,9 @@ class Facet:
     # A token's value -> the value (None: not one). Default: a SQL facet's
     # as the index would keep it ("FRA" -> "fre"), a Python facet's as is.
     canonical: Optional[Callable[[str], Optional[str]]] = None
+    # A token's value -> the values a row must all have, when it isn't one
+    # the list keeps (a genre saved before they were kept split: genre_parts).
+    parts: Optional[Callable[[str], tuple[str, ...]]] = None
     # Python facets: (row, ctx) -> the row's values (rows have PY_COLUMNS).
     values: Optional[Callable[[dict, dict], Iterable[str]]] = None
     inputs: tuple[str, ...] = ()
@@ -767,7 +777,7 @@ _FACET_LIST = [
           canonical=lambda v: v if v in _CHANNEL_BANDS else None),
     # A media server's genre can be "" (_title_metadata).
     Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=("titles", "plex"),
-          titles=True),
+          titles=True, parts=genre_parts),
     Facet("year", values=_year_values, inputs=_TITLE_INPUTS, titles=True),
     Facet("rating", values=lambda r, c: [rating_band(row_title(r, c)["rating"])], inputs=_TITLE_INPUTS, titles=True),
     Facet("country", values=lambda r, c: row_title(r, c)["countries"], inputs=_TITLE_INPUTS, titles=True),
@@ -800,6 +810,9 @@ def facet_filter(key: str, value: str) -> Optional[Filter]:
         value = facet.canonical(value)
     elif facet.pairs_sql:
         value = facet.normalize(_sql_text(value))
+    parts = facet_parts(key, value) if value else ()
+    if len(parts) == 1:
+        value = parts[0]  # "genre:science fiction" is "genre:sci-fi"
     if not value:
         return None
     fid = f"{key}:{value}"
@@ -807,8 +820,15 @@ def facet_filter(key: str, value: str) -> Optional[Filter]:
         sql, params = facet.cond(value)
         return Filter(fid, key, sql=sql, params=(lambda p=params: p), inputs=facet.inputs)
     values = facet.values
-    return Filter(fid, key, py=lambda r, c, v=value: v in set(values(r, c)), titles=facet.titles,
+    return Filter(fid, key, py=lambda r, c, need=frozenset(parts): need <= set(values(r, c)), titles=facet.titles,
                   inputs=facet.inputs)
+
+
+def facet_parts(key: str, value: str) -> tuple[str, ...]:
+    """The values of list `key` a row with `value` has all of: (value,), or
+    a combined genre's parts. The filter index keeps the parts."""
+    facet = FACETS.get(key)
+    return facet.parts(value) if facet and facet.parts else (value,)
 
 
 # ── Advanced Search conditions (v0.10.0) ─────────────────────────────────
@@ -1062,6 +1082,13 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
         def values(r, c) -> set:
             t = row_title(r, c)
             return t["genres"] if kind == "title_genre" else ({t[prop["field"]]} - {""})
+        if kind == "title_genre" and (op != "contains" or wanted[0] in _GENRE_PARTS):
+            # As row_title keeps them (v0.10.0): "Action & Adventure" is the
+            # titles with both, "Science Fiction" is Sci-Fi.
+            need = [frozenset(genre_parts(w)) for w in wanted]
+            if op == "ne":
+                return Filter(fid, titles=True, py=lambda r, c: not need[0] <= values(r, c))
+            return Filter(fid, titles=True, py=lambda r, c: any(n <= values(r, c) for n in need))
         if op == "contains":
             return Filter(fid, titles=True, py=lambda r, c: any(wanted[0] in v for v in values(r, c)))
         if op == "ne":

@@ -67,10 +67,12 @@ async def library_sync_loop() -> None:
                 print(f"[SYNC] Reading the media servers and Sonarr / Radarr failed: {exc}", flush=True)
             # Posters for titles without one, and every title's country,
             # genres, network and show status (v0.10.0: only after a full
-            # scan before). It runs on its own, one at a time.
+            # scan before). It runs on its own, one at a time, by the
+            # scheduled run's rules (it leaves titles not found to the
+            # Poster grid).
             try:
                 from backend.routes.posters import start_prefetch
-                await start_prefetch()
+                await start_prefetch(scheduled=True)
             except Exception as exc:
                 print(f"[SYNC] Poster prefetch skipped: {exc}", flush=True)
         await asyncio.sleep(INTERVAL)

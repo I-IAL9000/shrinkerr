@@ -272,6 +272,25 @@ async def test_a_title_change_reaches_the_lists(service_env, test_db):
 
 
 @pytest.mark.asyncio
+async def test_a_saved_combined_genre_counts_its_titles(service_env, test_db):
+    """"genre:action & adventure", saved before genres were kept split, is
+    the titles with both parts; "genre:science fiction" is sci-fi."""
+    await seed(test_db)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE poster_cache SET genres = 'Action & Adventure' WHERE genres = 'Comedy'")
+        await db.execute("UPDATE poster_cache SET genres = 'Action' WHERE genres = 'Crime, Drama'")
+        await db.commit()
+    service_env._state.index = await service_env.build()
+    for value, kept in (("action & adventure", "action & adventure"), ("science fiction", "sci-fi")):
+        token = facet_token("genre", value)
+        rows = await _rows(test_db, token)
+        counts, lists = await service_env.answer(parse_filter(token))
+        assert rows and counts["matching"] == len(rows), value
+        assert (kept, len(rows)) in lists["genre"], value
+    assert len(await _rows(test_db, "genre:action")) > len(await _rows(test_db, facet_token("genre", "action & adventure")))
+
+
+@pytest.mark.asyncio
 async def test_lists_wait_for_the_index(service_env, test_db, monkeypatch):
     from backend.routes.scan import get_filter_counts
     await seed(test_db)

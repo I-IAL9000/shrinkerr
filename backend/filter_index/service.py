@@ -30,7 +30,7 @@ from backend import database
 from backend.filter_index.bits import from_ids
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import TOP_VALUES, FilterIndex, definitions_version
-from backend.scan_filters import _FILTER_LIST, _FACET_LIST, Filter, FilterExpr, _group_key
+from backend.scan_filters import _FILTER_LIST, _FACET_LIST, Filter, FilterExpr, _group_key, facet_parts
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
 REFRESH_EVERY = 10   # the background loop's pace
@@ -328,13 +328,26 @@ async def _adhoc_for(expr: FilterExpr, index: FilterIndex) -> dict[str, int]:
     return adhoc
 
 
+def _list_bits(index: FilterIndex, fid: str) -> int:
+    """A list value's rows: its bitset — patch() drops a value no row has,
+    possibly since _adhoc_for() — or, for a value the list doesn't keep (a
+    genre saved combined, "action & adventure"), the rows with all its parts."""
+    key, _, value = fid.partition(":")
+    parts = facet_parts(key, value)
+    if len(parts) == 1:
+        return index.bits.get(fid, 0)
+    bits = index.alive
+    for part in parts:
+        bits &= index.bits.get(f"{key}:{part}", 0)
+    return bits
+
+
 def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int]
                  ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
     """(groups, excluded) as FilterIndex.facet_counts takes them. Under the lock."""
     def bits_of(f: Filter) -> int:
         if f.group in _LISTS:
-            # patch() drops a value no row has, possibly since _adhoc_for().
-            return index.bits.get(f.id, 0)
+            return _list_bits(index, f.id)
         return adhoc[f.id] if f.id in adhoc else index.bits[f.id]
     groups = []
     for group in expr.groups:
@@ -361,7 +374,9 @@ async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[in
             index = _state.index
             groups, excluded = _constraints(index, expr, adhoc)
             counts = index.count_all() if expr.is_all else index.facet_counts(groups, excluded)
-            return counts, index.facet_values(groups, excluded, selected=selected, facet=facet, top=top)
+            unkept = {fid: _list_bits(index, fid) for fid in selected if fid not in index.bits}
+            return counts, index.facet_values(groups, excluded, selected=selected, facet=facet, top=top,
+                                              unkept=unkept)
     except Exception as exc:
         _log_error("Counting with the filter index", exc)
         return None

@@ -28,7 +28,12 @@ def _fakes(monkeypatch, calls, fail=()):
     monkeypatch.setattr(emby, "sync_emby_metadata_cache", fake("emby"))
     monkeypatch.setattr(arr, "sync_arr_file_status", fake("arr"))
     monkeypatch.setattr(maintainerr, "sync_maintainerr", fake("maintainerr"))
-    monkeypatch.setattr(posters, "start_prefetch", fake("prefetch"))
+
+    async def prefetch(scheduled=False):  # the scheduled run's rules (posters._run_prefetch)
+        calls.append("prefetch" if scheduled else "prefetch, not scheduled")
+        if "prefetch" in fail:
+            raise RuntimeError("prefetch failed")
+    monkeypatch.setattr(posters, "start_prefetch", prefetch)
 
 
 @pytest.mark.asyncio

@@ -449,6 +449,8 @@ async def lifespan(app: FastAPI):
         details_task.cancel()
     if library_sync_task:
         library_sync_task.cancel()
+    from backend.routes.posters import stop_prefetch
+    stop_prefetch()  # started by the library sync, a scan or Refresh Posters
 
 
 app = FastAPI(title="Shrinkerr", lifespan=lifespan)

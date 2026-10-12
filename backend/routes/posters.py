@@ -870,16 +870,45 @@ async def resolve_posters(req: ResolveRequest):
 # --- Prefetch endpoint (called after scan or manually) ---
 
 _prefetch_task: asyncio.Task | None = None
+# A run asked for while one ran (v0.10.0): its `scheduled`, None for none.
+_prefetch_again: bool | None = None
 
 
 @router.post("/prefetch")
-async def start_prefetch():
-    """Start bulk poster prefetch for all scanned titles. Returns immediately."""
-    global _prefetch_task
+async def prefetch_endpoint():
+    """Refresh Posters: the prefetch, for every title without a poster."""
+    return await start_prefetch()
+
+
+async def start_prefetch(scheduled: bool = False) -> dict:
+    """Start bulk poster prefetch for all scanned titles. Returns immediately.
+    `scheduled`: the library sync's run every few hours (_run_prefetch).
+    Asked for while one runs, it runs once more after it (v0.10.0): a scan's
+    new titles waited up to 3 hours when the scheduled run was going."""
+    global _prefetch_task, _prefetch_again
     if _prefetch_task and not _prefetch_task.done():
+        # The run after it skips no more than any of those asking for it would.
+        _prefetch_again = scheduled if _prefetch_again is None else (_prefetch_again and scheduled)
         return {"status": "already_running"}
-    _prefetch_task = asyncio.create_task(_run_prefetch())
+    _prefetch_task = asyncio.create_task(_prefetch_runs(scheduled))
     return {"status": "started"}
+
+
+async def _prefetch_runs(scheduled: bool) -> None:
+    global _prefetch_again
+    while True:
+        await _run_prefetch(scheduled=scheduled)
+        if _prefetch_again is None:
+            return
+        scheduled, _prefetch_again = _prefetch_again, None
+
+
+def stop_prefetch() -> None:
+    """At shutdown: a running prefetch is cancelled, a run waiting dropped."""
+    global _prefetch_again
+    _prefetch_again = None
+    if _prefetch_task and not _prefetch_task.done():
+        _prefetch_task.cancel()
 
 
 # `POST /re-resolve` (with two modes — "placeholder" and "auto") was
@@ -904,19 +933,22 @@ _prefetch_progress = {"status": "idle", "total": 0, "resolved": 0, "cached": 0}
 
 async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
     """Matched titles without the details of DETAILS_VERSION — cached before
-    their IMDb id, a show's network and status (v0.10.0) or their country,
-    genres and year (DETAILS_VERSION 2) were fetched, or matched through
-    Plex: find each on TMDB again — no image download — and store its
-    details. A show's season folders are looked up once. What TMDB has none
-    of doesn't replace what's stored, and a title TMDB doesn't find is marked
-    done: neither is asked again. A lookup that fails is tried again next
-    time. Returns the rows updated."""
+    their IMDb id, a show's network and status (v0.10.0), their country,
+    genres and year (DETAILS_VERSION 2) or all their genres (3) were
+    fetched, or matched through Plex: find each on TMDB again — no image
+    download — and store its details. A show's season folders are looked
+    up once; a Fix match by the
+    IMDb id the user picked (else its title), and it keeps that id, not the
+    folder's. What TMDB has none of doesn't replace what's stored, and a
+    title TMDB doesn't find is marked done: neither is asked again. A lookup
+    that fails is tried again next time, and a row changed meanwhile (a Fix
+    match, found again) is left as it is now. Returns the rows updated."""
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
         await db.execute("PRAGMA busy_timeout=10000")
         async with db.execute(
-            "SELECT folder_path, title, year, source, media_type FROM poster_cache "
+            "SELECT folder_path, title, year, source, media_type, imdb_id, resolved_at FROM poster_cache "
             "WHERE source IN ('tmdb', 'tmdb-manual', 'plex') AND COALESCE(details_v, 0) < ? "
             "ORDER BY folder_path", (DETAILS_VERSION,)
         ) as cur:
@@ -930,21 +962,18 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
     sem = asyncio.Semaphore(3)
     lookups: dict[tuple, asyncio.Future] = {}  # one per title: a show's season folders share theirs
 
-    async def lookup(manual: bool, title, year, hint, imdb_id, tvdb_id) -> dict:
+    async def lookup(title, year, hint, imdb_id, tvdb_id) -> dict:
         """The title's TMDB match with its details; {} when TMDB doesn't
         find it. Raises when a request failed."""
         async with sem:
             await asyncio.sleep(0.35)  # ~3 req/sec, as the prefetch
             meta: dict = {}
-            if manual:  # the user's pick: its own title
+            if imdb_id:
+                _, _, meta = await _resolve_tmdb(imdb_id, tmdb_key)
+            if not meta and tvdb_id:
+                _, _, meta = await _resolve_tmdb_tvdb(tvdb_id, tmdb_key)
+            if not meta and title:  # (under 3 letters: not searched)
                 _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint)
-            else:
-                if imdb_id:
-                    _, _, meta = await _resolve_tmdb(imdb_id, tmdb_key)
-                if not meta and tvdb_id:
-                    _, _, meta = await _resolve_tmdb_tvdb(tvdb_id, tmdb_key)
-                if not meta and title and len(title) >= 3:
-                    _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint)
             if not meta.get("tmdb_id"):
                 return {}
             details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), tmdb_key)
@@ -955,23 +984,25 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
     async def one(row: dict) -> tuple | None:
         path = row["folder_path"]
         parsed = await asyncio.to_thread(parse_folder_name, path)
-        if row["source"] == "tmdb-manual":
-            key = (True, row["title"], row["year"], row["media_type"], None, None)
+        manual = row["source"] == "tmdb-manual"
+        if manual:  # the user's pick: its IMDb id, else its own title — not the folder's
+            key = (True, row["title"], row["year"], row["media_type"], row["imdb_id"] or None, None)
         else:
             hint = row["media_type"] or _media_type_hint_from_parsed(parsed) or media_type_hint_for(path)
             key = (False, parsed.get("title"), parsed.get("year"), hint, parsed.get("imdb_id"), parsed.get("tvdb_id"))
         if key not in lookups:
-            lookups[key] = asyncio.ensure_future(lookup(*key))
+            lookups[key] = asyncio.ensure_future(lookup(*key[1:]))
         try:
             meta = await lookups[key]
         except Exception:
             return None
-        imdb_id = parsed.get("imdb_id") or meta.get("imdb_id") or ""
+        imdb_id = (row["imdb_id"] if manual else parsed.get("imdb_id")) or meta.get("imdb_id") or ""
         tv = meta.get("media_type") == "tv"  # a show's network and status; a film has none
         network, status = ((meta.get("network") or ""), (meta.get("status") or "")) if tv else (None, None)
         return (imdb_id, network, network, status, status,
                 _rating(imdb_id, None)["rating"], meta.get("rating"), meta.get("country") or "",
-                meta.get("genres") or "", meta.get("year") or "", DETAILS_VERSION, path)
+                meta.get("genres") or "", meta.get("year") or "", DETAILS_VERSION, path,
+                row["source"], row["resolved_at"], DETAILS_VERSION)
 
     done = 0
     for i in range(0, len(rows), 20):
@@ -983,25 +1014,38 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
                 await db.execute("PRAGMA busy_timeout=30000")
                 # Never replaced by none. The IMDb rating replaces TMDB's, which
                 # only fills in a missing one; the year in the folder name stays.
-                await db.executemany(
+                # Only the row as it was read: every write of a new match (a Fix
+                # match, found again) sets resolved_at.
+                cur = await db.executemany(
                     "UPDATE poster_cache SET imdb_id = COALESCE(NULLIF(?, ''), imdb_id, ''), "
                     "network = COALESCE(NULLIF(?, ''), network, ?), status = COALESCE(NULLIF(?, ''), status, ?), "
                     "rating = COALESCE(?, rating, ?), country = COALESCE(NULLIF(?, ''), country), "
                     "genres = COALESCE(NULLIF(?, ''), genres), year = COALESCE(NULLIF(year, ''), NULLIF(?, '')), "
-                    "details_v = ? WHERE folder_path = ?", updates)
+                    "details_v = ? WHERE folder_path = ? AND source IS ? AND resolved_at IS ? "
+                    "AND COALESCE(details_v, 0) < ?", updates)
+                done += cur.rowcount
                 await db.commit()
             finally:
                 await db.close()
-            done += len(updates)
         if (i + 20) % 500 < 20 and i + 20 < len(rows):
             print(f"[POSTER] Details: {i + 20}/{len(rows)}", flush=True)
     print(f"[POSTER] Details stored for {done}/{len(rows)} title(s)"
-          + (f"; {len(rows) - done} tried again next time" if done < len(rows) else ""), flush=True)
+          + (f"; {len(rows) - done} failed (tried again next time) or changed meanwhile" if done < len(rows) else ""),
+          flush=True)
     return done
 
 
-async def _run_prefetch():
-    """Prefetch posters for all title-level folders. Uses short DB connections to avoid locking."""
+async def _run_prefetch(scheduled: bool = False):
+    """Prefetch posters for all title-level folders. Uses short DB connections to avoid locking.
+
+    Never resolved again: a title with its image, the user's Fix match, an
+    Other folder's row or a Plex match (Plex isn't asked here); a match
+    whose image didn't download only gets its image (v0.10.0). `scheduled`
+    (every few hours, v0.10.0) also leaves a match TMDB has no poster for,
+    and titles not found: with Plex all of them, else those not found in the
+    last week — the Poster grid tries them again after a week, Plex first,
+    and finding them here every few hours would put that off forever.
+    Refresh Posters and a scan's run try every title not found."""
     global _prefetch_progress
     _prefetch_progress = {"status": "running", "total": 0, "resolved": 0, "cached": 0}
     print("[POSTER] Prefetch starting...", flush=True)
@@ -1025,19 +1069,11 @@ async def _run_prefetch():
                 for row in await cur.fetchall():
                     settings[row["key"]] = row["value"]
 
-            # Titles not resolved again: those with an image, and (v0.10.0,
-            # now that this runs every few hours) what it can't improve on —
-            # the user's Fix match, an Other folder's row, a Plex match (it
-            # doesn't ask Plex) and a title not found in the last week (the
-            # Poster grid tries those again after a week, Plex first; finding
-            # them here every few hours would put that off forever).
-            stale_cutoff = (datetime.now(timezone.utc) - timedelta(days=PLACEHOLDER_TTL_DAYS)).isoformat()
             async with db.execute(
-                "SELECT folder_path FROM poster_cache WHERE image_data IS NOT NULL "
-                "OR source IN ('tmdb-manual', 'other-skipped', 'plex') "
-                "OR (source = 'placeholder' AND resolved_at >= ?)", (stale_cutoff,)
+                "SELECT folder_path, source, poster_url, resolved_at, image_data IS NOT NULL AS has_image "
+                "FROM poster_cache"
             ) as cur:
-                already_cached = {r["folder_path"] for r in await cur.fetchall()}
+                cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
 
             # Media-dir label index for type inference when a folder lacks
             # a bracket ID. Same shape as the resolve_posters one above.
@@ -1074,15 +1110,57 @@ async def _run_prefetch():
         path_mapping = settings.get("plex_path_mapping", "")
 
         folder_list = sorted(title_folders)
-        # Without a TMDB key nothing can be found here (Plex isn't asked):
-        # placeholders would only keep the Poster grid from asking Plex.
-        to_resolve = [p for p in folder_list if p not in already_cached] if tmdb_key else []
+        plex_on = bool(plex_url and plex_token)
+        stale_cutoff = (datetime.now(timezone.utc) - timedelta(days=PLACEHOLDER_TTL_DAYS)).isoformat()
+        to_resolve: list[str] = []
+        images: list[tuple[str, str]] = []  # (folder, poster_url): matched, only the image is missing
+        for p in folder_list:
+            row = cached_rows.get(p)
+            if row is None:
+                to_resolve.append(p)
+            elif row["has_image"] or row["source"] in ("tmdb-manual", "other-skipped", "plex"):
+                continue
+            elif row["source"] == "tmdb" and row["poster_url"]:
+                images.append((p, row["poster_url"]))
+            elif scheduled and (row["source"] == "tmdb" or (row["source"] == "placeholder" and (
+                    plex_on or (row["resolved_at"] or "") >= stale_cutoff))):
+                continue
+            else:
+                to_resolve.append(p)
+        if not tmdb_key:
+            # Nothing can be found here without one (Plex isn't asked):
+            # placeholders would only keep the Poster grid from asking Plex.
+            to_resolve = []
         _prefetch_progress["total"] = len(folder_list)
-        _prefetch_progress["cached"] = len(already_cached & title_folders)
+        _prefetch_progress["cached"] = len(folder_list) - len(to_resolve) - len(images)
         _prefetch_progress["resolved"] = _prefetch_progress["cached"]
 
-        print(f"[POSTER] {len(folder_list)} titles total, {len(already_cached & title_folders)} cached, {len(to_resolve)} to fetch"
-              + ("" if tmdb_key else " (no TMDB key)"), flush=True)
+        print(f"[POSTER] {len(folder_list)} titles total, {_prefetch_progress['cached']} cached, "
+              f"{len(to_resolve)} to fetch, {len(images)} image(s) to download"
+              + ("" if tmdb_key else " (no TMDB key)") + (" (scheduled)" if scheduled else ""), flush=True)
+
+        # Images of matches that didn't download: downloaded with no
+        # connection open, each batch written in one short transaction, only
+        # where the row is still the one read.
+        image_sem = asyncio.Semaphore(4)
+
+        async def _image(folder: str, url: str) -> tuple | None:
+            async with image_sem:
+                img = await _download_image(url, plex_url, plex_token)
+            return (img, folder, url) if img else None
+        for i in range(0, len(images), 50):
+            got = [r for r in await asyncio.gather(*[_image(f, u) for f, u in images[i:i + 50]]) if r]
+            if got:
+                db_w = await aiosqlite.connect(DB_PATH)
+                try:
+                    await db_w.execute("PRAGMA busy_timeout=30000")
+                    await db_w.executemany("UPDATE poster_cache SET image_data = ? WHERE folder_path = ? "
+                                           "AND image_data IS NULL AND poster_url = ?", got)
+                    await db_w.commit()
+                finally:
+                    await db_w.close()
+            _prefetch_progress["resolved"] += len(images[i:i + 50])
+        resolved_before = _prefetch_progress["resolved"]
 
         # Step 3: Sequential resolution with rate limiting + batch DB writes
         # TMDB rate limit: 40 requests/10 seconds. We pace at ~3 req/sec to stay under.
@@ -1101,6 +1179,7 @@ async def _run_prefetch():
                 source = "placeholder"
                 tmdb_meta = {}
                 image_data = None
+                failed = False  # a lookup TMDB didn't answer
 
                 # Gate on `source == "placeholder"` not `not poster_url` so an
                 # ID match without a poster image still counts as definitive
@@ -1110,11 +1189,13 @@ async def _run_prefetch():
                 if tmdb_key and parsed.get("imdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
                     except Exception as e:
+                        failed = True
                         if "429" in str(e):
                             await asyncio.sleep(5)
                 if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
                     except Exception as e:
+                        failed = True
                         if "429" in str(e):
                             await asyncio.sleep(5)
                 # Title-search fallback runs whether or not an ID was
@@ -1126,9 +1207,15 @@ async def _run_prefetch():
                         media_type_hint=_hint,
                     )
                     except Exception as e:
+                        failed = True
                         if "429" in str(e):
                             await asyncio.sleep(5)
                 # Skip Plex in bulk prefetch (too slow, causes DB lock contention with queue)
+                if source == "placeholder" and failed:
+                    # Nothing found, but TMDB didn't answer: nothing written
+                    # (v0.10.0). A placeholder would replace a match — its
+                    # country, genres, IMDb id — for a week.
+                    return None
 
                 if poster_url:
                     # Reverted v0.3.121 — see _resolve_one for the
@@ -1166,7 +1253,7 @@ async def _run_prefetch():
                         if attempt < 2:
                             await asyncio.sleep(2)
 
-            _prefetch_progress["resolved"] = _prefetch_progress["cached"] + ci + len(chunk)
+            _prefetch_progress["resolved"] = resolved_before + ci + len(chunk)
             if (ci + len(chunk)) % 100 < 20:
                 print(f"[POSTER] Progress: {ci + len(chunk)}/{len(to_resolve)}", flush=True)
 
@@ -1426,14 +1513,14 @@ _COMBINED_GENRES = {"Action & Adventure": ("Action", "Adventure"), "Sci-Fi & Fan
 
 
 def _genre_names(genres: list | None) -> str:
-    """A title's genres as stored: its first three TMDB genres — ids (search
-    results) or {id, name} (its record) — named by _TMDB_GENRES, else as TMDB
-    names them, the combined TV genres split, without repeats:
-    "Action, Adventure, Drama"; "" for none."""
+    """A title's genres as stored: all its TMDB genres (v0.10.0: the first
+    three before) — ids (search results) or {id, name} (its record) — named
+    by _TMDB_GENRES, else as TMDB names them, the combined TV genres split,
+    without repeats: "Action, Adventure, Drama"; "" for none."""
     pairs = ((g.get("id"), g.get("name")) if isinstance(g, dict) else (g, None) for g in genres or [])
     named = [n for n in (_TMDB_GENRES.get(gid) or name for gid, name in pairs) if n]
     out: list[str] = []
-    for name in named[:3]:
+    for name in named:
         out += [part for part in _COMBINED_GENRES.get(name, (name,)) if part not in out]
     return ", ".join(out)
 
@@ -1464,7 +1551,8 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
 # change: rows with an older version are fetched again (_backfill_details).
 #   1: IMDb id, a TV show's network and status (v0.10.0)
 #   2: country, genres and year, for films too
-DETAILS_VERSION = 2
+#   3: all of a title's genres, not the first three
+DETAILS_VERSION = 3
 
 
 def _details_of(data: dict, tv: bool) -> dict:
@@ -1487,12 +1575,15 @@ async def _tmdb_details(tmdb_id, media_type: str, api_key) -> dict:
     folders named without one — a film's country (search results only give
     a show's), genres and year, and a TV show's network and status
     ("Returning Series", "Ended", "Canceled", ...) for the Scanner's filters.
-    {} when the request failed."""
+    {} when the request failed; none of them when TMDB has no such title
+    (404: a deleted or merged entry), so it isn't asked again."""
     import httpx
     tv = media_type == "tv"
     url = f"https://api.themoviedb.org/3/{'tv' if tv else 'movie'}/{tmdb_id}"
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await _tmdb_get(client, url, {"api_key": api_key, "append_to_response": "external_ids"})
+        if resp.status_code == 404:
+            return _details_of({}, tv)
         if resp.status_code != 200:
             return {}
         data = resp.json()

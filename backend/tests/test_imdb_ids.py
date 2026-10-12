@@ -46,7 +46,7 @@ async def test_tmdb_gives_movies_and_shows_their_imdb_id(posters, monkeypatch):
             return httpx.Response(200, json={"imdb_id": None, "external_ids": {"imdb_id": None}})
         if url.endswith("/movie/1"):
             return httpx.Response(200, json={"imdb_id": "tt0000001"})
-        return httpx.Response(404, json={})
+        return httpx.Response(503, json={})  # TMDB down
     monkeypatch.setattr(posters, "_tmdb_get", get)
 
     async def ids(tmdb_id, media_type):
