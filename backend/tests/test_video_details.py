@@ -145,6 +145,89 @@ async def test_a_test_build_that_already_filled_reads_the_width_only_rows(test_d
 
 
 @pytest.mark.asyncio
+async def test_a_share_thats_down_isnt_passed_by(test_db, monkeypatch):
+    """Not one file of a batch read: the share is likely down. The same
+    files are tried again later instead of being marked as tried."""
+    down = {"now": True}
+    calls = []
+
+    async def probe(path, detect_und_subs=True):
+        calls.append(path)
+        return None if down["now"] else dict(PROBE)
+    monkeypatch.setattr(scanner, "probe_file", probe)
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+        down["now"] = False  # mounted again
+    monkeypatch.setattr(video_details.asyncio, "sleep", sleep)
+    await _row(test_db, "/m/a.mkv")
+    await _row(test_db, "/m/b.mkv")
+    assert await video_details.fill_missing() == 2
+    assert waits == [video_details.RETRY_WAITS[0]]
+    assert calls == ["/m/a.mkv", "/m/b.mkv"] * 2
+
+
+@pytest.mark.asyncio
+async def test_files_that_never_read_are_passed_by_in_the_end(test_db, monkeypatch):
+    calls = _fake_probe(monkeypatch)
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+    monkeypatch.setattr(video_details.asyncio, "sleep", sleep)
+    await _row(test_db, "/m/missing-1.mkv")
+    await _row(test_db, "/m/missing-2.mkv")
+    assert await video_details.fill_missing() == 0
+    assert waits == list(video_details.RETRY_WAITS)
+    calls.clear()
+    assert await video_details.fill_missing() == 0  # tried enough: not again
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_conversion_meanwhile_isnt_overwritten(test_db, monkeypatch):
+    """The original was probed, then its conversion finished and updated the
+    row: the original's details don't land on the new file."""
+    path = "/m/Film (2009)/Film.mkv"
+
+    async def probe(p, detect_und_subs=True):
+        async with aiosqlite.connect(test_db) as db:  # the conversion finishes
+            await db.execute("UPDATE scan_results SET file_size = 7, video_codec = 'hevc', video_fps = 25.0 "
+                             "WHERE file_path = ?", (p,))
+            await db.commit()
+        return dict(PROBE)
+    monkeypatch.setattr(scanner, "probe_file", probe)
+    await _row(test_db, path)
+    await video_details.fill_missing()
+    assert await _details(test_db, path) == (0, 25.0, None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_the_loop_tries_again_after_an_error(test_db, monkeypatch):
+    """One error (a locked database) ended the fill until a restart."""
+    import backend.routes.scan as scan_routes
+    outcomes = [RuntimeError("database is locked"), 0]
+    runs = []
+
+    async def fill(busy):
+        runs.append(busy)
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    waits = []
+
+    async def sleep(seconds):
+        waits.append(seconds)
+    monkeypatch.setattr(video_details, "fill_missing", fill)
+    monkeypatch.setattr(video_details.asyncio, "sleep", sleep)
+    await video_details.video_details_loop()
+    assert len(runs) == 2 and runs[0] is scan_routes.scan_is_actively_running
+    assert waits == [120, 600]
+
+
+@pytest.mark.asyncio
 async def test_the_fill_waits_while_a_scan_runs(test_db, monkeypatch):
     calls = _fake_probe(monkeypatch)
     await _row(test_db, "/m/old.mkv")
