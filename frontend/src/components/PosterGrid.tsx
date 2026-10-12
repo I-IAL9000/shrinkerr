@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { FolderInfo } from "./FileTree";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
@@ -8,6 +8,7 @@ import PosterCard from "./PosterCard";
 import FileDetail from "./FileDetail";
 import PosterFixModal from "./PosterFixModal";
 import { naturalCompare } from "../utils/naturalCompare";
+import { posterOutline, type Box } from "../posterOutline";
 import { pressable } from "../utils/a11y";
 import { fmtBytes } from "../fmt";
 
@@ -299,6 +300,23 @@ export default function PosterGrid({
     return () => ro.disconnect();
   }, [expandedKey, expandedFiles.length, expandedFileDetails.size]);
 
+  // One outline around the open poster and its row (v0.10.0), from where
+  // they are once laid out.
+  const [outline, setOutline] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const box = containerRef.current;
+    const card = box?.querySelector<HTMLElement>(".poster-card.expanded");
+    const row = accordionRef.current?.querySelector<HTMLElement>(".poster-accordion");
+    if (!box || !card || !row) { setOutline(null); return; }
+    const origin = box.getBoundingClientRect();
+    const at = (el: HTMLElement): Box => {
+      const r = el.getBoundingClientRect();
+      return { x1: r.left - origin.left, y1: r.top - origin.top, x2: r.right - origin.left, y2: r.bottom - origin.top };
+    };
+    const radius = parseFloat(getComputedStyle(card).borderTopLeftRadius) || 6;
+    setOutline(posterOutline(at(card), at(row), radius, 1));
+  }, [expandedKey, accordionHeight, containerWidth, colCount]);
+
   // Compute total height accounting for accordion
   const totalHeight = rowCount * rowH + (expandedRow >= 0 ? accordionHeight : 0);
 
@@ -585,7 +603,11 @@ export default function PosterGrid({
 
   return (
     <div ref={containerRef} style={{ position: "relative", minHeight: totalHeight || 100 }}>
+      {/* The open poster and its row as one: filled behind (the gap between
+          them), its line in front. */}
+      {outline && <svg className="poster-outline fill" aria-hidden="true"><path d={outline} /></svg>}
       {renderedRows}
+      {outline && <svg className="poster-outline line" aria-hidden="true"><path d={outline} /></svg>}
       {folders.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: "var(--text-muted)" }}>
           {search || (filter && filter !== "all") ? (

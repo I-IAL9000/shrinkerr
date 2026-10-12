@@ -668,10 +668,9 @@ input[type="checkbox"] { cursor: pointer; }
   border-color: var(--accent);
 }
 .poster-card.expanded {
-  border-color: var(--accent);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+  border-color: transparent;  /* the grid's outline (.poster-outline) */
 }
+.poster-card.expanded:focus-visible { outline: none !important; }  /* the outline marks it */
 .poster-img-wrap {
   position: relative;
   aspect-ratio: 2 / 3;
@@ -767,15 +766,55 @@ input[type="checkbox"] { cursor: pointer; }
 }
 .poster-accordion {
   background: var(--bg-card);
-  border: 2px solid var(--accent);
-  border-top: 2px solid var(--accent);
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  border-bottom-left-radius: var(--radius);
-  border-bottom-right-radius: var(--radius);
+  border: 2px solid transparent;  /* the grid's outline (.poster-outline) */
+  border-radius: var(--radius);
   overflow: hidden;
-  margin-top: -2px;
 }
+/* The Scanner's results while a new filter or search loads (v0.10.0): dimmed,
+   with a notice in the middle of the screen. Both wait a moment, so a quick
+   answer doesn't flash them. */
+.scanner-results { position: relative; }
+.scanner-results-list { transition: opacity 0.15s; }
+.scanner-results.updating { min-height: 240px; }
+.scanner-results.updating .scanner-results-list {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 0.2s ease 0.15s;
+}
+.scanner-updating { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
+.scanner-updating-notice {
+  position: sticky;
+  top: calc(50vh - 60px);
+  margin: 96px auto 0;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  animation: scanner-updating-in 0.2s ease 0.15s both;
+}
+@keyframes scanner-updating-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* The open poster and its row in one outline (v0.10.0): the shape filled
+   behind them (the gap between them), its line in front. */
+.poster-outline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.poster-outline.fill path { fill: var(--bg-card); }
+.poster-outline.line path { fill: none; stroke: var(--accent); stroke-width: 2; }
 /* No scoped checkbox overrides in .poster-accordion — base rule styles the
    checked state (including the SVG checkmark); any `background:` shorthand
    here would clear the tick image. */

@@ -1905,23 +1905,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               >{t("common:actions.clear")}</button>
             </div>
           )}
-          <div style={{
-            position: "relative",
-            opacity: updating ? 0.5 : 1,
-            transition: "opacity 0.15s",
-            pointerEvents: updating ? "none" : "auto",
-          }}>
+          <div className={`scanner-results${updating ? " updating" : ""}`}>
+          {/* While a new filter or search loads: the results dimmed, and a
+              notice in the middle of what's on screen. */}
           {updating && (
-            <div style={{
-              position: "absolute", top: 8, right: 8, zIndex: 10,
-              background: "var(--bg-card)", border: "1px solid var(--border)",
-              padding: "4px 10px", borderRadius: 12, fontSize: 11,
-              color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6,
-            }}>
-              <div className="spinner" style={{ width: 10, height: 10 }} />
-              {t("scanner:empty.updating")}
+            <div className="scanner-updating" role="status">
+              <div className="scanner-updating-notice">
+                <div className="spinner" style={{ width: 18, height: 18 }} />
+                {t("scanner:empty.updating")}
+              </div>
             </div>
           )}
+          <div className="scanner-results-list">
           {viewMode === "tree" ? (
             <FileTree
               folders={displayFolders}
@@ -1963,6 +1958,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               sortDir={sortDir}
             />
           )}
+          </div>
           </div>
         </>
       )}
