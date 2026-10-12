@@ -2349,13 +2349,18 @@ async def _get_converted_folders(db) -> set[str]:
 
 
 async def _library_labels() -> dict[str, str]:
-    """Media folder id -> its label (else its path), for the Library list."""
-    db = await connect_db()
+    """Media folder id -> its label (else its path), for the Library list;
+    none on an error (the list shows the ids rather than no answer)."""
     try:
-        async with db.execute("SELECT id, path, label FROM media_dirs") as cur:
-            return {str(i): (label or path) for i, path, label in await cur.fetchall()}
-    finally:
-        await db.close()
+        db = await connect_db()
+        try:
+            async with db.execute("SELECT id, path, label FROM media_dirs") as cur:
+                return {str(i): (label or path) for i, path, label in await cur.fetchall()}
+        finally:
+            await db.close()
+    except Exception as exc:
+        print(f"[SCAN] Media folder labels unavailable: {exc}", flush=True)
+        return {}
 
 
 def _values_json(facet: str, values: list[tuple[str, int]], labels: dict[str, str]) -> list[dict]:

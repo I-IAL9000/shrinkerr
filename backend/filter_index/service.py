@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import bisect
 import contextlib
 import os
 import time
@@ -30,7 +31,7 @@ from backend import database
 from backend.filter_index.bits import from_ids, ids_of
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import TOP_VALUES, FilterIndex, definitions_version
-from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, Filter, FilterExpr, _group_key, title_folder
+from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, LISTED, Filter, FilterExpr, _group_key, title_folder
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
 REFRESH_EVERY = 10   # the background loop's pace
@@ -41,6 +42,11 @@ BACKOFF_MAX = 600
 ERROR_LOG_EVERY = 60  # an error is logged at most this often
 REFRESH_FAILURES = 3  # refreshes failing this many times in a row: rebuild instead
 ADHOC_MAX = 64       # Advanced Search conditions kept; more, and they're forgotten
+# Title metadata changes are applied at most this often: a Poster prefetch
+# writes it several times a second, and each change evaluates the six
+# Title lists over the whole library again (~2 s at 180K files).
+TITLES_REFRESH = 60
+FOLDERS_REFRESH = 60  # the folder search reads the paths again at most this often (a scan changes rows all the time)
 _LISTS = frozenset(f.key for f in INDEXED_FACETS)  # the indexed lists: a value of one is a filter's group
 
 
@@ -54,7 +60,10 @@ class _State:
         self.ctx_key: Optional[tuple] = None
         self.ctx: Optional[dict] = None
         self.adhoc: dict = {}  # Advanced Search conditions' rows, until the index changes
-        self.folders: dict = {"seq": None, "rows": {}}  # title folder -> its listed ids, while the index's seq holds
+        self.titles_at = 0.0  # when a change of title metadata was last applied (time.time)
+        # The folder search's (when read, the index's seq then, title folder -> its listed ids, the folders sorted).
+        self.folders: Optional[tuple[float, int, dict[str, list[int]], list[str]]] = None
+        self.folders_lock = asyncio.Lock()  # one search reads them at a time
         self.stale = False    # a rebuild must replace it (refresh decided so)
         self.foreign = False  # and it describes other rows (a restored backup, another database)
         self.refresh_failures = 0  # in a row
@@ -166,7 +175,7 @@ def _start_rebuild() -> None:
         async with _state.lock:
             _state.index, _state.dirty, _state.stale, _state.foreign = index, True, False, False
             _state.backoff, _state.refresh_failures, _state.adhoc = 0.0, 0, {}
-            _state.folders = {"seq": None, "rows": {}}  # its seq can be the old one's (another database)
+            _state.folders = None  # its seq can be the old one's (another database)
         print(f"[FILTERS] Filter index built in {time.perf_counter() - started:.1f}s", flush=True)
         try:  # the Scanner fetches its counts again
             from backend.websocket import ws_manager
@@ -219,6 +228,10 @@ async def _apply_changes(index: FilterIndex) -> None:
             return
         moved = {k for k, n in counters.items() if index.counters.get(k) != n}
         now = time.time()
+        if "titles" in moved and "titles" in index.counters and 0 <= now - _state.titles_at < TITLES_REFRESH:
+            # Title metadata applied a moment ago: this change waits (its counter stays behind).
+            moved.discard("titles")
+            counters = {**counters, "titles": index.counters["titles"]}
         if now - index.time_at >= TIME_REFRESH or now < index.time_at:  # or the clock went back
             moved.add("time")
         changed: list[int] = []
@@ -248,6 +261,8 @@ async def _apply_changes(index: FilterIndex) -> None:
         index.seq, index.counters = seq, counters
         if "time" in moved:
             index.time_at = now
+        if "titles" in moved:
+            _state.titles_at = now
         _state.adhoc = {}
         _state.dirty = True
     finally:
@@ -315,10 +330,9 @@ async def _adhoc_for(expr: FilterExpr, index: FilterIndex) -> dict[str, int]:
     return adhoc
 
 
-def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int], skip_group: Optional[str] = None
+def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int]
                  ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
-    """(groups, excluded) as FilterIndex.facet_counts takes them; without
-    the group `skip_group`. Under the lock."""
+    """(groups, excluded) as FilterIndex.facet_counts takes them. Under the lock."""
     def bits_of(f: Filter) -> int:
         if f.group in _LISTS:
             # patch() drops a value no row has, possibly since _adhoc_for().
@@ -326,13 +340,10 @@ def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int], sk
         return adhoc[f.id] if f.id in adhoc else index.bits[f.id]
     groups = []
     for group in expr.groups:
-        key = _group_key(group[0])
-        if key == skip_group:
-            continue
         bits = 0
         for f in group:
             bits |= bits_of(f)
-        groups.append((key, bits))
+        groups.append((_group_key(group[0]), bits))
     return groups, [(f.id, bits_of(f)) for f in expr.excluded]
 
 
@@ -364,46 +375,72 @@ async def counts(expr: FilterExpr) -> Optional[dict[str, int]]:
     return result[0] if result else None
 
 
+async def _folder_rows(index: FilterIndex) -> tuple[dict[str, list[int]], list[str]]:
+    """Title folder -> its listed ids, and the folders sorted. Read again
+    once rows changed, at most every FOLDERS_REFRESH seconds (a file a scan
+    adds is found a minute later at most), by one search at a time."""
+    async with _state.folders_lock:
+        now = time.time()
+        cached = _state.folders
+        if cached is not None and (cached[1] == index.seq or 0 <= now - cached[0] < FOLDERS_REFRESH):
+            return cached[2], cached[3]
+        db = await database.connect_db()
+        try:
+            async with db.execute(f"SELECT id, file_path FROM scan_results WHERE {LISTED}") as cur:
+                pairs = await cur.fetchall()
+        finally:
+            await db.close()
+
+        def by_folder() -> tuple[dict[str, list[int]], list[str]]:
+            rows: dict[str, list[int]] = {}
+            for row_id, fp in pairs:
+                rows.setdefault(title_folder(fp), []).append(row_id)
+            return rows, sorted(rows)
+        rows, folders = await asyncio.to_thread(by_folder)
+        _state.folders = (now, index.seq, rows, folders)
+        return rows, folders
+
+
 async def folder_values(expr: FilterExpr, q: str, limit: int = 50) -> Optional[list[tuple[str, int]]]:
     """Title folders whose path contains `q` (any case), with how many files
-    each would list under `expr` (its own Folder choice set aside): the most
-    first, `limit` of them; None as for answer(). Folders aren't indexed
-    (tens of thousands of values): they're searched."""
+    each would list under `expr` if clicked: its subfolders' too (a folder
+    token matches by path), with the Folder choices and its own exclusion
+    set aside. The most first, `limit` of them; None as for answer().
+    Folders aren't indexed (tens of thousands of values): they're searched."""
     try:
         index = await current()
         if index is None:
             return None
-        folders = _state.folders
-        if folders["seq"] != index.seq or not folders["rows"]:
-            db = await database.connect_db()
-            try:
-                async with db.execute("SELECT id, file_path FROM scan_results WHERE removed_from_list = 0") as cur:
-                    pairs = await cur.fetchall()
-            finally:
-                await db.close()
-
-            def by_folder() -> dict[str, list[int]]:
-                out: dict[str, list[int]] = {}
-                for row_id, fp in pairs:
-                    out.setdefault(title_folder(fp), []).append(row_id)
-                return out
-            folders["rows"], folders["seq"] = await asyncio.to_thread(by_folder), index.seq
+        rows, folders = await _folder_rows(index)
         adhoc = await _adhoc_for(expr, index)
         async with _state.lock:
             idx = _state.index
-            groups, excluded = _constraints(idx, expr, adhoc, skip_group="folder")
-            _, _, base = idx._bases(groups, excluded)
-            matching = set(ids_of(base(frozenset())))
+            group_at, excluded_at, base = idx._bases(*_constraints(idx, expr, adhoc))
+            common = frozenset(n for n in [group_at.get("folder")] if n is not None)
+            skips: dict[Optional[str], frozenset] = {None: common}
+            for f in expr.excluded:
+                if f.group == "folder":  # its own exclusion, set aside for it
+                    value = f.id.partition(":")[2].rstrip("/")
+                    skips[value] = skips.get(value, common) | {excluded_at[f.id]}
+            bases = {value: base(skip) for value, skip in skips.items()}
         needle = q.strip().casefold()
-        rows = folders["rows"]
 
         def search() -> list[tuple[str, int]]:
+            matching: dict[Optional[str], set[int]] = {}
             hits = []
-            for folder, ids in rows.items():
-                if needle in folder.casefold():
-                    n = sum(1 for i in ids if i in matching)
-                    if n:
-                        hits.append((folder, n))
+            for at, folder in enumerate(folders):
+                if not folder or needle not in folder.casefold():
+                    continue
+                which = folder if folder in bases else None
+                if which not in matching:
+                    matching[which] = set(ids_of(bases[which]))
+                matches = matching[which]
+                # Its subfolders: from folder + "/" to folder + "0" ("0" follows "/").
+                lo = bisect.bisect_left(folders, folder + "/", at + 1)
+                hi = bisect.bisect_left(folders, folder + "0", lo)
+                n = sum(1 for sub in [folder, *folders[lo:hi]] for i in rows[sub] if i in matches)
+                if n:
+                    hits.append((folder, n))
             hits.sort(key=lambda fc: (-fc[1], fc[0]))
             return hits[:limit]
         return await asyncio.to_thread(search)

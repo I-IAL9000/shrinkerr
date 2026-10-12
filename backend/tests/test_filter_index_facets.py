@@ -308,3 +308,129 @@ async def test_an_unknown_list_is_an_error(service_env, test_db):
     with pytest.raises(ApiError) as raised:
         await get_facet_values("nope")
     assert raised.value.status_code == 404 and raised.value.code == "scan.noSuchList"
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """The service's wall clock, moved by hand: clock[0] += seconds."""
+    import time as real_time
+    from types import SimpleNamespace
+
+    from backend.filter_index import service
+    now = [real_time.time()]
+    monkeypatch.setattr(service, "time", SimpleNamespace(time=lambda: now[0], monotonic=real_time.monotonic,
+                                                         perf_counter=real_time.perf_counter))
+    return now
+
+
+async def _write(db_path, sql, *params) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(sql, params)
+        await db.commit()
+
+
+_RESTLESS = "/demo/Movies/Restless Archive (2007)"  # a title folder with a subfolder (Extras) in the seed
+
+
+async def _clicked_folder(db_path, text: str, folder: str) -> int:
+    """What clicking a folder found by the search gives under `text`: it
+    replaces the Folder choices and its own exclusion."""
+    token = facet_token("folder", folder)
+    keep = [t for t in text.split(",") if t != "all" and not t.startswith("folder:") and t != f"!{token}"]
+    return len(await _rows(db_path, ",".join(keep + [token])))
+
+
+@pytest.mark.asyncio
+async def test_a_folder_found_counts_what_clicking_it_gives(service_env, test_db):
+    """Its subfolders' files too (a folder token matches by path), with the
+    Folder choices and its own exclusion set aside."""
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    extras = f"{_RESTLESS}/Extras"
+    tv = facet_token("folder", "/demo/TV")
+    for text in ["all", "res_1080p", tv, f"{tv},x264", f"!{facet_token('folder', _RESTLESS)}",
+                 f"!{facet_token('folder', extras)}"]:
+        hits = dict(await service_env.folder_values(parse_filter(text), "restless"))
+        for folder in (_RESTLESS, extras):
+            want = await _clicked_folder(test_db, text, folder)
+            assert hits.get(folder, 0) == want and (folder in hits) == (want > 0), (text, folder)
+    every = dict(await service_env.folder_values(parse_filter("all"), "restless"))
+    assert every[_RESTLESS] > every[extras] > 0
+
+
+@pytest.mark.asyncio
+async def test_the_folder_search_reads_the_paths_again_at_most_every_minute(service_env, test_db, clock):
+    """A scan changes rows all the time: a file added is found once the
+    paths are read again, at most every FOLDERS_REFRESH seconds."""
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+
+    async def restless() -> int:
+        return dict(await service_env.folder_values(parse_filter("all"), "restless"))[_RESTLESS]
+    before = await restless()
+    await _write(test_db, "INSERT INTO scan_results (file_path, file_size, video_codec, needs_conversion, duration, "
+                          "video_height, video_width, audio_tracks_json, subtitle_tracks_json, scan_timestamp) "
+                          "SELECT ?, file_size, video_codec, needs_conversion, duration, video_height, video_width, "
+                          "audio_tracks_json, subtitle_tracks_json, scan_timestamp FROM scan_results "
+                          "WHERE removed_from_list = 0 LIMIT 1", f"{_RESTLESS}/Part 2.mkv")
+    clock[0] += service_env.FOLDERS_REFRESH - 1
+    assert await restless() == before  # read a moment ago
+    clock[0] += 1
+    assert await restless() == before + 1
+
+
+@pytest.mark.asyncio
+async def test_searches_at_once_read_the_paths_once(service_env, test_db, monkeypatch):
+    import asyncio
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    read = []
+    real = service_env.title_folder
+    monkeypatch.setattr(service_env, "title_folder", lambda fp: read.append(fp) or real(fp))
+    index = service_env._state.index
+    first, second = await asyncio.gather(service_env._folder_rows(index), service_env._folder_rows(index))
+    assert first == second and first[0]
+    assert read and len(read) == len(set(read))  # each path once
+    assert await service_env.folder_values(parse_filter("all"), "restless")
+    assert len(read) == len(set(read))
+
+
+@pytest.mark.asyncio
+async def test_title_changes_are_applied_at_most_every_minute(service_env, test_db, clock):
+    """A Poster prefetch writes title metadata several times a second, and
+    each change evaluates the Title lists over the whole library again: at
+    most every TITLES_REFRESH seconds. Other changes apply at once."""
+    from backend.tests.filter_index_library import sql_counts
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+
+    async def networks() -> set[str]:
+        _, lists = await service_env.answer(parse_filter("all"))
+        return {v for v, _ in lists["network"]}
+    await _write(test_db, "UPDATE poster_cache SET network = 'Channel 4' WHERE network = 'HBO'")
+    assert "Channel 4" in await networks()  # the first one at once
+    await _write(test_db, "UPDATE poster_cache SET network = 'Sky' WHERE network = 'Channel 4'")
+    ignored = (await service_env.counts(parse_filter("all")))["ignored"]
+    await _write(test_db, "INSERT INTO ignored_files (file_path, reason, ignored_at) SELECT file_path, 'manual', 'x' "
+                          "FROM scan_results WHERE file_path LIKE '/demo/Movies/%' AND removed_from_list = 0 "
+                          "AND file_path NOT IN (SELECT file_path FROM ignored_files) ORDER BY id LIMIT 1")
+    clock[0] += service_env.TITLES_REFRESH - 1
+    assert "Sky" not in await networks() and "Channel 4" in await networks()  # waits
+    counts = await service_env.counts(parse_filter("all"))
+    assert counts["ignored"] == ignored + 1 and counts == await sql_counts(test_db)
+    clock[0] += 1
+    assert "Sky" in await networks() and "Channel 4" not in await networks()
+
+
+@pytest.mark.asyncio
+async def test_the_lists_answer_without_the_media_folder_labels(service_env, test_db, monkeypatch):
+    import backend.routes.scan as scan_route
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+
+    async def broken():
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(scan_route, "connect_db", broken)
+    body = await scan_route.get_filter_counts("all")
+    assert body["counts"]["all"] and body["facets"]["library"]
+    assert all(v["label"] == v["value"] for v in body["facets"]["library"])
