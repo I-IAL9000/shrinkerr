@@ -525,6 +525,19 @@ body {
 .filter-option-exclude:hover:not(:disabled),
 .filter-option-exclude[aria-pressed="true"] { color: var(--danger); }
 .filter-option-exclude:disabled { opacity: 0.3; cursor: default; }
+/* Lists (v0.10.0): a search box over the values, and "Show all". A long
+   list ("Show all", a search) scrolls under its search box. */
+.filter-list { display: flex; flex-direction: column; gap: 2px; }
+.filter-list-search {
+  margin: 2px 0 6px; padding: 5px 8px; font-size: 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-secondary);
+}
+.filter-list-values { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.filter-list-more {
+  align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: none;
+  color: var(--accent-text); font-size: 12px; cursor: pointer;
+}
+.filter-list-more:hover { text-decoration: underline; }
 .filter-panel-rule { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
 /* Phones: a panel spans the row of buttons (its positioned parent; not the
    whole bar, where the chips appearing below the row pushed an open panel

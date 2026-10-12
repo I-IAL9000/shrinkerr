@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Chevron from "./Chevron";
 import FilterPanel from "./FilterPanel";
-import { CATEGORIES, QUICK_FILTERS, chipLabel, optionLabel, selectedIn, type FilterCategory } from "../filterCatalog";
+import {
+  CATEGORIES, QUICK_FILTERS, chipLabel, listSection, optionLabel, parseListToken, selectedIn, type FilterCategory,
+} from "../filterCatalog";
 import type { FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 
@@ -28,7 +30,7 @@ function shortCount(n: number): string {
  * more shows more; across sections, files must match all (the server's
  * scan_filters.py decides; filterCatalog.json lays it out).
  */
-export default function FilterBar({ activeFilters, counts, matching, total, onToggle, onRemove, onClear }: FilterBarProps) {
+export default function FilterBar({ activeFilters, counts, matching, total, lists, filter, onToggle, onRemove, onClear }: FilterBarProps) {
   const { t } = useTranslation(["scanner"]);
   const [open, setOpen] = useState<string | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -40,6 +42,14 @@ export default function FilterBar({ activeFilters, counts, matching, total, onTo
   // filter's counts load: the badges vanishing re-wrapped the whole bar.
   const lastCounts = useRef<Record<string, number>>({});
   for (const [key, n] of Object.entries(counts ?? {})) lastCounts.current[key] = n;
+  // The lists' too: they emptied to "Counting…" on each tick in them.
+  const lastLists = useRef<FacetLists | null>(null);
+  if (lists) lastLists.current = lists;
+  // A media folder by its label ("Movies"), as the server names it.
+  const libraryLabel = (token: string) => {
+    const list = parseListToken(token.replace(/^!/, ""));
+    return list?.facet === "library" ? lastLists.current?.library?.find(v => v.value === list.value)?.label : undefined;
+  };
 
   const close = () => {
     const key = open;
@@ -109,16 +119,22 @@ export default function FilterBar({ activeFilters, counts, matching, total, onTo
 
   const categoryButton = (category: FilterCategory) => {
     const selected = selectedIn(category, active);
-    const hasFiles = category.sections.some(s => (s.options ?? []).some(o => (counts?.[o.key] ?? 1) > 0));
+    // A list has files when it has values (none yet: as if it had).
+    const hasFiles = category.sections.some(s => s.facet
+      ? (lists?.[s.facet]?.length ?? 1) > 0
+      : (s.options ?? []).some(o => (counts?.[o.key] ?? 1) > 0));
     const dimmed = !hasFiles && selected.length === 0;
     const title = t(category.labelKey);
     const names = selected.map(s => {
-      const label = optionLabel(s.key, t);
+      const label = optionLabel(s.key, t, libraryLabel(s.key));
       // "Watched · Watched" or "Watched · 1 year" says nothing (or the
       // opposite): with its section, as its chip ("Plex: Watched").
-      const section = category.sections.find(x => (x.options ?? []).some(o => o.key === s.key));
+      const list = parseListToken(s.key);
+      const section = list
+        ? listSection(list.facet)
+        : category.sections.find(x => (x.options ?? []).some(o => o.key === s.key));
       if (section?.prefix || label.toLowerCase() === title.toLowerCase()) {
-        return chipLabel((s.excluded ? "!" : "") + s.key, t);
+        return chipLabel((s.excluded ? "!" : "") + s.key, t, libraryLabel(s.key));
       }
       return s.excluded ? t("scanner:filters.notLabel", { label }) : label;
     });
@@ -139,7 +155,7 @@ export default function FilterBar({ activeFilters, counts, matching, total, onTo
         </button>
         {isOpen && (
           <FilterPanel category={category} active={active} counts={counts} lastCounts={lastCounts.current}
-            onToggle={onToggle} onClose={close} />
+            lists={lists} lastLists={lastLists.current} filter={filter} onToggle={onToggle} onClose={close} />
         )}
       </div>
     );
@@ -194,7 +210,7 @@ export default function FilterBar({ activeFilters, counts, matching, total, onTo
       {active.length > 0 && (
         <div className="filter-chips">
           {active.map((token, index) => {
-            const label = chipLabel(token, t);
+            const label = chipLabel(token, t, libraryLabel(token));
             return (
               <span key={token} className={`filter-chip${token.startsWith("!") ? " excluded" : ""}`}>
                 {label}

@@ -1,13 +1,18 @@
 import { useEffect, useId, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { optionLabel, type FilterCategory } from "../filterCatalog";
+import type { FacetLists } from "../api";
 import { fmtNum } from "../fmt";
+import FilterListSection from "./FilterListSection";
 
 interface FilterPanelProps {
   category: FilterCategory;
   active: string[];
   counts?: Record<string, number>;
   lastCounts?: Record<string, number>;  // the last counts shown, while a new filter's load
+  lists?: FacetLists | null;  // the lists' top values (null: counting)
+  lastLists?: FacetLists | null;  // the last ones shown, while a new filter's load
+  filter: string;  // what the lists' "Show all" and search ask under
   onToggle: (key: string, exclude: boolean) => void;
   onClose: () => void;
 }
@@ -17,9 +22,10 @@ const FOCUSABLE = "input:not(:disabled), button:not(:disabled)";
 /**
  * A category's options (v0.10.0): a checkbox (Alt-click excludes), the count
  * of files clicking it would give, and ⊘ to exclude. Options with no files
- * are greyed out unless they're on. Tab stays inside; Escape closes.
+ * are greyed out unless they're on. A list's values come from the server
+ * (FilterListSection). Tab stays inside; Escape closes.
  */
-export default function FilterPanel({ category, active, counts, lastCounts, onToggle, onClose }: FilterPanelProps) {
+export default function FilterPanel({ category, active, counts, lastCounts, lists, lastLists, filter, onToggle, onClose }: FilterPanelProps) {
   const { t } = useTranslation(["scanner"]);
   const ref = useRef<HTMLDivElement>(null);
   const fitRef = useRef<() => void>(() => {});
@@ -118,6 +124,10 @@ export default function FilterPanel({ category, active, counts, lastCounts, onTo
             <fieldset key={section.key} className="filter-section" aria-describedby={hintId}>
               <legend className={several ? "filter-section-title" : "sr-only"}>{t(section.labelKey)}</legend>
               {section.hintKey && <p id={hintId} className="filter-section-hint">{t(section.hintKey)}</p>}
+              {section.facet && (
+                <FilterListSection section={section} values={lists ? lists[section.facet] ?? [] : null}
+                  lastValues={lastLists?.[section.facet]} active={active} filter={filter} onToggle={onToggle} />
+              )}
               {(section.options ?? []).map(option => {
                 const label = optionLabel(option.key, t);
                 const included = active.includes(option.key);
