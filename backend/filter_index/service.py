@@ -76,11 +76,15 @@ class _State:
 _state = _State()
 
 
+_cancelled: list = []  # builds reset() cancelled, for a test's teardown to await
+
+
 def reset() -> None:
     """Forget the index (tests)."""
     global _state
     if _state.rebuild is not None and not _state.rebuild.done():
         _state.rebuild.cancel()
+        _cancelled.append(_state.rebuild)
     _state = _State()
 
 

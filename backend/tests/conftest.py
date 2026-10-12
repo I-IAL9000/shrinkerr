@@ -18,12 +18,12 @@ async def test_db(tmp_path):
     # background build: stop it on this test's event loop, so its database
     # thread is closed. One left running could keep the test run from
     # exiting after it passed (a CI job timed out that way).
+    import asyncio
     from backend.filter_index import service
-    task = service._state.rebuild
-    if task is not None and not task.done():
-        task.cancel()
+    service.reset()  # cancels a running build; it and any reset() cancelled before wait here
+    while service._cancelled:
+        task = service._cancelled.pop()
         try:
             await task
-        except BaseException:
+        except (asyncio.CancelledError, Exception):
             pass
-    service.reset()
