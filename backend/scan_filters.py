@@ -290,10 +290,23 @@ def title_folder(fp: str) -> str:
     return "/".join(parts[:-1])
 
 
+def title_key(fp: str, roots: frozenset = frozenset()) -> str:
+    """The key a file's title — its poster and metadata — is kept under, as
+    the Poster grid groups titles (PosterGrid's groupFolders): its
+    title_folder, or the file itself when that's a media folder (`roots`,
+    without a trailing "/"): a file loose in it is a title of its own, not
+    the library (v0.10.0: the prefetch looked the library's name up). A
+    media folder named with an id is a title: its files are its own."""
+    folder = title_folder(fp)
+    if folder in roots and not _TITLE_ID_FOLDER.search(folder.rsplit("/", 1)[-1]):
+        return fp
+    return folder
+
+
 @functools.lru_cache(maxsize=1 << 16)
 def _folder_year(folder: str) -> Optional[str]:
-    """The year in a folder's name. Kept per folder: the filter index asks
-    for every file, ~25K folders for 180K files."""
+    """The year in a folder's name (or a loose file's). Kept per folder: the
+    filter index asks for every file, ~25K folders for 180K files."""
     from backend.routes.posters import parse_folder_name
     return parse_folder_name(folder, walk_files=False).get("year")
 
@@ -301,16 +314,16 @@ def _folder_year(folder: str) -> Optional[str]:
 def row_title(row: dict, ctx: dict) -> dict:
     """The file's title metadata (v0.10.0): year, rating (IMDb, else TMDB),
     genres (TMDB and the media server's), network, show status and
-    countries — from the Poster grid's cache, else the year in the folder
-    name."""
+    countries — from the Poster grid's cache (by title_key; ctx's
+    "media_roots"), else the year in the folder name (a disc's: its own
+    folder's, parse_folder_name)."""
     v = row.get("_title")
     if v is not None:
         return v
-    folder = title_folder(row["file_path"])
-    year, rating, genres, network, status, country = (ctx.get("title_meta") or {}).get(folder) or (None,) * 6
+    key = title_key(row["file_path"], ctx.get("media_roots") or frozenset())
+    year, rating, genres, network, status, country = (ctx.get("title_meta") or {}).get(key) or (None,) * 6
     if not year:
-        named = folder.rsplit("/", 1)[0] if folder.rsplit("/", 1)[-1].upper() in ("VIDEO_TS", "BDMV") else folder
-        year = _folder_year(named)  # a disc: its own folder
+        year = _folder_year(key)
     found = {g.strip().lower() for g in (genres or "").split(",") if g.strip()}
     server = ctx.get("server_genres") or {}
     if server:
@@ -614,7 +627,7 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # A track's field is read once, in SQL (_track_text), by the index and the
 # lists alike; Python only folds that text, so the two can't disagree.
 
-FACETS_VERSION = 5  # bump when a facet's normalize / values changes
+FACETS_VERSION = 6  # bump when a facet's normalize / values changes
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
@@ -764,7 +777,7 @@ def _library_values(row: dict, ctx: dict) -> list[str]:
     return next(([dir_id] for prefix, dir_id in ctx.get("media_dir_ids") or () if fp.startswith(prefix)), [])
 
 
-_TITLE_INPUTS = ("titles",)
+_TITLE_INPUTS = ("titles", "media_dirs")  # media_dirs: title_key
 _FACET_LIST = [
     Facet("alang", pairs_sql=_track_pairs("audio_tracks_json", "language"), normalize=fold_lang,
           cond=_lang_cond("audio_tracks_json"), combine=("audio_tracks_json", "text", "language")),
@@ -776,7 +789,7 @@ _FACET_LIST = [
           combine=("audio_tracks_json", "max", "channels"),
           canonical=lambda v: v if v in _CHANNEL_BANDS else None),
     # A media server's genre can be "" (_title_metadata).
-    Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=("titles", "plex"),
+    Facet("genre", values=lambda r, c: [g for g in row_title(r, c)["genres"] if g], inputs=(*_TITLE_INPUTS, "plex"),
           titles=True, parts=genre_parts),
     Facet("year", values=_year_values, inputs=_TITLE_INPUTS, titles=True),
     Facet("rating", values=lambda r, c: [rating_band(row_title(r, c)["rating"])], inputs=_TITLE_INPUTS, titles=True),

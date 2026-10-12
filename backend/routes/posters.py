@@ -90,6 +90,10 @@ def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
     exist on this host's filesystem.
     """
     parts = folder_path.rstrip("/").split("/")
+    # A disc rip's VIDEO_TS / BDMV folder is named after its parent (v0.10.0:
+    # TMDB was searched for "VIDEO_TS"), a season folder after its show's.
+    if len(parts) > 1 and parts[-1].upper() in ("VIDEO_TS", "BDMV"):
+        parts = parts[:-1]
     folder_name = parts[-1] if parts else ""
     if re.match(r"^(Season|Series|Specials)\b", folder_name, re.IGNORECASE):
         folder_name = parts[-2] if len(parts) > 1 else folder_name
@@ -361,6 +365,40 @@ async def _maybe_purge_tvdb_cache_v116(db) -> None:
         print(f"[POSTER] v0.3.116 migration skipped: {exc}", flush=True)
 
 
+_KEYS_PURGE_FLAG = "_v0_10_0_misnamed_poster_rows_purged"
+
+
+async def _maybe_purge_misnamed_rows(db) -> None:
+    """One-shot (v0.10.0): rows resolved under the wrong name are deleted, so
+    the Poster grid and the prefetch look them up again — a disc rip's,
+    kept under its VIDEO_TS / BDMV folder (TMDB was searched for "VIDEO_TS"),
+    and a media folder's own (the prefetch searched the library's name,
+    "Movies", for the files loose in it; title_key) unless it's named with
+    an id (a title). Never a Fix match. Tracked in settings, as
+    _maybe_purge_tvdb_cache_v116."""
+    from backend.scan_filters import _TITLE_ID_FOLDER
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (_KEYS_PURGE_FLAG,)) as cur:
+            if await cur.fetchone():
+                return
+        async with db.execute("SELECT path FROM media_dirs") as cur:
+            roots = {(r[0] or "").rstrip("/") for r in await cur.fetchall()}
+        async with db.execute("SELECT folder_path, source FROM poster_cache") as cur:
+            rows = await cur.fetchall()
+        targets = [r[0] for r in rows if (r[1] or "") != "tmdb-manual" and (
+            r[0].rstrip("/").rsplit("/", 1)[-1].upper() in ("VIDEO_TS", "BDMV")
+            or (r[0].rstrip("/") in roots and not _TITLE_ID_FOLDER.search(r[0].rstrip("/").rsplit("/", 1)[-1])))]
+        for i in range(0, len(targets), 500):
+            batch = targets[i:i + 500]
+            await db.execute(f"DELETE FROM poster_cache WHERE folder_path IN ({','.join('?' * len(batch))})", batch)
+        if targets:
+            print(f"[POSTER] {len(targets)} poster row(s) of discs and media folders to look up again", flush=True)
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (_KEYS_PURGE_FLAG,))
+        await db.commit()
+    except Exception as exc:
+        print(f"[POSTER] Purging misnamed poster rows skipped: {exc}", flush=True)
+
+
 @router.post("/resolve")
 async def resolve_posters(req: ResolveRequest):
     """Batch-resolve poster metadata. Returns cached image data as base64 data URIs."""
@@ -382,6 +420,7 @@ async def resolve_posters(req: ResolveRequest):
         # pattern. Tracked via a settings flag so it runs exactly once
         # per upgrade. v0.3.116+.
         await _maybe_purge_tvdb_cache_v116(db)
+        await _maybe_purge_misnamed_rows(db)
 
         result = {}
         uncached = []
@@ -1069,6 +1108,7 @@ async def _run_prefetch(scheduled: bool = False):
                 for row in await cur.fetchall():
                     settings[row["key"]] = row["value"]
 
+            await _maybe_purge_misnamed_rows(db)
             async with db.execute(
                 "SELECT folder_path, source, poster_url, resolved_at, image_data IS NOT NULL AS has_image "
                 "FROM poster_cache"
@@ -1091,6 +1131,8 @@ async def _run_prefetch(scheduled: bool = False):
                 dir_label_pairs.sort(key=lambda t: len(t[0]), reverse=True)
             except Exception:
                 pass
+            async with db.execute("SELECT path FROM media_dirs") as cur:  # as the Scanner tree reads them
+                media_roots = frozenset((r["path"] or "").rstrip("/") for r in await cur.fetchall())
         finally:
             await db.close()
 
@@ -1100,9 +1142,10 @@ async def _run_prefetch(scheduled: bool = False):
                     return _label_to_media_type(label)
             return None
 
-        # Step 2: Extract unique title folders
-        from backend.scan_filters import title_folder
-        title_folders = {tf for tf in (title_folder(fp) for fp in all_paths) if tf}
+        # Step 2: the titles, keyed as the Poster grid keys them: a file
+        # loose in a media folder by itself, never as the media folder.
+        from backend.scan_filters import title_key
+        title_folders = {tf for tf in (title_key(fp, media_roots) for fp in all_paths) if tf}
 
         plex_url = settings.get("plex_url", "").rstrip("/")
         plex_token = settings.get("plex_token", "")

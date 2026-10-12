@@ -30,6 +30,11 @@ EXPRESSIONS = [
     _ADV_TITLE,
     "alang:fre", "alang:eng,alang:fre", "acodec:truehd,!x264", "achan:8,res_1080p", "genre:drama,year:1990s",
     "rating:8,type_tv", "network:HBO", "!slang:eng", "library:1", "alang:fre,!alang:eng",
+    # Genres saved before they were kept split: a combined one is the titles
+    # with all its parts (the parts' rows ANDed), "science fiction" is sci-fi.
+    "genre:action%20%26%20adventure", "!genre:action%20%26%20adventure",
+    "genre:comedy,genre:action%20%26%20adventure", "genre:action%20%26%20adventure,year:1980s",
+    "genre:science%20fiction",
 ]
 
 
@@ -160,8 +165,8 @@ async def seed(db_path: str) -> None:
         folders = titles[:4] + titles[-4:]  # films and shows
         meta = [("1994", 8.4, "Crime, Drama", "United States", "HBO", "Ended"),
                 ("2003", 6.1, "Comedy", "United Kingdom, Ireland", "BBC One", "Returning Series"),
-                ("2019", 4.2, "Science Fiction", "Germany", "", ""),
-                ("1987", None, "Drama", "France", "", "")]
+                ("2019", 4.2, "Science Fiction, Action", "Germany", "", ""),
+                ("1987", None, "Drama, Action & Adventure", "France", "", "")]
         await db.executemany(
             "INSERT OR REPLACE INTO poster_cache (folder_path, year, rating, genres, country, network, status) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)", [(f, *meta[n % len(meta)]) for n, f in enumerate(folders)])

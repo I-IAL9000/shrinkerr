@@ -2105,6 +2105,8 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
                 key=lambda pair: -len(pair[0]))
     except Exception:
         ctx["media_dir_ids"] = []
+    # The media folders themselves: a file loose in one is its own title (title_key).
+    ctx["media_roots"] = frozenset(prefix[:-1] for prefix, _ in ctx["media_dir_ids"])
     # When each title was last watched, for "Not watched in N months" (v0.10.0)
     from backend.watch_activity import load as load_watch_activity
     ctx["watch_activity"] = await load_watch_activity(db)
