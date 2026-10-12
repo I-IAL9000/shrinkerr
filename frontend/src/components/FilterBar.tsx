@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import Chevron from "./Chevron";
 import FilterPanel from "./FilterPanel";
 import { CATEGORIES, QUICK_FILTERS, chipLabel, optionLabel, selectedIn, type FilterCategory } from "../filterCatalog";
+import type { FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 
 interface FilterBarProps {
@@ -10,6 +11,8 @@ interface FilterBarProps {
   counts?: Record<string, number>;
   matching: number | null;  // files the whole filter matches; null while counting
   total?: number;  // files in the Scanner, for the All pill
+  lists?: FacetLists | null;  // the lists' top values under the filter (null: not yet)
+  filter: string;  // the filter string the lists' "Show all" and search ask under
   onToggle: (key: string, exclude: boolean) => void;
   onRemove: (token: string) => void;
   onClear: () => void;
@@ -106,14 +109,14 @@ export default function FilterBar({ activeFilters, counts, matching, total, onTo
 
   const categoryButton = (category: FilterCategory) => {
     const selected = selectedIn(category, active);
-    const hasFiles = category.sections.some(s => s.options.some(o => (counts?.[o.key] ?? 1) > 0));
+    const hasFiles = category.sections.some(s => (s.options ?? []).some(o => (counts?.[o.key] ?? 1) > 0));
     const dimmed = !hasFiles && selected.length === 0;
     const title = t(category.labelKey);
     const names = selected.map(s => {
       const label = optionLabel(s.key, t);
       // "Watched · Watched" or "Watched · 1 year" says nothing (or the
       // opposite): with its section, as its chip ("Plex: Watched").
-      const section = category.sections.find(x => x.options.some(o => o.key === s.key));
+      const section = category.sections.find(x => (x.options ?? []).some(o => o.key === s.key));
       if (section?.prefix || label.toLowerCase() === title.toLowerCase()) {
         return chipLabel((s.excluded ? "!" : "") + s.key, t);
       }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress } from "../api";
+import { startQueue, getScanTree, getScanStats, getFilterCounts, getMediaDirs, startScan, cancelScan, getScanStatus, refreshMetadata, cancelMetadata, removeScanResult, updateAudioTracks, updateSubtitleTracks, rescanFolder, addJobsFromScan, ignoreFile, unignoreFile, getEncodingSettings, deleteFileFromDisk, detectLanguagesBatch, getDetectBatchStatus, cancelDetectBatch, ackDetectBatchPending, getPosterPrefetchStatus, startPosterPrefetch, queueHealthChecks, arrActionBulk, resetHealthStatus, type DetectBatchProgress, type FacetLists } from "../api";
 import { fmtNum } from "../fmt";
 import { naturalCompare } from "../utils/naturalCompare";
 import StatsCards from "../components/StatsCards";
@@ -100,7 +100,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     try {
       localStorage.setItem("shrinkerr_scanner_filters", JSON.stringify(filters));
     } catch { /* same reason as above */ }
-    const search = filter === "all" ? "" : `?filter=${filter}`;
+    // A list value's own encoding (folder:%2Fmedia%2C…) survives the address
+    // being decoded once; "+" would read as a space, "&" and "#" end it.
+    const search = filter === "all" ? "" : `?filter=${filter.replace(/%/g, "%25").replace(/[&#+]/g, c => encodeURIComponent(c))}`;
     if (location.search !== search) navigate({ search }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
@@ -162,16 +164,18 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // With a filter active the pills count what clicking each would give —
   // the other active groups still apply (v0.10.0). Refreshed with the stats.
   // Kept with the filter they're for: another filter's counts aren't shown.
-  const [facetCounts, setFacetCounts] = useState<{ filter: string; counts: Record<string, number> } | null>(null);
+  // The lists' values (languages, genres…) come with them; with no filter,
+  // only the lists (the pills count from the stats), and no slow count.
+  const [facetCounts, setFacetCounts] = useState<{ filter: string; counts: Record<string, number>; lists: FacetLists | null } | null>(null);
   useEffect(() => {
-    if (filter === "all") { setFacetCounts(null); return; }
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
-      getFilterCounts(filter, ctrl.signal).then(r => setFacetCounts({ filter, counts: r.counts }))
+      getFilterCounts(filter, ctrl.signal, filter === "all")
+        .then(r => setFacetCounts({ filter, counts: r.counts ?? {}, lists: r.facets }))
         // Failed: stop "Counting…" (the total falls back to the tree's), but
         // keep this filter's counts from before (a refresh during a scan).
         .catch(() => {
-          if (!ctrl.signal.aborted) setFacetCounts(prev => (prev?.filter === filter ? prev : { filter, counts: {} }));
+          if (!ctrl.signal.aborted) setFacetCounts(prev => (prev?.filter === filter ? prev : { filter, counts: {}, lists: null }));
         });
     }, 200);
     return () => { clearTimeout(timer); ctrl.abort(); };
@@ -1218,7 +1222,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     : { all: treeTotalFiles };
   // "All" (clear the filter) keeps the library's total. Until this filter's
   // counts are in, the options show "…" and the chips "Counting…".
-  const facets = facetCounts?.filter === filter ? facetCounts.counts : null;
+  const facets = filter !== "all" && facetCounts?.filter === filter ? facetCounts.counts : null;
   const filterCounts = filter === "all" ? libraryCounts : { ...facets, all: libraryCounts.all };
   // "Detect all unknown" only for Unknown language on its own: another
   // language option ticked with it adds files whose language is known.
@@ -1553,6 +1557,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             counts={filterCounts}
             matching={facets ? facets.matching ?? treeTotalFiles : null}
             total={serverStats?.counts?.all}
+            lists={facetCounts?.filter === filter ? facetCounts.lists : null}
+            filter={filter}
             onToggle={(key, exclude) => setFilters(prev => toggleFilter(prev, key, exclude))}
             onRemove={token => setFilters(prev => {
               const next = prev.filter(x => x !== token && x !== "all");

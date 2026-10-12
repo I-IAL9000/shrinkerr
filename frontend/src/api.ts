@@ -121,9 +121,20 @@ export const getScanStats = () => apiFetch<any>("/scan/scan-stats");
 export const getScanTree = (filter: string = "all", signal?: AbortSignal) =>
   apiFetch<{ folders: { path: string; file_count: number; total_size: number; newest_mtime: number }[];
              imdb_ids?: Record<string, string> }>(`/scan/tree?filter=${encodeURIComponent(filter)}`, { signal });
-/** Each pill's count under `filter`: what clicking it would give (v0.10.0). */
-export const getFilterCounts = (filter: string, signal?: AbortSignal) =>
-  apiFetch<{ counts: Record<string, number> }>(`/scan/filter-counts?filter=${encodeURIComponent(filter)}`, { signal });
+/** A list's value (alang:fre) and the files ticking it would give; a media folder's `label`. */
+export interface FacetValue { value: string; count: number; label?: string }
+export type FacetLists = Record<string, FacetValue[]>;
+/** Each pill's count under `filter`: what clicking it would give (v0.10.0),
+ *  and each list's top values ("facets": null until the filter index is
+ *  ready). `facetsOnly`: for the lists alone: while the index isn't ready,
+ *  both null rather than the slow count. */
+export const getFilterCounts = (filter: string, signal?: AbortSignal, facetsOnly = false) =>
+  apiFetch<{ counts: Record<string, number> | null; facets: FacetLists | null }>(
+    `/scan/filter-counts?filter=${encodeURIComponent(filter)}${facetsOnly ? "&facets_only=true" : ""}`, { signal });
+/** Every value of one list under `filter` (null until the index is ready); folders matching `q`. */
+export const getFacetValues = (facet: string, filter: string, q = "", signal?: AbortSignal) =>
+  apiFetch<{ values: FacetValue[] | null }>(
+    `/scan/facet-values?facet=${encodeURIComponent(facet)}&filter=${encodeURIComponent(filter)}&q=${encodeURIComponent(q)}`, { signal });
 export const getScanFiles = (folder: string, filter: string = "all", signal?: AbortSignal) =>
   apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`, { signal });
 export const getFilesByTitle = (prefix: string, filter: string = "all", signal?: AbortSignal) =>

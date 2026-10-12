@@ -54,15 +54,18 @@
         {"key": "vfr", "label": "VFR"}]}
     ]},
     {"key": "audio", "labelKey": "scanner:filterBar.categories.audio", "sections": [
+      {"key": "alang", "labelKey": "scanner:filterBar.sections.language", "chipLabelKey": "scanner:filterBar.sections.audioLanguage", "facet": "alang"},
+      {"key": "acodec", "labelKey": "scanner:filterBar.sections.codec", "chipLabelKey": "scanner:filterBar.sections.audioCodec", "facet": "acodec"},
+      {"key": "achan", "labelKey": "scanner:filterBar.sections.channels", "facet": "achan"},
       {"key": "audio", "labelKey": "scanner:filterBar.sections.audio", "options": [
         {"key": "audio_cleanup", "labelKey": "scanner:filters.audioCleanup"},
         {"key": "lossless_audio", "labelKey": "scanner:filters.losslessAudio"},
         {"key": "lossy_audio", "labelKey": "scanner:filters.lossyAudio"},
         {"key": "object_audio", "label": "Atmos / DTS:X"},
-        {"key": "audio_71", "label": "7.1"},
         {"key": "commentary", "labelKey": "scanner:filters.commentary"}]}
     ]},
     {"key": "subtitles", "labelKey": "scanner:filterBar.categories.subtitles", "sections": [
+      {"key": "slang", "labelKey": "scanner:filterBar.sections.language", "chipLabelKey": "scanner:filterBar.sections.subtitleLanguage", "facet": "slang"},
       {"key": "subtitles", "labelKey": "scanner:filterBar.sections.kind", "options": [
         {"key": "image_subs", "labelKey": "scanner:filters.imageSubs"},
         {"key": "external_subs", "labelKey": "scanner:filters.externalSubs"},
@@ -78,7 +81,17 @@
         {"key": "dubbed", "labelKey": "scanner:filters.dubbed"},
         {"key": "not_api_matched", "labelKey": "scanner:filters.notApiMatched"}]}
     ]},
+    {"key": "title", "labelKey": "scanner:filterBar.categories.title", "sections": [
+      {"key": "genre", "labelKey": "scanner:filterBar.sections.genre", "facet": "genre"},
+      {"key": "year", "labelKey": "scanner:filterBar.sections.year", "facet": "year"},
+      {"key": "rating", "labelKey": "scanner:filterBar.sections.rating", "facet": "rating", "prefix": true},
+      {"key": "country", "labelKey": "scanner:filterBar.sections.country", "facet": "country"},
+      {"key": "network", "labelKey": "scanner:filterBar.sections.network", "facet": "network"},
+      {"key": "showstatus", "labelKey": "scanner:filterBar.sections.showStatus", "facet": "showstatus", "prefix": true}
+    ]},
     {"key": "library", "labelKey": "scanner:filterBar.categories.library", "sections": [
+      {"key": "library", "labelKey": "scanner:filterBar.sections.library", "facet": "library"},
+      {"key": "folder", "labelKey": "scanner:filterBar.sections.folder", "facet": "folder"},
       {"key": "type", "labelKey": "scanner:filterBar.sections.type", "prefix": true, "options": [
         {"key": "type_movie", "labelKey": "scanner:filters.movies"},
         {"key": "type_tv", "labelKey": "scanner:filters.tvShows"},
@@ -134,8 +147,9 @@
   ],
   "hidden": [
     {"key": "recent", "labelKey": "scanner:filters.recent"},
-    {"key": "large_files", "labelKey": "scanner:filters.sizeLarge"},
+    {"key": "large_files", "labelKey": "scanner:filters.sizeLarge", "alias": "size_large"},
     {"key": "low_bitrate", "labelKey": "scanner:filters.lowBitrate"},
-    {"key": "high_bitrate", "labelKey": "scanner:filters.highBitrate"}
+    {"key": "high_bitrate", "labelKey": "scanner:filters.highBitrate"},
+    {"key": "audio_71", "label": "7.1", "alias": "achan:8"}
   ]
 }

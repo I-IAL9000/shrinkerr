@@ -166,6 +166,7 @@
       "audio": "Audio",
       "subtitles": "Subtítulos",
       "language": "Idioma",
+      "title": "Título",
       "library": "Biblioteca",
       "watched": "Visto",
       "directPlay": "Reproducción directa"
@@ -181,9 +182,21 @@
       "hdr": "HDR",
       "picture": "Imagen",
       "audio": "Audio",
+      "audioLanguage": "Idioma del audio",
+      "audioCodec": "Códec de audio",
+      "channels": "Canales",
       "kind": "Clase",
       "subCleanup": "Limpieza",
+      "subtitleLanguage": "Idioma de los subtítulos",
       "language": "Idioma",
+      "genre": "Género",
+      "year": "Año",
+      "rating": "Valoración",
+      "country": "País",
+      "network": "Cadena",
+      "showStatus": "Estado de la serie",
+      "library": "Biblioteca",
+      "folder": "Carpeta",
       "type": "Tipo",
       "source": "Origen",
       "added": "Añadido",
@@ -211,6 +224,36 @@
     "excluded": "excluido",
     "noFiles": "sin archivos",
     "rule": "Si marcas varias opciones de una sección, se muestran los archivos que coinciden con cualquiera de ellas; entre secciones, los archivos deben coincidir con todas. ⊘ o Alt+clic excluye."
+  },
+  "facets": {
+    "unknownLanguage": "Desconocido",
+    "channels": {
+      "1": "Mono",
+      "2": "Estéreo",
+      "6": "5.1",
+      "8": "7.1+"
+    },
+    "rating": {
+      "8": "8 o más",
+      "7": "7–8",
+      "6": "6–7",
+      "5": "5–6",
+      "lt5": "Menos de 5",
+      "none": "Sin valoración"
+    },
+    "status": {
+      "returning": "En emisión",
+      "ended": "Finalizada",
+      "canceled": "Cancelada",
+      "in_production": "En producción",
+      "planned": "Planeada",
+      "pilot": "Piloto"
+    },
+    "search": "Buscar…",
+    "searchFolders": "Buscar carpetas…",
+    "showAll": "Mostrar todo",
+    "showFewer": "Mostrar menos",
+    "noMatches": "Sin resultados"
   },
   "stats": {
     "filesToConvert": "Archivos por convertir",

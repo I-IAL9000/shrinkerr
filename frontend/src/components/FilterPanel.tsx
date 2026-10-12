@@ -118,7 +118,7 @@ export default function FilterPanel({ category, active, counts, lastCounts, onTo
             <fieldset key={section.key} className="filter-section" aria-describedby={hintId}>
               <legend className={several ? "filter-section-title" : "sr-only"}>{t(section.labelKey)}</legend>
               {section.hintKey && <p id={hintId} className="filter-section-hint">{t(section.hintKey)}</p>}
-              {section.options.map(option => {
+              {(section.options ?? []).map(option => {
                 const label = optionLabel(option.key, t);
                 const included = active.includes(option.key);
                 const excluded = active.includes("!" + option.key);

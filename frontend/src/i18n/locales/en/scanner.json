@@ -160,6 +160,7 @@
       "audio": "Audio",
       "subtitles": "Subtitles",
       "language": "Language",
+      "title": "Title",
       "library": "Library",
       "watched": "Watched",
       "directPlay": "Direct play"
@@ -175,9 +176,21 @@
       "hdr": "HDR",
       "picture": "Picture",
       "audio": "Audio",
+      "audioLanguage": "Audio language",
+      "audioCodec": "Audio codec",
+      "channels": "Channels",
       "kind": "Kind",
       "subCleanup": "Cleanup",
+      "subtitleLanguage": "Subtitle language",
       "language": "Language",
+      "genre": "Genre",
+      "year": "Year",
+      "rating": "Rating",
+      "country": "Country",
+      "network": "Network",
+      "showStatus": "Show status",
+      "library": "Library",
+      "folder": "Folder",
       "type": "Type",
       "source": "Source",
       "added": "Added",
@@ -204,6 +217,36 @@
     "excluded": "excluded",
     "noFiles": "no files",
     "rule": "Ticking several options in a section shows files matching any of them; across sections, files must match all. ⊘ or Alt-click excludes."
+  },
+  "facets": {
+    "unknownLanguage": "Unknown",
+    "channels": {
+      "1": "Mono",
+      "2": "Stereo",
+      "6": "5.1",
+      "8": "7.1+"
+    },
+    "rating": {
+      "8": "8 and up",
+      "7": "7–8",
+      "6": "6–7",
+      "5": "5–6",
+      "lt5": "Under 5",
+      "none": "No rating"
+    },
+    "status": {
+      "returning": "Returning",
+      "ended": "Ended",
+      "canceled": "Canceled",
+      "in_production": "In production",
+      "planned": "Planned",
+      "pilot": "Pilot"
+    },
+    "search": "Search…",
+    "searchFolders": "Search folders…",
+    "showAll": "Show all",
+    "showFewer": "Show fewer",
+    "noMatches": "No matches"
   },
   "stats": {
     "filesToConvert": "Files to convert",

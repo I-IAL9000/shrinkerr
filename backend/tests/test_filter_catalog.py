@@ -18,8 +18,16 @@ _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)")
 def _options():
     for category in CATALOG["categories"]:
         for section in category["sections"]:
-            for option in section["options"]:
+            for option in section.get("options", []):
                 yield category, section, option
+
+
+def _lists():
+    # sections whose values come from the server: a list (alang:fre, genre:drama)
+    for category in CATALOG["categories"]:
+        for section in category["sections"]:
+            if "facet" in section:
+                yield category, section
 
 
 def _lookup(lang: str, key: str):
@@ -48,6 +56,8 @@ def test_no_hidden_filter_shares_a_sections_group():
     # it would widen with that section, while its chip doesn't say where it is
     sections = {section["key"] for category in CATALOG["categories"] for section in category["sections"]}
     for hidden in CATALOG["hidden"]:
+        if hidden.get("alias"):
+            continue  # the bar reads it as its alias: its chip is the alias's
         f = FILTERS[hidden["key"]]
         assert (f.group or f"_{f.id}") not in sections, hidden["key"]
 
@@ -62,14 +72,49 @@ def test_every_filter_is_shown_once_or_hidden():
 
 def test_every_label_exists_in_english_and_spanish():
     keys = set()
+    for category in CATALOG["categories"]:
+        keys.add(category["labelKey"])
+        for section in category["sections"]:
+            keys |= {section["labelKey"], section.get("hintKey"), section.get("chipLabelKey")}
     for category, section, option in _options():
-        keys |= {category["labelKey"], section["labelKey"], section.get("hintKey"), option.get("labelKey")}
+        keys.add(option.get("labelKey"))
         assert (option.get("label") or "").strip() or option.get("labelKey"), option["key"]
-    keys |= {h["labelKey"] for h in CATALOG["hidden"]}
+    for hidden in CATALOG["hidden"]:
+        keys.add(hidden.get("labelKey"))
+        assert (hidden.get("label") or "").strip() or hidden.get("labelKey"), hidden["key"]
     keys.discard(None)
     for lang in ("en", "es"):
         missing = [k for k in sorted(keys) if not (isinstance(_lookup(lang, k), str) and _lookup(lang, k).strip())]
         assert not missing, (lang, missing)
+
+
+def test_list_sections_are_the_servers_lists():
+    from backend.scan_filters import FACETS
+    lists = [section for _, section in _lists()]
+    assert sorted(s["facet"] for s in lists) == sorted(FACETS)  # every list shown once
+    for s in lists:
+        assert s["key"] == s["facet"]  # the section is the list's group
+    groups = {f.group for f in FILTERS.values() if f.group}
+    assert not groups & set(FACETS)  # no fixed filter shares a list's group
+
+
+def test_hidden_aliases_point_at_something_shown():
+    shown = {o["key"] for _, _, o in _options()} | {s["facet"] for _, s in _lists()}
+    for hidden in CATALOG["hidden"]:
+        alias = hidden.get("alias")
+        if alias:
+            assert alias.split(":")[0] in shown, alias
+
+
+def test_list_value_labels_exist_in_english_and_spanish():
+    keys = [f"scanner:facets.channels.{v}" for v in ("1", "2", "6", "8")]
+    keys += [f"scanner:facets.rating.{v}" for v in ("8", "7", "6", "5", "lt5", "none")]
+    keys += [f"scanner:facets.status.{v}" for v in ("returning", "ended", "canceled", "in_production", "planned", "pilot")]
+    keys += ["scanner:facets.unknownLanguage", "scanner:facets.search", "scanner:facets.searchFolders",
+             "scanner:facets.showAll", "scanner:facets.showFewer", "scanner:facets.noMatches"]
+    for lang in ("en", "es"):
+        for key in keys:
+            assert _lookup(lang, key), (lang, key)
 
 
 def test_the_bar_strings_match_in_english_and_spanish():
