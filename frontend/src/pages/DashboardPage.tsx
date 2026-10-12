@@ -261,12 +261,8 @@ export default function DashboardPage() {
         <h2 style={{ color: "var(--text-primary)", fontSize: 20, margin: 0 }}>{t("dashboard:title")}</h2>
         {totalCompleted > 0 && (
           <div style={{ display: "flex", gap: 8 }}>
-            <a href="/api/jobs/export/csv" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-xs btn-secondary">{t("dashboard:exportCsv")}</button>
-            </a>
-            <a href="/api/jobs/export/json" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-xs btn-secondary">{t("dashboard:exportJson")}</button>
-            </a>
+            <a className="btn btn-xs btn-secondary" href="/api/jobs/export/csv" download>{t("dashboard:exportCsv")}</a>
+            <a className="btn btn-xs btn-secondary" href="/api/jobs/export/json" download>{t("dashboard:exportJson")}</a>
           </div>
         )}
       </div>

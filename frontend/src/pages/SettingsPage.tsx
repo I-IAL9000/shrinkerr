@@ -3462,16 +3462,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
 
                 {/* Save + Download */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
-                  <a href="/api/settings/nzbget-script" download="Shrinkerr.py" style={{ textDecoration: "none" }}>
-                    <button className="btn btn-sm btn-secondary">
-                      {t("settingsIntegrations:downloaders.downloadNzbget")}
-                    </button>
-                  </a>
-                  <a href="/api/settings/sabnzbd-script" download="shrinkerr.py" style={{ textDecoration: "none" }}>
-                    <button className="btn btn-sm btn-secondary">
-                      {t("settingsIntegrations:downloaders.downloadSabnzbd")}
-                    </button>
-                  </a>
+                  <a className="btn btn-sm btn-secondary" href="/api/settings/nzbget-script" download="Shrinkerr.py">{t("settingsIntegrations:downloaders.downloadNzbget")}</a>
+                  <a className="btn btn-sm btn-secondary" href="/api/settings/sabnzbd-script" download="shrinkerr.py">{t("settingsIntegrations:downloaders.downloadSabnzbd")}</a>
                 </div>
 
                 {/* Installation instructions */}
