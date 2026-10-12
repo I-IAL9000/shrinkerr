@@ -190,8 +190,9 @@ const NAV_SECTIONS: { labelKey: string; items: NavItem[] }[] = [
   },
 ];
 
-/** Saved views under the Scanner (v0.10.0), each opening the Scanner on it.
- *  The Views menu announces changes with a "shrinkerr:views-changed" event. */
+/** Saved views under the Scanner (v0.10.0), each opening the Scanner on it,
+ *  shown while the Scanner is open (as Settings' pages under Settings). The
+ *  Views menu announces changes with a "shrinkerr:views-changed" event. */
 function SidebarViews() {
   const location = useLocation();
   const [views, setViews] = useState<SavedView[]>([]);
@@ -231,7 +232,7 @@ function SidebarNavItems() {
                 {item.badge && <NewFileBadge />}
                 {item.failedBadge && <FailedJobBadge />}
               </NavLink>
-              {item.to === "/scanner" && <SidebarViews />}
+              {item.to === "/scanner" && location.pathname.startsWith("/scanner") && <SidebarViews />}
               {item.to === "/settings" && location.pathname.startsWith("/settings") && (
                 <div className="settings-subnav">
                   {SETTINGS_SECTIONS.map(s => (

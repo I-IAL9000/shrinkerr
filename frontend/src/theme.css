@@ -292,9 +292,13 @@ body {
   text-transform: uppercase;
 }
 
+/* The sidebar's side padding: the links, the active one's border, and the
+   sub-pages under Scanner and Settings, which start where a link's text
+   does (past the 18px icon and the 10px gap). */
+:root { --sidebar-pad: 16px; }
 .sidebar-link {
   display: flex; align-items: center; gap: 10px;
-  padding: 7px 16px;
+  padding: 7px var(--sidebar-pad);
   color: #c8bfdf;
   text-decoration: none;
   font-size: 14px;
@@ -306,7 +310,7 @@ body {
   background: #11111a;
   color: #6860fe;
   border-left: 3px solid #6860fe;
-  padding-left: 13px;
+  padding-left: calc(var(--sidebar-pad) - 3px);
   border-radius: 0;
 }
 .sidebar-link.active img { filter: brightness(0) saturate(100%) invert(37%) sepia(95%) saturate(5000%) hue-rotate(243deg) brightness(100%) contrast(99%); }
@@ -317,7 +321,7 @@ body {
   padding: 2px 0;
 }
 .settings-subnav-link {
-  padding: 5px 20px 5px 40px;
+  padding: 5px 20px 5px calc(var(--sidebar-pad) + 28px);
   font-size: 12px;
   color: var(--text-muted);
   text-decoration: none;
@@ -1032,7 +1036,8 @@ input[type="checkbox"] { cursor: pointer; }
 
 @media (max-width: 900px) {
   .sidebar-desktop { width: 180px; }
-  .sidebar-link { padding: 8px 14px; font-size: 13px; }
+  :root { --sidebar-pad: 14px; }
+  .sidebar-link { padding: 8px var(--sidebar-pad); font-size: 13px; }
   .main-content { padding: 12px; }
   .stats-grid { gap: 8px; }
   .stat-card { min-width: 100px; }
