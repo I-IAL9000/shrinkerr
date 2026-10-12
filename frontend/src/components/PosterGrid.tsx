@@ -230,6 +230,7 @@ export default function PosterGrid({
     if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
     setExpandedKey(null);
     setExpandedFiles([]);
+    setFilesError(null);
     setLoadingFiles(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
@@ -414,6 +415,7 @@ export default function PosterGrid({
     if (expandedKey === group.key) {
       setExpandedKey(null);
       setExpandedFiles([]);
+      setFilesError(null);
       if (expandAbortCtrl.current) { try { expandAbortCtrl.current.abort(); } catch {} }
       return;
     }

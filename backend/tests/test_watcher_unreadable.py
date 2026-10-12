@@ -18,21 +18,14 @@ YEAR = 365 * 24 * HOUR
 
 
 @pytest.fixture(autouse=True)
-def natives(test_db, monkeypatch):
-    """The original-language lookup without the network: path → language."""
+def _this_db(test_db, monkeypatch):
+    """Media-folder labels ("Other": not looked up) from this test's database."""
     import sys
-    import backend.metadata as metadata
     from backend.media_paths import invalidate_media_dir_cache
     for name, module in list(sys.modules.items()):
         if name.startswith("backend.") and isinstance(getattr(module, "DB_PATH", None), str):
             monkeypatch.setattr(module, "DB_PATH", test_db)
     invalidate_media_dir_cache()
-    found: dict[str, str] = {}
-
-    async def lookup(path):
-        return found.get(path)
-    monkeypatch.setattr(metadata, "lookup_original_language", lookup)
-    return found
 
 
 async def _library(db_path, tmp_path, *, age):
@@ -178,8 +171,22 @@ async def test_an_old_file_listed_as_corrupt_isnt_new(test_db, tmp_path):
 @pytest.mark.asyncio
 async def test_a_recent_file_listed_as_corrupt_is_new(test_db, tmp_path):
     broken = await _library(test_db, tmp_path, age=2 * HOUR)
-    await _list_as_corrupt(FileWatcher(test_db, interval_minutes=5), broken)
+    w = FileWatcher(test_db, interval_minutes=5)
+    await _list_as_corrupt(w, broken)
     assert await _is_new(test_db, broken)
+    assert w.new_files_count == 1
+
+
+@pytest.mark.asyncio
+async def test_the_new_files_badge_doesnt_count_an_old_one(test_db, tmp_path):
+    """The badge counted it, so it said "1 new" over an empty Added: New.
+    The Scanner is still told the list changed."""
+    broken = await _library(test_db, tmp_path, age=40 * YEAR)
+    w = FileWatcher(test_db, interval_minutes=5)
+    with patch("backend.websocket.ws_manager.send_scan_results_changed", new_callable=AsyncMock) as changed:
+        await _list_as_corrupt(w, broken)
+    assert w.new_files_count == 0
+    changed.assert_called_once_with(added=1, removed=0)
 
 
 @pytest.mark.asyncio
@@ -204,35 +211,35 @@ async def _language(db_path, path):
 
 
 @pytest.mark.asyncio
-async def test_the_watcher_looks_up_a_corrupt_files_original_language(test_db, tmp_path, natives):
+async def test_the_watcher_looks_up_a_corrupt_files_original_language(test_db, tmp_path, original_languages):
     broken = await _library(test_db, tmp_path, age=40 * YEAR)
-    natives[broken] = "eng"
+    original_languages[broken] = "eng"
     await _list_as_corrupt(FileWatcher(test_db, interval_minutes=5), broken)
     assert await _language(test_db, broken) == ("eng", "api")
 
 
 @pytest.mark.asyncio
-async def test_a_full_scan_looks_up_a_corrupt_files_original_language(test_db, tmp_path, natives):
+async def test_a_full_scan_looks_up_a_corrupt_files_original_language(test_db, tmp_path, original_languages):
     from backend.scanner import scan_directory
     folder = tmp_path / "media" / "Mag Wheels (1978)"
     folder.mkdir(parents=True)
     path = folder / "Mag Wheels (1978).avi"
     path.write_bytes(b"not a video" * 100)
-    natives[str(path)] = "eng"
+    original_languages[str(path)] = "eng"
     with patch("backend.scanner.probe_file", new_callable=AsyncMock, return_value=None):
         (row,) = await scan_directory(str(tmp_path / "media"))
     assert (row.probe_status, row.native_language, row.language_source) == ("corrupt", "eng", "api")
 
 
 @pytest.mark.asyncio
-async def test_a_corrupt_file_in_an_other_folder_isnt_looked_up(test_db, tmp_path, natives):
+async def test_a_corrupt_file_in_an_other_folder_isnt_looked_up(test_db, tmp_path, original_languages):
     """Home videos and the like match spuriously, as for readable files."""
     from backend.scanner import scan_directory
     folder = tmp_path / "media" / "Holiday (1999)"
     folder.mkdir(parents=True)
     path = folder / "Holiday (1999).avi"
     path.write_bytes(b"not a video" * 100)
-    natives[str(path)] = "eng"
+    original_languages[str(path)] = "eng"
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT INTO media_dirs (path, label) VALUES (?, 'Other')", (str(tmp_path / "media"),))
         await db.commit()
@@ -241,31 +248,40 @@ async def test_a_corrupt_file_in_an_other_folder_isnt_looked_up(test_db, tmp_pat
     assert (row.native_language, row.language_source) == ("und", "heuristic")
 
 
-@pytest.mark.asyncio
-async def test_the_follow_up_lookup_gets_the_files_that_were_added(test_db, tmp_path):
-    """It got the first N of the files found, N being how many were added:
-    files that didn't read (or were skipped) took the places of ones added."""
-    media = tmp_path / "Movies"
-    known = media / "Known (2020)" / "Known (2020).mkv"
-    readable = [media / f"Good {i} (2001)" / f"Good {i} (2001).mkv" for i in range(2)]
-    unreadable = [media / f"Bad {i} (2001)" / f"Bad {i} (2001).mkv" for i in range(6)]
-    for p in (known, *readable, *unreadable):
-        p.parent.mkdir(parents=True)
-        p.write_bytes(b"x" * 1000)
-    async with aiosqlite.connect(test_db) as db:
-        await db.execute("INSERT INTO media_dirs (path, auto_scan) VALUES (?, 1)", (str(media),))
-        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) "
-                         "VALUES (?, 1, '2026-10-12T00:00:00')", (str(known),))
-        await db.commit()
-    probe = {"video_codec": "h264", "video_width": 720, "video_height": 480, "audio_tracks": [],
-             "subtitle_tracks": [], "duration": 60, "file_size": 1000}
-    readable_paths = {str(p) for p in readable}
+async def _add_iso(db_path, iso):
+    """The watcher meets a disc image no reader opens (listed at once)."""
+    with patch("backend.scanner.probe_file", new_callable=AsyncMock, return_value=None), \
+            patch("backend.disc_metadata.diagnose_unreadable_iso", return_value='{"kind": "unknown"}'):
+        return await FileWatcher(db_path)._scan_new_files([str(iso)])
 
-    async def probe_file(path, *a, **kw):
-        return probe if path in readable_paths else None
-    w = FileWatcher(test_db, interval_minutes=5)
-    with patch("backend.scanner.probe_file", new=probe_file), \
-            patch.object(w, "_refresh_metadata_for_files", new_callable=AsyncMock) as refresh:
-        await w.check_once()
-    (paths,), _ = refresh.call_args
-    assert sorted(paths) == sorted(readable_paths)
+
+def _iso(tmp_path, age):
+    iso = tmp_path / "media" / "Mag Wheels (1978)" / "Mag Wheels (1978).iso"
+    iso.parent.mkdir(parents=True)
+    iso.write_bytes(b"\0" * 4096)
+    stamp = time.time() - age
+    os.utime(iso, (stamp, stamp))
+    return str(iso)
+
+
+@pytest.mark.asyncio
+async def test_an_old_unreadable_disc_image_isnt_new_and_is_looked_up(test_db, tmp_path, original_languages):
+    iso = _iso(tmp_path, 40 * YEAR)
+    original_languages[iso] = "eng"
+    assert await _add_iso(test_db, iso) == ([iso], [])
+    assert not await _is_new(test_db, iso)
+    assert await _language(test_db, iso) == ("eng", "api")
+
+
+@pytest.mark.asyncio
+async def test_a_recent_unreadable_disc_image_is_new(test_db, tmp_path):
+    iso = _iso(tmp_path, 2 * HOUR)
+    assert await _add_iso(test_db, iso) == ([iso], [iso])
+    assert await _is_new(test_db, iso)
+
+
+@pytest.mark.asyncio
+async def test_a_file_whose_date_cant_be_read_isnt_new(test_db, tmp_path):
+    iso = str(tmp_path / "media" / "Gone (1999)" / "Gone (1999).iso")  # gone before it was listed
+    assert await _add_iso(test_db, iso) == ([iso], [])
+    assert not await _is_new(test_db, iso)

@@ -11,6 +11,8 @@ import backend.metadata as metadata
 from backend.metadata import title_search_name
 from backend.routes.posters import parse_folder_name, pick_tmdb_match
 
+pytestmark = pytest.mark.real_tmdb_lookup  # tests the lookup itself, with FakeTMDB
+
 
 @pytest.mark.parametrize("path, roots, folder, tv", [
     ("/m/movies/Saw II (2005)/BDMV/index.bdmv", ["/m/movies"], "/m/movies/Saw II (2005)", False),

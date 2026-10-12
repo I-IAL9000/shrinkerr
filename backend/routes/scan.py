@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from backend.database import DB_PATH, connect_db, is_temp_path, prefix_clause
 from backend.models import ScanRequest
 from backend.scan_filters import (
-    HIGH_BITRATE, LISTED, LOW_BITRATE, PY_COLUMNS, count_all, facet_counts, parse_filter,
+    HIGH_BITRATE, LISTED, LOW_BITRATE, NEW_WINDOW_S, PY_COLUMNS, count_all, facet_counts, parse_filter,
     row_converted, row_ignored, row_low_bitrate, row_type, row_watch_status,
     build_dir_label_index as _build_dir_label_index,
 )
@@ -2068,7 +2068,7 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
     except Exception:
         pass
 
-    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(seconds=NEW_WINDOW_S)).isoformat()
 
     # Media-dir label index for type-filter classification. Loaded once
     # per request and reused by every row's enrichment so we don't run a

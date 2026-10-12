@@ -27,3 +27,23 @@ async def test_db(tmp_path):
             await task
         except (asyncio.CancelledError, Exception):
             pass
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "real_tmdb_lookup: call the real lookup_original_language (stub its HTTP yourself)")
+
+
+@pytest.fixture(autouse=True)
+def original_languages(request, monkeypatch):
+    """No test asks TMDB for an original language: scans, the watcher and
+    the routes get it from this dict (path -> language), else None. A test
+    marked real_tmdb_lookup gets the real lookup."""
+    found: dict[str, str] = {}
+    if request.node.get_closest_marker("real_tmdb_lookup") is None:
+        import backend.metadata as metadata
+
+        async def lookup(path):
+            return found.get(path)
+        monkeypatch.setattr(metadata, "lookup_original_language", lookup)
+    return found

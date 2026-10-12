@@ -71,7 +71,7 @@ async def test_watcher_records_unreadable_iso_instead_of_dropping_it(test_db, tm
     from backend.watcher import FileWatcher
     iso = _junk_iso(str(tmp_path / "media" / "Movie (2001)"))
 
-    added = await FileWatcher(test_db)._scan_new_files([iso])
+    added, _ = await FileWatcher(test_db)._scan_new_files([iso])
 
     assert added == [iso]
     db = sqlite3.connect(test_db)

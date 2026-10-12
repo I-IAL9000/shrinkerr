@@ -79,6 +79,16 @@ def _unchanged_for(file_path: str, seconds: float) -> bool:
     return age >= seconds or age < 0
 
 
+def _changed_within(file_path: str, seconds: float) -> bool:
+    """Modified less than `seconds` ago (a timestamp in the future, or one
+    that can't be read, doesn't count)."""
+    try:
+        age = time.time() - os.path.getmtime(file_path)
+    except OSError:
+        return False
+    return 0 <= age < seconds
+
+
 async def _unreadable_iso_entry(file_path: str):
     """Scanner row for a disc image no reader could open (v0.9.153)."""
     import time
@@ -282,11 +292,12 @@ class FileWatcher:
         finally:
             await db.close()
 
-    async def _scan_new_files(self, new_files: list[str], ignored_folders: list[str] | None = None) -> list[str]:
+    async def _scan_new_files(self, new_files: list[str], ignored_folders: list[str] | None = None
+                              ) -> tuple[list[str], list[str]]:
         """Probe and add new files to scan_results. Returns the paths added
-        (not the auto-ignored ones)."""
+        (not the auto-ignored ones), and those of them marked new."""
         if not new_files:
-            return []
+            return [], []
 
         from backend.scanner import probe_file, is_x264, is_x265
 
@@ -384,13 +395,14 @@ class FileWatcher:
         new_file_paths = []
         # Listed without a probe and not changed within Added: New's window:
         # broken for years ("Mag Wheels (1978)"), so not new to the library
-        # (v0.10.0). A date in the future counts as old, as it does below.
+        # (v0.10.0). A date in the future, or none, counts as old.
         unread_old: set[str] = set()
 
         async def _list_unread(entry):
             results.append(entry)
             new_file_paths.append(entry.file_path)
-            if await asyncio.to_thread(_unchanged_for, entry.file_path, NEW_WINDOW_S):
+            if entry.file_mtime is None or not await asyncio.to_thread(
+                    _changed_within, entry.file_path, NEW_WINDOW_S):
                 unread_old.add(entry.file_path)
 
         skipped_ignored = 0
@@ -437,8 +449,8 @@ class FileWatcher:
                     from backend.scanner import unprobed_entry
                     print(f"[WATCHER] Can't read {file_path} (tried {failures} times): listed as corrupt",
                           flush=True)
-                    await _list_unread(await asyncio.to_thread(
-                        unprobed_entry, Path(file_path), await api_original_language(file_path)))
+                    api_lang = await api_original_language(file_path)
+                    await _list_unread(await asyncio.to_thread(unprobed_entry, Path(file_path), api_lang))
                     self._probe_failures.pop(file_path, None)
                     self._probe_failure_counts.pop(file_path, None)
                     continue
@@ -534,7 +546,8 @@ class FileWatcher:
             # Auto-queue if enabled
             await self._auto_queue_new_files(results)
 
-        return [s.file_path for s in results]
+        added = [s.file_path for s in results]
+        return added, [p for p in added if p not in unread_old]
 
     async def _auto_queue_new_files(self, results: list) -> int:
         """Auto-enqueue new files that need work, if the setting is enabled.
@@ -573,56 +586,6 @@ class FileWatcher:
                 msg += f" ({by_rule} skipped or kept from converting by a rule)"
             print(msg, flush=True)
         return queued
-
-    async def _refresh_metadata_for_files(self, file_paths: list[str]) -> int:
-        """Do lazy metadata lookups for a batch of new files. Returns count updated."""
-        if not file_paths:
-            return 0
-
-        try:
-            from backend.metadata import lookup_original_language
-            from backend.media_paths import is_other_typed_dir
-        except ImportError:
-            return 0
-
-        updated = 0
-        for file_path in file_paths[:10]:  # Max 10 per cycle
-            # Skip "Other" dirs — TMDB matches against non-movie/non-tv
-            # content produce spurious results.
-            try:
-                if await is_other_typed_dir(file_path):
-                    continue
-            except Exception:
-                pass
-            try:
-                api_lang = await asyncio.wait_for(
-                    lookup_original_language(file_path),
-                    timeout=8,
-                )
-            except (asyncio.TimeoutError, Exception):
-                api_lang = None
-
-            if not api_lang:
-                continue
-
-            # Update the scan result with API language
-            db = await aiosqlite.connect(self.db_path)
-            try:
-                await db.execute(
-                    "UPDATE scan_results SET native_language = ? WHERE file_path = ?",
-                    (api_lang, file_path),
-                )
-                await db.commit()
-                updated += 1
-            finally:
-                await db.close()
-
-            # Small delay between API calls to be nice
-            await asyncio.sleep(1)
-
-        if updated > 0:
-            print(f"[WATCHER] Metadata: updated {updated}/{len(file_paths)} new files", flush=True)
-        return updated
 
     async def _get_scanned_dirs(self) -> set[str]:
         """Get the set of top-level directories that have been scanned (have results in DB)."""
@@ -1464,12 +1427,12 @@ class FileWatcher:
             stale_path_set = stale_path_set - set(moved)
             new_files = [f for f in new_files if f not in set(moved.values())]
         removed = await self._remove_stale_entries(list(stale_path_set))
-        added_paths = await self._scan_new_files(new_files[:200], ignored_folders)
+        added_paths, marked_new = await self._scan_new_files(new_files[:200], ignored_folders)
         added = len(added_paths)
 
-        # Track new files for the badge
-        if added > 0:
-            self.new_files_count += added
+        # Track new files for the badge: as Added: New, not an old file that
+        # can't be read.
+        self.new_files_count += len(marked_new)
 
         remaining_new = max(0, len(new_files) - 200)
 
@@ -1485,12 +1448,6 @@ class FileWatcher:
                 await ws_manager.send_scan_results_changed(added=added, removed=removed)
             except Exception as exc:
                 print(f"[WATCHER] WS broadcast failed (non-fatal): {exc}", flush=True)
-
-        # Lazy metadata lookup for the files just added (v0.10.0: it got the
-        # first `added` of new_files, not those when some didn't read or were
-        # skipped).
-        if added > 0:
-            await self._refresh_metadata_for_files(added_paths)
 
         # v0.9.107: auto-detect sidecar subs added next to already-known videos
         # (no manual folder rescan needed). Scoped to folders that gained subs —
