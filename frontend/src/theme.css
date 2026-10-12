@@ -98,9 +98,9 @@
 
 /* Buttons — no pure white, use bg-card (light grey) so controls read as controls */
 [data-theme="light"] .btn-primary { background: var(--accent-btn); color: #ffffff; }
-[data-theme="light"] .btn-primary:hover { background: var(--accent-hover); }
-[data-theme="light"] .btn-secondary { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); }
-[data-theme="light"] .btn-secondary:hover { background: var(--bg-card-hover); color: var(--text-primary); border-color: var(--border-strong); }
+[data-theme="light"] .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+[data-theme="light"] .btn-secondary { background: var(--bg-card); color: var(--text-secondary); border-color: var(--border); }
+[data-theme="light"] .btn-secondary:hover:not(:disabled) { background: var(--bg-card-hover); color: var(--text-primary); border-color: var(--border-strong); }
 
 /* Filter / sort pills — also light grey, not white */
 [data-theme="light"] .filter-pill { background: var(--bg-card); color: var(--text-muted); border: 1px solid var(--border); }
@@ -394,19 +394,42 @@ body {
 .stat-value.success { color: var(--success); }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
-/* Buttons */
+/* Buttons. One box whatever the element (a <label> or an <a> with the class
+   came out taller than a <button>), a border on every variant (a primary was
+   2px shorter than a secondary beside it), and sizes, shapes and colours as
+   classes, never inline: .btn-sm / .btn-xs, .btn-pill, .btn-ghost,
+   .btn-danger (see /design). */
 .btn {
-  padding: 8px 16px;
-  border: none;
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 7px 15px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  font: inherit;
   font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: middle;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
 }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+.btn-xs { padding: 3px 9px; font-size: 11px; }
+.btn-pill { border-radius: 16px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .btn-primary { background: var(--accent-btn); color: var(--text-primary); }
-.btn-primary:hover { background: var(--accent); }
-.btn-secondary { background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border); }
-.btn-secondary:hover { background: var(--border); color: var(--text-secondary); }
+.btn-primary:hover:not(:disabled) { background: var(--accent); }
+.btn-secondary { background: var(--bg-tertiary); color: var(--text-muted); border-color: var(--border); }
+.btn-secondary:hover:not(:disabled) { background: var(--border); color: var(--text-secondary); }
+/* Quiet: a secondary action beside the content (a file's panel, a log). */
+.btn-ghost { background: transparent; color: var(--text-muted); border-color: var(--border); }
+.btn-ghost:hover:not(:disabled) { color: var(--text-secondary); border-color: var(--border-strong, var(--text-dim)); }
+/* Destructive: red text and border on a secondary or a quiet one, red on a primary. */
+.btn-secondary.btn-danger, .btn-ghost.btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.btn-secondary.btn-danger:hover:not(:disabled), .btn-ghost.btn-danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+.btn-primary.btn-danger, .btn-primary.btn-danger:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* Button with icon */
 .btn svg { vertical-align: -2px; margin-right: 4px; }

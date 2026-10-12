@@ -268,7 +268,7 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
               </div>
             );
           })}
-          <button onClick={addRow} className="btn btn-secondary" style={{ alignSelf: "flex-start", fontSize: 11, padding: "4px 10px" }}>{t("scannerModals:search.addCondition")}</button>
+          <button onClick={addRow} className="btn btn-xs btn-secondary" style={{ alignSelf: "flex-start" }}>{t("scannerModals:search.addCondition")}</button>
         </div>
 
         {/* Footer */}
@@ -279,9 +279,9 @@ export default function AdvancedSearchModal({ initial, onApply, onClose }: Props
             )}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={runPreview} className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>{t("scannerModals:search.preview")}</button>
-            <button onClick={onClose} className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}>{t("common:actions.cancel")}</button>
-            <button onClick={applyAndClose} className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }}>{t("scannerModals:search.apply")}</button>
+            <button onClick={runPreview} className="btn btn-sm btn-secondary">{t("scannerModals:search.preview")}</button>
+            <button onClick={onClose} className="btn btn-sm btn-secondary">{t("common:actions.cancel")}</button>
+            <button onClick={applyAndClose} className="btn btn-sm btn-primary">{t("scannerModals:search.apply")}</button>
           </div>
         </div>
       </div>

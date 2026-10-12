@@ -29,7 +29,7 @@ export default function BeforeAfter({ jobId }: { jobId: number }) {
 
   if (frames === null) {
     return (
-      <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 10px", marginBottom: 12 }} disabled={loading}
+      <button className="btn btn-xs btn-secondary" style={{ marginBottom: 12 }} disabled={loading}
         onClick={async (e) => {
           e.stopPropagation();
           setLoading(true);
@@ -68,8 +68,7 @@ export default function BeforeAfter({ jobId }: { jobId: number }) {
       {frames.length > 1 && (
         <div role="group" aria-label={t("item.frames.moments")} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {frames.map((f, i) => (
-            <button key={i} className={i === index ? "btn btn-primary" : "btn btn-secondary"} aria-pressed={i === index}
-              style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setIndex(i)}>
+            <button key={i} className={i === index ? "btn btn-xs btn-primary" : "btn btn-xs btn-secondary"} aria-pressed={i === index} onClick={() => setIndex(i)}>
               {clock(f.t)}
             </button>
           ))}

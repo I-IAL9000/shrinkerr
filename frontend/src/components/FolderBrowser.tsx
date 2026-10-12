@@ -87,7 +87,7 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
               }}
               aria-label={t("common:labels.folderPath")} placeholder="/path/to/media"
             />
-            <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "8px 12px" }}>{t("dialogs:folderBrowser.go")}</button>
+            <button type="submit" className="btn btn-sm btn-secondary">{t("dialogs:folderBrowser.go")}</button>
           </div>
         </form>
 
@@ -163,8 +163,8 @@ export default function FolderBrowser({ isOpen, initialPath = "/media", onSelect
             {t("dialogs:folderBrowser.selected")} <span style={{ color: "var(--accent-text)" }}>{currentPath}</span>
           </span>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={onCancel} style={{ padding: "8px 16px" }}>{t("common:actions.cancel")}</button>
-            <button className="btn btn-primary" onClick={() => onSelect(currentPath)} style={{ padding: "8px 16px" }}>{t("dialogs:folderBrowser.select")}</button>
+            <button className="btn btn-secondary" onClick={onCancel}>{t("common:actions.cancel")}</button>
+            <button className="btn btn-primary" onClick={() => onSelect(currentPath)}>{t("dialogs:folderBrowser.select")}</button>
           </div>
         </div>
       </div>

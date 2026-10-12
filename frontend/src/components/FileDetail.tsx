@@ -402,19 +402,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
                 onClick={handleDetect}
                 disabled={detecting}
                 title={t("fileDetail:actions.detectTitle")}
-                style={{
-                  background: "transparent",
-                  color: "var(--text-muted)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  cursor: detecting ? "wait" : "pointer",
-                  opacity: detecting ? 0.6 : 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
+                className="btn btn-xs btn-ghost"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -429,18 +417,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
                 title={canRemuxApply
                   ? t("fileDetail:actions.remuxApplyTitle")
                   : t("fileDetail:actions.convertApplyTitle")}
-                style={{
-                  background: "transparent",
-                  color: "var(--accent-text)",
-                  border: "1px solid var(--accent)",
-                  borderRadius: 4,
-                  padding: "4px 10px",
-                  fontSize: 11,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
+                className="btn btn-xs btn-primary"
               >
                 {canRemuxApply ? t("fileDetail:actions.remuxApply") : t("fileDetail:actions.convertApply")}
               </button>
@@ -452,20 +429,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
               title={isCorrupt
                 ? t("fileDetail:actions.researchTitleCorrupt")
                 : t("fileDetail:actions.researchTitle")}
-              style={{
-                background: isCorrupt ? "var(--danger)" : "transparent",
-                color: isCorrupt ? "#fff" : "var(--text-muted)",
-                border: `1px solid ${isCorrupt ? "var(--danger)" : "var(--border)"}`,
-                borderRadius: 4,
-                padding: "4px 10px",
-                fontSize: 11,
-                fontWeight: isCorrupt ? 600 : 400,
-                cursor: researching ? "wait" : "pointer",
-                opacity: researching ? 0.6 : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
+              className={isCorrupt ? "btn btn-xs btn-primary btn-danger" : "btn btn-xs btn-ghost"}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
@@ -482,19 +446,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
               onClick={handleUpgradeSearch}
               disabled={researching || upgrading}
               title={t("fileDetail:actions.searchUpgradeTitle")}
-              style={{
-                background: "transparent",
-                color: "var(--text-muted)",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                padding: "4px 10px",
-                fontSize: 11,
-                cursor: upgrading ? "wait" : "pointer",
-                opacity: upgrading ? 0.6 : 1,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
+              className="btn btn-xs btn-ghost"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>

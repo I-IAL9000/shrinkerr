@@ -209,15 +209,7 @@ export default function LogsPage() {
         {/* Clear button */}
         <button
           onClick={clearView}
-          style={{
-            background: "transparent",
-            color: "var(--text-muted)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-sm)",
-            padding: "4px 10px",
-            fontSize: 12,
-            cursor: "pointer",
-          }}
+          className="btn btn-sm btn-ghost"
         >
           {t("common:actions.clear")}
         </button>

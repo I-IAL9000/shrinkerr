@@ -224,7 +224,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       {job.status === "failed" && (
         <>
           {onRetry && (
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "2px 8px" }}
+            <button className="btn btn-xs btn-secondary"
               onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>{t("common:actions.retry")}</button>
           )}
           <button aria-label={t("common:actions.remove")} onClick={(e) => { e.stopPropagation(); onRemove(job.id); }}

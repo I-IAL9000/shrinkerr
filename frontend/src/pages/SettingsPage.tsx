@@ -215,10 +215,9 @@ function VmafRemeasureRow() {
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button
-            className="btn btn-secondary"
+            className="btn btn-sm btn-secondary"
             disabled={status.running || !showCandidates}
             onClick={start}
-            style={{ fontSize: 12 }}
           >
             {status.running ? t("settingsMedia:video.vmafRemeasure.running") : t("settingsMedia:video.vmafRemeasure.button", { count: status.candidates })}
           </button>
@@ -247,6 +246,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
   const { t, i18n } = useTranslation(["settings", "common"]);
   const [shortcutsOn, setShortcutsOn] = useState(shortcutsEnabled);
   const pageRef = useRef<HTMLDivElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   // Paint slider fills inside this page only. See useRangeFill.ts for why
   // this replaced the old document-body MutationObserver.
   useRangeFill(pageRef);
@@ -724,27 +724,29 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <h2 style={{ color: "white", fontSize: 20 }}>{t("settingsMedia:header.title")}</h2>
         <div style={{ display: "flex", gap: 8 }}>
-          <a href="/api/settings/export" download style={{ textDecoration: "none" }}>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("settingsMedia:header.export")}</button>
+          {/* A link and a button, not a button in a link and a label around a
+              hidden input: the same box, and both reachable with the keyboard. */}
+          <a className="btn btn-xs btn-secondary" href="/api/settings/export" download>
+            {t("settingsMedia:header.export")}
           </a>
-          <label className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", cursor: "pointer" }}>
+          <button type="button" className="btn btn-xs btn-secondary" onClick={() => importInput.current?.click()}>
             {t("settingsMedia:header.import")}
-            <input type="file" accept=".json" style={{ display: "none" }}
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                try {
-                  const text = await file.text();
-                  const data = JSON.parse(text);
-                  const res = await importSettings(data);
-                  toast(t("settingsMedia:header.importSuccess", { settings: res.settings_count, dirs: res.dirs_count, rules: res.rules_count }), "success");
-                  window.location.reload();
-                } catch (err: any) {
-                  toast(t("settingsMedia:header.importFailed", { error: err.message }), "error");
-                }
-              }}
-            />
-          </label>
+          </button>
+          <input ref={importInput} type="file" accept=".json" hidden
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                const res = await importSettings(data);
+                toast(t("settingsMedia:header.importSuccess", { settings: res.settings_count, dirs: res.dirs_count, rules: res.rules_count }), "success");
+                window.location.reload();
+              } catch (err: any) {
+                toast(t("settingsMedia:header.importFailed", { error: err.message }), "error");
+              }
+            }}
+          />
         </div>
       </div>
 
@@ -810,8 +812,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               {dirs.length === 0 && <div style={{ color: "var(--text-muted)" }}>{t("settingsMedia:directories.empty")}</div>}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <button className="btn btn-secondary" onClick={() => setBrowserOpen(true)}
-                style={{ padding: "8px 12px", fontSize: 12, whiteSpace: "nowrap", height: 36 }}>
+              <button className="btn btn-sm btn-secondary" onClick={() => setBrowserOpen(true)} style={{ whiteSpace: "nowrap", height: 36 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: -2, marginRight: 4 }}>
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
@@ -879,11 +880,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           finally { setEncoderCapsRefreshing(false); }
                         }}
                         title={t("settingsMedia:video.redetectTitle")}
-                        style={{
-                          background: "none", border: "1px solid var(--border)",
-                          color: "var(--text-muted)", cursor: "pointer",
-                          borderRadius: 4, padding: "2px 8px", fontSize: 11,
-                        }}
+                        className="btn btn-xs btn-ghost"
                       >
                         {encoderCapsRefreshing ? t("settingsMedia:video.detecting") : t("settingsMedia:video.redetect")}
                       </button>
@@ -1523,7 +1520,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                       value={row[tier] ?? ""}
                                       onChange={e => setCell(ctype, tier, e.target.value === "" ? "" : parseInt(e.target.value))} />
                                   ))}
-                                  <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 8px", whiteSpace: "nowrap" }}
+                                  <button className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
                                     title={t("settingsMedia:video.smart.ruleForTitle")} onClick={() => ruleFor(ctype)}>
                                     {t("settingsMedia:video.smart.ruleFor")}
                                   </button>
@@ -1533,7 +1530,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
                             <span style={{ fontSize: 11, color: "var(--text-muted)", flex: "1 1 240px" }}>{t("settingsMedia:video.smart.cqTableHelp")}</span>
-                            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 10px" }}
+                            <button className="btn btn-xs btn-secondary"
                               onClick={() => setEncoding({ ...encoding, content_type_cq: encoding.content_type_cq_recommended })}>
                               {t("settingsMedia:video.smart.resetRecommended")}
                             </button>
@@ -2642,8 +2639,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           setTmdbTest({ status: "error", error: e.message || t("settingsIntegrations:tmdb.requestFailed") });
                         }
                       }}
-                      disabled={tmdbTest.status === "loading"}
-                      style={{ minWidth: 60 }}
+                      disabled={tmdbTest.status === "loading"} style={{ minWidth: 60 }}
                     >
                       {tmdbTest.status === "loading" ? "..." : t("settingsIntegrations:tmdb.test")}
                     </button>
@@ -2702,8 +2698,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       </div>
                     </div>
                     <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: 12, padding: "6px 12px" }}
+                      className="btn btn-sm btn-secondary"
                       onClick={handlePlexDisconnect}
                     >
                       {t("settingsIntegrations:plex.disconnect")}
@@ -2761,8 +2756,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     </div>
                     <div style={{ flex: 1 }} />
                     <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      className="btn btn-sm btn-secondary"
                       onClick={() => { setPlexAuthState("idle"); setPlexPickerError(""); }}
                     >
                       {t("common:actions.cancel")}
@@ -2834,16 +2828,14 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     )}
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                       <button
-                        className="btn btn-primary"
-                        style={{ fontSize: 12, padding: "6px 14px" }}
+                        className="btn btn-sm btn-primary"
                         disabled={!plexPickedUri}
                         onClick={handlePlexSaveConnection}
                       >
                         {t("settingsIntegrations:plex.useServer")}
                       </button>
                       <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: 12, padding: "6px 14px" }}
+                        className="btn btn-sm btn-secondary"
                         onClick={() => { setPlexAuthState("idle"); setPlexPendingToken(""); setPlexServers([]); setPlexPickedUri(""); setPlexPickerError(""); }}
                       >
                         {t("common:actions.cancel")}
@@ -2909,8 +2901,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         </button>
                       </div>
                       <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: 12, padding: "6px 12px", whiteSpace: "nowrap" }}
+                        className="btn btn-sm btn-secondary" style={{ whiteSpace: "nowrap" }}
                         onClick={async () => {
                           setPlexTest({ status: "loading" });
                           try {
@@ -3025,7 +3016,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     onClick={async () => {
                       try {
                         const r = await testApiKey("jellyfin");
@@ -3091,7 +3082,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 12 }}>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     onClick={async () => {
                       try {
                         const r = await testApiKey("emby");
@@ -3178,7 +3169,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     onClick={async () => {
                       try {
                         if (!(await saveChanges(true))) return;
@@ -3188,7 +3179,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Sonarr", error: err.message }), "error"); }
                     }}
                   >{t("settingsIntegrations:arr.testSonarr")}</button>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     onClick={async () => {
                       try {
                         if (!(await saveChanges(true))) return;
@@ -3198,7 +3189,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       } catch (err: any) { toast(t("settingsIntegrations:arr.testFailed", { name: "Radarr", error: err.message }), "error"); }
                     }}
                   >{t("settingsIntegrations:arr.testRadarr")}</button>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     title={t("settingsIntegrations:arr.syncStatusHelp")}
                     onClick={async () => {
                       try {
@@ -3225,7 +3216,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       placeholder={t("settingsIntegrations:bazarr.apiKey")}
                       value={encoding?.bazarr_api_key || ""}
                       onChange={e => setEncoding({ ...encoding, bazarr_api_key: e.target.value })} />
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                    <button className="btn btn-sm btn-secondary"
                       onClick={async () => {
                         try {
                           if (!(await saveChanges(true))) return;
@@ -3246,7 +3237,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       placeholder="http://maintainerr:6246"
                       value={encoding?.maintainerr_url || ""}
                       onChange={e => setEncoding({ ...encoding, maintainerr_url: e.target.value })} />
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                    <button className="btn btn-sm btn-secondary"
                       onClick={async () => {
                         try {
                           if (!(await saveChanges(true))) return;
@@ -3308,7 +3299,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         onChange={e => setEncoding({ ...encoding, mqtt_base_topic: e.target.value })} />
                     </div>
                   </details>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px", marginTop: 8 }}
+                  <button className="btn btn-sm btn-secondary" style={{ marginTop: 8 }}
                     onClick={async () => {
                       try {
                         if (!(await saveChanges(true))) return;
@@ -3328,7 +3319,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <li>
                       {t("settingsIntegrations:arr.connect.step2")}{" "}
                       <code style={{ background: "var(--bg-card)", padding: "1px 6px", borderRadius: 3 }}>{`${window.location.origin}/api/webhooks/arr`}</code>{" "}
-                      <button className="btn btn-secondary" style={{ fontSize: 11, padding: "1px 8px" }}
+                      <button className="btn btn-xs btn-secondary"
                         onClick={async () => { await copyText(`${window.location.origin}/api/webhooks/arr`); toast(t("settingsIntegrations:arr.connect.copied"), "success"); }}>
                         {t("settingsIntegrations:arr.connect.copy")}
                       </button>
@@ -3430,7 +3421,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>&times;</button>
                       </div>
                     ))}
-                    <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 12px", alignSelf: "flex-start" }}
+                    <button className="btn btn-xs btn-secondary" style={{ alignSelf: "flex-start" }}
                       onClick={() => setEncoding({ ...encoding, nzbget_path_mappings: [...(encoding?.nzbget_path_mappings || []), { from: "", to: "" }] })}>
                       {t("settingsIntegrations:downloaders.addMapping")}
                     </button>
@@ -3472,12 +3463,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 {/* Save + Download */}
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16 }}>
                   <a href="/api/settings/nzbget-script" download="Shrinkerr.py" style={{ textDecoration: "none" }}>
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
+                    <button className="btn btn-sm btn-secondary">
                       {t("settingsIntegrations:downloaders.downloadNzbget")}
                     </button>
                   </a>
                   <a href="/api/settings/sabnzbd-script" download="shrinkerr.py" style={{ textDecoration: "none" }}>
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}>
+                    <button className="btn btn-sm btn-secondary">
                       {t("settingsIntegrations:downloaders.downloadSabnzbd")}
                     </button>
                   </a>
@@ -3673,7 +3664,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       onChange={e => setEncoding({ ...encoding, filename_suffix: e.target.value })}
                       aria-label={t("settingsSystem:automation.filename.suffixPlaceholder")} placeholder={t("settingsSystem:automation.filename.suffixPlaceholder")} />
                     {!encoding?.filename_suffix && (
-                      <button className="btn btn-secondary" style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}
+                      <button className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
                         onClick={() => setEncoding({ ...encoding, filename_suffix: "-Shrinkerr" })}>
                         {t("settingsSystem:automation.filename.useSuffix", { suffix: "-Shrinkerr" })}
                       </button>
@@ -3749,8 +3740,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     onChange={e => setEncoding({ ...encoding, backup_folder: e.target.value })}
                     aria-label={t("settingsSystem:automation.originals.backupFolderPlaceholder")} placeholder={t("settingsSystem:automation.originals.backupFolderPlaceholder")} />
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap", flexShrink: 0 }}
+                    className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap", flexShrink: 0 }}
                     onClick={() => setBackupBrowserOpen(true)}
                   >{t("settingsSystem:automation.originals.browse")}</button>
                 </div>
@@ -3769,8 +3759,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 </>)}
                 <div style={{ paddingLeft: 26, marginBottom: 16 }}>
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, color: "var(--danger)" }}
+                    className="btn btn-xs btn-danger btn-secondary"
                     onClick={async () => {
                       const data = await getBackups();
                       if (data.total_count === 0) {
@@ -3832,8 +3821,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 </div>
                 <div style={{ marginBottom: 14, paddingLeft: 0 }}>
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: 11, padding: "4px 10px", color: "var(--danger)", borderColor: "rgba(233,69,96,0.4)" }}
+                    className="btn btn-xs btn-danger btn-secondary"
                     onClick={async () => {
                       if (!confirm(t("settingsSystem:automation.health.clearPendingConfirm"))) return;
                       const res = await clearPendingHealthChecks();
@@ -3985,7 +3973,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
                     <RuleSharing ruleNames={rules.map(r => r.name)} onChanged={loadRules} />
                     {encoding?.plex_configured && (
-                      <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+                      <button className="btn btn-xs btn-secondary"
                         disabled={ruleSyncing}
                         onClick={async () => {
                           setRuleSyncing(true);
@@ -4006,7 +3994,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                         {ruleSyncing ? t("settingsIntegrations:rules.syncing") : t("settingsIntegrations:rules.syncFromPlex")}
                       </button>
                     )}
-                    <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 10px" }}
+                    <button className="btn btn-xs btn-primary"
                       onClick={() => {
                         setShowAddRule(true);
                         setEditingRuleId(null);
@@ -4208,7 +4196,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                           <option value="any">{t("settingsIntegrations:rules.form.matchAny")}</option>
                           <option value="all">{t("settingsIntegrations:rules.form.matchAll")}</option>
                         </select>
-                        <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 8px" }}
+                        <button className="btn btn-xs btn-secondary"
                           onClick={() => setRuleForm({...ruleForm, conditions: [...ruleForm.conditions, { type: "directory", operator: "is", value: "" }]})}>
                           +
                         </button>
@@ -4662,7 +4650,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       )}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn btn-primary" style={{ fontSize: 12, padding: "4px 12px" }}
+                      <button className="btn btn-sm btn-primary"
                         onClick={async () => {
                           // Validation with feedback
                           if (!ruleForm.name.trim()) {
@@ -4747,7 +4735,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                       >
                         {editingRuleId ? t("settingsIntegrations:rules.form.update") : t("settingsIntegrations:rules.form.add")}
                       </button>
-                      <button className="btn btn-secondary" style={{ fontSize: 12, padding: "4px 12px" }}
+                      <button className="btn btn-sm btn-secondary"
                         onClick={() => { setShowAddRule(false); setEditingRuleId(null); }}
                       >{t("common:actions.cancel")}</button>
                     </div>
@@ -4945,7 +4933,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 </div>
 
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+                  <button className="btn btn-sm btn-secondary"
                     onClick={async () => {
                       if (!(await saveChanges(true))) return;
                       const res = await testNotifications();
@@ -5127,7 +5115,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
               <div style={sectionStyle}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <h3 style={{ color: "white", margin: 0 }}>{t("settingsSystem:backups.title")}</h3>
-                  <button className="btn btn-primary" style={{ fontSize: 11, padding: "4px 12px" }}
+                  <button className="btn btn-xs btn-primary"
                     disabled={backupCreating}
                     onClick={async () => {
                       setBackupCreating(true);
@@ -5344,8 +5332,8 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: 12, padding: "7px 14px", display: versionInfo?.check_enabled === false ? "none" : undefined }}
+                    className="btn btn-sm btn-secondary"
+                    style={{ display: versionInfo?.check_enabled === false ? "none" : undefined }}
                     disabled={updateCheckLoading}
                     onClick={async () => {
                       setUpdateCheckLoading(true);
@@ -5370,8 +5358,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                   </button>
                   {versionInfo?.update_available && (
                     <button
-                      className="btn btn-primary"
-                      style={{ fontSize: 12, padding: "7px 14px" }}
+                      className="btn btn-sm btn-primary"
                       onClick={() => versionInfo.compare_url
                         ? window.open(versionInfo.compare_url, "_blank", "noopener,noreferrer")
                         : setChangelogModalOpen(true)}

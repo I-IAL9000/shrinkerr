@@ -100,10 +100,10 @@ export default function PoliciesSection({ views, inputStyle, labelStyle }: {
                   {p.last_run_at ? ` · ${t("settingsSystem:policies.lastRun", { when: fmtDateTime(p.last_run_at) })} ${lastRun(p.last_result)}` : ""}
                 </div>
               </div>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }} disabled={busy} onClick={() => run(p)}>
+              <button className="btn btn-xs btn-secondary" disabled={busy} onClick={() => run(p)}>
                 {t("settingsSystem:policies.runNow")}
               </button>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }} disabled={busy}
+              <button className="btn btn-xs btn-secondary" disabled={busy}
                 onClick={() => { setEditing(p.id); setForm({ name: p.name, view_id: p.view_id, action: p.action, every: p.every,
                   weekday: p.weekday, at: p.at, max_files: p.max_files, max_gb: p.max_gb, start_queue: p.start_queue, enabled: p.enabled }); }}>
                 {t("settingsSystem:policies.edit")}
@@ -186,7 +186,7 @@ export default function PoliciesSection({ views, inputStyle, labelStyle }: {
           {views.length === 0 && <div style={{ ...small, flexBasis: "100%" }}>{t("settingsSystem:policies.noViews")}</div>}
         </div>
       ) : (
-        <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => { setEditing(null); setForm({ ...BLANK }); }}>
+        <button className="btn btn-sm btn-secondary" onClick={() => { setEditing(null); setForm({ ...BLANK }); }}>
           + {t("settingsSystem:policies.add")}
         </button>
       )}

@@ -6,8 +6,6 @@ import { serverText } from "../i18n/server";
 import { useDialog } from "../useDialog";
 import { useToast } from "../useToast";
 
-const BUTTON = { fontSize: 11, padding: "4px 10px" } as const;
-
 /**
  * Settings → Automation → Rules (v0.10.0): export the rules as a YAML file,
  * import one (rules with an existing rule's name replace it), and add
@@ -37,16 +35,16 @@ export default function RuleSharing({ ruleNames, onChanged }: { ruleNames: strin
 
   return (
     <>
-      <button className="btn btn-secondary" style={BUTTON} onClick={() => {
+      <button className="btn btn-xs btn-secondary" onClick={() => {
         getRuleLibrary().then(setLibrary).catch((err) => toast(err.message, "error"));
       }}>{t("settingsIntegrations:rules.sharing.library")}</button>
-      <button className="btn btn-secondary" style={BUTTON} onClick={() => fileRef.current?.click()}>
+      <button className="btn btn-xs btn-secondary" onClick={() => fileRef.current?.click()}>
         {t("settingsIntegrations:rules.sharing.import")}
       </button>
       <input ref={fileRef} type="file" accept=".yaml,.yml,application/yaml,text/yaml" hidden
         aria-label={t("settingsIntegrations:rules.sharing.import")}
         onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} />
-      <button className="btn btn-secondary" style={BUTTON} disabled={!ruleNames.length}
+      <button className="btn btn-xs btn-secondary" disabled={!ruleNames.length}
         onClick={() => downloadRulesFile().catch((err) => toast(err.message, "error"))}>
         {t("settingsIntegrations:rules.sharing.export")}
       </button>
@@ -83,7 +81,7 @@ export default function RuleSharing({ ruleNames, onChanged }: { ruleNames: strin
                       {t(`settingsIntegrations:rules.library.presets.${p.id}.description`)}
                     </div>
                   </div>
-                  <button className={added ? "btn btn-secondary" : "btn btn-primary"} style={BUTTON}
+                  <button className={added ? "btn btn-xs btn-secondary" : "btn btn-xs btn-primary"}
                     onClick={async () => {
                       try {
                         const res = await addLibraryRule(p.id, name);
@@ -117,7 +115,7 @@ function Dialog({ label, onClose, children }: { label: string; onClose: () => vo
         <h3 style={{ margin: "0 0 10px", fontSize: 16, color: "var(--text-primary)" }}>{label}</h3>
         {children}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-          <button className="btn btn-secondary" style={{ fontSize: 13, padding: "6px 16px" }} onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose}>
             {t("common:actions.close")}
           </button>
         </div>

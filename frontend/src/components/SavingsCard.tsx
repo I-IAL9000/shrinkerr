@@ -106,7 +106,7 @@ export default function SavingsCard({ saved, files, before, onClose }: {
           {canCopy && <button className="btn btn-secondary" onClick={copy}>{t("dashboard:share.copy")}</button>}
           {canShare && <button className="btn btn-secondary" onClick={share}>{t("dashboard:share.share")}</button>}
           <a className="btn btn-primary" href={url || undefined} download="shrinkerr-savings.png"
-            aria-disabled={!url} style={{ textDecoration: "none" }}>{t("dashboard:share.download")}</a>
+            aria-disabled={!url}>{t("dashboard:share.download")}</a>
         </div>
       </div>
     </div>

@@ -73,28 +73,37 @@ function ButtonShowcase() {
         <button className="btn btn-secondary" disabled>Disabled</button>
       </Row>
 
+      <SubHead>Sizes (classes, never inline font size or padding)</SubHead>
+      <Row>
+        <button className="btn btn-secondary">Default</button>
+        <button className="btn btn-sm btn-secondary">Small (.btn-sm)</button>
+        <button className="btn btn-xs btn-secondary">Extra small (.btn-xs)</button>
+        <a className="btn btn-xs btn-secondary" href="#buttons">A link</a>
+        <label className="btn btn-xs btn-secondary">A label</label>
+      </Row>
+
       <SubHead>Pill buttons (toolbars)</SubHead>
       <Row>
-        <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <button className="btn btn-sm btn-pill btn-secondary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add to queue
         </button>
-        <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <button className="btn btn-sm btn-pill btn-secondary">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           Rescan
         </button>
-        <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, display: "inline-flex", alignItems: "center", gap: 4, color: "#e94560", borderColor: "#e94560" }}>
+        <button className="btn btn-sm btn-pill btn-danger btn-secondary">
           Destructive pill
         </button>
       </Row>
 
-      <SubHead>Small destructive (re-download corrupt)</SubHead>
+      <SubHead>Small destructive, and quiet (.btn-ghost) beside content</SubHead>
       <Row>
-        <button style={{ background: "#e94560", color: "#fff", border: "1px solid #e94560", borderRadius: 4, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <button className="btn btn-xs btn-primary btn-danger">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
           Re-download (corrupt file)
         </button>
-        <button style={{ background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 4, padding: "4px 10px", fontSize: 11, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <button className="btn btn-xs btn-ghost">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
           Search for upgrade
         </button>

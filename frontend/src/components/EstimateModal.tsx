@@ -444,8 +444,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                         {cqSlider ?? cq ?? (estimate?.cq || 20)}
                       </span>
                       {cq !== null && (
-                        <button onClick={() => setCq(null)}
-                          style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-muted)", padding: "1px 6px", borderRadius: 3, fontSize: 10, cursor: "pointer" }}>
+                        <button onClick={() => setCq(null)} className="btn btn-xs btn-ghost">
                           {t("scannerModals:overrides.reset")}
                         </button>
                       )}
@@ -555,8 +554,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginTop: 4 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <button
-                        className="btn btn-secondary"
-                        style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, whiteSpace: "nowrap" }}
+                        className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
                         disabled={testRunning || filePaths.length === 0}
                         onClick={async () => {
                           setTestRunning(true);
@@ -644,16 +642,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
 
         {/* Actions */}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }} onClick={onCancel}>
+          <button className="btn btn-sm btn-secondary" onClick={onCancel}>
             {t("common:actions.cancel")}
           </button>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 16px" }}
+          <button className="btn btn-sm btn-secondary"
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
             onClick={() => onConfirm(priority, overrideRules, buildOverrides(), true)}
           >
             {t("scannerModals:estimate.addAndStart")}
           </button>
-          <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 16px" }}
+          <button className="btn btn-sm btn-primary"
             disabled={loading || !estimate || (estimate.total_files === 0 && !overrideRules)}
             onClick={() => onConfirm(priority, overrideRules, buildOverrides())}
           >

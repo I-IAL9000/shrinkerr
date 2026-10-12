@@ -89,14 +89,13 @@ export default function ActivityPage() {
               border: "1px solid var(--border)", padding: "6px 10px", borderRadius: 4, fontSize: 12,
             }}
           />
-          <button type="submit" className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px" }}>
+          <button type="submit" className="btn btn-sm btn-secondary">
             {t("activity:search")}
           </button>
           {appliedSearch && (
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ fontSize: 12, padding: "6px 12px" }}
+              className="btn btn-sm btn-secondary"
               onClick={() => { setSearch(""); setAppliedSearch(""); }}
             >{t("common:actions.clear")}</button>
           )}
@@ -117,10 +116,9 @@ export default function ActivityPage() {
       {total > PAGE_SIZE && (
         <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 16 }}>
           <button
-            className="btn btn-secondary"
+            className="btn btn-sm btn-secondary"
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            style={{ fontSize: 12, padding: "6px 12px", opacity: offset === 0 ? 0.5 : 1 }}
           >
             {t("activity:pagination.prev")}
           </button>
@@ -128,10 +126,9 @@ export default function ActivityPage() {
             {t("activity:pagination.pageOf", { page, totalPages })}
           </span>
           <button
-            className="btn btn-secondary"
+            className="btn btn-sm btn-secondary"
             disabled={offset + PAGE_SIZE >= total}
             onClick={() => setOffset(offset + PAGE_SIZE)}
-            style={{ fontSize: 12, padding: "6px 12px", opacity: offset + PAGE_SIZE >= total ? 0.5 : 1 }}
           >
             {t("activity:pagination.next")}
           </button>

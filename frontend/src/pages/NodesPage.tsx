@@ -206,8 +206,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
             {t("nodes:card.suspendedAfter", { count: node.consecutive_failures })}
           </span>
           <button
-            className="btn btn-secondary"
-            style={{ fontSize: 10, padding: "3px 10px", color: "var(--accent-text)", flexShrink: 0 }}
+            className="btn btn-xs btn-secondary" style={{ color: "var(--accent-text)", flexShrink: 0 }}
             onClick={async () => { await resetNode(node.id); onRefresh(); }}
           >{t("nodes:card.reset")}</button>
         </div>
@@ -266,8 +265,7 @@ function NodeCard({ node, onRefresh, onOpenSettings }: {
       {/* Actions */}
       {!isLocal && (
         <button
-          className="btn btn-secondary"
-          style={{ fontSize: 11, padding: "4px 10px", alignSelf: "flex-start", color: "var(--danger)" }}
+          className="btn btn-xs btn-danger btn-secondary" style={{ alignSelf: "flex-start" }}
           onClick={async () => {
             if (confirm(node.status === "working" ? t("nodes:card.removeConfirmWorking", { name: node.name }) : t("nodes:card.removeConfirm", { name: node.name }))) {
               await removeNode(node.id);

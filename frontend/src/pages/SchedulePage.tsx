@@ -165,8 +165,7 @@ export default function SchedulePage() {
               <span style={{ color: "var(--success)" }}>
                 {t("schedule:start.scheduled", { time: fmtDateTime(scheduledTime) })}
               </span>
-              <button className="btn btn-secondary" onClick={handleCancel}
-                style={{ marginLeft: 8, fontSize: 11, padding: "4px 8px" }}>{t("common:actions.cancel")}</button>
+              <button className="btn btn-xs btn-secondary" onClick={handleCancel} style={{ marginLeft: 8 }}>{t("common:actions.cancel")}</button>
             </div>
           )}
           <button className="btn btn-primary" onClick={handleSchedule}>{t("schedule:start.submit")}</button>
@@ -259,22 +258,22 @@ export default function SchedulePage() {
 
           {/* Quick presets */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+            <button className="btn btn-xs btn-secondary"
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array.from({ length: 24 }, (_, i) => i >= 22 || i < 8))}>
               {t("schedule:runHours.presetOvernight", { range: `${formatHour(22)}-${formatHour(8)}` })}
             </button>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+            <button className="btn btn-xs btn-secondary"
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array.from({ length: 24 }, (_, i) => i >= 0 && i < 8))}>
               {t("schedule:runHours.presetNight", { range: `${formatHour(0)}-${formatHour(8)}` })}
             </button>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+            <button className="btn btn-xs btn-secondary"
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array(24).fill(true))}>
               {t("schedule:runHours.presetAllDay")}
             </button>
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+            <button className="btn btn-xs btn-secondary"
               disabled={!runHoursEnabled}
               onClick={() => setActiveHours(Array(24).fill(false))}>
               {t("common:actions.clear")}

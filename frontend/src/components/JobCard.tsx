@@ -44,14 +44,10 @@ function JobCardImpl({ progress, jobIndex, fileSize, encoderLabel, jobType, audi
           </span>
           {onCancel && (
             <button
+              className="btn btn-xs btn-ghost btn-danger"
               onClick={async () => {
                 const ok = await confirm({ message: t("queue:card.cancelConfirm"), confirmLabel: t("queue:card.cancelConversion"), danger: true });
                 if (ok) onCancel();
-              }}
-              style={{
-                background: "none", border: "1px solid rgba(233,69,96,0.4)",
-                color: "var(--danger)", cursor: "pointer", borderRadius: 4,
-                padding: "2px 8px", fontSize: 11,
               }}
               title={t("queue:card.cancelTitle")}
             >

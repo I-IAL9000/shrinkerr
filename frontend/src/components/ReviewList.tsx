@@ -43,10 +43,10 @@ export default function ReviewList({ jobs, onChange }: { jobs: Job[]; onChange: 
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 12, color: "var(--text-muted)", flex: "1 1 280px" }}>{t("queue:review.intro")}</span>
-        <button className="btn btn-primary" disabled={busy} style={{ fontSize: 12, padding: "4px 12px" }} onClick={() => act(all, true)}>
+        <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => act(all, true)}>
           {t("queue:review.approveAll")}
         </button>
-        <button className="btn btn-secondary" disabled={busy} style={{ fontSize: 12, padding: "4px 12px" }} onClick={() => act(all, false)}>
+        <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => act(all, false)}>
           {t("queue:review.rejectAll")}
         </button>
       </div>
@@ -68,9 +68,9 @@ export default function ReviewList({ jobs, onChange }: { jobs: Job[]; onChange: 
                   {job.encoder && <> · {job.encoder}</>}
                 </div>
               </div>
-              <button className="btn btn-primary" disabled={busy} style={{ fontSize: 12, padding: "3px 10px" }}
+              <button className="btn btn-sm btn-primary" disabled={busy}
                 onClick={() => act([job.id], true)}>{t("queue:review.approve")}</button>
-              <button className="btn btn-secondary" disabled={busy} style={{ fontSize: 12, padding: "3px 10px" }}
+              <button className="btn btn-sm btn-secondary" disabled={busy}
                 onClick={() => act([job.id], false)}>{t("queue:review.reject")}</button>
             </li>
           );

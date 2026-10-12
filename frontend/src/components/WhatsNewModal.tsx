@@ -79,11 +79,11 @@ export default function WhatsNewModal() {
           padding: "12px 20px", borderTop: "1px solid var(--border)",
           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
         }}>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }}
+          <button className="btn btn-sm btn-secondary"
             onClick={() => { close(); setFullNotes(true); }}>
             {t("dialogs:whatsNew.fullNotes")}
           </button>
-          <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 18px" }} onClick={close}>
+          <button className="btn btn-sm btn-primary" onClick={close}>
             {t("dialogs:whatsNew.gotIt")}
           </button>
         </div>

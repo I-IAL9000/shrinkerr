@@ -772,18 +772,18 @@ export default function QueuePage() {
         </div>
         <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
           {tab === "pending" && (
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }} onClick={() => setPlannerOpen(true)}>
+            <button className="btn btn-xs btn-secondary" onClick={() => setPlannerOpen(true)}>
               {t("queue:planner.open")}
             </button>
           )}
           {tab === "pending" && tabJobs.length > 0 && (<>
-                <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+                <button className="btn btn-xs btn-secondary"
                   onClick={async () => { if (await confirm({ message: t("queue:confirm.clearPending", { count: pendingCount }), confirmLabel: t("common:actions.clearAll"), danger: true })) { clearPending().then(() => load()); } }}>
                   {t("common:actions.clearAll")}
                 </button>
           </>)}
           {tab === "completed" && tabJobs.length > 0 && (<>
-                <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+                <button className="btn btn-xs btn-secondary"
                   onClick={async () => {
                     // The history feeds lifetime space saved, Undo and the
                     // converted badges; one click used to wipe it (v0.10.0).
@@ -795,7 +795,7 @@ export default function QueuePage() {
                 </button>
           </>)}
           {tab === "failed" && tabJobs.length > 0 && (<>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+              <button className="btn btn-xs btn-secondary"
                 onClick={async () => {
                   let retried = 0;
                   let refused = 0;
@@ -810,7 +810,7 @@ export default function QueuePage() {
                 }}>
                 {t("queue:actions.retryAll")}
               </button>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px", color: "var(--danger)", borderColor: "var(--danger)" }}
+              <button className="btn btn-xs btn-danger btn-secondary"
                 onClick={async () => {
                   const paths = tabJobs.map(j => j.file_path).filter(Boolean);
                   if (!paths.length) { toast(t("queue:toasts.noFilePaths"), "error"); return; }
@@ -829,7 +829,7 @@ export default function QueuePage() {
                 }}>
                 {t("queue:actions.rerequestAll")}
               </button>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}
+              <button className="btn btn-xs btn-secondary"
                 onClick={async () => {
                   if (!await confirm({ message: t("queue:confirm.clearFailed", { count: tabJobs.length }), confirmLabel: t("common:actions.clearAll"), danger: true })) return;
                   for (const job of tabJobs) {

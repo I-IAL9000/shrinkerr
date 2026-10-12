@@ -113,8 +113,7 @@ export default function ViewsMenu({ filter, onApply }: { filter: string; onApply
               disabled={filter === "all"}
               style={{ flex: 1, minWidth: 0, padding: "5px 8px", fontSize: 12, background: "var(--bg-primary)",
                        color: "var(--text-secondary)", border: "1px solid var(--border)", borderRadius: 4 }} />
-            <button className="btn btn-secondary" onClick={save} disabled={filter === "all" || !name.trim()}
-              style={{ fontSize: 11, padding: "4px 10px", opacity: filter === "all" || !name.trim() ? 0.5 : 1 }}>
+            <button className="btn btn-xs btn-secondary" onClick={save} disabled={filter === "all" || !name.trim()}>
               {t("scanner:views.save")}
             </button>
           </div>

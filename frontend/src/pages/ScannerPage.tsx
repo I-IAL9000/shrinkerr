@@ -1386,8 +1386,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       </button>
       {viewMode === "poster" && (
         <button
-          className="btn btn-secondary"
-          style={{ padding: "5px 10px", borderRadius: 16, fontSize: 12, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
+          className="btn btn-sm btn-pill btn-secondary"
           disabled={posterPrefetching}
           onClick={async () => {
             await startPosterPrefetch();
@@ -1436,8 +1435,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
         </button>
         {scanning && (
           <button
-            className="btn btn-secondary"
-            style={{ height: 36, color: "var(--danger)", borderColor: "rgba(233,69,96,0.4)" }}
+            className="btn btn-danger btn-secondary" style={{ height: 36 }}
             onClick={() => {
               cancelScan().catch(() => {});
               setScanStarted(false);
@@ -1599,15 +1597,13 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {t("scanner:corruptBanner.text")}
               </span>
               <button
-                className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
+                className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
                 onClick={() => setReplaceCorruptOpen(true)}
               >
                 {t("scanner:corruptBanner.replace")}
               </button>
               <button
-                className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "4px 10px", whiteSpace: "nowrap" }}
+                className="btn btn-xs btn-secondary" style={{ whiteSpace: "nowrap" }}
                 onClick={handleResetCorruptFlags}
               >
                 {t("scanner:corruptBanner.clearAll")}
@@ -1624,7 +1620,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             borderRadius: 6, transition: "background 0.15s",
             position: "sticky" as const, top: 0, zIndex: 50,
           }}>
-            <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap" }} onClick={handleSelectAll}>
+            <button className="btn btn-sm btn-pill btn-secondary" onClick={handleSelectAll}>
               {selectAllActive || selectedPaths.size > 0 ? t("common:actions.deselectAll") : t("common:actions.selectAll")}
             </button>
             {/* v0.9.20: one detect button that follows the selection — becomes
@@ -1632,11 +1628,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 unknown" for the whole Unknown-language filter. */}
             {(selectedCount > 0 || (onlyUnknownLanguage && folders.length > 0)) && (
               <button
-                className="btn btn-secondary"
+                className="btn btn-sm btn-pill btn-secondary"
                 title={selectedCount > 0
                   ? t("scanner:selection.detectSelectedTitle")
                   : t("scanner:selection.detectAllTitle")}
-                style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                 onClick={selectedCount > 0 ? handleBulkDetectLanguages : handleDetectAllUnknown}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1652,24 +1647,23 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               return <>
                 <span style={{ fontSize: 11, color: "var(--accent-text)", fontWeight: 600 }}>{t("scanner:selection.selected", { count: selectedCount })}</span>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleAddToQueue}>
+                <button className="btn btn-sm btn-pill btn-primary" onClick={handleAddToQueue}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   {t("common:actions.addToQueue")}
                 </button>
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRescan}>
+                <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkRescan}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                   {t("common:actions.rescan")}
                 </button>
-                <button className="btn btn-secondary" title={t("scanner:selection.fixDirectPlayTitle")} style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleFixDirectPlay}>
+                <button className="btn btn-sm btn-pill btn-secondary" title={t("scanner:selection.fixDirectPlayTitle")} onClick={handleFixDirectPlay}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
                   {t("scanner:selection.fixDirectPlay")}
                 </button>
                 {/* v0.9.20: "Detect selected" is now the adaptive button above,
                     so the per-selection detect button here is removed. */}
                 <button
-                  className="btn btn-secondary"
+                  className="btn btn-sm btn-pill btn-secondary"
                   title={t("scanner:selection.renameTitle")}
-                  style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                   onClick={() => {
                     // Pass all selected paths (folder + file) — server expands folders
                     const paths = Array.from(selectedPaths);
@@ -1689,9 +1683,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {/* Health check dropdown: quick / thorough */}
                 <div ref={healthMenuRef} style={{ position: "relative", display: "inline-flex" }}>
                   <button
-                    className="btn btn-secondary"
+                    className="btn btn-sm btn-pill btn-secondary"
                     title={t("scanner:selection.healthCheckTitle")}
-                    style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                     onClick={() => setHealthMenuOpen(o => !o)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1748,9 +1741,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {/* *arr actions dropdown: upgrade / missing / replace */}
                 <div ref={arrMenuRef} style={{ position: "relative", display: "inline-flex" }}>
                   <button
-                    className="btn btn-secondary"
+                    className="btn btn-sm btn-pill btn-secondary"
                     title={t("scanner:arr.menuTitle")}
-                    style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }}
                     onClick={() => setArrMenuOpen(o => !o)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1817,30 +1809,30 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                   )}
                 </div>
                 {allSelectedIgnored ? (
-                  <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
+                  <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkUnignore}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     {t("common:actions.unignore")}
                   </button>
                 ) : (
                   <>
-                    <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkIgnore}>
+                    <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkIgnore}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
                       {t("common:actions.ignore")}
                     </button>
                     {someSelectedIgnored && (
-                      <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkUnignore}>
+                      <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkUnignore}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         {t("common:actions.unignore")}
                       </button>
                     )}
                   </>
                 )}
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkRemove}>
+                <button className="btn btn-sm btn-pill btn-secondary" onClick={handleBulkRemove}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   {t("common:actions.remove")}
                 </button>
                 <span style={{ width: 1, height: 14, background: "var(--border)" }} />
-                <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 12px", borderRadius: 16, whiteSpace: "nowrap", color: "var(--danger)", display: "inline-flex", alignItems: "center", gap: 4 }} onClick={handleBulkDelete}>
+                <button className="btn btn-sm btn-pill btn-danger btn-secondary" onClick={handleBulkDelete}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                   {t("scanner:selection.trashFiles")}
                 </button>
@@ -1869,8 +1861,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 {detectProgress.current ? ` — ${detectProgress.current}` : ""}
                 {detectProgress.cancelled ? t("scanner:bulk.detectCancelling") : ""}
               </span>
-              <button className="btn btn-secondary"
-                style={{ fontSize: 12, padding: "4px 12px", borderRadius: 14, marginLeft: "auto", whiteSpace: "nowrap" }}
+              <button className="btn btn-sm btn-pill btn-secondary" style={{ marginLeft: "auto" }}
                 onClick={handleCancelDetect} disabled={detectProgress.cancelled}>
                 {t("common:actions.cancel")}
               </button>
@@ -1898,13 +1889,11 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 />
               </span>
               <button
-                className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "3px 10px", marginLeft: "auto" }}
+                className="btn btn-xs btn-secondary" style={{ marginLeft: "auto" }}
                 onClick={() => setAdvSearchOpen(true)}
               >{t("scanner:advBanner.edit")}</button>
               <button
-                className="btn btn-secondary"
-                style={{ fontSize: 11, padding: "3px 10px" }}
+                className="btn btn-xs btn-secondary"
                 onClick={() => setAdvToken(null)}
               >{t("common:actions.clear")}</button>
             </div>

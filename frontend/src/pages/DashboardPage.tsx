@@ -262,10 +262,10 @@ export default function DashboardPage() {
         {totalCompleted > 0 && (
           <div style={{ display: "flex", gap: 8 }}>
             <a href="/api/jobs/export/csv" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("dashboard:exportCsv")}</button>
+              <button className="btn btn-xs btn-secondary">{t("dashboard:exportCsv")}</button>
             </a>
             <a href="/api/jobs/export/json" download style={{ textDecoration: "none" }}>
-              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }}>{t("dashboard:exportJson")}</button>
+              <button className="btn btn-xs btn-secondary">{t("dashboard:exportJson")}</button>
             </a>
           </div>
         )}
@@ -296,7 +296,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>{t("dashboard:cards.smallerFiles", { pct: dash.bandwidth_pct })}</div>
           )}
           {(dash.total_saved || 0) > 0 && (
-            <button className="btn btn-secondary" style={{ fontSize: 11, padding: "3px 10px", marginTop: 8 }} onClick={() => setShareOpen(true)}>
+            <button className="btn btn-xs btn-secondary" style={{ marginTop: 8 }} onClick={() => setShareOpen(true)}>
               {t("dashboard:share.button")}
             </button>
           )}

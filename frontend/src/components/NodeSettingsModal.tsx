@@ -252,8 +252,7 @@ export default function NodeSettingsModal({ node, onClose, onSaved }: Props) {
               <button
                 onClick={rotateToken}
                 disabled={rotating}
-                className="btn btn-secondary"
-                style={{ fontSize: 12 }}
+                className="btn btn-sm btn-secondary"
               >
                 {rotating ? t("nodes:settings.token.rotating") : t("nodes:settings.token.rotate")}
               </button>

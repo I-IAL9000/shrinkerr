@@ -41,8 +41,7 @@ export default function RuleTester({ inputStyle }: { inputStyle: CSSProperties }
         <input value={path} onChange={e => setPath(e.target.value)} onKeyDown={e => { if (e.key === "Enter") run(); }}
           aria-label={t("settingsIntegrations:rules.tester.title")} placeholder={t("settingsIntegrations:rules.tester.placeholder")}
           style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
-        <button className="btn btn-secondary" onClick={run} disabled={!path.trim() || busy}
-          style={{ fontSize: 12, padding: "4px 12px", whiteSpace: "nowrap" }}>
+        <button className="btn btn-sm btn-secondary" onClick={run} disabled={!path.trim() || busy} style={{ whiteSpace: "nowrap" }}>
           {busy ? t("settingsIntegrations:rules.tester.testing") : t("settingsIntegrations:rules.tester.test")}
         </button>
       </div>

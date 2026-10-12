@@ -200,7 +200,7 @@ export default function ChangelogModal({
           >
             {t("dialogs:changelog.viewOnGithub")}
           </a>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={onClose}>
+          <button className="btn btn-sm btn-secondary" onClick={onClose}>
             {t("common:actions.close")}
           </button>
         </div>

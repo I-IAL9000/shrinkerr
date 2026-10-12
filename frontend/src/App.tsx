@@ -407,7 +407,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           }}
         />
         {error && <div style={{ color: "var(--danger)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
-        <button className="btn btn-primary" style={{ width: "100%", opacity: loading ? 0.6 : 1 }}
+        <button className="btn btn-primary" style={{ width: "100%" }}
           onClick={handleLogin} disabled={loading}>
           {loading ? t("nav:login.signingIn") : t("nav:login.signIn")}
         </button>

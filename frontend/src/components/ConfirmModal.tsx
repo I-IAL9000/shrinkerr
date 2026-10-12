@@ -98,18 +98,13 @@ function ConfirmDialog({ request, onAnswer }: { request: ConfirmOptions; onAnswe
             onClick={() => onAnswer(false)}
             className="btn btn-secondary"
             data-autofocus={request.danger ? true : undefined}
-            style={{ fontSize: 13, padding: "6px 16px" }}
           >
             {request.cancelLabel || t("common:actions.cancel")}
           </button>
           <button
             onClick={() => onAnswer(true)}
-            className="btn btn-primary"
+            className={`btn btn-primary${request.danger ? " btn-danger" : ""}`}
             data-autofocus={request.danger ? undefined : true}
-            style={{
-              fontSize: 13, padding: "6px 16px",
-              ...(request.danger ? { background: "var(--danger)", borderColor: "var(--danger)" } : {}),
-            }}
           >
             {request.confirmLabel || t("common:actions.confirm")}
           </button>
