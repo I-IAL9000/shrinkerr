@@ -54,8 +54,10 @@ async def test_the_counts_are_the_sql_engines(library):
     assert index.count_all() == await library_data.sql_counts(library)
     assert index.savings_of("needs_conversion") == await library_data.sql_savings(library)
     for text in library_data.EXPRESSIONS:
-        if "adv:" in text:
-            continue  # Advanced Search conditions aren't in the index: the service evaluates them (Task 7)
+        if ":" in text:
+            # Advanced Search conditions aren't in the index: the service evaluates them (Task 7).
+            # This index has no lists' values: test_filter_index_facets.py compares those.
+            continue
         assert _facets(index, text) == await library_data.sql_counts(library, text), text
 
 

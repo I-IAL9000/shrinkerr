@@ -20,7 +20,7 @@ _ADV_TITLE = encode_advanced([{"property": "year", "op": "gte", "value": 2000}])
 
 # Filter strings to compare the index with the SQL engine on: groups, OR
 # within a group, exclusions, Python filters, Advanced Search (SQL and
-# Python conditions, all and any, title metadata).
+# Python conditions, all and any, title metadata), the lists' values.
 EXPRESSIONS = [
     "x264", "x264,x265", "x264,res_1080p", "needs_conversion,!ignored", "!x264", "queued",
     "plex_watched,type_tv", "hdr_dv,hdr_hdr10,!res_sd", "audio_cleanup,sub_cleanup",
@@ -28,6 +28,8 @@ EXPRESSIONS = [
     "!ignored,!corrupt", "needs_conversion,queued", "corrupt,health_never", "bitrate_low,!bloated",
     "new,added_7d,res_1080p", _ADV_ALL, f"{_ADV_ALL},x265", f"{_ADV_ANY},!x264",
     _ADV_TITLE,
+    "alang:fre", "alang:eng,alang:fre", "acodec:truehd,!x264", "achan:8,res_1080p", "genre:drama,year:1990s",
+    "rating:8,type_tv", "network:HBO", "!slang:eng", "library:1", "folder:%2Fdemo%2FTV",
 ]
 
 
@@ -152,6 +154,17 @@ async def seed(db_path: str) -> None:
         await db.execute(
             "INSERT INTO encoding_rules (name, match_type, match_value, action, enabled, created_at) "
             "VALUES ('Skip The Glass House', 'directory', '/demo/TV/The Glass House', 'skip', 1, ?)", (stamp,))
+        # Title metadata for the Title lists (v0.10.0): a few titles' folders.
+        from backend.scan_filters import title_folder
+        titles = sorted({title_folder(path[i]) for i in ids[::9]})
+        folders = titles[:4] + titles[-4:]  # films and shows
+        meta = [("1994", 8.4, "Crime, Drama", "United States", "HBO", "Ended"),
+                ("2003", 6.1, "Comedy", "United Kingdom, Ireland", "BBC One", "Returning Series"),
+                ("2019", 4.2, "Science Fiction", "Germany", "", ""),
+                ("1987", None, "Drama", "France", "", "")]
+        await db.executemany(
+            "INSERT OR REPLACE INTO poster_cache (folder_path, year, rating, genres, country, network, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)", [(f, *meta[n % len(meta)]) for n, f in enumerate(folders)])
         await db.commit()
 
 

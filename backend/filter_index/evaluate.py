@@ -11,7 +11,7 @@ import asyncio
 import json
 from typing import Optional
 
-from backend.scan_filters import LISTED, PY_COLUMNS, Filter
+from backend.scan_filters import LISTED, PY_COLUMNS, Facet, Filter
 
 _PER_COLUMN = 62  # bit 63 is the sign; 62 leaves one spare
 
@@ -24,12 +24,14 @@ def _where(ids: Optional[list[int]]) -> tuple[str, list]:
     return f"{LISTED} AND id IN (SELECT value FROM json_each(?))", [json.dumps(list(ids))]
 
 
-async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional[list[int]] = None
+async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional[list[int]] = None,
+                   facets: list[Facet] = ()
                    ) -> tuple[list[int], dict[str, list[int]], Optional[dict[int, int]]]:
     """(alive, members, savings) for `filters` over the listed rows, or over
-    `ids` only: the listed ids among them; {filter id: the ids it matches};
-    and when a Python filter ran, {id: estimated savings} for rows with any
-    (else None). `ctx`: the enrichment context, for Python filters.
+    `ids` only: the listed ids among them; {filter id: the ids it matches},
+    and for `facets`, every value as `<facet>:<value>`; and when a Python
+    filter or facet ran, {id: estimated savings} for rows with any (else
+    None). `ctx`: the enrichment context, for Python filters and facets.
 
     With ids=None the SQL and Python passes read separately; a row written
     in between is re-evaluated by the next refresh (it's in the change log)."""
@@ -63,8 +65,22 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
                     mask ^= low
     await asyncio.to_thread(spread)
 
+    for facet in [f for f in facets if f.pairs_sql]:
+        async with db.execute(facet.pairs_sql.format(where=where), where_params) as cur:
+            pairs = await cur.fetchall()
+
+        def spread_pairs(pairs=pairs, facet=facet) -> None:
+            seen = set()
+            for row_id, raw in pairs:
+                value = facet.normalize(raw)
+                if value and (row_id, value) not in seen:
+                    seen.add((row_id, value))
+                    members.setdefault(f"{facet.key}:{value}", []).append(row_id)
+        await asyncio.to_thread(spread_pairs)
+
     py_filters = [f for f in filters if f.py]
-    if not py_filters:
+    py_facets = [f for f in facets if f.values]
+    if not py_filters and not py_facets:
         return alive, members, None
     async with db.execute(f"SELECT id, {PY_COLUMNS} FROM scan_results WHERE {where}", where_params) as cur:
         names = [d[0] for d in cur.description]
@@ -79,5 +95,8 @@ async def evaluate(db, filters: list[Filter], ctx: Optional[dict], ids: Optional
             for f in py_filters:
                 if f.py(r, ctx):
                     members[f.id].append(r["id"])
+            for facet in py_facets:
+                for value in set(facet.values(r, ctx)):
+                    members.setdefault(f"{facet.key}:{value}", []).append(r["id"])
     await asyncio.to_thread(judge)
     return alive, members, savings
