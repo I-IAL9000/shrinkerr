@@ -23,7 +23,7 @@ async def test_the_counts_come_from_the_index_once_built(library, monkeypatch):
     expected = {text: await library_data.sql_counts(library, text) for text in ("all", "x264,!ignored")}
     savings = await library_data.sql_savings(library)
     # Not built yet: the SQL engine answers (and the build starts).
-    assert await scan_route.get_filter_counts("x264,!ignored") == {"counts": expected["x264,!ignored"]}
+    assert await scan_route.get_filter_counts("x264,!ignored") == {"counts": expected["x264,!ignored"], "facets": None}
     await service.wait_rebuilt()
 
     async def sql_engine(*args, **kwargs):
@@ -31,7 +31,8 @@ async def test_the_counts_come_from_the_index_once_built(library, monkeypatch):
     monkeypatch.setattr(scan_route, "count_all", sql_engine)
     monkeypatch.setattr(scan_route, "facet_counts", sql_engine)
     for text, counts in expected.items():
-        assert await scan_route.get_filter_counts(text) == {"counts": counts}
+        body = await scan_route.get_filter_counts(text)
+        assert body["counts"] == counts and body["facets"]["alang"], text
     stats = await scan_route.get_scan_stats()
     assert stats["summary"]["files_to_convert"] == expected["all"]["needs_conversion"]
     assert stats["summary"]["estimated_savings_bytes"] == savings

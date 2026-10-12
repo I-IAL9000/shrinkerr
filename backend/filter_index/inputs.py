@@ -21,6 +21,8 @@ TABLES: dict[str, list[tuple[str, "str | None", "str | None"]]] = {
     "maintainerr": [("maintainerr_media", None, None)],
     "settings": [("settings", None,
                   "{row}.key IN ('always_keep_languages', 'sub_keep_languages', 'backup_original_days')")],
+    # The Title lists' metadata, not the posters.
+    "titles": [("poster_cache", "year, rating, genres, country, network, status, folder_path", None)],
 }
 INPUTS = frozenset(TABLES) | {"time"}
 

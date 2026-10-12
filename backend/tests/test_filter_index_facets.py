@@ -212,3 +212,99 @@ async def test_one_list_and_the_top_values(test_db):
         assert values[:2] == every[key][:2], key
         assert len(values) == min(2, len(every[key])) + (key == "alang"), key
     assert top["alang"][-1] == ("xxx", 0)
+
+
+@pytest.fixture
+def service_env(test_db, tmp_path, monkeypatch):
+    from backend.filter_index import service
+    service.reset()
+    monkeypatch.setattr(service, "index_path", lambda: str(tmp_path / "filter-index.bin"))
+    yield service
+    service.reset()
+
+
+@pytest.mark.asyncio
+async def test_the_counts_endpoint_returns_the_lists(service_env, test_db):
+    from backend.routes.scan import get_facet_values, get_filter_counts
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    body = await get_filter_counts("alang:fre")
+    assert body["counts"]["matching"] == len(await _rows(test_db, "alang:fre"))
+    langs = {v["value"]: v["count"] for v in body["facets"]["alang"]}
+    assert langs["fre"] == len(await _rows(test_db, "alang:fre"))  # its own list set aside
+    assert len(body["facets"]["alang"]) <= 50
+    library = body["facets"]["library"]
+    assert all(v.get("label") for v in library)  # media folders carry their label
+    every = (await get_facet_values("genre", "all", ""))["values"]
+    assert every and [v["count"] for v in every] == sorted((v["count"] for v in every), reverse=True)
+    folders = (await get_facet_values("folder", "all", "night"))["values"]
+    assert folders and all("night" in v["value"].lower() for v in folders)
+    narrowed = (await get_facet_values("folder", "res_4k", "night"))["values"]
+    assert sum(v["count"] for v in narrowed) <= sum(v["count"] for v in folders)
+
+
+@pytest.mark.asyncio
+async def test_a_title_change_reaches_the_lists(service_env, test_db):
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("UPDATE poster_cache SET network = 'Channel 4' WHERE network = 'HBO'")
+        await db.commit()
+    counts, lists = await service_env.answer(parse_filter("all"))
+    networks = {v for v, _ in lists["network"]}
+    assert "Channel 4" in networks and "HBO" not in networks
+
+
+@pytest.mark.asyncio
+async def test_lists_wait_for_the_index(service_env, test_db, monkeypatch):
+    from backend.routes.scan import get_filter_counts
+    await seed(test_db)
+    monkeypatch.setattr(service_env, "_start_rebuild", lambda: None)  # not built yet
+    body = await get_filter_counts("all", facets_only=True)
+    assert body == {"counts": None, "facets": None}
+
+
+@pytest.mark.asyncio
+async def test_list_values_come_from_the_index_only(service_env, test_db, monkeypatch):
+    """A list value the index hasn't has no rows (patch drops a value no row
+    has): 0, not evaluated now. Only folders and Advanced Search conditions are."""
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    evaluated = []
+    real = service_env._adhoc_bits
+
+    async def adhoc_bits(f):
+        evaluated.append(f.id)
+        return await real(f)
+    monkeypatch.setattr(service_env, "_adhoc_bits", adhoc_bits)
+    counts, lists = await service_env.answer(
+        parse_filter("alang:xxx,genre:western,folder:%2Fdemo%2FTV,!network:Nowhere"))
+    assert evaluated == ["folder:/demo/TV"]
+    assert counts["matching"] == 0
+    assert lists["alang"] == [("xxx", 0)] and ("Nowhere", 0) in lists["network"]
+
+
+@pytest.mark.asyncio
+async def test_a_value_dropped_meanwhile_counts_as_none(service_env, test_db, monkeypatch):
+    """A refresh between the unlocked step and the counting can drop a value
+    the filter names: no rows, not an error."""
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    real = service_env._adhoc_for
+
+    async def adhoc_then_refreshed(expr, index):
+        out = await real(expr, index)
+        del service_env._state.index.bits["alang:fre"]  # as patch() drops a value no row has any more
+        return out
+    monkeypatch.setattr(service_env, "_adhoc_for", adhoc_then_refreshed)
+    result = await service_env.answer(parse_filter("alang:fre"))
+    assert result is not None and result[0]["matching"] == 0
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_list_is_an_error(service_env, test_db):
+    from backend.api_errors import ApiError
+    from backend.routes.scan import get_facet_values
+    with pytest.raises(ApiError) as raised:
+        await get_facet_values("nope")
+    assert raised.value.status_code == 404 and raised.value.code == "scan.noSuchList"

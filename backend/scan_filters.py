@@ -580,7 +580,7 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # A track's field is read once, in SQL (_track_text), by the index and the
 # lists alike; Python only folds that text, so the two can't disagree.
 
-FACETS_VERSION = 1  # bump when a facet's normalize / values changes
+FACETS_VERSION = 2  # bump when a facet's normalize / values changes
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 

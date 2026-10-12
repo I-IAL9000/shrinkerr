@@ -2348,15 +2348,41 @@ async def _get_converted_folders(db) -> set[str]:
     return (await _converted_sets(db))[1]
 
 
+async def _library_labels() -> dict[str, str]:
+    """Media folder id -> its label (else its path), for the Library list."""
+    db = await connect_db()
+    try:
+        async with db.execute("SELECT id, path, label FROM media_dirs") as cur:
+            return {str(i): (label or path) for i, path, label in await cur.fetchall()}
+    finally:
+        await db.close()
+
+
+def _values_json(facet: str, values: list[tuple[str, int]], labels: dict[str, str]) -> list[dict]:
+    out = []
+    for value, count in values:
+        item = {"value": value, "count": count}
+        if facet == "library":
+            item["label"] = labels.get(value, value)
+        out.append(item)
+    return out
+
+
 @router.get("/filter-counts")
-async def get_filter_counts(filter: str = "all"):
+async def get_filter_counts(filter: str = "all", facets_only: bool = False):
     """The pills' counts under the active filter: what clicking each would
-    give (v0.10.0). With no filter, the library-wide counts."""
+    give (v0.10.0). With no filter, the library-wide counts. "facets": each
+    list's top values under it, from the filter index (None until it's
+    ready). `facets_only`: don't fall back to the SQL engine for the counts."""
     expr = parse_filter(filter)
     from backend.filter_index import service as filter_index
-    fast = await filter_index.counts(expr)
+    fast = await filter_index.answer(expr)
     if fast is not None:
-        return {"counts": fast}
+        counts, lists = fast
+        labels = await _library_labels()
+        return {"counts": counts, "facets": {k: _values_json(k, v, labels) for k, v in lists.items()}}
+    if facets_only:
+        return {"counts": None, "facets": None}
     # The index's first build is still running: the SQL engine (~12 s at 166K files).
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
@@ -2364,10 +2390,31 @@ async def get_filter_counts(filter: str = "all"):
         ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
         if expr.is_all:
             counts, _ = await count_all(db, ctx)
-            return {"counts": counts}
-        return {"counts": await facet_counts(db, ctx, expr)}
+            return {"counts": counts, "facets": None}
+        return {"counts": await facet_counts(db, ctx, expr), "facets": None}
     finally:
         await db.close()
+
+
+@router.get("/facet-values")
+async def get_facet_values(facet: str, filter: str = "all", q: str = ""):
+    """One list's values under the active filter, the most first: every
+    value of an indexed list ("Show all", the search box), or the title
+    folders whose name contains `q`. "values": None until the filter index
+    is ready."""
+    from backend.filter_index import service as filter_index
+    from backend.scan_filters import FACETS
+    if facet not in FACETS:
+        raise ApiError(404, "No such list.", code="scan.noSuchList")
+    expr = parse_filter(filter)
+    if facet == "folder":
+        hits = await filter_index.folder_values(expr, q)
+        return {"values": None if hits is None else [{"value": f, "count": n} for f, n in hits]}
+    result = await filter_index.answer(expr, facet=facet, top=None)
+    if result is None:
+        return {"values": None}
+    labels = await _library_labels() if facet == "library" else {}
+    return {"values": _values_json(facet, result[1].get(facet, []), labels)}
 
 
 @router.get("/tree")

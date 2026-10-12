@@ -54,11 +54,15 @@ async def test_the_tables_filters_read_count_their_changes(test_db):
         await db.execute("INSERT INTO maintainerr_media (folder_path, collection, synced_at) VALUES ('/m/', 'c', 'x')")
         await db.execute("INSERT INTO media_dirs (path, label) VALUES ('/m', 'Movies')")
         await db.execute("INSERT INTO encoding_rules (name, action, created_at) VALUES ('r', 'skip', 'x')")
+        await db.execute("INSERT INTO poster_cache (folder_path, genres) VALUES ('/m', 'Drama')")
+        # A poster resolved: not a change filters see.
+        await db.execute("UPDATE poster_cache SET poster_url = 'p', image_data = 'i' WHERE folder_path = '/m'")
         await db.commit()
     after = await _counters(test_db)
     assert {k for k in after if after[k] != before[k]} == {f"fi:{name}" for name in TABLES}
     assert after["fi:jobs"] == before["fi:jobs"] + 1          # the insert, not the progress
     assert after["fi:settings"] == before["fi:settings"] + 1  # the keep languages, not the queue state
+    assert after["fi:titles"] == before["fi:titles"] + 1      # the insert, not the poster
 
 
 # Per table: a minimal row to insert, the columns an UPDATE of which must
@@ -89,6 +93,11 @@ ROWS = {
     "maintainerr_media": ({"folder_path": "/m/", "collection": "c", "synced_at": "x"},
                           {"folder_path": "/n/", "collection": "d", "synced_at": "y"}, {}),
     "settings": ({"key": "always_keep_languages", "value": "[]"}, {"value": "[\"ice\"]"}, {}),
+    "poster_cache": ({"folder_path": "/m", "title": "M"},
+                     {"year": "1999", "rating": 7.5, "genres": "Drama", "country": "France", "network": "HBO",
+                      "status": "Ended", "folder_path": "/n"},
+                     {"title": "N", "poster_url": "p", "source": "tmdb", "plex_rating_key": "1", "image_data": "i",
+                      "resolved_at": "x", "media_type": "movie", "imdb_id": "tt1"}),
 }
 CASES = [(name, table) for name, entries in TABLES.items() for table, _, _ in entries]
 

@@ -27,10 +27,10 @@ import uuid
 from typing import Optional
 
 from backend import database
-from backend.filter_index.bits import from_ids
+from backend.filter_index.bits import from_ids, ids_of
 from backend.filter_index.evaluate import evaluate
-from backend.filter_index.index import FilterIndex, definitions_version
-from backend.scan_filters import _FILTER_LIST, Filter, FilterExpr, _group_key
+from backend.filter_index.index import TOP_VALUES, FilterIndex, definitions_version
+from backend.scan_filters import _FILTER_LIST, INDEXED_FACETS, Filter, FilterExpr, _group_key, title_folder
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
 REFRESH_EVERY = 10   # the background loop's pace
@@ -41,6 +41,7 @@ BACKOFF_MAX = 600
 ERROR_LOG_EVERY = 60  # an error is logged at most this often
 REFRESH_FAILURES = 3  # refreshes failing this many times in a row: rebuild instead
 ADHOC_MAX = 64       # Advanced Search conditions kept; more, and they're forgotten
+_LISTS = frozenset(f.key for f in INDEXED_FACETS)  # the indexed lists: a value of one is a filter's group
 
 
 class _State:
@@ -53,6 +54,7 @@ class _State:
         self.ctx_key: Optional[tuple] = None
         self.ctx: Optional[dict] = None
         self.adhoc: dict = {}  # Advanced Search conditions' rows, until the index changes
+        self.folders: dict = {"seq": None, "rows": {}}  # title folder -> its listed ids, while the index's seq holds
         self.stale = False    # a rebuild must replace it (refresh decided so)
         self.foreign = False  # and it describes other rows (a restored backup, another database)
         self.refresh_failures = 0  # in a row
@@ -118,7 +120,7 @@ async def _context(db, counters: dict[str, int], fresh: bool = False) -> dict:
     key = tuple(sorted(counters.items()))
     if fresh or _state.ctx is None or _state.ctx_key != key:
         from backend.routes.scan import _build_enrichment_context
-        _state.ctx, _state.ctx_key = await _build_enrichment_context(db), key
+        _state.ctx, _state.ctx_key = await _build_enrichment_context(db, titles=True), key  # the Title lists
     return _state.ctx
 
 
@@ -133,7 +135,7 @@ async def build() -> FilterIndex:
         seq, counters = await _snapshot(db)  # before evaluating: later changes are applied after
         started = time.time()
         ctx = await _context(db, counters, fresh=True)
-        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx)
+        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, facets=INDEXED_FACETS)
     finally:
         await db.close()
     # ~0.5 s for 166K files: off the event loop.
@@ -164,6 +166,7 @@ def _start_rebuild() -> None:
         async with _state.lock:
             _state.index, _state.dirty, _state.stale, _state.foreign = index, True, False, False
             _state.backoff, _state.refresh_failures, _state.adhoc = 0.0, 0, {}
+            _state.folders = {"seq": None, "rows": {}}  # its seq can be the old one's (another database)
         print(f"[FILTERS] Filter index built in {time.perf_counter() - started:.1f}s", flush=True)
         try:  # the Scanner fetches its counts again
             from backend.websocket import ws_manager
@@ -230,13 +233,18 @@ async def _apply_changes(index: FilterIndex) -> None:
             _start_rebuild()
             return
         dirty = [f for f in _FILTER_LIST if set(f.inputs) & moved]
-        ctx = await _context(db, counters) if changed or any(f.py for f in dirty) else None
+        dirty_facets = [f for f in INDEXED_FACETS if set(f.inputs) & moved]
+        need_ctx = changed or any(f.py for f in dirty) or any(f.values for f in dirty_facets)
+        ctx = await _context(db, counters) if need_ctx else None
         if changed:
-            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed)
+            alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=changed, facets=INDEXED_FACETS)
             index.patch(changed, alive, members, savings)
-        if dirty:
-            _, members, _ = await evaluate(db, dirty, ctx)
-            index.replace(dirty, members)
+        if dirty or dirty_facets:
+            _, members, _ = await evaluate(db, dirty, ctx, facets=dirty_facets)
+            if dirty:
+                index.replace(dirty, members)
+            if dirty_facets:
+                index.replace_facets([f.key for f in dirty_facets], members)
         index.seq, index.counters = seq, counters
         if "time" in moved:
             index.time_at = now
@@ -295,37 +303,112 @@ async def _adhoc_bits(f: Filter) -> int:
     return bits
 
 
-async def counts(expr: FilterExpr) -> Optional[dict[str, int]]:
-    """The pills' counts under `expr`, as count_all (no filter) or
-    facet_counts give them; None when the SQL engine should answer
-    (current()) or on an error."""
+async def _adhoc_for(expr: FilterExpr, index: FilterIndex) -> dict[str, int]:
+    """The rows of `expr`'s filters the index doesn't keep (Advanced Search
+    conditions, folders), evaluated now — outside the lock: a refresh
+    shouldn't wait on a Python condition. Never an indexed list's value:
+    one the index hasn't has no rows (_constraints)."""
+    adhoc: dict[str, int] = {}
+    for f in [f for group in expr.groups for f in group] + expr.excluded:
+        if f.group not in _LISTS and f.id not in index.bits and f.id not in adhoc:
+            adhoc[f.id] = await _adhoc_bits(f)
+    return adhoc
+
+
+def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int], skip_group: Optional[str] = None
+                 ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """(groups, excluded) as FilterIndex.facet_counts takes them; without
+    the group `skip_group`. Under the lock."""
+    def bits_of(f: Filter) -> int:
+        if f.group in _LISTS:
+            # patch() drops a value no row has, possibly since _adhoc_for().
+            return index.bits.get(f.id, 0)
+        return adhoc[f.id] if f.id in adhoc else index.bits[f.id]
+    groups = []
+    for group in expr.groups:
+        key = _group_key(group[0])
+        if key == skip_group:
+            continue
+        bits = 0
+        for f in group:
+            bits |= bits_of(f)
+        groups.append((key, bits))
+    return groups, [(f.id, bits_of(f)) for f in expr.excluded]
+
+
+async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[int] = TOP_VALUES
+                 ) -> Optional[tuple[dict[str, int], dict[str, list[tuple[str, int]]]]]:
+    """(the pills' counts under `expr`, as count_all with no filter or
+    facet_counts; each indexed list's values with counts, or only `facet`'s,
+    `top` of them); None when the SQL engine should answer (current()) or
+    on an error."""
     try:
         index = await current()
         if index is None:
             return None
-        # Advanced Search conditions first, outside the lock: a refresh
-        # shouldn't wait on a Python condition's evaluation.
-        adhoc: dict[str, int] = {}
-        for f in [f for group in expr.groups for f in group] + expr.excluded:
-            if f.id not in index.bits:
-                adhoc[f.id] = await _adhoc_bits(f)
+        adhoc = await _adhoc_for(expr, index)
+        selected = frozenset(f.id for f in [f for g in expr.groups for f in g] + expr.excluded if ":" in f.id)
         async with _state.lock:
             index = _state.index
-            if expr.is_all:
-                return index.count_all()
-
-            def bits_of(f: Filter) -> int:
-                return adhoc[f.id] if f.id in adhoc else index.bits[f.id]
-            groups = []
-            for group in expr.groups:
-                bits = 0
-                for f in group:
-                    bits |= bits_of(f)
-                groups.append((_group_key(group[0]), bits))
-            excluded = [(f.id, bits_of(f)) for f in expr.excluded]
-            return index.facet_counts(groups, excluded)
+            groups, excluded = _constraints(index, expr, adhoc)
+            counts = index.count_all() if expr.is_all else index.facet_counts(groups, excluded)
+            return counts, index.facet_values(groups, excluded, selected=selected, facet=facet, top=top)
     except Exception as exc:
         _log_error("Counting with the filter index", exc)
+        return None
+
+
+async def counts(expr: FilterExpr) -> Optional[dict[str, int]]:
+    """The pills' counts under `expr` (answer()'s first half)."""
+    result = await answer(expr)
+    return result[0] if result else None
+
+
+async def folder_values(expr: FilterExpr, q: str, limit: int = 50) -> Optional[list[tuple[str, int]]]:
+    """Title folders whose path contains `q` (any case), with how many files
+    each would list under `expr` (its own Folder choice set aside): the most
+    first, `limit` of them; None as for answer(). Folders aren't indexed
+    (tens of thousands of values): they're searched."""
+    try:
+        index = await current()
+        if index is None:
+            return None
+        folders = _state.folders
+        if folders["seq"] != index.seq or not folders["rows"]:
+            db = await database.connect_db()
+            try:
+                async with db.execute("SELECT id, file_path FROM scan_results WHERE removed_from_list = 0") as cur:
+                    pairs = await cur.fetchall()
+            finally:
+                await db.close()
+
+            def by_folder() -> dict[str, list[int]]:
+                out: dict[str, list[int]] = {}
+                for row_id, fp in pairs:
+                    out.setdefault(title_folder(fp), []).append(row_id)
+                return out
+            folders["rows"], folders["seq"] = await asyncio.to_thread(by_folder), index.seq
+        adhoc = await _adhoc_for(expr, index)
+        async with _state.lock:
+            idx = _state.index
+            groups, excluded = _constraints(idx, expr, adhoc, skip_group="folder")
+            _, _, base = idx._bases(groups, excluded)
+            matching = set(ids_of(base(frozenset())))
+        needle = q.strip().casefold()
+        rows = folders["rows"]
+
+        def search() -> list[tuple[str, int]]:
+            hits = []
+            for folder, ids in rows.items():
+                if needle in folder.casefold():
+                    n = sum(1 for i in ids if i in matching)
+                    if n:
+                        hits.append((folder, n))
+            hits.sort(key=lambda fc: (-fc[1], fc[0]))
+            return hits[:limit]
+        return await asyncio.to_thread(search)
+    except Exception as exc:
+        _log_error("Searching folders", exc)
         return None
 
 
