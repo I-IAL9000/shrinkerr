@@ -296,6 +296,14 @@ def _movie(year, file=None, guids=(), key="100", title="Buddy"):
     return item
 
 
+@pytest.fixture(autouse=True)
+def plex_logs(monkeypatch):
+    """What posters logged about Plex starts over for each test."""
+    import backend.routes.posters as posters
+    monkeypatch.setattr(posters, "_plex_logged", set())
+    monkeypatch.setattr(posters, "_plex_warned_at", None)
+
+
 @pytest.fixture
 def plex(monkeypatch):
     """A Plex server: `found["section"]` / `found["global"]` are what its
@@ -310,6 +318,13 @@ def plex(monkeypatch):
         return found["libraries"]
     monkeypatch.setattr(plex_mod, "get_plex_libraries", libraries)
 
+    def answer(got):
+        if isinstance(got, int):
+            return httpx.Response(got, json={})  # an error status
+        if isinstance(got, str):
+            return httpx.Response(200, text=got)  # not JSON
+        return httpx.Response(200, json={"MediaContainer": {"Metadata": got}})
+
     def results(kind, request):
         got = found[kind]
         return got.get(request.url.params.get("query"), []) if isinstance(got, dict) else got
@@ -318,12 +333,12 @@ def plex(monkeypatch):
         path = request.url.path
         found["asked"].append((path, dict(request.url.params)))
         if path.endswith("/search") and path.startswith("/library/sections/"):
-            if found["section"] is None:
-                return httpx.Response(500, json={})
-            return httpx.Response(200, json={"MediaContainer": {"Metadata": results("section", request)}})
+            return answer(results("section", request))
         if path == "/search":
-            return httpx.Response(200, json={"MediaContainer": {"Metadata": results("global", request)}})
+            return answer(results("global", request))
         key = path.rsplit("/", 1)[-1]
+        if path.startswith("/library/metadata/") and isinstance(found["metadata"], int):
+            return httpx.Response(found["metadata"], json={})
         if path.startswith("/library/metadata/") and key in found["metadata"]:
             return httpx.Response(200, json={"MediaContainer": {"Metadata": [found["metadata"][key]]}})
         return httpx.Response(404, json={})
@@ -402,20 +417,40 @@ async def test_a_library_is_a_folder_not_a_prefix(plex):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["libraries", "search", "record"])
+@pytest.mark.parametrize("failure", ["libraries", "search 500", "search 401", "search unreadable", "record 500"])
 async def test_plex_not_answering_raises(plex, monkeypatch, failure):
     import backend.plex as plex_mod
     if failure == "libraries":
         async def unreachable(url, token):
             raise httpx.ConnectError("refused")
         monkeypatch.setattr(plex_mod, "get_plex_libraries", unreachable)
-    elif failure == "search":
-        plex["section"] = None  # the fake answers 500
+    elif failure == "search unreadable":
+        plex["section"] = "<html>Plex is starting</html>"
+    elif failure.startswith("search"):
+        plex["section"] = int(failure.split()[1])
     else:  # a show whose ids can't tell: its record is asked for
         plex["section"] = [{"ratingKey": "7", "type": "show", "title": "Dark", "year": 2017,
                             "thumb": "/library/metadata/7/thumb/1"}]
+        plex["metadata"] = 500
     with pytest.raises(Exception):
-        await _resolve("/media/TV/Dark (2017)" if failure == "record" else FOLDER)
+        await _resolve("/media/TV/Dark (2017)" if failure.startswith("record") else FOLDER)
+
+
+@pytest.mark.asyncio
+async def test_a_request_plex_refuses_for_good_is_no_match(plex, capsys):
+    """A server without the legacy /search (404), a library search it
+    rejects (400): no match from it, logged once — Plex isn't down."""
+    plex["global"] = 404
+    assert await _resolve() == (None, "placeholder", {})
+    plex["section"] = 400
+    assert await _resolve() == (None, "placeholder", {})
+    assert await _resolve() == (None, "placeholder", {})
+    out = capsys.readouterr().out
+    assert out.count("Plex answers 404 to its search") == 1 and out.count("Plex answers 400 to a library search") == 1
+    plex["section"] = [{"ratingKey": "7", "type": "show", "title": "Dark", "year": 2017,
+                        "thumb": "/library/metadata/7/thumb/1"}]
+    plex["metadata"] = 404  # a show's record Plex no longer has: where it is isn't known
+    assert await _resolve("/media/TV/Dark (2017)") == ("7", "plex", {"media_type": "tv"})
 
 
 @pytest.mark.asyncio
@@ -572,7 +607,7 @@ async def test_plex_matches_are_looked_up_again_once(posters, test_db, monkeypat
         await db.commit()
     searched = []
 
-    async def search(title, year, key, media_type_hint=None, imdb_id=None):
+    async def search(title, year, key, media_type_hint=None, **kw):
         searched.append(title)
         return None, "placeholder", {}
     prefetches = []
@@ -608,7 +643,7 @@ async def test_the_prefetch_purges_plex_matches_too(posters, test_db, monkeypatc
         await db.commit()
     searched = []
 
-    async def search(title, year, key, media_type_hint=None, imdb_id=None):
+    async def search(title, year, key, media_type_hint=None, **kw):
         searched.append(title)
         return "https://img/x.jpg", "tmdb", {"media_type": "movie", "tmdb_id": 1}
 
@@ -627,7 +662,7 @@ async def test_the_prefetch_purges_plex_matches_too(posters, test_db, monkeypatc
             assert await cur.fetchall() == [("/m/movies/Buddy (2026)", "tmdb"), ("/m/movies/Picked", "tmdb-manual")]
 
 
-# --- The prefetch asks Plex first, as the Poster grid does ------------------------
+# --- TMDB finds the title, Plex gives its poster: the grid and the prefetch ------
 
 PLEX_SETTINGS = [("plex_url", PLEX), ("plex_token", "tok"), ("plex_path_mapping", MAPPING)]
 HEAT = "/media/Misc/Heat (1995)"
@@ -662,33 +697,56 @@ async def _no_prefetch(*a, **kw):
     return {"status": "started"}
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("via", ["grid", "prefetch"])
-async def test_plex_is_asked_first_by_the_grid_and_the_prefetch(posters, plex, test_db, monkeypatch, via):
-    """Plex matches made before are deleted once, and the prefetch (every few
-    hours) found titles on TMDB only: every title not opened in the Poster
-    grid would have swapped Plex's artwork for TMDB's. A title Plex has
-    comes back with its Plex poster; a wrong one is replaced."""
-    await _plex_library(test_db, [FOLDER, HEAT, CHASE],
-                        [(FOLDER, "Buddy", _plex_poster(100)), (HEAT, "Heat", _plex_poster(200))])  # Buddy: 1997's
-    plex["section"] = {
-        "Buddy": [_movie(1997, file="/data/misc/Buddy (1997)/Buddy.mkv", key="100"),
-                  _movie(2026, file="/data/misc/HD 2025/Buddy (2026) [tt37281055]/b.mkv", key="101")],
-        "Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat")],
-        # A [tvdb-N] folder is a show: Plex's film of it isn't taken (the media-type check).
-        "Chase": [_movie(2010, file="/data/misc/Chase (2010) [tvdb-163541]/Chase.mkv", key="300", title="Chase")]}
+BUDDY_2026 = {"id": 12, "title": "Buddy", "release_date": "2026-04-17", "poster_path": "/buddy.jpg"}
+HEAT_1995 = {"id": 949, "title": "Heat", "release_date": "1995-12-15", "poster_path": "/heat.jpg",
+             "imdb_id": "tt0113277"}
+
+
+def _tmdb_knows(posters, monkeypatch):
+    """TMDB as it answers for FOLDER (Buddy 2026: /find doesn't know its
+    IMDb id, its search does), Heat 1995 (its record, its search) and
+    Chase (a show, found by its TVDB id); the paths asked."""
     asked = []
 
-    async def get(client, url, params):  # TMDB knows Chase only
+    async def get(client, url, params):
         path = url.split("/3/")[1]
         asked.append(path)
-        if path == "find/163541":
-            return httpx.Response(200, json={"movie_results": [], "tv_results": [
-                {"id": 5, "name": "Chase", "first_air_date": "2010-09-20", "poster_path": "/chase.jpg"}]})
-        if path == "tv/5":
-            return httpx.Response(200, json={"first_air_date": "2010-09-20", "origin_country": ["US"]})
-        return httpx.Response(200, json={"results": [], "movie_results": [], "tv_results": []})
+        answers = {
+            "find/163541": {"movie_results": [], "tv_results": [
+                {"id": 5, "name": "Chase", "first_air_date": "2010-09-20", "poster_path": "/chase.jpg"}]},
+            "tv/5": {"first_air_date": "2010-09-20", "origin_country": ["US"]},
+            "search/movie": {"results": [dict(BUDDY_2026)] if params.get("query") == "Buddy" else []},
+            "search/multi": {"results": [{**HEAT_1995, "media_type": "movie"}] if params.get("query") == "Heat" else []},
+            "movie/12": {"imdb_id": "tt37281055", "release_date": "2026-04-17"},
+            "movie/949": dict(HEAT_1995),
+        }
+        if path in answers:
+            return httpx.Response(200, json=answers[path])
+        return httpx.Response(404 if path.startswith(("movie/", "tv/")) else 200,
+                              json={"results": [], "movie_results": [], "tv_results": []})
     monkeypatch.setattr(posters, "_tmdb_get", get)
+    return asked
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("via", ["grid", "prefetch"])
+async def test_plex_gives_the_poster_of_the_title_tmdb_found(posters, plex, test_db, monkeypatch, via):
+    """Which title a folder is, TMDB says; Plex only supplies its poster —
+    the grid and the prefetch alike. Plex matches made before are looked up
+    again: a right one comes back with its Plex poster, a wrong one (the
+    1997 Buddy) is replaced."""
+    await _plex_library(test_db, [FOLDER, HEAT, CHASE],
+                        [(FOLDER, "Buddy", _plex_poster(100)), (HEAT, "Heat", _plex_poster(200))])
+    plex["section"] = {
+        # Buddy: Plex has the 1997 film elsewhere and this folder's file, without ids.
+        "Buddy": [_movie(1997, file="/data/misc/Buddy (1997)/Buddy.mkv", key="100"),
+                  _movie(2026, file="/data/misc/HD 2025/Buddy (2026) [tt37281055]/b.mkv", key="101")],
+        # Heat: its file here, with its ids — they find it on TMDB, in one request.
+        "Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat",
+                        guids=["imdb://tt0113277", "tmdb://949"])],
+        # Chase, a show in a films library: Plex's film of the name isn't its poster.
+        "Chase": [_movie(2010, file="/data/misc/Chase (2010) [tvdb-163541]/Chase.mkv", key="300", title="Chase")]}
+    asked = _tmdb_knows(posters, monkeypatch)
     monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
     monkeypatch.setattr(posters, "start_prefetch", _no_prefetch)
     if via == "grid":
@@ -696,9 +754,9 @@ async def test_plex_is_asked_first_by_the_grid_and_the_prefetch(posters, plex, t
     else:
         await posters._run_prefetch()
     assert await _poster_rows(test_db) == {
-        FOLDER: ("plex", _plex_poster(101), "movie"), HEAT: ("plex", _plex_poster(200), "movie"),
+        FOLDER: ("tmdb", _plex_poster(101), "movie"), HEAT: ("tmdb", _plex_poster(200), "movie"),
         CHASE: ("tmdb", "https://image.tmdb.org/t/p/w300/chase.jpg", "tv")}
-    assert asked == ["find/163541", "tv/5"]  # TMDB only for the title Plex hasn't
+    assert sorted(asked) == ["find/163541", "find/tt37281055", "movie/12", "movie/949", "search/movie", "tv/5"]
     assert plex["libraries_read"] == 1  # once, not for each title
 
 
@@ -741,42 +799,38 @@ async def test_the_prefetch_still_waits_after_a_rate_limit_and_the_grid_doesnt(p
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("down", ["libraries", "search"])
-async def test_plex_not_answering_stores_nothing(posters, plex, test_db, monkeypatch, down):
-    """During the sweep after the purge, a Plex outage made TMDB's art the
-    title's for good: the prefetch would never ask Plex about it again."""
+async def test_plex_not_answering_keeps_tmdbs_poster_until_it_does(posters, plex, test_db, monkeypatch, down):
+    """A Plex outage never keeps a title from being stored: TMDB's poster,
+    and Plex's asked for by the next prefetch — Plex only, TMDB isn't asked
+    and the match stays as it is."""
     import backend.plex as plex_mod
     await _plex_library(test_db, [HEAT])
-    reads = []
     if down == "libraries":
         async def unreachable(url, token):
-            reads.append(url)
             raise httpx.ConnectError("refused")
         monkeypatch.setattr(plex_mod, "get_plex_libraries", unreachable)
     else:
-        plex["section"] = None  # the fake answers 500
-    asked = []
-
-    async def get(client, url, params):  # TMDB has Heat
-        asked.append(url.split("/3/")[1])
-        if "/search/" in url:
-            return httpx.Response(200, json={"results": [
-                {"id": 9, "title": "Heat", "release_date": "1995-12-15", "poster_path": "/heat.jpg"}]})
-        return httpx.Response(200, json={"release_date": "1995-12-15"})
-    monkeypatch.setattr(posters, "_tmdb_get", get)
+        plex["section"] = 500
+    asked = _tmdb_knows(posters, monkeypatch)
     monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
-    await posters._run_prefetch()
-    assert await _poster_rows(test_db) == {}
-    # Its libraries unreadable, the prefetch looks nothing up.
-    assert asked == ([] if down == "libraries" else ["search/multi", "movie/9"])
-    # The Poster grid shows what TMDB has, this time, and stores nothing.
     got = (await posters.resolve_posters(posters.ResolveRequest(paths=[HEAT])))[HEAT]
-    assert (got["source"], got["poster_url"]) == ("tmdb", "https://image.tmdb.org/t/p/w300/heat.jpg")
-    assert await _poster_rows(test_db) == {}
-    assert len(reads) == (2 if down == "libraries" else 0)  # once a batch: not again for each title
-    plex["section"] = {"Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat")]}
+    assert (got["source"], got["imdb_id"]) == ("tmdb", "tt0113277")
+    rows = await _poster_rows(test_db)
+    assert rows == {HEAT: ("tmdb", "https://image.tmdb.org/t/p/w300/heat.jpg", "movie")}
+    asked.clear()
+    plex["section"] = {"Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat",
+                                       guids=["imdb://tt0113277"])]}
     monkeypatch.setattr(plex_mod, "get_plex_libraries", lambda url, token: _libraries())
+
+    async def download(url, plex_url="", plex_token=""):
+        return "cGxleA==" if url.startswith("/api/posters/image") else None
+    monkeypatch.setattr(posters, "_download_image", download)
     await posters._run_prefetch()  # Plex back: its poster
-    assert await _poster_rows(test_db) == {HEAT: ("plex", _plex_poster(200), "movie")}
+    assert await _poster_rows(test_db) == {HEAT: ("tmdb", _plex_poster(200), "movie")}
+    assert asked == []
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT art_retry, image_data, imdb_id FROM poster_cache") as cur:
+            assert await cur.fetchall() == [(0, "cGxleA==", "tt0113277")]
 
 
 async def _libraries():

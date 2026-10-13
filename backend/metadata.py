@@ -200,16 +200,17 @@ async def _lookup_tmdb_by_tvdb(
 
 async def _lookup_tmdb_by_title(
     title: str, year: "int | str | None", api_key: str, client: httpx.AsyncClient,
-    *, prefer_tv: bool = False, imdb_id: str | None = None,
+    *, prefer_tv: bool = False, imdb_id: str | None = None, duration: float | None = None,
 ) -> str | None:
     """v0.9.93: fallback when an id lookup comes up empty — TMDB frequently
     lacks the imdb/tvdb external-id link for newer titles even though the title
     itself exists. Search by title (+year) and take the original language of
     the result the poster matcher accepts (v0.10.0, SC-18: this used to take
     the first result without comparing titles, so "Saw" could resolve to
-    whatever TMDB ranked first) — with the folder's `imdb_id` checked as
-    the poster's is (pick_imdb_checked), so both come from the same title."""
-    from backend.routes.posters import pick_imdb_checked, rank_tmdb_matches  # lazy: avoids import cycle
+    whatever TMDB ranked first) — chosen as the poster's is
+    (pick_tmdb_candidate: the folder's `imdb_id` checked, the file's
+    `duration` telling alike results apart), so both are the same title."""
+    from backend.routes.posters import pick_tmdb_candidate  # lazy: avoids import cycle
     year = str(year) if year else None
     order = ("tv", "movie") if prefer_tv else ("movie", "tv")
     for kind in order:
@@ -221,10 +222,10 @@ async def _lookup_tmdb_by_title(
             f"title search {kind} {title!r}")
         if resp.status_code != 200:
             continue
-        ranked = rank_tmdb_matches(resp.json().get("results", []), title, year)
         try:
-            match, _ = await pick_imdb_checked(ranked, imdb_id, api_key, kind)
-        except RuntimeError as exc:  # a match's IMDb id TMDB didn't give: unknown, not "no match"
+            match, _ = await pick_tmdb_candidate(resp.json().get("results", []), title, year, api_key, media_type=kind,
+                                                 imdb_id=imdb_id, duration=duration, log=_lookup_debug)
+        except RuntimeError as exc:  # a candidate's details TMDB didn't give: unknown, not "no match"
             _lookup_debug(f"title search {kind} {title!r} ({year}): {exc}")
             raise _TransientLookupError(f"title search {kind}") from exc
         if match is None:
@@ -322,10 +323,12 @@ async def lookup_original_language(file_path: str) -> str | None:
         # cached under a title key.
         async with db.execute("SELECT path FROM media_dirs") as cur:
             media_roots = [r["path"] for r in await cur.fetchall()]
-        from backend.routes.posters import parse_folder_name
+        from backend.routes.posters import _file_year, parse_folder_name
         name_path, is_tv = title_search_name(file_path, media_roots)
         _meta = parse_folder_name(name_path, walk_files=False) if name_path else {}
-        title, year = _meta.get("title"), _meta.get("year")
+        # The year in the file's name when the folder has none (v0.10.0), as
+        # the poster's lookup reads it.
+        title, year = _meta.get("title"), _meta.get("year") or (_file_year(_meta, {"name": file_path}) if _meta else None)
         if parsed:
             id_type, media_id = parsed
         else:
@@ -386,10 +389,13 @@ async def lookup_original_language(file_path: str) -> str | None:
                 # external-id link for newer titles) — fall back to a
                 # title/year search, the same thing manual matching does.
                 if not raw_lang and title:
+                    async with db.execute("SELECT duration FROM scan_results WHERE file_path = ?", (file_path,)) as cur:
+                        found = await cur.fetchone()
                     raw_lang = await _lookup_tmdb_by_title(
                         title, year, tmdb_key, client,
                         prefer_tv=(id_type == "tvdb" or is_tv),
                         imdb_id=media_id if id_type == "imdb" else None,
+                        duration=found["duration"] if found else None,
                     )
         except _TransientLookupError:
             # Rate-limited, failing or unreachable: unknown, not "no match".

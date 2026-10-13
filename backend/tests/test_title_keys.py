@@ -54,7 +54,7 @@ def posters(test_db, monkeypatch):
     monkeypatch.setenv("SHRINKERR_TMDB_API_KEY", "test-key")
     searched = []
 
-    async def search(title, year, key, media_type_hint=None, imdb_id=None):
+    async def search(title, year, key, media_type_hint=None, **kw):
         searched.append((title, year))
         return "https://img/x.jpg", "tmdb", {"media_type": "movie", "tmdb_id": len(searched)}
 

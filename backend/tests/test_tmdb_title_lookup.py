@@ -217,11 +217,12 @@ def _buddies(details_status=200):
 
 
 @pytest.mark.asyncio
-async def test_a_title_search_checks_the_folders_imdb_id(lookup_db, monkeypatch):
+async def test_a_title_search_checks_the_folders_imdb_id(lookup_db, monkeypatch, capsys):
     """The poster came from the right film, the language from another."""
     tmdb = _buddies()
     monkeypatch.setattr(httpx, "AsyncClient", tmdb)
     assert await metadata.lookup_original_language("/m/movies/Buddy (2026) [tt37281055]/Buddy.mkv") == "isl"
+    assert "[POSTER]" not in capsys.readouterr().out  # the skipped match: the language lookup's own log
     assert [url.rsplit("/3/", 1)[1] for url, _ in tmdb.calls] == [
         "find/tt37281055", "search/movie", "movie/11", "movie/12"]
     assert await _cache(lookup_db) == [("imdb", "tt37281055", "isl")]
@@ -233,3 +234,31 @@ async def test_an_imdb_id_tmdb_didnt_let_us_check_isnt_cached(lookup_db, monkeyp
     monkeypatch.setattr(httpx, "AsyncClient", _buddies(details_status=details_status))
     assert await metadata.lookup_original_language("/m/movies/Buddy (2026) [tt37281055]/Buddy.mkv") is None
     assert await _cache(lookup_db) == []  # unknown, not "no match": asked again
+
+
+@pytest.mark.asyncio
+async def test_a_remake_is_told_by_the_files_runtime_as_the_poster_is(lookup_db, monkeypatch):
+    """A folder without a year: the language of the film the file's
+    runtime is, as the poster's lookup chooses it (pick_tmdb_candidate)."""
+    path = "/m/movies/Heat/heat.mkv"
+    async with aiosqlite.connect(lookup_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, duration, scan_timestamp) "
+                         "VALUES (?, 9, ?, 'x')", (path, 170 * 60))
+        await db.commit()
+
+    def answer(url, params):
+        if url.endswith("/search/movie"):
+            return 200, {"results": [{"id": 2, "title": "Heat", "release_date": "1986-03-14", "original_language": "fr"},
+                                     {"id": 949, "title": "Heat", "release_date": "1995-12-15",
+                                      "original_language": "en"}]}
+        return 200, {"runtime": {"2": 101, "949": 170}[url.rsplit("/", 1)[1]]}
+    monkeypatch.setattr(httpx, "AsyncClient", FakeTMDB(answer))
+    assert await metadata.lookup_original_language(path) == "eng"
+
+
+@pytest.mark.asyncio
+async def test_the_year_in_the_file_name_is_searched_with(lookup_db, monkeypatch):
+    tmdb = FakeTMDB(lambda url, params: (200, SAW_RESULTS))
+    monkeypatch.setattr(httpx, "AsyncClient", tmdb)
+    assert await metadata.lookup_original_language("/m/movies/Saw II/Saw.II.2005.1080p.mkv") == "eng"
+    assert tmdb.calls[0][1]["year"] == "2005"

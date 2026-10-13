@@ -582,6 +582,10 @@ async def init_db():
             except Exception:
                 pass
         # Poster cache table
+        # source (v0.10.0): 'tmdb' — the title as TMDB found it, its poster
+        # Plex's (poster_url /api/posters/image?...) or TMDB's; 'tmdb-manual' —
+        # a Fix match; 'plex' — Plex's own match, only without a TMDB key;
+        # 'placeholder' — not found; 'other-skipped' — an Other folder.
         await db.execute("""CREATE TABLE IF NOT EXISTS poster_cache (
             folder_path TEXT PRIMARY KEY,
             title TEXT,
@@ -607,6 +611,9 @@ async def init_db():
             # The posters.DETAILS_VERSION of the details (country, genres,
             # network...) fetched from the title's TMDB record; 0: not yet.
             ("details_v", "INTEGER DEFAULT 0"),
+            # 1: Plex didn't answer when the title was found, so it has
+            # TMDB's poster; the prefetch asks Plex for its own (v0.10.0).
+            ("art_retry", "INTEGER DEFAULT 0"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")

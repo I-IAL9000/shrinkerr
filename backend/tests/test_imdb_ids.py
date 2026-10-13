@@ -65,7 +65,7 @@ async def test_a_folder_named_without_an_id_gets_tmdbs(posters, test_db, monkeyp
         await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (posters._V116_PURGE_FLAG,))
         await db.commit()
 
-    async def search(title, year, key, media_type_hint=None, imdb_id=None):
+    async def search(title, year, key, media_type_hint=None, **kw):
         return "https://img/x.jpg", "tmdb", {"media_type": "movie", "tmdb_id": 5, "rating": 6.1}
 
     async def details(tmdb_id, media_type, key):
@@ -111,7 +111,7 @@ async def test_titles_cached_before_are_looked_up_once(posters, test_db, monkeyp
     searched = []
     flaky = {"fail": True}
 
-    async def search(title, year, key, media_type_hint=None, imdb_id=None):
+    async def search(title, year, key, media_type_hint=None, **kw):
         searched.append(title)
         return "u", "tmdb", {"media_type": "movie", "tmdb_id": {"Film": 5, "The Pick": 7, "Unknown": 8, "Flaky": 9}[title]}
 
