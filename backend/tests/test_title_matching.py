@@ -49,9 +49,12 @@ def test_titles_match_without_case_accents_and_punctuation(folder_title, year, r
     ("The Hobbit Battle of the Five Armies", "2014", _film("The Hobbit: The Battle of the Five Armies", "2014-12-10")),
     ("Harry Potter Philosophers Stone", "2001", _film("Harry Potter and the Philosopher's Stone", "2001-11-16")),
     ("The Godfather 2", "1974", _film("The Godfather Part II", "1974-12-20")),
+    ("Harry Potter Deathly Hallows 2", "2011", _film("Harry Potter and the Deathly Hallows: Part 2", "2011-07-07")),
     # ... spell them differently, or number a sequel another way.
     ("Colour Out of Space", "2019", _film("Color Out of Space", "2019-09-07")),
     ("Seven", "1995", _film("Se7en", "1995-09-22")),
+    ("Megan", "2022", _film("M3GAN", "2022-12-28")),
+    ("Colour", "2019", _film("Color", "2019-03-01")),
     ("Mission Impossible 2", "2000", _film("Mission: Impossible II", "2000-05-24")),
     # TMDB's year a year off.
     ("Colour Out of Space", "2020", _film("Color Out of Space", "2019-09-07")),
@@ -84,10 +87,33 @@ def test_buddy_2026_is_tmdbs_first_buddy_not_a_namesake():
     ("Saw II", "2005", _film("Saw III", "2006-10-26")),                      # another part of a series
     ("Saw IV", "2007", _film("Saw V", "2008-10-23")),
     ("Frozen", "2013", _film("Frozen II", "2014-11-20")),
+    ("Harry Potter and the Deathly Hallows Part 1", "2010",
+     _film("Harry Potter and the Deathly Hallows: Part 2", "2011-07-07")),
+    ("The Hunger Games Mockingjay Part 1", "2014", _film("The Hunger Games: Mockingjay - Part 2", "2015-11-18")),
+    ("American Hustle", "2013", _film("American Sniper", "2014-12-25")),               # alike, not close
+    ("The Lost City", "2022", _film("The Lost King", "2022-10-07")),
     ("Buddy", "2026", _film("Body", "2026-01-01")),                          # not close
+    # One letter is much of a short title.
+    ("Lucky", "2014", _film("Lucy", "2014-07-14")),
+    ("Glass", "2019", _film("Class", "2019-01-01")),
+    ("The Ring", "2002", _film("The King", "2002-01-01")),
+    ("Taken", "2008", _film("Token", "2008-01-01")),
 ])
 def test_no_wrong_title_is_taken(folder_title, year, result):
     assert pick_tmdb_match([result], folder_title, year) is None
+
+
+@pytest.mark.parametrize("folder_title, result", [
+    ("기생충", _film("Parasite", "2019-05-30", original_title="기생충")),
+    ("Левиафан", _film("Leviathan", "2014-09-24", original_title="Левиафан")),
+    ("ゴジラ", _film("Godzilla", "2019-05-29", original_title="ゴジラ")),
+    ("Amélie", _film("Amélie", "2019-01-01")),  # macOS shares give names decomposed
+])
+def test_titles_in_other_scripts_match_by_their_original_title(folder_title, result):
+    import unicodedata
+    for name in (folder_title, unicodedata.normalize("NFD", folder_title)):
+        assert pick_tmdb_match([_film("Something Else", "2019-01-01"), result], name, result["release_date"][:4]) is result
+    assert pick_tmdb_match([_film("Something Else", "2019-01-01")], folder_title, None) is None  # not "" for all
 
 
 def test_without_a_year_titles_match_as_before():
@@ -170,6 +196,33 @@ async def test_no_candidate_with_the_folders_imdb_id_is_no_match(posters, tmdb):
     assert await posters._resolve_tmdb_search(
         "Buddy", "2026", "k", media_type_hint="movie", imdb_id="tt0000099") == (None, "placeholder", {})
     assert tmdb == ["search/movie", "movie/11", "movie/12"]  # at most three tried (two here)
+
+
+@pytest.mark.asyncio
+async def test_a_candidate_that_couldnt_be_checked_isnt_taken(posters, tmdb, test_db, monkeypatch):
+    """Rate-limited (the burst after the Plex matches were purged), the
+    first namesake was taken unchecked and kept for good."""
+    real_get = posters._tmdb_get
+
+    async def limited(client, url, params):
+        if "/movie/" in url:
+            tmdb.append(url.split("/3/")[1])
+            return httpx.Response(429, json={})
+        return await real_get(client, url, params)
+    monkeypatch.setattr(posters, "_tmdb_get", limited)
+    with pytest.raises(RuntimeError):
+        await posters._resolve_tmdb_search("Buddy", "2026", "k", media_type_hint="movie", imdb_id="tt37281055")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, 'x')",
+                         (BUDDY_FOLDER + "/Buddy.mkv",))
+        await db.commit()
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    await posters._run_prefetch()
+    got = (await posters.resolve_posters(posters.ResolveRequest(paths=[BUDDY_FOLDER])))[BUDDY_FOLDER]
+    assert got["source"] == "placeholder"  # shown as not found this time ...
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT COUNT(*) FROM poster_cache") as cur:
+            assert (await cur.fetchone())[0] == 0  # ... and looked up again next time
 
 
 @pytest.mark.asyncio
@@ -265,13 +318,15 @@ def plex(monkeypatch):
         path = request.url.path
         found["asked"].append((path, dict(request.url.params)))
         if path.endswith("/search") and path.startswith("/library/sections/"):
+            if found["section"] is None:
+                return httpx.Response(500, json={})
             return httpx.Response(200, json={"MediaContainer": {"Metadata": results("section", request)}})
         if path == "/search":
             return httpx.Response(200, json={"MediaContainer": {"Metadata": results("global", request)}})
         key = path.rsplit("/", 1)[-1]
         if path.startswith("/library/metadata/") and key in found["metadata"]:
             return httpx.Response(200, json={"MediaContainer": {"Metadata": [found["metadata"][key]]}})
-        return httpx.Response(404)
+        return httpx.Response(404, json={})
     real_client = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler)))
     return found
@@ -304,6 +359,63 @@ async def test_where_the_files_are_decides(plex):
     # The same title and year with its files elsewhere: another copy, not this one.
     plex["section"] = [_movie(2026, file=elsewhere, key="100")]
     assert await _resolve() == (None, "placeholder", {})
+
+
+@pytest.mark.asyncio
+async def test_ids_decide_before_where_the_files_are(plex):
+    here = "/data/misc/HD 2025/Buddy (2026) [tt37281055]/Buddy.mkv"
+    # Plex took the new film for the 1997 one: its file is here, its id says it's that film.
+    plex["section"] = [_movie(2026, file=here, guids=["imdb://tt0118798"], key="100")]
+    assert await _resolve() == (None, "placeholder", {})
+    # Another copy of this film (or one Plex hasn't scanned again): its id says it's this one.
+    plex["section"] = [_movie(2026, file="/data/misc/4K/Buddy (2026)/Buddy.mkv", guids=["imdb://tt37281055"], key="101")]
+    assert await _resolve() == ("101", "plex", {"media_type": "movie"})
+
+
+@pytest.mark.asyncio
+async def test_paths_are_compared_however_the_accents_are_written(plex):
+    import unicodedata
+    folder = "/media/Misc/Hrútar (2015)"  # as Shrinkerr lists it (NFC); Plex's file decomposed (NFD)
+    plex_file = unicodedata.normalize("NFD", "/data/misc/Hrútar (2015)/Hrútar.mkv")
+    plex["section"] = [_movie(2016, file=plex_file, key="100", title="Rams")]  # its English title
+    assert await _resolve(folder) == ("100", "plex", {"media_type": "movie"})
+
+
+@pytest.mark.asyncio
+async def test_a_discs_title_is_its_folders(plex):
+    """A disc's key is its VIDEO_TS folder; Plex has the film beside it."""
+    plex["section"] = [_movie(1995, file="/data/misc/Heat (1995)/Heat (1995).mkv", key="200", title="Heat")]
+    assert await _resolve("/media/Misc/Heat (1995)/VIDEO_TS") == ("200", "plex", {"media_type": "movie"})
+    plex["section"] = [_movie(1995, file="/data/misc/Heat (1995) 2/Heat.mkv", key="201", title="Heat")]
+    assert await _resolve("/media/Misc/Heat (1995)/BDMV") == (None, "placeholder", {})
+
+
+@pytest.mark.asyncio
+async def test_a_library_is_a_folder_not_a_prefix(plex):
+    """/data/misc2 isn't in the library at /data/misc: Plex's paths can't be
+    compared with the folder's (its title and year decide), and the
+    library isn't searched."""
+    plex["global"] = [_movie(2026, file="/data/misc/Buddy (2026)/Buddy.mkv", key="100")]
+    assert await _resolve("/media/Misc2/Buddy (2026)", "/media/Misc2=/data/misc2") == (
+        "100", "plex", {"media_type": "movie"})
+    assert [path for path, _ in plex["asked"]] == ["/search"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["libraries", "search", "record"])
+async def test_plex_not_answering_raises(plex, monkeypatch, failure):
+    import backend.plex as plex_mod
+    if failure == "libraries":
+        async def unreachable(url, token):
+            raise httpx.ConnectError("refused")
+        monkeypatch.setattr(plex_mod, "get_plex_libraries", unreachable)
+    elif failure == "search":
+        plex["section"] = None  # the fake answers 500
+    else:  # a show whose ids can't tell: its record is asked for
+        plex["section"] = [{"ratingKey": "7", "type": "show", "title": "Dark", "year": 2017,
+                            "thumb": "/library/metadata/7/thumb/1"}]
+    with pytest.raises(Exception):
+        await _resolve("/media/TV/Dark (2017)" if failure == "record" else FOLDER)
 
 
 @pytest.mark.asyncio
@@ -463,10 +575,17 @@ async def test_plex_matches_are_looked_up_again_once(posters, test_db, monkeypat
     async def search(title, year, key, media_type_hint=None, imdb_id=None):
         searched.append(title)
         return None, "placeholder", {}
+    prefetches = []
+
+    async def start_prefetch(scheduled=False):
+        prefetches.append(scheduled)
     monkeypatch.setattr(posters, "_resolve_tmdb_search", search)
+    monkeypatch.setattr(posters, "start_prefetch", start_prefetch)
     paths = ["/m/movies/Buddy (2026)", "/m/movies/Picked", "/m/movies/Found"]
     got = await posters.resolve_posters(posters.ResolveRequest(paths=paths))
     assert searched == ["Buddy"] and got["/m/movies/Buddy (2026)"]["source"] == "placeholder"
+    # The rest of them, and their details, found again now: not in up to 3 hours.
+    assert prefetches == [False]
     assert (got["/m/movies/Picked"]["source"], got["/m/movies/Found"]["source"]) == ("tmdb-manual", "tmdb")
     # Once: a Plex match made now stays.
     async with aiosqlite.connect(test_db) as db:
@@ -475,6 +594,7 @@ async def test_plex_matches_are_looked_up_again_once(posters, test_db, monkeypat
         await db.commit()
     got = await posters.resolve_posters(posters.ResolveRequest(paths=paths))
     assert searched == ["Buddy"] and got["/m/movies/Buddy (2026)"]["source"] == "plex"
+    assert prefetches == [False]
 
 
 @pytest.mark.asyncio
@@ -538,6 +658,10 @@ async def _no_backfill(*a):
     return 0
 
 
+async def _no_prefetch(*a, **kw):
+    return {"status": "started"}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("via", ["grid", "prefetch"])
 async def test_plex_is_asked_first_by_the_grid_and_the_prefetch(posters, plex, test_db, monkeypatch, via):
@@ -566,6 +690,7 @@ async def test_plex_is_asked_first_by_the_grid_and_the_prefetch(posters, plex, t
         return httpx.Response(200, json={"results": [], "movie_results": [], "tv_results": []})
     monkeypatch.setattr(posters, "_tmdb_get", get)
     monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    monkeypatch.setattr(posters, "start_prefetch", _no_prefetch)
     if via == "grid":
         await posters.resolve_posters(posters.ResolveRequest(paths=[FOLDER, HEAT, CHASE]))
     else:
@@ -611,3 +736,73 @@ async def test_the_prefetch_still_waits_after_a_rate_limit_and_the_grid_doesnt(p
     waits.clear()
     await posters.resolve_posters(posters.ResolveRequest(paths=["/m/movies/Other (2002)"]))
     assert waits == []
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("down", ["libraries", "search"])
+async def test_plex_not_answering_stores_nothing(posters, plex, test_db, monkeypatch, down):
+    """During the sweep after the purge, a Plex outage made TMDB's art the
+    title's for good: the prefetch would never ask Plex about it again."""
+    import backend.plex as plex_mod
+    await _plex_library(test_db, [HEAT])
+    reads = []
+    if down == "libraries":
+        async def unreachable(url, token):
+            reads.append(url)
+            raise httpx.ConnectError("refused")
+        monkeypatch.setattr(plex_mod, "get_plex_libraries", unreachable)
+    else:
+        plex["section"] = None  # the fake answers 500
+    asked = []
+
+    async def get(client, url, params):  # TMDB has Heat
+        asked.append(url.split("/3/")[1])
+        if "/search/" in url:
+            return httpx.Response(200, json={"results": [
+                {"id": 9, "title": "Heat", "release_date": "1995-12-15", "poster_path": "/heat.jpg"}]})
+        return httpx.Response(200, json={"release_date": "1995-12-15"})
+    monkeypatch.setattr(posters, "_tmdb_get", get)
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    await posters._run_prefetch()
+    assert await _poster_rows(test_db) == {}
+    # Its libraries unreadable, the prefetch looks nothing up.
+    assert asked == ([] if down == "libraries" else ["search/multi", "movie/9"])
+    # The Poster grid shows what TMDB has, this time, and stores nothing.
+    got = (await posters.resolve_posters(posters.ResolveRequest(paths=[HEAT])))[HEAT]
+    assert (got["source"], got["poster_url"]) == ("tmdb", "https://image.tmdb.org/t/p/w300/heat.jpg")
+    assert await _poster_rows(test_db) == {}
+    assert len(reads) == (2 if down == "libraries" else 0)  # once a batch: not again for each title
+    plex["section"] = {"Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat")]}
+    monkeypatch.setattr(plex_mod, "get_plex_libraries", lambda url, token: _libraries())
+    await posters._run_prefetch()  # Plex back: its poster
+    assert await _poster_rows(test_db) == {HEAT: ("plex", _plex_poster(200), "movie")}
+
+
+async def _libraries():
+    return LIBRARIES
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("via", ["grid", "prefetch"])
+async def test_a_match_found_after_a_lookup_that_failed_is_stored(posters, test_db, monkeypatch, via):
+    """The IMDb id's lookup was rate-limited; the title search found it."""
+    async def get(client, url, params):
+        if "/find/" in url:
+            return httpx.Response(503, json={})
+        if "/search/" in url:
+            return httpx.Response(200, json={"results": [dict(BUDDIES[1])]})
+        return httpx.Response(200, json={"imdb_id": "tt37281055", "origin_country": ["IS"]})
+    monkeypatch.setattr(posters, "_tmdb_get", get)
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, 'x')",
+                         (BUDDY_FOLDER + "/Buddy.mkv",))
+        await db.commit()
+    if via == "grid":
+        await posters.resolve_posters(posters.ResolveRequest(paths=[BUDDY_FOLDER]))
+    else:
+        await posters._run_prefetch()
+    assert await _poster_rows(test_db) == {
+        BUDDY_FOLDER: ("tmdb", "https://image.tmdb.org/t/p/w300/right.jpg", "movie")}

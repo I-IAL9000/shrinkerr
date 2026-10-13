@@ -193,3 +193,43 @@ async def test_old_title_matches_are_looked_up_again(lookup_db, monkeypatch):
     ]
     assert await _cache(lookup_db) == [("imdb", "tt0432348", "eng")]
     assert await metadata.recheck_title_matches() == 0  # once
+
+
+def _buddies(details_status=200):
+    """TMDB for "Buddy (2026) [tt37281055]": /find doesn't know the IMDb id
+    (a new title); the search gives two 2026 "Buddy"s, the first another
+    film (its IMDb id says so)."""
+    def answer(url, params):
+        if "/find/" in url:
+            return 200, {"movie_results": [], "tv_results": []}
+        if url.endswith("/search/movie"):
+            return 200, {"results": [
+                {"id": 11, "title": "Buddy", "release_date": "2026-02-01", "original_language": "fr"},
+                {"id": 12, "title": "Buddy", "release_date": "2026-04-17", "original_language": "is"}]}
+        if url.endswith("/search/tv"):
+            return 200, {"results": []}
+        if details_status == "unreachable":
+            raise httpx.ConnectError("unreachable")
+        if details_status != 200:
+            return details_status, {}
+        return 200, {"imdb_id": {"11": "tt0000011", "12": "tt37281055"}[url.rsplit("/", 1)[1]]}
+    return FakeTMDB(answer)
+
+
+@pytest.mark.asyncio
+async def test_a_title_search_checks_the_folders_imdb_id(lookup_db, monkeypatch):
+    """The poster came from the right film, the language from another."""
+    tmdb = _buddies()
+    monkeypatch.setattr(httpx, "AsyncClient", tmdb)
+    assert await metadata.lookup_original_language("/m/movies/Buddy (2026) [tt37281055]/Buddy.mkv") == "isl"
+    assert [url.rsplit("/3/", 1)[1] for url, _ in tmdb.calls] == [
+        "find/tt37281055", "search/movie", "movie/11", "movie/12"]
+    assert await _cache(lookup_db) == [("imdb", "tt37281055", "isl")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("details_status", [503, "unreachable"])
+async def test_an_imdb_id_tmdb_didnt_let_us_check_isnt_cached(lookup_db, monkeypatch, details_status):
+    monkeypatch.setattr(httpx, "AsyncClient", _buddies(details_status=details_status))
+    assert await metadata.lookup_original_language("/m/movies/Buddy (2026) [tt37281055]/Buddy.mkv") is None
+    assert await _cache(lookup_db) == []  # unknown, not "no match": asked again
