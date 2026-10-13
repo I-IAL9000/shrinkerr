@@ -793,96 +793,13 @@ async def resolve_posters(req: ResolveRequest):
         # below TMDB's 50 req/sec rate limit even if every path takes the
         # full chain (Plex → IMDb find → TVDB find → title search +
         # image download). v0.3.63.
+        plex = await _plex_for(plex_url, plex_token, plex_path_mapping) if uncached else None
+
         async def _resolve_one(path: str):
             # Lists the folder for ids: on the NAS, so off the loop (SC-25).
             parsed = await asyncio.to_thread(parse_folder_name, path)
-            poster_url = None
-            source = "placeholder"
-            image_data = None
-            tmdb_meta: dict = {}
-
-            # 1. Try Plex
-            if plex_url and plex_token:
-                try:
-                    poster_url, source, tmdb_meta = await _resolve_plex(
-                        path, parsed, plex_url, plex_token, plex_path_mapping
-                    )
-                except Exception as exc:
-                    print(f"[POSTER] Plex failed for '{parsed['title']}': {exc}", flush=True)
-
-            # 1a. Validate Plex's match against the bracket family. Plex's
-            # global title-only search fallback can return wrong-type
-            # matches (`Charlie's Angels (1976) [tvdb-77170]` → the 2000
-            # movie) or untyped season/episode entries (`Chase (2010)
-            # [tvdb-163541]` → media_type=None). When the folder carries a
-            # bracket ID the bracket family is authoritative — Plex's
-            # answer must agree. Otherwise discard and fall through to the
-            # bracket-ID-driven TMDB lookup below. Pre-v0.3.133 Plex's
-            # answer locked in `source != "placeholder"` and the TVDB find
-            # never ran. v0.3.133+.
-            if source == "plex":
-                bracket_hint = _media_type_hint_from_parsed(parsed)
-                plex_mt = tmdb_meta.get("media_type")
-                if bracket_hint and (
-                    (plex_mt and plex_mt != bracket_hint)
-                    or (bracket_hint == "tv" and not plex_mt)
-                ):
-                    poster_url, source, tmdb_meta = None, "placeholder", {}
-
-            # 2. Try TMDB by IMDb ID (exact match)
-            if source == "placeholder" and tmdb_key and parsed.get("imdb_id"):
-                try:
-                    poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
-                except Exception:
-                    pass
-
-            # 3. Try TMDB by TVDB ID (exact match for TV shows)
-            if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
-                try:
-                    poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
-                except Exception:
-                    pass
-
-            # 4. TMDB title search — runs as a last-resort fallback when
-            # the upstream ID lookups failed AND we still have a title.
-            # v0.3.91 dropped the v0.3.56 "skip title-search when an ID
-            # is present" gate: the original concern was that title-
-            # search would fuzzy-guess and pick a same-titled wrong-
-            # medium / wrong-year entry, but since v0.3.82's media_type
-            # hint and v0.3.83's year-strict pass ordering, title-
-            # search is constrained enough that falling through is
-            # safer than returning placeholder. Specifically: a
-            # `[tvdb-N]` folder where TMDB doesn't have that TVDB ID
-            # cross-referenced (common for brand-new shows) will now
-            # match by title+year+TV-type instead of going unmatched.
-            #
-            # Hint priority: bracket family (most specific) →
-            # containing media-dir's label → no constraint.
-            if source == "placeholder" and tmdb_key and parsed.get("title"):
-                hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
-                try:
-                    poster_url, source, tmdb_meta = await _resolve_tmdb_search(
-                        parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=hint, imdb_id=parsed.get("imdb_id"),
-                    )
-                except Exception:
-                    pass
-
-            if poster_url:
-                # Reverted from v0.3.121. The "skip image fetch for TMDB
-                # CDN URLs and let the browser do it" optimisation traded
-                # backend response time for browser-side load latency on
-                # EVERY page visit — cache rows used to render instantly
-                # from base64 stored in poster_cache, but URL-only rows
-                # require the browser to fetch from TMDB CDN every time.
-                # On filtered Scanner views with hundreds of cards, the
-                # browser's per-host connection limit + TMDB CDN
-                # variability made posters trickle in or never load. Now
-                # always backend-download + base64-cache so cached reads
-                # are instant for the user. v0.3.128+.
-                image_data = await _download_image(poster_url, plex_url, plex_token)
-            tmdb_meta = await _with_details(tmdb_meta, tmdb_key, parsed.get("imdb_id"))
-
+            poster_url, source, image_data, tmdb_meta, _ = await _resolve_title(
+                path, parsed, tmdb_key, _media_type_hint_for(path), plex)
             return path, parsed, poster_url, source, image_data, tmdb_meta
 
         # Concurrency 16 — kept from v0.3.121 so the slower (now
@@ -1104,8 +1021,9 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
 async def _run_prefetch(scheduled: bool = False):
     """Prefetch posters for all title-level folders. Uses short DB connections to avoid locking.
 
-    Never resolved again: a title with its image, the user's Fix match, an
-    Other folder's row or a Plex match (Plex isn't asked here); a match
+    Titles are found as the Poster grid finds them, Plex first
+    (_resolve_title). Never resolved again: a title with its image, the
+    user's Fix match, an Other folder's row or a Plex match; a match
     whose image didn't download only gets its image (v0.10.0). `scheduled`
     (every few hours, v0.10.0) also leaves a match TMDB has no poster for,
     and titles not found: with Plex all of them, else those not found in the
@@ -1198,9 +1116,9 @@ async def _run_prefetch(scheduled: bool = False):
                 continue
             else:
                 to_resolve.append(p)
-        if not tmdb_key:
-            # Nothing can be found here without one (Plex isn't asked):
-            # placeholders would only keep the Poster grid from asking Plex.
+        if not tmdb_key and not plex_on:
+            # Nothing can be found here without either: placeholders would
+            # only keep the Poster grid from looking again.
             to_resolve = []
         _prefetch_progress["total"] = len(folder_list)
         _prefetch_progress["cached"] = len(folder_list) - len(to_resolve) - len(images)
@@ -1235,6 +1153,8 @@ async def _run_prefetch(scheduled: bool = False):
 
         # Step 3: Sequential resolution with rate limiting + batch DB writes
         # TMDB rate limit: 40 requests/10 seconds. We pace at ~3 req/sec to stay under.
+        # Plex first, as the Poster grid (v0.10.0); it's local, not paced.
+        plex = await _plex_for(plex_url, plex_token, path_mapping) if to_resolve else None
         now_str = datetime.now(timezone.utc).isoformat()
         sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
@@ -1246,54 +1166,13 @@ async def _run_prefetch(scheduled: bool = False):
             async with sem:
                 await asyncio.sleep(0.35)  # ~3 req/sec to respect TMDB rate limits
                 parsed = await asyncio.to_thread(parse_folder_name, path)  # lists the folder: on the NAS
-                poster_url = None
-                source = "placeholder"
-                tmdb_meta = {}
-                image_data = None
-                failed = False  # a lookup TMDB didn't answer
-
-                # Gate on `source == "placeholder"` not `not poster_url` so an
-                # ID match without a poster image still counts as definitive
-                # and skips the title-search fuzzy fallback. Title search only
-                # runs when no explicit ID was parsed — see the resolve_posters
-                # caller for the full rationale. v0.3.56+.
-                if tmdb_key and parsed.get("imdb_id"):
-                    try: poster_url, source, tmdb_meta = await _resolve_tmdb(parsed["imdb_id"], tmdb_key)
-                    except Exception as e:
-                        failed = True
-                        if "429" in str(e):
-                            await asyncio.sleep(5)
-                if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
-                    try: poster_url, source, tmdb_meta = await _resolve_tmdb_tvdb(parsed["tvdb_id"], tmdb_key)
-                    except Exception as e:
-                        failed = True
-                        if "429" in str(e):
-                            await asyncio.sleep(5)
-                # Title-search fallback runs whether or not an ID was
-                # parsed (v0.3.91+ — see resolve_posters above).
-                if source == "placeholder" and tmdb_key and parsed.get("title") and len(parsed["title"]) >= 3:
-                    _hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
-                    try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(
-                        parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=_hint, imdb_id=parsed.get("imdb_id"),
-                    )
-                    except Exception as e:
-                        failed = True
-                        if "429" in str(e):
-                            await asyncio.sleep(5)
-                # Skip Plex in bulk prefetch (too slow, causes DB lock contention with queue)
+                poster_url, source, image_data, tmdb_meta, failed = await _resolve_title(
+                    path, parsed, tmdb_key, _media_type_hint_for(path), plex, rate_limit_wait=5)
                 if source == "placeholder" and failed:
                     # Nothing found, but TMDB didn't answer: nothing written
                     # (v0.10.0). A placeholder would replace a match — its
                     # country, genres, IMDb id — for a week.
                     return None
-
-                if poster_url:
-                    # Reverted v0.3.121 — see _resolve_one for the
-                    # rationale (browser-side fetches were worse than
-                    # backend caching). v0.3.128+.
-                    image_data = await _download_image(poster_url, plex_url, plex_token)
-                tmdb_meta = await _with_details(tmdb_meta, tmdb_key, parsed.get("imdb_id"))
                 imdb_id = tmdb_meta.get("imdb_id")
 
                 return (path, parsed["title"], parsed.get("year") or tmdb_meta.get("year") or None, poster_url,
@@ -1432,6 +1311,120 @@ def _check_tmdb(resp) -> None:
         raise RuntimeError(f"TMDB returned {resp.status_code}")
 
 
+async def _plex_for(plex_url: str, plex_token: str, path_mapping: str) -> dict | None:
+    """Plex as _resolve_title asks it, its libraries read once for a batch
+    of titles; None when Plex isn't set up."""
+    if not (plex_url and plex_token):
+        return None
+    from backend.plex import get_plex_libraries
+    try:
+        libraries = await get_plex_libraries(plex_url, plex_token)
+    except Exception:
+        libraries = []
+    return {"url": plex_url, "token": plex_token, "mapping": path_mapping, "libraries": libraries}
+
+
+async def _resolve_title(folder: str, parsed: dict, tmdb_key: str, label_hint: str | None,
+                         plex: dict | None = None, rate_limit_wait: float = 0) -> tuple:
+    """A title's match, found the same way by the Poster grid and the
+    prefetch (v0.10.0: the prefetch didn't ask Plex, so it replaced Plex's
+    artwork with TMDB's): Plex first (`plex`, _plex_for), then TMDB by the
+    folder's IMDb id, its TVDB id and its title; then its image and details.
+    `label_hint`: the media folder's type, for the title search of a folder
+    without an id. A TMDB lookup that doesn't answer is no match, and the
+    next way is tried — `rate_limit_wait` seconds after a rate limit (the
+    prefetch's pacing). Returns (poster_url, source, image_data, meta,
+    failed): `failed`, a TMDB lookup didn't answer."""
+    poster_url, source, meta = None, "placeholder", {}
+    plex_url, plex_token = (plex["url"], plex["token"]) if plex else ("", "")
+    failed = False
+
+    # 1. Try Plex
+    if plex:
+        try:
+            poster_url, source, meta = await _resolve_plex(
+                folder, parsed, plex_url, plex_token, plex["mapping"], libraries=plex["libraries"])
+        except Exception as exc:
+            print(f"[POSTER] Plex failed for '{parsed['title']}': {exc}", flush=True)
+
+    # 1a. Validate Plex's match against the bracket family. Plex's
+    # global title-only search fallback can return wrong-type
+    # matches (`Charlie's Angels (1976) [tvdb-77170]` → the 2000
+    # movie) or untyped season/episode entries (`Chase (2010)
+    # [tvdb-163541]` → media_type=None). When the folder carries a
+    # bracket ID the bracket family is authoritative — Plex's
+    # answer must agree. Otherwise discard and fall through to the
+    # bracket-ID-driven TMDB lookup below. Pre-v0.3.133 Plex's
+    # answer locked in `source != "placeholder"` and the TVDB find
+    # never ran. v0.3.133+.
+    if source == "plex":
+        bracket_hint = _media_type_hint_from_parsed(parsed)
+        plex_mt = meta.get("media_type")
+        if bracket_hint and (
+            (plex_mt and plex_mt != bracket_hint)
+            or (bracket_hint == "tv" and not plex_mt)
+        ):
+            poster_url, source, meta = None, "placeholder", {}
+
+    async def tmdb(lookup, *args, **kwargs):
+        nonlocal failed
+        try:
+            return await lookup(*args, **kwargs)
+        except Exception as exc:
+            failed = True
+            if rate_limit_wait and "429" in str(exc):
+                await asyncio.sleep(rate_limit_wait)
+            return None, "placeholder", {}
+
+    # 2. Try TMDB by IMDb ID (exact match). Gated on `source ==
+    # "placeholder"`, not `not poster_url`: an ID match without a poster
+    # image is still definitive and skips the title search. v0.3.56+.
+    if source == "placeholder" and tmdb_key and parsed.get("imdb_id"):
+        poster_url, source, meta = await tmdb(_resolve_tmdb, parsed["imdb_id"], tmdb_key)
+
+    # 3. Try TMDB by TVDB ID (exact match for TV shows)
+    if source == "placeholder" and tmdb_key and parsed.get("tvdb_id"):
+        poster_url, source, meta = await tmdb(_resolve_tmdb_tvdb, parsed["tvdb_id"], tmdb_key)
+
+    # 4. TMDB title search — runs as a last-resort fallback when
+    # the upstream ID lookups failed AND we still have a title.
+    # v0.3.91 dropped the v0.3.56 "skip title-search when an ID
+    # is present" gate: the original concern was that title-
+    # search would fuzzy-guess and pick a same-titled wrong-
+    # medium / wrong-year entry, but since v0.3.82's media_type
+    # hint and v0.3.83's year-strict pass ordering, title-
+    # search is constrained enough that falling through is
+    # safer than returning placeholder. Specifically: a
+    # `[tvdb-N]` folder where TMDB doesn't have that TVDB ID
+    # cross-referenced (common for brand-new shows) will now
+    # match by title+year+TV-type instead of going unmatched.
+    # A folder's IMDb id checks the match (v0.10.0).
+    #
+    # Hint priority: bracket family (most specific) →
+    # containing media-dir's label → no constraint.
+    if source == "placeholder" and tmdb_key and parsed.get("title"):
+        poster_url, source, meta = await tmdb(
+            _resolve_tmdb_search, parsed["title"], parsed.get("year"), tmdb_key,
+            media_type_hint=_media_type_hint_from_parsed(parsed) or label_hint, imdb_id=parsed.get("imdb_id"))
+
+    image_data = None
+    if poster_url:
+        # Reverted from v0.3.121. The "skip image fetch for TMDB
+        # CDN URLs and let the browser do it" optimisation traded
+        # backend response time for browser-side load latency on
+        # EVERY page visit — cache rows used to render instantly
+        # from base64 stored in poster_cache, but URL-only rows
+        # require the browser to fetch from TMDB CDN every time.
+        # On filtered Scanner views with hundreds of cards, the
+        # browser's per-host connection limit + TMDB CDN
+        # variability made posters trickle in or never load. Now
+        # always backend-download + base64-cache so cached reads
+        # are instant for the user. v0.3.128+.
+        image_data = await _download_image(poster_url, plex_url, plex_token)
+    meta = await _with_details(meta, tmdb_key, parsed.get("imdb_id"))
+    return poster_url, source, image_data, meta, failed
+
+
 # A Plex item's ids: its Guid list (asked for with includeGuids=1) and a
 # legacy agent's guid ("com.plexapp.agents.imdb://tt0118798?lang=en").
 _PLEX_GUID_RE = re.compile(r"(?:com\.plexapp\.agents\.)?(imdb|tmdb|tvdb|themoviedb|thetvdb)://([^/?]+)",
@@ -1454,6 +1447,19 @@ def _within(path: str, folder: str) -> bool:
     return path == folder or path.startswith(folder + "/")
 
 
+def _plex_ids_agree(item: dict, parsed: dict) -> bool | None:
+    """Whether a Plex item's ids are the folder's ([tt…], [tvdb-…],
+    [tmdb-…]): all of the kinds both have the same; None when they have no
+    kind in common."""
+    ids = _plex_ids(item)
+    shared = [k for k in ("imdb", "tvdb", "tmdb") if parsed.get(f"{k}_id") and ids.get(k)]
+    return all(ids[k] == str(parsed[f"{k}_id"]).lower() for k in shared) if shared else None
+
+
+# Plex tells namesakes apart by their year: "Butterfly (2025)".
+_PLEX_TITLE_YEAR_RE = re.compile(r"\s*\(\d{4}\)\s*$")
+
+
 def _plex_item_is_this(item: dict, folder: str, parsed: dict, paths_comparable: bool) -> bool:
     """Whether a Plex search result is the title in `folder` (the path Plex
     sees it at), v0.10.0 — the first with the folder's title was taken, so
@@ -1463,21 +1469,22 @@ def _plex_item_is_this(item: dict, folder: str, parsed: dict, paths_comparable: 
          Plex's libraries as Plex sees it — else the path mapping is
          missing): in this folder, or a show's season folder in its
          Location. Elsewhere: another title, or another copy of it.
-      2. The folder's ids ([tt…], [tvdb-…], [tmdb-…]) of a kind Plex has
-         for it too: all of them the same.
-      3. Its title (or original title, _norm_title) the folder's, and its
-         year the folder's (±1) when both have one."""
+      2. Its ids and the folder's (_plex_ids_agree), when they have a kind
+         in common.
+      3. Its title (or original title, _norm_title; a year Plex added to
+         tell namesakes apart left out) the folder's, and its year the
+         folder's (±1) when both have one."""
     files = [p["file"] for m in item.get("Media") or [] for p in m.get("Part") or [] if p.get("file")]
     locations = [loc["path"] for loc in item.get("Location") or [] if loc.get("path")]
     if paths_comparable and (files or locations):
         return (any(_within(f, folder) for f in files)
                 or any(_within(loc, folder) or _within(folder, loc) for loc in locations))
-    ids = _plex_ids(item)
-    shared = [k for k in ("imdb", "tvdb", "tmdb") if parsed.get(f"{k}_id") and ids.get(k)]
-    if shared:
-        return all(ids[k] == str(parsed[f"{k}_id"]).lower() for k in shared)
+    agree = _plex_ids_agree(item, parsed)
+    if agree is not None:
+        return agree
     norm = _norm_title(parsed.get("title"))
-    if not any(_same_title(norm, _norm_title(item.get(k))) for k in ("title", "originalTitle")):
+    if not any(_same_title(norm, _norm_title(_PLEX_TITLE_YEAR_RE.sub("", item.get(k) or "")))
+               for k in ("title", "originalTitle")):
         return False
     try:
         return not (parsed.get("year") and item.get("year")) or abs(int(parsed["year"]) - int(item["year"])) <= 1
@@ -1485,11 +1492,21 @@ def _plex_item_is_this(item: dict, folder: str, parsed: dict, paths_comparable: 
         return True
 
 
-async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping):
+async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping, libraries: list | None = None):
     """The folder's poster in Plex: the first item its library search (else
-    Plex's global search) finds that is this title (_plex_item_is_this).
-    A show's search result has no Location: one that otherwise is this
-    title is asked for its own record (one request)."""
+    Plex's global search: films and shows, of the folder's bracket family's
+    type) finds that is this title (_plex_item_is_this). A show's search
+    result has no Location: when its ids can't tell, one that otherwise is
+    this title is asked for its own record (one request). `libraries`:
+    Plex's (get_plex_libraries), read for a batch of titles; else read here.
+
+    Plex's JSON relied on — as documented, not checked against every server
+    version: MediaContainer.Metadata[] items with ratingKey, type ("movie",
+    "show", ...), title, originalTitle, year, thumb, Guid[].id
+    ("imdb://tt…", with includeGuids=1) or a legacy agent's guid, a film's
+    Media[].Part[].file and a show's Location[].path (its own record,
+    /library/metadata/{ratingKey}). Without paths or ids an item is matched
+    by its title and year."""
     import httpx
     from backend.plex import _translate_path, get_plex_libraries
     from urllib.parse import quote
@@ -1498,10 +1515,11 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
     title = parsed["title"]
 
     async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            libraries = await get_plex_libraries(plex_url, plex_token)
-        except Exception:
-            libraries = []
+        if libraries is None:
+            try:
+                libraries = await get_plex_libraries(plex_url, plex_token)
+            except Exception:
+                libraries = []
 
         search_path = _translate_path(folder_path, path_mapping) if path_mapping else folder_path
 
@@ -1514,7 +1532,7 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
         async def is_this(item: dict) -> bool:
             key = str(item.get("ratingKey") or "")
             if (comparable and item.get("type") == "show" and not item.get("Location") and key.isdigit()
-                    and _plex_item_is_this(item, search_path, parsed, False)):
+                    and _plex_ids_agree(item, parsed) is None and _plex_item_is_this(item, search_path, parsed, False)):
                 if key not in show_locations:
                     show_locations[key] = []
                     try:
@@ -1552,15 +1570,17 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
                 pass
 
         # Global fallback — derive media_type from Plex item type. Films and
-        # shows only: a season, an episode or a collection isn't a title.
+        # shows only: a season, an episode or a collection isn't a title;
+        # and of the type a bracket id says (a [tvdb-N] folder is a show),
+        # so a namesake of the other type isn't taken before it.
+        wanted = _media_type_hint_from_parsed(parsed)
         try:
             resp = await client.get(f"{plex_url}/search", params={"query": title, "includeGuids": 1}, headers=headers)
             if resp.status_code == 200:
                 for item in resp.json().get("MediaContainer", {}).get("Metadata", []):
-                    plex_type = item.get("type")  # "movie" | "show" | etc.
+                    mt = {"movie": "movie", "show": "tv"}.get(item.get("type"))  # "movie" | "show" | etc.
                     thumb = item.get("thumb")
-                    if plex_type in ("movie", "show") and thumb and await is_this(item):
-                        mt = "movie" if plex_type == "movie" else "tv"
+                    if mt and (not wanted or mt == wanted) and thumb and await is_this(item):
                         return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {"media_type": mt}
         except Exception:
             pass

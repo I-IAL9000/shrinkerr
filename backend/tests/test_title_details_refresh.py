@@ -392,12 +392,24 @@ async def test_what_the_prefetch_resolves(posters, test_db, monkeypatch, schedul
     async def backfill(*a):
         backfills.append(a)
         return 0
+    plexed = []  # asked first, as the Poster grid does: Plex has none of them
+
+    async def plex_lookup(folder, parsed, *a, **kw):
+        plexed.append(parsed["title"])
+        return None, "placeholder", {}
+
+    async def plex_libraries(url, token):
+        return []
+    import backend.plex as plex_mod
+    monkeypatch.setattr(plex_mod, "get_plex_libraries", plex_libraries)
+    monkeypatch.setattr(posters, "_resolve_plex", plex_lookup)
     monkeypatch.setattr(posters, "_resolve_tmdb_search", search)
     monkeypatch.setattr(posters, "_tmdb_details", details)
     monkeypatch.setattr(posters, "_download_image", download)
     monkeypatch.setattr(posters, "_backfill_details", backfill)
     await posters._run_prefetch(scheduled=scheduled)
     assert sorted(searched) == expected
+    assert sorted(plexed) == (expected if plex else [])
     assert len(backfills) == 1
     rows = {r[0].rsplit("/", 1)[1]: r[1:] for r in await _rows(test_db, "source, country, image_data")}
     # A match whose image didn't download gets only its image, not looked up again.

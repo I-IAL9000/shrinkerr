@@ -246,22 +246,28 @@ def _movie(year, file=None, guids=(), key="100", title="Buddy"):
 @pytest.fixture
 def plex(monkeypatch):
     """A Plex server: `found["section"]` / `found["global"]` are what its
-    library and global searches find, `found["metadata"]` its items' own
-    records. The requests made, as (path, params)."""
+    library and global searches find (a list, or one per query),
+    `found["metadata"]` its items' own records. The requests made, as (path,
+    params), in `found["asked"]`; how often its libraries were read."""
     import backend.plex as plex_mod
+    found = {"section": [], "global": [], "metadata": {}, "asked": [], "libraries_read": 0, "libraries": LIBRARIES}
 
     async def libraries(url, token):
-        return LIBRARIES
+        found["libraries_read"] += 1
+        return found["libraries"]
     monkeypatch.setattr(plex_mod, "get_plex_libraries", libraries)
-    found = {"section": [], "global": [], "metadata": {}, "asked": []}
+
+    def results(kind, request):
+        got = found[kind]
+        return got.get(request.url.params.get("query"), []) if isinstance(got, dict) else got
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         found["asked"].append((path, dict(request.url.params)))
         if path.endswith("/search") and path.startswith("/library/sections/"):
-            return httpx.Response(200, json={"MediaContainer": {"Metadata": found["section"]}})
+            return httpx.Response(200, json={"MediaContainer": {"Metadata": results("section", request)}})
         if path == "/search":
-            return httpx.Response(200, json={"MediaContainer": {"Metadata": found["global"]}})
+            return httpx.Response(200, json={"MediaContainer": {"Metadata": results("global", request)}})
         key = path.rsplit("/", 1)[-1]
         if path.startswith("/library/metadata/") and key in found["metadata"]:
             return httpx.Response(200, json={"MediaContainer": {"Metadata": [found["metadata"][key]]}})
@@ -361,6 +367,86 @@ async def test_a_show_is_found_by_its_folder(plex):
     assert not any(path.startswith("/library/metadata/") for path, _ in plex["asked"])
 
 
+# --- Plex as it answers on a real server (the user's, read-only) ------------------
+
+HALHUB = "/media=/home/hal9000/HALHUB"  # Shrinkerr's /media is Plex's /home/hal9000/HALHUB
+HALHUB_LIBRARIES = [
+    {"id": "1", "title": "Movies", "type": "movie",
+     "paths": ["/home/hal9000/HALHUB/Misc/Movies2", "/home/hal9000/HALHUB/M2T2/Movies4"]},
+    {"id": "2", "title": "TV Shows", "type": "show",
+     "paths": ["/home/hal9000/HALHUB/M2T2/TV4", "/home/hal9000/HALHUB/TV1/TV1"]},
+]
+BUTTERFLY = "/media/TV1/TV1/Butterfly (2025) [tvdb-438640]"
+BUTTERFLY_2018 = {"ratingKey": "6001", "type": "show", "title": "Butterfly", "year": 2018,
+                  "thumb": "/library/metadata/6001/thumb/1",
+                  "Guid": [{"id": "imdb://tt7703440"}, {"id": "tmdb://83244"}, {"id": "tvdb://352161"}]}
+BUTTERFLY_2025 = {"ratingKey": "6002", "type": "show", "title": "Butterfly (2025)", "year": 2025,
+                  "thumb": "/library/metadata/6002/thumb/1",
+                  "Guid": [{"id": "imdb://tt26672404"}, {"id": "tmdb://227114"}, {"id": "tvdb://438640"}]}
+BUTTERFLY_RECORDS = {  # /library/metadata/{ratingKey}: a show's Location is only here
+    "6001": {**BUTTERFLY_2018, "Location": [{"path": "/home/hal9000/HALHUB/M2T2/TV4/Butterfly (2018) [tvdb-352161]"}]},
+    "6002": {**BUTTERFLY_2025, "Location": [{"path": "/home/hal9000/HALHUB/TV1/TV1/Butterfly (2025) [tvdb-438640]"}]},
+}
+
+
+def _without_ids(item):
+    return {k: v for k, v in item.items() if k != "Guid"}
+
+
+@pytest.mark.asyncio
+async def test_a_film_plex_has_in_its_folder(plex):
+    plex["libraries"] = HALHUB_LIBRARIES
+    folder = "/home/hal9000/HALHUB/M2T2/Movies4/Futuresport (1999) [tt0158409]"
+    plex["section"] = {"Futuresport": [{
+        "ratingKey": "5001", "type": "movie", "title": "Futuresport", "year": 1998,
+        "thumb": "/library/metadata/5001/thumb/1",
+        "Guid": [{"id": "imdb://tt0158409"}, {"id": "tmdb://16365"}, {"id": "tvdb://43367"}],
+        "Media": [{"Part": [{"file": f"{folder}/Futuresport (1999) 480p DVDRip AC3 2.0 x264-HANDJOB.mkv"}]}]}]}
+    assert await _resolve("/media/M2T2/Movies4/Futuresport (1999) [tt0158409]", HALHUB) == (
+        "5001", "plex", {"media_type": "movie"})
+    assert plex["asked"][0] == ("/library/sections/1/search",
+                                {"type": "1", "query": "Futuresport", "includeGuids": "1"})
+
+
+@pytest.mark.asyncio
+async def test_a_show_plex_has_two_of_is_told_by_its_ids(plex):
+    """Today's code took the 2018 show: its title is the folder's."""
+    plex["libraries"], plex["metadata"] = HALHUB_LIBRARIES, BUTTERFLY_RECORDS
+    plex["section"] = {"Butterfly": [BUTTERFLY_2018, BUTTERFLY_2025]}
+    assert await _resolve(BUTTERFLY, HALHUB) == ("6002", "plex", {"media_type": "tv"})
+    # The ids in the search results decide: no show's record asked for.
+    assert [path for path, _ in plex["asked"]] == ["/library/sections/2/search"]
+
+
+@pytest.mark.asyncio
+async def test_without_ids_plexs_year_in_the_title_and_the_shows_folder_decide(plex):
+    plex["libraries"], plex["metadata"] = HALHUB_LIBRARIES, BUTTERFLY_RECORDS
+    plex["section"] = {"Butterfly": [_without_ids(BUTTERFLY_2018), _without_ids(BUTTERFLY_2025)]}
+    assert await _resolve(BUTTERFLY, HALHUB) == ("6002", "plex", {"media_type": "tv"})
+    # The 2018 show isn't this title by its year: only the 2025 one's folder is asked for.
+    assert [path for path, _ in plex["asked"]] == ["/library/sections/2/search", "/library/metadata/6002"]
+
+
+@pytest.mark.asyncio
+async def test_plexs_global_search_finds_many_and_takes_none_of_the_others(plex):
+    plex["libraries"], plex["metadata"] = HALHUB_LIBRARIES, BUTTERFLY_RECORDS
+    films = "/home/hal9000/HALHUB/Misc/Movies2"
+    plex["global"] = {"Butterfly": [
+        _movie(2008, file=f"{films}/Barbie Mariposa (2008)/b.mkv", key="7001",
+               title="Barbie Mariposa & Her Butterfly Fairy Friends"),
+        _movie(2017, file=f"{films}/Black Butterfly (2017)/b.mkv", key="7002", title="Black Butterfly"),
+        _movie(1975, file=f"{films}/Butterfly (1975)/b.mkv", key="7003", title="Butterfly"),
+        _movie(2025, key="7004", title="Butterfly"),  # a film of the name and year, where Plex doesn't say
+        BUTTERFLY_2018,
+        {"ratingKey": "7005", "type": "episode", "title": "Butterfly", "year": 2025,
+         "thumb": "/library/metadata/7005/thumb/1"},
+    ]}
+    assert await _resolve(BUTTERFLY, HALHUB) == (None, "placeholder", {})
+    plex["global"]["Butterfly"].append(BUTTERFLY_2025)
+    assert await _resolve(BUTTERFLY, HALHUB) == ("6002", "plex", {"media_type": "tv"})
+    assert not any(path.startswith("/library/metadata/") for path, _ in plex["asked"])
+
+
 # --- Plex matches made before ----------------------------------------------------
 
 @pytest.mark.asyncio
@@ -419,3 +505,109 @@ async def test_the_prefetch_purges_plex_matches_too(posters, test_db, monkeypatc
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT folder_path, source FROM poster_cache ORDER BY folder_path") as cur:
             assert await cur.fetchall() == [("/m/movies/Buddy (2026)", "tmdb"), ("/m/movies/Picked", "tmdb-manual")]
+
+
+# --- The prefetch asks Plex first, as the Poster grid does ------------------------
+
+PLEX_SETTINGS = [("plex_url", PLEX), ("plex_token", "tok"), ("plex_path_mapping", MAPPING)]
+HEAT = "/media/Misc/Heat (1995)"
+CHASE = "/media/Misc/Chase (2010) [tvdb-163541]"  # a show, in a films library
+
+
+def _plex_poster(key):
+    return f"/api/posters/image?path=%2Flibrary%2Fmetadata%2F{key}%2Fthumb%2F1"
+
+
+async def _plex_library(db_path, folders, rows=()):
+    async with aiosqlite.connect(db_path) as db:
+        await db.executemany("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", PLEX_SETTINGS)
+        await db.executemany("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, 'x')",
+                             [(f + "/file.mkv",) for f in folders])
+        await db.executemany("INSERT INTO poster_cache (folder_path, title, source, poster_url, media_type, "
+                             "image_data) VALUES (?, ?, 'plex', ?, 'movie', 'aW1n')", rows)
+        await db.commit()
+
+
+async def _poster_rows(db_path):
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT folder_path, source, poster_url, media_type FROM poster_cache") as cur:
+            return {r[0]: r[1:] for r in await cur.fetchall()}
+
+
+async def _no_backfill(*a):
+    return 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("via", ["grid", "prefetch"])
+async def test_plex_is_asked_first_by_the_grid_and_the_prefetch(posters, plex, test_db, monkeypatch, via):
+    """Plex matches made before are deleted once, and the prefetch (every few
+    hours) found titles on TMDB only: every title not opened in the Poster
+    grid would have swapped Plex's artwork for TMDB's. A title Plex has
+    comes back with its Plex poster; a wrong one is replaced."""
+    await _plex_library(test_db, [FOLDER, HEAT, CHASE],
+                        [(FOLDER, "Buddy", _plex_poster(100)), (HEAT, "Heat", _plex_poster(200))])  # Buddy: 1997's
+    plex["section"] = {
+        "Buddy": [_movie(1997, file="/data/misc/Buddy (1997)/Buddy.mkv", key="100"),
+                  _movie(2026, file="/data/misc/HD 2025/Buddy (2026) [tt37281055]/b.mkv", key="101")],
+        "Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat")],
+        # A [tvdb-N] folder is a show: Plex's film of it isn't taken (the media-type check).
+        "Chase": [_movie(2010, file="/data/misc/Chase (2010) [tvdb-163541]/Chase.mkv", key="300", title="Chase")]}
+    asked = []
+
+    async def get(client, url, params):  # TMDB knows Chase only
+        path = url.split("/3/")[1]
+        asked.append(path)
+        if path == "find/163541":
+            return httpx.Response(200, json={"movie_results": [], "tv_results": [
+                {"id": 5, "name": "Chase", "first_air_date": "2010-09-20", "poster_path": "/chase.jpg"}]})
+        if path == "tv/5":
+            return httpx.Response(200, json={"first_air_date": "2010-09-20", "origin_country": ["US"]})
+        return httpx.Response(200, json={"results": [], "movie_results": [], "tv_results": []})
+    monkeypatch.setattr(posters, "_tmdb_get", get)
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    if via == "grid":
+        await posters.resolve_posters(posters.ResolveRequest(paths=[FOLDER, HEAT, CHASE]))
+    else:
+        await posters._run_prefetch()
+    assert await _poster_rows(test_db) == {
+        FOLDER: ("plex", _plex_poster(101), "movie"), HEAT: ("plex", _plex_poster(200), "movie"),
+        CHASE: ("tmdb", "https://image.tmdb.org/t/p/w300/chase.jpg", "tv")}
+    assert asked == ["find/163541", "tv/5"]  # TMDB only for the title Plex hasn't
+    assert plex["libraries_read"] == 1  # once, not for each title
+
+
+@pytest.mark.asyncio
+async def test_with_plex_the_prefetch_finds_titles_without_a_tmdb_key(posters, plex, test_db, monkeypatch):
+    monkeypatch.delenv("SHRINKERR_TMDB_API_KEY")
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    await _plex_library(test_db, [HEAT])
+    plex["section"] = {"Heat": [_movie(1995, file="/data/misc/Heat (1995)/Heat.mkv", key="200", title="Heat")]}
+    await posters._run_prefetch()
+    assert await _poster_rows(test_db) == {HEAT: ("plex", _plex_poster(200), "movie")}
+
+
+@pytest.mark.asyncio
+async def test_the_prefetch_still_waits_after_a_rate_limit_and_the_grid_doesnt(posters, test_db, monkeypatch):
+    import asyncio
+    waits = []
+    real_sleep = asyncio.sleep
+
+    async def sleep(seconds, *a, **kw):
+        waits.append(seconds)
+        await real_sleep(0)
+
+    async def search(*a, **kw):
+        raise RuntimeError("TMDB returned 429")
+    monkeypatch.setattr(asyncio, "sleep", sleep)
+    monkeypatch.setattr(posters, "_resolve_tmdb_search", search)
+    monkeypatch.setattr(posters, "_backfill_details", _no_backfill)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) "
+                         "VALUES ('/m/movies/Film (2001)/f.mkv', 1, 'x')")
+        await db.commit()
+    await posters._run_prefetch()
+    assert waits == [0.35, 5]  # its pace, then a rate limit's wait
+    waits.clear()
+    await posters.resolve_posters(posters.ResolveRequest(paths=["/m/movies/Other (2002)"]))
+    assert waits == []
