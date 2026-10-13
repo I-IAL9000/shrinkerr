@@ -158,7 +158,7 @@ async def test_new_matches_store_their_details(posters, test_db, monkeypatch):
                          "('/m/movies/Prefetched/film.mkv', 1, '2026-10-12')")
         await db.commit()
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         return "https://img/x.jpg", "tmdb", {"media_type": "movie", "tmdb_id": {"Film": 1, "Prefetched": 2}[title]}
 
     async def details(tmdb_id, media_type, key):
@@ -213,7 +213,7 @@ async def test_titles_cached_before_get_their_details_once(posters, test_db, mon
     searched, found, asked = [], [], []
     flaky = {"fail": True}
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         searched.append(title)
         if title == "Broken":
             raise RuntimeError("TMDB returned 503")
@@ -280,7 +280,7 @@ async def test_a_fix_match_keeps_its_own_imdb_id(posters, test_db, monkeypatch):
         found.append(imdb_id)
         return "u", "tmdb", {"media_type": "movie", "tmdb_id": 7} if imdb_id == "tt0000007" else {}
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         searched.append((title, year, media_type_hint))
         return "u", "tmdb", {"media_type": "movie", "tmdb_id": 8}
 
@@ -308,7 +308,7 @@ async def test_a_title_changed_while_the_backfill_runs_keeps_its_change(posters,
         await db.commit()
     changed = []
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         return "u", "tmdb", {"media_type": "movie", "tmdb_id": len(title)}
 
     async def details(tmdb_id, media_type, key):
@@ -348,6 +348,8 @@ async def _library(db_path, rows, plex=False):
         if plex:
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('plex_url', 'http://plex'), "
                              "('plex_token', 't')")
+        # Plex matches made before were looked up again once (test_title_matching).
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('_v0_10_0_plex_poster_rows_purged', '1')")
         await db.commit()
 
 
@@ -375,7 +377,7 @@ async def test_what_the_prefetch_resolves(posters, test_db, monkeypatch, schedul
     await _library(test_db, PREFETCH_ROWS, plex=plex)
     searched, downloaded = [], []
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         searched.append(title)
         return "https://img/x.jpg", "tmdb", {"media_type": "movie", "tmdb_id": 1}
 
@@ -414,7 +416,7 @@ async def test_a_lookup_that_fails_writes_nothing(posters, test_db, monkeypatch)
     await _library(test_db, [("Posterless", "tmdb", None, None, 0), ("Old Miss", "placeholder", None, None, 8)])
     before = await _rows(test_db, "source, country, resolved_at")
 
-    async def search(title, year, key, media_type_hint=None):
+    async def search(title, year, key, media_type_hint=None, imdb_id=None):
         raise RuntimeError("TMDB returned 503")
 
     async def backfill(*a):

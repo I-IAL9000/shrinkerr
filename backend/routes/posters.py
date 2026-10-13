@@ -3,6 +3,8 @@
 import re
 import base64
 import asyncio
+import difflib
+import unicodedata
 from datetime import datetime, timezone, timedelta
 
 import aiosqlite
@@ -399,6 +401,28 @@ async def _maybe_purge_misnamed_rows(db) -> None:
         print(f"[POSTER] Purging misnamed poster rows skipped: {exc}", flush=True)
 
 
+_PLEX_PURGE_FLAG = "_v0_10_0_plex_poster_rows_purged"
+
+
+async def _maybe_purge_plex_rows(db) -> None:
+    """One-shot (v0.10.0): Plex matches are deleted, so the Poster grid and
+    the prefetch look them up again — they were made by title alone
+    (_resolve_plex took any namesake: a remake, another year's film). A Fix
+    match is never a Plex match. Tracked in settings, as
+    _maybe_purge_tvdb_cache_v116."""
+    try:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (_PLEX_PURGE_FLAG,)) as cur:
+            if await cur.fetchone():
+                return
+        cur = await db.execute("DELETE FROM poster_cache WHERE source = 'plex'")
+        if cur.rowcount:
+            print(f"[POSTER] {cur.rowcount} Plex match(es) to look up again", flush=True)
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (_PLEX_PURGE_FLAG,))
+        await db.commit()
+    except Exception as exc:
+        print(f"[POSTER] Purging Plex matches skipped: {exc}", flush=True)
+
+
 @router.post("/resolve")
 async def resolve_posters(req: ResolveRequest):
     """Batch-resolve poster metadata. Returns cached image data as base64 data URIs."""
@@ -421,6 +445,7 @@ async def resolve_posters(req: ResolveRequest):
         # per upgrade. v0.3.116+.
         await _maybe_purge_tvdb_cache_v116(db)
         await _maybe_purge_misnamed_rows(db)
+        await _maybe_purge_plex_rows(db)
 
         result = {}
         uncached = []
@@ -838,7 +863,7 @@ async def resolve_posters(req: ResolveRequest):
                 try:
                     poster_url, source, tmdb_meta = await _resolve_tmdb_search(
                         parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=hint,
+                        media_type_hint=hint, imdb_id=parsed.get("imdb_id"),
                     )
                 except Exception:
                     pass
@@ -1012,9 +1037,11 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
             if not meta and tvdb_id:
                 _, _, meta = await _resolve_tmdb_tvdb(tvdb_id, tmdb_key)
             if not meta and title:  # (under 3 letters: not searched)
-                _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint)
+                _, _, meta = await _resolve_tmdb_search(title, year, tmdb_key, media_type_hint=hint, imdb_id=imdb_id)
             if not meta.get("tmdb_id"):
                 return {}
+            if meta.get("details_v") == DETAILS_VERSION:  # fetched for the search's IMDb check
+                return meta
             details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), tmdb_key)
         if not details:
             raise RuntimeError("TMDB details unavailable")  # rate-limited or down: next time
@@ -1109,6 +1136,7 @@ async def _run_prefetch(scheduled: bool = False):
                     settings[row["key"]] = row["value"]
 
             await _maybe_purge_misnamed_rows(db)
+            await _maybe_purge_plex_rows(db)
             async with db.execute(
                 "SELECT folder_path, source, poster_url, resolved_at, image_data IS NOT NULL AS has_image "
                 "FROM poster_cache"
@@ -1247,7 +1275,7 @@ async def _run_prefetch(scheduled: bool = False):
                     _hint = _media_type_hint_from_parsed(parsed) or _media_type_hint_for(path)
                     try: poster_url, source, tmdb_meta = await _resolve_tmdb_search(
                         parsed["title"], parsed.get("year"), tmdb_key,
-                        media_type_hint=_hint,
+                        media_type_hint=_hint, imdb_id=parsed.get("imdb_id"),
                     )
                     except Exception as e:
                         failed = True
@@ -1404,14 +1432,70 @@ def _check_tmdb(resp) -> None:
         raise RuntimeError(f"TMDB returned {resp.status_code}")
 
 
+# A Plex item's ids: its Guid list (asked for with includeGuids=1) and a
+# legacy agent's guid ("com.plexapp.agents.imdb://tt0118798?lang=en").
+_PLEX_GUID_RE = re.compile(r"(?:com\.plexapp\.agents\.)?(imdb|tmdb|tvdb|themoviedb|thetvdb)://([^/?]+)",
+                           re.IGNORECASE)
+_PLEX_ID_KINDS = {"imdb": "imdb", "tmdb": "tmdb", "themoviedb": "tmdb", "tvdb": "tvdb", "thetvdb": "tvdb"}
+
+
+def _plex_ids(item: dict) -> dict[str, str]:
+    """{"imdb": "tt0118798", "tmdb": "9622", ...}: the ids Plex has for an item."""
+    ids: dict[str, str] = {}
+    for guid in [*((g or {}).get("id") for g in item.get("Guid") or []), item.get("guid")]:
+        m = _PLEX_GUID_RE.match(guid or "")
+        if m:
+            ids.setdefault(_PLEX_ID_KINDS[m.group(1).lower()], m.group(2).lower())
+    return ids
+
+
+def _within(path: str, folder: str) -> bool:
+    path, folder = path.rstrip("/"), folder.rstrip("/")
+    return path == folder or path.startswith(folder + "/")
+
+
+def _plex_item_is_this(item: dict, folder: str, parsed: dict, paths_comparable: bool) -> bool:
+    """Whether a Plex search result is the title in `folder` (the path Plex
+    sees it at), v0.10.0 — the first with the folder's title was taken, so
+    a remake or any namesake in Plex gave its poster. In this order:
+      1. Where its files are, when Plex says (a film's Media/Part files, a
+         show's Location) and `paths_comparable` (the folder is in one of
+         Plex's libraries as Plex sees it — else the path mapping is
+         missing): in this folder, or a show's season folder in its
+         Location. Elsewhere: another title, or another copy of it.
+      2. The folder's ids ([tt…], [tvdb-…], [tmdb-…]) of a kind Plex has
+         for it too: all of them the same.
+      3. Its title (or original title, _norm_title) the folder's, and its
+         year the folder's (±1) when both have one."""
+    files = [p["file"] for m in item.get("Media") or [] for p in m.get("Part") or [] if p.get("file")]
+    locations = [loc["path"] for loc in item.get("Location") or [] if loc.get("path")]
+    if paths_comparable and (files or locations):
+        return (any(_within(f, folder) for f in files)
+                or any(_within(loc, folder) or _within(folder, loc) for loc in locations))
+    ids = _plex_ids(item)
+    shared = [k for k in ("imdb", "tvdb", "tmdb") if parsed.get(f"{k}_id") and ids.get(k)]
+    if shared:
+        return all(ids[k] == str(parsed[f"{k}_id"]).lower() for k in shared)
+    norm = _norm_title(parsed.get("title"))
+    if not any(_same_title(norm, _norm_title(item.get(k))) for k in ("title", "originalTitle")):
+        return False
+    try:
+        return not (parsed.get("year") and item.get("year")) or abs(int(parsed["year"]) - int(item["year"])) <= 1
+    except (TypeError, ValueError):
+        return True
+
+
 async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping):
+    """The folder's poster in Plex: the first item its library search (else
+    Plex's global search) finds that is this title (_plex_item_is_this).
+    A show's search result has no Location: one that otherwise is this
+    title is asked for its own record (one request)."""
     import httpx
     from backend.plex import _translate_path, get_plex_libraries
     from urllib.parse import quote
 
     headers = {"X-Plex-Token": plex_token, "Accept": "application/json"}
     title = parsed["title"]
-    year = parsed.get("year")
 
     async with httpx.AsyncClient(timeout=10) as client:
         try:
@@ -1421,42 +1505,63 @@ async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping)
 
         search_path = _translate_path(folder_path, path_mapping) if path_mapping else folder_path
 
+        def in_library(lp: str) -> bool:
+            return search_path.startswith(lp.rstrip("/") + "/") or search_path.startswith(lp)
+        comparable = any(in_library(lp) for lib in libraries for lp in lib.get("paths", []))
+
+        show_locations: dict[str, list] = {}  # a show the global search finds again isn't asked again
+
+        async def is_this(item: dict) -> bool:
+            key = str(item.get("ratingKey") or "")
+            if (comparable and item.get("type") == "show" and not item.get("Location") and key.isdigit()
+                    and _plex_item_is_this(item, search_path, parsed, False)):
+                if key not in show_locations:
+                    show_locations[key] = []
+                    try:
+                        resp = await client.get(f"{plex_url}/library/metadata/{key}", params={"includeGuids": 1},
+                                                headers=headers)
+                        if resp.status_code == 200:
+                            full = (resp.json().get("MediaContainer", {}).get("Metadata") or [{}])[0]
+                            show_locations[key] = full.get("Location") or []
+                    except Exception:
+                        pass
+                item = {**item, "Location": show_locations[key]}
+            return _plex_item_is_this(item, search_path, parsed, comparable)
+
         for lib in libraries:
             section_id = lib.get("id")
             if not section_id:
                 continue
             lib_paths = lib.get("paths", [])
-            if not any(search_path.startswith(lp.rstrip("/") + "/") or search_path.startswith(lp) for lp in lib_paths):
+            if not any(in_library(lp) for lp in lib_paths):
                 continue
 
             lib_media_type = "movie" if lib.get("type") == "movie" else "tv"
             try:
                 resp = await client.get(
                     f"{plex_url}/library/sections/{section_id}/search",
-                    params={"type": 1 if lib.get("type") == "movie" else 2, "query": title},
+                    params={"type": 1 if lib.get("type") == "movie" else 2, "query": title, "includeGuids": 1},
                     headers=headers,
                 )
                 if resp.status_code == 200:
                     for item in resp.json().get("MediaContainer", {}).get("Metadata", []):
-                        item_title = (item.get("title") or "").lower().strip()
-                        if item_title == title.lower().strip():
-                            thumb = item.get("thumb")
-                            if thumb:
-                                return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {"media_type": lib_media_type}
+                        thumb = item.get("thumb")
+                        if thumb and await is_this(item):
+                            return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {"media_type": lib_media_type}
             except Exception:
                 pass
 
-        # Global fallback — derive media_type from Plex item type
+        # Global fallback — derive media_type from Plex item type. Films and
+        # shows only: a season, an episode or a collection isn't a title.
         try:
-            resp = await client.get(f"{plex_url}/search", params={"query": title}, headers=headers)
+            resp = await client.get(f"{plex_url}/search", params={"query": title, "includeGuids": 1}, headers=headers)
             if resp.status_code == 200:
                 for item in resp.json().get("MediaContainer", {}).get("Metadata", []):
-                    if (item.get("title") or "").lower().strip() == title.lower().strip():
-                        thumb = item.get("thumb")
-                        if thumb:
-                            plex_type = item.get("type")  # "movie" | "show" | etc.
-                            mt = "movie" if plex_type == "movie" else "tv" if plex_type == "show" else None
-                            return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", ({"media_type": mt} if mt else {})
+                    plex_type = item.get("type")  # "movie" | "show" | etc.
+                    thumb = item.get("thumb")
+                    if plex_type in ("movie", "show") and thumb and await is_this(item):
+                        mt = "movie" if plex_type == "movie" else "tv"
+                        return f"/api/posters/image?path={quote(thumb, safe='')}", "plex", {"media_type": mt}
         except Exception:
             pass
 
@@ -1633,19 +1738,24 @@ async def _tmdb_details(tmdb_id, media_type: str, api_key) -> dict:
     return _details_of(data, tv)
 
 
+def _merge_details(meta: dict, details: dict) -> dict:
+    """`meta` plus the title's details, fetched (_tmdb_details): `details_v`
+    is DETAILS_VERSION. A search result's country or genres aren't replaced
+    by none."""
+    return {**meta, **{k: v for k, v in details.items() if v or not meta.get(k)}, "details_v": DETAILS_VERSION}
+
+
 async def _with_details(meta: dict, api_key, imdb_id: str | None = None) -> dict:
-    """`meta` plus the title's details (_tmdb_details), with `imdb_id` (the
-    folder's), when given, as its IMDb id. `details_v` is DETAILS_VERSION
-    when they were fetched. A search result's country or genres aren't
-    replaced by none."""
-    if meta.get("tmdb_id") and api_key:
+    """`meta` plus the title's details (_tmdb_details, unless the title
+    search's IMDb check fetched them), with `imdb_id` (the folder's), when
+    given, as its IMDb id."""
+    if meta.get("tmdb_id") and api_key and meta.get("details_v") != DETAILS_VERSION:
         try:
             details = await _tmdb_details(meta["tmdb_id"], meta.get("media_type"), api_key)
         except Exception:
             details = {}
         if details:
-            meta = {**meta, **{k: v for k, v in details.items() if v or not meta.get(k)},
-                    "details_v": DETAILS_VERSION}
+            meta = _merge_details(meta, details)
     return {**meta, "imdb_id": imdb_id} if imdb_id else meta
 
 
@@ -1681,11 +1791,55 @@ def _label_to_media_type(label: str | None) -> str | None:
     return None
 
 
-def pick_tmdb_match(results: list[dict], title: str, year: str | None) -> dict | None:
-    """The TMDB search result that matches `title` (and `year`), or None.
+# Title matching (v0.10.0): titles are compared as _norm_title gives them.
+_TITLE_PUNCT_RE = re.compile(r"[^\w\s]")
+# A sequel's number written either way ("II" or "2"), for _close_titles.
+_ROMAN = {r: str(n) for n, r in enumerate(
+    "i ii iii iv v vi vii viii ix x xi xii xiii xiv xv xvi xvii xviii xix xx".split(), 1)}
+# How alike two titles of the same year (±1) must be for the last pass of
+# rank_tmdb_matches (difflib's ratio, 0-1). 0.8 takes "Colour Out of Space"
+# for "Color Out of Space" (0.97), "The Godfather 2" for "The Godfather Part
+# II" (0.86), "Seven" for "Se7en" (0.80); "Buddy" isn't "Body" (0.67),
+# "Heat" isn't "Hear" (0.75). A title within another is pass 2's, before.
+_CLOSE_TITLE_RATIO = 0.8
 
-    Shared by poster matching and the original-language lookup (v0.10.0), so
-    a title gets its language from the same TMDB entry as its poster.
+
+def _norm_title(text: str | None) -> str:
+    """A title as matched: casefolded, without accents ("Amélie" is
+    "amelie") or punctuation (": - – ' ’ . , ! ?" and the like: "Mission:
+    Impossible" is "mission impossible"), "&" as "and", single spaces."""
+    # NFKD splits an accent off its letter ("é" is "e" + U+0301); the accent,
+    # not a word character, goes with the punctuation.
+    text = unicodedata.normalize("NFKD", text or "").casefold()
+    text = _TITLE_PUNCT_RE.sub("", text.replace("&", " and ").replace("_", " "))
+    return " ".join(text.split())
+
+
+def _same_title(a: str, b: str) -> bool:
+    """Normalised titles that are the same, spaces aside ("Spider-Man" is
+    "Spider Man")."""
+    return bool(a and b) and (a == b or a.replace(" ", "") == b.replace(" ", ""))
+
+
+def _close_titles(a: str, b: str) -> bool:
+    """Normalised titles close enough to be one, for a result of the
+    folder's year: alike by _CLOSE_TITLE_RATIO ("Harry Potter Philosophers
+    Stone" and "Harry Potter and the Philosopher's Stone": 0.89) — never
+    with other numbers: "Saw II" isn't "Saw III", "Frozen" isn't "Frozen
+    II" ("II" and "2" are one)."""
+    wa, wb = [_ROMAN.get(w, w) for w in a.split()], [_ROMAN.get(w, w) for w in b.split()]
+    if not wa or not wb or {w for w in wa if w.isdigit()} != {w for w in wb if w.isdigit()}:
+        return False
+    return difflib.SequenceMatcher(None, " ".join(wa), " ".join(wb)).ratio() >= _CLOSE_TITLE_RATIO
+
+
+def rank_tmdb_matches(results: list[dict], title: str, year: str | None) -> list[dict]:
+    """The TMDB search results that match `title` (and `year`), best first:
+    in the order of the passes below, each in TMDB's order (its relevance,
+    as Fix match lists them). [] for none.
+
+    Titles are compared normalised (_norm_title), with a result's title /
+    name and its original title / name ("Druk" is "Another Round").
 
     Pass ordering (v0.3.83+):
 
@@ -1705,58 +1859,82 @@ def pick_tmdb_match(results: list[dict], title: str, year: str | None) -> dict |
     (preserves the long-standing behaviour for users without
     year-tagged folders).
     """
-    title_lower = title.lower().strip()
+    norm = _norm_title(title)
+    items = []
+    for item in results:
+        names = {_norm_title(item.get(k)) for k in ("title", "name", "original_title", "original_name")} - {""}
+        items.append((item, names, str(item.get("release_date") or item.get("first_air_date") or "")[:4]))
+    ranked: list[dict] = []
 
-    def _item_title(item: dict) -> str:
-        return (item.get("title") or item.get("name") or "").lower().strip()
+    def add(found) -> None:
+        ranked.extend(item for item in found if all(item is not r for r in ranked))
 
-    def _item_year(item: dict) -> str:
-        return str(item.get("release_date", item.get("first_air_date", ""))[:4])
+    def same(names) -> bool:
+        return any(_same_title(norm, n) for n in names)
+
+    def partial(names) -> bool:
+        return bool(norm) and any(norm in n or n in norm for n in names)
 
     if year:
         # 1. Exact title + exact year
-        for item in results:
-            if _item_title(item) == title_lower and _item_year(item) == year:
-                return item
+        add(item for item, names, iy in items if same(names) and iy == year)
         # 2. Partial title + exact year — catches "See no evil" → "See No
         #    Evil 2" (2014) and "Odyssey" → "The Odyssey" (2025).
-        for item in results:
-            it = _item_title(item)
-            if (title_lower in it or it in title_lower) and _item_year(item) == year:
-                return item
+        add(item for item, names, iy in items if partial(names) and iy == year)
+        try:
+            target = int(year)
+        except ValueError:
+            return ranked
+
+        def near(iy: str) -> bool:
+            return iy.isdigit() and abs(int(iy) - target) <= 1
         # 3. Exact title + ±1 year — covers the "TMDB has 2014, folder
         #    has 2013" metadata-drift case without admitting the
         #    "off by 8 years" wrong-movie cases that pre-v0.3.83
         #    Pass 2 was admitting.
-        try:
-            target = int(year)
-            for item in results:
-                iy = _item_year(item)
-                if _item_title(item) != title_lower or not iy.isdigit():
-                    continue
-                if abs(int(iy) - target) <= 1:
-                    return item
-        except ValueError:
-            pass
+        add(item for item, names, iy in items if same(names) and near(iy))
+        # 4. A close title + the year (±1) — what Fix match would show
+        #    first: "The Hobbit Battle of the Five Armies" (2014) for "The
+        #    Hobbit: The Battle of the Five Armies", "Seven" for "Se7en".
+        add(item for item, names, iy in items if near(iy) and any(_close_titles(norm, n) for n in names))
         # No year-aware match — no match rather than silently picking a
         # wrong-year title-match.
-        return None
+        return ranked
 
     # No-year path: original behaviour kept.
     # A. Exact title (any year)
-    for item in results:
-        if _item_title(item) == title_lower:
-            return item
+    add(item for item, names, _ in items if same(names))
     # B. Partial title (any year)
-    for item in results:
-        it = _item_title(item)
-        if title_lower in it or it in title_lower:
-            return item
-    return None
+    add(item for item, names, _ in items if partial(names))
+    return ranked
 
 
-async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None):
+def pick_tmdb_match(results: list[dict], title: str, year: str | None) -> dict | None:
+    """The TMDB search result that matches `title` (and `year`) best
+    (rank_tmdb_matches), or None.
+
+    Shared by poster matching and the original-language lookup (v0.10.0), so
+    a title gets its language from the same TMDB entry as its poster."""
+    ranked = rank_tmdb_matches(results, title, year)
+    return ranked[0] if ranked else None
+
+
+# A title search checks this many of its matches' IMDb ids, at most
+# (_resolve_tmdb_search): one details request each.
+_IMDB_CHECKED_MATCHES = 3
+
+
+async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None,
+                               imdb_id: str | None = None):
     """Search by title+year — requires strict matching to avoid mismatches.
+
+    `imdb_id` (v0.10.0): the folder's, for a title its IMDb id didn't find
+    (TMDB's /find lacks the link for many new titles). The matches are
+    checked in order (rank_tmdb_matches, at most _IMDB_CHECKED_MATCHES): one
+    whose IMDb id on TMDB is another title's is skipped for the next, and
+    none left is no match. The details fetched for the check come with the
+    match (`details_v`), so _with_details doesn't ask again. A match whose
+    details TMDB didn't give (rate-limited) is taken unchecked, as before.
 
     `media_type_hint` (v0.3.82+): when set to "movie" or "tv", uses the
     type-specific TMDB endpoint (/search/tv or /search/movie) instead
@@ -1798,16 +1976,28 @@ async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None
         if media_type_hint in ("movie", "tv"):
             for r in results:
                 r["media_type"] = media_type_hint
-        item = pick_tmdb_match(results, title, year)
-        if item is not None:
-            mt = item.get("media_type", "movie")
-            meta = _extract_tmdb_meta(item, mt, api_key)
-            # Poster is optional — a title with no TMDB poster is still a
-            # better match than falling through to a wrong-year/wrong-show
-            # fuzzy guess. Render placeholder, keep the meta. v0.3.56+.
-            poster = item.get("poster_path")
-            poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
-            return poster_url, "tmdb", meta
+    ranked = rank_tmdb_matches(results, title, year)
+    for item in ranked[:_IMDB_CHECKED_MATCHES if imdb_id else 1]:
+        mt = item.get("media_type", "movie")
+        meta = _extract_tmdb_meta(item, mt, api_key)
+        if imdb_id and meta.get("tmdb_id"):
+            try:
+                details = await _tmdb_details(meta["tmdb_id"], mt, api_key)
+            except Exception:
+                details = {}
+            if details:
+                found = details.get("imdb_id") or ""
+                if found and found.lower() != imdb_id.lower():
+                    print(f"[POSTER] '{title}' ({year}): TMDB {mt} {meta['tmdb_id']} is {found}, "
+                          f"not {imdb_id}: skipped", flush=True)
+                    continue
+                meta = _merge_details(meta, details)
+        # Poster is optional — a title with no TMDB poster is still a
+        # better match than falling through to a wrong-year/wrong-show
+        # fuzzy guess. Render placeholder, keep the meta. v0.3.56+.
+        poster = item.get("poster_path")
+        poster_url = f"https://image.tmdb.org/t/p/w300{poster}" if poster else None
+        return poster_url, "tmdb", meta
     return None, "placeholder", {}
 
 
