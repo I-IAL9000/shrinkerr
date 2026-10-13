@@ -58,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo mode never hands out the API key, backups or download scripts; links in the in-app changelog only open http(s) addresses; scan progress and cancel files live in the data folder instead of fixed names in `/tmp`.
 
 ### Fixed
+- **Signed out mid-use, the app said so**: when a session ended while Shrinkerr was open, every page showed an empty library ("No files scanned yet", endless spinners) instead of the sign-in page. A request turned away now brings up the sign-in page, and a session in use is renewed, so it lasts 30 days from the last visit rather than from signing in.
+- **Pause on stream asks the media servers every 15 seconds**: it asked Plex for active streams twice a second while both encode slots were busy, and every request went to the log. Requests to Plex, Sonarr, TMDB and the like are no longer logged one by one.
 - **Remote workers deleted originals** even with "keep originals" or trash on; they follow the server's setting now, and track cleanups follow a rule's originals policy (0.9.158 made cleanups keep originals on the server).
 - **A conversion or cleanup whose source read stalled could replace the original with a truncated file**; such outputs are rejected now and the original kept.
 - **A scan no longer empties the library when a share isn't mounted or a folder can't be read**: a folder's rows are kept when it would lose more than half of them, or can't be listed.

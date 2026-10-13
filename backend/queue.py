@@ -1247,6 +1247,10 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
     return fresh
 
 
+# Seconds between asking the media servers for active streams (pause on
+# stream): the worker loop runs every half second while its slots are full.
+STREAM_CHECK_EVERY = 15
+
 class QueueWorker:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -1268,6 +1272,8 @@ class QueueWorker:
         # Set is kept across loop iterations so we don't double-stop or
         # double-cont. Cleared on resume. v0.4.5+.
         self._stream_paused_jobs: set[int] = set()
+        self._streams_checked_at = float("-inf")  # _stream_pause_server
+        self._streams_server: Optional[str] = None
         # v0.9.59: bounded requeue count per job for transient DB-lock
         # failures — a lock storm (e.g. a rescan holding the write path under
         # storage stall) shouldn't permanently discard a running encode.
@@ -1691,6 +1697,25 @@ class QueueWorker:
         except Exception:
             return 1
 
+    async def _stream_pause_server(self) -> Optional[str]:
+        """The media server whose streams pause encoding ("Plex", "Jellyfin",
+        "Emby"), or None. Asked at most every STREAM_CHECK_EVERY seconds: the
+        worker loop comes round every half second while its slots are full,
+        and asked Plex each time (v0.10.0)."""
+        now = time.monotonic()
+        if now - self._streams_checked_at < STREAM_CHECK_EVERY:
+            return self._streams_server
+        self._streams_checked_at = now
+        server = None
+        if await self._should_pause_for_plex():
+            server = "Plex"
+        elif await self._should_pause_for_jellyfin():
+            server = "Jellyfin"
+        elif await self._should_pause_for_emby():
+            server = "Emby"
+        self._streams_server = server
+        return server
+
     async def _should_pause_for_plex(self) -> bool:
         """Check if encoding should pause due to active Plex streams."""
         try:
@@ -1878,22 +1903,12 @@ class QueueWorker:
             # "Pausing"/"Resuming" line once per stream-start /
             # stream-end transition.
             try:
-                pause_label: Optional[str] = None
-                if await self._should_pause_for_plex():
-                    pause_label = "Plex"
-                    if not getattr(self, '_plex_pause_logged', False):
-                        print("[WORKER] Pausing — active Plex stream(s) detected", flush=True)
-                        self._plex_pause_logged = True
-                elif await self._should_pause_for_jellyfin():
-                    pause_label = "Jellyfin"
-                    if not getattr(self, '_jellyfin_pause_logged', False):
-                        print("[WORKER] Pausing — active Jellyfin stream(s) detected", flush=True)
-                        self._jellyfin_pause_logged = True
-                elif await self._should_pause_for_emby():
-                    pause_label = "Emby"
-                    if not getattr(self, '_emby_pause_logged', False):
-                        print("[WORKER] Pausing — active Emby stream(s) detected", flush=True)
-                        self._emby_pause_logged = True
+                pause_label = await self._stream_pause_server()
+                if pause_label is not None:
+                    logged = f"_{pause_label.lower()}_pause_logged"
+                    if not getattr(self, logged, False):
+                        print(f"[WORKER] Pausing — active {pause_label} stream(s) detected", flush=True)
+                        setattr(self, logged, True)
 
                 if pause_label is not None:
                     # Stream is active. Freeze any running ffmpeg

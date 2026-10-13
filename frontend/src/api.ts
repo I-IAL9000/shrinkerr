@@ -31,6 +31,9 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** Sent when the server turns a request away for want of a sign-in. */
+export const SIGNED_OUT_EVENT = "shrinkerr:signed-out";
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const apiKey = getStoredApiKey();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -47,6 +50,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
     throw new ApiRequestError(String(i18n.t("common:errorBoundary.unreachable")), method);
   }
   if (!res.ok) {
+    // Signed out meanwhile (the session ended, or sign-in was turned on):
+    // the app shows the sign-in page instead of empty lists. v0.10.0.
+    if (res.status === 401) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
     // Pull the FastAPI-style `{"detail": "..."}` body so callers can
     // surface the actual server-side reason via toast. Pre-v0.3.51 the
     // thrown Error's message was just "API error: 400", losing every

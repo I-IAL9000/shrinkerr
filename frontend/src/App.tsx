@@ -1,7 +1,7 @@
 import { createBrowserRouter, RouterProvider, Routes, Route, Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
-import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, shortVersion, type VersionInfo, checkAuth, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
+import { ApiRequestError, useWebSocket, getNewFileCount, clearNewFileCount, getFailedJobCount, getVersion, shortVersion, type VersionInfo, checkAuth, SIGNED_OUT_EVENT, login, setStoredApiKey, startQueue, pauseQueue, getJobStats, getTmdbStatus, getViews, type SavedView } from "./api";
 import { useVisibleInterval } from "./useVisibleInterval";
 import AuthSetup from "./components/AuthSetup";
 // Pages load on first visit (FE#30, v0.10.0): everything was one 1.5 MB
@@ -563,6 +563,21 @@ function AppContent() {
     }).catch(() => { setAuthenticated(true); setAuthChecked(true); });
   }, []);
   useEffect(() => { recheckAuth(); }, [recheckAuth]);
+  // A request turned away for want of a sign-in (the session ended while
+  // the app was open): check again, once at a time, so the sign-in page
+  // shows instead of empty pages and spinners.
+  useEffect(() => {
+    let checking = false;
+    const onSignedOut = () => {
+      if (checking) return;
+      checking = true;
+      checkAuth().then(r => {
+        if (r.auth_required && !r.authenticated) setAuthenticated(false);
+      }).catch(() => {}).finally(() => { checking = false; });
+    };
+    window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
+  }, []);
 
   // v0.9.110: check whether a TMDB key is available (drives the banner below).
   useEffect(() => {

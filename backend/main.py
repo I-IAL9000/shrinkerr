@@ -13,6 +13,8 @@ from fastapi.responses import JSONResponse
 
 # Configure logging so shrinkerr.* loggers output to console
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+# Not every request to Plex, Sonarr, TMDB...: their errors only (v0.10.0).
+logging.getLogger("httpx").setLevel(logging.WARNING)
 from fastapi.staticfiles import StaticFiles
 
 from backend.database import init_db, DB_PATH
@@ -794,7 +796,14 @@ async def api_key_auth(request: Request, call_next):
         session_cookie = request.cookies.get("shrinkerr_session")
         if session_cookie and _validate_session(session_cookie, auth_settings):
             request.state.auth_method = "session"
-            return await call_next(request)
+            response = await call_next(request)
+            # A session in use is renewed once a day (v0.10.0): it lasts 30
+            # days from the last visit, not from signing in, so it doesn't
+            # end in the middle of using the app.
+            username, timestamp, _ = session_cookie.split(":")
+            if time.time() - int(timestamp) > 86400:
+                _set_session_cookie(response, request, username, auth_settings["session_secret"].strip())
+            return response
 
     # Endpoint needed auth but got none (or needed a key specifically but
     # caller sent only a session). No configured credential path = 503
