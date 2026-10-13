@@ -599,3 +599,13 @@ async def test_a_title_found_again_is_left_when_changed_meanwhile(posters, plex,
     assert BUDDY_DIR in await _stored(test_db)  # a Fix match, say, meanwhile: kept
     await posters._retry_plex_art([{**read, "resolved_at": "r2"}], plex_for)
     assert await _stored(test_db) == {}
+
+
+def test_a_season_folder_with_its_year_is_its_shows():
+    """"Season 01 (2014)" is a season folder (TMDB was searched for "Season 01");
+    a title starting with a season word still isn't."""
+    from backend.routes.posters import parse_folder_name
+    got = parse_folder_name("/m/TV/Fargo (2014)/Season 01 (2014)", walk_files=False)
+    assert (got["title"], got["year"]) == ("Fargo", "2014")
+    assert parse_folder_name("/m/TV/Dark/Staffel 2 [2019]", walk_files=False)["title"] == "Dark"
+    assert parse_folder_name("/m/Movies/Season of the Witch (2011)", walk_files=False)["title"] == "Season of the Witch"

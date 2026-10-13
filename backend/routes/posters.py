@@ -75,12 +75,12 @@ def _extract_ids(text: str) -> tuple[str | None, str | None, str | None]:
 
 
 # A folder named for a season, not the title — the whole name, with its
-# number: its show's name is (v0.10.0: in other languages too, and "S01";
-# as metadata._SEASON_DIR_RE). "Season of the Witch", "Special Forces" and
-# "Temporada de patos" are titles.
+# number (and maybe its year: "Season 01 (2014)"): its show's name is
+# (v0.10.0: in other languages too, and "S01"; as metadata._SEASON_DIR_RE).
+# "Season of the Witch", "Special Forces" and "Temporada de patos" are titles.
 _SEASON_DIR_RE = re.compile(
-    r"(?:season|series|staffel|saison|temporada|stagione|seizoen|sæson|säsong|sesong|kausi)[ ._-]*\d+"
-    r"|s\d{1,3}|specials?", re.IGNORECASE)
+    r"(?:(?:season|series|staffel|saison|temporada|stagione|seizoen|sæson|säsong|sesong|kausi)[ ._-]*\d+"
+    r"|s\d{1,3}|specials?)(?:\s*[(\[][^)\]]*[)\]])?", re.IGNORECASE)
 # A season pack's release name ends with its seasons: "Show.Name.S01.1080p…"
 # is "Show Name" ("Model S1 (2020)" isn't a release name: a title).
 _SEASON_PACK_RE = re.compile(r"\s+(?:S\d{1,2}(?:\s*-\s*S?\d{1,2})?|Seasons?\s*\d+(?:\s*-\s*\d+)?)$", re.IGNORECASE)
