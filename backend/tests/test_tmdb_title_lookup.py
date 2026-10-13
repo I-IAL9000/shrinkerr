@@ -81,6 +81,7 @@ SAW_RESULTS = {"results": [
 @pytest_asyncio.fixture
 async def lookup_db(test_db, monkeypatch):
     monkeypatch.setattr(metadata, "DB_PATH", test_db)
+    monkeypatch.setattr(metadata, "_transient_failures", {})
     monkeypatch.delenv("SHRINKERR_TMDB_API_KEY", raising=False)
     async with aiosqlite.connect(test_db) as db:
         await db.execute("INSERT INTO media_dirs (path) VALUES ('/m/movies')")
@@ -138,10 +139,17 @@ async def test_a_rate_limit_or_outage_is_not_cached_as_no_match(lookup_db, monke
     answers = [(status, {"status_message": "slow down"})]
     tmdb = FakeTMDB(lambda url, params: answers.pop(0) if answers else (200, SAW_RESULTS))
     monkeypatch.setattr(httpx, "AsyncClient", tmdb)
+    now = [1000.0]
+    monkeypatch.setattr(metadata, "_now", lambda: now[0])
     path = "/m/movies/Saw II (2005)/movie.mkv"
     assert await metadata.lookup_original_language(path) is None
     assert await _cache(lookup_db) == []
-    assert await metadata.lookup_original_language(path) == "eng"  # asked again, not a cached miss
+    # The title's other files, meanwhile: not asked again for a while (a
+    # rate limit isn't multiplied) ...
+    assert await metadata.lookup_original_language("/m/movies/Saw II (2005)/extra.mkv") is None
+    assert len(tmdb.calls) == 1
+    now[0] += metadata._TRANSIENT_RETRY_SECONDS
+    assert await metadata.lookup_original_language(path) == "eng"  # ... then asked again, not a cached miss
 
 
 @pytest.mark.asyncio
@@ -262,3 +270,27 @@ async def test_the_year_in_the_file_name_is_searched_with(lookup_db, monkeypatch
     monkeypatch.setattr(httpx, "AsyncClient", tmdb)
     assert await metadata.lookup_original_language("/m/movies/Saw II/Saw.II.2005.1080p.mkv") == "eng"
     assert tmdb.calls[0][1]["year"] == "2005"
+
+
+
+@pytest.mark.asyncio
+async def test_the_posters_match_gives_the_language(lookup_db, monkeypatch):
+    """The language of the TMDB entry the title's poster came from: no
+    request, and never another entry's."""
+    async with aiosqlite.connect(lookup_db) as db:
+        await db.execute("INSERT INTO poster_cache (folder_path, title, source, original_language) "
+                         "VALUES ('/m/movies/Buddy (2026) [tt37281055]', 'Buddy', 'tmdb', 'is')")
+        await db.commit()
+    tmdb = FakeTMDB(lambda url, params: (200, {}))
+    monkeypatch.setattr(httpx, "AsyncClient", tmdb)
+    assert await metadata.lookup_original_language("/m/movies/Buddy (2026) [tt37281055]/Buddy.mkv") == "isl"
+    assert tmdb.calls == []
+
+
+@pytest.mark.asyncio
+async def test_titles_tmdb_didnt_answer_for_long_ago_are_forgotten(lookup_db, monkeypatch):
+    monkeypatch.setattr(metadata, "_transient_failures", {("title", "old:"): 0.0})
+    monkeypatch.setattr(metadata, "_now", lambda: 10_000.0)
+    monkeypatch.setattr(httpx, "AsyncClient", FakeTMDB(lambda url, params: (429, {})))
+    assert await metadata.lookup_original_language("/m/movies/Saw II (2005)/movie.mkv") is None
+    assert metadata._transient_failures == {("title", "saw ii:2005"): 10_000.0}

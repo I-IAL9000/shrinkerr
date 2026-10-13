@@ -74,12 +74,15 @@ def _extract_ids(text: str) -> tuple[str | None, str | None, str | None]:
     return imdb, tvdb, tmdb
 
 
-# A folder named for a season, not the title: its show's name is (v0.10.0:
-# in other languages too, and "S01").
+# A folder named for a season, not the title — the whole name, with its
+# number: its show's name is (v0.10.0: in other languages too, and "S01";
+# as metadata._SEASON_DIR_RE). "Season of the Witch", "Special Forces" and
+# "Temporada de patos" are titles.
 _SEASON_DIR_RE = re.compile(
-    r"^(?:season|series|specials?|staffel|saison|temporada|stagione|seizoen|sæson|säsong|sesong|kausi)\b"
-    r"|^s\d{1,3}$", re.IGNORECASE)
-# A season pack's name ends with its seasons: "Show.Name.S01.1080p…" is "Show Name".
+    r"(?:season|series|staffel|saison|temporada|stagione|seizoen|sæson|säsong|sesong|kausi)[ ._-]*\d+"
+    r"|s\d{1,3}|specials?", re.IGNORECASE)
+# A season pack's release name ends with its seasons: "Show.Name.S01.1080p…"
+# is "Show Name" ("Model S1 (2020)" isn't a release name: a title).
 _SEASON_PACK_RE = re.compile(r"\s+(?:S\d{1,2}(?:\s*-\s*S?\d{1,2})?|Seasons?\s*\d+(?:\s*-\s*\d+)?)$", re.IGNORECASE)
 
 
@@ -111,17 +114,17 @@ def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
         parts = parts[:-1]
     folder_name = parts[-1] if parts else ""
     tv = False
-    if _SEASON_DIR_RE.match(folder_name) and len(parts) > 1:
+    if _SEASON_DIR_RE.fullmatch(folder_name) and len(parts) > 1:
         folder_name, tv = parts[-2], True
 
     imdb_id, tvdb_id, tmdb_id = _extract_ids(folder_name)
-    year_match = re.search(r"[\(\[](\d{4})[\)\]]", folder_name)  # "(2019)", "[2019]"
+    year_match = re.search(r"[\(\[]((?:18|19|20)\d{2})[\)\]]", folder_name)  # "(2019)", "[2019]"; not "[1080]"
 
     # Strip ID brackets/braces and `(YYYY)` from the title text.
     title = folder_name
     title = re.sub(r"\s*[\[\{(](?:tt\d+|tvdb(?:id)?[-=:]?\d+|tmdb(?:id)?[-=:]?\d+|imdb(?:id)?-\w+)[\]\})]", "", title)
     title = re.sub(r"\s*\b(?:tt\d{7,}|tvdb(?:id)?[-=]\d+|tmdb(?:id)?[-=]\d+)\b", "", title)
-    title = re.sub(r"\s*[\(\[]\d{4}[\)\]]", "", title)
+    title = re.sub(r"\s*[\(\[](?:18|19|20)\d{2}[\)\]]", "", title)
     title = title.strip().rstrip(" -")
 
     # Fallback path 1: walk individual filenames for IDs the folder name
@@ -143,6 +146,7 @@ def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
 
     # Fallback path 2: scene-style parser for title/year.
     year = year_match.group(1) if year_match else None
+    release = False  # a release name: "….1080p.BluRay.x264-GRP"
     if not (imdb_id or tvdb_id or tmdb_id):
         from backend.media_parser import parse_media_name
         parsed = parse_media_name(folder_name)
@@ -150,8 +154,9 @@ def parse_folder_name(folder_path: str, *, walk_files: bool = True) -> dict:
             title = parsed.title
         year = year or parsed.year
         tv = tv or parsed.media_type == "tv"
+        release = bool(parsed.resolution or parsed.source or parsed.codec)
     pack = _SEASON_PACK_RE.search(title)
-    if pack and pack.start() > 0:
+    if release and pack and pack.start() > 0:
         title, tv = title[:pack.start()], True
 
     return {
@@ -861,12 +866,12 @@ async def resolve_posters(req: ResolveRequest):
             await db.execute(
                 """INSERT OR REPLACE INTO poster_cache
                    (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                    network, status, imdb_id, details_v, art_retry, resolved_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    network, status, imdb_id, details_v, art_retry, original_language, resolved_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (path, parsed["title"], entry["year"], poster_url, source, image_data,
                  entry["rating"], entry["genres"], entry["country"], tmdb_meta.get("media_type"),
                  tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0),
-                 int(found["art_retry"]), now_iso),
+                 int(found["art_retry"]), tmdb_meta.get("original_language"), now_iso),
             )
 
         await db.commit()
@@ -1008,8 +1013,8 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
         network, status = ((meta.get("network") or ""), (meta.get("status") or "")) if tv else (None, None)
         return (imdb_id, network, network, status, status,
                 _rating(imdb_id, None)["rating"], meta.get("rating"), meta.get("country") or "",
-                meta.get("genres") or "", meta.get("year") or "", DETAILS_VERSION, path,
-                row["source"], row["resolved_at"], DETAILS_VERSION)
+                meta.get("genres") or "", meta.get("year") or "", meta.get("original_language") or "",
+                DETAILS_VERSION, path, row["source"], row["resolved_at"], DETAILS_VERSION)
 
     done = 0
     for i in range(0, len(rows), 20):
@@ -1028,6 +1033,7 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
                     "network = COALESCE(NULLIF(?, ''), network, ?), status = COALESCE(NULLIF(?, ''), status, ?), "
                     "rating = COALESCE(?, rating, ?), country = COALESCE(NULLIF(?, ''), country), "
                     "genres = COALESCE(NULLIF(?, ''), genres), year = COALESCE(NULLIF(year, ''), NULLIF(?, '')), "
+                    "original_language = COALESCE(NULLIF(?, ''), original_language), "
                     "details_v = ? WHERE folder_path = ? AND source IS ? AND resolved_at IS ? "
                     "AND COALESCE(details_v, 0) < ?", updates)
                 done += cur.rowcount
@@ -1040,6 +1046,11 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
           + (f"; {len(rows) - done} failed (tried again next time) or changed meanwhile" if done < len(rows) else ""),
           flush=True)
     return done
+
+
+# Plex's own matches (source 'plex', made without a TMDB key) have been
+# found on TMDB with one (_run_prefetch).
+_PLEX_ROWS_FOUND_FLAG = "_v0_10_0_plex_rows_found_on_tmdb"
 
 
 async def _run_prefetch(scheduled: bool = False):
@@ -1080,9 +1091,18 @@ async def _run_prefetch(scheduled: bool = False):
 
             await _maybe_purge_misnamed_rows(db)
             await _maybe_purge_plex_rows(db)
+            # Plex's own matches, made without a TMDB key: found on TMDB once
+            # one is there (v0.10.0); without one, they will be again.
+            plex_rows_found = False
+            if resolve_tmdb_key_sync(settings.get("tmdb_api_key")):
+                async with db.execute("SELECT 1 FROM settings WHERE key = ?", (_PLEX_ROWS_FOUND_FLAG,)) as cur:
+                    plex_rows_found = bool(await cur.fetchone())
+            else:
+                await db.execute("DELETE FROM settings WHERE key = ?", (_PLEX_ROWS_FOUND_FLAG,))
+                await db.commit()
             async with db.execute(
                 "SELECT folder_path, source, poster_url, resolved_at, image_data IS NOT NULL AS has_image, "
-                "art_retry, title, media_type, imdb_id FROM poster_cache"
+                "art_retry, title, year, media_type, imdb_id FROM poster_cache"
             ) as cur:
                 cached_rows = {r["folder_path"]: r for r in await cur.fetchall()}
 
@@ -1133,10 +1153,14 @@ async def _run_prefetch(scheduled: bool = False):
         stale_cutoff = (datetime.now(timezone.utc) - timedelta(days=PLACEHOLDER_TTL_DAYS)).isoformat()
         to_resolve: list[str] = []
         images: list[tuple[str, str]] = []  # (folder, poster_url): matched, only the image is missing
+        plex_rows: set[str] = set()  # Plex's own matches, found on TMDB now
         for p in folder_list:
             row = cached_rows.get(p)
             if row is None:
                 to_resolve.append(p)
+            elif row["source"] == "plex" and tmdb_key and not plex_rows_found:
+                to_resolve.append(p)
+                plex_rows.add(p)
             elif row["has_image"] or row["source"] in ("tmdb-manual", "other-skipped", "plex"):
                 continue
             elif row["source"] == "tmdb" and row["poster_url"]:
@@ -1194,8 +1218,8 @@ async def _run_prefetch(scheduled: bool = False):
         sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
             (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-             network, status, imdb_id, details_v, art_retry, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+             network, status, imdb_id, details_v, art_retry, original_language, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
         async def _do_one(path: str) -> tuple | None:
             async with sem:
@@ -1216,13 +1240,15 @@ async def _run_prefetch(scheduled: bool = False):
                         source, image_data, _rating(imdb_id, tmdb_meta.get("rating"))["rating"],
                         tmdb_meta.get("genres") or None, tmdb_meta.get("country") or None, tmdb_meta.get("media_type"),
                         tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0),
-                        int(found["art_retry"]), now_str)
+                        int(found["art_retry"]), tmdb_meta.get("original_language"), now_str)
 
         # Process in chunks of 20 (rate-limited HTTP, batch DB write)
+        plex_rows_left = 0  # Plex's own matches TMDB didn't answer for: found again next time
         for ci in range(0, len(to_resolve), 20):
             chunk = to_resolve[ci:ci + 20]
             results = await asyncio.gather(*[_do_one(p) for p in chunk], return_exceptions=True)
             batch = [r for r in results if isinstance(r, tuple)]
+            plex_rows_left += sum(1 for p, r in zip(chunk, results) if p in plex_rows and not isinstance(r, tuple))
 
             if batch:
                 for attempt in range(3):
@@ -1246,6 +1272,15 @@ async def _run_prefetch(scheduled: bool = False):
 
         if art_rows and _plex_answers(plex):
             await _retry_plex_art(art_rows, plex)
+        if tmdb_key and not plex_rows_found and not plex_rows_left:
+            db_w = await aiosqlite.connect(DB_PATH)
+            try:
+                await db_w.execute("PRAGMA busy_timeout=30000")
+                await db_w.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                                   (_PLEX_ROWS_FOUND_FLAG,))
+                await db_w.commit()
+            finally:
+                await db_w.close()
 
         if tmdb_key:
             await _backfill_details(tmdb_key, _media_type_hint_for)
@@ -1416,17 +1451,24 @@ def _plex_failed(plex: dict, exc: Exception) -> None:
 
 
 _EPISODE_NAME_RE = re.compile(r"[Ss]\d{1,2}[Ee]\d{1,3}")
+# A film in parts: "Heat.cd1.avi", "Heat - Part 2.mkv", "Disc 1".
+_PART_NAME_RE = re.compile(r"(?:^|[ ._\-\[(])(?:cd|dis[ck]|dvd|part|pt)[ ._-]?\d{1,2}(?=[ ._\-\])]|$)", re.IGNORECASE)
 
 
 def _title_files(rows) -> dict:
     """What a title's files say (v0.10.0), from (file_path, file_size,
-    duration) rows: its biggest file's name and duration — the film, not
-    its extras — and whether they're episodes ("S01E02")."""
+    duration) rows: its biggest file's name and its duration — the film,
+    not its extras; a film in parts (cd1, cd2…): theirs together, else
+    none — and whether they're episodes ("S01E02")."""
     rows = [r for r in rows if r[0]]
     if not rows:
         return {}
     main = max(rows, key=lambda r: r[1] or 0)
-    return {"name": main[0], "duration": main[2] or None,
+    duration = main[2] or None
+    parts = [r for r in rows if _PART_NAME_RE.search(r[0].rsplit("/", 1)[-1].rsplit(".", 1)[0])]
+    if len(parts) > 1:
+        duration = sum(r[2] for r in parts) if all(r[2] for r in parts) else None
+    return {"name": main[0], "duration": duration,
             "episodes": any(_EPISODE_NAME_RE.search(r[0].rsplit("/", 1)[-1]) for r in rows)}
 
 
@@ -1494,20 +1536,26 @@ async def _find_on_tmdb(api_key: str, *, title: str | None, year: str | None, me
         return await lookup(*args, **kwargs)
     ask = ask or strict
     ways: list[tuple] = []
+    asked: set[tuple] = set()  # an id the folder and Plex both give is asked about once
+
+    def way(kind: str, value, lookup, args, kwargs=None) -> None:
+        if (kind, str(value).lower()) not in asked:
+            asked.add((kind, str(value).lower()))
+            ways.append((lookup, args, kwargs or {}))
     if imdb_id:
-        ways.append((_resolve_tmdb, (imdb_id, api_key), {}))
+        way("imdb", imdb_id, _resolve_tmdb, (imdb_id, api_key))
     if tvdb_id:
-        ways.append((_resolve_tmdb_tvdb, (tvdb_id, api_key), {}))
+        way("tvdb", tvdb_id, _resolve_tmdb_tvdb, (tvdb_id, api_key))
     if tmdb_id:
-        ways.append((_resolve_tmdb_id, (tmdb_id, media_type, api_key), {"title": title}))
+        way("tmdb", tmdb_id, _resolve_tmdb_id, (tmdb_id, media_type, api_key), {"title": title})
     if server_ids:
         server_type = server_ids.get("media_type")
         if server_ids.get("tmdb"):
-            ways.append((_resolve_tmdb_id, (server_ids["tmdb"], server_type, api_key), {}))
+            way("tmdb", server_ids["tmdb"], _resolve_tmdb_id, (server_ids["tmdb"], server_type, api_key))
         if server_ids.get("imdb"):
-            ways.append((_resolve_tmdb, (server_ids["imdb"], api_key), {}))
+            way("imdb", server_ids["imdb"], _resolve_tmdb, (server_ids["imdb"], api_key))
         if server_ids.get("tvdb") and server_type == "tv":
-            ways.append((_resolve_tmdb_tvdb, (server_ids["tvdb"], api_key), {}))
+            way("tvdb", server_ids["tvdb"], _resolve_tmdb_tvdb, (server_ids["tvdb"], api_key))
     if title:
         ways.append((_resolve_tmdb_search, (title, year, api_key),
                      {"media_type_hint": media_type, "imdb_id": imdb_id, "duration": duration}))
@@ -1556,12 +1604,6 @@ async def _resolve_title(folder: str, parsed: dict, tmdb_key: str, label_hint: s
         except Exception as exc:
             _plex_unanswered(exc)
             return {**found, "failed": True}
-        # Plex's answer must be the bracket family's type (v0.3.133): its
-        # global search can give `Charlie's Angels (1976) [tvdb-77170]`
-        # the 2000 film.
-        bracket_hint = _media_type_hint_from_parsed(parsed)
-        if source == "plex" and bracket_hint and meta.get("media_type") != bracket_hint:
-            return found
         if source == "plex":
             found.update(poster_url=poster_url, source=source, meta=meta,
                          image_data=await _download_image(poster_url, plex_url, plex_token))
@@ -1595,18 +1637,34 @@ async def _resolve_title(folder: str, parsed: dict, tmdb_key: str, label_hint: s
             tmdb_key, title=parsed.get("title"), year=year, media_type=_title_media_type(parsed, files, label_hint),
             imdb_id=parsed.get("imdb_id"), tvdb_id=parsed.get("tvdb_id"), tmdb_id=parsed.get("tmdb_id"),
             server_ids=server_ids, duration=files.get("duration"), ask=ask)
-        if source == "placeholder":
-            return {**found, "failed": tmdb_down}
-        meta = await _with_details(meta, tmdb_key, parsed.get("imdb_id"))
         art = None
-        if lookup and not plex_down:
-            try:
-                art = await _plex_art(lookup, {"imdb": meta.get("imdb_id"), "tmdb": meta.get("tmdb_id"),
-                                               "tvdb": meta.get("tvdb_id") or parsed.get("tvdb_id")},
-                                      meta.get("media_type"), [parsed.get("title"), meta.get("title")])
-            except Exception as exc:
-                plex_down = True
-                _plex_failed(plex, exc)
+        if source == "placeholder":
+            if tmdb_down:
+                return {**found, "failed": True}
+            # TMDB doesn't know it (a home video, a concert): Plex's own
+            # match, as without a key — or, Plex not answering, nothing
+            # stored (it may have it).
+            if plex:
+                if lookup and not plex_down:
+                    try:
+                        poster_url, source, meta = await _plex_own_match(lookup, parsed)
+                    except Exception as exc:
+                        plex_down = True
+                        _plex_failed(plex, exc)
+                if plex_down:
+                    return {**found, "failed": True}
+            if source == "placeholder":
+                return found
+        else:
+            meta = await _with_details(meta, tmdb_key, parsed.get("imdb_id"))
+            if lookup and not plex_down:
+                try:
+                    art = await _plex_art(lookup, {"imdb": meta.get("imdb_id"), "tmdb": meta.get("tmdb_id"),
+                                                   "tvdb": meta.get("tvdb_id") or parsed.get("tvdb_id")},
+                                          meta.get("media_type"), [parsed.get("title"), meta.get("title")])
+                except Exception as exc:
+                    plex_down = True
+                    _plex_failed(plex, exc)
         if lookup and not plex_down:
             plex["failures"] = 0  # it answered: its failures weren't in a row
     finally:
@@ -1635,11 +1693,14 @@ async def _retry_plex_art(rows: list, plex: dict) -> int:
     v0.10.0) — Plex is asked, TMDB isn't, and the match stays as it is: a
     title Plex has (its IMDb id agrees, or its files are in the folder) gets
     Plex's poster, one it hasn't keeps TMDB's; either way it isn't asked
-    again. A poster that doesn't download is tried again next time. Rows
-    changed meanwhile (a Fix match, found again) are left as they are.
-    Returns the posters replaced."""
+    again. A poster that doesn't download is tried again next time. When
+    Plex's ids for the files here (_plex_ids_here) are another title's, the
+    title is looked up again (its row deleted): it was found by its name
+    because Plex didn't answer. Rows changed meanwhile (a Fix match, found
+    again) are left as they are. Returns the posters replaced."""
     import httpx
     updates: list[tuple] = []
+    again: list[tuple] = []
     async with httpx.AsyncClient(timeout=10) as client:
         for row in rows:
             if not _plex_answers(plex):
@@ -1648,6 +1709,11 @@ async def _retry_plex_art(rows: list, plex: dict) -> int:
             parsed = parse_folder_name(folder, walk_files=False)
             lookup = _PlexLookup(client, plex, folder)
             try:
+                here = await _plex_ids_here(lookup, parsed, row["year"] or parsed.get("year"))
+                if here and here.get("imdb") and row["imdb_id"] and here["imdb"] != row["imdb_id"].lower():
+                    again.append((folder, row["resolved_at"]))
+                    plex["failures"] = 0
+                    continue
                 poster = await _plex_art(lookup, {"imdb": row["imdb_id"] or parsed.get("imdb_id"),
                                                   "tvdb": parsed.get("tvdb_id")},
                                          row["media_type"], [row["title"] or parsed.get("title")])
@@ -1659,16 +1725,20 @@ async def _retry_plex_art(rows: list, plex: dict) -> int:
             if poster and not image:
                 continue
             updates.append((poster, image, folder, row["resolved_at"]))
-    if updates:
+    if updates or again:
         db = await aiosqlite.connect(DB_PATH)
         try:
             await db.execute("PRAGMA busy_timeout=30000")
             await db.executemany(
                 "UPDATE poster_cache SET poster_url = COALESCE(?, poster_url), image_data = COALESCE(?, image_data), "
                 "art_retry = 0 WHERE folder_path = ? AND art_retry = 1 AND resolved_at IS ?", updates)
+            await db.executemany(
+                "DELETE FROM poster_cache WHERE folder_path = ? AND art_retry = 1 AND resolved_at IS ?", again)
             await db.commit()
         finally:
             await db.close()
+    if again:
+        print(f"[POSTER] {len(again)} title(s) Plex has as another title: looked up again", flush=True)
     replaced = sum(1 for u in updates if u[0])
     if updates:
         print(f"[POSTER] Plex's posters for {replaced} of {len(updates)} title(s) found while it didn't answer",
@@ -1835,33 +1905,40 @@ class _PlexLookup:
         return f"/api/posters/image?path={quote(item['thumb'], safe='')}"
 
 
+async def _plex_own_match(lookup: "_PlexLookup", parsed: dict) -> tuple:
+    """Plex's own match for the folder (v0.10.0) — without a TMDB key, or
+    for a title TMDB doesn't know (a home video, a concert): the first item
+    its library search (else its global search) finds that is this title
+    (_plex_item_is_this), of the type a bracket id says (v0.3.133: its
+    global search gave `Charlie's Angels (1976) [tvdb-77170]` the 2000
+    film; a [tvdb-N] show in a films library isn't Plex's film). A show
+    whose ids can't tell but is otherwise this title is asked for its own
+    record (its Location). Raises when Plex doesn't answer: its answer is
+    unknown, not "no match"."""
+    wanted = _media_type_hint_from_parsed(parsed)
+    for scope in ("section", "global"):
+        for item, media_type in await lookup.search(parsed["title"], scope):
+            if wanted and media_type != wanted:
+                continue  # a namesake of the other type isn't taken before it
+            if _plex_ids_agree(item, parsed) is None and _plex_item_is_this(item, lookup.folder, parsed, False):
+                item = await lookup.located(item)
+            if _plex_item_is_this(item, lookup.folder, parsed, lookup.comparable):
+                return lookup.poster(item), "plex", {"media_type": media_type}
+    return None, "placeholder", {}
+
+
 async def _resolve_plex(folder_path, parsed, plex_url, plex_token, path_mapping, libraries: list | None = None):
-    """Plex's own match for the folder — without a TMDB key only (v0.10.0;
-    TMDB decides otherwise): the first item its library search (else its
-    global search, of the folder's bracket family's type) finds that is
-    this title (_plex_item_is_this). A show whose ids can't tell but is
-    otherwise this title is asked for its own record (its Location).
-    `libraries`: Plex's (get_plex_libraries), read for a batch of titles;
-    else read here. Raises when Plex doesn't answer: its answer is unknown,
-    not "no match"."""
+    """_plex_own_match over a connection of its own. `libraries`: Plex's
+    (get_plex_libraries), read for a batch of titles; else read here."""
     import httpx
     from backend.plex import get_plex_libraries
 
     async with httpx.AsyncClient(timeout=10) as client:
         if libraries is None:
             libraries = await get_plex_libraries(plex_url, plex_token)
-        lookup = _PlexLookup(client, {"url": plex_url, "token": plex_token, "mapping": path_mapping,
-                                      "libraries": libraries}, folder_path)
-        wanted = _media_type_hint_from_parsed(parsed)
-        for scope in ("section", "global"):
-            for item, media_type in await lookup.search(parsed["title"], scope):
-                if scope == "global" and wanted and media_type != wanted:
-                    continue  # a namesake of the other type isn't taken before it
-                if _plex_ids_agree(item, parsed) is None and _plex_item_is_this(item, lookup.folder, parsed, False):
-                    item = await lookup.located(item)
-                if _plex_item_is_this(item, lookup.folder, parsed, lookup.comparable):
-                    return lookup.poster(item), "plex", {"media_type": media_type}
-    return None, "placeholder", {}
+        return await _plex_own_match(_PlexLookup(client, {"url": plex_url, "token": plex_token,
+                                                          "mapping": path_mapping, "libraries": libraries},
+                                                 folder_path), parsed)
 
 
 def _plex_title_fits(item: dict, title: str | None, year: str | None) -> bool:
@@ -2086,6 +2163,7 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
         "media_type": media_type,
         "tmdb_id": item.get("id"),
         "title": item.get("title") or item.get("name"),
+        "original_language": item.get("original_language"),
     }
 
 
@@ -2400,9 +2478,11 @@ async def pick_tmdb_candidate(results: list[dict], title: str, year: str | None,
     (rank_tmdb_tiers). With the folder's IMDb id, the first that isn't
     another title (pick_imdb_checked). With alike results in the best pass
     — a remake without a year in the name, two films of a title and year —
-    and the file's `duration` (seconds) known, the first film of them
-    (up to _IMDB_CHECKED_MATCHES) whose runtime is the file's
-    (_runtime_fits), else the first. A clear match costs no request.
+    and the file's `duration` (seconds) known: the best match, unless its
+    runtime on TMDB is known and isn't the file's (_runtime_fits) and
+    another film of them (up to _IMDB_CHECKED_MATCHES in all) is — an
+    unknown runtime (new, obscure entries) isn't evidence against it. A
+    clear match costs no request.
     Raises RuntimeError when TMDB didn't give a candidate's details. Shared
     by poster matching and the original-language lookup, so both take the
     same title."""
@@ -2412,18 +2492,20 @@ async def pick_tmdb_candidate(results: list[dict], title: str, year: str | None,
     if imdb_id:
         return await pick_imdb_checked([i for t in tiers for i in t], imdb_id, api_key, media_type or "movie", log)
     best = tiers[0]
-    if not duration or len(best) < 2:
+
+    def film(item: dict) -> bool:
+        return (item.get("media_type") or media_type or "movie") == "movie"
+    if not duration or len(best) < 2 or not film(best[0]):
         return best[0], {}
-    first: tuple[dict, dict] = (best[0], {})
-    for item in best[:_IMDB_CHECKED_MATCHES]:
-        if (item.get("media_type") or media_type or "movie") != "movie":
-            continue
-        details = await _candidate_details(item, "movie", api_key)
-        if item is best[0]:
-            first = (item, details)
-        if _runtime_fits(details.get("runtime"), duration):
-            return item, details
-    return first
+    details = await _candidate_details(best[0], "movie", api_key)
+    if not details.get("runtime") or _runtime_fits(details["runtime"], duration):
+        return best[0], details
+    for item in best[1:_IMDB_CHECKED_MATCHES]:
+        if film(item):
+            other = await _candidate_details(item, "movie", api_key)
+            if _runtime_fits(other.get("runtime"), duration):
+                return item, other
+    return best[0], details
 
 
 async def _resolve_tmdb_search(title, year, api_key, media_type_hint: str | None = None,
@@ -2825,11 +2907,11 @@ async def override_poster(req: OverrideRequest):
         await db.execute(
             """INSERT OR REPLACE INTO poster_cache
                (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                network, status, imdb_id, details_v, resolved_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                network, status, imdb_id, details_v, original_language, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (req.folder_path, title, year, poster_url, "tmdb-manual", image_data,
              rating, genre_names or None, country_names or None, req.media_type,
-             network, status, imdb_id, DETAILS_VERSION, datetime.now(timezone.utc).isoformat()),
+             network, status, imdb_id, DETAILS_VERSION, _raw_lang, datetime.now(timezone.utc).isoformat()),
         )
         # v0.9.95: a manual match is authoritative — ALWAYS mark the row(s)
         # 'tmdb-manual', even if TMDB has no original_language for the pick

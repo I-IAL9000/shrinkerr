@@ -614,6 +614,9 @@ async def init_db():
             # 1: Plex didn't answer when the title was found, so it has
             # TMDB's poster; the prefetch asks Plex for its own (v0.10.0).
             ("art_retry", "INTEGER DEFAULT 0"),
+            # The title's original language on TMDB (its 2-letter code), for
+            # the original-language lookup to agree with the poster (v0.10.0).
+            ("original_language", "TEXT"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")

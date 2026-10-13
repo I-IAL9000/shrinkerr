@@ -2,6 +2,7 @@
 
 import os
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -126,6 +127,16 @@ def _lookup_debug(msg: str) -> None:
     if _lookup_debug_budget > 0:
         _lookup_debug_budget -= 1
         print(f"[METADATA] {msg}", flush=True)
+
+
+# A title TMDB didn't answer for (rate-limited, down) isn't asked about
+# again for this long (v0.10.0): each of its files asked 1 + 3 requests more.
+_TRANSIENT_RETRY_SECONDS = 600
+_transient_failures: dict[tuple, float] = {}
+
+
+def _now() -> float:
+    return time.monotonic()
 
 
 class _TransientLookupError(Exception):
@@ -323,6 +334,17 @@ async def lookup_original_language(file_path: str) -> str | None:
         # cached under a title key.
         async with db.execute("SELECT path FROM media_dirs") as cur:
             media_roots = [r["path"] for r in await cur.fetchall()]
+        # The language of the TMDB entry the title's poster came from
+        # (v0.10.0): the same title, no request.
+        from backend.scan_filters import title_key
+        async with db.execute(
+            "SELECT original_language FROM poster_cache WHERE folder_path = ? "
+            "AND source IN ('tmdb', 'tmdb-manual') AND original_language > ''",
+            (title_key(file_path, frozenset((p or "").rstrip("/") for p in media_roots)),),
+        ) as cur:
+            stored = await cur.fetchone()
+        if stored:
+            return map_language_code(stored["original_language"])
         from backend.routes.posters import _file_year, parse_folder_name
         name_path, is_tv = title_search_name(file_path, media_roots)
         _meta = parse_folder_name(name_path, walk_files=False) if name_path else {}
@@ -374,6 +396,10 @@ async def lookup_original_language(file_path: str) -> str | None:
                       "looked up (add one in Settings → Metadata)", flush=True)
             return None
 
+        failed_at = _transient_failures.get((id_type, media_id))
+        if failed_at is not None and _now() - failed_at < _TRANSIENT_RETRY_SECONDS:
+            return None  # TMDB didn't answer for it a moment ago
+
         # Do the lookup via TMDB
         raw_lang: Optional[str] = None
         try:
@@ -399,7 +425,12 @@ async def lookup_original_language(file_path: str) -> str | None:
                     )
         except _TransientLookupError:
             # Rate-limited, failing or unreachable: unknown, not "no match".
-            # Not cached, so the next scan or refresh asks again.
+            # Not cached, so the next scan or refresh asks again — after
+            # _TRANSIENT_RETRY_SECONDS, not for each of the title's files.
+            now = _now()
+            for key in [k for k, t in _transient_failures.items() if now - t >= _TRANSIENT_RETRY_SECONDS]:
+                del _transient_failures[key]
+            _transient_failures[(id_type, media_id)] = now
             return None
 
         mapped = map_language_code(raw_lang) if raw_lang else None

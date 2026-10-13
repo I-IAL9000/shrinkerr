@@ -31,6 +31,16 @@ from backend.routes.posters import parse_folder_name
     ("/m/TV/Show.Name.S01.1080p.WEB-DL.DDP5.1.H.264-GRP", "Show Name", None, True),  # a season pack
     ("/m/TV/The.Office.US.S02-S03.1080p.BluRay.x264-GRP", "The Office US", None, True),
     ("/m/TV/Show.Name.S01E01.1080p.WEB.h264-GRP.mkv", "Show Name", None, True),        # a loose episode
+    # Films whose names start with a season word, or end like a season pack.
+    ("/m/Movies/Special Forces (2011)", "Special Forces", "2011", False),
+    ("/m/Movies/Special ID (2013)", "Special ID", "2013", False),
+    ("/m/Movies/Temporada de patos (2004)", "Temporada de patos", "2004", False),
+    ("/m/Movies/Saison (2020)", "Saison", "2020", False),
+    ("/m/Movies/Season of the Witch (2011)", "Season of the Witch", "2011", False),
+    ("/m/Movies/Series 7 The Contenders (2001)", "Series 7 The Contenders", "2001", False),
+    ("/m/Movies/Model S1 (2020)", "Model S1", "2020", False),
+    ("/m/Movies/Area 51 [1080]", "Area 51", None, False),  # not a year
+    ("/m/TV/Show Name/Specials", "Show Name", None, True),
 ])
 def test_release_and_library_names_give_the_title(path, title, year, tv):
     parsed = parse_folder_name(path, walk_files=False)
@@ -250,6 +260,26 @@ async def test_a_remake_without_a_year_is_told_by_its_runtime(posters, test_db, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("files, runtimes, found, asked_records", [
+    # The best match's runtime unknown (new, obscure entries): it stays.
+    ([("heat.mkv", 9, 170 * 60)], {2: {}, 949: {"runtime": 170}}, 2, ["movie/2"]),
+    # Longer than the best match (an extended cut, +35%), and no other fits: it stays.
+    ([("heat.mkv", 9, 136 * 60)], {2: {"runtime": 101}, 949: {"runtime": 170}, 3: {"runtime": 100}}, 2,
+     ["movie/2", "movie/949", "movie/3"]),
+    # In two parts: their runtimes together, not the bigger part's.
+    ([("Heat.cd1.avi", 9, 85 * 60), ("Heat.cd2.avi", 8, 85 * 60)],
+     {2: {"runtime": 101}, 949: {"runtime": 170}, 3: {"runtime": 100}}, 949, ["movie/2", "movie/949"]),
+])
+async def test_the_best_match_is_left_only_when_its_runtime_is_known_and_another(
+        posters, test_db, monkeypatch, files, runtimes, found, asked_records):
+    await _library(test_db, [(f"/m/Movies/Heat/{name}", size, d) for name, size, d in files], [("/m/Movies", "Movies")])
+    asked = _tmdb(posters, monkeypatch, {"Heat": HEATS}, runtimes)
+    await posters._run_prefetch()
+    assert (await _stored(test_db))["/m/Movies/Heat"][1] == _tmdb_poster(found)
+    assert [path for path, _ in asked[1:]] == asked_records
+
+
+@pytest.mark.asyncio
 async def test_two_films_of_a_title_and_year_are_told_by_their_runtimes(posters, test_db, monkeypatch):
     await _library(test_db, [("/m/Movies/Buddy (2026)/buddy.mkv", 9, 118 * 60)], [("/m/Movies", "Movies")])
     _tmdb(posters, monkeypatch, {"Buddy": [_film(11, "Buddy", "2026-02-01"), _film(12, "Buddy", "2026-04-17")]},
@@ -315,6 +345,18 @@ async def test_plexs_ids_name_only_the_title_in_the_folder(posters, plex, test_d
 
 
 @pytest.mark.asyncio
+async def test_an_id_already_asked_about_isnt_asked_again(posters, plex, test_db, monkeypatch):
+    """Plex's IMDb id for the files is the folder's: /find once."""
+    folder = "/media/Misc/HD 2025/Buddy (2026) [tt37281055]"
+    await _library(test_db, [], plex_on=True)
+    plex["section"] = {"Buddy": [_movie(2026, file="/data/misc/HD 2025/Buddy (2026) [tt37281055]/b.mkv", key="101",
+                                        guids=["imdb://tt37281055"])]}
+    asked = _tmdb(posters, monkeypatch, {"Buddy": [_film(12, "Buddy", "2026-04-17")]}, {12: {"imdb_id": "tt37281055"}})
+    await _grid(posters, folder)
+    assert [path for path, _ in asked] == ["find/tt37281055", "search/movie", "movie/12"]
+
+
+@pytest.mark.asyncio
 async def test_plexs_poster_can_come_from_another_library(posters, plex, test_db, monkeypatch):
     """The title in Plex elsewhere (its 4K library, say): its ids are the
     title's, so its poster is."""
@@ -355,8 +397,8 @@ async def test_plexs_poster_later_leaves_a_row_changed_meanwhile(posters, plex, 
         return "cGxleA=="
     monkeypatch.setattr(posters, "_download_image", download)
     plex_for = await posters._plex_for(PLEX, "tok", MAPPING)
-    read = {"folder_path": BUDDY_DIR, "title": "Buddy", "media_type": "movie", "imdb_id": "tt37281055",
-            "resolved_at": "r1"}  # as it was read, before a Fix match or a new lookup
+    read = {"folder_path": BUDDY_DIR, "title": "Buddy", "year": "2026", "media_type": "movie",
+            "imdb_id": "tt37281055", "resolved_at": "r1"}  # as it was read, before a Fix match or a new lookup
     assert await posters._retry_plex_art([read], plex_for) == 1
     assert await _stored(test_db) == {BUDDY_DIR: ("tmdb", "u", "movie", 1)}  # not written over
     assert await posters._retry_plex_art([{**read, "resolved_at": "r2"}], plex_for) == 1
@@ -419,3 +461,141 @@ async def test_plex_failing_now_and_then_is_still_asked(posters, plex, test_db, 
     await posters._run_prefetch()
     stored = await _stored(test_db)
     assert sorted(row[3] for row in stored.values()) == [0] * 14 + [1] * 7
+
+
+HOME_VIDEO = "/media/Misc/Family Trip (2019)"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plex_answers", [True, False])
+async def test_a_title_tmdb_doesnt_know_keeps_plexs_own_match(posters, plex, test_db, monkeypatch, plex_answers):
+    """A home video, a concert: TMDB doesn't know it, Plex has it with its
+    own artwork — Plex's match (its hardened rules), as without a key."""
+    await _library(test_db, [], plex_on=True)
+    plex["section"] = {"Family Trip": [_movie(2019, file="/data/misc/Family Trip (2019)/trip.mkv", key="500",
+                                              title="Family Trip")]} if plex_answers else 500
+    asked = _tmdb(posters, monkeypatch)  # TMDB knows nothing
+    got = (await _grid(posters, HOME_VIDEO))[HOME_VIDEO]
+    assert [path for path, _ in asked] == ["search/multi"]
+    if plex_answers:
+        assert await _stored(test_db) == {HOME_VIDEO: ("plex", _plex_poster(500), "movie", 0)}
+    else:  # Plex may have it: nothing stored, looked up again
+        assert got["source"] == "placeholder" and await _stored(test_db) == {}
+
+
+@pytest.mark.asyncio
+async def test_a_tmdb_lookup_that_failed_isnt_answered_by_plex(posters, plex, test_db, monkeypatch):
+    await _library(test_db, [], plex_on=True)
+    plex["section"] = {"Family Trip": [_movie(2019, file="/data/misc/Family Trip (2019)/trip.mkv", key="500",
+                                              title="Family Trip")]}
+
+    async def down(client, url, params):
+        return httpx.Response(503, json={})
+    monkeypatch.setattr(posters, "_tmdb_get", down)
+    got = (await _grid(posters, HOME_VIDEO))[HOME_VIDEO]
+    assert got["source"] == "placeholder" and await _stored(test_db) == {}
+
+
+@pytest.mark.asyncio
+async def test_plexs_ids_for_the_files_later_find_the_title_again(posters, plex, test_db, monkeypatch):
+    """Found by its title while Plex was down; back, Plex names the files
+    here another film (its title and year fit): looked up again, not kept
+    for good."""
+    await _library(test_db, [(BUDDY_DIR + "/Buddy.mkv", 9, None)], plex_on=True)
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO poster_cache (folder_path, title, year, source, poster_url, media_type, imdb_id, "
+                         "image_data, details_v, art_retry, resolved_at) VALUES (?, 'Buddy', '2026', 'tmdb', ?, "
+                         "'movie', 'tt37281055', 'aW1n', ?, 1, 'r1')",
+                         (BUDDY_DIR, _tmdb_poster(12), posters.DETAILS_VERSION))
+        await db.commit()
+    plex["section"] = {"Buddy": [_movie(2026, file=BUDDY_FILE, key="177", guids=["imdb://tt0000077", "tmdb://77"])]}
+    asked = _tmdb(posters, monkeypatch, records={77: {"title": "Buddy", "release_date": "2026-09-01",
+                                                      "imdb_id": "tt0000077", "poster_path": "/77.jpg"}})
+    await posters._run_prefetch()
+    assert await _stored(test_db) == {} and asked == []  # Plex only; looked up again ...
+    await posters._run_prefetch()
+    assert await _stored(test_db) == {BUDDY_DIR: ("tmdb", _plex_poster(177), "movie", 0)}  # ... as Plex has it
+    assert [path for path, _ in asked] == ["movie/77"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("via", ["grid", "prefetch", "backfill"])
+async def test_the_titles_original_language_is_stored(posters, test_db, monkeypatch, via):
+    """For the original-language lookup to take the poster's title's."""
+    folder = "/m/Movies/Jagten (2012)"
+    await _library(test_db, [(folder + "/j.mkv", 9, None)], [("/m/Movies", "Movies")])
+    backfill = posters._backfill_details
+    _tmdb(posters, monkeypatch, {"Jagten": [_film(103663, "The Hunt", "2012-01-10", original_title="Jagten",
+                                                  original_language="da")]}, {103663: {}})
+    if via == "grid":
+        await _grid(posters, folder)
+    elif via == "prefetch":
+        await posters._run_prefetch()
+    else:  # a title found before the language was stored
+        async with aiosqlite.connect(test_db) as db:
+            await db.execute("INSERT INTO poster_cache (folder_path, title, source, media_type, details_v) "
+                             "VALUES (?, 'Jagten', 'tmdb', 'movie', 0)", (folder,))
+            await db.commit()
+        assert await backfill("k", lambda p: "movie") == 1
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT original_language FROM poster_cache") as cur:
+            assert await cur.fetchall() == [("da",)]
+
+
+@pytest.mark.asyncio
+async def test_a_fix_match_stores_its_original_language(posters, test_db, monkeypatch):
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('tmdb_api_key', 'k')")
+        await db.commit()
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"title": "Druk", "original_language": "da"}))))
+    await posters.override_poster(posters.OverrideRequest(folder_path="/m/Movies/Another Round", tmdb_id=580175,
+                                                          media_type="movie"))
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT source, original_language FROM poster_cache") as cur:
+            assert await cur.fetchall() == [("tmdb-manual", "da")]
+
+
+@pytest.mark.asyncio
+async def test_plex_rows_are_found_on_tmdb_once_a_key_is_there(posters, plex, test_db, monkeypatch):
+    """Matched by Plex alone without a TMDB key; with one, the prefetch
+    finds them on TMDB — once: a title TMDB doesn't know stays Plex's."""
+    monkeypatch.delenv("SHRINKERR_TMDB_API_KEY")
+    await _library(test_db, [(BUDDY_DIR + "/Buddy.mkv", 9, None), (HOME_VIDEO + "/trip.mkv", 9, None)], plex_on=True)
+    plex["section"] = {"Buddy": [_movie(2026, file=BUDDY_FILE, key="101")],
+                       "Family Trip": [_movie(2019, file="/data/misc/Family Trip (2019)/trip.mkv", key="500",
+                                              title="Family Trip")]}
+    await posters._run_prefetch()
+    assert {k: v[0] for k, v in (await _stored(test_db)).items()} == {BUDDY_DIR: "plex", HOME_VIDEO: "plex"}
+    monkeypatch.setenv("SHRINKERR_TMDB_API_KEY", "test-key")
+    asked = _tmdb(posters, monkeypatch, {"Buddy": [_film(12, "Buddy", "2026-04-17")]}, {12: {}})
+    await posters._run_prefetch()
+    stored = await _stored(test_db)
+    assert (stored[BUDDY_DIR], stored[HOME_VIDEO][0]) == (("tmdb", _plex_poster(101), "movie", 0), "plex")
+    asked.clear()
+    await posters._run_prefetch()
+    assert asked == []  # not again
+    # Without a key again, they would be again.
+    monkeypatch.delenv("SHRINKERR_TMDB_API_KEY")
+    await posters._run_prefetch()
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT 1 FROM settings WHERE key = ?", (posters._PLEX_ROWS_FOUND_FLAG,)) as cur:
+            assert await cur.fetchall() == []
+
+
+@pytest.mark.asyncio
+async def test_a_title_found_again_is_left_when_changed_meanwhile(posters, plex, test_db, monkeypatch):
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO poster_cache (folder_path, title, year, source, poster_url, media_type, imdb_id, "
+                         "art_retry, resolved_at) VALUES (?, 'Buddy', '2026', 'tmdb', 'u', 'movie', 'tt37281055', 1, "
+                         "'r2')", (BUDDY_DIR,))
+        await db.commit()
+    plex["section"] = {"Buddy": [_movie(2026, file=BUDDY_FILE, key="177", guids=["imdb://tt0000077"])]}
+    plex_for = await posters._plex_for(PLEX, "tok", MAPPING)
+    read = {"folder_path": BUDDY_DIR, "title": "Buddy", "year": "2026", "media_type": "movie",
+            "imdb_id": "tt37281055", "resolved_at": "r1"}
+    await posters._retry_plex_art([read], plex_for)
+    assert BUDDY_DIR in await _stored(test_db)  # a Fix match, say, meanwhile: kept
+    await posters._retry_plex_art([{**read, "resolved_at": "r2"}], plex_for)
+    assert await _stored(test_db) == {}

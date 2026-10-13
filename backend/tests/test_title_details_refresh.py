@@ -348,8 +348,10 @@ async def _library(db_path, rows, plex=False):
         if plex:
             await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('plex_url', 'http://plex'), "
                              "('plex_token', 't')")
-        # Plex matches made before were looked up again once (test_title_matching).
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('_v0_10_0_plex_poster_rows_purged', '1')")
+        # Plex matches made before were looked up again once, and found on TMDB
+        # (test_title_matching, test_title_identity).
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('_v0_10_0_plex_poster_rows_purged', '1'), "
+                         "('_v0_10_0_plex_rows_found_on_tmdb', '1')")
         await db.commit()
 
 
