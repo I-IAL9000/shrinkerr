@@ -555,6 +555,13 @@ export const arrActionBulk = (filePaths: string[], action: ArrAction, deleteFile
     },
   );
 
+// Bazarr (v0.10.0): search for the subtitles the file's movie / series is missing.
+export const bazarrSearch = (filePath: string) =>
+  apiFetch<{ ok: boolean; kind: "movies" | "series"; id: number }>(
+    "/arr/bazarr-search",
+    { method: "POST", body: JSON.stringify({ file_path: filePath }) },
+  );
+
 // Replacing corrupt files (v0.10.0): a dry run per file; the approved ones
 // go through arrActionBulk(paths, "replace").
 export interface ReplacePlanFile {

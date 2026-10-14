@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getTracksByPath, getFileHistory, researchFile, arrAction, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
+import { getTracksByPath, getFileHistory, researchFile, arrAction, bazarrSearch, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import SubTrackRow from "./SubTrackRow";
 import VideoDetails from "./VideoDetails";
@@ -35,6 +35,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   const [historyLoading, setHistoryLoading] = useState(false);
   const [researching, setResearching] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [subSearching, setSubSearching] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detectStage, setDetectStage] = useState<{ stage: string; stage_key?: string | null; stage_params?: Record<string, unknown> | null } | null>(null);
   const [detected, setDetected] = useState(false);
@@ -64,6 +65,18 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
       toast(t("fileDetail:upgrade.error", { error: exc?.message || exc }), "error");
     } finally {
       setUpgrading(false);
+    }
+  };
+
+  const handleSubtitleSearch = async () => {
+    setSubSearching(true);
+    try {
+      const r = await bazarrSearch(file.file_path);
+      toast(t(r.kind === "series" ? "fileDetail:bazarr.searchedSeries" : "fileDetail:bazarr.searchedMovies"), "success");
+    } catch (exc: any) {
+      toast(t("fileDetail:bazarr.failed", { error: exc?.message || exc }), "error");
+    } finally {
+      setSubSearching(false);
     }
   };
 
@@ -468,6 +481,20 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
               </svg>
               {upgrading ? t("fileDetail:actions.searching") : t("fileDetail:actions.searchUpgrade")}
             </button>
+            {itemActions?.bazarrReady && (
+              <button
+                type="button"
+                onClick={handleSubtitleSearch}
+                disabled={subSearching}
+                title={t("fileDetail:actions.searchSubtitlesTitle")}
+                className="btn btn-xs btn-ghost"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/>
+                </svg>
+                {subSearching ? t("fileDetail:actions.searching") : t("fileDetail:actions.searchSubtitles")}
+              </button>
+            )}
           </div>
           {detecting && detectStage && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 10, color: "var(--text-muted)" }}>

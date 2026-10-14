@@ -77,6 +77,51 @@ async def test_the_connection_test_and_the_key(test_db, servers, monkeypatch):
     assert servers[-1][3] == "secret1234" and "bazarr_api_key" in settings_route._SECRET_SETTINGS_KEYS
 
 
+
+@pytest.mark.asyncio
+async def test_bazarr_searches_a_titles_missing_subtitles(test_db, servers):
+    """The Scanner's "Search for subtitles": the file's movie or series, found
+    through Sonarr / Radarr like the *arr actions."""
+    from backend.api_errors import ApiError
+    from backend.routes import arr as arr_route
+    episode = arr_route.BazarrSearchRequest(file_path="/m/TV/Show/Season 01/Show - S01E02.mkv")
+    film = arr_route.BazarrSearchRequest(file_path="/m/Movies/Film (2020)/Film (2020).mkv")
+    await _set(test_db, sonarr_url="http://sonarr", sonarr_api_key="s", sonarr_path_mapping="/m/TV=/tv",
+               radarr_url="http://radarr", radarr_api_key="r", radarr_path_mapping="/m/Movies=/movies")
+    with pytest.raises(ApiError) as err:
+        await arr_route.bazarr_search(film)
+    assert (err.value.status_code, err.value.code) == (400, "arr.bazarrNotConfigured")
+    await _set(test_db, bazarr_url="http://bazarr:6767", bazarr_api_key="bz")
+    assert await arr_route.bazarr_search(episode) == {"ok": True, "kind": "series", "id": 7}
+    assert await arr_route.bazarr_search(film) == {"ok": True, "kind": "movies", "id": 9}
+    assert servers == [
+        ("PATCH", "/api/series", {"seriesid": "7", "action": "search-missing"}, "bz"),
+        ("PATCH", "/api/movies", {"radarrid": "9", "action": "search-missing"}, "bz"),
+    ]
+    with pytest.raises(ApiError) as err:
+        await arr_route.bazarr_search(arr_route.BazarrSearchRequest(file_path="/m/TV/Other/Season 01/Other - S01E01.mkv"))
+    assert (err.value.status_code, err.value.code) == (404, "arr.bazarrNotFound")
+
+
+@pytest.mark.asyncio
+async def test_bazarrs_reason_when_the_search_fails(test_db, monkeypatch):
+    from backend.api_errors import ApiError
+    from backend.routes import arr as arr_route
+    monkeypatch.setattr(arr, "_radarr_cache", {})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "radarr":
+            return httpx.Response(200, json=[{"id": 9, "path": "/movies/Film (2020)"}])
+        return httpx.Response(500, json="Movie file not found. Path mapping issue?")
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler)))
+    await _set(test_db, radarr_url="http://radarr", radarr_api_key="r", radarr_path_mapping="/m/Movies=/movies",
+               bazarr_url="http://bazarr:6767", bazarr_api_key="bz")
+    with pytest.raises(ApiError) as err:
+        await arr_route.bazarr_search(arr_route.BazarrSearchRequest(file_path="/m/Movies/Film (2020)/Film (2020).mkv"))
+    assert (err.value.status_code, err.value.code, err.value.params) == (
+        502, "arr.bazarrFailed", {"error": "HTTP 500: Movie file not found. Path mapping issue?"})
+
 def _x265() -> bool:
     return bool(shutil.which("ffmpeg")) and "libx265" in subprocess.run(
         ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout

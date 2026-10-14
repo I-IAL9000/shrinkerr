@@ -73,6 +73,8 @@
     "searching": "Searching…",
     "searchUpgrade": "Search for upgrade",
     "searchUpgradeTitle": "Ask Sonarr/Radarr to search for a better release per your quality profile. Does NOT blocklist or delete the current file.",
+    "searchSubtitles": "Search for subtitles",
+    "searchSubtitlesTitle": "Ask Bazarr to search its providers for the subtitles this movie or series is missing (for a series, every episode)",
     "corruptNote": "ffprobe couldn't read a video stream in this file. Blocklists the release and requests a fresh download from Sonarr/Radarr."
   },
   "upgrade": {
@@ -81,6 +83,11 @@
     "triggered": "Upgrade search triggered ({{service}}): {{label}}",
     "failed": "Upgrade search failed: {{error}}",
     "error": "Upgrade search error: {{error}}"
+  },
+  "bazarr": {
+    "searchedMovies": "Bazarr searched for the movie's missing subtitles",
+    "searchedSeries": "Bazarr searched for the series' missing subtitles",
+    "failed": "Subtitle search failed: {{error}}"
   },
   "research": {
     "labelCorrupt": "Re-download (file is corrupt)",

@@ -73,6 +73,8 @@
     "searching": "Buscando…",
     "searchUpgrade": "Buscar mejora",
     "searchUpgradeTitle": "Pedir a Sonarr/Radarr que busque una versión mejor según tu perfil de calidad. NO bloquea ni elimina el archivo actual.",
+    "searchSubtitles": "Buscar subtítulos",
+    "searchSubtitlesTitle": "Pedir a Bazarr que busque en sus proveedores los subtítulos que le faltan a esta película o serie (en una serie, todos los episodios)",
     "corruptNote": "ffprobe no pudo leer un flujo de vídeo en este archivo. Bloquea la versión y solicita una nueva descarga a Sonarr/Radarr."
   },
   "upgrade": {
@@ -82,6 +84,11 @@
     "triggered": "Búsqueda de mejora iniciada ({{service}}): {{label}}",
     "failed": "Falló la búsqueda de mejora: {{error}}",
     "error": "Error en la búsqueda de mejora: {{error}}"
+  },
+  "bazarr": {
+    "searchedMovies": "Bazarr buscó los subtítulos que le faltan a la película",
+    "searchedSeries": "Bazarr buscó los subtítulos que le faltan a la serie",
+    "failed": "Falló la búsqueda de subtítulos: {{error}}"
   },
   "research": {
     "labelCorrupt": "Volver a descargar (el archivo está dañado)",

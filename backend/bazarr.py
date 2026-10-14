@@ -6,6 +6,7 @@ Sonarr / Radarr and scan its subtitles on disk.
 
 Bazarr's API: PATCH /api/series?seriesid=<Sonarr id>&action=sync|scan-disk,
 PATCH /api/movies?radarrid=<Radarr id>&action=…, with the X-API-KEY header.
+The Scanner's "Search for subtitles" is action=search-missing.
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from backend.database import connect_db
 # job); Bazarr's sync reads what they found, so give them a moment.
 RESCAN_DELAY = 60
 _ACTIONS = ("sync", "scan-disk")
+# Bazarr answers a subtitle search once it has searched every provider.
+SEARCH_TIMEOUT = 300
 
 
 async def _settings() -> tuple[str, str]:
@@ -82,6 +85,45 @@ async def rescan_for_file(file_path: str) -> dict | None:
         return {"ok": False, "error": str(exc)}
     print(f"[BAZARR] Rescan of {kind} {item_id} {'requested' if ok else 'failed'}", flush=True)
     return {"ok": ok, "kind": kind, "id": item_id}
+
+
+def _reason(resp: httpx.Response) -> str:
+    """Bazarr's error: its message (a JSON string or {"message"}), or the status."""
+    try:
+        body = resp.json()
+    except ValueError:
+        body = resp.text
+    if isinstance(body, dict):
+        body = body.get("message") or body.get("error") or ""
+    text = str(body or "").strip()
+    return f"HTTP {resp.status_code}: {text}" if text else f"HTTP {resp.status_code}"
+
+
+async def search_missing_subtitles(file_path: str) -> dict:
+    """Have Bazarr search its providers for the subtitles the file's movie /
+    series is missing (a whole series: Bazarr has no such action for one
+    episode). {"ok": True, "kind": "movies" | "series", "id"}, or {"ok":
+    False, "reason": "not_configured" | "not_found" | "failed", "error"}."""
+    url, api_key = await _settings()
+    if not url or not api_key:
+        return {"ok": False, "reason": "not_configured", "error": "Bazarr isn't set up"}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(SEARCH_TIMEOUT, connect=10)) as client:
+            owner = await _owner(client, file_path)
+            if owner is None:
+                return {"ok": False, "reason": "not_found", "error": "not in Sonarr / Radarr"}
+            kind, item_id = owner
+            id_param = "seriesid" if kind == "series" else "radarrid"
+            resp = await client.patch(f"{url}/api/{kind}", params={id_param: item_id, "action": "search-missing"},
+                                      headers={"X-API-KEY": api_key})
+    except Exception as exc:
+        print(f"[BAZARR] Subtitle search failed for {file_path}: {exc!r}", flush=True)
+        return {"ok": False, "reason": "failed", "error": str(exc) or type(exc).__name__}
+    if resp.status_code >= 300:
+        print(f"[BAZARR] Subtitle search of {kind} {item_id} failed: {_reason(resp)}", flush=True)
+        return {"ok": False, "reason": "failed", "error": _reason(resp)}
+    print(f"[BAZARR] Searched missing subtitles of {kind} {item_id}", flush=True)
+    return {"ok": True, "kind": kind, "id": item_id}
 
 
 def schedule_rescan(file_path: str, delay: float = RESCAN_DELAY) -> None:

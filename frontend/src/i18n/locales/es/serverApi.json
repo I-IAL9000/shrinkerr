@@ -135,7 +135,10 @@
     "inUseByPolicies": "Hay políticas que usan esta vista: {{policies}}."
   },
   "arr": {
-    "maintainerrFailed": "Maintainerr: {{error}}"
+    "maintainerrFailed": "Maintainerr: {{error}}",
+    "bazarrNotConfigured": "Bazarr no está configurado: añade su URL y clave API en Ajustes → Integraciones.",
+    "bazarrNotFound": "Sonarr y Radarr no tienen este archivo, así que Bazarr tampoco.",
+    "bazarrFailed": "Bazarr: {{error}}"
   },
   "policies": {
     "nameRequired": "Ponle un nombre a la política.",

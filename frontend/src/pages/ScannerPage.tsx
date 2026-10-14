@@ -1125,7 +1125,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       setEstimatePaths([file.file_path]);
       setEstimateHasIgnored(!!file.ignored);
     },
-  }), []);
+    bazarrReady: !!(encodingSettings?.bazarr_url && encodingSettings?.bazarr_api_key),
+  }), [encodingSettings]);
 
   // "Fix for direct play" (v0.10.0): the selection's files with a direct-play
   // problem get a conversion (Hi10P) or a remux to MKV, with SRT copies of

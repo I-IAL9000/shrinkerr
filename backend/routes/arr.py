@@ -371,6 +371,29 @@ async def replace_plan():
     return {"files": await asyncio.gather(*(plan(p) for p in paths)), "truncated": truncated}
 
 
+class BazarrSearchRequest(BaseModel):
+    file_path: str
+
+
+@router.post("/bazarr-search")
+async def bazarr_search(payload: BazarrSearchRequest):
+    """Have Bazarr search for the subtitles the file's movie or series is
+    missing (backend/bazarr.py). {"ok": true, "kind": "movies"|"series", "id"}."""
+    if not payload.file_path:
+        raise ApiError(status_code=400, detail="file_path required", code="common.filePathRequired")
+    from backend.bazarr import search_missing_subtitles
+    result = await search_missing_subtitles(payload.file_path)
+    if result["ok"]:
+        return result
+    if result["reason"] == "not_configured":
+        raise ApiError(400, "Bazarr isn't set up: add its URL and API key in Settings → Integrations.",
+                       code="arr.bazarrNotConfigured")
+    if result["reason"] == "not_found":
+        raise ApiError(404, "Sonarr and Radarr don't have this file, so Bazarr doesn't either.",
+                       code="arr.bazarrNotFound")
+    raise ApiError(502, f"Bazarr: {result['error']}", code="arr.bazarrFailed", params={"error": result["error"]})
+
+
 @router.post("/maintainerr-sync")
 async def maintainerr_sync():
     """Read Maintainerr's collections now (also after every full scan): the

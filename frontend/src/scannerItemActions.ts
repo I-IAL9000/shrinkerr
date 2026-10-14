@@ -7,6 +7,8 @@ import type { ScannedFile } from "./types";
 // (no provider) the actions aren't offered.
 export interface ScannerItemActions {
   addToQueue: (file: ScannedFile) => void;
+  // Bazarr's URL and API key are set: "Search for subtitles" is offered.
+  bazarrReady: boolean;
 }
 
 export const ScannerItemActionsContext = createContext<ScannerItemActions | null>(null);
