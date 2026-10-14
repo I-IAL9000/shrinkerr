@@ -103,6 +103,7 @@
     "notDeleted": "no eliminado",
     "searched": "búsqueda iniciada",
     "notSearched": "búsqueda NO iniciada",
+    "untracked": "Sonarr no tenía registro de este archivo, así que no se eliminó: bórralo cuando llegue el nuevo",
     "requested": "Nueva descarga solicitada — {{parts}}",
     "failed": "Falló la nueva descarga: {{error}}",
     "error": "Error en la nueva descarga: {{error}}"

@@ -488,6 +488,7 @@ export interface ResearchResult {
   blocklist_error?: string | null;
   deleted?: boolean;
   searched?: boolean;
+  untracked?: boolean;  // Sonarr had no record of the file: searched, not deleted (v0.10.0)
   error?: string;
 }
 export const researchFile = (filePath: string, deleteFile: boolean = true) =>

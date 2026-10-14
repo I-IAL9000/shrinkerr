@@ -75,6 +75,7 @@ def _sonarr(monkeypatch, files_before: list[str], files_after: list[str], queue:
             if request.read() and b"RescanSeries" in request.content:
                 state["rescanned"] = True
                 return httpx.Response(201, json={"id": 55})
+            state["searched"] = b"EpisodeSearch" in request.content
             return httpx.Response(201, json={"id": 56})
         if path == "/api/v3/queue/details":
             return httpx.Response(200, json=queue or [])
@@ -112,16 +113,26 @@ async def test_a_stale_sonarr_record_is_rescanned_then_replaced(sonarr_settings,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("after, error", [
-    (["Love Island USA - S05E16 - Other.mkv"], "Sonarr's file for S05E16 is a different one: "
-                                               "Love Island USA - S05E16 - Other.mkv"),
-    ([], "Sonarr has no file for S05E16, even after rescanning the series"),
-])
-async def test_why_sonarr_has_no_record_of_the_file(sonarr_settings, monkeypatch, after, error):
-    state = _sonarr(monkeypatch, after, after)
+async def test_sonarrs_other_file_for_the_episode_is_left_alone(sonarr_settings, monkeypatch):
+    state = _sonarr(monkeypatch, ["Love Island USA - S05E16 - Other.mkv"], ["Love Island USA - S05E16 - Other.mkv"])
     result = await arr.research_sonarr_file(FILE, delete_file=True)
-    assert result == {"success": False, "error": error}
+    assert result == {"success": False, "error": "Sonarr's file for S05E16 is a different one: "
+                                                 "Love Island USA - S05E16 - Other.mkv"}
     assert not any(method == "DELETE" for method, _ in state["calls"])  # nothing of Sonarr's is deleted
+
+
+@pytest.mark.asyncio
+async def test_an_episode_sonarr_shows_missing_is_searched_for(sonarr_settings, monkeypatch):
+    """Sonarr has no record of this file — the episode shows as missing, even
+    after a rescan: the replacement is its search. Nothing to blocklist, and
+    this file isn't Sonarr's to delete (it said "Sonarr has no file", which
+    read as "no releases")."""
+    state = _sonarr(monkeypatch, [], [])
+    result = await arr.research_sonarr_file(FILE, delete_file=True)
+    assert result["success"] and result["searched"] and result["untracked"], result
+    assert not result["deleted"] and not result["blocklisted"] and result["episode_ids"] == [7]
+    assert not any(method == "DELETE" for method, _ in state["calls"])
+    assert state["searched"]
 
 
 @pytest.mark.asyncio

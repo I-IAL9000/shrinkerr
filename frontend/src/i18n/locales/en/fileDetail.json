@@ -102,6 +102,7 @@
     "notDeleted": "not deleted",
     "searched": "search triggered",
     "notSearched": "search NOT triggered",
+    "untracked": "Sonarr had no record of this file, so it wasn't deleted: remove it once the new one is in",
     "requested": "Re-download requested — {{parts}}",
     "failed": "Re-download failed: {{error}}",
     "error": "Re-download error: {{error}}"

@@ -30,6 +30,7 @@ export function useRequestReplacement() {
           r.blocklisted ? t("fileDetail:research.blocklisted") : t("fileDetail:research.notBlocklisted"),
           r.deleted ? t("fileDetail:research.deleted") : t("fileDetail:research.notDeleted"),
           r.searched ? t("fileDetail:research.searched") : t("fileDetail:research.notSearched"),
+          ...(r.untracked ? [t("fileDetail:research.untracked")] : []),
         ];
         toast(t("fileDetail:research.requested", { parts: parts.join(", ") }), "success");
       } else {

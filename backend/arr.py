@@ -484,29 +484,31 @@ async def _already_downloading(client: httpx.AsyncClient, url: str, headers: dic
             f"this file is replaced when it's imported")
 
 
-async def _no_episodefile_reason(client: httpx.AsyncClient, url: str, headers: dict, series_id: int,
-                                 files: list[dict], arr_path: str) -> str:
-    """Why Sonarr has no record of this file, from what it has for the
-    episode in its name (v0.10.0) — e.g. a different file for it."""
+async def _episode_without_record(client: httpx.AsyncClient, url: str, headers: dict, series_id: int,
+                                  files: list[dict], arr_path: str, rescanned: bool) -> tuple[str, list[dict]]:
+    """Sonarr has no record of this file: (why, as what it has for the
+    episode in its name; the episodes it shows as missing — none recorded,
+    none downloading — which a search can fill) (v0.10.0)."""
     found = _EPISODE_TAG.search(Path(arr_path).name)
     if not found:
-        return "No Sonarr episodefile matching path"
+        return "No Sonarr episodefile matching path", []
     season, numbers = int(found.group(1)), [int(n) for n in re.findall(r"\d+", found.group(2))]
     label = f"S{season:02d}E{numbers[0]:02d}"
     resp = await client.get(f"{url}/api/v3/episode", headers=headers, params={"seriesId": series_id})
     if resp.status_code != 200:
-        return "No Sonarr episodefile matching path"
+        return "No Sonarr episodefile matching path", []
     episodes = [e for e in resp.json() if e.get("seasonNumber") == season and e.get("episodeNumber") in numbers]
     if not episodes:
-        return f"Sonarr's series has no {label}"
+        return f"Sonarr's series has no {label}", []
     downloading = await _already_downloading(client, url, headers, series_id, episodes)
     if downloading:
-        return downloading
+        return downloading, []
     file_ids = {e.get("episodeFileId") for e in episodes if e.get("episodeFileId")}
     names = [Path(f.get("path", "")).name for f in files if f.get("id") in file_ids]
     if names:
-        return f"Sonarr's file for {label} is a different one: {names[0]}"
-    return f"Sonarr has no file for {label}, even after rescanning the series"
+        return f"Sonarr's file for {label} is a different one: {names[0]}", []
+    scan = "even after rescanning the series" if rescanned else "and its rescan didn't finish in time"
+    return f"Sonarr shows {label} as missing: it has no record of this file, {scan}", episodes
 
 
 async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:
@@ -541,7 +543,10 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
             resp.raise_for_status()
             files = resp.json()
             match = _episodefile_for(files, arr_path)
-            if not match and not dry_run and await _sonarr_rescan_series(client, url, headers, series_id):
+            rescanned = False
+            if not match and not dry_run:
+                rescanned = await _sonarr_rescan_series(client, url, headers, series_id)
+            if rescanned:
                 # Sonarr's record was stale (the file renamed or replaced on
                 # disk since it looked): rescanned, look again (v0.10.0).
                 resp = await client.get(f"{url}/api/v3/episodefile", headers=headers, params={"seriesId": series_id})
@@ -549,8 +554,22 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                 files = resp.json()
                 match = _episodefile_for(files, arr_path)
             if not match:
-                return {"success": False,
-                        "error": await _no_episodefile_reason(client, url, headers, series_id, files, arr_path)}
+                why, missing = await _episode_without_record(client, url, headers, series_id, files, arr_path,
+                                                             rescanned)
+                if not missing:
+                    return {"success": False, "error": why}
+                # Sonarr shows the episode as missing: nothing of its own to
+                # blocklist or delete, so the replacement is its search. This
+                # file isn't Sonarr's: it stays until the user removes it.
+                searched = False
+                if not dry_run:
+                    resp = await client.post(f"{url}/api/v3/command", headers=headers,
+                                             json={"name": "EpisodeSearch", "episodeIds": [e["id"] for e in missing]})
+                    searched = resp.status_code in (200, 201)
+                    print(f"[SONARR-RESEARCH] {why}; searched: {searched}", flush=True)
+                return {"success": True, "service": "sonarr", "series": series.get("title"),
+                        "episode_ids": [e["id"] for e in missing], "blocklisted": False, "deleted": False,
+                        "searched": searched, "untracked": True, **({"dry_run": True} if dry_run else {})}
             episodefile_id = match["id"]
 
             # 3. Find the episodes associated with this file (needed for search command)
@@ -837,14 +856,15 @@ async def upgrade_sonarr_file(file_path: str) -> dict:
             resp.raise_for_status()
             files = resp.json()
             match = _episodefile_for(files, arr_path)
-            if not match and await _sonarr_rescan_series(client, url, headers, series_id):  # a stale record
+            rescanned = not match and await _sonarr_rescan_series(client, url, headers, series_id)
+            if rescanned:  # a stale record
                 resp = await client.get(f"{url}/api/v3/episodefile", headers=headers, params={"seriesId": series_id})
                 resp.raise_for_status()
                 files = resp.json()
                 match = _episodefile_for(files, arr_path)
             if not match:
-                return {"success": False,
-                        "error": await _no_episodefile_reason(client, url, headers, series_id, files, arr_path)}
+                why, _ = await _episode_without_record(client, url, headers, series_id, files, arr_path, rescanned)
+                return {"success": False, "error": why}
 
             # Resolve episode IDs
             resp = await client.get(
