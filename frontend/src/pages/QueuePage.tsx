@@ -22,7 +22,7 @@ import { useJobProgressMap } from "../jobProgressStore";
 export default function QueuePage() {
   // Re-renders this page on every progress tick; other pages don't (FE#4).
   const jobProgressMap = useJobProgressMap();
-  const { t } = useTranslation(["queue", "common"]);
+  const { t } = useTranslation(["queue", "common", "fileDetail"]);
   const [jobs, setJobs] = useState<Job[]>([]);
   // Latest rendered jobs, for the poll's post-await merge (its closure is stale).
   const jobsRef = useRef(jobs);
@@ -824,7 +824,14 @@ export default function QueuePage() {
                   if (res.failed === 0) {
                     toast(t("queue:toasts.rerequested", { count: res.succeeded }), "success");
                   } else {
-                    toast(t("queue:toasts.rerequestPartial", { succeeded: res.succeeded, failed: res.failed }), res.succeeded > 0 ? "success" : "error");
+                    // Why, not "check logs" (v0.10.0): the reasons, most common first.
+                    const reasons = res.results.filter(r => !r.success).map(r => r.error || t("fileDetail:unknownError"));
+                    const why = [...new Set(reasons)].sort((a, b) =>
+                      reasons.filter(x => x === b).length - reasons.filter(x => x === a).length);
+                    toast(t("queue:toasts.rerequestPartial", {
+                      succeeded: res.succeeded, failed: res.failed,
+                      reason: why.slice(0, 2).join("; ") + (why.length > 2 ? "; …" : ""),
+                    }), res.succeeded > 0 ? "success" : "error");
                   }
                 }}>
                 {t("queue:actions.rerequestAll")}

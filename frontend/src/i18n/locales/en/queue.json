@@ -69,7 +69,7 @@
     "noFilePaths": "No file paths on these jobs",
     "rerequested_one": "Re-requested {{count}} file from Sonarr/Radarr",
     "rerequested_other": "Re-requested {{count}} files from Sonarr/Radarr",
-    "rerequestPartial": "{{succeeded}} re-requested, {{failed}} failed (check logs)",
+    "rerequestPartial": "{{succeeded}} re-requested, {{failed}} failed: {{reason}}",
     "clearedFailed_one": "Cleared {{count}} failed job",
     "clearedFailed_other": "Cleared {{count}} failed jobs"
   },

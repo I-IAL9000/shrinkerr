@@ -1223,6 +1223,39 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.9.85 backfill skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: conversions that failed on a damaged source before
+        # those were told apart (converter.source_damaged) get its message and
+        # Request replacement, and the file is marked corrupt — once.
+        try:
+            flag = "_v0_10_0_backfill_damaged_sources"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                import json as _json
+                from backend.converter import _SOURCE_DAMAGED, source_damaged
+                async with db.execute(
+                    "SELECT id, file_path, error_log, ffmpeg_log FROM jobs WHERE status = 'failed' "
+                    "AND error_key = 'errors.ffmpegExited' AND ffmpeg_log IS NOT NULL"
+                ) as cur:
+                    rows = await cur.fetchall()
+                damaged = [r for r in rows if source_damaged(r[3])]
+                for job_id, path, error_log, _ in damaged:
+                    await db.execute(
+                        "UPDATE jobs SET error_key = 'errors.sourceDamaged', error_params = '{}', error_log = ? "
+                        "WHERE id = ?", (f"{_SOURCE_DAMAGED}\n{error_log or ''}".strip(), job_id))
+                    await db.execute(
+                        "UPDATE scan_results SET health_status = 'corrupt', probe_status = 'corrupt', "
+                        "health_errors_json = ? WHERE file_path = ?",
+                        (_json.dumps({"source": "conversion_decode_errors",
+                                      "error": "The source has broken frames ffmpeg couldn't decode "
+                                               "(the conversion failed on them)"}), path))
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if damaged:
+                    print(f"[DB] v0.10.0 backfill: {len(damaged)} failed conversion(s) of a damaged source",
+                          flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 damaged-source backfill skipped: {exc}", flush=True)
+
         # The Scanner's filter index (backend/filter_index): a log of changed
         # scan_results rows, and counters for the other tables filters read.
         # Last, after every table it watches exists.

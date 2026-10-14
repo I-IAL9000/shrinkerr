@@ -80,7 +80,7 @@
     "rerequested_one": "{{count}} archivo solicitado de nuevo a Sonarr/Radarr",
     "rerequested_many": "{{count}} archivos solicitados de nuevo a Sonarr/Radarr",
     "rerequested_other": "{{count}} archivos solicitados de nuevo a Sonarr/Radarr",
-    "rerequestPartial": "{{succeeded}} solicitados de nuevo, {{failed}} fallidos (revisa los registros)",
+    "rerequestPartial": "{{succeeded}} solicitados de nuevo, {{failed}} fallidos: {{reason}}",
     "clearedFailed_one": "{{count}} trabajo fallido borrado",
     "clearedFailed_many": "{{count}} trabajos fallidos borrados",
     "clearedFailed_other": "{{count}} trabajos fallidos borrados"

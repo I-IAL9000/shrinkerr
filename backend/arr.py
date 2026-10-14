@@ -1,5 +1,6 @@
 """Sonarr and Radarr integration — trigger rescans after conversion."""
 
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -346,6 +347,30 @@ async def arr_tags_for_paths(file_paths: list[str]) -> dict[str, set[str]]:
     return tags
 
 
+# An id in a folder's name: "Show (2019) [tvdb-364107]", "{tmdb-603}", "[tt0133093]".
+_ID_TAGS = {
+    "tvdbId": re.compile(r"[\[{]tvdb(?:id)?-(\d+)[\]}]", re.IGNORECASE),
+    "tmdbId": re.compile(r"[\[{]tmdb(?:id)?-(\d+)[\]}]", re.IGNORECASE),
+    "imdbId": re.compile(r"[\[{](?:imdb(?:id)?-)?(tt\d+)[\]}]", re.IGNORECASE),
+}
+
+
+def _match_without_path(items: list[dict], arr_path: str, keys: tuple[str, ...]) -> dict | None:
+    """The Sonarr series / Radarr movie for a path that isn't under any of
+    theirs — no path mapping covers its folder (v0.10.0: "/media/TV2/..."
+    when only "/media/TV" is mapped): by an id in its folder names (`keys`),
+    else the one whose folder has the name of one of the path's folders."""
+    for key in keys:
+        found = _ID_TAGS[key].search(arr_path)
+        if found:
+            matches = [i for i in items if str(i.get(key) or "").lower() == found.group(1).lower()]
+            if len(matches) == 1:
+                return matches[0]
+    names = set(Path(arr_path).parts[1:-1])
+    matches = [i for i in items if i.get("path") and Path(i["path"].rstrip("/")).name in names]
+    return matches[0] if len(matches) == 1 else None
+
+
 async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_key: str,
                                         arr_path: str) -> dict | None:
     """Locate the Sonarr series record whose folder contains (or equals) the given path.
@@ -376,7 +401,7 @@ async def _find_sonarr_series_for_path(client: httpx.AsyncClient, url: str, api_
             if check_path == s_path:
                 return s
         check_path = str(Path(check_path).parent)
-    return None
+    return _match_without_path(series_list, arr_path, ("tvdbId",))
 
 
 async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_key: str,
@@ -404,7 +429,7 @@ async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_k
             if check_path == m_path:
                 return m
         check_path = str(Path(check_path).parent)
-    return None
+    return _match_without_path(movie_list, arr_path, ("tmdbId", "imdbId"))
 
 
 async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:

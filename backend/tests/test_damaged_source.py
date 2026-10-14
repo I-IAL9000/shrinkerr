@@ -107,3 +107,31 @@ async def test_a_short_output(test_db, tmp_path, monkeypatch, log, key, marked):
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT health_status FROM scan_results WHERE file_path = ?", (str(src),)) as cur:
             assert (await cur.fetchone())[0] == marked
+
+
+@pytest.mark.asyncio
+async def test_earlier_failures_of_a_damaged_source_are_told_apart_at_start(test_db):
+    """A conversion that failed on a damaged source before the update kept
+    "ffmpeg exited with code 244" and had no Request replacement: start-up
+    finds it by its ffmpeg log, once."""
+    from backend.database import init_db
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("DELETE FROM settings WHERE key = '_v0_10_0_backfill_damaged_sources'")
+        for path, log in (("/m/Damaged.mkv", DAMAGED), ("/m/DiskFull.mkv", "No space left on device")):
+            await db.execute("INSERT INTO scan_results (file_path, file_size, probe_status, scan_timestamp) "
+                             "VALUES (?, 1, 'ok', 't')", (path,))
+            await db.execute(
+                "INSERT INTO jobs (file_path, job_type, status, created_at, error_key, error_log, ffmpeg_log, "
+                "audio_tracks_to_remove) VALUES (?, 'convert', 'failed', 't', 'errors.ffmpegExited', "
+                "'ffmpeg exited with code 244', ?, '[]')", (path, log))
+        await db.commit()
+
+    await init_db()
+
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT j.file_path, j.error_key, j.error_log, s.health_status FROM jobs j "
+                              "JOIN scan_results s USING (file_path) ORDER BY 1") as cur:
+            rows = await cur.fetchall()
+    assert rows[0][:2] == ("/m/Damaged.mkv", "errors.sourceDamaged") and rows[0][3] == "corrupt"
+    assert rows[0][2].startswith("The source file looks damaged") and rows[0][2].endswith("code 244")
+    assert rows[1] == ("/m/DiskFull.mkv", "errors.ffmpegExited", "ffmpeg exited with code 244", None)
