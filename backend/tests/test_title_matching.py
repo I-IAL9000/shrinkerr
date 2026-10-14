@@ -199,6 +199,26 @@ async def test_no_candidate_with_the_folders_imdb_id_is_no_match(posters, tmdb):
 
 
 @pytest.mark.asyncio
+async def test_the_only_film_of_a_title_and_year_is_taken_though_its_imdb_id_differs(posters, monkeypatch):
+    """TMDB didn't know the folder's IMDb id (/find empty) and its one
+    "Summer of Soul" of 2021 has another: one film's old and new ids (IMDb
+    merges duplicates). It was refused, so the title stayed unmatched."""
+    async def get(client, url, params):
+        if "/search/" in url:
+            return httpx.Response(200, json={"results": [
+                {"id": 776527, "title": "Summer of Soul (...Or, When the Revolution Could Not Be Televised)",
+                 "original_title": "Summer of Soul (...Or, When the Revolution Could Not Be Televised)",
+                 "release_date": "2021-07-02", "poster_path": "/sos.jpg"},
+                {"id": 9, "title": "Summer of Love", "release_date": "2021-05-01"}]})
+        return httpx.Response(200, json={"imdb_id": "tt7378922", "origin_country": ["US"]})
+    monkeypatch.setattr(posters, "_tmdb_get", get)
+    _, source, meta = await posters._resolve_tmdb_search(
+        "Summer of Soul (...or, When the Revolution Could Not Be Televised)", "2021", "k",
+        media_type_hint="movie", imdb_id="tt11422728")
+    assert (source, meta["tmdb_id"]) == ("tmdb", 776527)
+
+
+@pytest.mark.asyncio
 async def test_a_candidate_that_couldnt_be_checked_isnt_taken(posters, tmdb, test_db, monkeypatch):
     """Rate-limited (the burst after the Plex matches were purged), the
     first namesake was taken unchecked and kept for good."""

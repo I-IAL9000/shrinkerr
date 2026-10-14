@@ -2441,7 +2441,8 @@ async def _candidate_details(item: dict, media_type: str, api_key: str) -> dict:
 
 
 async def pick_imdb_checked(ranked: list[dict], imdb_id: str | None, api_key: str,
-                            media_type: str = "movie", log=_poster_log) -> tuple[dict | None, dict]:
+                            media_type: str = "movie", log=_poster_log,
+                            sole: dict | None = None) -> tuple[dict | None, dict]:
     """The first of a title search's matches (`ranked`, rank_tmdb_matches)
     that is the title with `imdb_id` — the folder's, when TMDB's /find
     doesn't know it (common for new titles), v0.10.0: up to
@@ -2451,17 +2452,33 @@ async def pick_imdb_checked(ranked: list[dict], imdb_id: str | None, api_key: st
     the first, unchecked, with no details. Raises RuntimeError when TMDB
     didn't give a match's details (rate-limited, down): unchecked, it isn't
     taken — it's looked up again later. `log`: the caller's, for a skipped
-    match."""
+    match.
+
+    `sole`: the only result with the folder's title and year, if one. When
+    every match checked has another IMDb id, it's still taken: TMDB didn't
+    know the folder's id (its /find came back empty), so the two ids are
+    likely one title's — IMDb merges duplicates, and one side keeps the old
+    id ("Summer of Soul (2021)"). A namesake among several results of a
+    title and year ("Buddy", 2026) is still refused."""
     if not imdb_id:
         return (ranked[0] if ranked else None), {}
+    skipped: dict[int, dict] = {}
     for item in ranked[:_IMDB_CHECKED_MATCHES]:
         mt = item.get("media_type") or media_type
         details = await _candidate_details(item, mt, api_key)
         found = details.get("imdb_id") or ""
         if found and found.lower() != imdb_id.lower():
-            log(f"TMDB {mt} {item.get('id')} is {found}, not {imdb_id}: skipped")
+            skipped[id(item)] = details
             continue
         return item, details
+    if sole is not None and id(sole) in skipped:
+        log(f"TMDB {sole.get('media_type') or media_type} {sole.get('id')} has another IMDb id than "
+            f"{imdb_id}, but is the only one of its title and year: taken")
+        return sole, skipped[id(sole)]
+    for item in ranked[:_IMDB_CHECKED_MATCHES]:
+        if id(item) in skipped:
+            log(f"TMDB {item.get('media_type') or media_type} {item.get('id')} is "
+                f"{skipped[id(item)].get('imdb_id')}, not {imdb_id}: skipped")
     return None, {}
 
 
@@ -2490,7 +2507,12 @@ async def pick_tmdb_candidate(results: list[dict], title: str, year: str | None,
     if not tiers:
         return None, {}
     if imdb_id:
-        return await pick_imdb_checked([i for t in tiers for i in t], imdb_id, api_key, media_type or "movie", log)
+        norm = _norm_title(title)
+        same = [i for i in results if year and str(i.get("release_date") or i.get("first_air_date") or "")[:4] == year
+                and any(_same_title(_norm_title(i.get(k)), norm)
+                        for k in ("title", "name", "original_title", "original_name"))]
+        return await pick_imdb_checked([i for t in tiers for i in t], imdb_id, api_key, media_type or "movie", log,
+                                       sole=same[0] if len(same) == 1 else None)
     best = tiers[0]
 
     def film(item: dict) -> bool:
