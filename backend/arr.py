@@ -1,5 +1,6 @@
 """Sonarr and Radarr integration — trigger rescans after conversion."""
 
+import asyncio
 import re
 import time
 from datetime import datetime, timezone
@@ -432,6 +433,82 @@ async def _find_radarr_movie_for_path(client: httpx.AsyncClient, url: str, api_k
     return _match_without_path(movie_list, arr_path, ("tmdbId", "imdbId"))
 
 
+def _episodefile_for(files: list[dict], arr_path: str) -> dict | None:
+    """Sonarr's record of this file: by its path, else by its name (path
+    mapping discrepancies)."""
+    match = next((f for f in files if f.get("path", "").rstrip("/") == arr_path.rstrip("/")), None)
+    if not match:
+        target_name = Path(arr_path).name
+        match = next((f for f in files if Path(f.get("path", "")).name == target_name), None)
+    return match
+
+
+_COMMAND_POLL = 1.0  # seconds between looks at a Sonarr command's status
+_EPISODE_TAG = re.compile(r"[Ss](\d{1,2})((?:[Ee]\d{1,3})+)")
+
+
+async def _sonarr_rescan_series(client: httpx.AsyncClient, url: str, headers: dict, series_id: int,
+                                timeout: float = 60.0) -> bool:
+    """Have Sonarr rescan a series' folder and wait for it: True when it finished."""
+    resp = await client.post(f"{url}/api/v3/command", headers=headers,
+                             json={"name": "RescanSeries", "seriesId": series_id})
+    if resp.status_code not in (200, 201):
+        return False
+    command_id = resp.json().get("id")
+    deadline = time.monotonic() + timeout
+    while command_id is not None and time.monotonic() < deadline:
+        await asyncio.sleep(_COMMAND_POLL)
+        resp = await client.get(f"{url}/api/v3/command/{command_id}", headers=headers)
+        status = resp.json().get("status") if resp.status_code == 200 else None
+        if status in ("completed", "failed", "aborted", "cancelled"):
+            print(f"[SONARR-RESEARCH] Rescanned series {series_id}: {status}", flush=True)
+            return status == "completed"
+    return False
+
+
+async def _already_downloading(client: httpx.AsyncClient, url: str, headers: dict, series_id: int,
+                               episodes: list[dict]) -> str | None:
+    """Why not to ask for a replacement: one of these episodes is already
+    in Sonarr's download queue (v0.10.0). None when not (or unknown)."""
+    ids = {e.get("id") for e in episodes}
+    try:
+        resp = await client.get(f"{url}/api/v3/queue/details", headers=headers, params={"seriesId": series_id})
+        queued = next((q for q in resp.json() if q.get("episodeId") in ids), None) if resp.status_code == 200 else None
+    except Exception:
+        return None
+    if not queued:
+        return None
+    episode = next((e for e in episodes if e.get("id") == queued.get("episodeId")), {})
+    label = f"S{episode.get('seasonNumber', 0):02d}E{episode.get('episodeNumber', 0):02d}"
+    return (f"{label} is already downloading in Sonarr ({queued.get('title') or 'a release'}); "
+            f"this file is replaced when it's imported")
+
+
+async def _no_episodefile_reason(client: httpx.AsyncClient, url: str, headers: dict, series_id: int,
+                                 files: list[dict], arr_path: str) -> str:
+    """Why Sonarr has no record of this file, from what it has for the
+    episode in its name (v0.10.0) — e.g. a different file for it."""
+    found = _EPISODE_TAG.search(Path(arr_path).name)
+    if not found:
+        return "No Sonarr episodefile matching path"
+    season, numbers = int(found.group(1)), [int(n) for n in re.findall(r"\d+", found.group(2))]
+    label = f"S{season:02d}E{numbers[0]:02d}"
+    resp = await client.get(f"{url}/api/v3/episode", headers=headers, params={"seriesId": series_id})
+    if resp.status_code != 200:
+        return "No Sonarr episodefile matching path"
+    episodes = [e for e in resp.json() if e.get("seasonNumber") == season and e.get("episodeNumber") in numbers]
+    if not episodes:
+        return f"Sonarr's series has no {label}"
+    downloading = await _already_downloading(client, url, headers, series_id, episodes)
+    if downloading:
+        return downloading
+    file_ids = {e.get("episodeFileId") for e in episodes if e.get("episodeFileId")}
+    names = [Path(f.get("path", "")).name for f in files if f.get("id") in file_ids]
+    if names:
+        return f"Sonarr's file for {label} is a different one: {names[0]}"
+    return f"Sonarr has no file for {label}, even after rescanning the series"
+
+
 async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run: bool = False) -> dict:
     """Blocklist the current release and trigger Sonarr to grab a replacement.
     dry_run: only look it up — the episodes and the release it would
@@ -463,13 +540,17 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
             )
             resp.raise_for_status()
             files = resp.json()
-            match = next((f for f in files if f.get("path", "").rstrip("/") == arr_path.rstrip("/")), None)
+            match = _episodefile_for(files, arr_path)
+            if not match and not dry_run and await _sonarr_rescan_series(client, url, headers, series_id):
+                # Sonarr's record was stale (the file renamed or replaced on
+                # disk since it looked): rescanned, look again (v0.10.0).
+                resp = await client.get(f"{url}/api/v3/episodefile", headers=headers, params={"seriesId": series_id})
+                resp.raise_for_status()
+                files = resp.json()
+                match = _episodefile_for(files, arr_path)
             if not match:
-                # Fall back to basename match (path mapping discrepancies)
-                target_name = Path(arr_path).name
-                match = next((f for f in files if Path(f.get("path", "")).name == target_name), None)
-            if not match:
-                return {"success": False, "error": f"No Sonarr episodefile matching path"}
+                return {"success": False,
+                        "error": await _no_episodefile_reason(client, url, headers, series_id, files, arr_path)}
             episodefile_id = match["id"]
 
             # 3. Find the episodes associated with this file (needed for search command)
@@ -482,6 +563,9 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
             episodes = resp.json()
             file_episodes = [e for e in episodes if e.get("episodeFileId") == episodefile_id]
             episode_ids = [e["id"] for e in file_episodes]
+            downloading = await _already_downloading(client, url, headers, series_id, file_episodes)
+            if downloading:  # nothing blocklisted or deleted: the download replaces it
+                return {"success": False, "error": downloading}
 
             # 4. Find the most recent import history record for these episodes
             blocklisted = False
@@ -752,12 +836,15 @@ async def upgrade_sonarr_file(file_path: str) -> dict:
             )
             resp.raise_for_status()
             files = resp.json()
-            match = next((f for f in files if f.get("path", "").rstrip("/") == arr_path.rstrip("/")), None)
+            match = _episodefile_for(files, arr_path)
+            if not match and await _sonarr_rescan_series(client, url, headers, series_id):  # a stale record
+                resp = await client.get(f"{url}/api/v3/episodefile", headers=headers, params={"seriesId": series_id})
+                resp.raise_for_status()
+                files = resp.json()
+                match = _episodefile_for(files, arr_path)
             if not match:
-                target_name = Path(arr_path).name
-                match = next((f for f in files if Path(f.get("path", "")).name == target_name), None)
-            if not match:
-                return {"success": False, "error": "No Sonarr episodefile matching path"}
+                return {"success": False,
+                        "error": await _no_episodefile_reason(client, url, headers, series_id, files, arr_path)}
 
             # Resolve episode IDs
             resp = await client.get(

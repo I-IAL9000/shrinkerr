@@ -5,6 +5,7 @@ replacement said "No matching Sonarr series for path"."""
 import time
 
 import pytest
+import pytest_asyncio
 
 from backend import arr
 
@@ -46,3 +47,91 @@ async def test_a_series_is_found_without_a_path_mapping(path, series_id):
 async def test_a_movie_is_found_without_a_path_mapping(path, movie_id):
     found = await arr._find_radarr_movie_for_path(None, "http://radarr", "k", path)
     assert (found or {}).get("id") == movie_id
+
+
+FILE = ("/media/TV2/RealityTV/Love Island (US) (2019) [tvdb-364107]/Season 5/"
+        "Love Island USA - S05E16 - Episode 16 - 1080p WEBRip AAC 2.0 x265-Sonarr.mkv")
+SONARR_DIR = "/RealityTV/Love Island (US) (2019) [tvdb-364107]"
+
+
+def _sonarr(monkeypatch, files_before: list[str], files_after: list[str], queue: list | None = None):
+    """A Sonarr whose series folder lists `files_before` until it's rescanned."""
+    import httpx
+    monkeypatch.setattr(arr, "_COMMAND_POLL", 0)
+    monkeypatch.setitem(arr._sonarr_cache, "data", [{"id": 1, "path": SONARR_DIR, "tvdbId": 364107}])
+    state = {"rescanned": False, "calls": []}
+
+    def handler(request):
+        path, method = request.url.path, request.method
+        state["calls"].append((method, path))
+        names = files_after if state["rescanned"] else files_before
+        if path == "/api/v3/episodefile" and method == "GET":
+            return httpx.Response(200, json=[{"id": 100 + n, "path": f"{SONARR_DIR}/Season 5/{name}"}
+                                             for n, name in enumerate(names)])
+        if path == "/api/v3/episode":
+            return httpx.Response(200, json=[{"id": 7, "seasonNumber": 5, "episodeNumber": 16,
+                                              "episodeFileId": 100 if names else 0}])
+        if path == "/api/v3/command" and method == "POST":
+            if request.read() and b"RescanSeries" in request.content:
+                state["rescanned"] = True
+                return httpx.Response(201, json={"id": 55})
+            return httpx.Response(201, json={"id": 56})
+        if path == "/api/v3/queue/details":
+            return httpx.Response(200, json=queue or [])
+        if path == "/api/v3/command/55":
+            return httpx.Response(200, json={"id": 55, "status": "completed"})
+        if path == "/api/v3/history":
+            return httpx.Response(200, json={"records": [{"id": 9, "eventType": "grabbed"}]})
+        if path.startswith("/api/v3/history/failed/") or method == "DELETE":
+            return httpx.Response(200, json={})
+        return httpx.Response(404)
+    real = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler)))
+    return state
+
+
+@pytest_asyncio.fixture
+async def sonarr_settings(test_db):
+    import aiosqlite
+    async with aiosqlite.connect(test_db) as db:
+        await db.executemany("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [
+            ("sonarr_url", "http://sonarr"), ("sonarr_api_key", "k"),
+            ("sonarr_path_mapping", "/media/TV2/RealityTV=/RealityTV")])
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_stale_sonarr_record_is_rescanned_then_replaced(sonarr_settings, monkeypatch):
+    """Sonarr still had the episode under its old name: rescanning the
+    series makes its record this file's, and the replacement goes ahead."""
+    state = _sonarr(monkeypatch, ["Love Island USA - S05E16 - Episode 16 - 1080p WEBRip x264.mkv"],
+                    [FILE.rsplit("/", 1)[1]])
+    result = await arr.research_sonarr_file(FILE, delete_file=True)
+    assert result["success"] and result["deleted"] and result["searched"] and result["blocklisted"], result
+    assert ("DELETE", "/api/v3/episodefile/100") in state["calls"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("after, error", [
+    (["Love Island USA - S05E16 - Other.mkv"], "Sonarr's file for S05E16 is a different one: "
+                                               "Love Island USA - S05E16 - Other.mkv"),
+    ([], "Sonarr has no file for S05E16, even after rescanning the series"),
+])
+async def test_why_sonarr_has_no_record_of_the_file(sonarr_settings, monkeypatch, after, error):
+    state = _sonarr(monkeypatch, after, after)
+    result = await arr.research_sonarr_file(FILE, delete_file=True)
+    assert result == {"success": False, "error": error}
+    assert not any(method == "DELETE" for method, _ in state["calls"])  # nothing of Sonarr's is deleted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("files", [[FILE.rsplit("/", 1)[1]], []], ids=["its-file", "no-file"])
+async def test_an_episode_already_downloading_says_so(sonarr_settings, monkeypatch, files):
+    """A download of the episode already in Sonarr's queue: said, and
+    nothing blocklisted, deleted or searched."""
+    state = _sonarr(monkeypatch, files, files,
+                    queue=[{"episodeId": 7, "title": "Love.Island.US.S05E16.1080p.WEB.h264-EDITH"}])
+    result = await arr.research_sonarr_file(FILE, delete_file=True)
+    assert result == {"success": False, "error": "S05E16 is already downloading in Sonarr "
+                      "(Love.Island.US.S05E16.1080p.WEB.h264-EDITH); this file is replaced when it's imported"}
+    assert not [c for c in state["calls"] if c[0] in ("DELETE",) or c[1].startswith("/api/v3/history/failed")]
