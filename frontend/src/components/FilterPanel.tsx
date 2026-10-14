@@ -148,7 +148,7 @@ export default function FilterPanel({
                     <label className="filter-option-main">
                       <input type="checkbox" checked={included} disabled={empty}
                         onChange={e => onToggle(option.key, (e.nativeEvent as MouseEvent).altKey === true)} />
-                      <span className="filter-option-label">{label}</span>
+                      <span className="filter-option-label" title={label}>{label}</span>
                       {excluded && <span className="sr-only">{t("scanner:filterBar.excluded")}</span>}
                       <span className={`filter-option-count${count == null ? " stale" : ""}`}>
                       {shown == null ? "…" : fmtNum(shown)}

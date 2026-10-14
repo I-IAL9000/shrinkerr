@@ -403,3 +403,19 @@ async def test_months_since_watched_in_advanced_search(lib):
     assert await names(adv("lt", 1)) == {"ep1", "ep2", "old"}
     assert await names(adv("exists")) == {"heat_br", "heat_web", "big", "dune", "old", "ep1", "ep2"}
     assert await names(adv("gt")) == set(ROWS)  # no value: not a condition
+
+
+@pytest.mark.asyncio
+async def test_no_subtitles(lib):
+    """v0.10.0: files read, with no subtitle track and none beside them;
+    one that couldn't be read, or isn't read yet (NULL), isn't counted."""
+    import aiosqlite
+    unread = ROWS["heat_web"]["file_path"]  # stays NULL
+    async with aiosqlite.connect(lib) as db:
+        await db.execute("UPDATE scan_results SET subtitle_tracks_json = '[]' "
+                         "WHERE subtitle_tracks_json IS NULL AND file_path != ?", (unread,))
+        await db.commit()
+    expected = {name for name, row in ROWS.items() if "subtitle_tracks_json" not in row and name != "heat_web"
+                and not row.get("has_external_subs_flag") and row.get("probe_status") in (None, "ok")}
+    assert expected and "ep2" not in expected and "broken" not in expected  # sidecar subs; unreadable
+    assert await names("no_subs") == expected

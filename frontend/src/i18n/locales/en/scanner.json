@@ -37,7 +37,7 @@
   "selection": {
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
-    "detectSelected": "Detect selected ({{n}})",
+    "detectSelected": "Detect unknown languages ({{n}})",
     "detectAllUnknown": "Detect all unknown ({{n}})",
     "detectSelectedTitle": "Detect languages for the selected items (und audio + subtitle tracks), writing the tags back to the files",
     "detectAllTitle": "Detect languages for every title in the current Unknown-language filter, writing the tags back to the files",
@@ -131,6 +131,7 @@
     "interlaced": "Interlaced",
     "commentary": "Commentary",
     "externalSubs": "External",
+    "noSubs": "No subtitles",
     "forcedSubs": "Forced",
     "missingLanguage": "Missing my language",
     "healthNever": "Never checked",

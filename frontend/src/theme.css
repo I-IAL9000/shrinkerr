@@ -669,6 +669,7 @@ input[type="checkbox"] { cursor: pointer; }
 }
 .poster-card.expanded {
   border-color: transparent;  /* the grid's outline (.poster-outline) */
+  transition: none;  /* the hover lift drops at once: the outline is measured right away */
 }
 .poster-card.expanded:focus-visible { outline: none !important; }  /* the outline marks it */
 .poster-img-wrap {

@@ -67,6 +67,7 @@
     {"key": "subtitles", "labelKey": "scanner:filterBar.categories.subtitles", "sections": [
       {"key": "slang", "labelKey": "scanner:filterBar.sections.language", "chipLabelKey": "scanner:filterBar.sections.subtitleLanguage", "facet": "slang"},
       {"key": "subtitles", "labelKey": "scanner:filterBar.sections.kind", "options": [
+        {"key": "no_subs", "labelKey": "scanner:filters.noSubs"},
         {"key": "image_subs", "labelKey": "scanner:filters.imageSubs"},
         {"key": "external_subs", "labelKey": "scanner:filters.externalSubs"},
         {"key": "forced_subs", "labelKey": "scanner:filters.forcedSubs"},

@@ -543,6 +543,11 @@ _FILTER_LIST = [
         "subtitle_tracks_json", f"lower(COALESCE(json_extract(t.value, '$.codec'), '')) IN {_IMAGE_SUB_CODECS}",
         hint=("pgs", "dvd_subtitle", "vobsub", "dvb_subtitle", "xsub"))),
     Filter("external_subs", "subtitles", sql="COALESCE(has_external_subs_flag, 0) = 1"),
+    # No subtitles at all, in the file or beside it (v0.10.0); a file that
+    # couldn't be read tells nothing about its tracks.
+    Filter("no_subs", "subtitles", sql="json_valid(subtitle_tracks_json) AND "
+           "json_array_length(subtitle_tracks_json) = 0 AND COALESCE(has_external_subs_flag, 0) = 0 "
+           "AND COALESCE(probe_status, 'ok') = 'ok'"),
     Filter("forced_subs", "subtitles", sql=_tracks(
         "subtitle_tracks_json", "json_extract(t.value, '$.forced') = 1", hint=('"forced": true', '"forced":true'))),
     # Subtitles for the deaf and hard of hearing, by the track's title.
