@@ -159,6 +159,18 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# "Fix for direct play when converting" (v0.10.0): every conversion job
+# carries the direct_play flag the Scanner's "Fix for direct play" sets
+# (backend/direct_play.py) — the fixes apply only where a file needs them.
+_DIRECT_PLAY_JOB_TYPES = ("convert", "combined")
+
+
+async def _direct_play_by_default(db) -> bool:
+    async with db.execute("SELECT value FROM settings WHERE key = 'direct_play_on_convert'") as cur:
+        row = await cur.fetchone()
+    return bool(row) and (row[0] or "").lower() == "true"
+
+
 class JobQueue:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -232,15 +244,17 @@ class JobQueue:
             audio_json = json.dumps(audio_tracks_to_remove or [])
             sub_json = json.dumps(subtitle_tracks_to_remove or [])
             now = _utcnow()
+            direct_play = 1 if job_type in _DIRECT_PLAY_JOB_TYPES and await _direct_play_by_default(db) else None
             async with db.execute(
                 """INSERT INTO jobs
                    (file_path, job_type, status, encoder, audio_tracks_to_remove, subtitle_tracks_to_remove,
                     created_at, queue_order, original_size,
-                    nvenc_preset, nvenc_cq, audio_codec, audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority)
-                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    nvenc_preset, nvenc_cq, audio_codec, audio_bitrate, libx265_crf, libx265_preset, target_resolution, priority,
+                    direct_play)
+                   VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (file_path, job_type, encoder, audio_json, sub_json, now, next_order,
                  original_size or 0, nvenc_preset, nvenc_cq, audio_codec, audio_bitrate,
-                 libx265_crf, libx265_preset, target_resolution, priority),
+                 libx265_crf, libx265_preset, target_resolution, priority, direct_play),
             ) as cur:
                 job_id = cur.lastrowid
             await db.commit()
@@ -317,6 +331,7 @@ class JobQueue:
             # "duplicate, append 0". `seen_in_batch` dedupes within the same call
             # so two queue-adds of the same file don't insert twice.
             now = _utcnow()
+            direct_play_default = await _direct_play_by_default(db)
             params_list: list[tuple] = []
             inserted_mask: list[bool] = []
             seen_in_batch: set[str] = set()
@@ -354,7 +369,8 @@ class JobQueue:
                     j.get("originals_policy"),
                     j.get("originals_days"),
                     j.get("vmaf_min_score"),
-                    1 if j.get("direct_play") else None,
+                    1 if j.get("direct_play") or (direct_play_default and j["job_type"] in _DIRECT_PLAY_JOB_TYPES)
+                    else None,
                 ))
                 inserted_mask.append(True)
 

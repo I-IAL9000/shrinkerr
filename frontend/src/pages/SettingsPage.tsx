@@ -1052,6 +1052,17 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     <div style={helpStyle}>{t("settingsMedia:video.convertFromHelp")}</div>
                   </div>
 
+                  {/* v0.10.0: every conversion also fixes for direct play (backend/direct_play.py) */}
+                  <div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                      <input type="checkbox" checked={encoding.direct_play_on_convert ?? false}
+                        onChange={() => setEncoding({ ...encoding, direct_play_on_convert: !(encoding.direct_play_on_convert ?? false) })}
+                        style={{ accentColor: "var(--accent)" }} />
+                      <span style={labelStyle}>{t("settingsMedia:video.directPlayOnConvert")}</span>
+                    </label>
+                    <div style={helpStyle}>{t("settingsMedia:video.directPlayOnConvertHelp")}</div>
+                  </div>
+
                   {encoding.default_encoder === "nvenc" && (
                     <>
                       {/* v0.5.7: NVDEC hardware decode pairing */}

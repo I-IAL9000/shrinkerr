@@ -140,6 +140,8 @@ _ENCODING_DEFAULTS = {
     # v0.10.0: image subtitles (PGS / VobSub) read into SRT tracks with OCR
     "image_subs_to_srt": "false",
     "image_subs_keep_original": "true",
+    # v0.10.0: every conversion also fixes for direct play (backend/direct_play.py)
+    "direct_play_on_convert": "false",
     "tmdb_api_key": "",
     "plex_url": "",
     "plex_token": "",
@@ -658,6 +660,7 @@ async def get_encoding_settings():
         "audio_compat_loudnorm": merged.get("audio_compat_loudnorm", "false").lower() == "true",
         "image_subs_to_srt": merged.get("image_subs_to_srt", "false").lower() == "true",
         "image_subs_keep_original": merged.get("image_subs_keep_original", "true").lower() == "true",
+        "direct_play_on_convert": merged.get("direct_play_on_convert", "false").lower() == "true",
         "plex_ignore_labels": merged.get("plex_ignore_labels", ""),
         "plex_scan_after_conversion": merged.get("plex_scan_after_conversion", "true").lower() == "true",
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
@@ -1169,7 +1172,7 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
         if update.lossless_keep_object_audio is not None:
             updates["lossless_keep_object_audio"] = "true" if update.lossless_keep_object_audio else "false"
         for key in ("convert_dts", "audio_compat_track", "audio_compat_loudnorm",
-                    "image_subs_to_srt", "image_subs_keep_original"):
+                    "image_subs_to_srt", "image_subs_keep_original", "direct_play_on_convert"):
             if getattr(update, key) is not None:
                 updates[key] = "true" if getattr(update, key) else "false"
         if update.audio_compat_codec is not None:

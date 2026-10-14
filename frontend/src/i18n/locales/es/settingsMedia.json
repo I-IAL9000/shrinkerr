@@ -66,6 +66,8 @@
     "convertFrom": "Convertir desde (códecs de origen)",
     "always": "(siempre)",
     "convertFromHelp": "Selecciona qué códecs de origen se convertirán al códec de destino.",
+    "directPlayOnConvert": "Arreglar para reproducción directa al convertir",
+    "directPlayOnConvertHelp": "Cada conversión hace también lo que hace \"Arreglar para reproducción directa\" en el Escáner, donde el archivo lo necesita: copias SRT de los subtítulos de imagen (PGS, VobSub) y una pista estéreo de compatibilidad cuando el audio del idioma principal no es AAC, AC3, E-AC3 ni MP3.",
     "scale": {
       "highestQuality": "{{value}} (máxima calidad)",
       "smallestFile": "{{value}} (archivo más pequeño)",

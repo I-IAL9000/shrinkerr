@@ -221,3 +221,27 @@ async def test_remote_workers_fix_them_too(test_db, monkeypatch):
         await db.commit()
     job = (await nodes_route.request_job(nodes_route.RequestJobBody(node_id="n1"), request))["job"]
     assert (job["direct_play"], job["image_subs_to_srt"], job["compat_for_direct_play"]) == (1, True, True)
+
+
+@pytest.mark.asyncio
+async def test_conversions_fix_for_direct_play_when_the_setting_is_on(test_db, monkeypatch):
+    """"Fix for direct play when converting": every conversion job carries the
+    fixes, however it's queued; remuxes, and conversions with it off, don't."""
+    import backend.routes.settings as settings_route
+    from backend.models import SettingsUpdate
+    from backend.queue import JobQueue
+    from backend.rule_actions import settings_overrides
+    monkeypatch.setattr(settings_route, "DB_PATH", test_db)
+    queue = JobQueue(test_db)
+    await queue.add_job("/m/a.mkv", "convert")
+    await queue.add_jobs_bulk([{"file_path": "/m/b.mkv", "job_type": "combined"}])
+    await settings_route.update_encoding_settings(SettingsUpdate(direct_play_on_convert=True))
+    assert (await settings_route.get_encoding_settings())["direct_play_on_convert"] is True
+    await queue.add_job("/m/c.mkv", "convert")
+    await queue.add_job("/m/d.mkv", "audio")
+    await queue.add_jobs_bulk([{"file_path": "/m/e.mkv", "job_type": "combined"},
+                               {"file_path": "/m/f.mkv", "job_type": "audio"}])
+    jobs = await _jobs(test_db)
+    assert {p[3:]: j["direct_play"] for p, j in jobs.items()} == {
+        "a.mkv": None, "b.mkv": None, "c.mkv": 1, "d.mkv": None, "e.mkv": 1, "f.mkv": None}
+    assert settings_overrides(jobs["/m/c.mkv"]) == {"image_subs_to_srt": True, "compat_for_direct_play": True}

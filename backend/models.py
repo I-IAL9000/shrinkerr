@@ -265,6 +265,7 @@ class SettingsUpdate(BaseModel):
     audio_compat_loudnorm: Optional[bool] = None
     image_subs_to_srt: Optional[bool] = None  # v0.10.0
     image_subs_keep_original: Optional[bool] = None
+    direct_play_on_convert: Optional[bool] = None  # v0.10.0: conversions also fix for direct play
     tmdb_api_key: Optional[str] = None
     plex_url: Optional[str] = None
     plex_token: Optional[str] = None
