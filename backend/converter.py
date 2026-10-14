@@ -38,6 +38,7 @@ _ABSENT: object = object()
 _ENCODING_SETTINGS: tuple[tuple[str, object, Callable], ...] = (
     # Encoder selection + quality
     ("default_encoder",                  "nvenc",   str),
+    ("output_codec",                     "hevc",    str),  # v0.10.0: "hevc" | "av1"; a rule's choice wins
     ("nvenc_cq",                         20,        int),
     ("libx265_crf",                      20,        int),
     ("nvenc_preset",                     "p6",      str),
@@ -3155,6 +3156,9 @@ async def convert_file(
     vaapi_qp = live_settings.get("vaapi_qp", 22)
     vaapi_compression_level = live_settings.get("vaapi_compression_level", 4)
     videotoolbox_quality = live_settings.get("videotoolbox_quality", 55)
+    # The job's codec (its rule's) or Settings → Video's (v0.10.0); "hevc" is the default None.
+    output_codec = output_codec or live_settings.get("output_codec")
+    output_codec = "av1" if output_codec == "av1" else None
     if output_codec == "av1":
         from backend.encoder_caps import av1_encoder
         if not await asyncio.to_thread(av1_encoder, encoder):

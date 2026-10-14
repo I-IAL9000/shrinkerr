@@ -114,6 +114,7 @@
     "restoreMissingDb": "Backup zip must contain shrinkerr.db or squeezarr.db",
     "restoreNotZip": "Must upload a .zip file",
     "invalidCompatCodec": "audio_compat_codec must be aac, eac3 or ac3",
+    "invalidOutputCodec": "output_codec must be hevc or av1",
     "mqttHostInvalid": "Enter the broker's host name or IP address, without mqtt://.",
     "mqttPortInvalid": "The MQTT port must be between 1 and 65535.",
     "mqttTopicInvalid": "An MQTT topic can't be empty, contain + or #, or start or end with /.",

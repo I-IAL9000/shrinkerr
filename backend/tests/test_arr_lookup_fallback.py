@@ -110,6 +110,10 @@ async def test_a_stale_sonarr_record_is_rescanned_then_replaced(sonarr_settings,
     result = await arr.research_sonarr_file(FILE, delete_file=True)
     assert result["success"] and result["deleted"] and result["searched"] and result["blocklisted"], result
     assert ("DELETE", "/api/v3/episodefile/100") in state["calls"]
+    # The file goes before the release is marked failed: that starts Sonarr's
+    # own search, which with the file still there grabbed nothing.
+    calls = state["calls"]
+    assert calls.index(("DELETE", "/api/v3/episodefile/100")) < calls.index(("POST", "/api/v3/history/failed/9"))
 
 
 @pytest.mark.asyncio

@@ -108,10 +108,12 @@ async def test_the_approved_ones_are_replaced(library, test_db):
     res = await action_bulk(BulkActionRequest(file_paths=[paths["episode"], paths["film"]], action="replace"))
     assert (res["succeeded"], res["failed"]) == (2, 0)
     assert all(r["blocklisted"] and r["deleted"] and r["searched"] for r in res["results"])
+    # The file goes first: marking the grab failed starts the *arr's own
+    # search, which grabbed nothing while the file was still there (v0.10.0).
     assert _changes(sent) == [
-        ("POST /api/v3/history/failed/555", None), ("DELETE /api/v3/episodefile/10", None),
+        ("DELETE /api/v3/episodefile/10", None), ("POST /api/v3/history/failed/555", None),
         ("POST /api/v3/command", {"name": "EpisodeSearch", "episodeIds": [100]}),
-        ("POST /api/v3/history/failed/77", None), ("DELETE /api/v3/moviefile/50", None),
+        ("DELETE /api/v3/moviefile/50", None), ("POST /api/v3/history/failed/77", None),
         ("POST /api/v3/command", {"name": "MoviesSearch", "movieIds": [5]})]
     async with aiosqlite.connect(test_db) as db:  # forgotten: a new download starts unchecked
         async with db.execute("SELECT file_path FROM scan_results WHERE file_path IN (?, ?)",

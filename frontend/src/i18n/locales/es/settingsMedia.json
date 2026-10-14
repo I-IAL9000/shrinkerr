@@ -56,7 +56,7 @@
       "restart": "Después ejecuta <code>docker compose down && up -d</code> y pulsa <em>Volver a detectar</em> arriba.",
       "verify": "Ejecuta <code>docker exec shrinkerr vainfo</code> para comprobar los perfiles de codificación que expone tu hardware."
     },
-    "outputCodec": {"label": "Códec de salida", "help": "HEVC (H.265). Para codificar algunos archivos en AV1, pon AV1 como códec de salida de una regla de codificación (Ajustes → Automatización → Reglas de codificación)."},
+    "outputCodec": {"label": "Códec de salida", "help": "A qué codifican las conversiones. Los archivos AV1 quedan más pequeños con la misma calidad, pero AV1 solo codifica rápido en una GPU compatible (NVENC en una RTX 40 o posterior, Intel Arc QSV); si no, lo hace la CPU (SVT-AV1), mucho más lento. Una regla de codificación puede elegir el otro códec para sus archivos."},
     "parallelJobs": "Trabajos en paralelo",
     "parallelJobsHelp": "Número de trabajos de codificación simultáneos. Más = la cola avanza más rápido, pero con más carga de GPU/CPU.",
     "ffmpegThreads": "Hilos de FFmpeg por trabajo",

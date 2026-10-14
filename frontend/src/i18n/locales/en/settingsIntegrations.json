@@ -244,6 +244,7 @@
       "update": "Update Rule",
       "add": "Add Rule",
       "outputCodec": "Output codec",
+      "outputCodecDefault": "Default ({{codec}}, Settings → Video)",
       "av1Unavailable": "This encoder can't write AV1 here, so these files are encoded HEVC. Choose libx265 (CPU) for AV1 with SVT-AV1 — or NVENC on an RTX 40 or later, QSV on Intel Arc.",
       "av1None": "No AV1 encoder was found here, so these files are encoded HEVC.",
       "more": {

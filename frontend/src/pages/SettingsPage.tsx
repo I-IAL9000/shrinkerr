@@ -965,11 +965,24 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                     )}
                   </div>
 
-                  {/* Output codec (v0.10.0): HEVC; AV1 is a rule's choice. The
-                      Target Codec dropdown here was never saved. */}
+                  {/* Output codec (v0.10.0): what conversions encode to; an
+                      encoding rule can choose the other for its files. */}
                   <div>
-                    <div style={{ ...labelStyle, marginBottom: 8 }}>{t("settingsMedia:video.outputCodec.label")}</div>
-                    <div style={helpStyle}>{t("settingsMedia:video.outputCodec.help")}</div>
+                    <label style={{ ...labelStyle, display: "block", marginBottom: 8 }} htmlFor="output-codec">
+                      {t("settingsMedia:video.outputCodec.label")}
+                    </label>
+                    <select id="output-codec" style={{ ...inputStyle, width: "100%" }}
+                      value={encoding?.output_codec === "av1" ? "av1" : "hevc"}
+                      onChange={e => setEncoding({ ...encoding, output_codec: e.target.value })}>
+                      <option value="hevc">HEVC (H.265)</option>
+                      <option value="av1">AV1</option>
+                    </select>
+                    <div style={{ ...helpStyle, marginTop: 4 }}>{t("settingsMedia:video.outputCodec.help")}</div>
+                    {encoding?.output_codec === "av1" && encoderCaps?.av1 && !encoderCaps.av1[encoding?.default_encoder || "nvenc"] && (
+                      <div style={{ ...helpStyle, marginTop: 4, color: "var(--caution)" }}>
+                        {t(encoderCaps.av1.libx265 ? "settingsIntegrations:rules.form.av1Unavailable" : "settingsIntegrations:rules.form.av1None")}
+                      </div>
+                    )}
                   </div>
 
                   {/* Parallel Jobs */}
@@ -4115,7 +4128,7 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 rule.action === "encode" && rule.nvenc_cq ? `CQ${rule.nvenc_cq}` : null,
                                 rule.action === "encode" && rule.libx265_crf ? `CRF${rule.libx265_crf}` : null,
                                 rule.action === "encode" && rule.target_resolution && rule.target_resolution !== "copy" ? rule.target_resolution : null,
-                                rule.action === "encode" && rule.output_codec === "av1" ? "AV1" : null,
+                                rule.action === "encode" && rule.output_codec ? (rule.output_codec === "av1" ? "AV1" : "HEVC") : null,
                                 rule.audio_keep_languages ? t("settingsIntegrations:rules.form.more.badges.audio", { langs: rule.audio_keep_languages }) : null,
                                 rule.sub_policy ? t(`settingsIntegrations:rules.form.more.badges.subs_${rule.sub_policy}`, { langs: rule.sub_keep_languages || "" }) : null,
                                 rule.action === "encode" && rule.originals_policy ? t(`settingsIntegrations:rules.form.more.badges.originals_${rule.originals_policy}`, { count: rule.originals_days || 7 }) : null,
@@ -4534,7 +4547,9 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                             <label style={labelStyle}>{t("settingsIntegrations:rules.form.outputCodec")}</label>
                             <select aria-label={t("settingsIntegrations:rules.form.outputCodec")} style={{ ...inputStyle, width: "100%" }} value={ruleForm.output_codec || ""}
                               onChange={e => setRuleForm({ ...ruleForm, output_codec: e.target.value })}>
-                              <option value="">HEVC (H.265)</option>
+                              <option value="">{t("settingsIntegrations:rules.form.outputCodecDefault", {
+                                codec: encoding?.output_codec === "av1" ? "AV1" : "HEVC" })}</option>
+                              <option value="hevc">HEVC (H.265)</option>
                               <option value="av1">AV1</option>
                             </select>
                             {ruleForm.output_codec === "av1" && encoderCaps?.av1

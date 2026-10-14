@@ -142,6 +142,8 @@ _ENCODING_DEFAULTS = {
     "image_subs_keep_original": "true",
     # v0.10.0: every conversion also fixes for direct play (backend/direct_play.py)
     "direct_play_on_convert": "false",
+    # v0.10.0: what conversions encode to — "hevc" or "av1" (an encoding rule can choose either)
+    "output_codec": "hevc",
     "tmdb_api_key": "",
     "plex_url": "",
     "plex_token": "",
@@ -661,6 +663,7 @@ async def get_encoding_settings():
         "image_subs_to_srt": merged.get("image_subs_to_srt", "false").lower() == "true",
         "image_subs_keep_original": merged.get("image_subs_keep_original", "true").lower() == "true",
         "direct_play_on_convert": merged.get("direct_play_on_convert", "false").lower() == "true",
+        "output_codec": "av1" if merged.get("output_codec") == "av1" else "hevc",
         "plex_ignore_labels": merged.get("plex_ignore_labels", ""),
         "plex_scan_after_conversion": merged.get("plex_scan_after_conversion", "true").lower() == "true",
         "plex_empty_trash_after_scan": merged.get("plex_empty_trash_after_scan", "false").lower() == "true",
@@ -1175,6 +1178,10 @@ async def update_encoding_settings(update: SettingsUpdate, request: Request = No
                     "image_subs_to_srt", "image_subs_keep_original", "direct_play_on_convert"):
             if getattr(update, key) is not None:
                 updates[key] = "true" if getattr(update, key) else "false"
+        if update.output_codec is not None:
+            if update.output_codec not in ("hevc", "av1"):
+                raise ApiError(400, "output_codec must be hevc or av1", code="settings.invalidOutputCodec")
+            updates["output_codec"] = update.output_codec
         if update.audio_compat_codec is not None:
             if update.audio_compat_codec not in ("aac", "eac3", "ac3"):
                 raise ApiError(400, "audio_compat_codec must be aac, eac3 or ac3", code="settings.invalidCompatCodec")

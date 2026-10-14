@@ -586,10 +586,12 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
             if downloading:  # nothing blocklisted or deleted: the download replaces it
                 return {"success": False, "error": downloading}
 
-            # 4. Find the most recent import history record for these episodes
+            # 4. Find the most recent grab of these episodes, to blocklist once
+            #    the file is gone (below)
             blocklisted = False
             blocklist_error = None
             release = None
+            grab_rec = None
             if episode_ids:
                 try:
                     # Look for the most recent grabbed/imported record and blocklist it.
@@ -605,20 +607,9 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                         records = resp.json().get("records", [])
                         # markAsFailed needs a history record id for a *grabbed* event
                         grab_rec = next((r for r in records if r.get("eventType") == "grabbed"), None)
-                        if grab_rec and dry_run:
+                        if grab_rec:
                             release = grab_rec.get("sourceTitle") or ""
                             break
-                        if grab_rec:
-                            resp2 = await client.post(
-                                f"{url}/api/v3/history/failed/{grab_rec['id']}",
-                                headers=headers,
-                            )
-                            if resp2.status_code in (200, 201):
-                                blocklisted = True
-                                print(f"[SONARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
-                                break
-                            else:
-                                blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
                 except Exception as exc:
                     blocklist_error = str(exc)
                     print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
@@ -647,6 +638,23 @@ async def research_sonarr_file(file_path: str, delete_file: bool = True, dry_run
                 deleted = resp.status_code in (200, 204)
                 if not deleted:
                     print(f"[SONARR-RESEARCH] Delete episodefile failed: {resp.status_code} {resp.text[:200]}", flush=True)
+
+            # 5b. Blocklist it — after the delete (v0.10.0): marking a grab
+            #     failed starts Sonarr's own search for the episode, which,
+            #     with the file still there, found it met the cutoff and
+            #     grabbed nothing — and swallowed the search below as a
+            #     duplicate of itself.
+            if grab_rec:
+                try:
+                    resp2 = await client.post(f"{url}/api/v3/history/failed/{grab_rec['id']}", headers=headers)
+                    if resp2.status_code in (200, 201):
+                        blocklisted = True
+                        print(f"[SONARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
+                    else:
+                        blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
+                except Exception as exc:
+                    blocklist_error = str(exc)
+                    print(f"[SONARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
 
             # 6. Trigger a fresh search. markAsFailed usually does this implicitly,
             #    but call it explicitly to be safe across versions.
@@ -710,10 +718,11 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
             if movie_file_id and radarr_name and radarr_name != Path(arr_path).name:
                 return {"success": False, "error": f"Radarr's file for this movie is a different one: {radarr_name}"}
 
-            # 3. Blocklist the most recent grabbed release
+            # 3. Find the most recent grab, to blocklist once the file is gone (below)
             blocklisted = False
             blocklist_error = None
             release = None
+            grab_rec = None
             try:
                 resp = await client.get(
                     f"{url}/api/v3/history/movie",
@@ -724,19 +733,9 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
                     records = resp.json()
                     # sort by date desc
                     records.sort(key=lambda r: r.get("date", ""), reverse=True)
-                    if records and dry_run:
-                        release = records[0].get("sourceTitle") or ""
-                    elif records:
+                    if records:
                         grab_rec = records[0]
-                        resp2 = await client.post(
-                            f"{url}/api/v3/history/failed/{grab_rec['id']}",
-                            headers=headers,
-                        )
-                        if resp2.status_code in (200, 201):
-                            blocklisted = True
-                            print(f"[RADARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
-                        else:
-                            blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
+                        release = grab_rec.get("sourceTitle") or ""
             except Exception as exc:
                 blocklist_error = str(exc)
                 print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
@@ -762,6 +761,21 @@ async def research_radarr_file(file_path: str, delete_file: bool = True, dry_run
                 deleted = resp.status_code in (200, 204)
                 if not deleted:
                     print(f"[RADARR-RESEARCH] Delete moviefile failed: {resp.status_code} {resp.text[:200]}", flush=True)
+
+            # 4b. Blocklist it — after the delete (v0.10.0): marking a grab
+            #     failed starts Radarr's own search, which, with the file still
+            #     there, grabbed nothing and swallowed the search below.
+            if grab_rec:
+                try:
+                    resp2 = await client.post(f"{url}/api/v3/history/failed/{grab_rec['id']}", headers=headers)
+                    if resp2.status_code in (200, 201):
+                        blocklisted = True
+                        print(f"[RADARR-RESEARCH] Marked history {grab_rec['id']} as failed (blocklisted)", flush=True)
+                    else:
+                        blocklist_error = f"HTTP {resp2.status_code}: {resp2.text[:200]}"
+                except Exception as exc:
+                    blocklist_error = str(exc)
+                    print(f"[RADARR-RESEARCH] Blocklist step failed: {exc}", flush=True)
 
             # 5. Trigger search
             resp = await client.post(

@@ -147,3 +147,31 @@ async def test_remote_workers_encode_it(tmp_path, monkeypatch):
         "id": 9, "file_path": str(src), "job_type": "convert", "encoder": "libx265", "output_codec": "av1"},
         ["libx265"])
     assert seen["output_codec"] == "av1"
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setting, job_codec, av1", [("av1", None, True), ("av1", "hevc", False),
+                                                     ("hevc", None, False), ("hevc", "av1", True)])
+async def test_settings_output_codec_unless_a_rule_chose(test_db, clip, monkeypatch, setting, job_codec, av1):
+    """Settings → Video's output codec (v0.10.0) is what a conversion encodes
+    to; a rule's choice, either way, wins (it's on the job)."""
+    from backend.converter import convert_file
+    from backend.models import SettingsUpdate
+    from backend.routes import settings as settings_route
+    monkeypatch.setattr(settings_route, "DB_PATH", test_db)
+    monkeypatch.setattr(encoder_caps, "av1_encoder", lambda enc: "libsvtav1")
+    await settings_route.update_encoding_settings(SettingsUpdate(output_codec=setting))
+    assert (await settings_route.get_encoding_settings())["output_codec"] == setting
+    plan = await convert_file(str(clip), "libx265", 2.0, command_only=True, output_codec=job_codec)
+    assert ("libsvtav1" in " ".join(plan["command"])) is av1
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_output_codec_is_refused(test_db, monkeypatch):
+    from backend.models import SettingsUpdate
+    from backend.routes import settings as settings_route
+    from backend.api_errors import ApiError
+    monkeypatch.setattr(settings_route, "DB_PATH", test_db)
+    with pytest.raises(ApiError):
+        await settings_route.update_encoding_settings(SettingsUpdate(output_codec="vp9"))
