@@ -388,13 +388,21 @@ async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[in
 async def matching_ids(expr: FilterExpr) -> Optional[list[int]]:
     """The listed rows `expr` matches, from the index: the tree, the file
     lists and Add to Queue skip the Python filters' pass over the library.
-    None when the SQL engine should answer (current()) or on an error."""
+    None when the SQL engine should answer (current()), while the index is
+    behind (a rebuild after a big change: the files it's missing would never
+    be auto-queued or matched by a rule's view; counts may lag, lists not)
+    or on an error. A list never starts a build (filter_index_loop and
+    the counts do): one cancelled with a test's loop leaks its connection."""
+    if _state.index is None or _state.loading or _state.stale:
+        return None
     try:
         index = await current()
-        if index is None:
+        if index is None or _state.stale:
             return None
         adhoc = await _adhoc_for(expr, index)
         async with _state.lock:
+            if _state.stale:
+                return None
             index = _state.index
             groups, excluded = _constraints(index, expr, adhoc)
             rows = index._bases(groups, excluded)[2](frozenset())

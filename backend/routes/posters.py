@@ -2189,19 +2189,21 @@ def _credits_of(data: dict, tv: bool) -> str:
     """A title's credits as poster_cache keeps them: JSON {"actor": the
     CREDITS_ACTORS top-billed, "director": a film's directors or a show's
     creators, "studio": its production companies}; "" when TMDB has none."""
-    def names(items) -> list[str]:
-        out: list[str] = []
+    def names(items, most: int = 1 << 30) -> list[str]:
+        out: dict[str, None] = {}  # in order, once each (a long soap's cast: thousands)
         for item in items or []:
             name = (item.get("name") or "").strip() if isinstance(item, dict) else ""
-            if name and name not in out:
-                out.append(name)
-        return out
+            if name:
+                out[name] = None
+                if len(out) >= most:
+                    break
+        return list(out)
     credits = (data.get("aggregate_credits") if tv else data.get("credits")) or {}
     cast = sorted((c for c in credits.get("cast") or [] if isinstance(c, dict)),
                   key=lambda c: c.get("order") if isinstance(c.get("order"), int) else 1 << 30)
     directors = data.get("created_by") if tv else [c for c in credits.get("crew") or []
                                                     if isinstance(c, dict) and c.get("job") == "Director"]
-    out = {"actor": names(cast)[:CREDITS_ACTORS], "director": names(directors),
+    out = {"actor": names(cast, CREDITS_ACTORS), "director": names(directors),
            "studio": names(data.get("production_companies"))}
     out = {k: v for k, v in out.items() if v}
     return json.dumps(out, ensure_ascii=False) if out else ""

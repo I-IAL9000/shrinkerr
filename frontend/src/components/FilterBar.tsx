@@ -123,8 +123,9 @@ export default function FilterBar({ activeFilters, counts, matching, total, list
 
   const categoryButton = (category: FilterCategory) => {
     const selected = selectedIn(category, active);
-    // A list has files when it has values (none yet: as if it had).
-    const hasFiles = category.sections.some(s => s.facet
+    // A list has files when it has values (none yet: as if it had). A
+    // searched list (actors) isn't in the counts: the others answer.
+    const hasFiles = category.sections.some(s => s.searched ? false : s.facet
       ? (lists?.[s.facet]?.length ?? 1) > 0
       : (s.options ?? []).some(o => (counts?.[o.key] ?? 1) > 0));
     const dimmed = !hasFiles && selected.length === 0;

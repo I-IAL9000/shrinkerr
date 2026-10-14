@@ -59,7 +59,7 @@ async def test_the_tree_lists_and_add_to_queue_list_the_index_rows(library, monk
     assert len(texts) > 10
     by_sql = {text: await everything(text) for text in texts}  # the index isn't built yet
     assert any(answer[1] for answer in by_sql.values())
-    await service.wait_rebuilt()
+    service._state.index = await service.build()  # a list doesn't start it
     from backend.scan_filters import FilterExpr
 
     def no_python_pass(*args):
@@ -67,3 +67,16 @@ async def test_the_tree_lists_and_add_to_queue_list_the_index_rows(library, monk
     monkeypatch.setattr(FilterExpr, "post_filter", no_python_pass)
     for text in texts:
         assert await everything(text) == by_sql[text], text
+
+
+@pytest.mark.asyncio
+async def test_an_index_behind_leaves_the_rows_to_sql(library):
+    """While a rebuild after a big change runs, the index misses the new
+    files: the lists, views and rules read SQL (counts may lag)."""
+    from backend.scan_filters import parse_filter
+    expr = parse_filter("!ignored")
+    assert await service.matching_ids(expr) is None and not service._rebuilding()  # no build started
+    service._state.index = await service.build()
+    assert await service.matching_ids(expr) is not None
+    service._state.stale = True
+    assert await service.matching_ids(expr) is None
