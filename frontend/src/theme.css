@@ -493,6 +493,7 @@ body {
 .filter-panel {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 100; /* above the sticky selection bar (50) */
   width: min(var(--panel-width, 240px), calc(100vw - 32px)); max-height: 70vh; overflow-y: auto;
+  overscroll-behavior: contain; /* its end doesn't scroll the page out from under it */
   padding: 12px; box-sizing: border-box;
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
