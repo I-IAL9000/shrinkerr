@@ -606,3 +606,25 @@ def test_temp_recovery_never_adopts_another_jobs_output(tmp_path):
     variant = tmp_path / unicodedata.normalize("NFD", "AMÉLIE (2001).converting.mkv")
     variant.write_bytes(b"ours")
     assert _find_own_temp_variant(own2) == variant
+
+
+def test_a_broken_stream_under_nvdec_is_retried_with_software_decode():
+    """A WEB-DL episode with broken references mid-file: under NVDEC the
+    HEVC decoder can't build the frames' references, then NVENC fails with
+    "out of memory" (exit 244). The software decoder conceals the gap, so
+    that failure is retried with it, as NVDEC's other failures are."""
+    from backend.converter import nvdec_retryable
+    log = "\n".join([
+        "[hevc @ 0x5] Could not find ref with POC 32749",
+        "[hevc @ 0x5] Error constructing the frame RPS.",
+        "[hevc @ 0x5] Skipping invalid undecodable NALU: 0",
+        "[hevc_nvenc @ 0x5] Failed locking bitstream buffer: out of memory (10):",
+        "[vost#0:0/hevc_nvenc @ 0x5] [enc:hevc_nvenc @ 0x5] Error encoding a frame: Cannot allocate memory",
+        "Conversion failed!",
+    ])
+    assert nvdec_retryable(log)
+    assert nvdec_retryable("[hevc_nvenc @ 0x5] Failed locking bitstream buffer: out of memory (10):")
+    assert nvdec_retryable("[hevc @ 0x5] Error constructing the frame RPS.")
+    assert nvdec_retryable("[mpeg2video @ 0x5] hardware accelerator failed to decode picture")  # v0.9.111
+    assert not nvdec_retryable("[out#0/matroska @ 0x5] Error writing trailer: No space left on device\n"
+                               "Conversion failed!")

@@ -2967,6 +2967,33 @@ def discard_review_output(review_path: str) -> None:
         pass
 
 
+# ffmpeg-log signatures that mean the NVDEC hardware decoder failed and the
+# encode should be retried with software decode. Covers the mid-stream
+# hwaccel-reconfig crash (v0.7.14) AND a decode failure from the start —
+# NVDEC's MPEG-2 decoder chokes on some interlaced/DVD-rip streams with
+# "hardware accelerator failed to decode" / cuvidDecodePicture errors
+# (v0.9.111) — AND a stream with broken references mid-file (v0.10.0: a
+# spliced WEB-DL episode's "Could not find ref with POC" / "Error
+# constructing the frame RPS" under NVDEC, then NVENC "Failed locking
+# bitstream buffer: out of memory" and exit 244; the software decoder
+# conceals the gap and the encode completes). Only tried when NVDEC was
+# actually in use (_used_nvdec_native), once.
+_NVDEC_RETRY_SIGNATURES = (
+    "Error reinitializing filters",
+    "auto_scale_0",
+    "hwaccel changed",
+    "hardware accelerator failed to decode",
+    "cuvidDecodePicture",
+    "Error constructing the frame RPS",
+    "Failed locking bitstream buffer",
+)
+
+
+def nvdec_retryable(log: str) -> bool:
+    """Whether a failed NVDEC encode's log says a software-decode retry may succeed."""
+    return any(sig in log for sig in _NVDEC_RETRY_SIGNATURES)
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -3731,21 +3758,7 @@ async def convert_file(
     # software decode — the software decoders handle every mid-stream
     # change consistently, and NVENC still does the encode.
     _used_nvdec_native = bool(_hw_use and _hw_on_device and _hw_backend == "cuda")
-    # ffmpeg-log signatures that mean the NVDEC hardware decoder failed and the
-    # encode should be retried with software decode. Covers the mid-stream
-    # hwaccel-reconfig crash (v0.7.14) AND a decode failure from the start —
-    # NVDEC's MPEG-2 decoder chokes on some interlaced/DVD-rip streams with
-    # "hardware accelerator failed to decode" / cuvidDecodePicture errors
-    # (v0.9.111). Gated on _used_nvdec_native, so these only trigger a fallback
-    # when NVDEC was actually in use.
-    _NVDEC_RETRY_SIGNATURES = (
-        "Error reinitializing filters",
-        "auto_scale_0",
-        "hwaccel changed",
-        "hardware accelerator failed to decode",
-        "cuvidDecodePicture",
-    )
-
+    # The NVDEC failures a software-decode retry gets past: _NVDEC_RETRY_SIGNATURES.
     def _assemble_cmd(use_hw: bool) -> list:
         """Build the full ffmpeg argv for an encode attempt. `use_hw`
         toggles hardware decode — the software-decode retry passes False
@@ -3971,7 +3984,7 @@ async def convert_file(
                 # cuvid/hwaccel error lines past the last-80 window. error_lines
                 # captures them (they match "failed"), so search both.
                 haystack = "\n".join(local_all_lines[-80:] + error_lines)
-                if any(sig in haystack for sig in _NVDEC_RETRY_SIGNATURES):
+                if nvdec_retryable(haystack):
                     return {"outcome": "retry", "result": fail_dict}
                 return {"outcome": "fail", "result": fail_dict}
 
