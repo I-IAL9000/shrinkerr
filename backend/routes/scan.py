@@ -2442,6 +2442,31 @@ async def get_facet_values(facet: str, filter: str = "all", q: str = ""):
     return {"values": _values_json(facet, result[1].get(facet, []), labels)}
 
 
+async def _index_rows(expr) -> set[int] | None:
+    """The rows `expr` lists, from the filter index (v0.10.0), when it has
+    Python filters (else SQL settles it) and the index is ready: the
+    tree, the file lists and Add to Queue then skip the context and the
+    Python filters' pass. None: SQL, then expr.post_filter."""
+    if not expr.needs_ctx:
+        return None
+    from backend.filter_index import service as filter_index
+    ids = await filter_index.matching_ids(expr)
+    return None if ids is None else set(ids)
+
+
+def _ids_sql(ids: set[int] | None) -> tuple[str, list]:
+    """A whole-library query's WHERE for _index_rows' rows: it reads only
+    them (a filter few files match, "ignored", reads a few, not all)."""
+    if ids is None:
+        return "", []
+    return " AND id IN (SELECT value FROM json_each(?))", [json.dumps(sorted(ids))]
+
+
+def _listed(expr, ids: set[int] | None, row: dict, ctx) -> bool:
+    """Whether a row SQL left is in `expr`'s list (_index_rows)."""
+    return row["id"] in ids if ids is not None else expr.post_filter(row, ctx)
+
+
 @router.get("/tree")
 async def get_scan_tree(filter: str = "all"):
     """Return folder hierarchy with aggregated counts/sizes.
@@ -2453,14 +2478,16 @@ async def get_scan_tree(filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         expr = parse_filter(filter)
-        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx else None
+        ids = await _index_rows(expr)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx and ids is None else None
+        ids_sql, ids_params = _ids_sql(ids)
         # The folder sums need path, size, mtime and the savings estimate;
         # the rest is what the Python filters read.
         async with db.execute(
-            "SELECT file_mtime, COALESCE(video_conv_savings_bytes, 0) AS est_savings, "
+            "SELECT id, file_mtime, COALESCE(video_conv_savings_bytes, 0) AS est_savings, "
             f"{PY_COLUMNS}{expr.select_sql} "
-            f"FROM scan_results WHERE {_SCAN_WHERE}{expr.where_sql}",
-            [*expr.select_params, *expr.where_params],
+            f"FROM scan_results WHERE {_SCAN_WHERE}{expr.where_sql}{ids_sql}",
+            [*expr.select_params, *expr.where_params, *ids_params],
         ) as cur:
             rows = await cur.fetchall()
 
@@ -2475,7 +2502,7 @@ async def get_scan_tree(filter: str = "all"):
         folders: dict[str, dict] = {}
         for row in rows:
             r = dict(row)
-            if expr.needs_ctx and not expr.post_filter(r, ctx):
+            if expr.needs_ctx and not _listed(expr, ids, r, ctx):
                 continue
             fp = r["file_path"]
             sz = r["file_size"] or 0
@@ -2538,7 +2565,8 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         expr = parse_filter(filter)
-        ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
+        ids = await _index_rows(expr)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles and ids is None)
         under_sql, under_params = prefix_clause([prefix.rstrip("/") + "/"])
         async with db.execute(
             f"""SELECT {_SCAN_SELECT_COLS}{expr.select_sql} FROM scan_results
@@ -2548,7 +2576,7 @@ async def get_files_by_title(prefix: str, filter: str = "all"):
             (*expr.select_params, prefix, *under_params, *expr.where_params),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
-        return [_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx)]
+        return [_enrich_row(r, ctx) for r in rows if _listed(expr, ids, r, ctx)]
     finally:
         await db.close()
 
@@ -2564,7 +2592,8 @@ async def get_scan_files(folder: str, filter: str = "all"):
     db.row_factory = aiosqlite.Row
     try:
         expr = parse_filter(filter)
-        ctx = await _build_enrichment_context(db, titles=expr.needs_titles)
+        ids = await _index_rows(expr)
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles and ids is None)
 
         # Direct children of the folder OR an exact file match for stray-file
         # pseudo-folders that are keyed by the file path itself.
@@ -2583,7 +2612,7 @@ async def get_scan_files(folder: str, filter: str = "all"):
             (*expr.select_params, folder, *under_params, len(folder_prefix) + 1, *expr.where_params),
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
-        return [_enrich_row(r, ctx) for r in rows if expr.post_filter(r, ctx)]
+        return [_enrich_row(r, ctx) for r in rows if _listed(expr, ids, r, ctx)]
     finally:
         await db.close()
 
@@ -2797,15 +2826,17 @@ async def _paths_matching(filter: str, folders: list[str] | None = None,
     expr = parse_filter(filter)
     if files is not None and not files:
         return []
+    ids = await _index_rows(expr)
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     try:
-        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx else None
+        ctx = await _build_enrichment_context(db, titles=expr.needs_titles) if expr.needs_ctx and ids is None else None
         if files is not None:
             scopes: list = [(f"{_SCAN_WHERE} AND file_path IN ({','.join('?' * len(files[i:i + 900]))})",
                              files[i:i + 900]) for i in range(0, len(files), 900)]
         elif folders is None:
-            scopes = [(_SCAN_WHERE, [])]
+            ids_sql, ids_params = _ids_sql(ids)
+            scopes = [(_SCAN_WHERE + ids_sql, ids_params)]
         else:
             # Chunked: 1000+ folders in one query exceeded SQLite's
             # expression-depth limit and the action did nothing (v0.5.23).
@@ -2816,12 +2847,12 @@ async def _paths_matching(filter: str, folders: list[str] | None = None,
         paths: list[str] = []
         for where, params in scopes:
             async with db.execute(
-                f"SELECT {PY_COLUMNS}{expr.select_sql} FROM scan_results WHERE {where}{expr.where_sql}",
+                f"SELECT id, {PY_COLUMNS}{expr.select_sql} FROM scan_results WHERE {where}{expr.where_sql}",
                 (*expr.select_params, *params, *expr.where_params),
             ) as cur:
                 for row in await cur.fetchall():
                     r = dict(row)
-                    if expr.post_filter(r, ctx):
+                    if _listed(expr, ids, r, ctx):
                         paths.append(r["file_path"])
         return paths
     finally:

@@ -27,7 +27,7 @@ import uuid
 from typing import Optional
 
 from backend import database
-from backend.filter_index.bits import from_ids
+from backend.filter_index.bits import from_ids, ids_of
 from backend.filter_index.evaluate import evaluate
 from backend.filter_index.index import SEARCHED, TOP_VALUES, FilterIndex, definitions_version
 from backend.scan_filters import _FILTER_LIST, _FACET_LIST, Filter, FilterExpr, _group_key, facet_parts
@@ -382,6 +382,25 @@ async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[in
                                               unkept=unkept, q=q)
     except Exception as exc:
         _log_error("Counting with the filter index", exc)
+        return None
+
+
+async def matching_ids(expr: FilterExpr) -> Optional[list[int]]:
+    """The listed rows `expr` matches, from the index: the tree, the file
+    lists and Add to Queue skip the Python filters' pass over the library.
+    None when the SQL engine should answer (current()) or on an error."""
+    try:
+        index = await current()
+        if index is None:
+            return None
+        adhoc = await _adhoc_for(expr, index)
+        async with _state.lock:
+            index = _state.index
+            groups, excluded = _constraints(index, expr, adhoc)
+            rows = index._bases(groups, excluded)[2](frozenset())
+        return await asyncio.to_thread(ids_of, rows)
+    except Exception as exc:
+        _log_error("Listing with the filter index", exc)
         return None
 
 

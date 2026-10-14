@@ -247,3 +247,6 @@ Each phase gets its own implementation plan and ships on `develop` on its own:
    shared by a title's files), not bitsets; the credit lists are searched
    (`facet-values?q=`), not in the counts response. Labels: Plex only.
 5. Tree, lists and Add to Queue through the index.
+   Done: with Python filters in the expression, the rows come from the index
+   (`matching_ids`) instead of the context and post_filter; whole-library
+   queries (tree, Add to Queue on everything) read only those ids.

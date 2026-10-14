@@ -37,3 +37,33 @@ async def test_the_counts_come_from_the_index_once_built(library, monkeypatch):
     assert stats["summary"]["files_to_convert"] == expected["all"]["needs_conversion"]
     assert stats["summary"]["estimated_savings_bytes"] == savings
     assert stats["counts"]["x264"] == expected["all"]["x264"]
+
+
+@pytest.mark.asyncio
+async def test_the_tree_lists_and_add_to_queue_list_the_index_rows(library, monkeypatch):
+    """With Python filters in it, a filter's rows come from the index once
+    it's built, not a Python pass: the same tree, files and paths as the SQL
+    engine's."""
+    import backend.routes.scan as scan_route
+    from backend.scan_filters import parse_filter
+
+    async def everything(text: str) -> tuple:
+        paths = sorted(await scan_route._paths_matching(text))
+        titles = sorted({p.rsplit("/", 2)[0] for p in paths})[:3]
+        files = [[r["file_path"] for r in await scan_route.get_files_by_title(t, text)] for t in titles]
+        folder_files = [[r["file_path"] for r in await scan_route.get_scan_files(p.rsplit("/", 1)[0], text)]
+                        for p in paths[:3]]
+        return await scan_route.get_scan_tree(text), paths, files, folder_files
+
+    texts = [t for t in library_data.EXPRESSIONS if parse_filter(t).needs_ctx]
+    assert len(texts) > 10
+    by_sql = {text: await everything(text) for text in texts}  # the index isn't built yet
+    assert any(answer[1] for answer in by_sql.values())
+    await service.wait_rebuilt()
+    from backend.scan_filters import FilterExpr
+
+    def no_python_pass(*args):
+        raise AssertionError("the rows went through the Python filters")
+    monkeypatch.setattr(FilterExpr, "post_filter", no_python_pass)
+    for text in texts:
+        assert await everything(text) == by_sql[text], text
