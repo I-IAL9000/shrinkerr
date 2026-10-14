@@ -12,6 +12,7 @@ import { useConfirm } from "./ConfirmModal";
 import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
 import { fmtBytes } from "../fmt";
+import { useScannerItemActions } from "../scannerItemActions";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -43,6 +44,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   const [settingLang, setSettingLang] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
+  const itemActions = useScannerItemActions();
 
   const isCorrupt = file.probe_status === "corrupt" || file.health_status === "corrupt";
 
@@ -420,6 +422,19 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
                 className="btn btn-xs btn-primary"
               >
                 {canRemuxApply ? t("fileDetail:actions.remuxApply") : t("fileDetail:actions.convertApply")}
+              </button>
+            )}
+            {itemActions && (
+              <button
+                type="button"
+                onClick={() => itemActions.addToQueue(file)}
+                title={t("fileDetail:actions.addToQueueTitle")}
+                className="btn btn-xs btn-secondary"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                {t("common:actions.addToQueue")}
               </button>
             )}
             <button

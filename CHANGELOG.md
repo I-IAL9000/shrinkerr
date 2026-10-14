@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doctor**: one page that checks the setup and makes a diagnostics file for bug reports, with secrets taken out. And a copy-ready remote worker command on the Nodes page.
 - **Demo mode** for a public, read-only demo, a guide for coming from Tdarr or Unmanic, and new documentation: what happens to your files, hardware, Unraid / TrueNAS / Synology, a comparison, how Shrinkerr is built, CONTRIBUTING and SECURITY.
 - **Docker images can run as your own user** (`PUID` / `PGID` / `UMASK`) and carry OCI labels; each release also gets minor-line tags (`:0.10`, `:0.10-nvenc`) for patches only.
+- **Add to queue from an open file** in the Scanner: next to Request replacement and Search for upgrade, with the same estimate as the toolbar, and without ticking the file or changing what's selected.
 
 ### Changed
 - **Scanner counts are instant**: which files each filter matches is kept up to date as your library changes, so a click updates every count at once instead of re-reading the library (12 seconds on a big one). It's built once in the background after the update, and kept in the data folder.

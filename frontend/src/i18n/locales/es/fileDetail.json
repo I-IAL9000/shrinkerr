@@ -64,6 +64,7 @@
     "convertApply": "Convertir a MKV (aplicar idioma)",
     "remuxApplyTitle": "Remuxar a MKV (copia de flujo, sin recodificar) para aplicar el idioma pendiente; no se pudo escribir directamente en este archivo",
     "convertApplyTitle": "Convertir este disco a MKV; el idioma se detecta y aplica durante la conversión",
+    "addToQueueTitle": "Añadir este archivo a la cola (primero muestra la estimación), sin seleccionarlo",
     "requesting": "Solicitando…",
     "redownloadCorrupt": "Volver a descargar (archivo dañado)",
     "requestReplacement": "Solicitar reemplazo",

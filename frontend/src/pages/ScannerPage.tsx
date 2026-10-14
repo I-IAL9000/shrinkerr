@@ -16,6 +16,7 @@ import type { FolderInfo } from "../components/FileTree";
 import { useToast } from "../useToast";
 import { useConfirm } from "../components/ConfirmModal";
 import EstimateModal from "../components/EstimateModal";
+import { ScannerItemActionsContext } from "../scannerItemActions";
 import RenameModal from "../components/RenameModal";
 import ReplaceCorruptModal from "../components/ReplaceCorruptModal";
 import type { ScannedFile, ScanProgress, AudioTrack, SubtitleTrack } from "../types";
@@ -182,6 +183,9 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   }, [filter, serverStats]);
   const [estimatePaths, setEstimatePaths] = useState<string[] | null>(null);
   const [estimateHasIgnored, setEstimateHasIgnored] = useState(false);
+  // The estimate is for an open item's "Add to queue", not the selection:
+  // adding it leaves the selection as it is.
+  const [estimateKeepsSelection, setEstimateKeepsSelection] = useState(false);
   const [renamePaths, setRenamePaths] = useState<string[] | null>(null);
   // While the add-to-queue API call is in flight. Holds the count being
   // added so the overlay can render a meaningful message; null when idle.
@@ -1097,6 +1101,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       paths.includes(f.file_path) || paths.some(p => p.endsWith("/") && f.file_path.startsWith(p.slice(0, -1)))
     ));
 
+    setEstimateKeepsSelection(false);
     if (selectAllActive) {
       // Select all: use the filter-based server-side resolution
       const anyIgnored = allFiles.some(f => f.ignored);
@@ -1111,6 +1116,16 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     setEstimatePaths(paths);
     setEstimateHasIgnored(hasIgnored);
   };
+
+  // "Add to queue" on a file open in the tree or under a poster (FileDetail):
+  // the toolbar's estimate → confirm flow, for that file alone.
+  const itemActions = useMemo(() => ({
+    addToQueue: (file: ScannedFile) => {
+      setEstimateKeepsSelection(true);
+      setEstimatePaths([file.file_path]);
+      setEstimateHasIgnored(!!file.ignored);
+    },
+  }), []);
 
   // "Fix for direct play" (v0.10.0): the selection's files with a direct-play
   // problem get a conversion (Hi10P) or a remux to MKV, with SRT copies of
@@ -1162,8 +1177,10 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       }
       if (filter !== "all") extra.filter = filter;
       const result = await addJobsFromScan(estimatePaths, priority, overrideRules, Object.keys(extra).length > 0 ? extra : undefined) as any;
-      setSelectAllActive(false);
-      setSelectedPaths(new Set());
+      if (!estimateKeepsSelection) {
+        setSelectAllActive(false);
+        setSelectedPaths(new Set());
+      }
       const skippedExisting = result.skipped_existing ?? 0;
       // "Add & start" (v0.10.0): start the queue once the jobs are in.
       if (start && (result.added > 0 || skippedExisting > 0)) {
@@ -1917,6 +1934,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
             </div>
           )}
           <div className="scanner-results-list">
+          <ScannerItemActionsContext.Provider value={itemActions}>
           {viewMode === "tree" ? (
             <FileTree
               folders={displayFolders}
@@ -1958,6 +1976,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               sortDir={sortDir}
             />
           )}
+          </ScannerItemActionsContext.Provider>
           </div>
           </div>
         </>

@@ -64,6 +64,7 @@
     "convertApply": "Convert to MKV (apply language)",
     "remuxApplyTitle": "Remux to MKV (stream copy, no re-encode) to apply the pending language — it couldn't be written to this file in place",
     "convertApplyTitle": "Convert this disc to MKV; the language is detected and applied during the conversion",
+    "addToQueueTitle": "Add this file to the queue (shows the estimate first), without selecting it",
     "requesting": "Requesting…",
     "redownloadCorrupt": "Re-download (corrupt file)",
     "requestReplacement": "Request replacement",
