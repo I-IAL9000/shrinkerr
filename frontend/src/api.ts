@@ -557,7 +557,7 @@ export const arrActionBulk = (filePaths: string[], action: ArrAction, deleteFile
 
 // Bazarr (v0.10.0): search for the subtitles the file's movie / series is missing.
 export const bazarrSearch = (filePath: string) =>
-  apiFetch<{ ok: boolean; kind: "movies" | "series"; id: number }>(
+  apiFetch<{ ok: boolean; kind: "movies" | "series"; id: number; already_running: boolean }>(
     "/arr/bazarr-search",
     { method: "POST", body: JSON.stringify({ file_path: filePath }) },
   );

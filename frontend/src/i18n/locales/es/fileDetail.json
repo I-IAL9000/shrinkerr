@@ -86,8 +86,10 @@
     "error": "Error en la búsqueda de mejora: {{error}}"
   },
   "bazarr": {
-    "searchedMovies": "Bazarr buscó los subtítulos que le faltan a la película",
-    "searchedSeries": "Bazarr buscó los subtítulos que le faltan a la serie",
+    "searchingMovies": "Bazarr está buscando los subtítulos que le faltan a la película",
+    "searchingSeries": "Bazarr está buscando los subtítulos que le faltan a la serie",
+    "alreadyMovies": "Bazarr ya está buscando los subtítulos que le faltan a la película",
+    "alreadySeries": "Bazarr ya está buscando los subtítulos que le faltan a la serie",
     "failed": "Falló la búsqueda de subtítulos: {{error}}"
   },
   "research": {

@@ -138,7 +138,7 @@
     "maintainerrFailed": "Maintainerr: {{error}}",
     "bazarrNotConfigured": "Bazarr isn't set up: add its URL and API key in Settings → Integrations.",
     "bazarrNotFound": "Sonarr and Radarr don't have this file, so Bazarr doesn't either.",
-    "bazarrFailed": "Bazarr: {{error}}"
+    "bazarrLookupFailed": "Couldn't look the file up in Sonarr / Radarr: {{error}}"
   },
   "policies": {
     "nameRequired": "Give the policy a name.",

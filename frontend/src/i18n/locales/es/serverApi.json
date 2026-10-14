@@ -138,7 +138,7 @@
     "maintainerrFailed": "Maintainerr: {{error}}",
     "bazarrNotConfigured": "Bazarr no está configurado: añade su URL y clave API en Ajustes → Integraciones.",
     "bazarrNotFound": "Sonarr y Radarr no tienen este archivo, así que Bazarr tampoco.",
-    "bazarrFailed": "Bazarr: {{error}}"
+    "bazarrLookupFailed": "No se pudo buscar el archivo en Sonarr / Radarr: {{error}}"
   },
   "policies": {
     "nameRequired": "Ponle un nombre a la política.",

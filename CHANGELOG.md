@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker images can run as your own user** (`PUID` / `PGID` / `UMASK`) and carry OCI labels; each release also gets minor-line tags (`:0.10`, `:0.10-nvenc`) for patches only.
 - **Add to queue from an open file** in the Scanner: next to Request replacement and Search for upgrade, with the same estimate as the toolbar, and without ticking the file or changing what's selected.
 - **Fix for direct play when converting** (Settings → Video, off by default): every conversion also adds SRT copies of image subtitles and a stereo compatibility track where a file needs them, however it was queued.
-- **Search for subtitles with Bazarr** from an open file in the Scanner, when Bazarr is set up: Bazarr searches for the subtitles the movie or series is missing, and a message says how it went (and why, when it didn't).
+- **Search for subtitles with Bazarr** from an open file in the Scanner, when Bazarr is set up: Bazarr searches in the background for the subtitles the movie or series is missing, and a message says it started, or why it couldn't.
 
 ### Changed
 - **Scanner counts are instant**: which files each filter matches is kept up to date as your library changes, so a click updates every count at once instead of re-reading the library (12 seconds on a big one). It's built once in the background after the update, and kept in the data folder.

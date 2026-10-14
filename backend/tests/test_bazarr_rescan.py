@@ -79,9 +79,10 @@ async def test_the_connection_test_and_the_key(test_db, servers, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_bazarr_searches_a_titles_missing_subtitles(test_db, servers):
+async def test_bazarr_searches_a_titles_missing_subtitles(test_db, servers, monkeypatch):
     """The Scanner's "Search for subtitles": the file's movie or series, found
-    through Sonarr / Radarr like the *arr actions."""
+    through Sonarr / Radarr like the *arr actions. Bazarr searches for
+    minutes, so the request only starts it, once per title at a time."""
     from backend.api_errors import ApiError
     from backend.routes import arr as arr_route
     episode = arr_route.BazarrSearchRequest(file_path="/m/TV/Show/Season 01/Show - S01E02.mkv")
@@ -92,20 +93,29 @@ async def test_bazarr_searches_a_titles_missing_subtitles(test_db, servers):
         await arr_route.bazarr_search(film)
     assert (err.value.status_code, err.value.code) == (400, "arr.bazarrNotConfigured")
     await _set(test_db, bazarr_url="http://bazarr:6767", bazarr_api_key="bz")
-    assert await arr_route.bazarr_search(episode) == {"ok": True, "kind": "series", "id": 7}
-    assert await arr_route.bazarr_search(film) == {"ok": True, "kind": "movies", "id": 9}
-    assert servers == [
-        ("PATCH", "/api/series", {"seriesid": "7", "action": "search-missing"}, "bz"),
+    searching, search = asyncio.Event(), bazarr._search_missing
+
+    async def until_released(*args):
+        await searching.wait()
+        return await search(*args)
+    monkeypatch.setattr(bazarr, "_search_missing", until_released)
+    assert await arr_route.bazarr_search(episode) == {"ok": True, "kind": "series", "id": 7, "already_running": False}
+    assert await arr_route.bazarr_search(episode) == {"ok": True, "kind": "series", "id": 7, "already_running": True}
+    assert await arr_route.bazarr_search(film) == {"ok": True, "kind": "movies", "id": 9, "already_running": False}
+    assert servers == []  # not waited for
+    searching.set()
+    assert await asyncio.gather(*bazarr._searches.values()) == [{"ok": True}, {"ok": True}]
+    assert sorted(servers) == [  # (side by side)
         ("PATCH", "/api/movies", {"radarrid": "9", "action": "search-missing"}, "bz"),
-    ]
+        ("PATCH", "/api/series", {"seriesid": "7", "action": "search-missing"}, "bz"),
+    ] and bazarr._searches == {}
     with pytest.raises(ApiError) as err:
         await arr_route.bazarr_search(arr_route.BazarrSearchRequest(file_path="/m/TV/Other/Season 01/Other - S01E01.mkv"))
     assert (err.value.status_code, err.value.code) == (404, "arr.bazarrNotFound")
 
 
 @pytest.mark.asyncio
-async def test_bazarrs_reason_when_the_search_fails(test_db, monkeypatch):
-    from backend.api_errors import ApiError
+async def test_bazarrs_reason_when_the_search_fails(test_db, monkeypatch, capsys):
     from backend.routes import arr as arr_route
     monkeypatch.setattr(arr, "_radarr_cache", {})
 
@@ -117,10 +127,10 @@ async def test_bazarrs_reason_when_the_search_fails(test_db, monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler)))
     await _set(test_db, radarr_url="http://radarr", radarr_api_key="r", radarr_path_mapping="/m/Movies=/movies",
                bazarr_url="http://bazarr:6767", bazarr_api_key="bz")
-    with pytest.raises(ApiError) as err:
-        await arr_route.bazarr_search(arr_route.BazarrSearchRequest(file_path="/m/Movies/Film (2020)/Film (2020).mkv"))
-    assert (err.value.status_code, err.value.code, err.value.params) == (
-        502, "arr.bazarrFailed", {"error": "HTTP 500: Movie file not found. Path mapping issue?"})
+    await arr_route.bazarr_search(arr_route.BazarrSearchRequest(file_path="/m/Movies/Film (2020)/Film (2020).mkv"))
+    error = "HTTP 500: Movie file not found. Path mapping issue?"
+    assert await bazarr._searches[("movies", 9)] == {"ok": False, "error": error}
+    assert f"Subtitle search of movies 9 failed: {error}" in capsys.readouterr().out
 
 def _x265() -> bool:
     return bool(shutil.which("ffmpeg")) and "libx265" in subprocess.run(

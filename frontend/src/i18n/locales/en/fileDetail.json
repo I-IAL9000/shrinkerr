@@ -85,8 +85,10 @@
     "error": "Upgrade search error: {{error}}"
   },
   "bazarr": {
-    "searchedMovies": "Bazarr searched for the movie's missing subtitles",
-    "searchedSeries": "Bazarr searched for the series' missing subtitles",
+    "searchingMovies": "Bazarr is searching for the movie's missing subtitles",
+    "searchingSeries": "Bazarr is searching for the series' missing subtitles",
+    "alreadyMovies": "Bazarr is already searching for the movie's missing subtitles",
+    "alreadySeries": "Bazarr is already searching for the series' missing subtitles",
     "failed": "Subtitle search failed: {{error}}"
   },
   "research": {

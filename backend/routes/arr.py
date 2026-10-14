@@ -375,10 +375,11 @@ class BazarrSearchRequest(BaseModel):
     file_path: str
 
 
-@router.post("/bazarr-search")
+@router.post("/bazarr-search", status_code=202)
 async def bazarr_search(payload: BazarrSearchRequest):
-    """Have Bazarr search for the subtitles the file's movie or series is
-    missing (backend/bazarr.py). {"ok": true, "kind": "movies"|"series", "id"}."""
+    """Start Bazarr's search for the subtitles the file's movie or series is
+    missing (backend/bazarr.py) and answer at once — the search can take
+    minutes. {"ok": true, "kind": "movies"|"series", "id", "already_running"}."""
     if not payload.file_path:
         raise ApiError(status_code=400, detail="file_path required", code="common.filePathRequired")
     from backend.bazarr import search_missing_subtitles
@@ -391,7 +392,8 @@ async def bazarr_search(payload: BazarrSearchRequest):
     if result["reason"] == "not_found":
         raise ApiError(404, "Sonarr and Radarr don't have this file, so Bazarr doesn't either.",
                        code="arr.bazarrNotFound")
-    raise ApiError(502, f"Bazarr: {result['error']}", code="arr.bazarrFailed", params={"error": result["error"]})
+    raise ApiError(502, f"Couldn't look the file up in Sonarr / Radarr: {result['error']}",
+                   code="arr.bazarrLookupFailed", params={"error": result["error"]})
 
 
 @router.post("/maintainerr-sync")

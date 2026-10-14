@@ -72,7 +72,10 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
     setSubSearching(true);
     try {
       const r = await bazarrSearch(file.file_path);
-      toast(t(r.kind === "series" ? "fileDetail:bazarr.searchedSeries" : "fileDetail:bazarr.searchedMovies"), "success");
+      const key = r.kind === "series"
+        ? (r.already_running ? "fileDetail:bazarr.alreadySeries" : "fileDetail:bazarr.searchingSeries")
+        : (r.already_running ? "fileDetail:bazarr.alreadyMovies" : "fileDetail:bazarr.searchingMovies");
+      toast(t(key), "success");
     } catch (exc: any) {
       toast(t("fileDetail:bazarr.failed", { error: exc?.message || exc }), "error");
     } finally {
