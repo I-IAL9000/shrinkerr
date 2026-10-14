@@ -245,3 +245,37 @@ async def test_conversions_fix_for_direct_play_when_the_setting_is_on(test_db, m
     assert {p[3:]: j["direct_play"] for p, j in jobs.items()} == {
         "a.mkv": None, "b.mkv": None, "c.mkv": 1, "d.mkv": None, "e.mkv": 1, "f.mkv": None}
     assert settings_overrides(jobs["/m/c.mkv"]) == {"image_subs_to_srt": True, "compat_for_direct_play": True}
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+@pytest.mark.asyncio
+async def test_an_encode_discarded_as_larger_still_fixes_for_direct_play(test_db, tmp_path, monkeypatch):
+    """The original stays when the encode is larger; the remux's fixes are
+    still made to it (here DTS-only audio: a compatibility track)."""
+    import backend.audio as audio
+    import backend.converter as converter
+    from backend.queue import JobQueue, QueueWorker
+    from backend.tests.test_same_name_conversion import _mkv
+    src = tmp_path / "Film (2020).mkv"
+    _mkv(src, ["eng"])
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp, audio_tracks_json) "
+                         "VALUES (?, 1, '2026-10-14', ?)",
+                         (str(src), json.dumps([{"stream_index": 1, "language": "eng", "codec": "dts"}])))
+        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('direct_play_on_convert', 'true')")
+        await db.commit()
+
+    async def larger(**kwargs):
+        return {"success": True, "output_path": str(src), "space_saved": 0, "error": None,
+                "skipped_larger": True, "had_track_removal": False}
+    monkeypatch.setattr(converter, "convert_file", larger)
+    remuxed, remux = [], audio.remux_audio
+
+    async def recorded(**kwargs):
+        remuxed.append(kwargs)
+        return await remux(**kwargs)
+    monkeypatch.setattr(audio, "remux_audio", recorded)
+    queue = JobQueue(test_db)
+    job_id = await queue.add_job(str(src), "convert", encoder="libx265")
+    await QueueWorker(test_db)._process_job(next(j for j in await queue.get_all_jobs() if j["id"] == job_id))
+    assert [(k["input_path"], k["compat_settings"]["compat_for_direct_play"]) for k in remuxed] == [(str(src), True)]

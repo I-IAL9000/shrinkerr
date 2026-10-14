@@ -2835,6 +2835,20 @@ class QueueWorker:
                     or bool(subtitle_tracks_to_remove)
                     or job_type == "combined"  # native-reorder / codec transcode case
                 )
+                # "Fix for direct play" (v0.10.0): what a remux fixes (SRT
+                # copies, a compatibility track, MKV) is still done to the
+                # original. Hi10P is the conversion's to fix; a remux can't.
+                if not should_followup and job.get("direct_play"):
+                    try:
+                        from backend.direct_play import problems_for
+                        db_dp = await self._db()
+                        try:
+                            problems = (await problems_for(db_dp, [file_path])).get(file_path, [])
+                        finally:
+                            await db_dp.close()
+                        should_followup = any(p != "video" for p in problems)
+                    except Exception as exc:
+                        print(f"[WORKER] Direct-play check failed (non-fatal): {exc}", flush=True)
                 if should_followup:
                     # v0.9.119: run the cleanup inline in THIS job (the remux
                     # block below now also fires when _inline_cleanup is set)
