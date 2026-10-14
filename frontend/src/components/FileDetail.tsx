@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
-import { getTracksByPath, getFileHistory, researchFile, arrAction, bazarrSearch, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
+import { getTracksByPath, getFileHistory, arrAction, bazarrSearch, detectLanguages, addJobsFromScan, setTrackLanguage, type FileEvent } from "../api";
 import AudioTrackRow from "./AudioTrackRow";
 import SubTrackRow from "./SubTrackRow";
 import VideoDetails from "./VideoDetails";
@@ -13,6 +13,7 @@ import { serverText } from "../i18n/server";
 import { unreadableReason } from "../utils/unreadable";
 import { fmtBytes } from "../fmt";
 import { useScannerItemActions } from "../scannerItemActions";
+import { useRequestReplacement } from "../useRequestReplacement";
 
 interface FileDetailProps {
   file: ScannedFile;
@@ -33,7 +34,6 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   const [tab, setTab] = useState<Tab>("tracks");
   const [history, setHistory] = useState<FileEvent[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [researching, setResearching] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [subSearching, setSubSearching] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -45,6 +45,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   const [settingLang, setSettingLang] = useState(false);
   const toast = useToast();
   const confirm = useConfirm();
+  const { request: requestReplacement, requesting: researching } = useRequestReplacement();
   const itemActions = useScannerItemActions();
 
   const isCorrupt = file.probe_status === "corrupt" || file.health_status === "corrupt";
@@ -83,34 +84,7 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
     }
   };
 
-  const handleResearch = async () => {
-    const label = isCorrupt ? t("fileDetail:research.labelCorrupt") : t("fileDetail:research.labelReplace");
-    const ok = await confirm({
-      message: t("fileDetail:research.confirmMessage", { label }),
-      confirmLabel: t("fileDetail:research.confirmLabel"),
-      danger: true,
-    });
-    if (!ok) return;
-    setResearching(true);
-    try {
-      const r = await researchFile(file.file_path, true);
-      if (r.success) {
-        const parts = [
-          r.service === "sonarr" ? `Sonarr: ${r.series || ""}` : `Radarr: ${r.movie || ""}`,
-          r.blocklisted ? t("fileDetail:research.blocklisted") : t("fileDetail:research.notBlocklisted"),
-          r.deleted ? t("fileDetail:research.deleted") : t("fileDetail:research.notDeleted"),
-          r.searched ? t("fileDetail:research.searched") : t("fileDetail:research.notSearched"),
-        ];
-        toast(t("fileDetail:research.requested", { parts: parts.join(", ") }), "success");
-      } else {
-        toast(t("fileDetail:research.failed", { error: r.error || t("fileDetail:unknownError") }), "error");
-      }
-    } catch (exc: any) {
-      toast(t("fileDetail:research.error", { error: exc?.message || exc }), "error");
-    } finally {
-      setResearching(false);
-    }
-  };
+  const handleResearch = () => requestReplacement(file.file_path, isCorrupt);
 
   const handleDetect = async () => {
     setDetecting(true);

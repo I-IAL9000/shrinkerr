@@ -43,6 +43,7 @@
     "hdrNeeds10Bit": "El vídeo HDR necesita un codificador de 10 bits; {{encoder}} codifica a 8 bits aquí. Usa NVENC, libx265 o VideoToolbox. No se ha convertido nada.",
     "hdrLost": "El original {{format}} perdió su HDR en la codificación. Se ha conservado el original.",
     "remuxOutputMissing": "El archivo de salida falta o está vacío tras el remux.",
+    "sourceDamaged": "El archivo de origen parece dañado: ffmpeg encontró fotogramas rotos que no pudo decodificar. Está marcado como corrupto en el Escáner; solicita un reemplazo a Sonarr o Radarr.",
     "originalLikelyCorrupt": "Probablemente el archivo original está corrupto — la conversión produjo una salida demasiado pequeña para ser útil ({{outputMb}} MB de un archivo de origen de {{originalGb}} GB). ffmpeg encontró datos corruptos que ffprobe no detecta de antemano. La entrada del archivo de origen se marcó como corrupta; se conserva el original.",
     "tracksChanged": "Las pistas del archivo han cambiado desde que se escaneó; vuelve a escanearlo y añade de nuevo la limpieza a la cola",
     "vmafRejected": "VMAF {{score}} está por debajo del mínimo configurado de {{min}} — codificación rechazada, se conserva el original.",

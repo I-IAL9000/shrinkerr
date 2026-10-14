@@ -2994,6 +2994,51 @@ def nvdec_retryable(log: str) -> bool:
     return any(sig in log for sig in _NVDEC_RETRY_SIGNATURES)
 
 
+# Decoder messages about the source's own data — broken frames or
+# references — not the encoder or the hardware. A failed encode whose log has
+# DAMAGE_LINES of them is reported as a damaged source, and the file marked
+# corrupt, so a replacement can be requested (v0.10.0).
+_DAMAGE_SIGNATURES = (
+    "Could not find ref with POC", "Error constructing the frame RPS", "Duplicate POC in a sequence",
+    "error while decoding MB", "corrupt decoded frame", "concealing", "Invalid NAL unit size",
+    "missing picture in access unit", "decode_slice_header error", "non-existing PPS", "Packet corrupt",
+    "Invalid data found when processing input",
+)
+DAMAGE_LINES = 5
+_SOURCE_DAMAGED = ("The source file looks damaged: ffmpeg found broken frames it couldn't decode. It's marked "
+                   "corrupt in the Scanner; request a replacement from Sonarr or Radarr.")
+
+
+def source_damaged(log: str) -> bool:
+    """Whether a failed encode's ffmpeg log shows a damaged source."""
+    return sum(1 for line in log.splitlines() if any(sig in line for sig in _DAMAGE_SIGNATURES)) >= DAMAGE_LINES
+
+
+async def _mark_source_corrupt(path: str, info: dict) -> None:
+    """Mark a source the conversion found damaged as corrupt in the Scanner
+    (its Corrupt filter, the file's Re-download button). Best-effort."""
+    try:
+        import aiosqlite as _aiosqlite
+        import json as _json
+        from backend.database import DB_PATH as _DB_PATH
+        _db = await _aiosqlite.connect(_DB_PATH)
+        try:
+            await _db.execute(
+                "UPDATE scan_results SET "
+                "  health_status = 'corrupt', "
+                "  probe_status = 'corrupt', "
+                "  health_errors_json = ? "
+                "WHERE file_path = ?",
+                (_json.dumps(info), path),
+            )
+            await _db.commit()
+            print(f"[CONVERT] Marked source as corrupt in scan_results: {path}", flush=True)
+        finally:
+            await _db.close()
+    except Exception as _exc:
+        print(f"[CONVERT] Failed to mark source corrupt (non-fatal): {_exc}", flush=True)
+
+
 async def convert_file(
     input_path: str,
     encoder: str,
@@ -4085,8 +4130,17 @@ async def convert_file(
             )
             _software_retry = True
             continue
-        # Non-retryable, or retry already attempted — return the failure.
-        return _enc["result"]
+        # Non-retryable, or retry already attempted — return the failure;
+        # a damaged source's as that, the file marked corrupt (v0.10.0).
+        failure = _enc["result"]
+        if source_damaged(failure.get("ffmpeg_log") or ""):
+            await _mark_source_corrupt(input_path, {
+                "source": "conversion_decode_errors",
+                "error": "The source has broken frames ffmpeg couldn't decode (the conversion failed on them)",
+            })
+            failure = {**failure, "error": f"{_SOURCE_DAMAGED}\n{failure.get('error') or ''}".strip(),
+                       "error_key": "errors.sourceDamaged", "error_params": {}}
+        return failure
 
     # Verify output exists and has non-zero size.
     #
@@ -4230,37 +4284,12 @@ async def convert_file(
         # mark, the row still shows "Convert to x265 (est. save ...)"
         # as if healthy. Best-effort: a DB failure here doesn't block
         # the return-to-caller-with-original-preserved path.
-        try:
-            import aiosqlite as _aiosqlite
-            import json as _json
-            from backend.database import DB_PATH as _DB_PATH
-            _db = await _aiosqlite.connect(_DB_PATH)
-            try:
-                await _db.execute(
-                    "UPDATE scan_results SET "
-                    "  health_status = 'corrupt', "
-                    "  probe_status = 'corrupt', "
-                    "  health_errors_json = ? "
-                    "WHERE file_path = ?",
-                    (
-                        _json.dumps({
-                            "source": "conversion_size_check",
-                            "error": "Original file likely corrupt — source stream corruption ffprobe didn't catch (conversion produced an unusably-small output)",
-                            "original_size": original_size,
-                            "output_size": output_size,
-                        }),
-                        input_path,
-                    ),
-                )
-                await _db.commit()
-                print(
-                    f"[CONVERT] Marked source as corrupt in scan_results: {input_path}",
-                    flush=True,
-                )
-            finally:
-                await _db.close()
-        except Exception as _exc:
-            print(f"[CONVERT] Failed to mark source corrupt (non-fatal): {_exc}", flush=True)
+        await _mark_source_corrupt(input_path, {
+            "source": "conversion_size_check",
+            "error": "Original file likely corrupt — source stream corruption ffprobe didn't catch (conversion produced an unusably-small output)",
+            "original_size": original_size,
+            "output_size": output_size,
+        })
         return {
             "success": False,
             "output_path": None,

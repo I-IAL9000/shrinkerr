@@ -10,6 +10,7 @@ import { fmtDateTime, fmtBytes, fmtDuration } from "../fmt";
 import { encoderSettingsLabel, jobEncoderSettings } from "../utils/encoderLabel";
 import { pressable } from "../utils/a11y";
 import PendingJobPlan from "./PendingJobPlan";
+import { useRequestReplacement } from "../useRequestReplacement";
 import BeforeAfter from "./BeforeAfter";
 
 interface JobListItemProps {
@@ -37,7 +38,10 @@ const iconBtnStyle: React.CSSProperties = {
 };
 
 function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
-  const { t } = useTranslation(["queue", "common"]);
+  const { t } = useTranslation(["queue", "common", "fileDetail"]);
+  const { request: requestReplacement, requesting } = useRequestReplacement();
+  // A damaged source (v0.10.0): its replacement is one click from the failure.
+  const damaged = job.error_key === "errors.sourceDamaged" || job.error_key === "errors.originalLikelyCorrupt";
   const [expandedLocal, setExpandedLocal] = useState(false);
   const expanded = expandedProp ?? expandedLocal;
   const [logData, setLogData] = useState<any>(null);
@@ -223,6 +227,13 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       )}
       {job.status === "failed" && (
         <>
+          {damaged && (
+            <button className="btn btn-xs btn-primary btn-danger" disabled={requesting}
+              title={t("fileDetail:actions.researchTitleCorrupt")}
+              onClick={(e) => { e.stopPropagation(); requestReplacement(job.file_path, true); }}>
+              {requesting ? t("fileDetail:actions.requesting") : t("fileDetail:actions.requestReplacement")}
+            </button>
+          )}
           {onRetry && (
             <button className="btn btn-xs btn-secondary"
               onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}>{t("common:actions.retry")}</button>
