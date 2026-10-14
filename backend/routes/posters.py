@@ -973,6 +973,8 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
         return 0
     print(f"[POSTER] Fetching details (IMDb id, country, genres, network, show status, credits) for {len(rows)} title(s)",
           flush=True)
+    # The Scanner's progress bar: this phase's own count, not the posters' finished one (v0.10.0).
+    _prefetch_progress.update(phase="details", total=len(rows), resolved=0)
     sem = asyncio.Semaphore(3)
     lookups: dict[tuple, asyncio.Future] = {}  # one per title: a show's season folders share theirs
 
@@ -1042,6 +1044,7 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
                 await db.commit()
             finally:
                 await db.close()
+        _prefetch_progress["resolved"] = min(i + 20, len(rows))
         if (i + 20) % 500 < 20 and i + 20 < len(rows):
             print(f"[POSTER] Details: {i + 20}/{len(rows)}", flush=True)
     print(f"[POSTER] Details stored for {done}/{len(rows)} title(s)"

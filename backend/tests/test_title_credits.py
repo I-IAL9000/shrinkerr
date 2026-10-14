@@ -51,7 +51,10 @@ async def test_the_details_backfill_stores_the_credits(test_db, monkeypatch):
     monkeypatch.setattr(posters, "_find_on_tmdb", find)
     monkeypatch.setattr(posters, "_tmdb_details", details)
     monkeypatch.setattr(posters.asyncio, "sleep", lambda *_: _none())
+    monkeypatch.setattr(posters, "_prefetch_progress", {"status": "running", "total": 31449, "resolved": 31449})
     assert await posters._backfill_details("key", lambda path: "movie") == 1
+    # The Scanner's bar shows this phase's count, not the posters' finished one.
+    assert posters._prefetch_progress == {"status": "running", "phase": "details", "total": 1, "resolved": 1}
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT credits, details_v FROM poster_cache") as cur:
             assert await cur.fetchone() == ('{"actor": ["Al Pacino"]}', DETAILS_VERSION)

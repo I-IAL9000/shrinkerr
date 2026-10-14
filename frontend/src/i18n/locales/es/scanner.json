@@ -23,7 +23,8 @@
     "tree": "Árbol",
     "refreshPosters": "Actualizar pósteres",
     "fetchingPosters": "Obteniendo {{resolved}}/{{total}}...",
-    "fetchingPostersProgress": "Obteniendo pósteres: {{resolved}} / {{total}}"
+    "fetchingPostersProgress": "Obteniendo pósteres: {{resolved}} / {{total}}",
+    "fetchingDetailsProgress": "Obteniendo detalles de los títulos (actores, directores, estudios…): {{resolved}} / {{total}}"
   },
   "sort": {
     "label": "Ordenar:",

@@ -160,7 +160,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     "tree"
   );
   const [posterPrefetching, setPosterPrefetching] = useState(false);
-  const [posterProgress, setPosterProgress] = useState({ total: 0, resolved: 0 });
+  const [posterProgress, setPosterProgress] = useState<{ total: number; resolved: number; phase?: string }>({ total: 0, resolved: 0 });
   const [serverStats, setServerStats] = useState<any>(null);
   // With a filter active the pills count what clicking each would give —
   // the other active groups still apply (v0.10.0). Refreshed with the stats.
@@ -266,7 +266,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     getPosterPrefetchStatus().then(s => {
       if (s.status === "running") {
         setPosterPrefetching(true);
-        setPosterProgress({ total: s.total, resolved: s.resolved });
+        setPosterProgress({ total: s.total, resolved: s.resolved, phase: s.phase });
       }
     }).catch(() => {});
     // Load server-computed stats immediately (lightweight, <100ms)
@@ -397,7 +397,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   useVisibleInterval(async () => {
     try {
       const s = await getPosterPrefetchStatus();
-      setPosterProgress({ total: s.total, resolved: s.resolved });
+      setPosterProgress({ total: s.total, resolved: s.resolved, phase: s.phase });
       if (s.status === "done" || s.status.startsWith("error")) {
         setPosterPrefetching(false);
         if (s.status === "done") {
@@ -1595,7 +1595,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <div className="progress-bar-fill" style={{ width: `${(posterProgress.resolved / posterProgress.total) * 100}%` }} />
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                {t("scanner:toolbar.fetchingPostersProgress", { resolved: posterProgress.resolved, total: posterProgress.total })}
+                {t(posterProgress.phase === "details" ? "scanner:toolbar.fetchingDetailsProgress"
+                  : "scanner:toolbar.fetchingPostersProgress", { resolved: posterProgress.resolved, total: posterProgress.total })}
               </div>
             </div>
           )}
