@@ -2636,9 +2636,16 @@ async def _truncation_failure(source_path: str, output_path: str, source_duratio
     out = container if out is None else min(out, container)
     if _output_is_full_length(src, out, tol=tol):
         return None
+    if source_damaged("\n".join(log_lines)):  # it stopped on broken frames: the file, not its read (v0.10.0)
+        return await _damaged_source(
+            source_path, f"The output stopped at {out:.0f}s of {src:.0f}s on frames ffmpeg couldn't decode",
+            f"Output is shorter than the source ({out:.0f}s of {src:.0f}s).")
+    # Without decoder errors it may still be a read cut short (a stalled
+    # mount), so the file isn't marked corrupt; it's usually damage, though.
     return {
-        "error": (f"Output is shorter than the source ({out:.0f}s of {src:.0f}s), so the "
-                  f"source read was probably interrupted. Original kept; retry the job."),
+        "error": (f"Output is shorter than the source ({out:.0f}s of {src:.0f}s): the file is probably damaged, "
+                  f"or reading it was interrupted. Original kept. Retry once; if it's short again, request a "
+                  f"replacement."),
         "error_key": "errors.outputTruncated",
         "error_params": {"output": f"{out:.0f}", "source": f"{src:.0f}"},
     }
@@ -3012,6 +3019,13 @@ _SOURCE_DAMAGED = ("The source file looks damaged: ffmpeg found broken frames it
 def source_damaged(log: str) -> bool:
     """Whether a failed encode's ffmpeg log shows a damaged source."""
     return sum(1 for line in log.splitlines() if any(sig in line for sig in _DAMAGE_SIGNATURES)) >= DAMAGE_LINES
+
+
+async def _damaged_source(path: str, why: str, detail: str) -> dict:
+    """A damaged source's failed-job fields (`detail`: what showed it), the
+    file marked corrupt so a replacement can be requested."""
+    await _mark_source_corrupt(path, {"source": "conversion_decode_errors", "error": why})
+    return {"error": f"{_SOURCE_DAMAGED}\n{detail}".strip(), "error_key": "errors.sourceDamaged", "error_params": {}}
 
 
 async def _mark_source_corrupt(path: str, info: dict) -> None:
@@ -4134,12 +4148,9 @@ async def convert_file(
         # a damaged source's as that, the file marked corrupt (v0.10.0).
         failure = _enc["result"]
         if source_damaged(failure.get("ffmpeg_log") or ""):
-            await _mark_source_corrupt(input_path, {
-                "source": "conversion_decode_errors",
-                "error": "The source has broken frames ffmpeg couldn't decode (the conversion failed on them)",
-            })
-            failure = {**failure, "error": f"{_SOURCE_DAMAGED}\n{failure.get('error') or ''}".strip(),
-                       "error_key": "errors.sourceDamaged", "error_params": {}}
+            failure = {**failure, **await _damaged_source(
+                input_path, "The source has broken frames ffmpeg couldn't decode (the conversion failed on them)",
+                failure.get("error") or "")}
         return failure
 
     # Verify output exists and has non-zero size.
@@ -4269,7 +4280,8 @@ async def convert_file(
             f"Original file likely corrupt — conversion produced an "
             f"unusably-small output ({_output_mb} MB from {_original_gb:.2f} GB "
             f"source). ffmpeg hit data corruption ffprobe doesn't catch "
-            f"upfront. Source row marked corrupt; original preserved."
+            f"upfront. It's marked corrupt in the Scanner; original kept. "
+            f"Request a replacement from Sonarr or Radarr."
         )
         print(f"[CONVERT] {diagnosis_msg}", flush=True)
         try:

@@ -40,8 +40,10 @@ const iconBtnStyle: React.CSSProperties = {
 function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, checked, onCheck, encodingDefaults, expanded: expandedProp, onToggleExpand, onPlanChanged }: JobListItemProps) {
   const { t } = useTranslation(["queue", "common", "fileDetail"]);
   const { request: requestReplacement, requesting } = useRequestReplacement();
-  // A damaged source (v0.10.0): its replacement is one click from the failure.
+  // A damaged source (v0.10.0): its replacement is one click from the
+  // failure. A short output usually is one (or its read was interrupted).
   const damaged = job.error_key === "errors.sourceDamaged" || job.error_key === "errors.originalLikelyCorrupt";
+  const replaceable = damaged || job.error_key === "errors.outputTruncated";
   const [expandedLocal, setExpandedLocal] = useState(false);
   const expanded = expandedProp ?? expandedLocal;
   const [logData, setLogData] = useState<any>(null);
@@ -227,10 +229,10 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       )}
       {job.status === "failed" && (
         <>
-          {damaged && (
+          {replaceable && (
             <button className="btn btn-xs btn-primary btn-danger" disabled={requesting}
-              title={t("fileDetail:actions.researchTitleCorrupt")}
-              onClick={(e) => { e.stopPropagation(); requestReplacement(job.file_path, true); }}>
+              title={t(damaged ? "fileDetail:actions.researchTitleCorrupt" : "fileDetail:actions.researchTitle")}
+              onClick={(e) => { e.stopPropagation(); requestReplacement(job.file_path, damaged); }}>
               {requesting ? t("fileDetail:actions.requesting") : t("fileDetail:actions.requestReplacement")}
             </button>
           )}

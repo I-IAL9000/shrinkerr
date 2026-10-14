@@ -75,3 +75,35 @@ async def test_a_failed_conversion_of_a_damaged_source(test_db, tmp_path, monkey
         assert row == ("corrupt", "corrupt")  # the Scanner's Corrupt filter and Re-download button
     else:
         assert result["error_key"] == "errors.ffmpegExited" and row == (None, "ok")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("log, key, marked", [(DAMAGED.splitlines(), "errors.sourceDamaged", "corrupt"),
+                                              ([], "errors.outputTruncated", None)],
+                         ids=["decode-errors", "no-evidence"])
+async def test_a_short_output(test_db, tmp_path, monkeypatch, log, key, marked):
+    """ffmpeg stopping early on broken frames (exit 0, a short output) is
+    the file's damage: marked corrupt. Without decoder errors it may be a
+    read cut short, so it isn't marked — the message says it's probably
+    damaged, and the failed job offers a replacement either way."""
+    import backend.converter as converter
+    src = tmp_path / "Movie (2001).mkv"
+    src.write_bytes(b"x")
+    async with aiosqlite.connect(test_db) as db:
+        await db.execute("INSERT INTO scan_results (file_path, file_size, scan_timestamp) VALUES (?, 1, 't')",
+                         (str(src),))
+        await db.commit()
+
+    async def length(path, **kwargs):
+        return 6000.0 if path == str(src) else 540.0
+    monkeypatch.setattr(converter, "_probe_video_duration", length)
+    monkeypatch.setattr(converter, "_probe_output_duration", length)
+
+    got = await converter._truncation_failure(str(src), str(tmp_path / "out.mkv"), 6000.0, None, log)
+
+    assert got["error_key"] == key and "540s of 6000s" in got["error"]
+    if key == "errors.outputTruncated":
+        assert "probably damaged" in got["error"]
+    async with aiosqlite.connect(test_db) as db:
+        async with db.execute("SELECT health_status FROM scan_results WHERE file_path = ?", (str(src),)) as cur:
+            assert (await cur.fetchone())[0] == marked
