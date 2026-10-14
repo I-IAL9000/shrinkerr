@@ -138,9 +138,10 @@ export const getFilterCounts = (filter: string, signal?: AbortSignal, facetsOnly
   apiFetch<{ counts: Record<string, number> | null; facets: FacetLists | null }>(
     `/scan/filter-counts?filter=${encodeURIComponent(filter)}${facetsOnly ? "&facets_only=true" : ""}`, { signal });
 /** Every value of one list under `filter` (null until the index is ready). */
-export const getFacetValues = (facet: string, filter: string, signal?: AbortSignal) =>
+export const getFacetValues = (facet: string, filter: string, signal?: AbortSignal, q?: string) =>
   apiFetch<{ values: FacetValue[] | null }>(
-    `/scan/facet-values?facet=${encodeURIComponent(facet)}&filter=${encodeURIComponent(filter)}`, { signal });
+    `/scan/facet-values?facet=${encodeURIComponent(facet)}&filter=${encodeURIComponent(filter)}`
+    + (q ? `&q=${encodeURIComponent(q)}` : ""), { signal });
 export const getScanFiles = (folder: string, filter: string = "all", signal?: AbortSignal) =>
   apiFetch<any[]>(`/scan/files?folder=${encodeURIComponent(folder)}&filter=${encodeURIComponent(filter)}`, { signal });
 export const getFilesByTitle = (prefix: string, filter: string = "all", signal?: AbortSignal) =>

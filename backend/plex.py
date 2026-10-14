@@ -636,7 +636,8 @@ async def get_available_plex_options() -> dict:
 async def sync_plex_metadata_cache() -> dict:
     """Sync Plex metadata (labels, collections, libraries) into plex_metadata_cache table.
 
-    Only syncs values referenced by enabled encoding rules.
+    Every label (the Scanner's Plex label list); the collections, genres and
+    libraries referenced by enabled encoding rules.
     Collects all Plex data first, then writes to DB in short transactions to avoid locking.
     """
     from datetime import datetime, timezone
@@ -690,6 +691,12 @@ async def sync_plex_metadata_cache() -> dict:
     url, token, path_mapping = await _get_plex_settings()
     if not url or not token:
         return {"labels_synced": 0, "collections_synced": 0, "genres_synced": 0, "libraries_synced": 0, "watch_synced": 0}
+
+    # Every label, not only the rules': the Title menu's Plex label list (v0.10.0).
+    try:
+        needed_labels |= set((await get_available_plex_options()).get("labels") or [])
+    except Exception as exc:
+        print(f"[PLEX] Failed to list the labels: {exc}", flush=True)
 
     # Step 2: Fetch all data from Plex APIs (no DB held)
     now = datetime.now(timezone.utc).isoformat()

@@ -1,6 +1,7 @@
 """Poster metadata resolution, image caching, and Plex image proxy."""
 
 import re
+import json
 import time
 import base64
 import asyncio
@@ -866,12 +867,12 @@ async def resolve_posters(req: ResolveRequest):
             await db.execute(
                 """INSERT OR REPLACE INTO poster_cache
                    (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                    network, status, imdb_id, details_v, art_retry, original_language, resolved_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    network, status, imdb_id, details_v, art_retry, original_language, credits, resolved_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (path, parsed["title"], entry["year"], poster_url, source, image_data,
                  entry["rating"], entry["genres"], entry["country"], tmdb_meta.get("media_type"),
                  tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0),
-                 int(found["art_retry"]), tmdb_meta.get("original_language"), now_iso),
+                 int(found["art_retry"]), tmdb_meta.get("original_language"), tmdb_meta.get("credits") or None, now_iso),
             )
 
         await db.commit()
@@ -970,7 +971,7 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
         await db.close()
     if not rows:
         return 0
-    print(f"[POSTER] Fetching details (IMDb id, country, genres, network, show status) for {len(rows)} title(s)",
+    print(f"[POSTER] Fetching details (IMDb id, country, genres, network, show status, credits) for {len(rows)} title(s)",
           flush=True)
     sem = asyncio.Semaphore(3)
     lookups: dict[tuple, asyncio.Future] = {}  # one per title: a show's season folders share theirs
@@ -1014,7 +1015,7 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
         return (imdb_id, network, network, status, status,
                 _rating(imdb_id, None)["rating"], meta.get("rating"), meta.get("country") or "",
                 meta.get("genres") or "", meta.get("year") or "", meta.get("original_language") or "",
-                DETAILS_VERSION, path, row["source"], row["resolved_at"], DETAILS_VERSION)
+                meta.get("credits") or "", DETAILS_VERSION, path, row["source"], row["resolved_at"], DETAILS_VERSION)
 
     done = 0
     for i in range(0, len(rows), 20):
@@ -1034,6 +1035,7 @@ async def _backfill_details(tmdb_key: str, media_type_hint_for) -> int:
                     "rating = COALESCE(?, rating, ?), country = COALESCE(NULLIF(?, ''), country), "
                     "genres = COALESCE(NULLIF(?, ''), genres), year = COALESCE(NULLIF(year, ''), NULLIF(?, '')), "
                     "original_language = COALESCE(NULLIF(?, ''), original_language), "
+                    "credits = COALESCE(NULLIF(?, ''), credits), "
                     "details_v = ? WHERE folder_path = ? AND source IS ? AND resolved_at IS ? "
                     "AND COALESCE(details_v, 0) < ?", updates)
                 done += cur.rowcount
@@ -1218,8 +1220,8 @@ async def _run_prefetch(scheduled: bool = False):
         sem = asyncio.Semaphore(3)
         _INSERT_SQL = """INSERT OR REPLACE INTO poster_cache
             (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-             network, status, imdb_id, details_v, art_retry, original_language, resolved_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+             network, status, imdb_id, details_v, art_retry, original_language, credits, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
         async def _do_one(path: str) -> tuple | None:
             async with sem:
@@ -1240,7 +1242,8 @@ async def _run_prefetch(scheduled: bool = False):
                         source, image_data, _rating(imdb_id, tmdb_meta.get("rating"))["rating"],
                         tmdb_meta.get("genres") or None, tmdb_meta.get("country") or None, tmdb_meta.get("media_type"),
                         tmdb_meta.get("network"), tmdb_meta.get("status"), imdb_id, tmdb_meta.get("details_v", 0),
-                        int(found["art_retry"]), tmdb_meta.get("original_language"), now_str)
+                        int(found["art_retry"]), tmdb_meta.get("original_language"), tmdb_meta.get("credits") or None,
+                        now_str)
 
         # Process in chunks of 20 (rate-limited HTTP, batch DB write)
         plex_rows_left = 0  # Plex's own matches TMDB didn't answer for: found again next time
@@ -2016,7 +2019,7 @@ async def _resolve_tmdb_id(tmdb_id, media_type, api_key, title: str | None = Non
     for mt in order:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await _tmdb_get(client, f"https://api.themoviedb.org/3/{mt}/{tmdb_id}",
-                                   {"api_key": api_key, "append_to_response": "external_ids"})
+                                   {"api_key": api_key, "append_to_response": _details_append(mt == "tv")})
         if resp.status_code == 404:
             continue
         _check_tmdb(resp)
@@ -2172,7 +2175,36 @@ def _extract_tmdb_meta(item: dict, media_type: str, api_key: str) -> dict:
 #   1: IMDb id, a TV show's network and status (v0.10.0)
 #   2: country, genres and year, for films too
 #   3: all of a title's genres, not the first three
-DETAILS_VERSION = 3
+#   4: its credits — actors, directors, studios (the Title lists)
+DETAILS_VERSION = 4
+CREDITS_ACTORS = 10  # the top-billed actors kept
+
+
+def _details_append(tv: bool) -> str:
+    """What a title's TMDB record is asked for with it (_details_of)."""
+    return "external_ids,aggregate_credits" if tv else "external_ids,credits"
+
+
+def _credits_of(data: dict, tv: bool) -> str:
+    """A title's credits as poster_cache keeps them: JSON {"actor": the
+    CREDITS_ACTORS top-billed, "director": a film's directors or a show's
+    creators, "studio": its production companies}; "" when TMDB has none."""
+    def names(items) -> list[str]:
+        out: list[str] = []
+        for item in items or []:
+            name = (item.get("name") or "").strip() if isinstance(item, dict) else ""
+            if name and name not in out:
+                out.append(name)
+        return out
+    credits = (data.get("aggregate_credits") if tv else data.get("credits")) or {}
+    cast = sorted((c for c in credits.get("cast") or [] if isinstance(c, dict)),
+                  key=lambda c: c.get("order") if isinstance(c.get("order"), int) else 1 << 30)
+    directors = data.get("created_by") if tv else [c for c in credits.get("crew") or []
+                                                    if isinstance(c, dict) and c.get("job") == "Director"]
+    out = {"actor": names(cast)[:CREDITS_ACTORS], "director": names(directors),
+           "studio": names(data.get("production_companies"))}
+    out = {k: v for k, v in out.items() if v}
+    return json.dumps(out, ensure_ascii=False) if out else ""
 
 
 def _details_of(data: dict, tv: bool) -> dict:
@@ -2183,7 +2215,8 @@ def _details_of(data: dict, tv: bool) -> dict:
     telling alike results apart and finding the title's Plex poster."""
     date = data.get("first_air_date") if tv else data.get("release_date")
     out = {"imdb_id": data.get("imdb_id") or (data.get("external_ids") or {}).get("imdb_id") or "",
-           "country": _country_names(data), "genres": _genre_names(data.get("genres")), "year": (date or "")[:4]}
+           "country": _country_names(data), "genres": _genre_names(data.get("genres")), "year": (date or "")[:4],
+           "credits": _credits_of(data, tv)}
     if tv:
         networks = data.get("networks") or []
         out["network"] = (networks[0].get("name") if networks else None) or ""
@@ -2207,7 +2240,7 @@ async def _tmdb_details(tmdb_id, media_type: str, api_key) -> dict:
     tv = media_type == "tv"
     url = f"https://api.themoviedb.org/3/{'tv' if tv else 'movie'}/{tmdb_id}"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await _tmdb_get(client, url, {"api_key": api_key, "append_to_response": "external_ids"})
+        resp = await _tmdb_get(client, url, {"api_key": api_key, "append_to_response": _details_append(tv)})
         if resp.status_code == 404:
             return _details_of({}, tv)
         if resp.status_code != 200:
@@ -2878,7 +2911,8 @@ async def override_poster(req: OverrideRequest):
     detail_url = f"https://api.themoviedb.org/3/{req.media_type}/{req.tmdb_id}"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(detail_url, params={"api_key": tmdb_key, "append_to_response": "external_ids"})
+            resp = await client.get(detail_url, params={"api_key": tmdb_key,
+                                                        "append_to_response": _details_append(req.media_type == "tv")})
         if resp.status_code != 200:
             raise ApiError(resp.status_code, f"TMDB returned {resp.status_code}", code="posters.tmdbError", params={"status": resp.status_code})
         data = resp.json()
@@ -2929,11 +2963,12 @@ async def override_poster(req: OverrideRequest):
         await db.execute(
             """INSERT OR REPLACE INTO poster_cache
                (folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type,
-                network, status, imdb_id, details_v, original_language, resolved_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                network, status, imdb_id, details_v, original_language, credits, resolved_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (req.folder_path, title, year, poster_url, "tmdb-manual", image_data,
              rating, genre_names or None, country_names or None, req.media_type,
-             network, status, imdb_id, DETAILS_VERSION, _raw_lang, datetime.now(timezone.utc).isoformat()),
+             network, status, imdb_id, DETAILS_VERSION, _raw_lang, details["credits"] or None,
+             datetime.now(timezone.utc).isoformat()),
         )
         # v0.9.95: a manual match is authoritative — ALWAYS mark the row(s)
         # 'tmdb-manual', even if TMDB has no original_language for the pick

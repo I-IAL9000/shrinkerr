@@ -35,6 +35,9 @@ EXPRESSIONS = [
     "genre:action%20%26%20adventure", "!genre:action%20%26%20adventure",
     "genre:comedy,genre:action%20%26%20adventure", "genre:action%20%26%20adventure,year:1980s",
     "genre:science%20fiction",
+    # Credits (searched lists, kept as id lists) and Plex labels.
+    "actor:Ann%20Lee", "actor:Ann%20Lee,actor:Bo%20Ek", "!actor:Ann%20Lee,res_1080p", "director:Jo%20Park,type_tv",
+    "studio:Acme%2C%20Inc.", "plabel:Keep%204K", "plabel:Keep%204K,actor:Bo%20Ek", "actor:Nobody",
 ]
 
 
@@ -167,9 +170,17 @@ async def seed(db_path: str) -> None:
                 ("2003", 6.1, "Comedy", "United Kingdom, Ireland", "BBC One", "Returning Series"),
                 ("2019", 4.2, "Science Fiction, Action", "Germany", "", ""),
                 ("1987", None, "Drama, Action & Adventure", "France", "", "")]
+        credits = ['{"actor": ["Ann Lee", "Bo Ek"], "director": ["Jo Park"], "studio": ["Acme, Inc."]}',
+                   '{"actor": ["Bo Ek", "Cy Moe"], "director": ["Jo Park", "Di Ray"]}', None,
+                   '{"actor": ["Ann Lee", " ", 7], "studio": ["Acme, Inc.", "Zeta"]}']
         await db.executemany(
-            "INSERT OR REPLACE INTO poster_cache (folder_path, year, rating, genres, country, network, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)", [(f, *meta[n % len(meta)]) for n, f in enumerate(folders)])
+            "INSERT OR REPLACE INTO poster_cache (folder_path, year, rating, genres, country, network, status, credits) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(f, *meta[n % len(meta)], credits[n % len(credits)]) for n, f in enumerate(folders)])
+        await db.executemany(
+            "INSERT INTO plex_metadata_cache (folder_path, metadata_type, metadata_value, synced_at) "
+            "VALUES (?, 'label', ?, ?)", [(folders[0] + "/", "Keep 4K", stamp), (folders[-1] + "/", "Keep 4K", stamp),
+                                          (folders[1] + "/", "Kids", stamp), ("/demo/", "Everything", stamp)])
         await db.commit()
 
 

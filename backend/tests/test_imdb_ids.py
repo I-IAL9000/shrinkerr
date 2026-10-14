@@ -56,7 +56,7 @@ async def test_tmdb_gives_movies_and_shows_their_imdb_id(posters, monkeypatch):
     assert await ids(2, "tv") == {"network": "HBO", "status": "Ended", "imdb_id": "tt0000002"}
     assert await ids(3, "movie") == {"imdb_id": ""}  # TMDB has none
     assert await posters._tmdb_details(4, "movie", "k") == {}  # failed: not "none"
-    assert asked[:2] == [("movie/1", "external_ids"), ("tv/2", "external_ids")]  # one request each
+    assert asked[:2] == [("movie/1", "external_ids,credits"), ("tv/2", "external_ids,aggregate_credits")]  # one request each
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_a_manual_match_stores_its_imdb_id(posters, test_db, monkeypatch):
     real_client = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler)))
     got = await posters.override_poster(posters.OverrideRequest(folder_path="/m/tv/Show", tmdb_id=12, media_type="tv"))
-    assert asked == [("/3/tv/12", "external_ids")]
+    assert asked == [("/3/tv/12", "external_ids,aggregate_credits")]
     assert (got["imdb_id"], got["rating"], got["rating_source"]) == ("tt0000005", 7.9, "imdb")
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT imdb_id, network, status, rating FROM poster_cache") as cur:

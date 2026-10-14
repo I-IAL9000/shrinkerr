@@ -1,6 +1,7 @@
 """The index on disk: what's loaded is what was saved, and a damaged or
 foreign file loads as nothing (the index is then rebuilt)."""
 import json
+from array import array
 
 from backend.filter_index.bits import from_ids
 from backend.filter_index.index import _MAGIC, FilterIndex
@@ -13,6 +14,8 @@ def _index() -> FilterIndex:
     index.bits = {f.id: from_ids(range(n, 300_000, 97 + n)) for n, f in enumerate(_FILTER_LIST)}
     index.bits["x264"] = 0  # an empty one
     index.savings = {3: 30_000_000_001, 299_997: 7}
+    index.combos = [("actor:Ann Lee",), ("actor:Ann Lee", "studio:Acme, Inc.")]
+    index.row_combo = array("i", [-1, 0, 1, -1, 0])
     return index
 
 

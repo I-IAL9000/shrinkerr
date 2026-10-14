@@ -1983,25 +1983,43 @@ async def _converted_sets(db) -> tuple[set[str], set[str]]:
     return paths, folders
 
 
-async def _title_metadata(db) -> tuple[dict, dict]:
+async def _title_metadata(db) -> tuple[dict, dict, dict, dict]:
     """The Poster grid's per-title metadata (folder -> year, rating, genres,
-    network, status, country) and the media servers' genres (folder/ -> {genre}),
-    for Advanced Search's title conditions (v0.10.0)."""
+    network, status, country), its credits (folder -> {"actor": [...],
+    "director": [...], "studio": [...]}), the media servers' genres and
+    Plex's labels (folder/ -> {genre or label}), for the Title lists and
+    Advanced Search's title conditions (v0.10.0)."""
     meta: dict = {}
+    credits: dict = {}
     genres: dict[str, set] = {}
+    labels: dict[str, set] = {}
     try:
-        async with db.execute("SELECT folder_path, year, rating, genres, network, status, country FROM poster_cache") as cur:
+        async with db.execute(
+            "SELECT folder_path, year, rating, genres, network, status, country, credits FROM poster_cache"
+        ) as cur:
             for r in await cur.fetchall():
                 meta[r["folder_path"]] = (r["year"], r["rating"], r["genres"], r["network"], r["status"], r["country"])
+                if r["credits"]:
+                    try:
+                        found = json.loads(r["credits"])
+                    except ValueError:
+                        continue
+                    if isinstance(found, dict):
+                        credits[r["folder_path"]] = found
         async with db.execute(
-            "SELECT folder_path, metadata_value FROM plex_metadata_cache WHERE metadata_type = 'genre'"
+            "SELECT folder_path, metadata_type, metadata_value FROM plex_metadata_cache "
+            "WHERE metadata_type IN ('genre', 'label')"
         ) as cur:
             for r in await cur.fetchall():
                 folder = (r["folder_path"] or "").rstrip("/") + "/"
-                genres.setdefault(folder, set()).add((r["metadata_value"] or "").strip().lower())
+                value = (r["metadata_value"] or "").strip()
+                if r["metadata_type"] == "genre":
+                    genres.setdefault(folder, set()).add(value.lower())
+                elif value:
+                    labels.setdefault(folder, set()).add(value)
     except Exception as exc:
         print(f"[SCAN] Title metadata unavailable: {exc}", flush=True)
-    return meta, genres
+    return meta, credits, genres, labels
 
 
 async def _build_enrichment_context(db, titles: bool = False) -> dict:
@@ -2111,7 +2129,7 @@ async def _build_enrichment_context(db, titles: bool = False) -> dict:
     from backend.watch_activity import load as load_watch_activity
     ctx["watch_activity"] = await load_watch_activity(db)
     if titles:
-        ctx["title_meta"], ctx["server_genres"] = await _title_metadata(db)
+        ctx["title_meta"], ctx["title_credits"], ctx["server_genres"], ctx["server_labels"] = await _title_metadata(db)
     return ctx
 
 
@@ -2405,15 +2423,19 @@ async def get_filter_counts(filter: str = "all", facets_only: bool = False):
 
 
 @router.get("/facet-values")
-async def get_facet_values(facet: str, filter: str = "all"):
+async def get_facet_values(facet: str, filter: str = "all", q: str = ""):
     """One list's values under the active filter, the most first ("Show
-    all", the search box). "values": None until the filter index is ready."""
+    all", the search box). "values": None until the filter index is ready.
+    A searched list (actors...: Facet.searched) answers the TOP_VALUES with
+    `q` in them, and the selected ones."""
     from backend.filter_index import service as filter_index
     from backend.scan_filters import FACETS
     if facet not in FACETS:
         raise ApiError(404, "No such list.", code="scan.noSuchList")
     expr = parse_filter(filter)
-    result = await filter_index.answer(expr, facet=facet, top=None)
+    searched = FACETS[facet].searched
+    result = await filter_index.answer(expr, facet=facet, top=filter_index.TOP_VALUES if searched else None,
+                                       q=q[:100] if searched else "")
     if result is None:
         return {"values": None}
     labels = await _library_labels() if facet == "library" else {}

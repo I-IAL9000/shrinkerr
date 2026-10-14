@@ -242,4 +242,8 @@ Each phase gets its own implementation plan and ships on `develop` on its own:
    Done (plan `.superpowers/plans/2026-10-12-filter-lists-phase-3.md`): folders
    are searched, not indexed; Rating, Channels and Year keep their own order.
 4. Title credits (actor, director, studio) and all Plex labels.
+   Done: credits are a `poster_cache.credits` JSON column (DETAILS_VERSION 4),
+   not a table; the index keeps each row's set of credit values (a "combo"
+   shared by a title's files), not bitsets; the credit lists are searched
+   (`facet-values?q=`), not in the counts response. Labels: Plex only.
 5. Tree, lists and Add to Queue through the index.

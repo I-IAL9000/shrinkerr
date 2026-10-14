@@ -29,7 +29,7 @@ from typing import Optional
 from backend import database
 from backend.filter_index.bits import from_ids
 from backend.filter_index.evaluate import evaluate
-from backend.filter_index.index import TOP_VALUES, FilterIndex, definitions_version
+from backend.filter_index.index import SEARCHED, TOP_VALUES, FilterIndex, definitions_version
 from backend.scan_filters import _FILTER_LIST, _FACET_LIST, Filter, FilterExpr, _group_key, facet_parts
 
 TIME_REFRESH = 300   # seconds between evaluating the time-based filters again
@@ -333,6 +333,8 @@ def _list_bits(index: FilterIndex, fid: str) -> int:
     possibly since _adhoc_for() — or, for a value the list doesn't keep (a
     genre saved combined, "action & adventure"), the rows with all its parts."""
     key, _, value = fid.partition(":")
+    if key in SEARCHED:
+        return index.list_bits(fid)
     parts = facet_parts(key, value)
     if len(parts) == 1:
         return index.bits.get(fid, 0)
@@ -358,11 +360,11 @@ def _constraints(index: FilterIndex, expr: FilterExpr, adhoc: dict[str, int]
     return groups, [(f.id, bits_of(f)) for f in expr.excluded]
 
 
-async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[int] = TOP_VALUES
+async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[int] = TOP_VALUES, q: str = ""
                  ) -> Optional[tuple[dict[str, int], dict[str, list[tuple[str, int]]]]]:
     """(the pills' counts under `expr`, as count_all with no filter or
     facet_counts; each indexed list's values with counts, or only `facet`'s,
-    `top` of them); None when the SQL engine should answer (current()) or
+    `top` of them, with `q` in them); None when the SQL engine should answer (current()) or
     on an error."""
     try:
         index = await current()
@@ -374,9 +376,10 @@ async def answer(expr: FilterExpr, facet: Optional[str] = None, top: Optional[in
             index = _state.index
             groups, excluded = _constraints(index, expr, adhoc)
             counts = index.count_all() if expr.is_all else index.facet_counts(groups, excluded)
-            unkept = {fid: _list_bits(index, fid) for fid in selected if fid not in index.bits}
+            unkept = {fid: _list_bits(index, fid) for fid in selected
+                      if fid not in index.bits and fid.partition(":")[0] not in SEARCHED}
             return counts, index.facet_values(groups, excluded, selected=selected, facet=facet, top=top,
-                                              unkept=unkept)
+                                              unkept=unkept, q=q)
     except Exception as exc:
         _log_error("Counting with the filter index", exc)
         return None

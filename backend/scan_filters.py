@@ -311,12 +311,23 @@ def _folder_year(folder: str) -> Optional[str]:
     return parse_folder_name(folder, walk_files=False).get("year")
 
 
+def _server_values(fp: str, by_folder: dict[str, set]) -> set:
+    """A media server's values (genres, labels) for the folders a file is in
+    (by_folder: folder/ -> its values)."""
+    found: set = set()
+    path = fp
+    while "/" in path.rstrip("/"):
+        path = path.rstrip("/").rsplit("/", 1)[0] + "/"
+        found |= by_folder.get(path, set())
+    return found
+
+
 def row_title(row: dict, ctx: dict) -> dict:
     """The file's title metadata (v0.10.0): year, rating (IMDb, else TMDB),
-    genres (TMDB and the media server's), network, show status and
-    countries — from the Poster grid's cache (by title_key; ctx's
-    "media_roots"), else the year in the folder name (a disc's: its own
-    folder's, parse_folder_name)."""
+    genres (TMDB and the media server's), network, show status, countries
+    and credits (actors, directors, studios) — from the Poster grid's cache
+    (by title_key; ctx's "media_roots"), else the year in the folder name (a
+    disc's: its own folder's, parse_folder_name) — and its Plex labels."""
     v = row.get("_title")
     if v is not None:
         return v
@@ -325,12 +336,8 @@ def row_title(row: dict, ctx: dict) -> dict:
     if not year:
         year = _folder_year(key)
     found = {g.strip().lower() for g in (genres or "").split(",") if g.strip()}
-    server = ctx.get("server_genres") or {}
-    if server:
-        path = row["file_path"]
-        while "/" in path.rstrip("/"):
-            path = path.rstrip("/").rsplit("/", 1)[0] + "/"
-            found |= server.get(path, set())
+    if ctx.get("server_genres"):
+        found |= _server_values(row["file_path"], ctx["server_genres"])
     found = {part for g in found for part in genre_parts(g)}
     try:
         year = int(year) if year else None
@@ -341,6 +348,8 @@ def row_title(row: dict, ctx: dict) -> dict:
         "status": _SHOW_STATUS.get((status or "").strip().lower(), ""),
         "network_name": (network or "").strip(),
         "countries": [c.strip() for c in (country or "").split(",") if c.strip()],
+        "credits": (ctx.get("title_credits") or {}).get(key) or {},
+        "labels": _server_values(row["file_path"], ctx["server_labels"]) if ctx.get("server_labels") else set(),
     }
     return v
 
@@ -632,7 +641,7 @@ PY_COLUMNS = ("file_path, file_size, duration, needs_conversion, converted, hdr_
 # A track's field is read once, in SQL (_track_text), by the index and the
 # lists alike; Python only folds that text, so the two can't disagree.
 
-FACETS_VERSION = 6  # bump when a facet's normalize / values changes
+FACETS_VERSION = 7  # bump when a facet's normalize / values changes
 
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 
@@ -727,6 +736,10 @@ class Facet:
     # pairs_sql's per-track _track_text(field); (column, "max", field) its
     # per-file MAX(CAST(field AS INTEGER)). pairs_sql stays the definition.
     combine: Optional[tuple[str, str, str]] = None
+    # Thousands of values, most with few files (actors): the index keeps
+    # them as id lists, and they're searched (facet-values ?q=), not listed
+    # in the counts response.
+    searched: bool = False
 
 
 def _track_pairs(column: str, field: str) -> str:
@@ -777,6 +790,11 @@ def _year_values(row: dict, ctx: dict) -> list[str]:
     return [f"{year // 10 * 10}s", str(year)] if year else []
 
 
+def _credit_values(names: Any) -> list[str]:
+    """A credits list as stored (JSON): its names."""
+    return [n.strip() for n in names if isinstance(n, str) and n.strip()] if isinstance(names, list) else []
+
+
 def _library_values(row: dict, ctx: dict) -> list[str]:
     fp = row["file_path"]
     return next(([dir_id] for prefix, dir_id in ctx.get("media_dir_ids") or () if fp.startswith(prefix)), [])
@@ -804,6 +822,10 @@ _FACET_LIST = [
     Facet("showstatus", values=lambda r, c: [s for s in [row_title(r, c)["status"]] if s],
           inputs=_TITLE_INPUTS, titles=True),
     Facet("library", values=_library_values, inputs=("media_dirs",)),
+    # A title's credits: searched, not listed in the counts (Facet.searched).
+    *[Facet(kind, values=lambda r, c, kind=kind: _credit_values(row_title(r, c)["credits"].get(kind)),
+            inputs=_TITLE_INPUTS, titles=True, searched=True) for kind in ("actor", "director", "studio")],
+    Facet("plabel", values=lambda r, c: row_title(r, c)["labels"], inputs=(*_TITLE_INPUTS, "plex"), titles=True),
 ]
 FACETS: dict[str, Facet] = {f.key: f for f in _FACET_LIST}
 

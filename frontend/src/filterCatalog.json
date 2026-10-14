@@ -88,7 +88,11 @@
       {"key": "rating", "labelKey": "scanner:filterBar.sections.rating", "facet": "rating", "prefix": true},
       {"key": "country", "labelKey": "scanner:filterBar.sections.country", "facet": "country"},
       {"key": "network", "labelKey": "scanner:filterBar.sections.network", "facet": "network"},
-      {"key": "showstatus", "labelKey": "scanner:filterBar.sections.showStatus", "facet": "showstatus", "prefix": true}
+      {"key": "showstatus", "labelKey": "scanner:filterBar.sections.showStatus", "facet": "showstatus", "prefix": true},
+      {"key": "actor", "labelKey": "scanner:filterBar.sections.actor", "facet": "actor", "searched": true},
+      {"key": "director", "labelKey": "scanner:filterBar.sections.director", "facet": "director", "searched": true},
+      {"key": "studio", "labelKey": "scanner:filterBar.sections.studio", "facet": "studio", "searched": true},
+      {"key": "plabel", "labelKey": "scanner:filterBar.sections.plexLabel", "facet": "plabel"}
     ]},
     {"key": "library", "labelKey": "scanner:filterBar.categories.library", "sections": [
       {"key": "library", "labelKey": "scanner:filterBar.sections.library", "facet": "library"},

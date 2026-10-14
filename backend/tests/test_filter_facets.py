@@ -36,7 +36,7 @@ def test_channel_and_rating_bands():
 def test_tokens_quote_their_value():
     assert facet_token("network", "Paramount+, HD") == "network:" + quote("Paramount+, HD", safe="")
     assert set(FACETS) == {"alang", "slang", "acodec", "achan", "genre", "year", "rating", "country",
-                           "network", "showstatus", "library"}
+                           "network", "showstatus", "library", "actor", "director", "studio", "plabel"}
     # Exactly as the browser's encodeURIComponent, so both build the same token.
     assert facet_token("network", "/m/Films/Heat (1995) [tt0113277]") == \
         "network:%2Fm%2FFilms%2FHeat%20(1995)%20%5Btt0113277%5D"

@@ -19,6 +19,7 @@ export interface FilterOption { key: string; label?: string; labelKey?: string }
 export interface FilterSection {
   key: string; labelKey: string; hintKey?: string; prefix?: boolean;
   options?: FilterOption[]; facet?: string; chipLabelKey?: string;
+  searched?: boolean;  // a long list (actors): the server searches it, top values first
 }
 export interface FilterCategory { key: string; labelKey: string; sections: FilterSection[] }
 

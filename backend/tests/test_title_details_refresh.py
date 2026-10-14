@@ -66,19 +66,23 @@ async def test_a_title_record_gives_its_country_genres_and_year(posters, monkeyp
     monkeypatch.setattr(posters, "_tmdb_get", get)
     assert await posters._tmdb_details(1, "movie", "k") == {
         "imdb_id": "tt0000001", "country": "United States, Luxembourg", "genres": "Action, Sci-Fi, Adventure",
-        "year": "1999"}
+        "year": "1999", "credits": ""}
     assert await posters._tmdb_details(2, "movie", "k") == {
-        "imdb_id": "tt0000002", "country": "Great Britain, Elbonia", "genres": "Mockumentary", "year": ""}
+        "imdb_id": "tt0000002", "country": "Great Britain, Elbonia", "genres": "Mockumentary", "year": "",
+        "credits": ""}
     assert await posters._tmdb_details(3, "tv", "k") == {
         "network": "AMC", "status": "Ended", "imdb_id": "tt0000003", "country": "United States",
-        "genres": "Sci-Fi, Fantasy, Drama, War, Politics", "year": "2008"}
+        "genres": "Sci-Fi, Fantasy, Drama, War, Politics", "year": "2008", "credits": ""}
     # TMDB has none of them: "" (stored, not asked again). Failed: {} (asked again).
-    assert await posters._tmdb_details(4, "movie", "k") == {"imdb_id": "", "country": "", "genres": "", "year": ""}
+    assert await posters._tmdb_details(4, "movie", "k") == {"imdb_id": "", "country": "", "genres": "", "year": "",
+                                                                    "credits": ""}
     assert await posters._tmdb_details(5, "movie", "k") == {}
     # Not found (a deleted or merged entry): none, for good — not asked every few hours.
-    assert await posters._tmdb_details(6, "movie", "k") == {"imdb_id": "", "country": "", "genres": "", "year": ""}
+    assert await posters._tmdb_details(6, "movie", "k") == {"imdb_id": "", "country": "", "genres": "", "year": "",
+                                                                    "credits": ""}
     assert (await posters._tmdb_details(7, "movie", "k"))["genres"] == "Drama, Comedy, Romance, Music, Action, Adventure"
-    assert asked[:3] == [("movie/1", "external_ids"), ("movie/2", "external_ids"), ("tv/3", "external_ids")]
+    assert asked[:3] == [("movie/1", "external_ids,credits"), ("movie/2", "external_ids,credits"),
+                         ("tv/3", "external_ids,aggregate_credits")]
 
 
 @pytest.mark.asyncio

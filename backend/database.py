@@ -617,6 +617,9 @@ async def init_db():
             # The title's original language on TMDB (its 2-letter code), for
             # the original-language lookup to agree with the poster (v0.10.0).
             ("original_language", "TEXT"),
+            # Its credits (posters._credits_of): JSON actors, directors and
+            # studios, for the Title lists (v0.10.0).
+            ("credits", "TEXT"),
         ]:
             try:
                 await db.execute(f"ALTER TABLE poster_cache ADD COLUMN {col} {ctype}")

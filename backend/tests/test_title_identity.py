@@ -116,7 +116,7 @@ async def test_a_release_named_folder_is_found_by_its_title_and_year(posters, te
     assert (got["source"], got["imdb_id"]) == ("tmdb", "tt0000001")
     # A clear match costs no checks: the search and the details stored.
     assert asked == [("search/movie", {"query": "Movie Name", "year": "2019"}),
-                     ("movie/1", {"append_to_response": "external_ids"})]
+                     ("movie/1", {"append_to_response": "external_ids,credits"})]
 
 
 @pytest.mark.asyncio
@@ -180,7 +180,7 @@ async def test_seasons_and_episodes_are_a_shows(posters, test_db, monkeypatch, f
                   {5: {"first_air_date": "2017-12-01"}, 6: {}})
     await posters._run_prefetch()
     # A show: an episode's runtime tells nothing; TMDB's first, no checks.
-    assert asked == [("search/tv", {"query": query}), ("tv/5", {"append_to_response": "external_ids"})]
+    assert asked == [("search/tv", {"query": query}), ("tv/5", {"append_to_response": "external_ids,aggregate_credits"})]
     assert (await _stored(test_db))[key][:3] == ("tmdb", None, "tv")
 
 

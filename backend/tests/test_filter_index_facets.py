@@ -59,11 +59,18 @@ async def test_every_value_is_the_rows_its_token_lists(test_db):
     await seed(test_db)
     index = await _index(test_db)
     values = [k for k in index.bits if ":" in k]
-    assert {k.split(":")[0] for k in values} == {f.key for f in _FACET_LIST}
+    searched = {f.key for f in _FACET_LIST if f.searched}
+    assert searched == {"actor", "director", "studio"}
+    assert {k.split(":")[0] for k in values} == {f.key for f in _FACET_LIST} - searched
+    assert {k.split(":")[0] for k in _credits(index)} == searched  # the rows' value sets, not bitsets
     for key in values:
-        from backend.scan_filters import facet_token
         facet, _, value = key.partition(":")
         assert set(ids_of(index.bits[key])) == await _rows(test_db, facet_token(facet, value)), key
+    for key in _credits(index):
+        facet, _, value = key.partition(":")
+        assert set(ids_of(index.list_bits(key))) == await _rows(test_db, facet_token(facet, value)), key
+    assert "plabel:Everything" in index.bits  # a label of a folder the files are in
+    assert "actor: " not in _credits(index) and not any(k.endswith(":7") for k in _credits(index))
 
 
 @pytest.mark.asyncio
@@ -99,8 +106,13 @@ async def test_a_lists_values_and_counts_under_a_filter(test_db):
     assert all(n > 0 for values in lists.values() for _, n in values)  # zeros aren't listed unless selected
 
 
-def _values(index: FilterIndex) -> dict[str, int]:
-    return {k: v for k, v in index.bits.items() if ":" in k}
+def _credits(index: FilterIndex) -> set[str]:
+    return {fid for combo in index.combos for fid in combo}
+
+
+def _values(index: FilterIndex) -> dict:
+    searched = {k: index.list_bits(k) for k in _credits(index)}
+    return {**{k: v for k, v in index.bits.items() if ":" in k}, **{k: v for k, v in searched.items() if v}}
 
 
 @pytest.mark.asyncio
@@ -204,8 +216,10 @@ async def test_each_value_counts_without_its_own_list_and_exclusion(test_db):
             selected = frozenset(f.id for f in [*(f for g in expr.groups for f in g), *expr.excluded] if ":" in f.id)
             lists = index.facet_values(groups, excluded, selected=selected, top=None)
             for facet in _FACET_LIST:
+                if facet.searched:  # asked for one at a time
+                    lists.update(index.facet_values(groups, excluded, selected=selected, top=None, facet=facet.key))
                 listed = dict(lists[facet.key])
-                for fid in [k for k in index.bits if k.startswith(f"{facet.key}:")]:
+                for fid in [k for k in [*index.bits, *_credits(index)] if k.startswith(f"{facet.key}:")]:
                     value = fid.partition(":")[2]
                     want = await count([t for t in text.split(",") if not own(t, facet.key, fid)]
                                        + [facet_token(facet.key, value)])
@@ -403,3 +417,61 @@ async def test_the_lists_answer_without_the_media_folder_labels(service_env, tes
     body = await scan_route.get_filter_counts("all")
     assert body["counts"]["all"] and body["facets"]["library"]
     assert all(v["label"] == v["value"] for v in body["facets"]["library"])
+
+
+@pytest.mark.asyncio
+async def test_a_searched_list_answers_its_matches(test_db):
+    """Actors, directors and studios aren't in the lists every count
+    carries; asked for, they answer the values with the search in them,
+    counted under the filter like the others."""
+    await seed(test_db)
+    index = await _index(test_db)
+    assert not {"actor", "director", "studio"} & set(index.facet_values([], [], top=None))
+    everyone = dict(index.facet_values([], [], facet="actor", top=None)["actor"])
+    assert everyone == {v: len(await _rows(test_db, facet_token("actor", v))) for v in ("Ann Lee", "Bo Ek", "Cy Moe")}
+    assert dict(index.facet_values([], [], facet="actor", q="ANN")["actor"]) == {"Ann Lee": everyone["Ann Lee"]}
+    expr = parse_filter("res_1080p,!actor:Bo%20Ek")
+    groups, excluded = await _constraints(index, expr)
+    groups = [(k, bits) for k, bits in groups]
+    assert [(fid, bits) for fid, bits in excluded] == [("actor:Bo Ek", index.list_bits("actor:Bo Ek"))]
+    under = dict(index.facet_values(groups, excluded, facet="actor", top=None,
+                                    selected=frozenset({"actor:Bo Ek", "actor:Nobody"}), q="ann")["actor"])
+    assert under["Ann Lee"] == len(await _rows(test_db, "res_1080p,!actor:Bo%20Ek,actor:Ann%20Lee"))
+    # The selected, whatever the search: Bo Ek's own exclusion set aside.
+    assert under["Bo Ek"] == len(await _rows(test_db, "res_1080p,actor:Bo%20Ek")) and under["Nobody"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_file_moved_out_of_a_title_leaves_its_credits(test_db):
+    from backend.routes.scan import _build_enrichment_context
+    await seed(test_db)
+    index = await _index(test_db)
+    row_id = ids_of(index.list_bits("actor:Ann Lee"))[0]
+    async with aiosqlite.connect(test_db) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("UPDATE scan_results SET file_path = '/demo/Elsewhere/moved.mkv' WHERE id = ?", (row_id,))
+        await db.commit()
+        ctx = await _build_enrichment_context(db, titles=True)
+        alive, members, savings = await evaluate(db, _FILTER_LIST, ctx, ids=[row_id], facets=_FACET_LIST)
+    index.patch([row_id], alive, members, savings or {})
+    assert row_id not in ids_of(index.list_bits("actor:Ann Lee"))
+    assert _values(index) == _values(await _index(test_db))
+
+
+@pytest.mark.asyncio
+async def test_the_facet_values_endpoint_searches_a_searched_list(service_env, test_db):
+    from backend.routes.scan import get_facet_values
+    await seed(test_db)
+    service_env._state.index = await service_env.build()
+    found = (await get_facet_values("studio", "all", q="acme"))["values"]
+    assert [v["value"] for v in found] == ["Acme, Inc."]
+    assert found[0]["count"] == len(await _rows(test_db, "studio:Acme%2C%20Inc."))
+    every = (await get_facet_values("actor", "all"))["values"]
+    assert {v["value"] for v in every} == {"Ann Lee", "Bo Ek", "Cy Moe"}
+    body = await get_filter_counts_lists("actor:Ann%20Lee")
+    assert "actor" not in body["facets"] and body["counts"]["matching"] == len(await _rows(test_db, "actor:Ann%20Lee"))
+
+
+async def get_filter_counts_lists(text: str) -> dict:
+    from backend.routes.scan import get_filter_counts
+    return await get_filter_counts(text)

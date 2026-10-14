@@ -38,7 +38,8 @@ function arrange(facet: string, values: FacetValue[], full: boolean): FacetValue
  * A list in a filter menu (v0.10.0): the values ticked or excluded, then
  * the most common values under the current filter, each a checkbox
  * (Alt-click excludes), its count and ⊘; a search box over a long list.
- * "Show all" and the search read every value from the server.
+ * "Show all" and the search read every value from the server. A searched
+ * list (actors) asks the server for its top values and searches there.
  */
 export default function FilterListSection({ section, values, lastValues, version, active, filter, onToggle }: {
   section: FilterSection;
@@ -57,6 +58,9 @@ export default function FilterListSection({ section, values, lastValues, version
   const [all, setAll] = useState<{ filter: string; values: FacetValue[] | null } | null>(null);
   const q = query.trim();
   const searching = q !== "";
+  const searched = section.searched === true;
+  const asked = searched ? q : "";  // a searched list's search is the server's
+  const allKey = `${filter}\n${asked}`;  // what `all` answers
 
   const selected = active.flatMap(token => {
     const excluded = token.startsWith("!");
@@ -68,18 +72,23 @@ export default function FilterListSection({ section, values, lastValues, version
   // focus with it.
   const [kept, setKept] = useState(() => selected.map(s => s.value));
 
-  // Every value, for "Show all" and the search box.
+  // Every value, for "Show all" and the search box; a searched list's top
+  // values or matches, asked for once typing pauses.
   useEffect(() => {
-    if (!expanded && !searching) return;
+    if (!searched && !expanded && !searching) return;
     const ctrl = new AbortController();
-    getFacetValues(facet, filter, ctrl.signal).then(r => setAll({ filter, values: r.values })).catch(() => {});
-    return () => ctrl.abort();
-  }, [facet, filter, expanded, searching, version]);
+    const timer = window.setTimeout(() => {
+      getFacetValues(facet, filter, ctrl.signal, asked)
+        .then(r => setAll({ filter: allKey, values: r.values })).catch(() => {});
+    }, searched && searching ? 250 : 0);
+    return () => { window.clearTimeout(timer); ctrl.abort(); };
+  }, [facet, filter, expanded, searching, version, searched, asked, allKey]);
 
-  const top = values ?? lastValues;
-  const allNow = all?.filter === filter ? all.values : null;
+  // A searched list's last answer stands in, dimmed, while the next loads.
+  const top = searched ? all?.values ?? null : values ?? lastValues;
+  const allNow = all?.filter === allKey ? all.values : null;
   const needle = q.toLocaleLowerCase();
-  const full = expanded || searching;
+  const full = expanded || searching || searched;
   const pool = (full ? allNow : null) ?? top ?? [];
   const fresh = full ? allNow !== null : values != null;  // the rows answer this filter: not dimmed
 
@@ -89,11 +98,11 @@ export default function FilterListSection({ section, values, lastValues, version
   if (needle) rest = rest.filter(v => label(v).toLocaleLowerCase().includes(needle));
   const arranged = arrange(facet, rest, full);
   const shown = full ? arranged : arranged.slice(0, SHOWN);
-  const more = !searching && (expanded || arrange(facet, rest, true).length > shown.length);
+  const more = !searched && !searching && (expanded || arrange(facet, rest, true).length > shown.length);
 
   // A search box over a long list (once shown, it stays while the menu's open).
   const [searchable, setSearchable] = useState(false);
-  if (!searchable && (searching || (allNow ?? top ?? []).length > SHOWN)) setSearchable(true);
+  if (!searchable && (searched || searching || (allNow ?? top ?? []).length > SHOWN)) setSearchable(true);
   const searchLabel = t("scanner:facets.searchIn", { section: t(section.chipLabelKey ?? section.labelKey) });
 
   // A ticked value's count and label: the top values always carry it (at 0
