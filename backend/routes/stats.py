@@ -90,7 +90,15 @@ async def get_stats_summary():
     # media folders and VMAF scores on a connection it had already closed,
     # so library labels and the VMAF card were always empty.
     import backend.database as _database
-    return await asyncio.to_thread(_stats_summary, _database.DB_PATH)
+    summary = await asyncio.to_thread(_stats_summary, _database.DB_PATH)
+    # "Needs converting" is the Scanner's Needs conversion (v0.10.0): not the
+    # raw flag, which also counts ignored files, files a rule skips and the
+    # low-bitrate ones (50K on the Dashboard against the Scanner's 16K).
+    from backend.filter_index import service as filter_index
+    fast = await filter_index.stats()
+    if fast is not None:
+        summary["needs_conversion"] = fast[0]["needs_conversion"]
+    return summary
 
 
 def _stats_summary(db_path: str) -> dict:

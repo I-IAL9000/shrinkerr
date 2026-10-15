@@ -80,3 +80,22 @@ async def test_an_index_behind_leaves_the_rows_to_sql(library):
     assert await service.matching_ids(expr) is not None
     service._state.stale = True
     assert await service.matching_ids(expr) is None
+
+
+@pytest.mark.asyncio
+async def test_the_dashboards_needs_converting_is_the_scanners(library, monkeypatch):
+    """The Dashboard counted every file flagged for conversion (50K), the
+    Scanner's Needs conversion leaves out the ignored, rule-skipped and
+    low-bitrate ones (16K): the Dashboard now shows the Scanner's."""
+    import aiosqlite
+    import backend.database as database
+    from backend.routes import stats
+    monkeypatch.setattr(database, "DB_PATH", library)
+    expected = (await library_data.sql_counts(library))["needs_conversion"]
+    async with aiosqlite.connect(library) as db:
+        async with db.execute("SELECT COUNT(*) FROM scan_results WHERE needs_conversion = 1 "
+                              "AND removed_from_list = 0") as cur:
+            flagged = (await cur.fetchone())[0]
+    assert flagged > expected  # the seeded library has ignored and low-bitrate ones
+    service._state.index = await service.build()
+    assert (await stats.get_stats_summary())["needs_conversion"] == expected
