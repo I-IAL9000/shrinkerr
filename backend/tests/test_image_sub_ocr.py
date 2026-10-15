@@ -349,3 +349,56 @@ def test_a_sup_pgsrip_cant_decode_is_still_told_apart(monkeypatch, tmp_path):
     _fake_pgsrip(tmp_path, monkeypatch, "broken")
     with pytest.raises(io._PgsRipError):
         io._pgsrip_rip_isolated(str(sup), ("eng",), timeout=60)
+
+
+def _pgs_set(pts: int, bitmap: bool, state: int) -> bytes:
+    """One PGS display set: a PCS (composition state), a palette and bitmap
+    when it shows a subtitle, and END."""
+    import struct
+    def seg(kind: int, body: bytes) -> bytes:
+        return struct.pack(">2sIIBH", b"PG", pts, 0, kind, len(body)) + body
+    pcs = struct.pack(">HHBHBBBB", 1920, 1080, 0x10, pts & 0xFFFF, state, 0, 0, 1 if bitmap else 0)
+    out = seg(0x16, pcs)
+    if bitmap:
+        out += seg(0x14, b"\x00" * 7) + seg(0x15, b"\x00" * 50)
+    return out + seg(0x80, b"")
+
+
+def test_detection_reads_a_few_dozen_subtitles_of_a_pgs_track(tmp_path):
+    """pgsrip took 10+ minutes on a Blu-ray's 20-minute sample (large dense
+    bitmaps, decoded in Python): detection keeps 60 subtitles spread through
+    it — each one that starts afresh, with the clear after it."""
+    from backend import image_sub_ocr as io
+    sup = tmp_path / "sub.sup"
+    sets = []
+    for n in range(300):  # a subtitle (epoch start), then its clear (normal, no bitmap)
+        sets.append(_pgs_set(n * 2, True, 0x80))
+        sets.append(_pgs_set(n * 2 + 1, False, 0x00))
+    sup.write_bytes(b"".join(sets))
+    assert io._trim_sup(str(sup), keep=60) == 60
+    kept = sup.read_bytes()
+    assert kept.count(b"PG") == 60 * (4 + 2)  # 60 subtitles (PCS, PDS, ODS, END) and their clears (PCS, END)
+    assert kept.startswith(sets[0]) and kept.endswith(sets[-2] + sets[-1])  # the first and the last, spread
+    few = tmp_path / "few.sup"
+    few.write_bytes(b"".join(sets[:20]))
+    assert io._trim_sup(str(few), keep=60) == 10 and few.read_bytes() == b"".join(sets[:20])  # nothing to cut
+    other = tmp_path / "other.sup"
+    other.write_bytes(b"not a pgs stream")
+    assert io._trim_sup(str(other)) == 0 and other.read_bytes() == b"not a pgs stream"
+
+
+@pytest.mark.asyncio
+async def test_detection_trims_the_sample_before_ocr(monkeypatch, tmp_path):
+    from backend import image_sub_ocr as io
+    sup = tmp_path / "sub.sup"
+    sup.write_bytes(b"".join(_pgs_set(n, True, 0x80) for n in range(200)))
+    seen = []
+
+    def fake_ocr(path, langs):
+        seen.append(open(path, "rb").read().count(b"PG") // 4)
+        return "Ciao, questo e un sottotitolo italiano con abbastanza parole."
+    monkeypatch.setattr(io, "_extract_sup", AsyncMock(return_value=str(sup)))
+    monkeypatch.setattr(io, "_pgsrip_to_text", fake_ocr)
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    lang, _ = await io.detect_image_sub_language("/m/f.mkv", 3, "hdmv_pgs_subtitle")
+    assert lang == "ita" and seen == [60]

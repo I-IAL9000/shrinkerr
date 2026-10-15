@@ -24,6 +24,7 @@ import asyncio
 import functools
 import os
 import shutil
+import struct
 import tempfile
 import threading
 
@@ -101,6 +102,52 @@ async def _run_extract(cmd: list[str], out_path: str, timeout: int = 600) -> boo
         tail = (stderr.decode(errors="replace")[-300:] if stderr else "").strip()
         print(f"[IMG-OCR] extract failed ({cmd[0]} rc={proc.returncode}): {tail}", flush=True)
     return ok
+
+
+# How many subtitles language detection reads from a PGS track (v0.10.0): a
+# few dozen identify a language, and pgsrip decodes bitmaps in Python — a
+# Blu-ray's large, dense ones took it 10+ minutes for a 20-minute sample.
+PGS_DETECT_SUBTITLES = 60
+_PGS_SEGMENT = struct.Struct(">2sIIBH")  # "PG", pts, dts, segment type, size
+_PGS_ODS, _PGS_PCS, _PGS_END = 0x15, 0x16, 0x80
+
+
+def _trim_sup(path: str, keep: int = PGS_DETECT_SUBTITLES) -> int:
+    """Cut a .sup down to `keep` subtitles spread evenly through it, in
+    place: each one a display set that starts afresh (epoch start or
+    acquisition point, with its own palette and bitmap) and the set after
+    it (its clear, for the end time). Returns the subtitles left; a file
+    that isn't PGS, has no more, or can't be read, stays as it is."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return 0
+    sets: list[tuple[int, int, bool, int]] = []  # (start, end, has a bitmap, composition state)
+    at = start = 0
+    has_bitmap, state = False, 0
+    while at + _PGS_SEGMENT.size <= len(data):
+        magic, _pts, _dts, kind, size = _PGS_SEGMENT.unpack_from(data, at)
+        if magic != b"PG":
+            return 0
+        body = at + _PGS_SEGMENT.size
+        if kind == _PGS_PCS and size >= 8:
+            state = data[body + 7]
+        elif kind == _PGS_ODS:
+            has_bitmap = True
+        at = body + size
+        if kind == _PGS_END:
+            sets.append((start, at, has_bitmap, state))
+            start, has_bitmap, state = at, False, 0
+    fresh = [i for i, (_, _, bitmap, st) in enumerate(sets) if bitmap and st in (0x40, 0x80)]
+    if len(fresh) <= keep:
+        return len(fresh)
+    chosen = [fresh[round(n * (len(fresh) - 1) / (keep - 1))] for n in range(keep)] if keep > 1 else fresh[:1]
+    # Each with the set after it when that's its clear (no bitmap), not the next subtitle.
+    kept = sorted({j for i in chosen for j in (i, i + 1) if j < len(sets) and (j == i or not sets[j][2])})
+    with open(path, "wb") as fh:  # in the work folder (/tmp), not the media share
+        fh.write(b"".join(data[sets[j][0]:sets[j][1]] for j in kept))
+    return keep
 
 
 async def _extract_sup(file_path: str, stream_index: int, workdir: str,
@@ -563,6 +610,7 @@ async def detect_image_sub_language(
             await _report(f"Extracting subtitle sample (track {stream_index})…", stage_key="detect.extractingSample")
             sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=sample)
             if sup:
+                await asyncio.to_thread(_trim_sup, sup)
                 result = await _ocr_pgs(sup)
                 if result:
                     return result
@@ -573,6 +621,7 @@ async def detect_image_sub_language(
         sup = await _extract_sup(file_path, stream_index, workdir, sample_seconds=None)
         if not sup:
             return (None, 0.0)
+        await asyncio.to_thread(_trim_sup, sup)
         result = await _ocr_pgs(sup)
         return result if result else (None, 0.0)
     except _PgsRipTimeout as exc:
