@@ -491,9 +491,15 @@ async def detect_image_sub_language(
     OCR. Called with 'Extracting subtitle…', 'OCR (Latin)…',
     'OCR (CJK/Cyrillic/Arabic)…' plus `stage_key`/`stage_params` keywords
     (serverJobs `detect.*` i18n key) so the UI can translate the stage."""
+    import time
     from backend.language_detection import detect_subtitle_language
+    started = time.monotonic()
+    name = os.path.basename(file_path)
 
     async def _report(stage: str, stage_key: str):
+        # Each step in the log as it starts, with the time so far (v0.10.0):
+        # a step that hung for 25 minutes left no trace.
+        print(f"[IMG-OCR] {name} s{stream_index}: {stage} ({time.monotonic() - started:.0f}s in)", flush=True)
         if progress_cb is not None:
             try:
                 await progress_cb(stage, stage_key=stage_key, stage_params={"track": stream_index})
@@ -530,12 +536,15 @@ async def detect_image_sub_language(
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _LATIN_LANGS)
             if text:
                 lang, conf = detect_subtitle_language(text)
+                print(f"[IMG-OCR] {name} s{stream_index}: Latin OCR → {lang or 'no language'} ({conf:.2f})", flush=True)
                 if lang:
                     return (lang, conf)
             await _report(f"OCR (CJK/Cyrillic/Arabic) on subtitle track {stream_index}…", stage_key="detect.ocrNonLatin")
             text = await loop.run_in_executor(None, _pgsrip_to_text, sup_path, _NON_LATIN_LANGS)
             if text:
                 lang, conf = detect_subtitle_language(text)
+                print(f"[IMG-OCR] {name} s{stream_index}: non-Latin OCR → {lang or 'no language'} ({conf:.2f})",
+                      flush=True)
                 if lang:
                     return (lang, conf)
             return None
