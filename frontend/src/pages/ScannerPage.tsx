@@ -1973,7 +1973,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onUnignoreFile={handleUnignoreFile}
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
-              onFilter={(token) => setFilters(prev => (prev.includes(token) ? prev : toggleFilter(prev, token, false)))}
+              // A title's actor, genre... shows everything with it: the filter, alone (v0.10.0).
+              onFilter={(token) => { setFilters([token]); setSearchInput(""); setSearch(""); }}
               mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}
