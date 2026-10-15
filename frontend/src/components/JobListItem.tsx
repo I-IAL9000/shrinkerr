@@ -230,7 +230,7 @@ function JobListItemImpl({ job, onCancel, onRetry, onRemove, onIgnore, onUndo, c
       {job.status === "failed" && (
         <>
           {replaceable && (
-            <button className="btn btn-xs btn-primary btn-danger" disabled={requesting}
+            <button className="btn btn-xs btn-primary btn-danger" disabled={requesting} style={{ marginRight: 8 }}
               title={t(damaged ? "fileDetail:actions.researchTitleCorrupt" : "fileDetail:actions.researchTitle")}
               onClick={(e) => { e.stopPropagation(); requestReplacement(job.file_path, damaged); }}>
               {requesting ? t("fileDetail:actions.requesting") : t("fileDetail:actions.requestReplacement")}
