@@ -378,6 +378,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
     release_group: { label: ct("types.release_group"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     content_type: { label: ct("types.content_type"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
     saved_view: { label: ct("types.saved_view"), group: ct("groups.file"), operators: [op("is"), op("is_not")], valueType: "select" },
+    // The Scanner's Title lists, as Advanced Search matches them (v0.10.0).
+    title_year: { label: ct("types.title_year"), group: ct("groups.title"), operators: [op("is"), op("greater_than"), op("less_than")], valueType: "number" },
+    title_rating: { label: ct("types.title_rating"), group: ct("groups.title"), operators: [op("greater_than"), op("less_than")], valueType: "number" },
+    ...Object.fromEntries(["title_genre", "title_country", "title_network", "title_actor", "title_director", "title_studio"].map(k => [k,
+      { label: ct(`types.${k}`), group: ct("groups.title"), operators: [op("is"), op("is_not"), op("contains"), op("does_not_contain")], valueType: "text" as const }])),
+    title_show_status: { label: ct("types.title_show_status"), group: ct("groups.title"), operators: [op("is"), op("is_not")], valueType: "select" },
     label: { label: ct("types.label"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     collection: { label: ct("types.collection"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
     genre: { label: ct("types.genre"), group: "Plex", operators: [op("is"), op("is_not")], valueType: "select" },
@@ -4238,6 +4244,12 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                 <option value="content_type">{t("settingsIntegrations:conditions.types.content_type")}</option>
                                 <option value="saved_view">{t("settingsIntegrations:conditions.types.saved_view")}</option>
                               </optgroup>
+                              <optgroup label={t("settingsIntegrations:conditions.groups.title")}>
+                                {["title_year", "title_rating", "title_genre", "title_country", "title_network", "title_show_status",
+                                  "title_actor", "title_director", "title_studio"].map(k => (
+                                  <option key={k} value={k}>{t(`settingsIntegrations:conditions.types.${k}`)}</option>
+                                ))}
+                              </optgroup>
                               <optgroup label="Plex">
                                 <option value="label">{t("settingsIntegrations:conditions.plexOptions.label")}</option>
                                 <option value="collection">{t("settingsIntegrations:conditions.plexOptions.collection")}</option>
@@ -4321,6 +4333,21 @@ export default function SettingsPage({ themePref, onThemeChange }: { themePref: 
                                     <option key={v} value={v}>{t(`settingsMedia:video.smart.types.${v}`)}</option>
                                   ))}
                                 </select>;
+                              }
+
+                              if (cond.type === "title_show_status") {
+                                return <select aria-label={t("common:labels.value")} style={{ ...inputStyle, flex: 1 }} value={cond.value} onChange={e => updateConditionValue(condIdx, e.target.value)}>
+                                  <option value="">{t("settingsIntegrations:conditions.values.select")}</option>
+                                  {["returning", "ended", "canceled", "in_production"].map(v => (
+                                    <option key={v} value={v}>{t(`serverSearch:properties.show_status.options.${v}`)}</option>
+                                  ))}
+                                </select>;
+                              }
+
+                              if (cond.type === "title_year" || cond.type === "title_rating") {
+                                const example = cond.type === "title_year" ? "2010" : "7.5";
+                                return <input type="number" step={cond.type === "title_year" ? 1 : 0.1} style={{ ...inputStyle, flex: 1 }} value={cond.value}
+                                  aria-label={t(`settingsIntegrations:conditions.types.${cond.type}`)} placeholder={example} onChange={e => updateConditionValue(condIdx, e.target.value)} />;
                               }
 
                               if (cond.type === "saved_view") {

@@ -565,9 +565,9 @@ body {
 .chevron { flex-shrink: 0; opacity: 0.75; }
 .btn svg.chevron, .sort-pill svg.chevron { margin: 0; vertical-align: middle; }
 .filter-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-.filter-chip {
-  display: inline-flex; align-items: center; gap: 2px; padding: 3px 4px 3px 10px;
-  font-size: 12px; border-radius: 14px;
+.filter-chip {  /* the filter pills' size (.filter-pill), the × in the right padding's place */
+  display: inline-flex; align-items: center; gap: 2px; padding: 6px 6px 6px 12px;
+  font-size: 12px; font-weight: 500; line-height: 1.4; border-radius: 25px;
   background: var(--accent-bg); color: var(--accent-text); border: 1px solid var(--accent);
 }
 .filter-chip.excluded { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border-color: var(--danger); }

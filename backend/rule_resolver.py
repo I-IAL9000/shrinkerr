@@ -195,7 +195,28 @@ CONDITION_TYPES = frozenset({
     "label", "collection", "genre", "library", "plex_watched",
     "jellyfin_tag", "jellyfin_watched", "emby_tag", "emby_watched",
     "arr_tag", "nzbget_category", "content_type", "saved_view",
+    *("title_year", "title_rating", "title_genre", "title_country", "title_network", "title_show_status",
+      "title_actor", "title_director", "title_studio"),
 })
+# Title conditions (v0.10.0): the Scanner's Title lists, as Advanced Search
+# matches them (scan_filters.compile_condition) — rule type -> its property.
+_TITLE_CONDITIONS = {
+    "title_year": "year", "title_rating": "rating", "title_genre": "genre", "title_country": "country",
+    "title_network": "network", "title_show_status": "show_status", "title_actor": "actor",
+    "title_director": "director", "title_studio": "studio",
+}
+_TITLE_OPS = {"is": "eq", "is_not": "ne", "contains": "contains", "does_not_contain": "contains",
+              "greater_than": "gt", "less_than": "lt"}
+
+
+def _title_condition(ctype: str, op: str, value, file_path: str, title_ctx: dict) -> bool:
+    """A title condition on a file, with title_ctx (routes.scan.title_context)."""
+    from backend.scan_filters import compile_condition
+    f = compile_condition(0, {"property": _TITLE_CONDITIONS[ctype], "op": _TITLE_OPS.get(op, "eq"), "value": value})
+    if f is None or f.py is None:
+        return False
+    hit = bool(f.py({"file_path": file_path}, title_ctx))
+    return not hit if op == "does_not_contain" else hit
 # Conditions matched through plex_metadata_cache. Only Plex label /
 # collection / genre / library rules used to load it, so a watched or
 # Jellyfin/Emby tag rule on its own never matched (v0.10.0).
@@ -209,7 +230,8 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
                      folder_metadata: list[tuple[str, str]],
                      extra_context: dict | None = None,
                      arr_tags: set[str] | frozenset = frozenset(),
-                     views: dict[str, set[str]] | None = None) -> bool:
+                     views: dict[str, set[str]] | None = None,
+                     title_ctx: dict | None = None) -> bool:
     """Check if a single condition matches a file.
 
     Args:
@@ -223,6 +245,7 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
         extra_context: Optional dict with additional context (e.g. nzbget_category).
         arr_tags: Lower-cased Sonarr/Radarr tags of the file's series / movie.
         views: saved view id -> the batch's files it lists (v0.10.0).
+        title_ctx: the title metadata, when a rule has a title condition.
     """
     ctype = cond.get("type", "")
     op = cond.get("operator", "is")
@@ -230,6 +253,9 @@ def _check_condition(cond: dict, file_path: str, scan_row: dict,
 
     if not value:
         return False
+
+    if ctype in _TITLE_CONDITIONS:
+        return title_ctx is not None and _title_condition(ctype, op, value, file_path, title_ctx)
 
     # A saved view (v0.10.0): the file is in the Scanner filter it names.
     if ctype == "saved_view":
@@ -561,6 +587,10 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
             from backend.routes.views import paths_in_view
             for vid in view_ids:
                 views[vid] = await paths_in_view(vid, file_paths)
+        title_ctx = None
+        if any(c.get("type") in _TITLE_CONDITIONS for _, (_, conds) in rules_with_conds for c in conds):
+            from backend.routes.scan import title_context
+            title_ctx = await title_context(db)
         arr_tags: dict[str, set[str]] = {}
         if any(c.get("type") in ("arr_tag", "tag") for _, (_, conds) in rules_with_conds for c in conds):
             from backend.arr import arr_tags_for_paths
@@ -618,7 +648,7 @@ async def resolve_rules_for_batch(file_paths: list[str], extra_context: dict | N
                     continue
 
                 cond_results = [_check_condition(c, fp, scan_row, meta, extra_context, arr_tags.get(fp, frozenset()),
-                                                 views)
+                                                 views, title_ctx)
                                 for c in conditions]
 
                 if match_mode == "all":

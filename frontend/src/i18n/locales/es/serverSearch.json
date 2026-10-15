@@ -110,6 +110,21 @@
     "network": {
       "label": "Cadena de TV"
     },
+    "country": {
+      "label": "País"
+    },
+    "actor": {
+      "label": "Actor"
+    },
+    "director": {
+      "label": "Director / creador"
+    },
+    "studio": {
+      "label": "Estudio"
+    },
+    "plex_label": {
+      "label": "Etiqueta de Plex"
+    },
     "show_status": {
       "label": "Estado de la serie",
       "options": {

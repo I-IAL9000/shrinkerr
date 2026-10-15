@@ -790,6 +790,13 @@ def _year_values(row: dict, ctx: dict) -> list[str]:
     return [f"{year // 10 * 10}s", str(year)] if year else []
 
 
+def _title_list(title: dict, field: str) -> Iterable[str]:
+    """One of a title's lists (row_title): its countries, Plex labels or credits."""
+    if field in ("countries", "labels"):
+        return title[field]
+    return _credit_values(title["credits"].get(field))
+
+
 def _credit_values(names: Any) -> list[str]:
     """A credits list as stored (JSON): its names."""
     return [n.strip() for n in names if isinstance(n, str) and n.strip()] if isinstance(names, list) else []
@@ -942,6 +949,17 @@ ADVANCED_PROPERTIES: dict[str, dict] = {
                       "examples": ["Documentary"]},
     "network":       {"kind": "title_text", "field": "network", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "TV network", "group": "Title",
                       "examples": ["HBO"]},
+    # The Title lists' other values (v0.10.0): any of the title's.
+    "country":       {"kind": "title_list", "field": "countries", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Country", "group": "Title",
+                      "examples": ["United Kingdom"]},
+    "actor":         {"kind": "title_list", "field": "actor", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Actor", "group": "Title",
+                      "examples": ["Tom Hanks"]},
+    "director":      {"kind": "title_list", "field": "director", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Director / creator", "group": "Title",
+                      "examples": ["Christopher Nolan"]},
+    "studio":        {"kind": "title_list", "field": "studio", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Studio", "group": "Title",
+                      "examples": ["A24"]},
+    "plex_label":    {"kind": "title_list", "field": "labels", "type": "string", "ops": ["eq", "ne", "in", "contains"], "label": "Plex label", "group": "Title",
+                      "examples": ["Keep 4K"]},
     "show_status":   {"kind": "title_text", "field": "status", "type": "enum", "ops": ["eq", "ne", "in"], "label": "Show status", "group": "Title",
                       "options": ["returning", "ended", "canceled", "in_production"],
                       "option_labels": {"returning": "Returning", "ended": "Ended", "canceled": "Canceled", "in_production": "In production"}},
@@ -1115,13 +1133,17 @@ def compile_condition(index: int, pred: dict) -> Optional[Filter]:
             return None
         return Filter(fid, py=lambda r, c: (lambda m: m is not None and test(m))(months(r, c)))
 
-    if kind in ("title_genre", "title_text"):
+    if kind in ("title_genre", "title_text", "title_list"):
         wanted = [str(v).strip().lower() for v in (_values(value) if op == "in" else [value]) if str(v or "").strip()]
         if not wanted:
             return None
         def values(r, c) -> set:
             t = row_title(r, c)
-            return t["genres"] if kind == "title_genre" else ({t[prop["field"]]} - {""})
+            if kind == "title_genre":
+                return t["genres"]
+            if kind == "title_list":
+                return {v.lower() for v in _title_list(t, prop["field"])}
+            return {t[prop["field"]]} - {""}
         if kind == "title_genre" and (op != "contains" or wanted[0] in _GENRE_PARTS):
             # As row_title keeps them (v0.10.0): "Action & Adventure" is the
             # titles with both, "Science Fiction" is Sci-Fi.

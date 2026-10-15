@@ -2022,6 +2022,16 @@ async def _title_metadata(db) -> tuple[dict, dict, dict, dict]:
     return meta, credits, genres, labels
 
 
+async def title_context(db) -> dict:
+    """What the title filters read (scan_filters.row_title) and nothing else:
+    for encoding rules' title conditions (v0.10.0)."""
+    ctx: dict = {}
+    ctx["title_meta"], ctx["title_credits"], ctx["server_genres"], ctx["server_labels"] = await _title_metadata(db)
+    async with db.execute("SELECT path FROM media_dirs") as cur:
+        ctx["media_roots"] = frozenset(r[0].rstrip("/") for r in await cur.fetchall())
+    return ctx
+
+
 async def _build_enrichment_context(db, titles: bool = False) -> dict:
     """Build shared context for enriching scan results (used by results, tree, files endpoints).
     `titles`: also the title metadata (FilterExpr.needs_titles)."""

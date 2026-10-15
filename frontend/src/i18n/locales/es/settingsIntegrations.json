@@ -365,7 +365,8 @@
     "groups": {
       "path": "Ruta",
       "file": "Archivo",
-      "downloads": "Descargas"
+      "downloads": "Descargas",
+      "title": "Título"
     },
     "types": {
       "directory": "Directorio de medios",
@@ -390,7 +391,16 @@
       "content_type": "Tipo de contenido",
       "saved_view": "Vista guardada",
       "plex_watched": "Plex visto",
-      "jellyfin_watched": "Jellyfin visto"
+      "jellyfin_watched": "Jellyfin visto",
+      "title_year": "Año",
+      "title_rating": "Puntuación (IMDb / TMDB)",
+      "title_genre": "Género",
+      "title_country": "País",
+      "title_network": "Cadena de TV",
+      "title_show_status": "Estado de la serie",
+      "title_actor": "Actor",
+      "title_director": "Director / creador",
+      "title_studio": "Estudio"
     },
     "plexOptions": {
       "label": "Etiqueta",
@@ -431,7 +441,16 @@
       "nzbget_category": "categoría nzbget",
       "content_type": "tipo de contenido",
       "plex_watched": "plex visto",
-      "jellyfin_watched": "jellyfin visto"
+      "jellyfin_watched": "jellyfin visto",
+      "title_year": "año",
+      "title_rating": "puntuación",
+      "title_genre": "género",
+      "title_country": "país",
+      "title_network": "cadena",
+      "title_show_status": "estado",
+      "title_actor": "actor",
+      "title_director": "director",
+      "title_studio": "estudio"
     },
     "values": {
       "selectDirectory": "Selecciona un directorio...",

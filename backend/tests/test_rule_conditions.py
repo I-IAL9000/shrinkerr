@@ -105,3 +105,54 @@ async def test_plex_sync_without_plex_keeps_the_cache(test_db):
     async with aiosqlite.connect(test_db) as db:
         async with db.execute("SELECT COUNT(*) FROM plex_metadata_cache") as cur:
             assert (await cur.fetchone())[0] == 2
+
+
+async def _title(db_path, file_path: str) -> None:
+    """The title's metadata, as the Poster grid caches it (by its title_key)."""
+    from backend.scan_filters import title_key
+    folder = title_key(file_path)
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO poster_cache (folder_path, title, year, rating, genres, country, network, status, credits, "
+            "source) VALUES (?, 'Show', '2010', 8.1, 'Drama, Action & Adventure', 'United Kingdom, Ireland', 'BBC One', "
+            "'Ended', ?, 'tmdb')",
+            (folder, json.dumps({"actor": ["Ann Lee", "Bo Ek"], "director": ["Jo Park"], "studio": ["Acme"]})))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ctype, op, value, hit", [
+    ("title_actor", "is", "ann lee", True), ("title_actor", "is", "Cy Moe", False),
+    ("title_actor", "contains", "Ek", True), ("title_actor", "does_not_contain", "Ek", False),
+    ("title_director", "is", "Jo Park", True), ("title_studio", "is_not", "Acme", False),
+    ("title_country", "is", "Ireland", True), ("title_network", "is", "BBC One", True),
+    ("title_genre", "is", "action", True), ("title_genre", "is", "Comedy", False),
+    ("title_show_status", "is", "ended", True), ("title_year", "greater_than", "2005", True),
+    ("title_year", "is", "2011", False), ("title_rating", "less_than", "8", False),
+])
+async def test_title_conditions(test_db, ctype, op, value, hit):
+    """Rules match the Scanner's Title lists (v0.10.0), as Advanced Search
+    does: year, rating, genre, country, network, show status, credits."""
+    await _title(test_db, FILE)
+    await _rule(test_db, ctype, value, op=op)
+    result = (await resolve_rules_for_batch([FILE]))[FILE]
+    assert (result is not None) is hit, (ctype, op, value)
+
+
+def test_advanced_search_has_the_title_lists():
+    """Advanced Search's conditions for what the filter menus' Title lists
+    hold: country, actor, director, studio, Plex label."""
+    from backend.scan_filters import compile_condition, title_key
+    row = {"file_path": "/m/Show [tvdb-5]/Season 1/e1.mkv"}
+    key = title_key(row["file_path"])
+    assert key == "/m/Show [tvdb-5]"
+    ctx = {"title_meta": {key: ("2010", 8.1, "Drama", None, None, "United Kingdom, Ireland")},
+           "title_credits": {key: {"actor": ["Ann Lee"], "director": ["Jo Park"], "studio": ["Acme"]}},
+           "server_labels": {"/m/Show [tvdb-5]/": {"Keep 4K"}}, "media_roots": frozenset({"/m"})}
+
+    def matches(prop, op, value) -> bool:
+        return compile_condition(0, {"property": prop, "op": op, "value": value}).py(dict(row), ctx)
+    assert matches("country", "eq", "ireland") and not matches("country", "eq", "France")
+    assert matches("actor", "contains", "ann") and matches("director", "eq", "Jo Park")
+    assert matches("studio", "ne", "Other") and not matches("studio", "ne", "acme")
+    assert matches("plex_label", "eq", "keep 4k") and matches("actor", "in", ["Nobody", "Ann Lee"])

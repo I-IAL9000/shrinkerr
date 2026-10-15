@@ -355,7 +355,8 @@
     "groups": {
       "path": "Path",
       "file": "File",
-      "downloads": "Downloads"
+      "downloads": "Downloads",
+      "title": "Title"
     },
     "types": {
       "directory": "Media Directory",
@@ -380,7 +381,16 @@
       "content_type": "Content type",
       "saved_view": "Saved view",
       "plex_watched": "Plex Watched",
-      "jellyfin_watched": "Jellyfin Watched"
+      "jellyfin_watched": "Jellyfin Watched",
+      "title_year": "Year",
+      "title_rating": "Rating (IMDb / TMDB)",
+      "title_genre": "Genre",
+      "title_country": "Country",
+      "title_network": "TV network",
+      "title_show_status": "Show status",
+      "title_actor": "Actor",
+      "title_director": "Director / creator",
+      "title_studio": "Studio"
     },
     "plexOptions": {
       "label": "Label",
@@ -421,7 +431,16 @@
       "nzbget_category": "nzbget category",
       "content_type": "content type",
       "plex_watched": "plex watched",
-      "jellyfin_watched": "jellyfin watched"
+      "jellyfin_watched": "jellyfin watched",
+      "title_year": "year",
+      "title_rating": "rating",
+      "title_genre": "genre",
+      "title_country": "country",
+      "title_network": "network",
+      "title_show_status": "show status",
+      "title_actor": "actor",
+      "title_director": "director",
+      "title_studio": "studio"
     },
     "values": {
       "selectDirectory": "Select directory...",

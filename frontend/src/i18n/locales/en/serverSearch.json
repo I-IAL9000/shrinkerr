@@ -110,6 +110,21 @@
     "network": {
       "label": "TV network"
     },
+    "country": {
+      "label": "Country"
+    },
+    "actor": {
+      "label": "Actor"
+    },
+    "director": {
+      "label": "Director / creator"
+    },
+    "studio": {
+      "label": "Studio"
+    },
+    "plex_label": {
+      "label": "Plex label"
+    },
     "show_status": {
       "label": "Show status",
       "options": {
