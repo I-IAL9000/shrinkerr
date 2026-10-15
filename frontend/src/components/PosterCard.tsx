@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { fmtBytes } from "../fmt";
 import { pressable } from "../utils/a11y";
+import ActionMenu, { type ActionMenuItem } from "./ActionMenu";
 
 interface PosterCardProps {
   title: string;
@@ -14,11 +15,13 @@ interface PosterCardProps {
   isExpanded: boolean;
   mediaType?: string | null;
   onEditClick?: () => void;
+  // The selection bar's actions, on this title (v0.10.0): a ⋯ menu.
+  menu?: ActionMenuItem[];
 }
 
 export default function PosterCard({
   title, year, posterUrl, fileCount, totalSize,
-  isSelected, onSelect, onClick, isExpanded, mediaType, onEditClick,
+  isSelected, onSelect, onClick, isExpanded, mediaType, onEditClick, menu,
 }: PosterCardProps) {
   const { t } = useTranslation(["library", "common"]);
   return (
@@ -68,12 +71,6 @@ export default function PosterCard({
           </span>
         )}
 
-        {isExpanded && (
-          <div className="poster-expand-arrow">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 16l-6-6h12z"/></svg>
-          </div>
-        )}
-
         {/* Edit (fix TMDB match) button — bottom-left, visible on hover */}
         {onEditClick && (
           <button
@@ -87,6 +84,16 @@ export default function PosterCard({
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
             </svg>
           </button>
+        )}
+
+        {/* The title's actions — bottom-right, as the fix-match button */}
+        {menu && menu.length > 0 && (
+          <div className="poster-menu" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+            <ActionMenu label={t("library:poster.actions")} items={menu} align="right" buttonClassName="poster-edit-btn"
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+              </svg>} />
+          </div>
         )}
       </div>
 

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Chevron from "./Chevron";
 
 export interface ActionMenuItem {
   label: string;
   onSelect: () => void;
+  danger?: boolean;
 }
 
 /**
@@ -13,10 +14,14 @@ export interface ActionMenuItem {
  * placeholder applied the first one. Here nothing happens until an item is
  * chosen: click, or arrows then Enter. Escape / Tab / a click outside close.
  */
-export default function ActionMenu({ label, items, buttonStyle }: {
+export default function ActionMenu({ label, items, buttonStyle, icon, buttonClassName, align = "left" }: {
   label: string;
   items: ActionMenuItem[];
   buttonStyle?: CSSProperties;
+  // An icon button instead of the label (`label` names it): a poster's ⋯ (v0.10.0).
+  icon?: ReactNode;
+  buttonClassName?: string;
+  align?: "left" | "right";
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -59,10 +64,12 @@ export default function ActionMenu({ label, items, buttonStyle }: {
         aria-expanded={open}
         onClick={() => setOpen(o => !o)}
         onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}
-        style={{ ...buttonStyle, display: "inline-flex", alignItems: "center", gap: 6 }}
+        className={buttonClassName}
+        aria-label={icon ? label : undefined}
+        title={icon ? label : undefined}
+        style={icon ? buttonStyle : { ...buttonStyle, display: "inline-flex", alignItems: "center", gap: 6 }}
       >
-        {label}
-        <Chevron />
+        {icon ?? <>{label}<Chevron /></>}
       </button>
       {open && (
         <div
@@ -70,7 +77,7 @@ export default function ActionMenu({ label, items, buttonStyle }: {
           aria-label={label}
           onKeyDown={onMenuKey}
           style={{
-            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50, minWidth: "100%",
+            position: "absolute", top: "calc(100% + 4px)", [align]: 0, zIndex: 50, minWidth: "100%",
             background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6,
             boxShadow: "0 6px 20px rgba(0,0,0,0.35)", padding: 4,
             display: "flex", flexDirection: "column",
@@ -82,7 +89,7 @@ export default function ActionMenu({ label, items, buttonStyle }: {
               ref={el => { itemRefs.current[i] = el; }}
               type="button"
               role="menuitem"
-              className="action-menu-item"
+              className={`action-menu-item${item.danger ? " danger" : ""}`}
               onClick={() => { close(true); item.onSelect(); }}
             >
               {item.label}

@@ -1131,6 +1131,59 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
   // "Fix for direct play" (v0.10.0): the selection's files with a direct-play
   // problem get a conversion (Hi10P) or a remux to MKV, with SRT copies of
   // image subtitles and a compatibility track where the audio needs one.
+  const handleRename = () => {
+    // Pass all selected paths (folder + file) — server expands folders
+    const paths = Array.from(selectedPaths);
+    if (paths.length === 0) {
+      toast(t("scanner:toasts.noSelection"));
+      return;
+    }
+    setRenamePaths(paths);
+  };
+
+  // A poster's ⋯ menu (v0.10.0): the selection bar's actions on that title —
+  // it becomes the selection, and the action runs once it has (the handlers
+  // read the selection).
+  const [titleAction, setTitleAction] = useState<{ path: string; run: string } | null>(null);
+  const titleActions: Record<string, () => void> = {
+    queue: handleAddToQueue, detect: handleBulkDetectLanguages, rescan: handleBulkRescan,
+    directPlay: () => handleFixDirectPlay(), rename: handleRename,
+    quickCheck: () => handleHealthCheck("quick"), thoroughCheck: () => handleHealthCheck("thorough"),
+    upgrade: () => handleBulkArrAction("upgrade"), missing: () => handleBulkArrAction("missing"),
+    replace: () => handleBulkArrAction("replace"),
+    ignore: handleBulkIgnore, unignore: handleBulkUnignore, remove: handleBulkRemove, trash: handleBulkDelete,
+  };
+  useEffect(() => {
+    if (!titleAction || selectAllActive || selectedPaths.size !== 1 || !selectedPaths.has(titleAction.path)) return;
+    const run = titleActions[titleAction.run];
+    setTitleAction(null);
+    run?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titleAction, selectedPaths, selectAllActive]);
+  const titleMenu = (path: string) => {
+    const item = (label: string, run: string, danger = false) => ({ label, danger, onSelect: () => {
+      setSelectAllActive(false);
+      setSelectedPaths(new Set([path]));
+      setTitleAction({ path, run });
+    } });
+    return [
+      item(t("common:actions.addToQueue"), "queue"),
+      item(t("scanner:titleMenu.detect"), "detect"),
+      item(t("common:actions.rescan"), "rescan"),
+      item(t("scanner:selection.fixDirectPlay"), "directPlay"),
+      item(t("scanner:selection.rename"), "rename"),
+      item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.quickCheck")}`, "quickCheck"),
+      item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.thoroughCheck")}`, "thoroughCheck"),
+      item(t("scanner:arr.upgrade"), "upgrade"),
+      item(t("scanner:arr.missing"), "missing"),
+      item(t("scanner:arr.replace"), "replace"),
+      item(t("common:actions.ignore"), "ignore"),
+      item(t("common:actions.unignore"), "unignore"),
+      item(t("common:actions.remove"), "remove"),
+      item(t("scanner:selection.trashFiles"), "trash", true),
+    ];
+  };
+
   const handleFixDirectPlay = async () => {
     const paths = selectAllActive ? folders.map(f => f.path + "/") : Array.from(selectedPaths);
     if (!paths.length) {
@@ -1690,15 +1743,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
                 <button
                   className="btn btn-sm btn-pill btn-secondary"
                   title={t("scanner:selection.renameTitle")}
-                  onClick={() => {
-                    // Pass all selected paths (folder + file) — server expands folders
-                    const paths = Array.from(selectedPaths);
-                    if (paths.length === 0) {
-                      toast(t("scanner:toasts.noSelection"));
-                      return;
-                    }
-                    setRenamePaths(paths);
-                  }}
+                  onClick={handleRename}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -1975,6 +2020,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onFolderFilesLoaded={handleFolderFilesLoaded}
               // A title's actor, genre... shows everything with it: the filter, alone (v0.10.0).
               onFilter={(token) => { setFilters([token]); setSearchInput(""); setSearch(""); }}
+              titleMenu={titleMenu}
               mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}

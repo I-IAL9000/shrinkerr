@@ -25,7 +25,8 @@
     "filterBy": "Show only {{value}}",
     "fixMatchTitle": "Fix TMDB match",
     "noFilesFound": "No files found",
-    "filesLoadFailed": "The files couldn't be loaded ({{error}})."
+    "filesLoadFailed": "The files couldn't be loaded ({{error}}).",
+    "actions": "Actions"
   },
   "fix": {
     "title": "Fix match",

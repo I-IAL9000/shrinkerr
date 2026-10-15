@@ -12,6 +12,7 @@ import { posterOutline, type Box } from "../posterOutline";
 import { pressable } from "../utils/a11y";
 import { fmtBytes } from "../fmt";
 import { listToken, listValue } from "../filterCatalog";
+import type { ActionMenuItem } from "./ActionMenu";
 
 interface PosterMeta {
   title: string;
@@ -70,6 +71,8 @@ interface PosterGridProps {
   sortDir?: "asc" | "desc";
   // A list filter's token ("genre:drama") to apply: an open title's details link to them (v0.10.0).
   onFilter?: (token: string) => void;
+  // A title's ⋯ menu (v0.10.0): the selection bar's actions on it (its select path).
+  titleMenu?: (selectPath: string) => ActionMenuItem[];
 }
 
 export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
@@ -154,6 +157,7 @@ export default function PosterGrid({
   mediaDirs,
   sortBy = "name", sortDir = "asc",
   onFilter,
+  titleMenu,
 }: PosterGridProps) {
   const { t } = useTranslation(["library", "common"]);
   const mediaRoots = useMemo(
@@ -458,6 +462,7 @@ export default function PosterGrid({
           isExpanded={expandedKey === group.key}
           mediaType={meta?.media_type}
           onEditClick={() => setFixModalGroup({ key: group.key, title: meta?.title || group.title, year: meta?.year || group.year })}
+          menu={titleMenu?.(groupSelectPath(group))}
         />
       );
     }

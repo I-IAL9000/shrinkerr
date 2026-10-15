@@ -399,5 +399,8 @@
     "saved": "Saved view “{{name}}”",
     "delete": "Delete view {{name}}",
     "pickFirst": "Choose some filters first, then name them here."
+  },
+  "titleMenu": {
+    "detect": "Detect unknown languages"
   }
 }

@@ -438,5 +438,8 @@
     "saved": "Vista «{{name}}» guardada",
     "delete": "Eliminar la vista {{name}}",
     "pickFirst": "Elige primero algunos filtros y ponles nombre aquí."
+  },
+  "titleMenu": {
+    "detect": "Detectar idiomas desconocidos"
   }
 }
