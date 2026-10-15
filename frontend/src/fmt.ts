@@ -64,6 +64,14 @@ export function fmtDuration(seconds: number | null | undefined): string {
  * browser's locale, so a Spanish UI on an en-US browser still showed
  * "4/22/2026, 8:06:15 PM". Falls back to the raw value if it isn't a date.
  */
+/** A date alone, in the interface language (v0.10.0). */
+export function fmtDate(value: string | number | Date | null | undefined): string {
+  if (value == null || value === "") return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString(i18n.language || undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 export function fmtDateTime(value: string | number | Date | null | undefined): string {
   if (value == null || value === "") return "";
   const d = value instanceof Date ? value : new Date(value);

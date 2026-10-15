@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { readVideoDetails } from "../api";
 import type { ScannedFile } from "../types";
 import { hdrLabel } from "../codecLabels";
-import { fmtBitrate, fmtBytes, fmtDuration } from "../fmt";
+import { fmtBitrate, fmtBytes, fmtDuration, fmtDate } from "../fmt";
 
 // The codecs by their standard names (the badges elsewhere say x264 / x265).
 const CODEC_NAMES: Record<string, string> = {
@@ -35,7 +35,7 @@ function container(file: ScannedFile): string | null {
 /**
  * A file's video details for the Scanner's file panel (v0.10.0): duration,
  * codec, size, bitrate, width, height, aspect ratio, resolution, frame rate
- * and container. "—" where the scan didn't read it. A file scanned before
+ * container, when it was added and its bits per pixel. "—" where the scan didn't read it. A file scanned before
  * 0.10.0 has no width yet: the server reads it now ("…" meanwhile).
  */
 export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
@@ -57,7 +57,11 @@ export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
   const codec = (file.video_codec || "").toLowerCase();
   const overall = file.duration > 0 ? (file.file_size * 8) / file.duration : 0;
   const fps = file.video_fps ? Number(file.video_fps.toFixed(3)) : 0;
-  const rows: [string, string | null][] = [
+  // The video's bits per pixel per frame (v0.10.0): how densely it's
+  // encoded — high, there's room to shrink; low, little to gain.
+  const bpp = file.video_bitrate && file.video_width && file.video_height && fps
+    ? file.video_bitrate / (file.video_width * file.video_height * fps) : 0;
+  const rows: [string, string | null, string?][] = [
     [t("fileDetail:details.duration"), file.duration > 0 ? fmtDuration(file.duration) : null],
     [t("fileDetail:details.codec"), codec ? [CODEC_NAMES[codec] || codec.toUpperCase(),
       file.video_bit_depth ? t("fileDetail:details.bitDepth", { bits: file.video_bit_depth }) : null,
@@ -72,12 +76,14 @@ export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
     [t("fileDetail:details.frameRate"), fps ? [`${fps} fps`, file.video_vfr ? t("fileDetail:details.variable") : null,
       file.video_interlaced ? t("fileDetail:details.interlaced") : null].filter(Boolean).join(" · ") : null],
     [t("fileDetail:details.container"), container(file)],
+    [t("fileDetail:details.added"), file.file_mtime ? fmtDate(file.file_mtime * 1000) : null],
+    [t("fileDetail:details.bitsPerPixel"), bpp ? bpp.toFixed(3) : null, t("fileDetail:details.bitsPerPixelHelp")],
   ];
   return (
     <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "4px 16px",
                  margin: "4px 0 8px", fontSize: 12 }}>
-      {rows.map(([label, value]) => (
-        <div key={label} style={{ minWidth: 0 }}>
+      {rows.map(([label, value, help]) => (
+        <div key={label} style={{ minWidth: 0 }} title={help}>
           <dt style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</dt>
           <dd style={{ margin: 0, color: value ? "var(--text-secondary)" : "var(--text-muted)", overflowWrap: "anywhere" }}>
             {value ?? (reading ? "…" : "—")}
