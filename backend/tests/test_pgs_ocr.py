@@ -69,7 +69,8 @@ STREAM = b"".join([
 @pytest.fixture
 def tesseract(tmp_path, monkeypatch):
     """A tesseract that reads every image as "line <n>" (n: its place in the
-    listing), pages split by form feeds, as the real one prints them."""
+    listing) with a low-confidence "~~" after it, in its TSV output — one
+    page per listed image, as the real one numbers them."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
     (bindir / "tesseract").write_text(
@@ -77,12 +78,26 @@ def tesseract(tmp_path, monkeypatch):
         "import sys\n"
         "if sys.argv[1] == '--list-langs':\n"
         "    print('List of available languages (1):'); print('eng'); sys.exit()\n"
-        "paths = open(sys.argv[1]).read().split() if sys.argv[1].endswith('.txt') else [sys.argv[1]]\n"
-        "for p in paths:\n"
+        "assert sys.argv[-1] == 'tsv'\n"
+        "paths = open(sys.argv[1]).read().split()\n"
+        "print('level\\tpage_num\\tblock_num\\tpar_num\\tline_num\\tword_num\\tleft\\ttop\\twidth\\theight\\tconf\\ttext')\n"
+        "for page, p in enumerate(paths, 1):\n"
         "    assert open(p, 'rb').read(2) == b'P5'\n"
-        "sys.stdout.write('\\f'.join(f'line {p.rsplit(\"/\", 1)[-1][:5]}' for p in paths))\n")
+        "    name = p.rsplit('/', 1)[-1][:5]\n"
+        "    for n, (word, conf) in enumerate([('line', 96.0), (name, 91.5), ('~~', 12.0)], 1):\n"
+        "        print(f'5\\t{page}\\t1\\t1\\t1\\t{n}\\t0\\t0\\t9\\t9\\t{conf}\\t{word}')\n")
     (bindir / "tesseract").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_unsure_words_are_dropped():
+    """Read with the wrong script's packs, Cyrillic came out as Latin
+    gibberish the detector took for Somali: a subtitle read unsure goes, and
+    a sure one's odd unsure word."""
+    tsv = ("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tl\tt\tw\th\tconf\ttext\n"
+           "5\t1\t1\t1\t1\t1\t0\t0\t9\t9\t95\tHello\n5\t1\t1\t1\t1\t2\t0\t0\t9\t9\t30\tqwx\n"
+           "5\t1\t1\t1\t2\t1\t0\t0\t9\t9\t88\tthere\n5\t2\t1\t1\t1\t1\t0\t0\t9\t9\t20\tzzk\n")
+    assert pgs_ocr._tsv_pages(tsv) == {1: "Hello\nthere"}
 
 
 def test_a_subtitle_shown_again_is_one():

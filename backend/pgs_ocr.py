@@ -194,15 +194,9 @@ def read_text(subs: list[Subtitle], images: dict, packs: tuple[str, ...], worker
             listing = os.path.join(work, f"list-{os.path.basename(chunk[0][1])}.txt")
             with open(listing, "w") as fh:
                 fh.write("\n".join(path for _, path in chunk))
-            env = {**os.environ, "OMP_THREAD_LIMIT": "1"}
-            out = subprocess.run(["tesseract", listing, "stdout", "-l", "+".join(packs), "--psm", "6"],
-                                 capture_output=True, text=True, env=env).stdout.split("\f")
-            if out and not out[-1].strip() and len(out) == len(chunk) + 1:
-                out = out[:-1]
-            if len(out) != len(chunk):  # pages don't line up: one image at a time
-                out = [subprocess.run(["tesseract", path, "stdout", "-l", "+".join(packs), "--psm", "6"],
-                                      capture_output=True, text=True, env=env).stdout for _, path in chunk]
-            return {key: text.strip() for (key, _), text in zip(chunk, out)}
+            out = subprocess.run(["tesseract", listing, "stdout", "-l", "+".join(packs), "--psm", "6", "tsv"],
+                                 capture_output=True, text=True, env={**os.environ, "OMP_THREAD_LIMIT": "1"}).stdout
+            return {chunk[page - 1][0]: text for page, text in _tsv_pages(out).items() if 0 < page <= len(chunk)}
         texts: dict = {}
         with ThreadPoolExecutor(len(chunks) or 1) as pool:
             for part in pool.map(ocr, chunks):
@@ -212,6 +206,42 @@ def read_text(subs: list[Subtitle], images: dict, packs: tuple[str, ...], worker
     finally:
         import shutil
         shutil.rmtree(work, ignore_errors=True)
+
+
+# What tesseract reads unsure of is dropped (v0.10.0): a pass with the wrong
+# script's packs reads Cyrillic as Latin gibberish — a few of its words
+# score 75-85, but a subtitle's average stays near 50 — which the language
+# detector took for Welsh or Somali, so the right pass never ran. A
+# subtitle's text counts when its words average MIN_PAGE_CONFIDENCE (clean
+# ones: 90+), without its words under MIN_WORD_CONFIDENCE.
+MIN_PAGE_CONFIDENCE = 65
+MIN_WORD_CONFIDENCE = 40
+
+
+def _tsv_pages(tsv: str) -> dict[int, str]:
+    """tesseract's TSV output as each page's text: its words, by line, of the
+    pages it read with confidence."""
+    words: dict[int, list[tuple[tuple, float, str]]] = {}
+    for row in tsv.splitlines()[1:]:
+        cols = row.split("\t")
+        if len(cols) < 12 or cols[0] != "5" or not cols[11].strip():
+            continue
+        try:
+            conf = float(cols[10])
+            page, block, par, line = (int(c) for c in cols[1:5])
+        except ValueError:
+            continue
+        words.setdefault(page, []).append(((block, par, line), conf, cols[11].strip()))
+    pages: dict[int, str] = {}
+    for page, found in words.items():
+        if sum(conf for _, conf, _ in found) / len(found) < MIN_PAGE_CONFIDENCE:
+            continue
+        lines: dict[tuple, list[str]] = {}
+        for line, conf, word in found:
+            if conf >= MIN_WORD_CONFIDENCE:
+                lines.setdefault(line, []).append(word)
+        pages[page] = "\n".join(" ".join(ws) for _, ws in sorted(lines.items()))
+    return pages
 
 
 def _stamp(pts: int) -> str:
