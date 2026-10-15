@@ -38,6 +38,25 @@ async def test_detect_image_sub_latin_first_pass(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_pass_out_of_time_ends_the_tracks_detection(monkeypatch):
+    """Dead Tone's two PGS tracks kept a batch busy 20+ minutes: each pass
+    stopped at its limit, then the next — more packs, the whole track —
+    started. The first that runs out of time ends the track's detection."""
+    from backend import image_sub_ocr as io
+    calls = []
+
+    def fake_ocr(sup, langs):
+        calls.append(langs)
+        raise io._PgsRipTimeout("eng")
+    monkeypatch.setattr(io, "_extract_sup", AsyncMock(return_value="/tmp/w/sub.sup"))
+    monkeypatch.setattr(io, "_pgsrip_to_text", fake_ocr)
+    monkeypatch.setattr("tempfile.mkdtemp", lambda **k: "/tmp/w")
+    monkeypatch.setattr("shutil.rmtree", lambda *a, **k: None)
+    assert await io.detect_image_sub_language("/m/f.mkv", 3, "hdmv_pgs_subtitle") == (None, 0.0)
+    assert calls == [io._LATIN_LANGS]
+
+
+@pytest.mark.asyncio
 async def test_detect_image_sub_falls_back_to_non_latin(monkeypatch):
     """Latin pass yields garbage langdetect can't ID → non-Latin pass runs
     and detects Japanese."""
@@ -318,7 +337,8 @@ def test_pgsrip_that_runs_too_long_is_stopped(monkeypatch, tmp_path, capsys):
     sup.write_bytes(b"\x00")
     _fake_pgsrip(tmp_path, monkeypatch, "slow")
     started = time.monotonic()
-    assert io._pgsrip_rip_isolated(str(sup), ("eng",), timeout=2) is None
+    with pytest.raises(io._PgsRipTimeout):  # the track's other passes would only take longer
+        io._pgsrip_rip_isolated(str(sup), ("eng",), timeout=2)
     assert time.monotonic() - started < 20 and "stopped after" in capsys.readouterr().out
 
 

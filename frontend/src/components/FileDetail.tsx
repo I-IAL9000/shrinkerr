@@ -116,14 +116,24 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
   // used to flip `keep` on its own cached copy and save that; the cache was
   // stale after a language change, so unticking two tracks and ticking a
   // third queued all three for removal.
+  // A track ticked or unticked by hand is "your choice", until it's set back
+  // to the rules' choice (auto_keep; v0.10.0) — as the server marks it
+  // (scanner.mark_manual_choices). Marked before that was kept: stays.
+  const toggled = <T extends { keep: boolean; manual?: boolean; auto_keep?: boolean }>(t: T): T => {
+    const auto = t.manual ? t.auto_keep : t.keep;
+    const keep = !t.keep;
+    return auto !== undefined && keep === auto
+      ? { ...t, keep, manual: false, auto_keep: undefined }
+      : { ...t, keep, manual: true, auto_keep: auto };
+  };
   const handleToggleAudioLocal = (idx: number) => {
-    const next = audioTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep, manual: true } : t);
+    const next = audioTracks.map(t => t.stream_index === idx ? toggled(t) : t);
     setFetchedAudio(next);
     setDetected(true);
     onAudioTracksChange?.(file, next, true);
   };
   const handleToggleSubLocal = (_fp: string, idx: number) => {
-    const next = subtitleTracks.map(t => t.stream_index === idx ? { ...t, keep: !t.keep, manual: true } : t);
+    const next = subtitleTracks.map(t => t.stream_index === idx ? toggled(t) : t);
     setFetchedSubs(next);
     setDetected(true);
     onSubTracksChange?.(file, next, true);

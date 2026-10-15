@@ -539,10 +539,7 @@ export default function PosterGrid({
                   : credits.studio?.length ? <span key="std" className="title-meta-group">{links("studio", credits.studio.slice(0, 2))}</span>
                   : null,
               ]);
-              return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                {(() => {
+              const imdbNode = (() => {
                   // v0.10.0: to the title on IMDb (its id from the folder
                   // name or TMDB), else an IMDb search. A TMDB rating is
                   // labelled TMDB.
@@ -569,7 +566,10 @@ export default function PosterGrid({
                         : <>{imdb}{stars}</>}
                     </span>
                   );
-                })()}
+              })();
+              return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 {meta?.media_type && (
                   // The poster's own badge colours: on this row's background the old one vanished.
                   <span style={{ background: tv ? "#0D54E4" : "rgba(145, 53, 255, 0.85)", color: "white", fontWeight: 700,
@@ -581,6 +581,7 @@ export default function PosterGrid({
                   meta?.year ? <span key="year">{link("year", String(meta.year))}</span> : null,
                   split(meta?.genres).length ? <span key="genres">{links("genre", split(meta?.genres))}</span> : null,
                   split(meta?.country).length ? <span key="country">{links("country", split(meta?.country))}</span> : null,
+                  imdbNode ? <span key="imdb">{imdbNode}</span> : null,
                 ])}
                 {parentFolder && (
                   <span style={{ marginLeft: "auto", background: "rgba(104,96,254,0.25)", color: "var(--accent-text)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>

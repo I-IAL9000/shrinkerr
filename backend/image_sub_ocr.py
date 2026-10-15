@@ -186,6 +186,12 @@ class _PgsRipError(Exception):
     burning minutes re-extracting. v0.9.53."""
 
 
+class _PgsRipTimeout(_PgsRipError):
+    """pgsrip ran past its time limit (v0.10.0): the other passes — more
+    language packs, the whole track — only take longer, so the track's
+    detection ends here too."""
+
+
 _tess_lang = threading.local()
 
 
@@ -291,7 +297,7 @@ def _pgsrip_rip_isolated(sup_path: str, tess_langs: tuple[str, ...], timeout: in
                               capture_output=True, text=True, timeout=timeout, cwd=root)
     except subprocess.TimeoutExpired:  # run() has killed it
         print(f"[IMG-OCR] pgsrip ({','.join(packs)}) stopped after {timeout // 60} min: {sup_path}", flush=True)
-        return None
+        raise _PgsRipTimeout(",".join(packs))
     except OSError as exc:
         print(f"[IMG-OCR] pgsrip couldn't start: {exc}", flush=True)
         return None
@@ -569,6 +575,10 @@ async def detect_image_sub_language(
             return (None, 0.0)
         result = await _ocr_pgs(sup)
         return result if result else (None, 0.0)
+    except _PgsRipTimeout as exc:
+        print(f"[IMG-OCR] {os.path.basename(file_path)} s{stream_index}: OCR ({exc}) ran out of time; "
+              f"skipping the remaining passes", flush=True)
+        return (None, 0.0)
     except _PgsRipError as exc:
         # Hard decode failure — propagated from the first pgsrip pass so we
         # skip the remaining passes and the full-track re-extraction. v0.9.53.

@@ -1564,12 +1564,25 @@ def _same_stream(a: dict, b: dict) -> bool:
 
 def mark_manual_choices(edited: list[dict], stored: list[dict]) -> list[dict]:
     """Mark the tracks of an edit whose keep/remove differs from the stored
-    one (or were marked before)."""
+    one (or were marked before), with the rules' choice ("auto_keep"): set
+    back to it, a track is the rules' again (v0.10.0: "your choice" stayed
+    after unticking). Marked before the rules' choice was kept: stays marked."""
     before = {t.get("stream_index"): t for t in stored}
     for t in edited:
+        t.pop("manual", None)
+        t.pop("auto_keep", None)
         old = before.get(t.get("stream_index"))
-        if old is None or old.get("manual") or bool(old.get("keep", True)) != bool(t.get("keep", True)):
+        keep = bool(t.get("keep", True))
+        if old is None:
             t["manual"] = True
+            continue
+        auto = old.get("auto_keep") if old.get("manual") else bool(old.get("keep", True))
+        if auto is not None and keep == bool(auto):
+            continue  # the rules' choice
+        if old.get("manual") or keep != bool(old.get("keep", True)):
+            t["manual"] = True
+            if auto is not None:
+                t["auto_keep"] = bool(auto)
     return edited
 
 
@@ -1584,6 +1597,7 @@ def keep_manual_choices(fresh: list[dict], stored: list[dict], audio: bool = Fal
     for t in fresh:
         old = next((m for m in manual if _same_stream(m, t)), None)
         if old is not None:
+            t["auto_keep"] = bool(t.get("keep", True))  # the rules' choice now
             t["keep"] = bool(old.get("keep", True))
             t["manual"] = True
     if audio and fresh and rules_kept is not None and not any(t.get("keep", True) for t in fresh):

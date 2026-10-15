@@ -21,6 +21,17 @@ def test_an_edit_marks_the_tracks_it_changed():
     edited = [tr(1, "eng", True), tr(2, "fra", True), tr(3, "spa", False)]
     out = mark_manual_choices(edited, stored)
     assert [t.get("manual", False) for t in out] == [False, True, True]  # 3: marked before
+    assert out[1]["auto_keep"] is False and "auto_keep" not in out[2]  # 3: its rules' choice unknown
+
+
+def test_setting_a_track_back_to_the_rules_choice_unmarks_it():
+    """Ticked, then unticked: "your choice" stayed. Back to what the rules
+    said, the track is theirs again."""
+    stored = [tr(1, "eng", True), tr(2, "fra", False)]
+    ticked = mark_manual_choices([tr(1, "eng", True), tr(2, "fra", True)], stored)
+    assert ticked[1]["manual"] and ticked[1]["auto_keep"] is False
+    unticked = mark_manual_choices([tr(1, "eng", True), tr(2, "fra", False)], ticked)
+    assert not any(t.get("manual") or "auto_keep" in t for t in unticked)
 
 
 def test_choices_carry_onto_the_same_stream_only():

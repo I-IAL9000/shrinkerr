@@ -14,6 +14,7 @@ export interface AudioTrack {
   detect_note_key?: string | null;     // v0.9.132 message code
   detect_note_params?: Record<string, unknown> | null;
   manual?: boolean;  // v0.10.0: keep/remove set by hand — rules leave it alone
+  auto_keep?: boolean;  // the rules' keep/remove for a manual track (set back to it: not manual)
 }
 
 export interface SubtitleTrack {
@@ -31,6 +32,7 @@ export interface SubtitleTrack {
   detect_note_key?: string | null;     // v0.9.132 message code
   detect_note_params?: Record<string, unknown> | null;
   manual?: boolean;  // v0.10.0: keep/remove set by hand — rules leave it alone
+  auto_keep?: boolean;  // the rules' keep/remove for a manual track (set back to it: not manual)
 }
 
 export interface ScannedFile {
