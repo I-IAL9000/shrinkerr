@@ -19,6 +19,10 @@
     "selectItem": "Select {{name}}"
   },
   "poster": {
+    "directedBy": "Directed by",
+    "createdBy": "Created by",
+    "starring": "Starring",
+    "filterBy": "Show only {{value}}",
     "fixMatchTitle": "Fix TMDB match",
     "noFilesFound": "No files found",
     "filesLoadFailed": "The files couldn't be loaded ({{error}})."

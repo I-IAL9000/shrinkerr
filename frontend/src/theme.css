@@ -1208,3 +1208,12 @@ input[type="checkbox"] { cursor: pointer; }
 
 /* A track kept or removed by hand (v0.10.0) */
 .track-manual { font-size: 0.8em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; white-space: nowrap; }
+
+/* v0.10.0: an open title's details (PosterGrid): each value filters the Scanner by it. */
+.title-meta-link {
+  background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--text-secondary); cursor: pointer;
+}
+.title-meta-link:hover, .title-meta-link:focus-visible { color: var(--text-primary); text-decoration: underline; }
+.title-meta-sep { color: var(--text-muted); opacity: 0.6; }
+.title-meta-group { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0; }
+.title-meta-label { margin-right: 4px; }

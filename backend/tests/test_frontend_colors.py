@@ -16,6 +16,7 @@ ALLOWED = {
     "pages/DesignPage.tsx": None,  # dev-only design reference (not in production builds)
     "App.tsx": {"#4920f0", "#6a64ff"},  # brand gradient behind white text
     "components/PosterCard.tsx": {"#0d54e4"},  # TV badge fill behind white text
+    "components/PosterGrid.tsx": {"#0d54e4"},  # the same TV badge, in an open title's details
     "components/PosterFixModal.tsx": {"#0d54e4"},
     "pages/SettingsPage.tsx": {"#e5a00d", "#1f1f1f"},  # Plex's own sign-in button colours
     "pages/DashboardPage.tsx": {  # chart palettes (fills, not text)

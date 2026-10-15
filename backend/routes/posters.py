@@ -307,6 +307,17 @@ async def _mark_shrink_done() -> None:
         await db.close()
 
 
+def _title_extras(network: str | None, status: str | None, credits: str | None) -> dict:
+    """A title's network, show status and credits for the Poster grid's
+    details (v0.10.0): credits as stored (_credits_of's JSON), parsed."""
+    try:
+        parsed = json.loads(credits) if credits else None
+    except ValueError:
+        parsed = None
+    return {"network": network or None, "status": status or None,
+            "credits": parsed if isinstance(parsed, dict) else None}
+
+
 def _rating(imdb_id: str | None, tmdb_rating: float | None) -> dict:
     """The title's rating: IMDb's (the dataset) when its IMDb id is known and
     rated, else TMDB's — with which it is, for the label."""
@@ -487,7 +498,7 @@ async def resolve_posters(req: ResolveRequest):
             chunk = req.paths[i:i + CHUNK]
             placeholders = ",".join("?" for _ in chunk)
             async with db.execute(
-                f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, imdb_id, resolved_at FROM poster_cache WHERE folder_path IN ({placeholders})",
+                f"SELECT folder_path, title, year, poster_url, source, image_data, rating, genres, country, media_type, imdb_id, resolved_at, network, status, credits FROM poster_cache WHERE folder_path IN ({placeholders})",
                 chunk,
             ) as cur:
                 cached_rows.update({r["folder_path"]: r for r in await cur.fetchall()})
@@ -587,6 +598,7 @@ async def resolve_posters(req: ResolveRequest):
                     "media_type": row["media_type"],
                     "imdb_id": imdb_id or None,
                     **_rating(imdb_id, row["rating"]),
+                    **_title_extras(row["network"], row["status"], row["credits"]),
                 }
                 if not row["media_type"]:
                     needs_media_type.append(path)
@@ -859,6 +871,7 @@ async def resolve_posters(req: ResolveRequest):
                 "media_type": tmdb_meta.get("media_type"),
                 "imdb_id": imdb_id or None,
                 **_rating(imdb_id, tmdb_meta.get("rating")),
+                **_title_extras(tmdb_meta.get("network"), tmdb_meta.get("status"), tmdb_meta.get("credits")),
             }
             result[path] = entry
             if found["failed"]:

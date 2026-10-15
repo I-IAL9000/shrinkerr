@@ -1973,6 +1973,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
               onUnignoreFile={handleUnignoreFile}
               onDeleteFile={handleDeleteFile}
               onFolderFilesLoaded={handleFolderFilesLoaded}
+              onFilter={(token) => setFilters(prev => (prev.includes(token) ? prev : toggleFilter(prev, token, false)))}
               mediaDirs={mediaDirPaths}
               sortBy={sortBy}
               sortDir={sortDir}

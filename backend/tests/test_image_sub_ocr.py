@@ -1,3 +1,4 @@
+import os
 import pytest
 from unittest.mock import patch, AsyncMock
 
@@ -265,33 +266,66 @@ def test_subtile_ocr_empty_srt_returns_none(monkeypatch, tmp_path):
     assert io._subtile_ocr_to_text(str(idx), "eng") is None
 
 
-def test_pgsrip_reads_srt_and_returns_text(monkeypatch, tmp_path):
+def _fake_pgsrip(tmp_path, monkeypatch, mode: str) -> None:
+    """A pgsrip and a tesseract for the OCR process (backend.pgsrip_child) to
+    find: `mode` "ok" writes an .srt, "slow" never ends, "broken" can't rip."""
+    fakes = tmp_path / "fakes"
+    (fakes / "pgsrip").mkdir(parents=True)
+    (fakes / "babelfish").mkdir()
+    (fakes / "pgsrip" / "__init__.py").write_text(
+        "import logging, os, time\n"
+        "class Options:\n    def __init__(self, **kw): pass\n"
+        "def Sup(path): return path\n"
+        "class _Rip:\n"
+        "    def rip(self, media, opts):\n"
+        f"        mode = {mode!r}\n"
+        "        if mode == 'slow': time.sleep(60)\n"
+        "        if mode == 'broken':\n"
+        "            logging.getLogger('pgsrip').error('Error while trying to rip'); return\n"
+        "        open(os.path.splitext(media)[0] + '.srt', 'w').write("
+        "'1\\n00:00:01,000 --> 00:00:02,000\\nHello there.\\n')\n"
+        "pgsrip = _Rip()\n")
+    (fakes / "pgsrip" / "utils.py").write_text("def from_hex(b): return int(b.hex(), 16)\n")
+    (fakes / "pgsrip" / "ripper.py").write_text("tess = None\n")
+    (fakes / "babelfish" / "__init__.py").write_text("def Language(code): return code\n")
+    (fakes / "tesseract").write_text("#!/bin/sh\necho 'List of available languages (1):'\necho eng\n")
+    (fakes / "tesseract").chmod(0o755)
+    monkeypatch.setenv("PYTHONPATH", str(fakes))
+    monkeypatch.setenv("PATH", f"{fakes}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_pgsrip_reads_srt_and_returns_text(monkeypatch, tmp_path, capsys):
     """Real body: pgsrip writes an .srt → we read + strip it and the OCR-yield
     log runs with `tess_langs`. Regression guard for the v0.9.77 wrong-variable
-    (tess_lang vs tess_langs) NameError that only fires on a produced srt."""
-    import sys
-    import types
+    (tess_lang vs tess_langs) NameError that only fires on a produced srt.
+    pgsrip runs in its own process (v0.10.0), whose log reaches the server's."""
     from backend import image_sub_ocr as io
     sup = tmp_path / "sub.sup"
     sup.write_bytes(b"\x00")
-    srt = tmp_path / "sub.srt"
-    monkeypatch.setattr(io, "_patch_pgsrip_from_hex", lambda: None)
-    monkeypatch.setattr(io, "_patch_pgsrip_tesseract", lambda: None)
-    monkeypatch.setattr(io, "tesseract_languages", lambda: frozenset({"eng"}))
-
-    fake_pgsrip = types.ModuleType("pgsrip")
-
-    class _Rip:
-        def rip(self, media, opts):
-            srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello there.\n")
-
-    fake_pgsrip.pgsrip = _Rip()
-    fake_pgsrip.Sup = lambda p: p
-    fake_pgsrip.Options = lambda **kw: kw
-    fake_babel = types.ModuleType("babelfish")
-    fake_babel.Language = lambda code: code
-    monkeypatch.setitem(sys.modules, "pgsrip", fake_pgsrip)
-    monkeypatch.setitem(sys.modules, "babelfish", fake_babel)
-
+    _fake_pgsrip(tmp_path, monkeypatch, "ok")
     out = io._pgsrip_to_text(str(sup), ("eng",))
     assert out is not None and "Hello there." in out
+    assert "OCR'd" in capsys.readouterr().out
+
+
+def test_pgsrip_that_runs_too_long_is_stopped(monkeypatch, tmp_path, capsys):
+    """A Blu-ray's subtitles took pgsrip 25+ minutes, in a thread nothing
+    could stop, and the app crawled meanwhile: it's a process now, stopped
+    at its time limit."""
+    import time
+    from backend import image_sub_ocr as io
+    sup = tmp_path / "sub.sup"
+    sup.write_bytes(b"\x00")
+    _fake_pgsrip(tmp_path, monkeypatch, "slow")
+    started = time.monotonic()
+    assert io._pgsrip_rip_isolated(str(sup), ("eng",), timeout=2) is None
+    assert time.monotonic() - started < 20 and "stopped after" in capsys.readouterr().out
+
+
+def test_a_sup_pgsrip_cant_decode_is_still_told_apart(monkeypatch, tmp_path):
+    from backend import image_sub_ocr as io
+    sup = tmp_path / "sub.sup"
+    sup.write_bytes(b"\x00")
+    _fake_pgsrip(tmp_path, monkeypatch, "broken")
+    with pytest.raises(io._PgsRipError):
+        io._pgsrip_rip_isolated(str(sup), ("eng",), timeout=60)

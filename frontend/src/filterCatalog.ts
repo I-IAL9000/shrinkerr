@@ -67,7 +67,7 @@ export function normalizeFilters(tokens: string[]): string[] {
 // track's field trimmed of spaces with its ASCII letters lower case, a
 // language by its B code, a channel band, Science Fiction as Sci-Fi
 // (scan_filters.genre_parts); null for one it can't have.
-function listValue(facet: string, value: string): string | null {
+export function listValue(facet: string, value: string): string | null {
   if (!value) return null;
   if (facet === "achan") return ["1", "2", "6", "8"].includes(value) ? value : null;
   if (facet === "genre") return value.trim().toLowerCase() === "science fiction" ? "sci-fi" : value;

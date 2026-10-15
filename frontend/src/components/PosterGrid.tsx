@@ -11,6 +11,7 @@ import { naturalCompare } from "../utils/naturalCompare";
 import { posterOutline, type Box } from "../posterOutline";
 import { pressable } from "../utils/a11y";
 import { fmtBytes } from "../fmt";
+import { listToken, listValue } from "../filterCatalog";
 
 interface PosterMeta {
   title: string;
@@ -25,6 +26,11 @@ interface PosterMeta {
   rating_source?: string | null;
   // From TMDB when the folder name has none (v0.10.0).
   imdb_id?: string | null;
+  // v0.10.0: a show's network and status; credits (TMDB's top-billed
+  // actors, a film's directors / a show's creators, studios).
+  network?: string | null;
+  status?: string | null;
+  credits?: { actor?: string[]; director?: string[]; studio?: string[] } | null;
 }
 
 interface TitleGroup {
@@ -62,6 +68,8 @@ interface PosterGridProps {
   mediaDirs?: string[];
   sortBy?: "name" | "size" | "files" | "date" | "savings";
   sortDir?: "asc" | "desc";
+  // A list filter's token ("genre:drama") to apply: an open title's details link to them (v0.10.0).
+  onFilter?: (token: string) => void;
 }
 
 export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
@@ -145,6 +153,7 @@ export default function PosterGrid({
   onFolderFilesLoaded,
   mediaDirs,
   sortBy = "name", sortDir = "asc",
+  onFilter,
 }: PosterGridProps) {
   const { t } = useTranslation(["library", "common"]);
   const mediaRoots = useMemo(
@@ -503,8 +512,36 @@ export default function PosterGrid({
                 return parts.length > 1 ? parts[parts.length - 2] : null;
               })() : null;
 
+              // v0.10.0: the title's details, each a link that filters the
+              // Scanner by it, as its list in a filter menu does.
+              const link = (facet: string, value: string) => {
+                const v = listValue(facet, facet === "genre" ? value.trim().toLowerCase() : value.trim());
+                return onFilter && v ? (
+                  <button key={`${facet}:${value}`} type="button" className="title-meta-link"
+                    title={t("library:poster.filterBy", { value })} onClick={() => onFilter(listToken(facet, v))}>{value}</button>
+                ) : <span key={`${facet}:${value}`}>{value}</span>;
+              };
+              const links = (facet: string, values: string[]) =>
+                values.flatMap((v, i) => (i ? [<span key={`c${i}`}>, </span>, link(facet, v)] : [link(facet, v)]));
+              const split = (text?: string | null) => (text ?? "").split(",").map(x => x.trim()).filter(Boolean);
+              const joined = (parts: React.ReactNode[]) => parts.filter(Boolean).flatMap((p, i) =>
+                (i ? [<span key={`d${i}`} className="title-meta-sep" aria-hidden="true">·</span>, p] : [p]));
+              const tv = meta?.media_type === "tv";
+              const credits = meta?.credits ?? {};
+              const people = joined([
+                credits.director?.length ? <span key="dir" className="title-meta-group">
+                  <span className="title-meta-label">{t(tv ? "library:poster.createdBy" : "library:poster.directedBy")}</span>
+                  {links("director", credits.director.slice(0, 2))}</span> : null,
+                credits.actor?.length ? <span key="act" className="title-meta-group">
+                  <span className="title-meta-label">{t("library:poster.starring")}</span>
+                  {links("actor", credits.actor.slice(0, 3))}</span> : null,
+                tv && meta?.network ? <span key="net" className="title-meta-group">{link("network", meta.network)}</span>
+                  : credits.studio?.length ? <span key="std" className="title-meta-group">{links("studio", credits.studio.slice(0, 2))}</span>
+                  : null,
+              ]);
               return (
-              <div style={{ display: "flex", gap: 10, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)", flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 12px", fontSize: 11, color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 {(() => {
                   // v0.10.0: to the title on IMDb (its id from the folder
                   // name or TMDB), else an IMDb search. A TMDB rating is
@@ -534,17 +571,24 @@ export default function PosterGrid({
                   );
                 })()}
                 {meta?.media_type && (
-                  <span style={{ background: "var(--bg-primary)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
-                    {meta.media_type === "tv" ? t("library:badges.tv") : t("library:badges.movie")}
+                  // The poster's own badge colours: on this row's background the old one vanished.
+                  <span style={{ background: tv ? "#0D54E4" : "rgba(145, 53, 255, 0.85)", color: "white", fontWeight: 700,
+                    padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
+                    {tv ? t("library:badges.tv") : t("library:badges.movie")}
                   </span>
                 )}
-                {meta?.genres && <span>{meta.genres}</span>}
-                {meta?.country && <span>{meta.country}</span>}
+                {joined([
+                  meta?.year ? <span key="year">{link("year", String(meta.year))}</span> : null,
+                  split(meta?.genres).length ? <span key="genres">{links("genre", split(meta?.genres))}</span> : null,
+                  split(meta?.country).length ? <span key="country">{links("country", split(meta?.country))}</span> : null,
+                ])}
                 {parentFolder && (
                   <span style={{ marginLeft: "auto", background: "rgba(104,96,254,0.25)", color: "var(--accent-text)", padding: "1px 6px", borderRadius: 3, fontSize: 10 }}>
                     {parentFolder}
                   </span>
                 )}
+              </div>
+              {people.length > 0 && <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>{people}</div>}
               </div>
             ); })()}
             {loadingFiles ? (

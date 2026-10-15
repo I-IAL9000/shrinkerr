@@ -257,12 +257,66 @@ def _pgsrip_rip(sup_path: str, tess_langs: tuple[str, ...] = ()) -> str | None:
     return srt
 
 
+def _ocr_timeout(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+# How long one pgsrip run may take before it's stopped (seconds): a language
+# detection pass reads a sample (_pgs_sample_seconds), a conversion's SRT the
+# whole track.
+PGS_DETECT_TIMEOUT = _ocr_timeout("SHRINKERR_PGS_OCR_TIMEOUT", 600)
+PGS_SRT_TIMEOUT = _ocr_timeout("SHRINKERR_PGS_SRT_TIMEOUT", 3600)
+
+
+def _pgsrip_rip_isolated(sup_path: str, tess_langs: tuple[str, ...], timeout: int) -> str | None:
+    """_pgsrip_rip in a process of its own (backend.pgsrip_child), stopped
+    after `timeout` seconds: in a thread of the server it held the
+    interpreter lock and the whole app crawled (v0.10.0). Sync — it waits on
+    the process, which holds no lock; callers run it in an executor. The
+    .srt's path or None; raises _PgsRipError as _pgsrip_rip does."""
+    import json
+    import subprocess
+    import sys
+    from backend.pgsrip_child import RESULT
+    packs = [p for p in tess_langs if p in tesseract_languages()]
+    if not packs:
+        print(f"[IMG-OCR] No tesseract pack installed for {','.join(tess_langs) or '?'}", flush=True)
+        return None
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        proc = subprocess.run([sys.executable, "-m", "backend.pgsrip_child", sup_path, "+".join(packs)],
+                              capture_output=True, text=True, timeout=timeout, cwd=root)
+    except subprocess.TimeoutExpired:  # run() has killed it
+        print(f"[IMG-OCR] pgsrip ({','.join(packs)}) stopped after {timeout // 60} min: {sup_path}", flush=True)
+        return None
+    except OSError as exc:
+        print(f"[IMG-OCR] pgsrip couldn't start: {exc}", flush=True)
+        return None
+    result = None
+    for line in (proc.stdout or "").splitlines():
+        if line.startswith(RESULT):
+            result = json.loads(line[len(RESULT):])
+        elif line.strip():
+            print(line, flush=True)  # its own [IMG-OCR] lines, in the server's log
+    if result is None:
+        tail = (proc.stderr or "").strip()[-300:]
+        print(f"[IMG-OCR] pgsrip ended without a result (rc={proc.returncode}): {tail}", flush=True)
+        return None
+    if result.get("rip_error"):
+        raise _PgsRipError(",".join(packs))
+    return result.get("srt")
+
+
 def _pgsrip_to_text(sup_path: str, tess_langs: tuple[str, ...]) -> str | None:
     """Run pgsrip on a .sup with the given tesseract language(s); read the
-    produced .srt and return its dialogue text. Sync (pgsrip is blocking);
-    the caller runs it in an executor. Returns None on empty output; raises
-    _PgsRipError when pgsrip cannot decode the .sup at all."""
-    srt = _pgsrip_rip(sup_path, tess_langs)
+    produced .srt and return its dialogue text. Sync (pgsrip runs in its own
+    process, _pgsrip_rip_isolated); the caller runs it in an executor.
+    Returns None on empty output; raises _PgsRipError when pgsrip cannot
+    decode the .sup at all."""
+    srt = _pgsrip_rip_isolated(sup_path, tess_langs, PGS_DETECT_TIMEOUT)
     if not srt:
         return None
     try:
@@ -669,7 +723,8 @@ async def image_subs_to_srt(input_path: str, plan: list[dict], workdir: str) -> 
             continue
         try:
             if t["codec"] in _PGS_CODECS:
-                srt = await loop.run_in_executor(None, _pgsrip_rip, src, tuple(t["pack"].split("+")))
+                srt = await loop.run_in_executor(None, _pgsrip_rip_isolated, src, tuple(t["pack"].split("+")),
+                                                 PGS_SRT_TIMEOUT)
             else:
                 srt = await loop.run_in_executor(None, _subtile_ocr_run, src, t["pack"])
         except _PgsRipError:
