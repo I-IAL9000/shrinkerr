@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Chevron from "./Chevron";
 
 export interface ActionMenuItem {
   label: string;
@@ -61,7 +62,7 @@ export default function ActionMenu({ label, items, buttonStyle }: {
         style={{ ...buttonStyle, display: "inline-flex", alignItems: "center", gap: 6 }}
       >
         {label}
-        <span aria-hidden="true" style={{ fontSize: 8 }}>{"▼"}</span>
+        <Chevron />
       </button>
       {open && (
         <div
