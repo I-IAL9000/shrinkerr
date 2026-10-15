@@ -155,7 +155,7 @@
     "container": "Container",
     "added": "Added",
     "bitsPerPixel": "Bits per pixel",
-    "bitsPerPixelHelp": "The video's bitrate per pixel per frame: how densely it's encoded. A high value (above ~0.1 for H.264) leaves room to shrink; a low one, little to gain.",
+    "bitsPerPixelHelp": "The file's bitrate per pixel per frame: how densely it's encoded. The \"Big for its resolution\" filter flags files above 0.25 (H.264 and older) or 0.15 (HEVC, AV1, VP9); a low value leaves little to gain.",
     "bitDepth": "{{bits}}-bit",
     "videoBitrate": "video {{rate}}",
     "variable": "variable",

@@ -33,10 +33,11 @@ function container(file: ScannedFile): string | null {
 }
 
 /**
- * A file's video details for the Scanner's file panel (v0.10.0): duration,
- * codec, size, bitrate, width, height, aspect ratio, resolution, frame rate
- * container, when it was added and its bits per pixel. "—" where the scan didn't read it. A file scanned before
- * 0.10.0 has no width yet: the server reads it now ("…" meanwhile).
+ * A file's video details for the Scanner's file panel (v0.10.0): the picture
+ * (codec, resolution, width, height, aspect ratio, frame rate), then the file
+ * (container, duration, size, bitrate, bits per pixel, when it was added). "—"
+ * where the scan didn't read it. A file scanned before 0.10.0 has no width
+ * yet: the server reads it now ("…" meanwhile).
  */
 export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
   const { t } = useTranslation(["fileDetail"]);
@@ -57,27 +58,29 @@ export default function VideoDetails({ file: listed }: { file: ScannedFile }) {
   const codec = (file.video_codec || "").toLowerCase();
   const overall = file.duration > 0 ? (file.file_size * 8) / file.duration : 0;
   const fps = file.video_fps ? Number(file.video_fps.toFixed(3)) : 0;
-  // The video's bits per pixel per frame (v0.10.0): how densely it's
-  // encoded — high, there's room to shrink; low, little to gain.
-  const bpp = file.video_bitrate && file.video_width && file.video_height && fps
-    ? file.video_bitrate / (file.video_width * file.video_height * fps) : 0;
+  // Bits per pixel per frame (v0.10.0), as the "Big for its resolution"
+  // filter reads it (scan_filters._BPP): the whole file's bitrate, the
+  // width or a 16:9 one, 24 fps when unknown, so the two agree.
+  const pixels = file.video_height ? (file.video_width || file.video_height * 16 / 9) * file.video_height : 0;
+  const bpp = overall && pixels ? overall / (pixels * (file.video_fps || 24)) : 0;
+  // The picture, then the file.
   const rows: [string, string | null, string?][] = [
-    [t("fileDetail:details.duration"), file.duration > 0 ? fmtDuration(file.duration) : null],
     [t("fileDetail:details.codec"), codec ? [CODEC_NAMES[codec] || codec.toUpperCase(),
       file.video_bit_depth ? t("fileDetail:details.bitDepth", { bits: file.video_bit_depth }) : null,
       hdrLabel(file.hdr_format)].filter(Boolean).join(" · ") : null],
-    [t("fileDetail:details.size"), file.file_size ? fmtBytes(file.file_size) : null],
-    [t("fileDetail:details.bitrate"), overall ? fmtBitrate(overall) + (file.video_bitrate
-      ? ` (${t("fileDetail:details.videoBitrate", { rate: fmtBitrate(file.video_bitrate) })})` : "") : null],
+    [t("fileDetail:details.resolution"), file.resolution ? TIERS[file.resolution] : null],
     [t("fileDetail:details.width"), file.video_width ? `${file.video_width} px` : null],
     [t("fileDetail:details.height"), file.video_height ? `${file.video_height} px` : null],
     [t("fileDetail:details.aspectRatio"), aspectRatio(file.video_dar, file.video_width, file.video_height)],
-    [t("fileDetail:details.resolution"), file.resolution ? TIERS[file.resolution] : null],
     [t("fileDetail:details.frameRate"), fps ? [`${fps} fps`, file.video_vfr ? t("fileDetail:details.variable") : null,
       file.video_interlaced ? t("fileDetail:details.interlaced") : null].filter(Boolean).join(" · ") : null],
     [t("fileDetail:details.container"), container(file)],
-    [t("fileDetail:details.added"), file.file_mtime ? fmtDate(file.file_mtime * 1000) : null],
+    [t("fileDetail:details.duration"), file.duration > 0 ? fmtDuration(file.duration) : null],
+    [t("fileDetail:details.size"), file.file_size ? fmtBytes(file.file_size) : null],
+    [t("fileDetail:details.bitrate"), overall ? fmtBitrate(overall) + (file.video_bitrate
+      ? ` (${t("fileDetail:details.videoBitrate", { rate: fmtBitrate(file.video_bitrate) })})` : "") : null],
     [t("fileDetail:details.bitsPerPixel"), bpp ? bpp.toFixed(3) : null, t("fileDetail:details.bitsPerPixelHelp")],
+    [t("fileDetail:details.added"), file.file_mtime ? fmtDate(file.file_mtime * 1000) : null],
   ];
   return (
     <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "4px 16px",
