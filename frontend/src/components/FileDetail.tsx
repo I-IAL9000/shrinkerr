@@ -261,8 +261,9 @@ export default function FileDetail({ file, onAudioTracksChange, onSubTracksChang
 
   return (
     <div className="file-detail">
-      {/* Tree rows truncate long names; the full one lives here. */}
-      <div style={{ color: "var(--text-secondary)", marginBottom: 2, overflowWrap: "anywhere" }}>{file.file_name}</div>
+      {/* Tree rows truncate long names; the full one lives here — with its
+          folder (v0.10.0: the name alone repeated the row's). */}
+      <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 2, overflowWrap: "anywhere" }}>{file.file_path}</div>
       <VideoDetails file={file} />
       {file.hdr_format?.startsWith("dv") && (
         <div style={{ color: "var(--text-muted)", fontSize: 12, marginBottom: 4 }}>{t("library:badges.dolbyVision")}</div>
