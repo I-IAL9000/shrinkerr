@@ -20,6 +20,8 @@ Classification rules:
       auto-ignore / queue decisions — we just surface the
       messages so the user can see what was noticed)
     * Any stderr line matches a known *fatal* pattern     → "corrupt"
+      (an audio decoder's lost frame — GLITCH_PATTERNS — only past
+      AUDIO_GLITCHES of them: a few are a warning)
     * Unrecognised stderr lines OR non-zero exit          → "corrupt"
 
 The benign patterns below are documented false positives that crop up on
@@ -102,6 +104,16 @@ FATAL_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for 
 ))
 
 
+# An audio decoder losing a frame now and then — a DVD rip's MP3 track with
+# a damaged frame plays fine, the player skips it — is a warning up to
+# AUDIO_GLITCHES times in the file (v0.10.0: one "Header missing" marked a
+# playable episode corrupt); past that the audio is damaged.
+GLITCH_PATTERNS: tuple[re.Pattern, ...] = tuple(re.compile(p, re.IGNORECASE) for p in (
+    r"\[(?:mp3|mp3float|mp2|mp2float|mp1|mp1float|aac|ac3|ac3_fixed|eac3) @ [^\]]+\]\s*header missing",
+))
+AUDIO_GLITCHES = 10
+
+
 def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, list[str]]:
     """Classify ffprobe/ffmpeg stderr into (status, cleaned_errors).
 
@@ -120,9 +132,14 @@ def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, li
 
     capped = unique[:10]
 
+    # A few audio glitches are benign; many are damage (counted before the dedup).
+    glitches = sum(1 for ln in lines if any(p.search(ln) for p in GLITCH_PATTERNS))
+    def glitch(ln: str) -> bool:
+        return glitches <= AUDIO_GLITCHES and any(p.search(ln) for p in GLITCH_PATTERNS)
+
     # Any fatal match → corrupt, full stop.
     for ln in unique:
-        if any(p.search(ln) for p in FATAL_PATTERNS):
+        if any(p.search(ln) for p in FATAL_PATTERNS) and not glitch(ln):
             return "corrupt", capped
 
     # Non-zero returncode without a recognised fatal line — still treat as
@@ -136,7 +153,7 @@ def classify_errors(stderr_text: str, returncode: int) -> tuple[HealthStatus, li
 
     # If every line matches a benign pattern, the file is effectively healthy
     # but we surface the messages under the "warnings" label.
-    if all(any(p.search(ln) for p in BENIGN_PATTERNS) for ln in unique):
+    if all(glitch(ln) or any(p.search(ln) for p in BENIGN_PATTERNS) for ln in unique):
         return "warnings", capped
 
     # Unrecognised stderr → treat as corrupt. Better to surface false
