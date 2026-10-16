@@ -1083,12 +1083,14 @@ async def _cleanup_expired_backups():
 
 
 async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
-                                     current_file_path: str) -> Optional[dict]:
+                                     current_file_path: str, output_codec: Optional[str] = None) -> Optional[dict]:
     """Point a job and its scan_results row at the output that replaced
     `file_path` (now at `current_file_path`): new path, size, codec, and the
     re-probed tracks sorted again. Shared by the local worker and remote-node
     completions, which never updated the row (H7, v0.10.0). Returns the
-    output's probe (None if it failed) for the caller to reuse (M7)."""
+    output's probe (None if it failed) for the caller to reuse (M7).
+    `output_codec` is the codec the job encoded ("hevc" / "av1"), for when
+    the output can't be probed."""
     from backend.scanner import probe_file
     _queue = JobQueue(db_path)
     import json as _json
@@ -1208,7 +1210,7 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
             # v0.3.136+.
             update_cols = [
                 "file_path = ?",
-                "video_codec = 'hevc'",
+                "video_codec = ?",  # the output's, not always HEVC: AV1 too (v0.10.0)
                 "link_count = NULL",  # a new file: no other links (v0.10.0)
                 "needs_conversion = 0",
                 "video_conv_savings_bytes = 0",  # nothing left to save
@@ -1223,7 +1225,8 @@ async def refresh_converted_scan_row(db_path: str, job_id: int, file_path: str,
                 # category-dir name. v0.9.4.
                 "disc_type = NULL",
             ]
-            update_params: list = [current_file_path]
+            update_params: list = [current_file_path,
+                                   (fresh or {}).get("video_codec") or output_codec or "hevc"]
             if new_size is not None:
                 update_cols.append("file_size = ?")
                 update_params.append(new_size)
@@ -2433,6 +2436,8 @@ class QueueWorker:
         # (path, probe) of the newest probe of the output, so the audio-codec
         # rename below doesn't probe the same file again (M7, v0.10.0).
         output_probe: tuple[str, Optional[dict]] | None = None
+        # The video codec the job encoded the output to (v0.10.0: HEVC or AV1).
+        output_video_codec: Optional[str] = None
         # v0.9.119: when a convert/combined encode is discarded for being larger
         # but the job still has audio/sub cleanup to do, run that cleanup inline
         # in THIS job (via the remux block below) instead of enqueuing a separate
@@ -2638,8 +2643,9 @@ class QueueWorker:
             )
             if output_replaced_source:
                 await self._finalize(job_id)
+                output_video_codec = (result.get("encoding_stats") or {}).get("output_codec") or "hevc"
                 output_probe = (current_file_path, await refresh_converted_scan_row(
-                    self.db_path, job_id, file_path, current_file_path))
+                    self.db_path, job_id, file_path, current_file_path, output_video_codec))
 
             # Always record the pre-rename source path so the VMAF
             # re-measure pass can find this job as a candidate even when
@@ -3477,6 +3483,10 @@ class QueueWorker:
                     if not already_correct:
                         # Get new file size (off-loop — media may be on CIFS)
                         new_size = await _async_getsize(current_file_path)
+                        # The output's codec: probed, else the one the job
+                        # encoded; neither (an audio job) keeps the row's.
+                        new_codec = ((output_probe[1] or {}) if output_probe else {}).get("video_codec") \
+                            or output_video_codec
                         # Same watcher-race guard as the early-update site
                         # above. Wipe any pre-existing scan_results row at
                         # current_file_path before renaming the original
@@ -3493,15 +3503,15 @@ class QueueWorker:
                         # would make the row perpetually render as a disc.
                         if new_size:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
+                                "UPDATE scan_results SET file_path = ?, file_size = ?, video_codec = COALESCE(?, video_codec), needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
-                                (current_file_path, new_size, file_path),
+                                (current_file_path, new_size, new_codec, file_path),
                             )
                         else:
                             await db.execute(
-                                "UPDATE scan_results SET file_path = ?, video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
+                                "UPDATE scan_results SET file_path = ?, video_codec = COALESCE(?, video_codec), needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1, is_new = 0, new_detected_at = NULL, disc_type = NULL "
                                 "WHERE file_path = ?",
-                                (current_file_path, file_path),
+                                (current_file_path, new_codec, file_path),
                             )
                         await db.commit()
                         print(f"[WORKER] Updated scan_results: {file_path} -> {current_file_path}", flush=True)

@@ -1273,6 +1273,30 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.10.0 converted-savings backfill skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: a conversion wrote video_codec 'hevc' whatever it
+        # encoded, so AV1 outputs showed (and filtered) as HEVC. Relabel a
+        # converted file whose latest conversion that replaced it recorded
+        # an AV1 output in its stats — once.
+        try:
+            flag = "_v0_10_0_av1_converted_codec"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute(
+                    "UPDATE scan_results SET video_codec = 'av1' "
+                    "WHERE converted = 1 AND video_codec = 'hevc' AND ("
+                    "  SELECT CASE WHEN json_valid(j.encoding_stats) "
+                    "              THEN json_extract(j.encoding_stats, '$.output_codec') END "
+                    "  FROM jobs j WHERE j.file_path = scan_results.file_path "
+                    "  AND j.job_type IN ('convert', 'combined') AND j.finalized_at IS NOT NULL "
+                    "  ORDER BY j.completed_at DESC, j.id DESC LIMIT 1) = 'av1'")
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if cur.rowcount:
+                    print(f"[DB] v0.10.0 backfill: {cur.rowcount} file(s) converted to AV1 "
+                          "were labelled HEVC", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 AV1 codec backfill skipped: {exc}", flush=True)
+
         # The Scanner's filter index (backend/filter_index): a log of changed
         # scan_results rows, and counters for the other tables filters read.
         # Last, after every table it watches exists.

@@ -1576,6 +1576,10 @@ async def retry_job(job_id: int):
                         new_size = _os.path.getsize(candidate)
                     except OSError:
                         new_size = None
+                    # Its codec: HEVC, or AV1 since v0.10.0.
+                    from backend.scanner import probe_file
+                    probed = await probe_file(candidate, detect_und_subs=False)
+                    new_codec = (probed or {}).get("video_codec") or "hevc"
 
                     had_track_removal = False
                     try:
@@ -1599,16 +1603,16 @@ async def retry_job(job_id: int):
                         if new_size:
                             await db2.execute(
                                 "UPDATE scan_results SET file_path = ?, file_size = ?, "
-                                "video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
+                                "video_codec = ?, needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
                                 "WHERE file_path = ?",
-                                (candidate, new_size, fp),
+                                (candidate, new_size, new_codec, fp),
                             )
                         else:
                             await db2.execute(
                                 "UPDATE scan_results SET file_path = ?, "
-                                "video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
+                                "video_codec = ?, needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
                                 "WHERE file_path = ?",
-                                (candidate, fp),
+                                (candidate, new_codec, fp),
                             )
                         await db2.commit()
                         print(f"[RETRY] Job {job_id}: file was already converted to {candidate} in a prior run — marking completed", flush=True)

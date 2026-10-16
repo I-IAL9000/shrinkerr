@@ -104,7 +104,8 @@ async def test_remote_completion_updates_the_scan_row_and_job(node_api, test_db,
         async with db.execute("SELECT file_path, original_file_path, status FROM jobs WHERE id = ?", (job_id,)) as cur:
             jrow = dict(await cur.fetchone())
     assert [r["file_path"] for r in rows] == [str(out)]
-    assert rows[0]["video_codec"] == "hevc" and rows[0]["needs_conversion"] == 0
+    # The output's codec (the fake output is MPEG-4).
+    assert rows[0]["video_codec"] == "mpeg4" and rows[0]["needs_conversion"] == 0
     assert [(t["stream_index"], t["language"]) for t in json.loads(rows[0]["audio_tracks_json"])] == [(1, "eng")]
     assert jrow == {"file_path": str(out), "original_file_path": str(src), "status": "completed"}
 

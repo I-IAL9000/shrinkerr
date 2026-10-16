@@ -81,7 +81,7 @@ async def test_conversion_refreshes_track_data_even_when_the_name_is_kept(test_d
     if outcome == "converted":
         assert [(t["stream_index"], t["language"], t["keep"]) for t in tracks] == [(1, "eng", True)]
         assert row["has_removable_tracks_flag"] == 0
-        assert row["video_codec"] == "hevc"
+        assert row["video_codec"] == "mpeg4"  # the output's (the fake encode writes MPEG-4)
     else:
         # The encode was thrown away and the original kept: the row must
         # still describe the original.

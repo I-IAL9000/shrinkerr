@@ -876,7 +876,8 @@ async def report_complete(req: CompletionReport, request: Request):
         if replaced:
             import backend.database as _database
             from backend.queue import refresh_converted_scan_row
-            await refresh_converted_scan_row(_database.DB_PATH, req.job_id, source_path, output_path)
+            await refresh_converted_scan_row(_database.DB_PATH, req.job_id, source_path, output_path,
+                                             (req.encoding_stats or {}).get("output_codec"))
             db = await connect_db()
             try:
                 # finalized_at: the output replaced the original, so neither
