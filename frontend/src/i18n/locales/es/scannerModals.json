@@ -52,7 +52,9 @@
       "hardlinked_other": "{{num}} archivos siguen con enlaces duros (en siembra) y se dejan fuera",
       "leavingSoon_one": "{{num}} archivo está en una colección de Maintainerr (se eliminará pronto) y se deja fuera",
       "leavingSoon_many": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
-      "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera"
+      "leavingSoon_other": "{{num}} archivos están en una colección de Maintainerr (se eliminarán pronto) y se dejan fuera",
+      "noEncode": "Sin conversión de vídeo: el vídeo se copia tal cual y solo se quitan pistas",
+      "cleanupSkips": "Los archivos sin pistas que quitar se omiten"
     },
     "learnedFrom_one": "aprendido de {{count}} conversión tuya",
     "learnedFrom_many": "aprendido de {{count}} conversiones tuyas",

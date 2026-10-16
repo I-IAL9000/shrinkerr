@@ -1170,7 +1170,7 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
     run?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [titleAction, selectedPaths, selectAllActive]);
-  const titleMenu = (path: string) => {
+  const titleMenu = (path: string, mediaType?: string | null) => {
     const item = (label: string, run: string, danger = false) => ({ label, danger, onSelect: () => {
       setSelectAllActive(false);
       setSelectedPaths(new Set([path]));
@@ -1185,7 +1185,8 @@ export default function ScannerPage({ scanProgress, onClearScanProgress }: Scann
       item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.quickCheck")}`, "quickCheck"),
       item(`${t("scanner:selection.healthCheck")}: ${t("scanner:selection.thoroughCheck")}`, "thoroughCheck"),
       item(t("scanner:arr.upgrade"), "upgrade"),
-      item(t("scanner:arr.missing"), "missing"),
+      // Missing episodes: a show's (or a title not known to be a film).
+      ...(mediaType === "movie" ? [] : [item(t("scanner:arr.missing"), "missing")]),
       item(t("scanner:arr.replace"), "replace"),
       item(t("common:actions.ignore"), "ignore"),
       item(t("common:actions.unignore"), "unignore"),

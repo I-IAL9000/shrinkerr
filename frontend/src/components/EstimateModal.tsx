@@ -343,10 +343,16 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               const enc = estimate.encoder;
               const encName = (e: string) => t(`settingsMedia:video.encoderNames.${e}`, { defaultValue: e });
               const orig = estimate.originals || {};
+              // Nothing converts (v0.10.0) — Cleanup only, or only cleanups to do:
+              // it said "Encodes with NVENC" regardless.
+              const bt = estimate.by_type || {};
+              const converts = cleanupOnly ? 0 : (bt.convert || 0) + (bt.combined || 0);
               const rows: React.ReactNode[] = [
-                enc.runs_here !== enc.requested
-                  ? t("scannerModals:estimate.whatHappens.encoderSwapped", { runs: encName(enc.runs_here), requested: encName(enc.requested) })
-                  : t("scannerModals:estimate.whatHappens.encoder", { encoder: encName(enc.runs_here) }),
+                converts === 0
+                  ? t("scannerModals:estimate.whatHappens.noEncode")
+                  : enc.runs_here !== enc.requested
+                    ? t("scannerModals:estimate.whatHappens.encoderSwapped", { runs: encName(enc.runs_here), requested: encName(enc.requested) })
+                    : t("scannerModals:estimate.whatHappens.encoder", { encoder: encName(enc.runs_here) }),
                 orig.action === "keep"
                   ? t("scannerModals:estimate.whatHappens.originalsKeep", { count: orig.days })
                   : orig.action === "trash"
@@ -356,6 +362,7 @@ export default function EstimateModal({ filePaths, hasIgnoredFiles, activeFilter
               if (Object.keys(audio).length) rows.push(t("scannerModals:estimate.whatHappens.audioRemoved", { list: trackLanguageList(audio) }));
               if (Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.subsRemoved", { list: trackLanguageList(subs) }));
               if (!Object.keys(audio).length && !Object.keys(subs).length) rows.push(t("scannerModals:estimate.whatHappens.nothingRemoved"));
+              if (cleanupOnly) rows.push(t("scannerModals:estimate.whatHappens.cleanupSkips"));
               if (estimate.hardlinked > 0) rows.push(t("scannerModals:estimate.whatHappens.hardlinked", { count: estimate.hardlinked, num: fmtNum(estimate.hardlinked) }));
               if (estimate.leaving_soon > 0) rows.push(t("scannerModals:estimate.whatHappens.leavingSoon", { count: estimate.leaving_soon, num: fmtNum(estimate.leaving_soon) }));
               return (

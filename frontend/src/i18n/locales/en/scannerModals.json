@@ -48,7 +48,9 @@
       "hardlinked_one": "{{num}} file is still hardlinked (seeding) and is left out",
       "hardlinked_other": "{{num}} files are still hardlinked (seeding) and are left out",
       "leavingSoon_one": "{{num}} file is in a Maintainerr collection (leaving soon) and is left out",
-      "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out"
+      "leavingSoon_other": "{{num}} files are in a Maintainerr collection (leaving soon) and are left out",
+      "noEncode": "No video conversion: the video is copied as it is, only tracks are removed",
+      "cleanupSkips": "Files with no track to remove are left out"
     },
     "learnedFrom_one": "learned from {{count}} of your conversions",
     "learnedFrom_other": "learned from {{count}} of your conversions",

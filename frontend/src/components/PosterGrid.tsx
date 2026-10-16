@@ -71,8 +71,8 @@ interface PosterGridProps {
   sortDir?: "asc" | "desc";
   // A list filter's token ("genre:drama") to apply: an open title's details link to them (v0.10.0).
   onFilter?: (token: string) => void;
-  // A title's ⋯ menu (v0.10.0): the selection bar's actions on it (its select path).
-  titleMenu?: (selectPath: string) => ActionMenuItem[];
+  // A title's ⋯ menu (v0.10.0): the selection bar's actions on it (its select path, movie / tv).
+  titleMenu?: (selectPath: string, mediaType?: string | null) => ActionMenuItem[];
 }
 
 export function groupFolders(folders: FolderInfo[], mediaRoots: Set<string>): TitleGroup[] {
@@ -462,7 +462,7 @@ export default function PosterGrid({
           isExpanded={expandedKey === group.key}
           mediaType={meta?.media_type}
           onEditClick={() => setFixModalGroup({ key: group.key, title: meta?.title || group.title, year: meta?.year || group.year })}
-          menu={titleMenu?.(groupSelectPath(group))}
+          menu={titleMenu?.(groupSelectPath(group), meta?.media_type)}
         />
       );
     }
