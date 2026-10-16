@@ -868,9 +868,12 @@ async def recompute_needs_conversion(db, source_codecs: list[str]) -> int:
         # doesn't flip them back to cleanup-only. Dolby Vision never does.
         should_convert = 1 if (disc_type or vc in codec_names) and not _dv_stays(hdr_format) else 0
         if int(needs_conversion or 0) != should_convert:
+            # One no longer converted has nothing to save; a newly converted
+            # one gets its estimate from the next savings_model re-estimate.
             await db.execute(
-                "UPDATE scan_results SET needs_conversion = ? WHERE file_path = ?",
-                (should_convert, file_path),
+                "UPDATE scan_results SET needs_conversion = ?, video_conv_savings_bytes = "
+                "CASE WHEN ? THEN video_conv_savings_bytes ELSE 0 END WHERE file_path = ?",
+                (should_convert, should_convert, file_path),
             )
             flipped += 1
     return flipped

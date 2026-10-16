@@ -1256,6 +1256,23 @@ async def init_db():
         except Exception as exc:
             print(f"[DB] v0.10.0 damaged-source backfill skipped: {exc}", flush=True)
 
+        # v0.10.0 backfill: a file marked converted kept the savings estimate
+        # it had before, so converted titles led the Scanner's Savings sort.
+        # Nothing is left to save on a file that doesn't need converting — once.
+        try:
+            flag = "_v0_10_0_clear_converted_savings"
+            async with db.execute("SELECT 1 FROM settings WHERE key = ?", (flag,)) as cur:
+                already_run = await cur.fetchone() is not None
+            if not already_run:
+                cur = await db.execute("UPDATE scan_results SET video_conv_savings_bytes = 0 "
+                                       "WHERE needs_conversion = 0 AND video_conv_savings_bytes != 0")
+                await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (flag,))
+                if cur.rowcount:
+                    print(f"[DB] v0.10.0 backfill: cleared the savings estimate of {cur.rowcount} "
+                          "file(s) that don't need converting", flush=True)
+        except Exception as exc:
+            print(f"[DB] v0.10.0 converted-savings backfill skipped: {exc}", flush=True)
+
         # The Scanner's filter index (backend/filter_index): a log of changed
         # scan_results rows, and counters for the other tables filters read.
         # Last, after every table it watches exists.

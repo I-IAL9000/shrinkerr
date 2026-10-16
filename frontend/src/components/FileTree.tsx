@@ -245,6 +245,12 @@ function buildFlatTitleTree(folders: FolderInfo[]): TreeNode {
 // "Season 11" < "Season 2" the default localeCompare gives.
 const _nameCmp = naturalCompare;
 
+// The Savings sort, either way round, orders what converting would save:
+// what has nothing to save (converted, or not a codec to convert) goes last.
+export function nothingToSaveLast<T>(sorted: T[], saving: (item: T) => number): T[] {
+  return [...sorted.filter(x => saving(x) > 0), ...sorted.filter(x => !(saving(x) > 0))];
+}
+
 function sortNodes(nodes: TreeNode[], sortBy: SortBy, sortDir: SortDirection): TreeNode[] {
   const sorted = [...nodes].sort((a, b) => {
     if (sortBy === "size") return a.agg_total_size - b.agg_total_size;
@@ -253,7 +259,8 @@ function sortNodes(nodes: TreeNode[], sortBy: SortBy, sortDir: SortDirection): T
     if (sortBy === "savings") return a.agg_est_savings - b.agg_est_savings;
     return _nameCmp(a.name, b.name);
   });
-  return sortDir === "desc" ? sorted.reverse() : sorted;
+  const ordered = sortDir === "desc" ? sorted.reverse() : sorted;
+  return sortBy === "savings" ? nothingToSaveLast(ordered, n => n.agg_est_savings) : ordered;
 }
 
 function sortFiles(files: ScannedFile[], sortBy: SortBy, sortDir: SortDirection): ScannedFile[] {
@@ -263,7 +270,8 @@ function sortFiles(files: ScannedFile[], sortBy: SortBy, sortDir: SortDirection)
     if (sortBy === "savings") return (a.video_conv_savings_bytes || 0) - (b.video_conv_savings_bytes || 0);
     return _nameCmp(a.file_name, b.file_name);
   });
-  return sortDir === "desc" ? sorted.reverse() : sorted;
+  const ordered = sortDir === "desc" ? sorted.reverse() : sorted;
+  return sortBy === "savings" ? nothingToSaveLast(ordered, f => f.video_conv_savings_bytes || 0) : ordered;
 }
 
 // ─── Visual order for shift-click selection ───

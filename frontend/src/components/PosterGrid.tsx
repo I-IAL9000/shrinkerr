@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { FolderInfo } from "./FileTree";
+import { nothingToSaveLast, type FolderInfo } from "./FileTree";
 import type { ScannedFile, AudioTrack, SubtitleTrack } from "../types";
 import { resolvePosterMetadata, getFilesByTitle } from "../api";
 import { getCodecLabel } from "../codecLabels";
@@ -122,7 +122,8 @@ export function sortGroups(groups: TitleGroup[], sortBy: string, sortDir: string
     if (sortBy === "date") return Math.max(0, ...a.folders.map(f => f.newest_mtime)) - Math.max(0, ...b.folders.map(f => f.newest_mtime));
     return naturalCompare(a.title, b.title);
   });
-  return sortDir === "desc" ? sorted.reverse() : sorted;
+  const ordered = sortDir === "desc" ? sorted.reverse() : sorted;
+  return sortBy === "savings" ? nothingToSaveLast(ordered, g => g.estSavings) : ordered;
 }
 
 function parseFile(row: any): ScannedFile {

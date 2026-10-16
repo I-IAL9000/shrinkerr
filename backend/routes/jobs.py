@@ -1599,14 +1599,14 @@ async def retry_job(job_id: int):
                         if new_size:
                             await db2.execute(
                                 "UPDATE scan_results SET file_path = ?, file_size = ?, "
-                                "video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                                "video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
                                 "WHERE file_path = ?",
                                 (candidate, new_size, fp),
                             )
                         else:
                             await db2.execute(
                                 "UPDATE scan_results SET file_path = ?, "
-                                "video_codec = 'hevc', needs_conversion = 0, converted = 1 "
+                                "video_codec = 'hevc', needs_conversion = 0, video_conv_savings_bytes = 0, converted = 1 "
                                 "WHERE file_path = ?",
                                 (candidate, fp),
                             )

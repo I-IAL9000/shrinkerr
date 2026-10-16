@@ -356,6 +356,7 @@ async def test_recompute_needs_conversion_works_without_row_factory(tmp_path):
         await db.execute("INSERT INTO scan_results VALUES ('/d.iso','hevc',0,0,'bdmv',NULL)")
         # v0.10.0: Dolby Vision never does.
         await db.execute("INSERT INTO scan_results VALUES ('/e.mkv','h264',1,0,NULL,'dv5')")
+        await db.execute("ALTER TABLE scan_results ADD COLUMN video_conv_savings_bytes INTEGER DEFAULT 0")
         await db.commit()
         flipped = await recompute_needs_conversion(db, ["h264"])
         assert flipped == 3  # /a.mkv (codec), /d.iso (disc), /e.mkv (Dolby Vision)
