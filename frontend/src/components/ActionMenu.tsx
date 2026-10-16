@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Chevron from "./Chevron";
 
 export interface ActionMenuItem {
@@ -14,7 +15,7 @@ export interface ActionMenuItem {
  * placeholder applied the first one. Here nothing happens until an item is
  * chosen: click, or arrows then Enter. Escape / Tab / a click outside close.
  */
-export default function ActionMenu({ label, items, buttonStyle, icon, buttonClassName, align = "left" }: {
+export default function ActionMenu({ label, items, buttonStyle, icon, buttonClassName, align = "left", floating = false }: {
   label: string;
   items: ActionMenuItem[];
   buttonStyle?: CSSProperties;
@@ -22,9 +23,14 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
   icon?: ReactNode;
   buttonClassName?: string;
   align?: "left" | "right";
+  // Over the page, not inside the button's box (v0.10.0): a poster clips
+  // what overflows it, and the menu was cut off.
+  floating?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<CSSProperties>({});
   const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -32,11 +38,34 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
     if (!open) return;
     itemRefs.current[0]?.focus();
     const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!wrapRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+    // A floating menu stays where the button was: it closes when the page moves.
+    const onMove = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setOpen(false); };
+    if (floating) {
+      window.addEventListener("scroll", onMove, true);
+      window.addEventListener("resize", onMove);
+    }
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, floating]);
+
+  const toggle = () => {
+    if (!open && floating && buttonRef.current) {
+      const box = buttonRef.current.getBoundingClientRect();
+      const tall = items.length * 30 + 12;  // about: opens upwards when it wouldn't fit below
+      const vertical = box.bottom + 4 + tall > window.innerHeight
+        ? { bottom: window.innerHeight - box.top + 4 } : { top: box.bottom + 4 };
+      const horizontal = align === "right" ? { right: window.innerWidth - box.right } : { left: box.left };
+      setAt({ position: "fixed", ...vertical, ...horizontal, zIndex: 1000 });
+    }
+    setOpen(o => !o);
+  };
 
   const close = (refocus: boolean) => {
     setOpen(false);
@@ -62,7 +91,7 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen(o => !o)}
+        onClick={toggle}
         onKeyDown={(e) => { if (e.key === "ArrowDown" && !open) { e.preventDefault(); setOpen(true); } }}
         className={buttonClassName}
         aria-label={icon ? label : undefined}
@@ -71,13 +100,14 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
       >
         {icon ?? <>{label}<Chevron /></>}
       </button>
-      {open && (
+      {open && ((menu: ReactNode) => (floating ? createPortal(menu, document.body) : menu))(
         <div
+          ref={menuRef}
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKey}
           style={{
-            position: "absolute", top: "calc(100% + 4px)", [align]: 0, zIndex: 50, minWidth: "100%",
+            ...(floating ? at : { position: "absolute", top: "calc(100% + 4px)", [align]: 0, zIndex: 50, minWidth: "100%" }),
             background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6,
             boxShadow: "0 6px 20px rgba(0,0,0,0.35)", padding: 4,
             display: "flex", flexDirection: "column",
@@ -95,7 +125,7 @@ export default function ActionMenu({ label, items, buttonStyle, icon, buttonClas
               {item.label}
             </button>
           ))}
-        </div>
+        </div>,
       )}
     </div>
   );

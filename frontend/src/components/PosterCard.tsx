@@ -89,7 +89,7 @@ export default function PosterCard({
         {/* The title's actions — bottom-right, as the fix-match button */}
         {menu && menu.length > 0 && (
           <div className="poster-menu" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-            <ActionMenu label={t("library:poster.actions")} items={menu} align="right" buttonClassName="poster-edit-btn"
+            <ActionMenu label={t("library:poster.actions")} items={menu} align="right" buttonClassName="poster-edit-btn" floating
               icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
               </svg>} />

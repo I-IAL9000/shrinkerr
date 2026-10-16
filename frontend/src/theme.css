@@ -1045,7 +1045,10 @@ input[type="checkbox"] { cursor: pointer; }
 
 /* Keyboard focus (FE#25, v0.10.0): there was no focus style at all. */
 :focus-visible { outline: 2px solid var(--accent-text) !important; outline-offset: 1px; }
-.poster-card:focus-within .poster-edit-btn, .poster-card:focus-within .poster-checkbox { opacity: 1; }
+/* Keyboard focus shows them; a click (which focuses the card too) doesn't —
+   they showed on every opened poster (v0.10.0). */
+.poster-card:focus-visible .poster-edit-btn, .poster-card:focus-visible .poster-checkbox,
+.poster-card:has(:focus-visible) .poster-edit-btn, .poster-card:has(:focus-visible) .poster-checkbox { opacity: 1; }
 .rule-drag-handle {
   background: none; border: none; color: var(--text-muted); cursor: grab;
   font-size: 14px; flex-shrink: 0; padding: 0 2px; line-height: 1;
